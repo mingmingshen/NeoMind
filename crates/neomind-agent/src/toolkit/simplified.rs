@@ -927,7 +927,9 @@ pub fn format_tools_for_llm() -> String {
     prompt.push_str("- extension(action=\"list|get|status\", ...)\n");
     prompt.push_str("- transform(action=\"list|get|create|update|delete|test\", ...)\n");
     prompt.push_str("- skill(action=\"search|list|get|create|update|delete\", ...) — operation guides & skill management\n");
-    prompt.push_str("- shell(command=\"...\") — execute system commands (network, disk, processes, files)\n\n");
+    prompt.push_str(
+        "- shell(command=\"...\") — execute system commands (network, disk, processes, files)\n\n",
+    );
     prompt.push_str(
         "Format: [{\"name\":\"tool_name\",\"arguments\":{\"action\":\"operation\",\"param\":\"value\"}}]\n\n",
     );

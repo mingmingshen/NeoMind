@@ -23,6 +23,7 @@ pub mod cache;
 pub mod conversation_context;
 pub mod fallback;
 pub mod formatter;
+pub mod planner;
 pub mod scheduler;
 pub mod semantic_mapper;
 pub mod smart_followup;
@@ -31,7 +32,6 @@ pub mod streaming;
 pub mod tokenizer;
 pub mod tool_parser;
 pub mod types;
-pub mod planner;
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -174,12 +174,18 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
                         if result_preview.is_empty() {
                             format!("the {} tool with {}", tc.name, args_summary)
                         } else {
-                            format!("the {} tool with {} and received: {}", tc.name, args_summary, result_preview)
+                            format!(
+                                "the {} tool with {} and received: {}",
+                                tc.name, args_summary, result_preview
+                            )
                         }
                     })
                     .collect();
 
-                let summary = format!("Previously called {}. These are past results, do not repeat.", summaries.join(", then "));
+                let summary = format!(
+                    "Previously called {}. These are past results, do not repeat.",
+                    summaries.join(", then ")
+                );
 
                 result.push(AgentMessage {
                     role: msg.role.clone(),
@@ -427,11 +433,11 @@ fn build_context_window(messages: &[AgentMessage], max_tokens: usize) -> Vec<Age
     // Adaptive compaction: scale parameters with model context capacity
     // Larger contexts (32k+) should preserve far more history
     let (keep_tools, compress_threshold, keep_recent, min_recent) = if max_tokens > 16000 {
-        (6, 30, 14, 8)  // Large context: very gentle
+        (6, 30, 14, 8) // Large context: very gentle
     } else if max_tokens > 8000 {
-        (4, 20, 10, 6)  // Medium context: moderate
+        (4, 20, 10, 6) // Medium context: moderate
     } else {
-        (2, 12, 6, 4)   // Small context: aggressive (original)
+        (2, 12, 6, 4) // Small context: aggressive (original)
     };
 
     // First, apply tool result clearing
@@ -1165,7 +1171,9 @@ impl Agent {
             }
             #[cfg(not(feature = "llamacpp"))]
             LlmBackend::LlamaCpp { .. } => {
-                return Err(NeoMindError::llm("llama.cpp backend is not available (feature not enabled)".to_string()));
+                return Err(NeoMindError::llm(
+                    "llama.cpp backend is not available (feature not enabled)".to_string(),
+                ));
             }
         };
 
@@ -1352,10 +1360,7 @@ impl Agent {
             for ext_name in &extension_tools {
                 if let Some(tool) = self.tools.get(ext_name) {
                     let def = tool.definition();
-                    prompt.push_str(&format!(
-                        "**{}**: {}\n",
-                        def.name, def.description
-                    ));
+                    prompt.push_str(&format!("**{}**: {}\n", def.name, def.description));
                     // Add parameter info
                     if let Some(params) = def.parameters.get("properties") {
                         prompt.push_str("  Parameters:\n");
@@ -2455,7 +2460,10 @@ impl Agent {
             // Build Phase 2 prompt with tool results
             let original_question = {
                 let state = self.internal_state.read().await;
-                state.memory.iter().rev()
+                state
+                    .memory
+                    .iter()
+                    .rev()
                     .find(|msg| msg.role == "user" && !msg.content.starts_with("[Tool:"))
                     .map(|msg| msg.content.clone())
             };
@@ -2471,15 +2479,18 @@ impl Agent {
                 let max_context = self.llm_interface.max_context_length().await;
                 let max_history_tokens = (max_context * 70) / 100;
                 let trimmed = crate::agent::streaming::build_context_window(
-                    &state.memory, max_history_tokens
+                    &state.memory,
+                    max_history_tokens,
                 );
                 trimmed.iter().map(|msg| msg.to_core()).collect()
             };
 
             // Call LLM to summarize (no tools, no thinking)
-            match self.llm_interface.chat_without_tools_with_history(
-                &phase2_prompt, &history_messages
-            ).await {
+            match self
+                .llm_interface
+                .chat_without_tools_with_history(&phase2_prompt, &history_messages)
+                .await
+            {
                 Ok(response) => {
                     let mut text = response.text.trim().to_string();
                     if text.is_empty() {
@@ -2495,7 +2506,10 @@ impl Agent {
                 }
                 Err(e) => {
                     // Fallback to formatted results on LLM error
-                    tracing::warn!("Phase 2 LLM call failed: {}, using formatted tool results", e);
+                    tracing::warn!(
+                        "Phase 2 LLM call failed: {}, using formatted tool results",
+                        e
+                    );
                     crate::agent::streaming::format_tool_results(&tool_results)
                 }
             }

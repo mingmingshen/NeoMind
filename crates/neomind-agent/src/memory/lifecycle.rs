@@ -16,12 +16,7 @@ pub trait MemoryLifecycle: Send + Sync {
 
     /// Called when a turn completes with memory enabled.
     /// Syncs the turn to mid-term memory for future retrieval.
-    async fn on_turn_complete(
-        &self,
-        session_id: &str,
-        user_msg: &str,
-        assistant_msg: &str,
-    );
+    async fn on_turn_complete(&self, session_id: &str, user_msg: &str, assistant_msg: &str);
 
     /// Called when a session ends with memory enabled.
     /// Triggers memory extraction for the session.
@@ -45,12 +40,7 @@ impl MemoryLifecycle for DefaultMemoryLifecycle {
         MemorySnapshot::load_opt(&self.store)
     }
 
-    async fn on_turn_complete(
-        &self,
-        _session_id: &str,
-        _user_msg: &str,
-        _assistant_msg: &str,
-    ) {
+    async fn on_turn_complete(&self, _session_id: &str, _user_msg: &str, _assistant_msg: &str) {
         // Mid-term memory sync is handled by the existing consolidation flow
         // in process_stream_to_channel. This hook is for future expansion.
     }

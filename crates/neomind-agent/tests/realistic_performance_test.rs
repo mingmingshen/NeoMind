@@ -285,7 +285,10 @@ async fn test_real_llm_performance() -> anyhow::Result<()> {
     let (response5, elapsed5) = ctx.llm_analyze(system_prompt, report_request).await;
     println!("   响应时间: {}ms", elapsed5);
     println!("   响应长度: {} 字符", response5.len());
-    println!("   响应预览: {}...", response5.chars().take(100).collect::<String>());
+    println!(
+        "   响应预览: {}...",
+        response5.chars().take(100).collect::<String>()
+    );
 
     println!("\n============================================================");
     println!("真实性能测试完成");
@@ -380,8 +383,8 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
         tool_config: None,
         execution_mode: ExecutionMode::Focused,
         error_message: None,
-            max_retries: 0,
-            consecutive_failures: 0,
+        max_retries: 0,
+        consecutive_failures: 0,
         priority: 128,
         conversation_history: vec![],
         user_messages: vec![],

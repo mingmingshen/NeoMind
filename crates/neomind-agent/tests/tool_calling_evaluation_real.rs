@@ -470,7 +470,6 @@ async fn test_real_tool_calling_evaluation() -> anyhow::Result<()> {
     println!("  Rule:   list_rules, create_rule, delete_rule");
     println!("  Agent:  list_agents, get_agent, execute_agent, control_agent, create_agent, etc.");
 
-
     let test_cases = get_test_cases();
     println!("\n📋 Test cases: {}", test_cases.len());
 

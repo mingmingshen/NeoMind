@@ -504,12 +504,15 @@ impl SemanticToolMapper {
 
                 if let Some(name) = device_name {
                     // Only resolve if it doesn't look like a technical ID (contains non-ASCII or spaces)
-                    let looks_technical = name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ':');
+                    let looks_technical = name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ':');
                     if !looks_technical {
                         if let Some(mapping) = self.resolve_device(&name).await {
                             params["device_id"] = Value::String(mapping.device_id.clone());
                             params["_device_name"] = Value::String(name);
-                            params["_match_type"] = Value::String(format!("{:?}", mapping.match_type));
+                            params["_match_type"] =
+                                Value::String(format!("{:?}", mapping.match_type));
                             mapping_applied = true;
                         }
                     }
@@ -534,7 +537,9 @@ impl SemanticToolMapper {
                     .map(|s| s.to_string());
 
                 if let Some(name) = rule_name {
-                    let looks_technical = name.contains('-') || name.contains(':') || (name.len() > 20 && name.chars().all(|c| c.is_ascii_alphanumeric()));
+                    let looks_technical = name.contains('-')
+                        || name.contains(':')
+                        || (name.len() > 20 && name.chars().all(|c| c.is_ascii_alphanumeric()));
                     if !looks_technical {
                         if let Some(mapping) = self.resolve_rule(&name).await {
                             params["rule_id"] = Value::String(mapping.rule_id.clone());

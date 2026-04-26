@@ -256,18 +256,19 @@ pub fn configure_static_file_serving<S>(router: Router<S>) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    let web_dir = std::env::var("NEOMIND_WEB_DIR")
-        .unwrap_or_else(|_| "/var/www/neomind".to_string());
+    let web_dir =
+        std::env::var("NEOMIND_WEB_DIR").unwrap_or_else(|_| "/var/www/neomind".to_string());
 
     let index_path = std::path::Path::new(&web_dir).join("index.html");
     if index_path.exists() {
         use tower_http::services::{ServeDir, ServeFile};
         tracing::info!("Serving frontend static files from: {}", web_dir);
-        router.fallback_service(
-            ServeDir::new(&web_dir).fallback(ServeFile::new(index_path))
-        )
+        router.fallback_service(ServeDir::new(&web_dir).fallback(ServeFile::new(index_path)))
     } else {
-        tracing::info!("No frontend files found at {}, serving API-only mode", web_dir);
+        tracing::info!(
+            "No frontend files found at {}, serving API-only mode",
+            web_dir
+        );
         let static_routes = Router::new()
             .route("/*path", get(serve_asset))
             .route("/", get(serve_index));

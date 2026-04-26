@@ -331,7 +331,6 @@ pub struct StreamConfig {
     /// Default: 200,000 characters
     #[serde(default = "StreamConfig::default_max_total_chars")]
     pub max_total_chars: usize,
-
 }
 
 impl StreamConfig {

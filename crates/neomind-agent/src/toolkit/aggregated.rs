@@ -265,7 +265,8 @@ impl DeviceTool {
 
             if let Some(template) = self.device_service.get_template(&d.device_type).await {
                 if !template.metrics.is_empty() {
-                    let metric_names: Vec<&str> = template.metrics.iter().map(|m| m.name.as_str()).collect();
+                    let metric_names: Vec<&str> =
+                        template.metrics.iter().map(|m| m.name.as_str()).collect();
                     device_json["metrics"] = serde_json::json!(metric_names);
                 }
                 if !template.commands.is_empty() {
@@ -276,14 +277,21 @@ impl DeviceTool {
                             if c.parameters.is_empty() {
                                 serde_json::json!({"name": c.name})
                             } else {
-                                let params: Vec<Value> = c.parameters.iter().map(|p| {
-                                    let type_str = format!("{:?}", p.data_type).to_lowercase();
-                                    if p.required {
-                                        serde_json::json!(format!("{}:{} (required)", p.name, type_str))
-                                    } else {
-                                        serde_json::json!(format!("{}:{}", p.name, type_str))
-                                    }
-                                }).collect();
+                                let params: Vec<Value> = c
+                                    .parameters
+                                    .iter()
+                                    .map(|p| {
+                                        let type_str = format!("{:?}", p.data_type).to_lowercase();
+                                        if p.required {
+                                            serde_json::json!(format!(
+                                                "{}:{} (required)",
+                                                p.name, type_str
+                                            ))
+                                        } else {
+                                            serde_json::json!(format!("{}:{}", p.name, type_str))
+                                        }
+                                    })
+                                    .collect();
                                 serde_json::json!({
                                     "name": c.name,
                                     "params": params
@@ -400,7 +408,10 @@ impl DeviceTool {
                                     metric_json["value"] = serde_json::json!(format!(
                                         "[binary data, {}]",
                                         if size_bytes > 1024 * 1024 {
-                                            format!("{:.1}MB", size_bytes as f64 / (1024.0 * 1024.0))
+                                            format!(
+                                                "{:.1}MB",
+                                                size_bytes as f64 / (1024.0 * 1024.0)
+                                            )
                                         } else {
                                             format!("{:.1}KB", size_bytes as f64 / 1024.0)
                                         }
@@ -417,7 +428,8 @@ impl DeviceTool {
                                 } else {
                                     "N/A".to_string()
                                 };
-                                metric_json["value"] = serde_json::json!(format!("[raw payload, {}]", size));
+                                metric_json["value"] =
+                                    serde_json::json!(format!("[raw payload, {}]", size));
                             } else {
                                 metric_json["value"] = latest.value.to_json_value();
                             }
@@ -437,11 +449,7 @@ impl DeviceTool {
                     let template_set: std::collections::HashSet<&str> = device_json
                         .get("metrics")
                         .and_then(|m| m.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|v| v.get("name")?.as_str())
-                                .collect()
-                        })
+                        .map(|arr| arr.iter().filter_map(|v| v.get("name")?.as_str()).collect())
                         .unwrap_or_default();
 
                     let virtual_names: Vec<&String> = all_stored
@@ -467,7 +475,10 @@ impl DeviceTool {
 
                     if !virtual_metrics.is_empty() {
                         // Merge into existing metrics array or create it
-                        if let Some(arr) = device_json.get_mut("metrics").and_then(|v| v.as_array_mut()) {
+                        if let Some(arr) = device_json
+                            .get_mut("metrics")
+                            .and_then(|v| v.as_array_mut())
+                        {
                             arr.extend(virtual_metrics);
                         } else {
                             device_json["metrics"] = serde_json::json!(virtual_metrics);
@@ -532,7 +543,9 @@ impl DeviceTool {
         } else {
             24 * 3600 // 24 hours (was 1h - too short for infrequent metrics like battery)
         };
-        let start_time = args["start_time"].as_i64().unwrap_or(end_time - default_window);
+        let start_time = args["start_time"]
+            .as_i64()
+            .unwrap_or(end_time - default_window);
         let limit = args["limit"].as_u64().unwrap_or(10) as usize;
 
         if let Some(m) = metric {
@@ -547,12 +560,16 @@ impl DeviceTool {
             // This handles cases where user passes "battery" but storage key is "values.battery"
             if data.is_empty() {
                 if let Some(device) = self.device_service.get_device(&device_id).await {
-                    if let Some(template) = self.device_service.get_template(&device.device_type).await {
+                    if let Some(template) =
+                        self.device_service.get_template(&device.device_type).await
+                    {
                         // Try to find a metric whose name ends with the user input
                         // e.g., "battery" matches "values.battery"
                         let m_lower = m.to_lowercase();
                         if let Some(matched_def) = template.metrics.iter().find(|def| {
-                            def.name == m || def.name.ends_with(&format!(".{}", m)) || def.name == m_lower
+                            def.name == m
+                                || def.name.ends_with(&format!(".{}", m))
+                                || def.name == m_lower
                         }) {
                             let resolved = matched_def.name.clone();
                             if let Ok(d) = storage
@@ -584,18 +601,28 @@ impl DeviceTool {
             // Return available metrics from the device template so the LLM can retry.
             if data.is_empty() {
                 if let Some(device) = self.device_service.get_device(&device_id).await {
-                    if let Some(template) = self.device_service.get_template(&device.device_type).await {
-                        let available: Vec<Value> = template.metrics.iter().map(|def| {
-                            serde_json::json!({
-                                "name": def.name,
-                                "display_name": def.display_name,
-                                "unit": def.unit,
+                    if let Some(template) =
+                        self.device_service.get_template(&device.device_type).await
+                    {
+                        let available: Vec<Value> = template
+                            .metrics
+                            .iter()
+                            .map(|def| {
+                                serde_json::json!({
+                                    "name": def.name,
+                                    "display_name": def.display_name,
+                                    "unit": def.unit,
+                                })
                             })
-                        }).collect();
+                            .collect();
                         tracing::warn!(
                             "Metric '{}' not found for device '{}'. Available: {:?}",
-                            m, device_id,
-                            available.iter().filter_map(|v| v.get("name").and_then(|n| n.as_str())).collect::<Vec<_>>()
+                            m,
+                            device_id,
+                            available
+                                .iter()
+                                .filter_map(|v| v.get("name").and_then(|n| n.as_str()))
+                                .collect::<Vec<_>>()
                         );
                         return Ok(ToolOutput::success(serde_json::json!({
                             "device_id": device_id,
@@ -624,41 +651,47 @@ impl DeviceTool {
                 || resolved_metric.contains("picture")
                 || resolved_metric.contains("frame")
                 || data.iter().any(|p| {
-                    p.value.as_str().map_or(false, |s| s.starts_with("data:image/"))
+                    p.value
+                        .as_str()
+                        .map_or(false, |s| s.starts_with("data:image/"))
                 });
 
             if is_image_metric && !data.is_empty() {
                 // For image metrics, return structured data with base64 separated from the data URI prefix.
                 // This makes it easy for the LLM to pass the base64_data field directly to
                 // image analysis extensions, while also preserving the mime_type for content handling.
-                let points: Vec<Value> = data.iter().take(limit).map(|p| {
-                    if let Some(s) = p.value.as_str() {
-                        if s.starts_with("data:image/") {
-                            // Parse data URI: "data:image/jpeg;base64,<base64data>"
-                            let mime_type = if let Some(semi) = s.find(';') {
-                                s[..semi].trim_start_matches("data:").to_string()
-                            } else {
-                                "image/jpeg".to_string()
-                            };
-                            let base64_data = if let Some(comma) = s.find(";base64,") {
-                                s[comma + 8..].to_string()
-                            } else {
-                                s.to_string()
-                            };
-                            let size_kb = base64_data.len() as f64 / 1024.0;
-                            return serde_json::json!({
-                                "timestamp": p.timestamp,
-                                "mime_type": mime_type,
-                                "base64_data": base64_data,
-                                "size_kb": format!("{:.1}", size_kb),
-                            });
+                let points: Vec<Value> = data
+                    .iter()
+                    .take(limit)
+                    .map(|p| {
+                        if let Some(s) = p.value.as_str() {
+                            if s.starts_with("data:image/") {
+                                // Parse data URI: "data:image/jpeg;base64,<base64data>"
+                                let mime_type = if let Some(semi) = s.find(';') {
+                                    s[..semi].trim_start_matches("data:").to_string()
+                                } else {
+                                    "image/jpeg".to_string()
+                                };
+                                let base64_data = if let Some(comma) = s.find(";base64,") {
+                                    s[comma + 8..].to_string()
+                                } else {
+                                    s.to_string()
+                                };
+                                let size_kb = base64_data.len() as f64 / 1024.0;
+                                return serde_json::json!({
+                                    "timestamp": p.timestamp,
+                                    "mime_type": mime_type,
+                                    "base64_data": base64_data,
+                                    "size_kb": format!("{:.1}", size_kb),
+                                });
+                            }
                         }
-                    }
-                    serde_json::json!({
-                        "timestamp": p.timestamp,
-                        "value": p.value.to_json_value()
+                        serde_json::json!({
+                            "timestamp": p.timestamp,
+                            "value": p.value.to_json_value()
+                        })
                     })
-                }).collect();
+                    .collect();
 
                 Ok(ToolOutput::success(serde_json::json!({
                     "device_id": device_id,
@@ -717,22 +750,35 @@ impl DeviceTool {
                             "Missing required parameters for '{}': {}. Available params: {}",
                             command,
                             missing.join(", "),
-                            cmd_def.parameters.iter()
-                                .map(|p| format!("{}:{}{}", p.name, format!("{:?}", p.data_type).to_lowercase(), if p.required { " (required)" } else { "" }))
+                            cmd_def
+                                .parameters
+                                .iter()
+                                .map(|p| format!(
+                                    "{}:{}{}",
+                                    p.name,
+                                    format!("{:?}", p.data_type).to_lowercase(),
+                                    if p.required { " (required)" } else { "" }
+                                ))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         )));
                     }
                 } else {
-                    let available: Vec<&str> = template.commands.iter().map(|c| c.name.as_str()).collect();
+                    let available: Vec<&str> =
+                        template.commands.iter().map(|c| c.name.as_str()).collect();
                     return Ok(ToolOutput::error(format!(
                         "Unknown command '{}' for device '{}'. Available commands: {}",
-                        command, device_id, available.join(", ")
+                        command,
+                        device_id,
+                        available.join(", ")
                     )));
                 }
             }
         } else {
-            return Ok(ToolOutput::error(format!("Device not found: {}", device_id)));
+            return Ok(ToolOutput::error(format!(
+                "Device not found: {}",
+                device_id
+            )));
         }
 
         // Confirmation check
@@ -1059,8 +1105,10 @@ impl AgentTool {
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
-        let candidates: Vec<(String, String)> =
-            agents.iter().map(|a| (a.id.clone(), a.name.clone())).collect();
+        let candidates: Vec<(String, String)> = agents
+            .iter()
+            .map(|a| (a.id.clone(), a.name.clone()))
+            .collect();
 
         super::resolver::EntityResolver::resolve(input, &candidates, "agent")
             .map_err(ToolError::Execution)
@@ -1185,45 +1233,52 @@ impl AgentTool {
         };
 
         // Parse resources — supports JSON array of {type, id} objects
-        let agent_resources: Vec<neomind_storage::agents::AgentResource> = if let Some(res_val) = args.get("resources") {
-            if let Some(arr) = res_val.as_array() {
-                // JSON array format: [{"type":"metric","id":"sensor_001:temperature"}, ...]
-                arr.iter().filter_map(|item| {
-                    let type_str = item.get("type")?.as_str()?;
-                    let id = item.get("id")?.as_str()?.to_string();
-                    let resource_type = match type_str {
-                        "device" => neomind_storage::agents::ResourceType::Device,
-                        "metric" => neomind_storage::agents::ResourceType::Metric,
-                        "command" => neomind_storage::agents::ResourceType::Command,
-                        "extension_metric" => neomind_storage::agents::ResourceType::ExtensionMetric,
-                        "extension_tool" => neomind_storage::agents::ResourceType::ExtensionTool,
-                        "data_stream" => neomind_storage::agents::ResourceType::DataStream,
-                        _ => return None,
-                    };
-                    Some(neomind_storage::agents::AgentResource {
-                        resource_type,
-                        resource_id: id.clone(),
-                        name: id,
-                        config: serde_json::json!({}),
-                    })
-                }).collect()
-            } else if let Some(s) = res_val.as_str() {
-                // Fallback: comma-separated device IDs (backward compat)
-                s.split(',')
-                    .filter(|id| !id.trim().is_empty())
-                    .map(|id| neomind_storage::agents::AgentResource {
-                        resource_type: neomind_storage::agents::ResourceType::Device,
-                        resource_id: id.trim().to_string(),
-                        name: id.trim().to_string(),
-                        config: serde_json::json!({}),
-                    })
-                    .collect()
+        let agent_resources: Vec<neomind_storage::agents::AgentResource> =
+            if let Some(res_val) = args.get("resources") {
+                if let Some(arr) = res_val.as_array() {
+                    // JSON array format: [{"type":"metric","id":"sensor_001:temperature"}, ...]
+                    arr.iter()
+                        .filter_map(|item| {
+                            let type_str = item.get("type")?.as_str()?;
+                            let id = item.get("id")?.as_str()?.to_string();
+                            let resource_type = match type_str {
+                                "device" => neomind_storage::agents::ResourceType::Device,
+                                "metric" => neomind_storage::agents::ResourceType::Metric,
+                                "command" => neomind_storage::agents::ResourceType::Command,
+                                "extension_metric" => {
+                                    neomind_storage::agents::ResourceType::ExtensionMetric
+                                }
+                                "extension_tool" => {
+                                    neomind_storage::agents::ResourceType::ExtensionTool
+                                }
+                                "data_stream" => neomind_storage::agents::ResourceType::DataStream,
+                                _ => return None,
+                            };
+                            Some(neomind_storage::agents::AgentResource {
+                                resource_type,
+                                resource_id: id.clone(),
+                                name: id,
+                                config: serde_json::json!({}),
+                            })
+                        })
+                        .collect()
+                } else if let Some(s) = res_val.as_str() {
+                    // Fallback: comma-separated device IDs (backward compat)
+                    s.split(',')
+                        .filter(|id| !id.trim().is_empty())
+                        .map(|id| neomind_storage::agents::AgentResource {
+                            resource_type: neomind_storage::agents::ResourceType::Device,
+                            resource_id: id.trim().to_string(),
+                            name: id.trim().to_string(),
+                            config: serde_json::json!({}),
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                }
             } else {
                 Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
+            };
 
         // Parse event_filter from schedule_config when schedule_type is event
         let is_event = matches!(schedule_type, ScheduleType::Event);
@@ -1475,9 +1530,7 @@ impl AgentTool {
 
     async fn execute_invoke(&self, args: &Value) -> Result<ToolOutput> {
         let invoker = self.agent_invoker.as_ref().ok_or_else(|| {
-            ToolError::Execution(
-                "Agent invocation is not available in this context".to_string(),
-            )
+            ToolError::Execution("Agent invocation is not available in this context".to_string())
         })?;
 
         let agent_id_input = args["agent_id"]
@@ -1539,12 +1592,19 @@ impl AgentTool {
             serde_json::Value::String(s) => {
                 if s.len() > max_str_len {
                     let size_mb = s.len() as f64 / (1024.0 * 1024.0);
-                    if s.starts_with("data:image/") || s.starts_with("/9j/") || s.starts_with("iVBOR") {
+                    if s.starts_with("data:image/")
+                        || s.starts_with("/9j/")
+                        || s.starts_with("iVBOR")
+                    {
                         serde_json::json!(format!("[图像数据: {:.1}MB, 已省略]", size_mb))
                     } else if size_mb > 0.1 {
                         serde_json::json!(format!("[大数据: {:.1}MB, 已省略]", size_mb))
                     } else {
-                        serde_json::json!(format!("[{}...已省略{}字符]", &s[..max_str_len.min(s.len())], s.len() - max_str_len.min(s.len())))
+                        serde_json::json!(format!(
+                            "[{}...已省略{}字符]",
+                            &s[..max_str_len.min(s.len())],
+                            s.len() - max_str_len.min(s.len())
+                        ))
                     }
                 } else {
                     val.clone()
@@ -1557,9 +1617,11 @@ impl AgentTool {
                     .collect();
                 serde_json::Value::Object(compacted)
             }
-            serde_json::Value::Array(arr) => {
-                serde_json::Value::Array(arr.iter().map(|v| Self::compact_value(v, max_str_len)).collect())
-            }
+            serde_json::Value::Array(arr) => serde_json::Value::Array(
+                arr.iter()
+                    .map(|v| Self::compact_value(v, max_str_len))
+                    .collect(),
+            ),
             _ => val.clone(),
         }
     }
@@ -1580,7 +1642,10 @@ impl AgentTool {
             .collect();
 
         let mut result = serde_json::Map::new();
-        result.insert("data_collected".into(), serde_json::Value::Array(data_summaries));
+        result.insert(
+            "data_collected".into(),
+            serde_json::Value::Array(data_summaries),
+        );
         if let Some(ref event) = input.event_data {
             result.insert("event_data".into(), Self::compact_value(event, 200));
         }
@@ -1670,9 +1735,7 @@ impl AgentTool {
             .get_agent(agent_id_input)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| {
-                ToolError::Execution(format!("Agent not found: {}", agent_id_input))
-            })?;
+            .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", agent_id_input)))?;
 
         let last_turn = agent.conversation_history.first();
 
@@ -1701,16 +1764,21 @@ impl AgentTool {
         });
 
         // Build memory summary for user insight
-        let recent_summaries: Vec<serde_json::Value> = agent.memory.short_term.summaries
+        let recent_summaries: Vec<serde_json::Value> = agent
+            .memory
+            .short_term
+            .summaries
             .iter()
             .take(3)
-            .map(|s| serde_json::json!({
-                "situation": s.situation,
-                "conclusion": s.conclusion,
-                "decisions": s.decisions,
-                "timestamp": s.timestamp,
-                "success": s.success,
-            }))
+            .map(|s| {
+                serde_json::json!({
+                    "situation": s.situation,
+                    "conclusion": s.conclusion,
+                    "decisions": s.decisions,
+                    "timestamp": s.timestamp,
+                    "success": s.success,
+                })
+            })
             .collect();
 
         let memory_summary = serde_json::json!({
@@ -2430,10 +2498,12 @@ impl MessageTool {
     }
 
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
-        let unread_only = args["unread_only"].as_bool()
+        let unread_only = args["unread_only"]
+            .as_bool()
             .or_else(|| args["unacknowledged_only"].as_bool())
             .unwrap_or(false);
-        let level_filter = args["level_filter"].as_str()
+        let level_filter = args["level_filter"]
+            .as_str()
             .or_else(|| args["severity_filter"].as_str());
         let limit = args["limit"].as_u64().unwrap_or(50) as usize;
         let detailed = Self::is_detailed(args);
@@ -2447,13 +2517,7 @@ impl MessageTool {
             let filtered: Vec<Value> = msgs
                 .into_iter()
                 .filter(|m| m.message_type == MessageType::Notification)
-                .filter(|m| {
-                    if unread_only {
-                        m.is_active()
-                    } else {
-                        true
-                    }
-                })
+                .filter(|m| if unread_only { m.is_active() } else { true })
                 .filter(|m| {
                     if let Some(lvl) = level_filter {
                         Self::level_matches(lvl, &m.severity)
@@ -2494,13 +2558,7 @@ impl MessageTool {
 
             let filtered: Vec<Value> = msgs
                 .iter()
-                .filter(|m| {
-                    if unread_only {
-                        !m.read
-                    } else {
-                        true
-                    }
-                })
+                .filter(|m| if unread_only { !m.read } else { true })
                 .filter(|m| {
                     if let Some(lvl) = level_filter {
                         Self::level_matches_enum(lvl, &m.level)
@@ -2589,7 +2647,8 @@ impl MessageTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("message is required".into()))?;
 
-        let level_str = args["level"].as_str()
+        let level_str = args["level"]
+            .as_str()
             .or_else(|| args["severity"].as_str())
             .unwrap_or("notice");
         let source = args["source"].as_str().unwrap_or("system");
@@ -2835,11 +2894,9 @@ impl ExtensionAggregatedTool {
             .ok_or_else(|| ToolError::InvalidArguments("extension_id is required".into()))?;
         let extension_id = self.resolve_extension_id(raw_id).await?;
 
-        let info = self
-            .registry
-            .get_info(&extension_id)
-            .await
-            .ok_or_else(|| ToolError::Execution(format!("Extension '{}' not found", extension_id)))?;
+        let info = self.registry.get_info(&extension_id).await.ok_or_else(|| {
+            ToolError::Execution(format!("Extension '{}' not found", extension_id))
+        })?;
 
         let commands: Vec<Value> = info
             .commands
@@ -2883,11 +2940,9 @@ impl ExtensionAggregatedTool {
             .ok_or_else(|| ToolError::InvalidArguments("extension_id is required".into()))?;
         let extension_id = self.resolve_extension_id(raw_id).await?;
 
-        let info = self
-            .registry
-            .get_info(&extension_id)
-            .await
-            .ok_or_else(|| ToolError::Execution(format!("Extension '{}' not found", extension_id)))?;
+        let info = self.registry.get_info(&extension_id).await.ok_or_else(|| {
+            ToolError::Execution(format!("Extension '{}' not found", extension_id))
+        })?;
 
         let healthy = self
             .registry
@@ -3072,7 +3127,11 @@ Examples:
 
 impl TransformTool {
     async fn execute_list(&self, _args: &Value) -> Result<ToolOutput> {
-        let transforms = self.store.list_transforms().await.map_err(|e| ToolError::Execution(e))?;
+        let transforms = self
+            .store
+            .list_transforms()
+            .await
+            .map_err(|e| ToolError::Execution(e))?;
 
         let items: Vec<Value> = transforms
             .iter()
@@ -3100,7 +3159,12 @@ impl TransformTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("id is required".into()))?;
 
-        match self.store.get_transform(id).await.map_err(|e| ToolError::Execution(e))? {
+        match self
+            .store
+            .get_transform(id)
+            .await
+            .map_err(|e| ToolError::Execution(e))?
+        {
             Some(t) => Ok(ToolOutput::success(serde_json::json!({
                 "id": t["id"],
                 "name": t["name"],
@@ -3123,9 +3187,11 @@ impl TransformTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("name is required".into()))?;
 
-        let scope_str = args["scope"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("scope is required (e.g. 'global', 'device_type:Sensor', 'device:sensor_1')".into()))?;
+        let scope_str = args["scope"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments(
+                "scope is required (e.g. 'global', 'device_type:Sensor', 'device:sensor_1')".into(),
+            )
+        })?;
 
         Self::parse_scope(scope_str).map_err(|e| ToolError::InvalidArguments(e))?;
 
@@ -3152,7 +3218,10 @@ impl TransformTool {
             }
         });
 
-        self.store.save_transform(transform_data).await.map_err(|e| ToolError::Execution(e))?;
+        self.store
+            .save_transform(transform_data)
+            .await
+            .map_err(|e| ToolError::Execution(e))?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "id": id,
@@ -3208,7 +3277,10 @@ impl TransformTool {
             "transform": existing
         });
 
-        self.store.save_transform(automation_data).await.map_err(|e| ToolError::Execution(e))?;
+        self.store
+            .save_transform(automation_data)
+            .await
+            .map_err(|e| ToolError::Execution(e))?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "id": id,
@@ -3221,7 +3293,11 @@ impl TransformTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("id is required".into()))?;
 
-        let deleted = self.store.delete_transform(id).await.map_err(|e| ToolError::Execution(e))?;
+        let deleted = self
+            .store
+            .delete_transform(id)
+            .await
+            .map_err(|e| ToolError::Execution(e))?;
 
         if deleted {
             Ok(ToolOutput::success(serde_json::json!({
@@ -3249,7 +3325,10 @@ impl TransformTool {
             .as_str()
             .ok_or_else(|| ToolError::Execution("Transform has no JavaScript code".into()))?;
 
-        let input_data = args.get("input_data").cloned().unwrap_or(serde_json::json!({}));
+        let input_data = args
+            .get("input_data")
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
 
         // Basic syntax validation - check for common JS issues
         let validation_errors: Vec<String> = Vec::new();
@@ -3301,7 +3380,9 @@ impl SkillTool {
     fn is_safe_id(id: &str) -> bool {
         !id.is_empty()
             && id.len() <= 128
-            && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     }
 
     /// Persist a skill file to disk.
@@ -3404,9 +3485,9 @@ Tips: Common pitfalls and best practices."#
 
         match action {
             "search" => {
-                let query = args["query"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidArguments("query is required for search".into()))?;
+                let query = args["query"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments("query is required for search".into())
+                })?;
 
                 let registry_guard = self.registry.read().await;
                 // Use generous budget since user explicitly requested skill search
@@ -3421,13 +3502,16 @@ Tips: Common pitfalls and best practices."#
                 }
 
                 let formatted = crate::skills::format_skill_matches(&matches);
-                let summaries: Vec<Value> = matches.iter().map(|m| {
-                    serde_json::json!({
-                        "id": m.skill_id,
-                        "name": m.skill_name,
-                        "score": (m.score * 100.0) as u32,
+                let summaries: Vec<Value> = matches
+                    .iter()
+                    .map(|m| {
+                        serde_json::json!({
+                            "id": m.skill_id,
+                            "name": m.skill_name,
+                            "score": (m.score * 100.0) as u32,
+                        })
                     })
-                }).collect();
+                    .collect();
 
                 Ok(ToolOutput::success(serde_json::json!({
                     "found": true,
@@ -3438,14 +3522,17 @@ Tips: Common pitfalls and best practices."#
             "list" => {
                 let registry_guard = self.registry.read().await;
                 let skills = registry_guard.list();
-                let summaries: Vec<Value> = skills.iter().map(|s| {
-                    serde_json::json!({
-                        "id": s.metadata.id,
-                        "name": s.metadata.name,
-                        "category": format!("{:?}", s.metadata.category).to_lowercase(),
-                        "keywords": s.metadata.triggers.keywords,
+                let summaries: Vec<Value> = skills
+                    .iter()
+                    .map(|s| {
+                        serde_json::json!({
+                            "id": s.metadata.id,
+                            "name": s.metadata.name,
+                            "category": format!("{:?}", s.metadata.category).to_lowercase(),
+                            "keywords": s.metadata.triggers.keywords,
+                        })
                     })
-                }).collect();
+                    .collect();
 
                 Ok(ToolOutput::success(serde_json::json!({
                     "count": summaries.len(),
@@ -3459,24 +3546,25 @@ Tips: Common pitfalls and best practices."#
 
                 let registry_guard = self.registry.read().await;
                 match registry_guard.get(id) {
-                    Some(skill) => {
-                        Ok(ToolOutput::success(serde_json::json!({
-                            "id": skill.metadata.id,
-                            "name": skill.metadata.name,
-                            "category": format!("{:?}", skill.metadata.category).to_lowercase(),
-                            "origin": format!("{:?}", skill.metadata.origin).to_lowercase(),
-                            "content": skill.body,
-                        })))
-                    }
-                    None => {
-                        Ok(ToolOutput::error(format!("Skill '{}' not found. Use 'list' to see available skills.", id)))
-                    }
+                    Some(skill) => Ok(ToolOutput::success(serde_json::json!({
+                        "id": skill.metadata.id,
+                        "name": skill.metadata.name,
+                        "category": format!("{:?}", skill.metadata.category).to_lowercase(),
+                        "origin": format!("{:?}", skill.metadata.origin).to_lowercase(),
+                        "content": skill.body,
+                    }))),
+                    None => Ok(ToolOutput::error(format!(
+                        "Skill '{}' not found. Use 'list' to see available skills.",
+                        id
+                    ))),
                 }
             }
             "create" => {
-                let content = args["content"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidArguments("content is required for create (YAML frontmatter + Markdown body)".into()))?;
+                let content = args["content"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments(
+                        "content is required for create (YAML frontmatter + Markdown body)".into(),
+                    )
+                })?;
 
                 let mut registry_guard = self.registry.write().await;
                 match registry_guard.add_user_skill(content) {
@@ -3494,12 +3582,14 @@ Tips: Common pitfalls and best practices."#
                 }
             }
             "update" => {
-                let id = args["id"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidArguments("id is required for update".into()))?;
-                let content = args["content"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidArguments("content is required for update (YAML frontmatter + Markdown body)".into()))?;
+                let id = args["id"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments("id is required for update".into())
+                })?;
+                let content = args["content"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments(
+                        "content is required for update (YAML frontmatter + Markdown body)".into(),
+                    )
+                })?;
 
                 let mut registry_guard = self.registry.write().await;
                 match registry_guard.update_user_skill(id, content) {
@@ -3516,9 +3606,9 @@ Tips: Common pitfalls and best practices."#
                 }
             }
             "delete" => {
-                let id = args["id"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidArguments("id is required for delete".into()))?;
+                let id = args["id"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments("id is required for delete".into())
+                })?;
 
                 if !Self::is_safe_id(id) {
                     return Ok(ToolOutput::error(format!("Invalid skill ID '{}'", id)));
@@ -3747,12 +3837,11 @@ impl AggregatedToolsBuilder {
         }
 
         // AI metric tool
-        if let (Some(storage), Some(registry)) = (&self.time_series_storage, &self.ai_metrics_registry)
+        if let (Some(storage), Some(registry)) =
+            (&self.time_series_storage, &self.ai_metrics_registry)
         {
-            let mut ai_tool = super::ai_metric::AiMetricTool::new(
-                storage.clone(),
-                registry.clone(),
-            );
+            let mut ai_tool =
+                super::ai_metric::AiMetricTool::new(storage.clone(), registry.clone());
             if let Some(bus) = self.event_bus {
                 ai_tool = ai_tool.with_event_bus(bus);
             }

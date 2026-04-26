@@ -107,7 +107,10 @@ impl GlobalRateLimiter {
                 );
             }
             // Safe: we just inserted the key if it didn't exist
-            limiters.get(key).expect("limiter should exist after insert").clone()
+            limiters
+                .get(key)
+                .expect("limiter should exist after insert")
+                .clone()
         };
         limiter.acquire().await;
     }

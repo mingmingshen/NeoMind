@@ -12,7 +12,9 @@ use neomind_storage::{MarkdownMemoryStore, MemoryCategory, SessionMessage};
 use crate::error::Result;
 use crate::memory::compressor::MemoryCompressor;
 use crate::memory::dedup::DedupProcessor;
-use crate::memory::extractor::{parse_category, AgentExtractor, ChatExtractor, ExtractResult, MemoryAction};
+use crate::memory::extractor::{
+    parse_category, AgentExtractor, ChatExtractor, ExtractResult, MemoryAction,
+};
 
 /// Memory extraction configuration
 #[derive(Debug, Clone)]
@@ -68,7 +70,12 @@ impl MemoryExtractor {
         config: ExtractionConfig,
     ) -> Self {
         let dedup = DedupProcessor::new(config.similarity_threshold);
-        Self { store, llm, config, dedup }
+        Self {
+            store,
+            llm,
+            config,
+            dedup,
+        }
     }
 
     /// Clone the LLM runtime reference
@@ -331,14 +338,10 @@ impl MemoryExtractor {
             ..Default::default()
         });
 
-        let output = self
-            .llm
-            .generate(input)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "LLM generation failed");
-                crate::error::NeoMindError::Llm(e.to_string())
-            })?;
+        let output = self.llm.generate(input).await.map_err(|e| {
+            tracing::error!(error = %e, "LLM generation failed");
+            crate::error::NeoMindError::Llm(e.to_string())
+        })?;
 
         // Log the LLM response
         tracing::info!(
@@ -411,7 +414,8 @@ impl MemoryExtractor {
             let should_add = match &candidate.action {
                 MemoryAction::Append => {
                     // For append, check duplicates if enabled
-                    if self.config.dedup_enabled && self.is_duplicate(&content, &candidate.content) {
+                    if self.config.dedup_enabled && self.is_duplicate(&content, &candidate.content)
+                    {
                         tracing::debug!(
                             content = %candidate.content,
                             category = ?category,
@@ -424,7 +428,12 @@ impl MemoryExtractor {
                 }
                 MemoryAction::Merge { targets } => {
                     // For merge, find and replace matching lines
-                    let merged = self.merge_with_targets(&mut content, &candidate.content, targets, candidate.importance);
+                    let merged = self.merge_with_targets(
+                        &mut content,
+                        &candidate.content,
+                        targets,
+                        candidate.importance,
+                    );
                     if merged {
                         // Write back the modified content
                         store
@@ -520,9 +529,9 @@ impl MemoryExtractor {
 
             // Strategy 2: Keyword target matching (fallback)
             let line_lower = line_trimmed.to_lowercase();
-            let matches_target = targets.iter().any(|t| {
-                line_lower.contains(&t.to_lowercase())
-            });
+            let matches_target = targets
+                .iter()
+                .any(|t| line_lower.contains(&t.to_lowercase()));
 
             if matches_target {
                 new_lines.push(format!(
@@ -572,7 +581,9 @@ impl MemoryExtractor {
             })
             .collect();
 
-        self.dedup.find_similar(new_content, &existing_entries).is_some()
+        self.dedup
+            .find_similar(new_content, &existing_entries)
+            .is_some()
     }
 
     /// Extract the text content from a markdown memory entry line
@@ -598,7 +609,8 @@ impl MemoryExtractor {
         let timestamp = chrono::Utc::now().format("%Y-%m-%d");
         let truncated = if content.len() > 200 {
             // Find a word boundary near 200 chars
-            let boundary = content.char_indices()
+            let boundary = content
+                .char_indices()
                 .take_while(|(i, _)| *i < 197)
                 .last()
                 .map(|(i, c)| i + c.len_utf8())
@@ -615,7 +627,6 @@ impl MemoryExtractor {
 }
 
 /// Convenience functions for manual memory operations
-
 /// Manually add a memory entry to a category
 pub async fn add_memory(
     store: &Arc<RwLock<MarkdownMemoryStore>>,

@@ -334,9 +334,7 @@ impl ExtensionMetricsCollector {
                                 neomind_devices::mdl::MetricValue::Boolean(b) => {
                                     neomind_core::MetricValue::Boolean(*b)
                                 }
-                                other => {
-                                    neomind_core::MetricValue::String(format!("{:?}", other))
-                                }
+                                other => neomind_core::MetricValue::String(format!("{:?}", other)),
                             };
                             bus.publish_sync(neomind_core::NeoMindEvent::ExtensionOutput {
                                 extension_id: extension_id.clone(),

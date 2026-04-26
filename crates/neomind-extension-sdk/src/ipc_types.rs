@@ -799,9 +799,9 @@ pub struct ValidationRule {
 
 /// Serde helper: serialize Vec<u8> as base64 string, deserialize from base64 or number array
 mod base64_vec {
-    use ::base64::{Engine, engine::general_purpose::STANDARD};
-    use ::serde::{Serializer, Serialize, Deserializer, Deserialize};
+    use ::base64::{engine::general_purpose::STANDARD, Engine};
     use ::serde::de::Error as DeError;
+    use ::serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S: Serializer>(data: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
         STANDARD.encode(data).serialize(s)
@@ -811,9 +811,10 @@ mod base64_vec {
         let value = ::serde_json::Value::deserialize(d)?;
         match &value {
             ::serde_json::Value::String(s) => STANDARD.decode(s).map_err(DeError::custom),
-            ::serde_json::Value::Array(arr) => {
-                Ok(arr.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect())
-            }
+            ::serde_json::Value::Array(arr) => Ok(arr
+                .iter()
+                .filter_map(|v| v.as_u64().map(|n| n as u8))
+                .collect()),
             _ => Err(DeError::custom("expected base64 string or number array")),
         }
     }

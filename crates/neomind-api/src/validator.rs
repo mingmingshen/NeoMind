@@ -213,11 +213,10 @@ pub fn validate_url(url: &str) -> Result<(), ValidationErrors> {
 /// Handler-level validation helpers that return `ErrorResponse` for direct use in handlers.
 /// These helpers bridge the gap between the validation framework and API handlers,
 /// allowing validation errors to be propagated with the `?` operator.
-
 /// Validate that a string field is not empty (returns ErrorResponse for handlers).
 pub fn validate_required_string(value: &str, field: &str) -> Result<(), ErrorResponse> {
     if value.trim().is_empty() {
-        return Err(ErrorResponse::validation(&format!("{} is required", field)));
+        return Err(ErrorResponse::validation(format!("{} is required", field)));
     }
     Ok(())
 }
@@ -231,13 +230,13 @@ pub fn validate_string_length(
 ) -> Result<(), ErrorResponse> {
     let len = value.trim().len();
     if len < min {
-        return Err(ErrorResponse::validation(&format!(
+        return Err(ErrorResponse::validation(format!(
             "{} must be at least {} characters",
             field, min
         )));
     }
     if len > max {
-        return Err(ErrorResponse::validation(&format!(
+        return Err(ErrorResponse::validation(format!(
             "{} must be at most {} characters",
             field, max
         )));
@@ -253,7 +252,7 @@ pub fn validate_numeric_range(
     max: f64,
 ) -> Result<(), ErrorResponse> {
     if value < min || value > max {
-        return Err(ErrorResponse::validation(&format!(
+        return Err(ErrorResponse::validation(format!(
             "{} must be between {} and {}",
             field, min, max
         )));
@@ -269,7 +268,7 @@ pub fn validate_identifier(value: &str, field: &str) -> Result<(), ErrorResponse
         .chars()
         .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ':')
     {
-        return Err(ErrorResponse::validation(&format!(
+        return Err(ErrorResponse::validation(format!(
             "{} contains invalid characters (only alphanumeric, underscore, hyphen, colon allowed)",
             field
         )));

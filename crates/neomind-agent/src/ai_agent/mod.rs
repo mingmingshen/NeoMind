@@ -22,7 +22,9 @@ use tokio::sync::RwLock;
 
 pub use executor::{AgentExecutionResult, AgentExecutor, AgentExecutorConfig, ExecutionContext};
 pub use intent_parser::IntentParser;
-pub use scheduler::{AgentScheduler, BackendSemaphores, ScheduledTask, SchedulerConfig, SchedulerError};
+pub use scheduler::{
+    AgentScheduler, BackendSemaphores, ScheduledTask, SchedulerConfig, SchedulerError,
+};
 
 /// AI Agent manager - the main entry point for user-defined agents.
 ///
@@ -218,7 +220,10 @@ impl AiAgentManager {
             .await?;
 
         // Execute the agent with optional invocation input
-        let result = self.executor.execute_agent(agent.clone(), None, invocation_input).await;
+        let result = self
+            .executor
+            .execute_agent(agent.clone(), None, invocation_input)
+            .await;
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
@@ -316,12 +321,7 @@ impl AiAgentManager {
             }
             AgentStatus::Active => {
                 // Reschedule: load the agent and re-register with the scheduler
-                if let Some(agent) = self
-                    .executor
-                    .store()
-                    .get_agent(id)
-                    .await?
-                {
+                if let Some(agent) = self.executor.store().get_agent(id).await? {
                     if agent.schedule.schedule_type != ScheduleType::Event {
                         self.scheduler.schedule_agent(agent).await?;
                         tracing::info!(agent_id = %id, "Agent reactivated and rescheduled");

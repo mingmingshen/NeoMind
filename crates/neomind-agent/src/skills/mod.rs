@@ -25,6 +25,4 @@ pub mod types;
 // Re-export main types
 pub use matcher::{format_skill_matches, match_skills};
 pub use registry::{create_shared_registry, SharedSkillRegistry, SkillRegistry};
-pub use types::{
-    Skill, SkillCategory, SkillMatch, SkillMetadata, SkillOrigin, TokenBudgetConfig,
-};
+pub use types::{Skill, SkillCategory, SkillMatch, SkillMetadata, SkillOrigin, TokenBudgetConfig};

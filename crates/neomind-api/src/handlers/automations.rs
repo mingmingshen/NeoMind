@@ -12,9 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
-use crate::automation::{
-    transform::JsTransformExecutor, Automation, AutomationType, IntentResult,
-};
+use crate::automation::{transform::JsTransformExecutor, Automation, AutomationType, IntentResult};
 
 use super::{
     common::{ok, HandlerResult},
@@ -193,7 +191,7 @@ pub async fn list_automations_handler(
 
     let automations = store.list_automations().await.unwrap_or_default();
 
-        let mut filtered: Vec<_> = automations
+    let mut filtered: Vec<_> = automations
         .into_iter()
         .filter(|a| {
             // Filter by enabled status
@@ -521,10 +519,25 @@ fn heuristic_analysis(description: &str) -> IntentResult {
 
     // Transform indicators (data processing keywords)
     let transform_keywords = [
-        "calculate", "compute", "aggregate", "average", "sum", "count",
-        "extract", "parse", "transform", "convert", "process",
-        "statistics", "metric", "virtual", "derived", "array",
-        "group by", "filter", "map",
+        "calculate",
+        "compute",
+        "aggregate",
+        "average",
+        "sum",
+        "count",
+        "extract",
+        "parse",
+        "transform",
+        "convert",
+        "process",
+        "statistics",
+        "metric",
+        "virtual",
+        "derived",
+        "array",
+        "group by",
+        "filter",
+        "map",
     ];
 
     let mut transform_score = 0i32;
@@ -550,8 +563,6 @@ fn heuristic_analysis(description: &str) -> IntentResult {
         warnings: vec![],
     }
 }
-
-
 
 /// Get execution history for an automation.
 ///
@@ -845,12 +856,10 @@ pub async fn list_transforms_handler(State(state): State<ServerState>) -> Handle
     };
 
     match store.list_automations().await {
-        Ok(transforms) => {
-            ok(json!({
-                "transforms": transforms,
-                "count": transforms.len(),
-            }))
-        }
+        Ok(transforms) => ok(json!({
+            "transforms": transforms,
+            "count": transforms.len(),
+        })),
         Err(e) => Err(ErrorResponse::internal(format!(
             "Failed to list transforms: {}",
             e

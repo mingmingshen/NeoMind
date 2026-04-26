@@ -375,7 +375,8 @@ impl DeviceService {
                         // Skip virtual metrics for device status tracking.
                         // Virtual metrics come from extensions/transforms, not real devices.
                         // We still write them to telemetry storage below.
-                        if neomind_core::NeoMindEvent::is_virtual_device_metric(is_virtual, &metric) {
+                        if neomind_core::NeoMindEvent::is_virtual_device_metric(is_virtual, &metric)
+                        {
                             let mut status = device_status.write().await;
                             let entry = status.entry(device_id.clone()).or_default();
                             entry.last_seen = chrono::Utc::now().timestamp();

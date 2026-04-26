@@ -24,13 +24,25 @@ impl MemorySecurityScanner {
 
         // 1. Injection patterns - attempt to override instructions
         let injection_patterns = [
-            (r"ignore\s+.*(instructions?|prompts?|rules)", "instruction override"),
-            (r"disregard\s+.*(instructions?|prompts?|rules|above)", "instruction disregard"),
-            (r"forget\s+.*(instructions?|rules|prompt)", "instruction forget"),
+            (
+                r"ignore\s+.*(instructions?|prompts?|rules)",
+                "instruction override",
+            ),
+            (
+                r"disregard\s+.*(instructions?|prompts?|rules|above)",
+                "instruction disregard",
+            ),
+            (
+                r"forget\s+.*(instructions?|rules|prompt)",
+                "instruction forget",
+            ),
             (r"you\s+are\s+now\s+", "role override"),
             (r"new\s+instructions?\s*:", "new instructions injection"),
             (r"system\s*:\s*", "system role injection"),
-            (r"<\s*/?(system|instruction|memory-context)\s*>", "XML tag injection"),
+            (
+                r"<\s*/?(system|instruction|memory-context)\s*>",
+                "XML tag injection",
+            ),
         ];
 
         for (pattern, label) in &injection_patterns {
@@ -48,7 +60,10 @@ impl MemorySecurityScanner {
             (r"curl\s+", "curl command"),
             (r"wget\s+", "wget command"),
             (r"http://|https://", "URL in memory"),
-            (r"(api[_-]?key|secret|token|password|credential)\s*[:=]", "credential exposure"),
+            (
+                r"(api[_-]?key|secret|token|password|credential)\s*[:=]",
+                "credential exposure",
+            ),
         ];
 
         for (pattern, label) in &exfil_patterns {

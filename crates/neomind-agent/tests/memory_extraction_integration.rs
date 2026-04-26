@@ -17,7 +17,11 @@ fn ollama_available() -> bool {
 }
 
 /// Create a temp memory store + extractor backed by Ollama glm5.
-async fn create_extractor() -> (tempfile::TempDir, Arc<RwLock<MarkdownMemoryStore>>, MemoryExtractor) {
+async fn create_extractor() -> (
+    tempfile::TempDir,
+    Arc<RwLock<MarkdownMemoryStore>>,
+    MemoryExtractor,
+) {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let store = MarkdownMemoryStore::new(temp_dir.path().to_path_buf());
     store.init().unwrap();
@@ -38,11 +42,7 @@ async fn create_extractor() -> (tempfile::TempDir, Arc<RwLock<MarkdownMemoryStor
         similarity_threshold: 0.85,
     };
 
-    let extractor = MemoryExtractor::with_config(
-        store.clone(),
-        llm,
-        extraction_config,
-    );
+    let extractor = MemoryExtractor::with_config(store.clone(), llm, extraction_config);
 
     (temp_dir, store, extractor)
 }
@@ -92,14 +92,29 @@ async fn test_agent_extraction_produces_all_categories() -> anyhow::Result<()> {
         println!("\n[{:?}] ->\n{}", category, content);
     }
 
-    let up = store_guard.read_category(&MemoryCategory::UserProfile).unwrap_or_default();
-    let dk = store_guard.read_category(&MemoryCategory::DomainKnowledge).unwrap_or_default();
-    let tp = store_guard.read_category(&MemoryCategory::TaskPatterns).unwrap_or_default();
-    let se = store_guard.read_category(&MemoryCategory::SystemEvolution).unwrap_or_default();
+    let up = store_guard
+        .read_category(&MemoryCategory::UserProfile)
+        .unwrap_or_default();
+    let dk = store_guard
+        .read_category(&MemoryCategory::DomainKnowledge)
+        .unwrap_or_default();
+    let tp = store_guard
+        .read_category(&MemoryCategory::TaskPatterns)
+        .unwrap_or_default();
+    let se = store_guard
+        .read_category(&MemoryCategory::SystemEvolution)
+        .unwrap_or_default();
 
     // At least some categories should have content
-    let non_empty = [&up, &dk, &tp, &se].iter().filter(|c| !c.trim().is_empty()).count();
-    assert!(non_empty >= 2, "At least 2 categories should be populated, got {}", non_empty);
+    let non_empty = [&up, &dk, &tp, &se]
+        .iter()
+        .filter(|c| !c.trim().is_empty())
+        .count();
+    assert!(
+        non_empty >= 2,
+        "At least 2 categories should be populated, got {}",
+        non_empty
+    );
 
     // Key assertion: system_evolution must NOT be empty
     assert!(
@@ -126,11 +141,17 @@ async fn test_chat_extraction_skips_system_evolution() -> anyhow::Result<()> {
 
     let messages = vec![
         SessionMessage::user("你好，我想了解一下温度监控系统"),
-        SessionMessage::assistant("你好！温度监控系统可以帮你实时监控环境温度。你有什么具体需求吗？"),
+        SessionMessage::assistant(
+            "你好！温度监控系统可以帮你实时监控环境温度。你有什么具体需求吗？",
+        ),
         SessionMessage::user("我喜欢用中文交流，另外我的仓库里有三个温度传感器"),
-        SessionMessage::assistant("好的，已记录你使用中文，仓库有三个温度传感器。需要设置告警阈值吗？"),
+        SessionMessage::assistant(
+            "好的，已记录你使用中文，仓库有三个温度传感器。需要设置告警阈值吗？",
+        ),
         SessionMessage::user("是的，设定温度超过30度就告警，用微信通知我"),
-        SessionMessage::assistant("好的，已设置温度告警阈值 30°C，通知方式为微信。还有什么需要吗？"),
+        SessionMessage::assistant(
+            "好的，已设置温度告警阈值 30°C，通知方式为微信。还有什么需要吗？",
+        ),
     ];
 
     let count = extractor.extract_from_chat(&messages).await?;
@@ -143,7 +164,9 @@ async fn test_chat_extraction_skips_system_evolution() -> anyhow::Result<()> {
         println!("\n[{:?}] ->\n{}", category, content);
     }
 
-    let se = store_guard.read_category(&MemoryCategory::SystemEvolution).unwrap_or_default();
+    let se = store_guard
+        .read_category(&MemoryCategory::SystemEvolution)
+        .unwrap_or_default();
 
     // Chat extraction should NEVER produce system_evolution entries
     // The file may contain header/metadata but no actual entries (lines starting with "- ")
@@ -155,11 +178,20 @@ async fn test_chat_extraction_skips_system_evolution() -> anyhow::Result<()> {
     );
 
     // At least user_profile or domain_knowledge should have something
-    let up = store_guard.read_category(&MemoryCategory::UserProfile).unwrap_or_default();
-    let dk = store_guard.read_category(&MemoryCategory::DomainKnowledge).unwrap_or_default();
-    let tp = store_guard.read_category(&MemoryCategory::TaskPatterns).unwrap_or_default();
+    let up = store_guard
+        .read_category(&MemoryCategory::UserProfile)
+        .unwrap_or_default();
+    let dk = store_guard
+        .read_category(&MemoryCategory::DomainKnowledge)
+        .unwrap_or_default();
+    let tp = store_guard
+        .read_category(&MemoryCategory::TaskPatterns)
+        .unwrap_or_default();
 
-    let non_se_non_empty = [&up, &dk, &tp].iter().filter(|c| !c.trim().is_empty()).count();
+    let non_se_non_empty = [&up, &dk, &tp]
+        .iter()
+        .filter(|c| !c.trim().is_empty())
+        .count();
     assert!(
         non_se_non_empty >= 1,
         "At least 1 non-system_evolution category should be populated"
@@ -211,14 +243,23 @@ async fn test_full_pipeline_extract_and_snapshot() -> anyhow::Result<()> {
 
     println!("\nSnapshot content:\n{}", snapshot.to_prompt_section());
 
-    assert!(!snapshot.is_empty(), "Snapshot should have content after extraction");
+    assert!(
+        !snapshot.is_empty(),
+        "Snapshot should have content after extraction"
+    );
 
     let section = snapshot.to_prompt_section();
-    assert!(section.contains("<memory-context>"), "Snapshot should contain memory-context tag");
+    assert!(
+        section.contains("<memory-context>"),
+        "Snapshot should contain memory-context tag"
+    );
 
     // The snapshot should contain at least some of the extracted memory content
     // (can't assert exact content since LLM output varies)
-    assert!(section.len() > 50, "Snapshot should have meaningful content");
+    assert!(
+        section.len() > 50,
+        "Snapshot should have meaningful content"
+    );
 
     Ok(())
 }

@@ -260,7 +260,8 @@ impl Tool for ExtensionTool {
         // Execute with a 30-second timeout to avoid hanging the agent on slow extensions
         let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
             let ext = self.extension.read().await;
-            ext.execute_command(&self.command.name, &normalized_args).await
+            ext.execute_command(&self.command.name, &normalized_args)
+                .await
         })
         .await;
 

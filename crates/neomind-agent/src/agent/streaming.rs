@@ -15,10 +15,12 @@ use futures::{Stream, StreamExt};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
+use super::planner::types::ExecutionPlan;
 use super::staged::{IntentCategory, IntentClassifier};
 use super::tool_parser::{parse_tool_calls, remove_tool_calls_from_response};
-use super::types::{AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, LargeDataCache, ToolCall};
-use super::planner::types::ExecutionPlan;
+use super::types::{
+    AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, LargeDataCache, ToolCall,
+};
 use crate::error::{NeoMindError, Result};
 use crate::llm::LlmInterface;
 
@@ -327,8 +329,6 @@ fn detect_json_tool_calls(buffer: &str) -> Option<(usize, String, String)> {
     Some((start, json_str, remaining))
 }
 
-
-
 /// Simple in-memory cache for tool results with TTL and size limit
 #[derive(Debug)]
 pub struct ToolResultCache {
@@ -581,7 +581,11 @@ pub(crate) fn truncate_result_utf8(result: &str, max_chars: usize) -> String {
         return result.to_string();
     }
     let truncated: String = result.chars().take(max_chars).collect();
-    format!("{}... (truncated, total {} chars)", truncated, result.chars().count())
+    format!(
+        "{}... (truncated, total {} chars)",
+        truncated,
+        result.chars().count()
+    )
 }
 
 /// Deduplicate accumulated tool results across multiple rounds.
@@ -598,7 +602,10 @@ fn deduplicate_tool_results(results: &[(String, String)]) -> Vec<(String, String
         // Create a dedup key from name + result fingerprint
         let dedup_key = make_result_dedup_key(name, result);
 
-        if let Some(pos) = seen.iter().position(|(k, dk)| k == name && dk == &dedup_key) {
+        if let Some(pos) = seen
+            .iter()
+            .position(|(k, dk)| k == name && dk == &dedup_key)
+        {
             // Replace with latest result
             deduped[pos] = (name.clone(), result.clone());
         } else {
@@ -639,7 +646,9 @@ fn make_result_dedup_key(name: &str, result: &str) -> String {
 
     // Fallback: simple hash of the result content for dedup
     let preview: String = result.chars().take(200).collect();
-    let hash = preview.chars().fold(0u64, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u64));
+    let hash = preview
+        .chars()
+        .fold(0u64, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u64));
     format!("{}|{:016x}", name, hash)
 }
 
@@ -734,13 +743,15 @@ fn build_phase2_summary_prompt(
 
     let mut block = format!(
         "\n\n[Completed {} rounds of tool execution (ended: {}), {} tool results collected]\n",
-        total_rounds, end_reason, all_results.len()
+        total_rounds,
+        end_reason,
+        all_results.len()
     );
 
-    block.push_str(&format!(
+    block.push_str(
         "IMPORTANT: You MUST provide a COMPLETE summary of ALL tool results below. \
          Do NOT mention that tools were called or that execution ended - just present the data naturally.\n\n"
-    ));
+    );
 
     for (name, result) in all_results {
         // Sanitize base64/image data before including in LLM prompt
@@ -754,7 +765,8 @@ fn build_phase2_summary_prompt(
     }
 
     block.push_str(&format!(
-        "\nPlease organize the above data to answer: {}", question
+        "\nPlease organize the above data to answer: {}",
+        question
     ));
 
     question + &block
@@ -841,9 +853,13 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
     if let Some(devices) = extract_array(json, "devices") {
         response.push_str(&format!("## Device List ({} total)\n\n", devices.len()));
         for device in devices {
-            let name = device.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+            let name = device
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("unknown");
             let id = device.get("id").and_then(|i| i.as_str()).unwrap_or("");
-            let device_type = device.get("type")
+            let device_type = device
+                .get("type")
                 .or_else(|| device.get("device_type"))
                 .and_then(|t| t.as_str())
                 .unwrap_or("unknown");
@@ -852,7 +868,10 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
             if status.is_empty() {
                 response.push_str(&format!("- **{}** ({}) - {}\n", name, id, device_type));
             } else {
-                response.push_str(&format!("- **{}** ({}) - {} - {}\n", name, id, device_type, status));
+                response.push_str(&format!(
+                    "- **{}** ({}) - {} - {}\n",
+                    name, id, device_type, status
+                ));
             }
         }
         return;
@@ -860,8 +879,14 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
 
     // Device query result: has "device_id" and "points"
     if json.get("device_id").is_some() && json.get("points").is_some() {
-        let device_id = json.get("device_id").and_then(|d| d.as_str()).unwrap_or("unknown");
-        let metric = json.get("metric").and_then(|m| m.as_str()).unwrap_or("unknown");
+        let device_id = json
+            .get("device_id")
+            .and_then(|d| d.as_str())
+            .unwrap_or("unknown");
+        let metric = json
+            .get("metric")
+            .and_then(|m| m.as_str())
+            .unwrap_or("unknown");
         let points = json.get("points").and_then(|p| p.as_array());
 
         response.push_str(&format!("## {} - {}\n\n", device_id, metric));
@@ -876,7 +901,8 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
                     let value = if is_image {
                         "[image data]".to_string()
                     } else {
-                        point.get("value")
+                        point
+                            .get("value")
                             .map(|v| v.to_string().trim_matches('"').to_string())
                             .unwrap_or_else(|| "N/A".to_string())
                     };
@@ -901,12 +927,20 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
     // Device get with metrics: has "id"/"name" + "type" + "metrics" array with values
     if json.get("name").is_some() && json.get("type").is_some() {
         if let Some(metrics) = json.get("metrics").and_then(|m| m.as_array()) {
-            let name = json.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
-            let device_type = json.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
+            let name = json
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("unknown");
+            let device_type = json
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("unknown");
             response.push_str(&format!("## {} ({})\n\n", name, device_type));
 
             for metric in metrics {
-                let display_name = metric.get("display_name").and_then(|d| d.as_str())
+                let display_name = metric
+                    .get("display_name")
+                    .and_then(|d| d.as_str())
                     .or_else(|| metric.get("name").and_then(|n| n.as_str()))
                     .unwrap_or("unknown");
                 let unit = metric.get("unit").and_then(|u| u.as_str()).unwrap_or("");
@@ -916,7 +950,8 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
                     if unit.is_empty() {
                         response.push_str(&format!("- **{}**: {}\n", display_name, value_str));
                     } else {
-                        response.push_str(&format!("- **{}**: {} {}\n", display_name, value_str, unit));
+                        response
+                            .push_str(&format!("- **{}**: {} {}\n", display_name, value_str, unit));
                     }
                 } else {
                     response.push_str(&format!("- **{}**: 无数据\n", display_name));
@@ -928,14 +963,20 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
 
     // Metric not found with suggestions: has "error" + "available_metrics"
     if json.get("error").is_some() && json.get("available_metrics").is_some() {
-        let error = json.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
+        let error = json
+            .get("error")
+            .and_then(|e| e.as_str())
+            .unwrap_or("Unknown error");
         response.push_str(&format!("**Error**: {}\n\n", error));
 
         if let Some(available) = json.get("available_metrics").and_then(|a| a.as_array()) {
             response.push_str("**Available metrics:**\n");
             for metric in available {
                 let name = metric.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                let display_name = metric.get("display_name").and_then(|d| d.as_str()).unwrap_or("");
+                let display_name = metric
+                    .get("display_name")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("");
                 let unit = metric.get("unit").and_then(|u| u.as_str()).unwrap_or("");
                 if display_name.is_empty() {
                     response.push_str(&format!("- `{}`\n", name));
@@ -953,7 +994,10 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
     if let Some(rules) = extract_array(json, "rules") {
         response.push_str(&format!("## Automation Rules ({} total)\n\n", rules.len()));
         for rule in rules {
-            let name = rule.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+            let name = rule
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("unknown");
             // Support both new "status" string field and legacy "enabled" boolean
             let status_display = if let Some(status) = rule.get("status").and_then(|s| s.as_str()) {
                 match status {
@@ -963,12 +1007,19 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
                     "disabled" => "[Disabled]",
                     _ => status,
                 }
-            } else if rule.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false) {
+            } else if rule
+                .get("enabled")
+                .and_then(|e| e.as_bool())
+                .unwrap_or(false)
+            {
                 "[Active]"
             } else {
                 "[Disabled]"
             };
-            let desc = rule.get("description").and_then(|d| d.as_str()).unwrap_or("");
+            let desc = rule
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
             if desc.is_empty() {
                 response.push_str(&format!("- **{}** {}\n", name, status_display));
             } else {
@@ -982,9 +1033,15 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
     if let Some(alerts) = extract_array(json, "alerts") {
         response.push_str(&format!("## Alerts ({} total)\n\n", alerts.len()));
         for alert in alerts.iter().take(10) {
-            let title = alert.get("title").or_else(|| alert.get("message"))
-                .and_then(|t| t.as_str()).unwrap_or("unknown");
-            let severity = alert.get("severity").and_then(|s| s.as_str()).unwrap_or("info");
+            let title = alert
+                .get("title")
+                .or_else(|| alert.get("message"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("unknown");
+            let severity = alert
+                .get("severity")
+                .and_then(|s| s.as_str())
+                .unwrap_or("info");
             let tag = match severity {
                 "critical" => "[CRITICAL]",
                 "warning" => "[WARN]",
@@ -1002,9 +1059,19 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
     if let Some(extensions) = extract_array(json, "extensions") {
         response.push_str(&format!("## Extensions ({} total)\n\n", extensions.len()));
         for ext in extensions {
-            let name = ext.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
-            let status = ext.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
-            let tag = if status == "running" { "[running]" } else { "[stopped]" };
+            let name = ext
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("unknown");
+            let status = ext
+                .get("status")
+                .and_then(|s| s.as_str())
+                .unwrap_or("unknown");
+            let tag = if status == "running" {
+                "[running]"
+            } else {
+                "[stopped]"
+            };
             response.push_str(&format!("- {} **{}** ({})\n", tag, name, status));
         }
         return;
@@ -1012,8 +1079,14 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
 
     // Agent details: has "name" and "type" at top level (single agent)
     if json.get("name").is_some() && json.get("type").is_some() && tool_name == "agent" {
-        let name = json.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
-        let status = json.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
+        let name = json
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown");
+        let status = json
+            .get("status")
+            .and_then(|s| s.as_str())
+            .unwrap_or("unknown");
         response.push_str(&format!("## Agent: {}\n\n", name));
         response.push_str(&format!("**Status**: {}\n", status));
         if let Some(stats) = json.get("stats") {
@@ -1027,20 +1100,38 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
     // Agent execution history: has "agent_id" + "stats"
     if json.get("agent_id").is_some() && json.get("stats").is_some() {
         if let Some(stats) = json.get("stats") {
-            let total = stats.get("total_executions").and_then(|t| t.as_u64()).unwrap_or(0);
-            let success = stats.get("successful_executions").and_then(|s| s.as_u64()).unwrap_or(0);
-            let failed = stats.get("failed_executions").and_then(|f| f.as_u64()).unwrap_or(0);
-            let avg_ms = stats.get("avg_duration_ms").and_then(|d| d.as_u64()).unwrap_or(0);
-            response.push_str(&format!("## Execution Stats\n\n"));
+            let total = stats
+                .get("total_executions")
+                .and_then(|t| t.as_u64())
+                .unwrap_or(0);
+            let success = stats
+                .get("successful_executions")
+                .and_then(|s| s.as_u64())
+                .unwrap_or(0);
+            let failed = stats
+                .get("failed_executions")
+                .and_then(|f| f.as_u64())
+                .unwrap_or(0);
+            let avg_ms = stats
+                .get("avg_duration_ms")
+                .and_then(|d| d.as_u64())
+                .unwrap_or(0);
+            response.push_str("## Execution Stats\n\n");
             response.push_str(&format!("- **Total**: {} times\n", total));
-            response.push_str(&format!("- **Success**: {} | **Failed**: {}\n", success, failed));
+            response.push_str(&format!(
+                "- **Success**: {} | **Failed**: {}\n",
+                success, failed
+            ));
             if avg_ms > 0 {
                 let avg_sec = avg_ms as f64 / 1000.0;
                 response.push_str(&format!("- **Avg Duration**: {:.1}s\n", avg_sec));
             }
             if let Some(last_ms) = stats.get("last_duration_ms").and_then(|d| d.as_u64()) {
                 if last_ms > 0 {
-                    response.push_str(&format!("- **Last Duration**: {:.1}s\n", last_ms as f64 / 1000.0));
+                    response.push_str(&format!(
+                        "- **Last Duration**: {:.1}s\n",
+                        last_ms as f64 / 1000.0
+                    ));
                 }
             }
         }
@@ -1057,10 +1148,16 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
         });
 
         if is_message_list {
-            let count = json.get("count").and_then(|c| c.as_u64()).unwrap_or(messages.len() as u64);
+            let count = json
+                .get("count")
+                .and_then(|c| c.as_u64())
+                .unwrap_or(messages.len() as u64);
             response.push_str(&format!("## Messages & Alerts ({} total)\n\n", count));
             for msg in messages.iter().take(15) {
-                let title = msg.get("title").and_then(|t| t.as_str()).unwrap_or("unknown");
+                let title = msg
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("unknown");
                 let level = msg.get("level").and_then(|l| l.as_str()).unwrap_or("info");
                 let read = msg.get("read").and_then(|r| r.as_bool()).unwrap_or(false);
                 let id = msg.get("id").and_then(|i| i.as_str()).unwrap_or("");
@@ -1072,7 +1169,14 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
                     _ => "[INFO]",
                 };
                 let read_icon = if read { "[read]" } else { "[unread]" };
-                response.push_str(&format!("{} {} [{}] {} (`{}`)\n", icon, read_icon, level, title, &id[..8.min(id.len())]));
+                response.push_str(&format!(
+                    "{} {} [{}] {} (`{}`)\n",
+                    icon,
+                    read_icon,
+                    level,
+                    title,
+                    &id[..8.min(id.len())]
+                ));
             }
             if messages.len() > 15 {
                 response.push_str(&format!("\n... ({} more)\n", messages.len() - 15));
@@ -1083,9 +1187,15 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
 
     // Agent conversation history: has "messages" array with role/content
     if let Some(messages) = extract_array(json, "messages") {
-        response.push_str(&format!("## Conversation Log ({} messages)\n\n", messages.len()));
+        response.push_str(&format!(
+            "## Conversation Log ({} messages)\n\n",
+            messages.len()
+        ));
         for msg in messages.iter().take(10) {
-            let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("unknown");
+            let role = msg
+                .get("role")
+                .and_then(|r| r.as_str())
+                .unwrap_or("unknown");
             let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
             let preview: String = content.chars().take(100).collect();
             response.push_str(&format!("- **{}**: {}\n", role, preview));
@@ -1097,7 +1207,10 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
     }
 
     // Control/execution success — but check if there's meaningful data first
-    if json.get("success").is_some() || json.get("execution_id").is_some() || json.get("rule_id").is_some() {
+    if json.get("success").is_some()
+        || json.get("execution_id").is_some()
+        || json.get("rule_id").is_some()
+    {
         // If there's a "data" object with useful fields, format those instead of generic message
         if let Some(data) = json.get("data") {
             format_json_data(data, response);
@@ -1107,13 +1220,24 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
             response.push_str(&format!("[OK] Executed successfully (ID: {})\n", exec_id));
         } else if let Some(rule_id) = json.get("rule_id").and_then(|r| r.as_str()) {
             response.push_str(&format!("[OK] Created successfully (ID: {})\n", rule_id));
-        } else if let Some(agent_id) = json.get("agent_id").or_else(|| json.get("id")).and_then(|a| a.as_str()) {
+        } else if let Some(agent_id) = json
+            .get("agent_id")
+            .or_else(|| json.get("id"))
+            .and_then(|a| a.as_str())
+        {
             response.push_str(&format!("[OK] Created successfully (ID: {})\n", agent_id));
-        } else if json.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
+        } else if json
+            .get("success")
+            .and_then(|s| s.as_bool())
+            .unwrap_or(false)
+        {
             response.push_str(&format!("**[OK]** {} operation succeeded\n", tool_name));
         } else {
             // Has error
-            let error = json.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
+            let error = json
+                .get("error")
+                .and_then(|e| e.as_str())
+                .unwrap_or("Unknown error");
             response.push_str(&format!("!! {} failed: {}\n", tool_name, error));
         }
         return;
@@ -1143,8 +1267,14 @@ fn format_agent_list(json: &serde_json::Value, response: &mut String) {
         } else {
             response.push_str(&format!("**AI Agent List** ({} total)\n\n", agents.len()));
             for agent in agents {
-                let name = agent.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
-                let status = agent.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
+                let name = agent
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("unknown");
+                let status = agent
+                    .get("status")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("unknown");
                 let icon = match status {
                     "active" | "Active" => "[on]",
                     _ => "[off]",
@@ -1176,18 +1306,28 @@ fn format_json_data(data: &serde_json::Value, response: &mut String) {
             }
 
             // Convert snake_case to Title Case
-            let display_name: String = key.chars().enumerate().flat_map(|(i, c)| {
-                if i == 0 {
-                    c.to_uppercase().collect::<Vec<char>>()
-                } else if c == '_' {
-                    vec![' ']
-                } else {
-                    vec![c]
-                }
-            }).collect();
+            let display_name: String = key
+                .chars()
+                .enumerate()
+                .flat_map(|(i, c)| {
+                    if i == 0 {
+                        c.to_uppercase().collect::<Vec<char>>()
+                    } else if c == '_' {
+                        vec![' ']
+                    } else {
+                        vec![c]
+                    }
+                })
+                .collect();
 
             let value_str = match value {
-                serde_json::Value::Bool(b) => if *b { "Yes".to_string() } else { "No".to_string() },
+                serde_json::Value::Bool(b) => {
+                    if *b {
+                        "Yes".to_string()
+                    } else {
+                        "No".to_string()
+                    }
+                }
                 serde_json::Value::Number(n) => {
                     if key.ends_with("_c") {
                         format!("{}°C", n)
@@ -1330,11 +1470,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                 .get("enabled")
                                 .and_then(|e| e.as_bool())
                                 .unwrap_or(false);
-                            let status = if enabled {
-                                "[Enabled]"
-                            } else {
-                                "!! Disabled"
-                            };
+                            let status = if enabled { "[Enabled]" } else { "!! Disabled" };
                             response.push_str(&format!("- **{}** {}\n", name, status));
                         }
                     } else if let Some(count) = json_value.get("count").and_then(|c| c.as_u64()) {
@@ -1707,8 +1843,10 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 }
                 "create_rule" => {
                     if let Some(rule_id) = json_value.get("rule_id").and_then(|r| r.as_str()) {
-                        response
-                            .push_str(&format!("[OK] Rule created successfully (ID: {})\n", rule_id));
+                        response.push_str(&format!(
+                            "[OK] Rule created successfully (ID: {})\n",
+                            rule_id
+                        ));
                     } else {
                         response.push_str("[OK] Rule created successfully.\n");
                     }
@@ -1732,7 +1870,8 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                             agent_id
                         ));
                     } else if let Some(id) = json_value.get("id").and_then(|i| i.as_str()) {
-                        response.push_str(&format!("[OK] Agent created successfully (ID: {})\n", id));
+                        response
+                            .push_str(&format!("[OK] Agent created successfully (ID: {})\n", id));
                     } else {
                         response.push_str("[OK] Agent created successfully.\n");
                     }
@@ -1762,14 +1901,21 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                     response.push_str("[OK] Rule deleted.\n");
                 }
                 "shell" => {
-                    let cmd = json_value.get("command").and_then(|c| c.as_str()).unwrap_or("?");
+                    let cmd = json_value
+                        .get("command")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("?");
                     let desc = json_value.get("description").and_then(|d| d.as_str());
                     if let Some(desc) = desc {
                         response.push_str(&format!("## Shell: {}\n**Command**: `{}`\n", desc, cmd));
                     } else {
                         response.push_str(&format!("## Shell: `{}`\n", cmd));
                     }
-                    if json_value.get("timed_out").and_then(|t| t.as_bool()).unwrap_or(false) {
+                    if json_value
+                        .get("timed_out")
+                        .and_then(|t| t.as_bool())
+                        .unwrap_or(false)
+                    {
                         response.push_str("**Timed out**\n");
                     }
                     if let Some(exit_code) = json_value.get("exit_code") {
@@ -1820,7 +1966,10 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
 }
 
 /// Emit plan events from an ExecutionPlan through the event channel.
-pub fn emit_plan_events(plan: &ExecutionPlan, tx: &tokio::sync::mpsc::UnboundedSender<super::types::AgentEvent>) {
+pub fn emit_plan_events(
+    plan: &ExecutionPlan,
+    tx: &tokio::sync::mpsc::UnboundedSender<super::types::AgentEvent>,
+) {
     let _ = tx.send(super::types::AgentEvent::ExecutionPlanCreated {
         plan: plan.clone(),
         session_id: None,
@@ -1878,7 +2027,8 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
                     .iter()
                     .flat_map(|calls| calls.iter())
                     .map(|tc| {
-                        let args_summary = super::types::summarize_tool_args(&tc.name, &tc.arguments);
+                        let args_summary =
+                            super::types::summarize_tool_args(&tc.name, &tc.arguments);
                         let result_preview = tc
                             .result
                             .as_ref()
@@ -1899,12 +2049,18 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
                         if result_preview.is_empty() {
                             format!("the {} tool with {}", tc.name, args_summary)
                         } else {
-                            format!("the {} tool with {} and received: {}", tc.name, args_summary, result_preview)
+                            format!(
+                                "the {} tool with {} and received: {}",
+                                tc.name, args_summary, result_preview
+                            )
                         }
                     })
                     .collect();
 
-                let summary = format!("Previously called {}. These are past results, do not repeat.", summaries.join(", then "));
+                let summary = format!(
+                    "Previously called {}. These are past results, do not repeat.",
+                    summaries.join(", then ")
+                );
 
                 result.push(AgentMessage {
                     role: msg.role.clone(),
@@ -1958,14 +2114,17 @@ fn build_context_window_with_summary(
     let config = CompactionConfig::for_context_size(max_tokens);
 
     // Filter out summarized messages if summary exists
-    let filtered: Vec<AgentMessage> = if let (Some(_summary), Some(up_to)) = (summary, summary_up_to_index) {
-        messages.iter().enumerate()
-            .filter(|(i, _)| (*i as u64) > up_to)
-            .map(|(_, msg)| msg.clone())
-            .collect()
-    } else {
-        messages.to_vec()
-    };
+    let filtered: Vec<AgentMessage> =
+        if let (Some(_summary), Some(up_to)) = (summary, summary_up_to_index) {
+            messages
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| (*i as u64) > up_to)
+                .map(|(_, msg)| msg.clone())
+                .collect()
+        } else {
+            messages.to_vec()
+        };
 
     // Build context window from filtered messages
     let mut result = build_context_window_with_config(&filtered, max_tokens, &config);
@@ -2134,29 +2293,48 @@ fn compact_tool_results_stream_with_config(
             } else {
                 // Build descriptive summary preserving action + args + result preview
                 let summary_content = if let Some(ref tool_calls) = msg.tool_calls {
-                    let summaries: Vec<String> = tool_calls.iter().map(|tc| {
-                        let args_summary = super::types::summarize_tool_args(&tc.name, &tc.arguments);
-                        let result_preview = tc.result.as_ref()
-                            .and_then(|r| {
-                                let s = if let Some(s) = r.as_str() { s.to_string() } else { r.to_string() };
-                                // Read actions need more preview to preserve data
-                                let is_data_action = args_summary.contains("list")
-                                    || args_summary.contains("get")
-                                    || args_summary.contains("history");
-                                let preview_len = if is_data_action { 300 } else { 80 };
-                                Some(s.chars().take(preview_len).collect::<String>())
-                            })
-                            .unwrap_or_default();
-                        if result_preview.is_empty() {
-                            format!("the {} tool with {}", tc.name, args_summary)
-                        } else {
-                            format!("the {} tool with {} and received: {}", tc.name, args_summary, result_preview)
-                        }
-                    }).collect();
-                    format!("Previously called {}. These are past results, do not repeat.", summaries.join(", then "))
+                    let summaries: Vec<String> = tool_calls
+                        .iter()
+                        .map(|tc| {
+                            let args_summary =
+                                super::types::summarize_tool_args(&tc.name, &tc.arguments);
+                            let result_preview = tc
+                                .result
+                                .as_ref()
+                                .and_then(|r| {
+                                    let s = if let Some(s) = r.as_str() {
+                                        s.to_string()
+                                    } else {
+                                        r.to_string()
+                                    };
+                                    // Read actions need more preview to preserve data
+                                    let is_data_action = args_summary.contains("list")
+                                        || args_summary.contains("get")
+                                        || args_summary.contains("history");
+                                    let preview_len = if is_data_action { 300 } else { 80 };
+                                    Some(s.chars().take(preview_len).collect::<String>())
+                                })
+                                .unwrap_or_default();
+                            if result_preview.is_empty() {
+                                format!("the {} tool with {}", tc.name, args_summary)
+                            } else {
+                                format!(
+                                    "the {} tool with {} and received: {}",
+                                    tc.name, args_summary, result_preview
+                                )
+                            }
+                        })
+                        .collect();
+                    format!(
+                        "Previously called {}. These are past results, do not repeat.",
+                        summaries.join(", then ")
+                    )
                 } else {
                     let tool_name = msg.tool_call_name.as_deref().unwrap_or("tool");
-                    format!("Previously called the {} tool. These are past results, do not repeat.", tool_name)
+                    format!(
+                        "Previously called the {} tool. These are past results, do not repeat.",
+                        tool_name
+                    )
                 };
 
                 let summary_msg = AgentMessage {
@@ -2372,11 +2550,15 @@ pub async fn process_stream_events_with_safeguards(
         effective_max
     );
 
-    let history_for_llm: Vec<neomind_core::Message> =
-        build_context_window_with_summary(&history_messages, effective_max, conversation_summary.as_deref(), summary_up_to_index)
-            .iter()
-            .map(|msg| msg.to_core())
-            .collect::<Vec<_>>();
+    let history_for_llm: Vec<neomind_core::Message> = build_context_window_with_summary(
+        &history_messages,
+        effective_max,
+        conversation_summary.as_deref(),
+        summary_up_to_index,
+    )
+    .iter()
+    .map(|msg| msg.to_core())
+    .collect::<Vec<_>>();
 
     tracing::debug!(
         "Passing {} messages from history to LLM",
@@ -2395,9 +2577,7 @@ pub async fn process_stream_events_with_safeguards(
     // The llm_interface already resolves thinking priority: local override > instance setting > None.
     // No keyword-based filtering — model providers have different standards, keyword heuristics
     // are unreliable and override user preference without good reason.
-    tracing::info!(
-        "Thinking control: respecting user/instance thinking_enabled setting directly"
-    );
+    tracing::info!("Thinking control: respecting user/instance thinking_enabled setting directly");
 
     // Get the stream from llm_interface - thinking is controlled by instance/user settings
     let stream_result = llm_interface
@@ -3590,11 +3770,15 @@ pub async fn process_multimodal_stream_events_with_safeguards(
         (max_context * 90) / 100
     };
 
-    let history_for_llm: Vec<neomind_core::Message> =
-        build_context_window_with_summary(&history_messages, effective_max, conversation_summary.as_deref(), summary_up_to_index)
-            .iter()
-            .map(|msg| msg.to_core())
-            .collect::<Vec<_>>();
+    let history_for_llm: Vec<neomind_core::Message> = build_context_window_with_summary(
+        &history_messages,
+        effective_max,
+        conversation_summary.as_deref(),
+        summary_up_to_index,
+    )
+    .iter()
+    .map(|msg| msg.to_core())
+    .collect::<Vec<_>>();
 
     tracing::debug!(
         "Passing {} messages from history to LLM (multimodal)",
@@ -3619,7 +3803,8 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     let has_images = !images.is_empty();
 
     // Extract base64 data for caching before images are consumed
-    let image_base64_list: Vec<String> = images.iter()
+    let image_base64_list: Vec<String> = images
+        .iter()
         .filter_map(|data_url| data_url.split(',').nth(1).map(|s| s.to_string()))
         .collect();
 
@@ -3654,7 +3839,11 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     if !image_base64_list.is_empty() {
         let mut state = internal_state.write().await;
         for (i, base64_data) in image_base64_list.iter().enumerate() {
-            let cache_key = if i == 0 { "user_image".to_string() } else { format!("user_image_{}", i) };
+            let cache_key = if i == 0 {
+                "user_image".to_string()
+            } else {
+                format!("user_image_{}", i)
+            };
             state.large_data_cache.store(&cache_key, base64_data);
         }
     }
@@ -4174,7 +4363,10 @@ const IMAGE_ARG_NAMES: &[&str] = &["image", "image_base64", "base64_data", "imag
 /// whenever cached image data exists it takes precedence over the LLM's value.
 ///
 /// Only HTTP(S) URLs are passed through (they may point to a real image resource).
-fn resolve_cached_arguments(arguments: &serde_json::Value, cache: &LargeDataCache) -> serde_json::Value {
+fn resolve_cached_arguments(
+    arguments: &serde_json::Value,
+    cache: &LargeDataCache,
+) -> serde_json::Value {
     match arguments {
         // Explicit $cached: reference → resolve
         serde_json::Value::String(s) if s.starts_with("$cached:") => {
@@ -4221,11 +4413,11 @@ fn resolve_cached_arguments(arguments: &serde_json::Value, cache: &LargeDataCach
                 .collect();
             serde_json::Value::Object(resolved)
         }
-        serde_json::Value::Array(arr) => {
-            serde_json::Value::Array(
-                arr.iter().map(|v| resolve_cached_arguments(v, cache)).collect(),
-            )
-        }
+        serde_json::Value::Array(arr) => serde_json::Value::Array(
+            arr.iter()
+                .map(|v| resolve_cached_arguments(v, cache))
+                .collect(),
+        ),
         other => other.clone(),
     }
 }
@@ -4761,13 +4953,26 @@ mod tests {
             "device_name": "NE101",
             "battery": "100%",
             "image_data": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ"
-        }).to_string();
+        })
+        .to_string();
 
         let sanitized = sanitize_tool_result_for_prompt(&result);
-        assert!(!sanitized.contains("base64"), "Should strip base64 data URL");
-        assert!(!sanitized.contains("/9j/4AAQ"), "Should strip image content");
-        assert!(sanitized.contains("image data"), "Should have image data placeholder");
-        assert!(sanitized.contains("device_name"), "Should preserve non-image fields");
+        assert!(
+            !sanitized.contains("base64"),
+            "Should strip base64 data URL"
+        );
+        assert!(
+            !sanitized.contains("/9j/4AAQ"),
+            "Should strip image content"
+        );
+        assert!(
+            sanitized.contains("image data"),
+            "Should have image data placeholder"
+        );
+        assert!(
+            sanitized.contains("device_name"),
+            "Should preserve non-image fields"
+        );
         assert!(sanitized.contains("NE101"), "Should preserve device name");
         assert!(sanitized.contains("100%"), "Should preserve battery info");
     }
@@ -4780,11 +4985,15 @@ mod tests {
             "device_name": "Camera",
             "firmware": "v1.7",
             "base64_data": fake_base64
-        }).to_string();
+        })
+        .to_string();
 
         let sanitized = sanitize_tool_result_for_prompt(&result);
         assert!(!sanitized.contains("ABCDEFGH"), "Should strip large base64");
-        assert!(sanitized.contains("base64 data"), "Should have base64 placeholder");
+        assert!(
+            sanitized.contains("base64 data"),
+            "Should have base64 placeholder"
+        );
         assert!(sanitized.contains("Camera"), "Should preserve device name");
         assert!(sanitized.contains("v1.7"), "Should preserve firmware");
     }
@@ -4799,7 +5008,8 @@ mod tests {
                     "image": "data:image/png;base64,iVBORw0KGgo="
                 }
             }
-        }).to_string();
+        })
+        .to_string();
 
         let sanitized = sanitize_tool_result_for_prompt(&result);
         assert!(sanitized.contains("NE101"), "Should preserve nested text");
@@ -4816,7 +5026,10 @@ mod tests {
         assert!(!sanitized.contains("/9j/"), "Should strip image data");
         assert!(sanitized.contains("Camera"), "Should preserve text");
         assert!(sanitized.contains("100%"), "Should preserve battery");
-        assert!(sanitized.contains("Status: OK"), "Should preserve other text");
+        assert!(
+            sanitized.contains("Status: OK"),
+            "Should preserve other text"
+        );
     }
 
     #[test]

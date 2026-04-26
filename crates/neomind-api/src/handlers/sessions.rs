@@ -93,7 +93,11 @@ async fn process_stream_to_channel(
                             "sessionId": session_id,
                         })
                     }
-                    AgentEvent::ToolCallStart { tool, arguments, round } => {
+                    AgentEvent::ToolCallStart {
+                        tool,
+                        arguments,
+                        round,
+                    } => {
                         let mut json = json!({
                             "type": "ToolCallStart",
                             "tool": tool,
@@ -160,7 +164,10 @@ async fn process_stream_to_channel(
                             "sessionId": session_id,
                         })
                     }
-                    AgentEvent::PlanStepStarted { step_id, description } => {
+                    AgentEvent::PlanStepStarted {
+                        step_id,
+                        description,
+                    } => {
                         json!({
                             "type": "PlanStepStarted",
                             "stepId": step_id,
@@ -168,7 +175,11 @@ async fn process_stream_to_channel(
                             "sessionId": session_id,
                         })
                     }
-                    AgentEvent::PlanStepCompleted { step_id, success, summary } => {
+                    AgentEvent::PlanStepCompleted {
+                        step_id,
+                        success,
+                        summary,
+                    } => {
                         json!({
                             "type": "PlanStepCompleted",
                             "stepId": step_id,
@@ -296,11 +307,14 @@ async fn process_stream_to_channel(
                             let sum_session_id = session_id.clone();
                             let sum_state = state.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = crate::handlers::summarization::trigger_summarization(
-                                    &sum_session_id,
-                                    &sum_state,
-                                    pt_val,
-                                ).await {
+                                if let Err(e) =
+                                    crate::handlers::summarization::trigger_summarization(
+                                        &sum_session_id,
+                                        &sum_state,
+                                        pt_val,
+                                    )
+                                    .await
+                                {
                                     tracing::warn!("Background summarization failed: {}", e);
                                 }
                             });
@@ -1046,8 +1060,8 @@ async fn handle_ws_socket(
                                         } else {
                                             // Use current session - no need to resend history
                                             // History is already sent on initial connection and session switches
-                                            let id = current.to_string();
-                                            id
+                                            
+                                            current.to_string()
                                         }
                                     };
 

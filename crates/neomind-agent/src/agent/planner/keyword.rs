@@ -56,9 +56,9 @@ impl KeywordPlanner {
             IntentCategory::Rule => self.plan_rule(intent, message),
             IntentCategory::Data => self.plan_data(),
             IntentCategory::Alert => self.plan_alert(),
-            IntentCategory::System => None, // Skip planning
-            IntentCategory::Help => None,   // Skip planning
-            IntentCategory::General => None, // Skip planning
+            IntentCategory::System => None,   // Skip planning
+            IntentCategory::Help => None,     // Skip planning
+            IntentCategory::General => None,  // Skip planning
             IntentCategory::Workflow => None, // Defer to LLM planner
         }
     }

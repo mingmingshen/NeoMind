@@ -345,8 +345,7 @@ pub struct IsolatedExtension {
     /// Push output channel for receiving PushOutput messages from extension
     /// Uses std::sync::Mutex for thread safety in receiver thread
     /// Bounded (256) to provide backpressure when WebSocket clients are slow
-    push_output_tx:
-        Arc<std::sync::Mutex<Option<tokio::sync::mpsc::Sender<super::PushOutputData>>>>,
+    push_output_tx: Arc<std::sync::Mutex<Option<tokio::sync::mpsc::Sender<super::PushOutputData>>>>,
     /// ✨ FIX: Tiered IPC buffer pool for optimal memory management
     ipc_buffer_pool: Arc<TieredBufferPool>,
     /// ✨ FIX: Active stream sessions - used to notify clients when extension restarts
@@ -792,9 +791,7 @@ impl IsolatedExtension {
                         {
                             let pid = child_pid as libc::pid_t;
                             let mut status: libc::c_int = 0;
-                            let ret = unsafe {
-                                libc::waitpid(pid, &mut status, libc::WNOHANG)
-                            };
+                            let ret = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
                             if ret > 0 {
                                 debug!(
                                     extension_id = %extension_id,
@@ -848,8 +845,17 @@ impl IsolatedExtension {
                 let response = match IpcResponse::from_bytes(payload.as_ref()) {
                     Ok(r) => {
                         // Debug: log StreamSessionInit responses specifically
-                        if let IpcResponse::StreamSessionInit { request_id, session_id, success, .. } = &r {
-                            debug!(request_id, session_id, success, "Received StreamSessionInit response");
+                        if let IpcResponse::StreamSessionInit {
+                            request_id,
+                            session_id,
+                            success,
+                            ..
+                        } = &r
+                        {
+                            debug!(
+                                request_id,
+                                session_id, success, "Received StreamSessionInit response"
+                            );
                         }
                         r
                     }
@@ -1021,7 +1027,11 @@ impl IsolatedExtension {
 
         // Wait for ShutdownAck with a 2-second timeout (instead of blind sleep).
         // This gives the extension time to flush state via its stop() lifecycle.
-        match self.in_flight.wait_with_timeout(0, rx, std::time::Duration::from_secs(2)).await {
+        match self
+            .in_flight
+            .wait_with_timeout(0, rx, std::time::Duration::from_secs(2))
+            .await
+        {
             Ok(_) => {
                 debug!(extension_id = %self.extension_id, "Received ShutdownAck from extension");
             }
@@ -1104,12 +1114,11 @@ impl IsolatedExtension {
                     );
                     return Err(IsolatedExtensionError::TooManyRequests(limit));
                 }
-                if self.active_requests.compare_exchange(
-                    current,
-                    current + 1,
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                ).is_ok() {
+                if self
+                    .active_requests
+                    .compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
                     break;
                 }
                 // CAS failed, another thread modified the counter — retry
@@ -1559,9 +1568,7 @@ impl IsolatedExtension {
             .map_err(|_| IsolatedExtensionError::ChannelClosed)?;
 
         match response {
-            IpcResponse::StreamSessionInit {
-                success: true, ..
-            } => Ok(()),
+            IpcResponse::StreamSessionInit { success: true, .. } => Ok(()),
             IpcResponse::StreamSessionInit {
                 success: false,
                 error: Some(e),
@@ -1574,9 +1581,7 @@ impl IsolatedExtension {
             } => Err(IsolatedExtensionError::ExecutionFailed(
                 "Stream session init failed".to_string(),
             )),
-            IpcResponse::Error { error, .. } => {
-                Err(IsolatedExtensionError::ExecutionFailed(error))
-            }
+            IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::ExecutionFailed(error)),
             _ => Err(IsolatedExtensionError::IpcError(
                 "Unexpected response to InitStreamSession".to_string(),
             )),
@@ -1699,9 +1704,7 @@ impl IsolatedExtension {
                 last_activity: duration_ms as i64,
                 ..Default::default()
             }),
-            IpcResponse::Error { error, .. } => {
-                Err(IsolatedExtensionError::ExecutionFailed(error))
-            }
+            IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::ExecutionFailed(error)),
             _ => Err(IsolatedExtensionError::IpcError(
                 "Unexpected response to CloseStreamSession".to_string(),
             )),
@@ -2211,10 +2214,7 @@ impl IsolatedExtension {
     ///
     /// This sends a ConfigUpdate IPC message (fire-and-forget).
     /// The extension's `configure()` method will be called in the runner process.
-    pub async fn send_config_update(
-        &self,
-        config: &serde_json::Value,
-    ) -> IsolatedResult<()> {
+    pub async fn send_config_update(&self, config: &serde_json::Value) -> IsolatedResult<()> {
         if !self.running.load(Ordering::SeqCst) {
             return Err(IsolatedExtensionError::NotRunning);
         }

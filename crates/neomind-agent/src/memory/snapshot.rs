@@ -62,10 +62,7 @@ impl MemorySnapshot {
 
         let loaded_at = chrono::Utc::now().timestamp();
 
-        Self {
-            content,
-            loaded_at,
-        }
+        Self { content, loaded_at }
     }
 
     /// Load a snapshot, returning None if there's no memory content.

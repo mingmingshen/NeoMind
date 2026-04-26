@@ -7,11 +7,11 @@
 //!
 //! All types used here are re-exported from the neomind-agent crate root.
 
+use neomind_agent::context_selector::ContextBundle;
 use neomind_agent::{
     ExecutionPlan, IntentCategory, IntentResult, KeywordPlanner, PlanningConfig,
     PlanningCoordinator, PlanningMode,
 };
-use neomind_agent::context_selector::ContextBundle;
 
 /// Helper to create an IntentResult for testing
 fn create_intent(category: IntentCategory, confidence: f32, keywords: Vec<&str>) -> IntentResult {
@@ -57,7 +57,10 @@ fn test_keyword_planner_device_control_intent() {
 
     let plan = planner.plan_sync(&intent, message);
 
-    assert!(plan.is_some(), "Device control intent should produce a plan");
+    assert!(
+        plan.is_some(),
+        "Device control intent should produce a plan"
+    );
     let plan = plan.unwrap();
     assert_eq!(plan.steps[0].action, "control");
     assert!(plan.steps[0].description.contains("控制"));
@@ -154,7 +157,10 @@ fn test_keyword_planner_workflow_skips() {
 
     let plan = planner.plan_sync(&intent, message);
 
-    assert!(plan.is_none(), "Workflow intent should skip planning (defer to LLM)");
+    assert!(
+        plan.is_none(),
+        "Workflow intent should skip planning (defer to LLM)"
+    );
 }
 
 #[test]
@@ -216,8 +222,16 @@ fn test_execution_plan_parallel_batches_all_safe_parallel() {
 
     let batches = plan.parallel_batches();
 
-    assert_eq!(batches.len(), 1, "All safe-parallel steps should be in one batch");
-    assert_eq!(batches[0].len(), 3, "All three steps should be in the batch");
+    assert_eq!(
+        batches.len(),
+        1,
+        "All safe-parallel steps should be in one batch"
+    );
+    assert_eq!(
+        batches[0].len(),
+        3,
+        "All three steps should be in the batch"
+    );
 }
 
 #[test]
@@ -248,7 +262,11 @@ fn test_execution_plan_parallel_batches_with_dependencies() {
 
     let batches = plan.parallel_batches();
 
-    assert_eq!(batches.len(), 2, "Should have two batches due to dependency");
+    assert_eq!(
+        batches.len(),
+        2,
+        "Should have two batches due to dependency"
+    );
     assert_eq!(batches[0], vec![0], "First batch should have step 0");
     assert_eq!(batches[1], vec![1], "Second batch should have step 1");
 }
@@ -290,9 +308,20 @@ fn test_execution_plan_parallel_batches_mixed_safe_unsafe() {
     let batches = plan.parallel_batches();
 
     assert_eq!(batches.len(), 2, "Should have two batches");
-    assert_eq!(batches[0].len(), 2, "First batch should have two safe-parallel steps");
-    assert_eq!(batches[1].len(), 1, "Second batch should have one unsafe step");
-    assert!(batches[1].contains(&2), "Second batch should contain the control step");
+    assert_eq!(
+        batches[0].len(),
+        2,
+        "First batch should have two safe-parallel steps"
+    );
+    assert_eq!(
+        batches[1].len(),
+        1,
+        "Second batch should have one unsafe step"
+    );
+    assert!(
+        batches[1].contains(&2),
+        "Second batch should contain the control step"
+    );
 }
 
 #[test]
@@ -333,7 +362,10 @@ async fn test_planning_coordinator_default_config() {
 
     let plan = coord.plan(&intent, &context, message).await;
 
-    assert!(plan.is_some(), "High confidence intent should produce a plan");
+    assert!(
+        plan.is_some(),
+        "High confidence intent should produce a plan"
+    );
     let plan = plan.unwrap();
     assert_eq!(plan.mode, PlanningMode::Keyword);
 }
@@ -364,7 +396,11 @@ async fn test_planning_coordinator_high_confidence_uses_keyword() {
 
     assert!(plan.is_some());
     let plan = plan.unwrap();
-    assert_eq!(plan.mode, PlanningMode::Keyword, "High confidence should use Keyword planner");
+    assert_eq!(
+        plan.mode,
+        PlanningMode::Keyword,
+        "High confidence should use Keyword planner"
+    );
 }
 
 #[tokio::test]
@@ -377,7 +413,10 @@ async fn test_planning_coordinator_low_confidence_falls_back_to_keyword() {
 
     let plan = coord.plan(&intent, &context, message).await;
 
-    assert!(plan.is_some(), "Should fall back to keyword planner when no LLM");
+    assert!(
+        plan.is_some(),
+        "Should fall back to keyword planner when no LLM"
+    );
     let plan = plan.unwrap();
     assert_eq!(plan.mode, PlanningMode::Keyword);
 }

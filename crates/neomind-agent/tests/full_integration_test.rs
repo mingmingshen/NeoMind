@@ -393,7 +393,10 @@ async fn test_llm_understands_metrics() -> anyhow::Result<()> {
 
     println!("\n2. 执行Agent分析...");
     let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
-    let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
+    let record = ctx
+        .executor
+        .execute_agent(agent.clone(), None, None)
+        .await?;
 
     println!("\n3. Agent响应:");
     println!("   状态: {:?}", record.status);
@@ -463,7 +466,10 @@ async fn test_llm_generates_commands() -> anyhow::Result<()> {
     println!("\n2. 执行Agent决策...");
 
     let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
-    let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
+    let record = ctx
+        .executor
+        .execute_agent(agent.clone(), None, None)
+        .await?;
 
     println!("\n3. 决策分析:");
     println!("   状态: {:?}", record.status);
@@ -542,7 +548,10 @@ async fn test_notification_sending() -> anyhow::Result<()> {
 
     println!("\n3. 执行Agent...");
     let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
-    let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
+    let record = ctx
+        .executor
+        .execute_agent(agent.clone(), None, None)
+        .await?;
 
     println!("\n4. Agent响应:");
     println!("   分析: {}", record.decision_process.situation_analysis);
@@ -647,7 +656,10 @@ async fn test_end_to_end_workflow() -> anyhow::Result<()> {
     let agent_id = agent.id.clone();
 
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    let record1 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
+    let record1 = ctx
+        .executor
+        .execute_agent(agent.clone(), None, None)
+        .await?;
     println!("分析: {}", record1.decision_process.situation_analysis);
     println!("结论: {}", record1.decision_process.conclusion);
 
@@ -658,7 +670,10 @@ async fn test_end_to_end_workflow() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    let record2 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
+    let record2 = ctx
+        .executor
+        .execute_agent(agent.clone(), None, None)
+        .await?;
     println!("分析: {}", record2.decision_process.situation_analysis);
     println!("结论: {}", record2.decision_process.conclusion);
 
@@ -669,7 +684,10 @@ async fn test_end_to_end_workflow() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    let record3 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
+    let record3 = ctx
+        .executor
+        .execute_agent(agent.clone(), None, None)
+        .await?;
     println!("分析: {}", record3.decision_process.situation_analysis);
 
     // Check if alert should be sent
@@ -745,7 +763,10 @@ async fn test_data_collection_and_context() -> anyhow::Result<()> {
     println!("\n3. 执行Agent...");
     let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
     let start = Instant::now();
-    let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
+    let record = ctx
+        .executor
+        .execute_agent(agent.clone(), None, None)
+        .await?;
     let elapsed = start.elapsed();
 
     println!("\n4. 执行结果:");

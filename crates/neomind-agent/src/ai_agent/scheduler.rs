@@ -7,8 +7,8 @@ use chrono_tz::Tz;
 use cron::Schedule;
 use neomind_storage::{AgentSchedule, AiAgent, ScheduleType};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
@@ -367,7 +367,8 @@ impl AgentScheduler {
                         match executor.store().get_agent(&agent_id).await {
                             Ok(Some(agent)) => {
                                 // Acquire per-backend semaphore (WAIT, not fail)
-                                let backend_id = agent.llm_backend_id
+                                let backend_id = agent
+                                    .llm_backend_id
                                     .clone()
                                     .unwrap_or_else(|| "default".to_string());
                                 let backend_sem = backend_sems.get(&backend_id).await;
@@ -396,7 +397,8 @@ impl AgentScheduler {
                                 let max_retries = agent.max_retries;
                                 let consecutive = agent.consecutive_failures;
 
-                                let result = executor.execute_agent(agent.clone(), None, None).await;
+                                let result =
+                                    executor.execute_agent(agent.clone(), None, None).await;
 
                                 match result {
                                     Ok(record) => {
@@ -410,7 +412,8 @@ impl AgentScheduler {
 
                                         // Reset consecutive failures on success
                                         if consecutive > 0 {
-                                            if let Err(e) = executor.store()
+                                            if let Err(e) = executor
+                                                .store()
                                                 .update_agent_consecutive_failures(&agent_id, 0)
                                                 .await
                                             {
@@ -434,8 +437,12 @@ impl AgentScheduler {
                                         );
 
                                         // Update consecutive failure count
-                                        if let Err(err) = executor.store()
-                                            .update_agent_consecutive_failures(&agent_id, new_consecutive)
+                                        if let Err(err) = executor
+                                            .store()
+                                            .update_agent_consecutive_failures(
+                                                &agent_id,
+                                                new_consecutive,
+                                            )
                                             .await
                                         {
                                             tracing::warn!(
@@ -456,7 +463,7 @@ impl AgentScheduler {
 
                                             // Exponential backoff: 5s, 10s, 20s...
                                             let backoff = std::time::Duration::from_secs(
-                                                5 * 2_u64.pow(new_consecutive.saturating_sub(1))
+                                                5 * 2_u64.pow(new_consecutive.saturating_sub(1)),
                                             );
                                             tokio::time::sleep(backoff).await;
 
@@ -469,8 +476,11 @@ impl AgentScheduler {
                                                         "Agent retry succeeded"
                                                     );
                                                     // Reset failures on retry success
-                                                    let _ = executor.store()
-                                                        .update_agent_consecutive_failures(&agent_id, 0)
+                                                    let _ = executor
+                                                        .store()
+                                                        .update_agent_consecutive_failures(
+                                                            &agent_id, 0,
+                                                        )
                                                         .await;
                                                 }
                                                 Err(retry_err) => {

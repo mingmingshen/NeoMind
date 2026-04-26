@@ -200,12 +200,16 @@ impl AgentEvent {
 
     /// Create an end event.
     pub fn end() -> Self {
-        Self::End { prompt_tokens: None }
+        Self::End {
+            prompt_tokens: None,
+        }
     }
 
     /// Create an end event with token usage data.
     pub fn end_with_tokens(prompt_tokens: u32) -> Self {
-        Self::End { prompt_tokens: Some(prompt_tokens) }
+        Self::End {
+            prompt_tokens: Some(prompt_tokens),
+        }
     }
 
     /// Create an intermediate end event (for multi-round processing).
@@ -566,24 +570,32 @@ impl AgentMessage {
                 // so the LLM knows what tools were called in previous turns.
                 if let Some(ref tool_calls) = self.tool_calls {
                     if !tool_calls.is_empty() && content.is_empty() {
-                        let summaries: Vec<String> = tool_calls.iter().map(|tc| {
-                            let args_summary = summarize_tool_args(&tc.name, &tc.arguments);
-                            let result_preview = tc.result.as_ref()
-                                .and_then(|r| {
-                                    if let Some(s) = r.as_str() {
-                                        Some(s.chars().take(120).collect::<String>())
-                                    } else {
-                                        let s = r.to_string();
-                                        Some(s.chars().take(120).collect::<String>())
-                                    }
-                                })
-                                .unwrap_or_default();
-                            if result_preview.is_empty() {
-                                format!("the {} tool with {}", tc.name, args_summary)
-                            } else {
-                                format!("the {} tool with {} and received: {}", tc.name, args_summary, result_preview)
-                            }
-                        }).collect();
+                        let summaries: Vec<String> = tool_calls
+                            .iter()
+                            .map(|tc| {
+                                let args_summary = summarize_tool_args(&tc.name, &tc.arguments);
+                                let result_preview = tc
+                                    .result
+                                    .as_ref()
+                                    .and_then(|r| {
+                                        if let Some(s) = r.as_str() {
+                                            Some(s.chars().take(120).collect::<String>())
+                                        } else {
+                                            let s = r.to_string();
+                                            Some(s.chars().take(120).collect::<String>())
+                                        }
+                                    })
+                                    .unwrap_or_default();
+                                if result_preview.is_empty() {
+                                    format!("the {} tool with {}", tc.name, args_summary)
+                                } else {
+                                    format!(
+                                        "the {} tool with {} and received: {}",
+                                        tc.name, args_summary, result_preview
+                                    )
+                                }
+                            })
+                            .collect();
                         content = format!("In a previous turn I called {}. These results are from earlier and should not be repeated.", summaries.join(", then "));
                     }
                 }
@@ -735,9 +747,17 @@ impl SessionState {
 
 /// Find the array of items from a tool response JSON.
 /// Tries: `val[list_key]` → `val["data"][list_key]` → `val["data"]` (if array) → `val` (if array)
-fn find_json_list<'a>(val: &'a serde_json::Value, list_key: &str) -> Option<&'a Vec<serde_json::Value>> {
-    val.get(list_key).and_then(|v| v.as_array())
-        .or_else(|| val.get("data").and_then(|d| d.get(list_key)).and_then(|v| v.as_array()))
+fn find_json_list<'a>(
+    val: &'a serde_json::Value,
+    list_key: &str,
+) -> Option<&'a Vec<serde_json::Value>> {
+    val.get(list_key)
+        .and_then(|v| v.as_array())
+        .or_else(|| {
+            val.get("data")
+                .and_then(|d| d.get(list_key))
+                .and_then(|v| v.as_array())
+        })
         .or_else(|| val.get("data").and_then(|v| v.as_array()))
         .or_else(|| val.as_array())
 }
@@ -755,27 +775,23 @@ pub fn summarize_tool_args(tool_name: &str, args: &Value) -> String {
     let action = obj.get("action").and_then(|v| v.as_str()).unwrap_or("");
 
     match tool_name {
-        "device" => {
-            match action {
-                "list" => "list".to_string(),
-                "get" | "query" | "history" => {
-                    let device_id = obj.get("device_id").and_then(|v| v.as_str()).unwrap_or("?");
-                    let metric = obj.get("metric").and_then(|v| v.as_str()).unwrap_or("");
-                    if metric.is_empty() {
-                        format!("{} {}", action, device_id)
-                    } else {
-                        format!("{} {}/{}", action, device_id, metric)
-                    }
+        "device" => match action {
+            "list" => "list".to_string(),
+            "get" | "query" | "history" => {
+                let device_id = obj.get("device_id").and_then(|v| v.as_str()).unwrap_or("?");
+                let metric = obj.get("metric").and_then(|v| v.as_str()).unwrap_or("");
+                if metric.is_empty() {
+                    format!("{} {}", action, device_id)
+                } else {
+                    format!("{} {}/{}", action, device_id, metric)
                 }
-                _ => action.to_string(),
             }
-        }
-        "agent" => {
-            match action {
-                "list" => "list".to_string(),
-                _ => action.to_string(),
-            }
-        }
+            _ => action.to_string(),
+        },
+        "agent" => match action {
+            "list" => "list".to_string(),
+            _ => action.to_string(),
+        },
         _ => {
             // Generic: show action + up to 2 key params
             let mut parts = vec![];
@@ -783,13 +799,21 @@ pub fn summarize_tool_args(tool_name: &str, args: &Value) -> String {
                 parts.push(action.to_string());
             }
             for (k, v) in obj.iter() {
-                if k == "action" { continue; }
-                if parts.len() >= 3 { break; }
+                if k == "action" {
+                    continue;
+                }
+                if parts.len() >= 3 {
+                    break;
+                }
                 if let Some(s) = v.as_str() {
                     parts.push(format!("{}={}", k, s.chars().take(20).collect::<String>()));
                 }
             }
-            if parts.is_empty() { "?".to_string() } else { parts.join(",") }
+            if parts.is_empty() {
+                "?".to_string()
+            } else {
+                parts.join(",")
+            }
         }
     }
 }
@@ -866,7 +890,10 @@ impl LargeDataCache {
             )
         } else {
             let preview: String = result.chars().take(300).collect();
-            format!("[Data: {}, {}. Use \"{}\" to reference. Preview: {}]", content_type, human_size, cached_ref, preview)
+            format!(
+                "[Data: {}, {}. Use \"{}\" to reference. Preview: {}]",
+                content_type, human_size, cached_ref, preview
+            )
         }
     }
 
@@ -896,7 +923,10 @@ impl LargeDataCache {
     pub fn get_latest_image(&self) -> Option<(String, String)> {
         // Priority 1: user-uploaded images
         if let Some(user_img) = self.entries.get("user_image") {
-            return Some((Self::extract_image_data(&user_img.data), "user_image".to_string()));
+            return Some((
+                Self::extract_image_data(&user_img.data),
+                "user_image".to_string(),
+            ));
         }
         // Priority 2: most recent image-type cached entry by timestamp
         let mut best: Option<(&String, &CachedLargeResult)> = None;
@@ -946,7 +976,9 @@ impl LargeDataCache {
     fn looks_like_base64(s: &str) -> bool {
         let sample_len = s.len().min(200);
         let sample = &s[..sample_len];
-        sample.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '\n' || c == '\r')
+        sample.chars().all(|c| {
+            c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '\n' || c == '\r'
+        })
     }
 
     /// Resolve a $cached reference to the actual data.
@@ -1059,7 +1091,8 @@ impl LargeDataCache {
     /// E.g., "6 devices: NE101-Shelf(b62730), NE101-Refrigerator(b65020), ..."
     fn extract_device_summary(val: &serde_json::Value) -> String {
         Self::extract_list_summary(
-            val, "devices",
+            val,
+            "devices",
             &["name", "device_name"],
             &["id", "device_id"],
             "devices",
@@ -1069,7 +1102,8 @@ impl LargeDataCache {
     /// Extract agent names and IDs from agent tool results.
     fn extract_agent_summary(val: &serde_json::Value) -> String {
         Self::extract_list_summary(
-            val, "agents",
+            val,
+            "agents",
             &["name", "agent_name"],
             &["id", "agent_id"],
             "agents",
@@ -1078,12 +1112,7 @@ impl LargeDataCache {
 
     /// Extract rule names and IDs from rule tool results.
     fn extract_rule_summary(val: &serde_json::Value) -> String {
-        Self::extract_list_summary(
-            val, "rules",
-            &["name"],
-            &["id", "rule_id"],
-            "rules",
-        )
+        Self::extract_list_summary(val, "rules", &["name"], &["id", "rule_id"], "rules")
     }
 
     /// Generic list summary extractor.
@@ -1098,15 +1127,21 @@ impl LargeDataCache {
         let arr = find_json_list(val, list_key);
         if let Some(arr) = arr {
             let count = arr.len();
-            let items: Vec<String> = arr.iter().take(10).filter_map(|item: &serde_json::Value| {
-                let name = name_keys.iter()
-                    .find_map(|k| item.get(*k).and_then(|v| v.as_str()))
-                    .unwrap_or("?");
-                let id = id_keys.iter()
-                    .find_map(|k| item.get(*k).and_then(|v| v.as_str()))
-                    .unwrap_or("?");
-                Some(format!("{}({})", name, id))
-            }).collect();
+            let items: Vec<String> = arr
+                .iter()
+                .take(10)
+                .filter_map(|item: &serde_json::Value| {
+                    let name = name_keys
+                        .iter()
+                        .find_map(|k| item.get(*k).and_then(|v| v.as_str()))
+                        .unwrap_or("?");
+                    let id = id_keys
+                        .iter()
+                        .find_map(|k| item.get(*k).and_then(|v| v.as_str()))
+                        .unwrap_or("?");
+                    Some(format!("{}({})", name, id))
+                })
+                .collect();
             if items.is_empty() {
                 return format!("{} {}", count, label);
             }
@@ -1122,13 +1157,23 @@ impl LargeDataCache {
         let arr = find_json_list(val, "messages");
         if let Some(arr) = arr {
             let count = arr.len();
-            let items: Vec<String> = arr.iter().take(10).filter_map(|item: &serde_json::Value| {
-                let title = item.get("title").or_else(|| item.get("subject"))
-                    .and_then(|v| v.as_str()).unwrap_or("?");
-                let level = item.get("level").and_then(|v| v.as_str())
-                    .map(|l| format!("[{}]", l)).unwrap_or_default();
-                Some(format!("{}{}", title, level))
-            }).collect();
+            let items: Vec<String> = arr
+                .iter()
+                .take(10)
+                .filter_map(|item: &serde_json::Value| {
+                    let title = item
+                        .get("title")
+                        .or_else(|| item.get("subject"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?");
+                    let level = item
+                        .get("level")
+                        .and_then(|v| v.as_str())
+                        .map(|l| format!("[{}]", l))
+                        .unwrap_or_default();
+                    Some(format!("{}{}", title, level))
+                })
+                .collect();
             if items.is_empty() {
                 return format!("{} messages", count);
             }
@@ -1144,13 +1189,20 @@ impl LargeDataCache {
         let arr = find_json_list(val, "extensions");
         if let Some(arr) = arr {
             let count = arr.len();
-            let items: Vec<String> = arr.iter().take(10).filter_map(|item: &serde_json::Value| {
-                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-                let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-                let state = item.get("state").and_then(|v| v.as_str())
-                    .map(|s| format!(":{}", s)).unwrap_or_default();
-                Some(format!("{}({}){}", name, id, state))
-            }).collect();
+            let items: Vec<String> = arr
+                .iter()
+                .take(10)
+                .filter_map(|item: &serde_json::Value| {
+                    let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                    let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+                    let state = item
+                        .get("state")
+                        .and_then(|v| v.as_str())
+                        .map(|s| format!(":{}", s))
+                        .unwrap_or_default();
+                    Some(format!("{}({}){}", name, id, state))
+                })
+                .collect();
             if items.is_empty() {
                 return format!("{} extensions", count);
             }
@@ -1166,36 +1218,58 @@ impl LargeDataCache {
         match val {
             serde_json::Value::Array(arr) => {
                 let count = arr.len();
-                if count == 0 { return "[]".to_string(); }
+                if count == 0 {
+                    return "[]".to_string();
+                }
                 // Show first 3 items concisely
-                let previews: Vec<String> = arr.iter().take(3).map(|item| {
-                    match item {
+                let previews: Vec<String> = arr
+                    .iter()
+                    .take(3)
+                    .map(|item| match item {
                         serde_json::Value::Object(map) => {
-                            let fields: Vec<String> = map.iter().take(3).map(|(k, v)| {
-                                let vs = match v {
-                                    serde_json::Value::String(s) => s.chars().take(20).collect::<String>(),
-                                    other => other.to_string().chars().take(20).collect::<String>(),
-                                };
-                                format!("{}={}", k, vs)
-                            }).collect();
+                            let fields: Vec<String> = map
+                                .iter()
+                                .take(3)
+                                .map(|(k, v)| {
+                                    let vs = match v {
+                                        serde_json::Value::String(s) => {
+                                            s.chars().take(20).collect::<String>()
+                                        }
+                                        other => {
+                                            other.to_string().chars().take(20).collect::<String>()
+                                        }
+                                    };
+                                    format!("{}={}", k, vs)
+                                })
+                                .collect();
                             format!("{{{}}}", fields.join(", "))
                         }
                         other => other.to_string().chars().take(60).collect(),
-                    }
-                }).collect();
-                let suffix = if count > 3 { format!(", ... ({} items)", count) } else { "".to_string() };
+                    })
+                    .collect();
+                let suffix = if count > 3 {
+                    format!(", ... ({} items)", count)
+                } else {
+                    "".to_string()
+                };
                 format!("[{}{}]", previews.join(", "), suffix)
             }
             serde_json::Value::Object(map) => {
-                let fields: Vec<String> = map.iter().take(5).map(|(k, v)| {
-                    let vs = match v {
-                        serde_json::Value::String(s) if s.len() > 40 => format!("{}...", &s[..40]),
-                        serde_json::Value::Array(a) => format!("Array({})", a.len()),
-                        serde_json::Value::Object(_) => "{...}".to_string(),
-                        other => other.to_string(),
-                    };
-                    format!("{}: {}", k, vs)
-                }).collect();
+                let fields: Vec<String> = map
+                    .iter()
+                    .take(5)
+                    .map(|(k, v)| {
+                        let vs = match v {
+                            serde_json::Value::String(s) if s.len() > 40 => {
+                                format!("{}...", &s[..40])
+                            }
+                            serde_json::Value::Array(a) => format!("Array({})", a.len()),
+                            serde_json::Value::Object(_) => "{...}".to_string(),
+                            other => other.to_string(),
+                        };
+                        format!("{}: {}", k, vs)
+                    })
+                    .collect();
                 format!("{{{}}}", fields.join(", "))
             }
             other => {
@@ -1212,28 +1286,29 @@ impl LargeDataCache {
         }
         match value {
             serde_json::Value::Object(map) => {
-                let fields: Vec<String> = map.iter().map(|(k, v)| {
-                    let val_desc = match v {
-                        serde_json::Value::String(s) if s.len() > 100 => {
-                            format!("String({} bytes)", s.len())
-                        }
-                        serde_json::Value::Array(arr) => {
-                            format!("Array({} items)", arr.len())
-                        }
-                        serde_json::Value::Object(_) => {
-                            Self::describe_value(v, depth + 1)
-                        }
-                        other => {
-                            let s = other.to_string();
-                            if s.len() > 50 {
-                                format!("{}...", &s[..50])
-                            } else {
-                                s
+                let fields: Vec<String> = map
+                    .iter()
+                    .map(|(k, v)| {
+                        let val_desc = match v {
+                            serde_json::Value::String(s) if s.len() > 100 => {
+                                format!("String({} bytes)", s.len())
                             }
-                        }
-                    };
-                    format!("\"{}\": {}", k, val_desc)
-                }).collect();
+                            serde_json::Value::Array(arr) => {
+                                format!("Array({} items)", arr.len())
+                            }
+                            serde_json::Value::Object(_) => Self::describe_value(v, depth + 1),
+                            other => {
+                                let s = other.to_string();
+                                if s.len() > 50 {
+                                    format!("{}...", &s[..50])
+                                } else {
+                                    s
+                                }
+                            }
+                        };
+                        format!("\"{}\": {}", k, val_desc)
+                    })
+                    .collect();
                 format!("{{{}}}", fields.join(", "))
             }
             serde_json::Value::Array(arr) => {
@@ -1298,7 +1373,7 @@ impl AgentInternalState {
             recent_response_hashes: Vec::new(),
             large_data_cache: LargeDataCache::new(),
             tool_result_cache: std::sync::Arc::new(tokio::sync::RwLock::new(
-                super::streaming::ToolResultCache::new(std::time::Duration::from_secs(300))
+                super::streaming::ToolResultCache::new(std::time::Duration::from_secs(300)),
             )),
         }
     }

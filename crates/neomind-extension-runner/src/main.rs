@@ -27,8 +27,8 @@ use std::collections::HashMap;
 use std::ffi::CStr;
 use std::io::{Read, Write};
 use std::os::raw::c_char;
-use std::path::{Path, PathBuf};
 use std::panic::AssertUnwindSafe;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::Parser;
@@ -61,9 +61,8 @@ use event_handler::get_global_event_state;
 // IPC routing module
 mod ipc_routing;
 use ipc_routing::{
-    safe_ffi_call, STDOUT_WRITE_MUTEX, create_event_channel,
-    register_pending_request, complete_pending_request, get_pending_requests,
-    start_stdin_reader,
+    complete_pending_request, create_event_channel, get_pending_requests, register_pending_request,
+    safe_ffi_call, start_stdin_reader, STDOUT_WRITE_MUTEX,
 };
 
 // ============================================================================
@@ -258,18 +257,31 @@ unsafe extern "C" fn push_output_writer(data: *const u8, len: usize) -> i32 {
 
     // Build IpcResponse::PushOutput from the JSON fields
     let response = IpcResponse::PushOutput {
-        session_id: msg.get("session_id").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        session_id: msg
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
         sequence: msg.get("sequence").and_then(|v| v.as_u64()).unwrap_or(0),
-        data: msg.get("data")
+        data: msg
+            .get("data")
             .and_then(|v| v.as_str())
             .map(|s| {
                 use base64::Engine as _;
-                base64::engine::general_purpose::STANDARD.decode(s)
+                base64::engine::general_purpose::STANDARD
+                    .decode(s)
                     .unwrap_or_else(|_| s.as_bytes().to_vec())
             })
             .unwrap_or_default(),
-        data_type: msg.get("data_type").and_then(|v| v.as_str()).unwrap_or("application/octet-stream").to_string(),
-        timestamp: msg.get("timestamp").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+        data_type: msg
+            .get("data_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("application/octet-stream")
+            .to_string(),
+        timestamp: msg
+            .get("timestamp")
+            .and_then(|v| v.as_i64())
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
         metadata: msg.get("metadata").cloned(),
     };
 
@@ -772,7 +784,9 @@ impl WasmRuntime {
         let max_wasm_size = std::env::var("NEOMIND_WASM_MAX_SIZE_MB")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(50) * 1024 * 1024;
+            .unwrap_or(50)
+            * 1024
+            * 1024;
         match std::fs::metadata(path) {
             Ok(meta) => {
                 let size = meta.len();
@@ -829,10 +843,13 @@ impl WasmRuntime {
         let host_state = HostState::new(wasi);
 
         let mut store = Store::new(engine, host_state);
-        store.set_fuel(std::env::var("NEOMIND_WASM_FUEL")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(1_000_000))
+        store
+            .set_fuel(
+                std::env::var("NEOMIND_WASM_FUEL")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(1_000_000),
+            )
             .map_err(|e| format!("Failed to set fuel: {}", e))?;
 
         // Instantiate module
@@ -867,9 +884,10 @@ impl WasmRuntime {
         }
 
         // Read result from memory
-        let memory = store.data().memory.ok_or_else(|| {
-            format!("WASM memory not available")
-        })?;
+        let memory = store
+            .data()
+            .memory
+            .ok_or_else(|| "WASM memory not available".to_string())?;
         let mut result_bytes = vec![0u8; result_len];
         memory
             .read(&store, WASM_RESULT_OFFSET, &mut result_bytes)
@@ -1102,10 +1120,13 @@ impl WasmRuntime {
             let host_state = HostState::with_ipc(wasi, ipc_client);
 
             let mut store = Store::new(&engine, host_state);
-            store.set_fuel(std::env::var("NEOMIND_WASM_FUEL")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(1_000_000))
+            store
+                .set_fuel(
+                    std::env::var("NEOMIND_WASM_FUEL")
+                        .ok()
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(1_000_000),
+                )
                 .map_err(|e| format!("Failed to set fuel: {}", e))?;
 
             let instance = linker
@@ -1207,10 +1228,13 @@ impl WasmRuntime {
 
             // Create store with fuel
             let mut store = Store::new(&engine, host_state);
-            store.set_fuel(std::env::var("NEOMIND_WASM_FUEL")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(1_000_000))
+            store
+                .set_fuel(
+                    std::env::var("NEOMIND_WASM_FUEL")
+                        .ok()
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(1_000_000),
+                )
                 .map_err(|e| format!("Failed to set fuel: {}", e))?;
 
             // Instantiate module
@@ -1414,10 +1438,13 @@ impl SyncIpcClient {
             Err(e) => {
                 error!("SyncIpcClient: failed to serialize request: {e}");
                 // Remove pending request on error
-                get_pending_requests().lock().unwrap_or_else(|e| {
-    error!("get_pending_requests() mutex poisoned: {}", e);
-    e.into_inner()
-}).remove(&request_id);
+                get_pending_requests()
+                    .lock()
+                    .unwrap_or_else(|e| {
+                        error!("get_pending_requests() mutex poisoned: {}", e);
+                        e.into_inner()
+                    })
+                    .remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to serialize request: {}", e)});
             }
         };
@@ -1428,26 +1455,32 @@ impl SyncIpcClient {
         // Write to stdout (protected by global mutex)
         {
             let _guard = STDOUT_WRITE_MUTEX.lock().unwrap_or_else(|e| {
-        error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
-        e.into_inner()
-    });
+                error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
+                e.into_inner()
+            });
             let mut stdout = std::io::stdout();
             if let Err(e) = stdout.write_all(&bytes) {
                 drop(_guard);
                 error!("SyncIpcClient: failed to write request: {e}");
-                get_pending_requests().lock().unwrap_or_else(|e| {
-    error!("get_pending_requests() mutex poisoned: {}", e);
-    e.into_inner()
-}).remove(&request_id);
+                get_pending_requests()
+                    .lock()
+                    .unwrap_or_else(|e| {
+                        error!("get_pending_requests() mutex poisoned: {}", e);
+                        e.into_inner()
+                    })
+                    .remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to write request: {}", e)});
             }
             if let Err(e) = stdout.flush() {
                 drop(_guard);
                 error!("SyncIpcClient: failed to flush request: {e}");
-                get_pending_requests().lock().unwrap_or_else(|e| {
-    error!("get_pending_requests() mutex poisoned: {}", e);
-    e.into_inner()
-}).remove(&request_id);
+                get_pending_requests()
+                    .lock()
+                    .unwrap_or_else(|e| {
+                        error!("get_pending_requests() mutex poisoned: {}", e);
+                        e.into_inner()
+                    })
+                    .remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to flush request: {}", e)});
             }
         }
@@ -1482,18 +1515,24 @@ impl SyncIpcClient {
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 error!("SyncIpcClient: timeout waiting for response");
-                get_pending_requests().lock().unwrap_or_else(|e| {
-    error!("get_pending_requests() mutex poisoned: {}", e);
-    e.into_inner()
-}).remove(&request_id);
+                get_pending_requests()
+                    .lock()
+                    .unwrap_or_else(|e| {
+                        error!("get_pending_requests() mutex poisoned: {}", e);
+                        e.into_inner()
+                    })
+                    .remove(&request_id);
                 json!({"success": false, "error": "Timeout waiting for response"})
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 error!("SyncIpcClient: response channel disconnected");
-                get_pending_requests().lock().unwrap_or_else(|e| {
-    error!("get_pending_requests() mutex poisoned: {}", e);
-    e.into_inner()
-}).remove(&request_id);
+                get_pending_requests()
+                    .lock()
+                    .unwrap_or_else(|e| {
+                        error!("get_pending_requests() mutex poisoned: {}", e);
+                        e.into_inner()
+                    })
+                    .remove(&request_id);
                 json!({"success": false, "error": "Response channel disconnected"})
             }
         }
@@ -2037,7 +2076,10 @@ impl Runner {
             }
         };
 
-        debug!(commands_count = descriptor.commands.len(), "Extension loaded");
+        debug!(
+            commands_count = descriptor.commands.len(),
+            "Extension loaded"
+        );
 
         debug!(
             extension_id = %descriptor.metadata.id,
@@ -2281,7 +2323,6 @@ impl Runner {
             }
         }
 
-
         debug!("Extension runner shutting down");
     }
 
@@ -2291,8 +2332,17 @@ impl Runner {
         debug!(response_type = ?std::mem::discriminant(&response), "Sending IPC response");
 
         // Debug: log StreamSessionInit responses specifically
-        if let IpcResponse::StreamSessionInit { request_id, session_id, success, .. } = &response {
-            debug!(request_id, session_id, success, "Sending StreamSessionInit response");
+        if let IpcResponse::StreamSessionInit {
+            request_id,
+            session_id,
+            success,
+            ..
+        } = &response
+        {
+            debug!(
+                request_id,
+                session_id, success, "Sending StreamSessionInit response"
+            );
         }
 
         let payload = match response.to_bytes() {
@@ -2312,9 +2362,9 @@ impl Runner {
         debug!(frame_len = bytes.len(), "Frame encoded");
 
         let _guard = STDOUT_WRITE_MUTEX.lock().unwrap_or_else(|e| {
-        error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
-        e.into_inner()
-    });
+            error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
+            e.into_inner()
+        });
         if let Err(e) = std::io::stdout().write_all(&bytes) {
             error!(error = %e, "Failed to write response");
             return;
@@ -2324,7 +2374,12 @@ impl Runner {
         }
 
         // Debug: confirm StreamSessionInit was sent
-        if let IpcResponse::StreamSessionInit { request_id, session_id, .. } = &response {
+        if let IpcResponse::StreamSessionInit {
+            request_id,
+            session_id,
+            ..
+        } = &response
+        {
             debug!(request_id, session_id, "StreamSessionInit response sent");
         }
     }
@@ -2367,9 +2422,9 @@ impl Runner {
 
         {
             let _guard = STDOUT_WRITE_MUTEX.lock().unwrap_or_else(|e| {
-        error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
-        e.into_inner()
-    });
+                error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
+                e.into_inner()
+            });
             if let Err(e) = std::io::stdout().write_all(&bytes) {
                 drop(_guard);
                 error!(error = %e, "Failed to write CapabilityRequest");
@@ -2546,24 +2601,22 @@ impl Runner {
             IpcMessage::ConfigUpdate { config } => {
                 debug!("Received config hot-reload update");
                 let result = match self.extension.as_ref() {
-                    Some(ext) => {
-                        match ext.configure(&config) {
-                            Ok(()) => {
-                                debug!("Config hot-reload applied successfully");
-                                IpcResponse::ConfigUpdated {
-                                    success: true,
-                                    error: None,
-                                }
-                            }
-                            Err(e) => {
-                                warn!(error = %e, "Config hot-reload failed");
-                                IpcResponse::ConfigUpdated {
-                                    success: false,
-                                    error: Some(e.to_string()),
-                                }
+                    Some(ext) => match ext.configure(&config) {
+                        Ok(()) => {
+                            debug!("Config hot-reload applied successfully");
+                            IpcResponse::ConfigUpdated {
+                                success: true,
+                                error: None,
                             }
                         }
-                    }
+                        Err(e) => {
+                            warn!(error = %e, "Config hot-reload failed");
+                            IpcResponse::ConfigUpdated {
+                                success: false,
+                                error: Some(e.to_string()),
+                            }
+                        }
+                    },
                     None => IpcResponse::ConfigUpdated {
                         success: false,
                         error: Some("Extension not loaded".to_string()),
@@ -2588,7 +2641,8 @@ impl Runner {
                 config,
                 client_info: _,
             } => {
-                self.handle_init_stream_session(request_id, session_id, config).await;
+                self.handle_init_stream_session(request_id, session_id, config)
+                    .await;
             }
 
             IpcMessage::ProcessStreamChunk {
@@ -2846,7 +2900,10 @@ impl Runner {
         tokio::task::block_in_place(|| {
             runtime_handle.block_on(async {
                 // Try new execute_command API first
-                match runtime.execute_command(command, args, ipc_client.clone()).await {
+                match runtime
+                    .execute_command(command, args, ipc_client.clone())
+                    .await
+                {
                     Ok(result) => {
                         // Extract the actual result from the response
                         if result
@@ -3067,7 +3124,12 @@ impl Runner {
         ext.get_stream_capability()
     }
 
-    async fn handle_init_stream_session(&mut self, request_id: u64, session_id: String, config: serde_json::Value) {
+    async fn handle_init_stream_session(
+        &mut self,
+        request_id: u64,
+        session_id: String,
+        config: serde_json::Value,
+    ) {
         debug!(session_id = %session_id, request_id, "Initializing stream session");
 
         let result = match self.extension_type {

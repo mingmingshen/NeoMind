@@ -531,13 +531,14 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                             // The router dispatches by session_id, so all sessions
                                             // share one forwarder and one IPC channel safely.
                                             if isolated.get_push_output_channel().await.is_none() {
-                                                let (push_tx, mut push_rx_ipc) =
-                                                    mpsc::channel(256);
+                                                let (push_tx, mut push_rx_ipc) = mpsc::channel(256);
                                                 isolated.set_push_output_channel(push_tx).await;
 
                                                 let router = push_router.clone();
                                                 let handle = tokio::spawn(async move {
-                                                    while let Some(output) = push_rx_ipc.recv().await {
+                                                    while let Some(output) =
+                                                        push_rx_ipc.recv().await
+                                                    {
                                                         let _ = router
                                                             .route(PushOutputMessage {
                                                                 session_id: output.session_id,
@@ -549,9 +550,7 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                             })
                                                             .await;
                                                     }
-                                                    tracing::debug!(
-                                                        "Push IPC forwarder stopped"
-                                                    );
+                                                    tracing::debug!("Push IPC forwarder stopped");
                                                 });
                                                 _push_forwarder_handle = Some(handle);
                                             }

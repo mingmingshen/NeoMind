@@ -70,10 +70,7 @@ impl AgentState {
 
     /// Start the memory scheduler with LLM runtime.
     /// Idempotent: if a scheduler is already running, returns Ok without creating a duplicate.
-    pub async fn start_memory_scheduler(
-        &self,
-        llm: Arc<dyn LlmRuntime>,
-    ) -> Result<(), String> {
+    pub async fn start_memory_scheduler(&self, llm: Arc<dyn LlmRuntime>) -> Result<(), String> {
         // Idempotency check — avoid spawning duplicate background tasks
         {
             let guard = self.memory_scheduler.read().await;
@@ -91,20 +88,15 @@ impl AgentState {
         }
 
         let store = Arc::new(RwLock::new((*self.system_memory_store).clone()));
-        let manager = Arc::new(RwLock::new(
-            neomind_agent::memory::MemoryManager::new(config.clone())
-        ));
+        let manager = Arc::new(RwLock::new(neomind_agent::memory::MemoryManager::new(
+            config.clone(),
+        )));
 
         // Get session store from session manager for extraction
         let session_store = self.session_manager.session_store();
 
-        let mut scheduler = MemoryScheduler::with_config(
-            manager,
-            store,
-            config,
-            llm,
-        )
-        .with_session_store(session_store);
+        let mut scheduler = MemoryScheduler::with_config(manager, store, config, llm)
+            .with_session_store(session_store);
 
         scheduler.start();
 

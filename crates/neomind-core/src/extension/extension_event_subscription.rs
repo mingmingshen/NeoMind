@@ -125,14 +125,19 @@ impl ExtensionEventSubscriptionService {
         // Without this filter, extensions would receive their own virtual metric writes
         // and potentially re-process them, creating infinite loops.
         if event.is_virtual_metric() {
-            trace!("Skipping virtual DeviceMetric dispatch to extensions (feedback loop prevention)");
+            trace!(
+                "Skipping virtual DeviceMetric dispatch to extensions (feedback loop prevention)"
+            );
             return;
         }
 
         // Prevent feedback loops: skip dispatching ExtensionOutput events back to
         // the extension that produced them. Extensions subscribing to "all" or "Extension"
         // prefix would receive their own output events, potentially causing infinite loops.
-        if let NeoMindEvent::ExtensionOutput { ref extension_id, .. } = event {
+        if let NeoMindEvent::ExtensionOutput {
+            ref extension_id, ..
+        } = event
+        {
             trace!(
                 extension_id = %extension_id,
                 "Dispatching ExtensionOutput event, excluding source extension"

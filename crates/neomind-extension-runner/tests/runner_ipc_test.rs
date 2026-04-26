@@ -524,7 +524,10 @@ fn test_ipc_message_close_stream_session() {
     let parsed: IpcMessage = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcMessage::CloseStreamSession { request_id, session_id } => {
+        IpcMessage::CloseStreamSession {
+            request_id,
+            session_id,
+        } => {
             assert_eq!(request_id, 43);
             assert_eq!(session_id, "session-123");
         }

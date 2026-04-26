@@ -288,15 +288,13 @@ impl MemoryScheduler {
     /// Load extraction state from file
     fn load_extraction_state(path: &PathBuf) -> ExtractionState {
         match std::fs::read_to_string(path) {
-            Ok(content) => {
-                match serde_json::from_str(&content) {
-                    Ok(state) => state,
-                    Err(e) => {
-                        warn!(error = %e, "Failed to parse extraction state, starting fresh");
-                        ExtractionState::default()
-                    }
+            Ok(content) => match serde_json::from_str(&content) {
+                Ok(state) => state,
+                Err(e) => {
+                    warn!(error = %e, "Failed to parse extraction state, starting fresh");
+                    ExtractionState::default()
                 }
-            }
+            },
             Err(_) => ExtractionState::default(),
         }
     }
@@ -381,7 +379,10 @@ mod tests {
         async fn generate(
             &self,
             _input: neomind_core::llm::backend::LlmInput,
-        ) -> std::result::Result<neomind_core::llm::backend::LlmOutput, neomind_core::llm::backend::LlmError> {
+        ) -> std::result::Result<
+            neomind_core::llm::backend::LlmOutput,
+            neomind_core::llm::backend::LlmError,
+        > {
             Ok(neomind_core::llm::backend::LlmOutput {
                 text: r#"{"summaries":[{"content":"Test summary","importance":70}]}"#.to_string(),
                 finish_reason: neomind_core::llm::backend::FinishReason::Stop,
@@ -393,7 +394,12 @@ mod tests {
         async fn generate_stream(
             &self,
             _input: neomind_core::llm::backend::LlmInput,
-        ) -> std::result::Result<std::pin::Pin<Box<dyn futures::Stream<Item = neomind_core::llm::backend::StreamChunk> + Send>>, neomind_core::llm::backend::LlmError> {
+        ) -> std::result::Result<
+            std::pin::Pin<
+                Box<dyn futures::Stream<Item = neomind_core::llm::backend::StreamChunk> + Send>,
+            >,
+            neomind_core::llm::backend::LlmError,
+        > {
             unimplemented!()
         }
 

@@ -4,10 +4,10 @@
 
 use lru::LruCache;
 use neomind_core::storage::{Result as CoreResult, StorageBackend, StorageError};
+use parking_lot::RwLock;
 use redb::{Database, TableDefinition};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use parking_lot::RwLock;
 use std::sync::Arc;
 
 type Result<T> = CoreResult<T>;

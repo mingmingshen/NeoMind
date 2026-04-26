@@ -421,7 +421,8 @@ impl SessionManager {
                                 // Extract result field if present
                                 let result = v.get("result").cloned();
                                 // Extract round field if present
-                                let round = v.get("round").and_then(|r| r.as_u64()).map(|r| r as usize);
+                                let round =
+                                    v.get("round").and_then(|r| r.as_u64()).map(|r| r as usize);
                                 Some(super::agent::ToolCall {
                                     name: name.to_string(),
                                     id: id.to_string(),
@@ -828,7 +829,9 @@ impl SessionManager {
         }
 
         // Save the metadata
-        let mut metadata = self.store.get_session_metadata(session_id)
+        let mut metadata = self
+            .store
+            .get_session_metadata(session_id)
             .unwrap_or_default();
         metadata.title = title.filter(|t| !t.trim().is_empty()); // Filter out empty titles
 
@@ -1095,12 +1098,15 @@ impl SessionManager {
         }
 
         // Read conversation summary from session metadata for context compression
-        let (conversation_summary, summary_up_to_index) = self.store
+        let (conversation_summary, summary_up_to_index) = self
+            .store
             .get_session_metadata(session_id)
             .map(|m| (m.conversation_summary, m.summary_up_to_index))
             .unwrap_or((None, None));
 
-        agent.process_stream_events(message, conversation_summary, summary_up_to_index).await
+        agent
+            .process_stream_events(message, conversation_summary, summary_up_to_index)
+            .await
     }
 
     /// Process a message in a session with event streaming and optional LLM backend override.
@@ -1110,7 +1116,8 @@ impl SessionManager {
         message: &str,
         backend_id: Option<&str>,
     ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
-        self.process_message_events_with_backend_and_skills(session_id, message, backend_id, &[]).await
+        self.process_message_events_with_backend_and_skills(session_id, message, backend_id, &[])
+            .await
     }
 
     /// Process a message in a session with event streaming, optional backend override, and pinned skills.
@@ -1123,7 +1130,10 @@ impl SessionManager {
     ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
         // If a specific backend is requested, configure the agent with it
         if let Some(backend) = backend_id {
-            if let Err(e) = self.configure_agent_by_backend_id(session_id, backend).await {
+            if let Err(e) = self
+                .configure_agent_by_backend_id(session_id, backend)
+                .await
+            {
                 tracing::error!(
                     session_id = %session_id,
                     backend_id = %backend,

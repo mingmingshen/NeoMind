@@ -186,7 +186,8 @@ mod tests {
 
     #[test]
     fn test_jaccard_english() {
-        let sim = DedupProcessor::jaccard_similarity("user prefers chinese", "user prefers english");
+        let sim =
+            DedupProcessor::jaccard_similarity("user prefers chinese", "user prefers english");
         // Bigrams overlap on "us"/"se"/"er"/"r "/" p"/"pr"/"re"/"ef"/"fe"/"er"/"rs" etc.
         assert!(sim > 0.3 && sim < 0.9);
     }

@@ -154,7 +154,11 @@ impl AiMetricTool {
         storage: Arc<neomind_devices::TimeSeriesStorage>,
         registry: Arc<AiMetricsRegistry>,
     ) -> Self {
-        Self { storage, registry, event_bus: None }
+        Self {
+            storage,
+            registry,
+            event_bus: None,
+        }
     }
 
     /// Set the EventBus for publishing AI metric events.
@@ -184,16 +188,19 @@ impl AiMetricTool {
     }
 
     /// Convert `neomind_devices::mdl::MetricValue` → `neomind_core::MetricValue` for event publishing.
-    fn devices_to_core_metric_value(v: &neomind_devices::mdl::MetricValue) -> neomind_core::MetricValue {
+    fn devices_to_core_metric_value(
+        v: &neomind_devices::mdl::MetricValue,
+    ) -> neomind_core::MetricValue {
         use neomind_devices::mdl::MetricValue as DV;
         match v {
             DV::Integer(i) => neomind_core::MetricValue::Integer(*i),
             DV::Float(f) => neomind_core::MetricValue::Float(*f),
             DV::String(s) => neomind_core::MetricValue::String(s.clone()),
             DV::Boolean(b) => neomind_core::MetricValue::Boolean(*b),
-            DV::Array(arr) => neomind_core::MetricValue::Json(serde_json::json!(
-                arr.iter().map(|v| Self::devices_to_core_metric_value(v)).collect::<Vec<_>>()
-            )),
+            DV::Array(arr) => neomind_core::MetricValue::Json(serde_json::json!(arr
+                .iter()
+                .map(|v| Self::devices_to_core_metric_value(v))
+                .collect::<Vec<_>>())),
             DV::Binary(_) => neomind_core::MetricValue::String("[binary]".to_string()),
             DV::Null => neomind_core::MetricValue::Json(Value::Null),
         }
@@ -215,9 +222,7 @@ impl AiMetricTool {
             }
             Value::String(s) => neomind_devices::mdl::MetricValue::String(s.clone()),
             Value::Array(arr) => neomind_devices::mdl::MetricValue::Array(
-                arr.iter()
-                    .map(|v| Self::json_to_metric_value(v))
-                    .collect(),
+                arr.iter().map(|v| Self::json_to_metric_value(v)).collect(),
             ),
             other => neomind_devices::mdl::MetricValue::String(other.to_string()),
         }
@@ -282,14 +287,16 @@ impl AiMetricTool {
 
         // Publish event so other agents can trigger on AI metric writes
         if let Some(ref event_bus) = self.event_bus {
-            let published = event_bus.publish(neomind_core::NeoMindEvent::ExtensionOutput {
-                extension_id: source_id.clone(),
-                output_name: field.to_string(),
-                value: core_value,
-                timestamp,
-                labels: None,
-                quality: Some(1.0),
-            }).await;
+            let published = event_bus
+                .publish(neomind_core::NeoMindEvent::ExtensionOutput {
+                    extension_id: source_id.clone(),
+                    output_name: field.to_string(),
+                    value: core_value,
+                    timestamp,
+                    labels: None,
+                    quality: Some(1.0),
+                })
+                .await;
             if !published {
                 tracing::warn!(source_id = %source_id, field = %field, "No subscribers for AI metric event");
             }
@@ -303,10 +310,7 @@ impl AiMetricTool {
     }
 
     async fn execute_read(&self, args: &Value) -> Result<ToolOutput> {
-        let query = args["query"]
-            .as_str()
-            .unwrap_or("list")
-            .to_lowercase();
+        let query = args["query"].as_str().unwrap_or("list").to_lowercase();
 
         match query.as_str() {
             "list" => self.read_list().await,
@@ -368,17 +372,23 @@ impl AiMetricTool {
 
     /// Query time-series data for a specific AI metric.
     async fn read_data(&self, args: &Value) -> Result<ToolOutput> {
-        let group = args["group"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("group is required for data query".into()))?;
-        let field = args["field"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("field is required for data query".into()))?;
+        let group = args["group"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments("group is required for data query".into())
+        })?;
+        let field = args["field"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments("field is required for data query".into())
+        })?;
 
         // Use seconds-level timestamps to match telemetry system convention.
         let now = chrono::Utc::now().timestamp();
-        let start = args["start_time"].as_i64().map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts }).unwrap_or(now - 86400); // default: 24h ago
-        let end = args["end_time"].as_i64().map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts }).unwrap_or(now);
+        let start = args["start_time"]
+            .as_i64()
+            .map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts })
+            .unwrap_or(now - 86400); // default: 24h ago
+        let end = args["end_time"]
+            .as_i64()
+            .map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts })
+            .unwrap_or(now);
 
         let source_id = format!("ai:{}", group);
         let points = self

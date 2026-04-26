@@ -174,10 +174,7 @@ impl IsolatedExtensionManager {
             // Use pkill to kill all matching processes.
             // `-f` matches against the full command line so we catch
             // `/path/to/neomind-extension-runner --extension-path ...`
-            let output = StdCommand::new("pkill")
-                .arg("-f")
-                .arg(runner_name)
-                .output();
+            let output = StdCommand::new("pkill").arg("-f").arg(runner_name).output();
 
             match output {
                 Ok(o) if o.status.success() => {
@@ -459,12 +456,12 @@ impl IsolatedExtensionManager {
                     "Extension already loaded (loaded by concurrent request while waiting for lock), skipping duplicate load"
                 );
                 let info = self.info_cache.read().get(id).cloned();
-                return info
-                    .map(|i| i.descriptor.metadata)
-                    .ok_or_else(|| IsolatedExtensionError::IpcError(format!(
+                return info.map(|i| i.descriptor.metadata).ok_or_else(|| {
+                    IsolatedExtensionError::IpcError(format!(
                         "Extension {} metadata not found in cache after load",
                         id
-                    )));
+                    ))
+                });
             }
 
             // Now safe to spawn - we hold the lock and extension is not loaded
@@ -572,11 +569,12 @@ impl IsolatedExtensionManager {
 
         // Return metadata from the info cache
         let info = self.info_cache.read().get(&id).cloned();
-        info.map(|i| Ok(i.descriptor.metadata))
-            .ok_or_else(|| IsolatedExtensionError::IpcError(format!(
+        info.map(|i| Ok(i.descriptor.metadata)).ok_or_else(|| {
+            IsolatedExtensionError::IpcError(format!(
                 "Extension {} metadata not found in cache after load",
                 id
-            )))?
+            ))
+        })?
     }
 
     /// Unload an extension
@@ -814,11 +812,7 @@ mod tests {
     #[test]
     fn test_manager_creation() {
         let manager = IsolatedExtensionManager::with_defaults();
-        let rt = tokio::runtime::Runtime::new()
-            .expect("Failed to create tokio runtime for test");
-        assert_eq!(
-            rt.block_on(async { manager.count().await }),
-            0
-        );
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime for test");
+        assert_eq!(rt.block_on(async { manager.count().await }), 0);
     }
 }

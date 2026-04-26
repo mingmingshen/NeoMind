@@ -363,7 +363,8 @@ impl ToolRegistryBuilder {
     pub fn with_shell_tool(mut self, config: Option<super::shell::ShellConfig>) -> Self {
         if let Some(shell_config) = config {
             if shell_config.enabled {
-                self.registry.register(Arc::new(super::shell::ShellTool::new(shell_config)));
+                self.registry
+                    .register(Arc::new(super::shell::ShellTool::new(shell_config)));
             }
         }
         self
@@ -514,7 +515,9 @@ pub fn format_for_llm(definitions: &[ToolDefinition]) -> String {
     result.push_str(&"-".repeat(40));
     result.push_str("\n**Tool Call Guide**\n\n");
     result.push_str("1. **List devices** → device(action=\"list\")\n");
-    result.push_str("2. **Query data** → device(action=\"query\", device_id=\"id\", metric=\"name\")\n");
+    result.push_str(
+        "2. **Query data** → device(action=\"query\", device_id=\"id\", metric=\"name\")\n",
+    );
     result.push_str("3. **Control device** → device(action=\"control\", device_id=\"id\", command=\"cmd\", confirm=true)\n\n");
     result.push_str("**Common Flows**:\n");
     result.push_str("- Query device data: device(action=\"list\") → device(action=\"query\")\n");

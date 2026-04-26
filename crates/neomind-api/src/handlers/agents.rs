@@ -876,7 +876,7 @@ pub async fn create_agent(
     }
 
     // Validate execution_mode and check Focused mode requires resources
-    let has_resources = request.resources.as_ref().map_or(false, |r| !r.is_empty())
+    let has_resources = request.resources.as_ref().is_some_and(|r| !r.is_empty())
         || !request.device_ids.is_empty()
         || !request.metrics.is_empty()
         || !request.commands.is_empty();
@@ -884,7 +884,7 @@ pub async fn create_agent(
     let execution_mode = request.execution_mode.as_deref();
     if execution_mode == Some("focused") && !has_resources {
         return Err(ErrorResponse::validation(
-            "Focused mode requires at least one resource binding"
+            "Focused mode requires at least one resource binding",
         ));
     }
 
@@ -1006,12 +1006,10 @@ pub async fn create_agent(
             // won't be affected by future chat model switches.
             // Each agent keeps its own independent LLM backend.
             match request.llm_backend_id.as_deref() {
-                None | Some("default") => {
-                    get_instance_manager()
-                        .ok()
-                        .and_then(|m| m.get_active_instance())
-                        .map(|inst| inst.id)
-                }
+                None | Some("default") => get_instance_manager()
+                    .ok()
+                    .and_then(|m| m.get_active_instance())
+                    .map(|inst| inst.id),
                 Some(id) => Some(id.to_string()),
             }
         },
@@ -1026,8 +1024,8 @@ pub async fn create_agent(
         stats: AgentStats::default(),
         memory: AgentMemory::default(),
         error_message: None,
-            max_retries: 0,
-            consecutive_failures: 0,
+        max_retries: 0,
+        consecutive_failures: 0,
         conversation_history: Default::default(),
         user_messages: Default::default(),
         conversation_summary: Default::default(),
@@ -1121,12 +1119,10 @@ pub async fn update_agent(
     if let Some(backend_id) = request.llm_backend_id.clone() {
         // Handle "default" by locking to the current active backend
         agent.llm_backend_id = match backend_id.as_str() {
-            "default" => {
-                get_instance_manager()
-                    .ok()
-                    .and_then(|m| m.get_active_instance())
-                    .map(|inst| inst.id)
-            }
+            "default" => get_instance_manager()
+                .ok()
+                .and_then(|m| m.get_active_instance())
+                .map(|inst| inst.id),
             _ => Some(backend_id),
         };
     }
@@ -1287,7 +1283,8 @@ pub async fn update_agent(
     // Validate: Focused mode requires resources
     // Check both the (possibly updated) execution_mode and resources
     if agent.execution_mode == neomind_storage::agents::ExecutionMode::Focused
-        && agent.resources.is_empty() {
+        && agent.resources.is_empty()
+    {
         return Err(ErrorResponse::bad_request(
             "Focused mode requires at least one resource binding".to_string(),
         ));
@@ -1419,7 +1416,10 @@ pub async fn execute_agent(
             agent_id = %aid_clone,
             "Background agent execution started"
         );
-        match agent_manager.execute_agent_now(&aid_clone, invocation_input).await {
+        match agent_manager
+            .execute_agent_now(&aid_clone, invocation_input)
+            .await
+        {
             Ok(summary) => {
                 tracing::info!(
                     execution_id = %summary.execution_id,
@@ -1529,11 +1529,7 @@ pub async fn invoke_agent(
                         .collect();
                     (conclusion, confidence, actions)
                 }
-                None => (
-                    summary.summary.clone(),
-                    0.0,
-                    vec![],
-                ),
+                None => (summary.summary.clone(), 0.0, vec![]),
             };
 
             ok(json!({
@@ -1548,12 +1544,19 @@ pub async fn invoke_agent(
                 "has_error": summary.has_error,
             }))
         }
-        Ok(Err(e)) => {
-            Err(ErrorResponse::new("AGENT_EXECUTION_FAILED", format!("Agent '{}' execution failed: {}", agent_name, e), StatusCode::INTERNAL_SERVER_ERROR))
-        }
-        Err(_) => {
-            Err(ErrorResponse::new("AGENT_EXECUTION_TIMEOUT", format!("Agent '{}' execution timed out after 60 seconds", agent_name), StatusCode::GATEWAY_TIMEOUT))
-        }
+        Ok(Err(e)) => Err(ErrorResponse::new(
+            "AGENT_EXECUTION_FAILED",
+            format!("Agent '{}' execution failed: {}", agent_name, e),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )),
+        Err(_) => Err(ErrorResponse::new(
+            "AGENT_EXECUTION_TIMEOUT",
+            format!(
+                "Agent '{}' execution timed out after 60 seconds",
+                agent_name
+            ),
+            StatusCode::GATEWAY_TIMEOUT,
+        )),
     }
 }
 

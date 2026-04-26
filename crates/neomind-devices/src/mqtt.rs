@@ -325,7 +325,7 @@ impl MqttDevice {
                 let now = chrono::Utc::now();
                 let should_update = state
                     .last_seen
-                    .map_or(true, |t| (now - t).num_seconds() >= 1);
+                    .is_none_or(|t| (now - t).num_seconds() >= 1);
                 if should_update {
                     state.last_seen = Some(now);
                 }

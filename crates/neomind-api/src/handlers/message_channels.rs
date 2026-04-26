@@ -495,7 +495,7 @@ pub async fn update_channel_filter_handler(
 
     // Check if channel exists
     if registry_guard.get(&name).await.is_none() {
-        return Err(ErrorResponse::not_found(&format!(
+        return Err(ErrorResponse::not_found(format!(
             "Channel not found: {}",
             name
         )));

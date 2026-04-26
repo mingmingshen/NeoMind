@@ -127,11 +127,11 @@ pub use agents::{
     AgentFilter,
     AgentMemory,
     AgentResource,
-    AgentToolConfig,
     AgentSchedule,
     AgentStats,
     AgentStatus,
     AgentStore,
+    AgentToolConfig,
     AiAgent,
     // Conversation types
     ConversationTurn,
@@ -140,6 +140,8 @@ pub use agents::{
     Decision,
     DecisionProcess,
     ExecutionFilter,
+    // Execution mode
+    ExecutionMode,
     ExecutionResult,
     ExecutionStatus,
     GeneratedReport,
@@ -160,8 +162,6 @@ pub use agents::{
     UserMessage,
     // Hierarchical memory types
     WorkingMemory,
-    // Execution mode
-    ExecutionMode,
 };
 
 pub use device_state::{

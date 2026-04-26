@@ -268,7 +268,10 @@ pub async fn trigger_extract(
     );
 
     // Prevent concurrent extraction tasks
-    if EXTRACTION_RUNNING.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+    if EXTRACTION_RUNNING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
         return Json(ExtractionResponse {
             success: true,
             extracted: 0,
@@ -288,7 +291,7 @@ pub async fn trigger_extract(
             return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 format!("LLM backend not available: {}", e),
-            )
+            );
         }
     };
 
@@ -306,7 +309,7 @@ pub async fn trigger_extract(
             return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 format!("No active LLM backend configured: {}", e),
-            )
+            );
         }
     };
 
@@ -521,7 +524,7 @@ pub async fn trigger_compress(State(state): State<ServerState>) -> Response {
             return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 format!("LLM backend not available: {}", e),
-            )
+            );
         }
     };
 
@@ -539,7 +542,7 @@ pub async fn trigger_compress(State(state): State<ServerState>) -> Response {
             return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 format!("No active LLM backend configured: {}", e),
-            )
+            );
         }
     };
 
@@ -559,7 +562,7 @@ pub async fn trigger_compress(State(state): State<ServerState>) -> Response {
     let mut total_result = CompressionResultSummary::default();
 
     for category in MemoryCategory::all() {
-        match compressor.compress(&memory_store, category.clone()).await {
+        match compressor.compress(&memory_store, *category).await {
             Ok(result) => {
                 tracing::info!(
                     category = ?category,
@@ -589,9 +592,7 @@ pub async fn trigger_compress(State(state): State<ServerState>) -> Response {
     } else {
         format!(
             "Compression completed: {} entries processed, {} compressed, {} deleted",
-            total_result.total_before,
-            total_result.compressed,
-            total_result.deleted
+            total_result.total_before, total_result.compressed, total_result.deleted
         )
     };
 

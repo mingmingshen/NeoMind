@@ -392,8 +392,12 @@ mod tests {
     async fn test_shared_store() {
         let store = SharedAutomationStore::memory().unwrap();
 
-        let automation = Automation::new("test-2", "Test Transform 2", TransformScope::DeviceType("sensor".to_string()))
-            .with_description("Another test");
+        let automation = Automation::new(
+            "test-2",
+            "Test Transform 2",
+            TransformScope::DeviceType("sensor".to_string()),
+        )
+        .with_description("Another test");
 
         store.save_automation(&automation).await.unwrap();
         let retrieved = store.get_automation("test-2").await.unwrap();

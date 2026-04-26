@@ -65,16 +65,27 @@ pub(crate) fn extract_symptom(situation_analysis: &str, decision: &Decision) -> 
     // Try to extract from situation analysis - use static strings for common cases
     if !situation_analysis.is_empty() {
         // Look for key phrases indicating conditions
-        if situation_analysis.contains("超过") || situation_analysis.contains("高于") || situation_analysis.contains("exceeds") || situation_analysis.contains("above") {
+        if situation_analysis.contains("超过")
+            || situation_analysis.contains("高于")
+            || situation_analysis.contains("exceeds")
+            || situation_analysis.contains("above")
+        {
             return "Value exceeds threshold".to_string();
         }
         if situation_analysis.contains("低于") || situation_analysis.contains("below") {
             return "Value below threshold".to_string();
         }
-        if situation_analysis.contains("异常") || situation_analysis.contains("不正常") || situation_analysis.contains("abnormal") {
+        if situation_analysis.contains("异常")
+            || situation_analysis.contains("不正常")
+            || situation_analysis.contains("abnormal")
+        {
             return "Abnormal state detected".to_string();
         }
-        if situation_analysis.contains("正常") || situation_analysis.contains("稳定") || situation_analysis.contains("normal") || situation_analysis.contains("stable") {
+        if situation_analysis.contains("正常")
+            || situation_analysis.contains("稳定")
+            || situation_analysis.contains("normal")
+            || situation_analysis.contains("stable")
+        {
             return "Status normal".to_string();
         }
     }
@@ -140,7 +151,6 @@ pub(crate) fn extract_semantic_description(decision: &Decision, symptom: &str) -
     format!("{} - {}", symptom, decision.action)
 }
 
-
 impl AgentExecutor {
     pub(crate) async fn update_memory(
         &self,
@@ -168,7 +178,8 @@ impl AgentExecutor {
         let has_anomaly = situation_analysis.to_lowercase().contains("异常")
             || situation_analysis.to_lowercase().contains("abnormal")
             || situation_analysis.to_lowercase().contains("anomaly");
-        let is_routine_success = !has_alert_or_command && decisions.is_empty() && success && !has_anomaly;
+        let is_routine_success =
+            !has_alert_or_command && decisions.is_empty() && success && !has_anomaly;
 
         if !is_routine_success {
             // Prepare decision summaries for Short-Term Memory
@@ -204,8 +215,12 @@ impl AgentExecutor {
 
             // 3. Add patterns to Long-Term Memory (only for significant executions)
             if !decisions.is_empty() {
-                let semantic_patterns =
-                    extract_semantic_patterns(decisions, situation_analysis, data, &memory.baselines);
+                let semantic_patterns = extract_semantic_patterns(
+                    decisions,
+                    situation_analysis,
+                    data,
+                    &memory.baselines,
+                );
 
                 for pattern in semantic_patterns {
                     memory.add_pattern(pattern);
@@ -294,7 +309,6 @@ impl AgentExecutor {
         Ok(memory)
     }
 
-
     pub fn build_conversation_messages(
         &self,
         agent: &AiAgent,
@@ -331,7 +345,12 @@ impl AgentExecutor {
 
         let system_prompt = format!(
             "{}\n\n{}\n\n{}\n\n{}\n{}\n\n{}",
-            LANGUAGE_POLICY, role_prompt, time_context, task_header, agent.user_prompt, conversation_context
+            LANGUAGE_POLICY,
+            role_prompt,
+            time_context,
+            task_header,
+            agent.user_prompt,
+            conversation_context
         );
         messages.push(Message::system(system_prompt));
 
@@ -554,7 +573,6 @@ impl AgentExecutor {
     }
 
     /// Create a conversation turn from execution results.
-
     pub fn create_conversation_turn(
         &self,
         execution_id: String,
@@ -609,8 +627,5 @@ impl AgentExecutor {
             duration_ms,
             success,
         }
-
+    }
 }
-
-}
-

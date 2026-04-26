@@ -1566,8 +1566,7 @@ pub async fn list_llamacpp_server_info_handler(
                         if server_details.model_name.is_none() {
                             if let Some(path) = &props.model_path {
                                 if !path.is_empty() {
-                                    let name =
-                                        path.rsplit('/').next().unwrap_or(path).to_string();
+                                    let name = path.rsplit('/').next().unwrap_or(path).to_string();
                                     server_details.model_name = Some(name.clone());
                                     adjust_capabilities_for_model(&name, &mut capabilities);
                                 }

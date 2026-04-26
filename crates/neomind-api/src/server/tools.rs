@@ -39,8 +39,8 @@ impl TransformStore for SharedAutomationStore {
             // Already an Automation serde format: {"type": "transform", ...}
             // Note: Automation is now a type alias for TransformAutomation, but serde may still
             // expect the {"type": "transform", ...} envelope if the data was serialized that way.
-            let automation: Automation =
-                serde_json::from_value(data).map_err(|e| format!("Invalid transform data: {}", e))?;
+            let automation: Automation = serde_json::from_value(data)
+                .map_err(|e| format!("Invalid transform data: {}", e))?;
             let id = automation.id().to_string();
             self.save_automation(&automation)
                 .await
@@ -60,7 +60,12 @@ impl TransformStore for SharedAutomationStore {
                 .and_then(|m| m.get(key))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
-                .or_else(|| inner.get(key).and_then(|v| v.as_str()).map(|s| s.to_string()))
+                .or_else(|| {
+                    inner
+                        .get(key)
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                })
         };
         let get_bool = |key: &str| -> Option<bool> {
             metadata_obj
@@ -96,8 +101,14 @@ impl TransformStore for SharedAutomationStore {
             .unwrap_or("global");
         let scope = parse_scope(scope_str).map_err(|e| e.to_string())?;
 
-        let intent = inner.get("intent").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let js_code = inner.get("js_code").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let intent = inner
+            .get("intent")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let js_code = inner
+            .get("js_code")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         let output_prefix = inner
             .get("output_prefix")
             .and_then(|v| v.as_str())
@@ -133,11 +144,7 @@ impl TransformStore for SharedAutomationStore {
     }
 
     async fn get_transform(&self, id: &str) -> std::result::Result<Option<Value>, String> {
-        match self
-            .get_automation(id)
-            .await
-            .map_err(|e| e.to_string())?
-        {
+        match self.get_automation(id).await.map_err(|e| e.to_string())? {
             Some(t) => {
                 let mut val = serde_json::to_value(&t).map_err(|e| e.to_string())?;
                 // Replace enum scope with human-readable string
@@ -149,10 +156,7 @@ impl TransformStore for SharedAutomationStore {
     }
 
     async fn list_transforms(&self) -> std::result::Result<Vec<Value>, String> {
-        let all = self
-            .list_automations()
-            .await
-            .map_err(|e| e.to_string())?;
+        let all = self.list_automations().await.map_err(|e| e.to_string())?;
         Ok(all
             .into_iter()
             .map(|t| {
@@ -165,15 +169,8 @@ impl TransformStore for SharedAutomationStore {
     }
 
     async fn delete_transform(&self, id: &str) -> std::result::Result<bool, String> {
-        match self
-            .get_automation(id)
-            .await
-            .map_err(|e| e.to_string())?
-        {
-            Some(_) => self
-                .delete_automation(id)
-                .await
-                .map_err(|e| e.to_string()),
+        match self.get_automation(id).await.map_err(|e| e.to_string())? {
+            Some(_) => self.delete_automation(id).await.map_err(|e| e.to_string()),
             None => Ok(false),
         }
     }
@@ -323,14 +320,16 @@ impl TransformTool {
         let transforms: Vec<Value> = automations
             .into_iter()
             .take(limit)
-            .map(|t| serde_json::json!({
-                "id": t.metadata.id,
-                "name": t.metadata.name,
-                "description": t.metadata.description,
-                "scope": t.scope.as_str(),
-                "enabled": t.metadata.enabled,
-                "execution_count": t.metadata.execution_count
-            }))
+            .map(|t| {
+                serde_json::json!({
+                    "id": t.metadata.id,
+                    "name": t.metadata.name,
+                    "description": t.metadata.description,
+                    "scope": t.scope.as_str(),
+                    "enabled": t.metadata.enabled,
+                    "execution_count": t.metadata.execution_count
+                })
+            })
             .collect();
 
         Ok(ToolOutput::success(serde_json::json!({

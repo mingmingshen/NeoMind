@@ -314,6 +314,7 @@ impl MemoryEntry {
 
 /// Aggregated memory result
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct AggregatedMemory {
     /// All memory entries
     pub entries: Vec<MemoryEntry>,
@@ -325,16 +326,6 @@ pub struct AggregatedMemory {
     pub by_source: HashMap<String, usize>,
 }
 
-impl Default for AggregatedMemory {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-            total: 0,
-            by_category: HashMap::new(),
-            by_source: HashMap::new(),
-        }
-    }
-}
 
 /// Metadata for a memory file (for UI display)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1049,8 +1040,8 @@ impl MarkdownMemoryStore {
             let line = line.trim();
 
             // Check for section headers
-            if line.starts_with("## ") {
-                let section = line[3..].trim();
+            if let Some(section) = line.strip_prefix("## ") {
+                let section = section.trim();
                 current_category = MemoryCategory::from_str(section);
                 continue;
             }

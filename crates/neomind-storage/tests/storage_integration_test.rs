@@ -355,7 +355,13 @@ async fn test_timeseries_large_value() {
         .unwrap();
 
     let results = store
-        .query_range("device1", "large", point.timestamp - 1, point.timestamp + 1, None)
+        .query_range(
+            "device1",
+            "large",
+            point.timestamp - 1,
+            point.timestamp + 1,
+            None,
+        )
         .await
         .unwrap();
 

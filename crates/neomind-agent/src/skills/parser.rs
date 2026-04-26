@@ -41,7 +41,9 @@ fn split_frontmatter(content: &str) -> Result<(String, String), ParseError> {
 
     if let Some(end_pos) = rest.find("\n---") {
         let frontmatter = rest[..end_pos].to_string();
-        let body = rest[end_pos + 4..].trim_start_matches(['\n', '\r']).to_string();
+        let body = rest[end_pos + 4..]
+            .trim_start_matches(['\n', '\r'])
+            .to_string();
         Ok((frontmatter, body))
     } else {
         Err(ParseError::MissingFrontmatter)
@@ -259,9 +261,7 @@ Step-by-step guide here.
         assert_eq!(skill.metadata.token_budget, 500);
         assert_eq!(
             skill.metadata.triggers.keywords,
-            vec![
-                "删除规则", "移除规则", "delete rule", "remove rule"
-            ]
+            vec!["删除规则", "移除规则", "delete rule", "remove rule"]
         );
         assert_eq!(skill.metadata.triggers.tool_target.len(), 1);
         assert_eq!(skill.metadata.triggers.tool_target[0].tool, "rule");
@@ -320,9 +320,7 @@ Step-by-step guide here.
                     keywords: vec![],
                     tool_target: vec![],
                 },
-                anti_triggers: SkillAntiTriggers {
-                    keywords: vec![],
-                },
+                anti_triggers: SkillAntiTriggers { keywords: vec![] },
             },
             body: "ABCD\n\nEFGH\n\nIJKL".to_string(),
         };

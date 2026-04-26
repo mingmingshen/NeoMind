@@ -42,7 +42,10 @@ impl PlanStep {
             (self.tool_name.as_str(), self.action.as_str()),
             ("device", "list" | "get" | "query")
                 | ("rule", "list" | "get")
-                | ("agent", "list" | "get" | "memory" | "executions" | "conversation")
+                | (
+                    "agent",
+                    "list" | "get" | "memory" | "executions" | "conversation"
+                )
                 | ("message", "list")
                 | ("extension", "list" | "get" | "status")
         )
@@ -147,10 +150,18 @@ pub struct PlanningConfig {
     pub llm_timeout_secs: u64,
 }
 
-fn default_enabled() -> bool { true }
-fn default_keyword_threshold() -> f32 { 0.8 }
-fn default_max_entities() -> usize { 3 }
-fn default_llm_timeout_secs() -> u64 { 2 }
+fn default_enabled() -> bool {
+    true
+}
+fn default_keyword_threshold() -> f32 {
+    0.8
+}
+fn default_max_entities() -> usize {
+    3
+}
+fn default_llm_timeout_secs() -> u64 {
+    2
+}
 
 impl Default for PlanningConfig {
     fn default() -> Self {

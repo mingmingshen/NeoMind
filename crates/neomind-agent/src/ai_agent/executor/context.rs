@@ -77,7 +77,8 @@ impl ChainState {
             return String::new();
         }
 
-        let mut context = String::from("\n\n## Previous Tool Execution Results (Tool Chaining)\n\n");
+        let mut context =
+            String::from("\n\n## Previous Tool Execution Results (Tool Chaining)\n\n");
         context.push_str(&format!("Currently on round {}.\n\n", self.depth));
 
         for (i, result) in self.previous_results.iter().enumerate() {
@@ -95,7 +96,8 @@ impl ChainState {
                 // Only include non-trivial results
                 if !result_str.is_empty() && result_str != "Command sent successfully" {
                     // Sanitize base64/image data to prevent context bloat
-                    let sanitized = crate::agent::streaming::sanitize_tool_result_for_prompt(result_str);
+                    let sanitized =
+                        crate::agent::streaming::sanitize_tool_result_for_prompt(result_str);
                     let display = if sanitized.chars().count() > 2000 {
                         crate::agent::streaming::truncate_result_utf8(&sanitized, 2000)
                     } else {
@@ -116,7 +118,6 @@ impl ChainState {
         context
     }
 }
-
 
 #[allow(dead_code)]
 pub(crate) fn build_medium_term_summary(
@@ -205,11 +206,7 @@ fn strip_llm_thinking(text: &str) -> String {
     }
 
     // Also remove common LLM meta-commentary patterns from the end
-    let trailing_patterns = [
-        "\n\nNote:",
-        "\n\nSummary:",
-        "\n\nIn conclusion,",
-    ];
+    let trailing_patterns = ["\n\nNote:", "\n\nSummary:", "\n\nIn conclusion,"];
     for pattern in &trailing_patterns {
         if let Some(pos) = cleaned.rfind(pattern) {
             // Only remove if it appears near the end (last 30% of text)
@@ -481,4 +478,3 @@ mod tests {
         assert!(result.contains("所有设备正常"));
     }
 }
-

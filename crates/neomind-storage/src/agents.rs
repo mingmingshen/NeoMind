@@ -1467,7 +1467,10 @@ impl AgentStore {
     }
 
     /// Get the most recent execution record for an agent.
-    pub async fn get_latest_execution(&self, agent_id: &str) -> Result<Option<AgentExecutionRecord>, Error> {
+    pub async fn get_latest_execution(
+        &self,
+        agent_id: &str,
+    ) -> Result<Option<AgentExecutionRecord>, Error> {
         let filter = ExecutionFilter {
             agent_id: Some(agent_id.to_string()),
             ..Default::default()

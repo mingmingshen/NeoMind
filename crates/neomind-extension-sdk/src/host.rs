@@ -1037,16 +1037,23 @@ pub fn set_push_output_writer(writer: PushOutputWriterFn) {
 /// The extension calls this during Push mode to emit data chunks.
 /// Returns `Ok(())` on success or an error if no writer is registered.
 pub fn send_push_output(msg: &PushOutputMessage) -> crate::ipc_types::Result<()> {
-    let writer = PUSH_WRITER
-        .get()
-        .ok_or_else(|| crate::ipc_types::ExtensionError::InternalError("push output writer not registered".into()))?;
-    let json = serde_json::to_vec(msg)
-        .map_err(|e| crate::ipc_types::ExtensionError::InternalError(format!("failed to serialize PushOutputMessage: {}", e)))?;
+    let writer = PUSH_WRITER.get().ok_or_else(|| {
+        crate::ipc_types::ExtensionError::InternalError("push output writer not registered".into())
+    })?;
+    let json = serde_json::to_vec(msg).map_err(|e| {
+        crate::ipc_types::ExtensionError::InternalError(format!(
+            "failed to serialize PushOutputMessage: {}",
+            e
+        ))
+    })?;
     let rc = unsafe { writer(json.as_ptr(), json.len()) };
     if rc == 0 {
         Ok(())
     } else {
-        Err(crate::ipc_types::ExtensionError::InternalError(format!("push_output_writer returned {}", rc)))
+        Err(crate::ipc_types::ExtensionError::InternalError(format!(
+            "push_output_writer returned {}",
+            rc
+        )))
     }
 }
 

@@ -72,7 +72,11 @@ pub fn match_skills(
     }
 
     // Sort by score descending
-    candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Apply token budget
     let mut result = Vec::new();
@@ -162,7 +166,11 @@ Step 2: ONE action (delete/update/enable)"#;
         let matches = match_skills(&registry, "天气怎么样", budget);
         // Priority weight alone produces a low score; no strong match
         for m in &matches {
-            assert!(m.score < 0.2, "Unrelated query should have low score, got {}", m.score);
+            assert!(
+                m.score < 0.2,
+                "Unrelated query should have low score, got {}",
+                m.score
+            );
         }
     }
 

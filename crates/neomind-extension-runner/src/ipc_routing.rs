@@ -63,7 +63,10 @@ pub(crate) fn create_event_channel() -> tokio::sync::mpsc::UnboundedReceiver<Ipc
 pub(crate) fn register_pending_request(request_id: u64) -> Receiver<IpcResponse> {
     let (tx, rx) = channel();
     let mut pending = get_pending_requests().lock().unwrap_or_else(|e| {
-        eprintln!("ERROR: get_pending_requests() mutex poisoned in register: {}", e);
+        eprintln!(
+            "ERROR: get_pending_requests() mutex poisoned in register: {}",
+            e
+        );
         e.into_inner()
     });
     pending.insert(request_id, tx);
@@ -73,7 +76,10 @@ pub(crate) fn register_pending_request(request_id: u64) -> Receiver<IpcResponse>
 /// Complete a pending request with the response
 pub(crate) fn complete_pending_request(request_id: u64, response: IpcResponse) {
     let mut pending = get_pending_requests().lock().unwrap_or_else(|e| {
-        eprintln!("ERROR: get_pending_requests() mutex poisoned in complete: {}", e);
+        eprintln!(
+            "ERROR: get_pending_requests() mutex poisoned in complete: {}",
+            e
+        );
         e.into_inner()
     });
     if let Some(tx) = pending.remove(&request_id) {
@@ -141,7 +147,10 @@ pub(crate) fn start_stdin_reader() -> std::thread::JoinHandle<()> {
                 let mut drain_buf = [0u8; 4096];
                 while remaining > 0 {
                     let to_read = remaining.min(drain_buf.len());
-                    if std::io::stdin().read_exact(&mut drain_buf[..to_read]).is_err() {
+                    if std::io::stdin()
+                        .read_exact(&mut drain_buf[..to_read])
+                        .is_err()
+                    {
                         debug!("Stdin closed while draining oversized message");
                         break;
                     }

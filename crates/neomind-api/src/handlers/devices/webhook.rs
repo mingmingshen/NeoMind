@@ -322,9 +322,7 @@ async fn process_device_transforms(
     // Load all transforms
     let transforms_result = store.list_automations().await;
     let transforms: Vec<_> = match transforms_result {
-        Ok(automations) => automations
-            .into_iter()
-            .collect(),
+        Ok(automations) => automations.into_iter().collect(),
         Err(e) => {
             warn!("Failed to load transforms: {}", e);
             return;

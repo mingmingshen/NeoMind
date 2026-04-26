@@ -142,7 +142,8 @@ impl PromptBuilder {
         let mut prompt = String::with_capacity(2048);
 
         prompt.push_str("## IMPORTANT: You MUST call tools to execute operations\n");
-        prompt.push_str("1. Don't just say what you will do - directly output the tool call JSON!\n");
+        prompt
+            .push_str("1. Don't just say what you will do - directly output the tool call JSON!\n");
         prompt.push_str("2. NEVER claim operation success without calling tools!\n");
         prompt.push_str(
             "3. Only use the \"✓\" mark after the tool actually executes and returns success.\n\n",

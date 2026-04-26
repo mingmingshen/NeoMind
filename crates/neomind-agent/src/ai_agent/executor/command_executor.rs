@@ -86,7 +86,6 @@ impl AgentExecutor {
         })
     }
 
-
     pub(crate) async fn execute_extension_command_for_agent(
         &self,
         agent: &AiAgent,
@@ -151,8 +150,6 @@ impl AgentExecutor {
     /// Expected formats:
     /// - "device_id:command_name" -> device command
     /// - "extension:ext_id:command_name" -> extension command
-    ///
-
     pub(crate) fn parse_command_from_action(action: &str) -> Option<(String, String, String)> {
         let action = action.trim();
 
@@ -209,7 +206,6 @@ impl AgentExecutor {
 
         None
     }
-
 
     fn is_alert_decision(decision: &Decision) -> bool {
         let dt = decision.decision_type.to_lowercase();
@@ -286,7 +282,10 @@ impl AgentExecutor {
                 "extension" => {
                     if let Some(action_executed) = self
                         .execute_extension_command_for_agent(
-                            agent, &target_id, &command_name, decision,
+                            agent,
+                            &target_id,
+                            &command_name,
+                            decision,
                         )
                         .await
                     {
@@ -491,14 +490,23 @@ impl AgentExecutor {
         let mut notifications_sent = Vec::new();
 
         // Pre-build allowed actions for Focused mode scope validation
-        let allowed_command_ids: Vec<String> = if agent.execution_mode == neomind_storage::agents::ExecutionMode::Focused {
-            agent.resources.iter()
-                .filter(|r| matches!(r.resource_type, neomind_storage::ResourceType::Command | neomind_storage::ResourceType::ExtensionTool))
-                .map(|r| r.resource_id.clone())
-                .collect()
-        } else {
-            Vec::new() // Empty = no scope restriction for Free mode
-        };
+        let allowed_command_ids: Vec<String> =
+            if agent.execution_mode == neomind_storage::agents::ExecutionMode::Focused {
+                agent
+                    .resources
+                    .iter()
+                    .filter(|r| {
+                        matches!(
+                            r.resource_type,
+                            neomind_storage::ResourceType::Command
+                                | neomind_storage::ResourceType::ExtensionTool
+                        )
+                    })
+                    .map(|r| r.resource_id.clone())
+                    .collect()
+            } else {
+                Vec::new() // Empty = no scope restriction for Free mode
+            };
 
         for decision in decisions {
             // Scope validation for Focused mode
@@ -506,14 +514,22 @@ impl AgentExecutor {
                 let action = &decision.action;
                 let is_allowed = allowed_command_ids.iter().any(|rid| {
                     // 1. Exact match (most reliable)
-                    if action == rid { return true; }
+                    if action == rid {
+                        return true;
+                    }
                     // 2. Suffix match: action "turn_on" matches rid "light_living:turn_on"
                     if let Some(cmd_suffix) = rid.split(':').last() {
-                        if action == cmd_suffix { return true; }
-                        if action.ends_with(&format!(":{}", cmd_suffix)) { return true; }
+                        if action == cmd_suffix {
+                            return true;
+                        }
+                        if action.ends_with(&format!(":{}", cmd_suffix)) {
+                            return true;
+                        }
                     }
                     // 3. Extension tool format: action contains the full rid
-                    if action.contains(rid.as_str()) { return true; }
+                    if action.contains(rid.as_str()) {
+                        return true;
+                    }
                     false
                 });
 
@@ -525,7 +541,10 @@ impl AgentExecutor {
                     );
                     actions_executed.push(neomind_storage::ActionExecuted {
                         action_type: "command".to_string(),
-                        description: format!("Rejected: command '{}' not in bound resources", decision.action),
+                        description: format!(
+                            "Rejected: command '{}' not in bound resources",
+                            decision.action
+                        ),
                         target: String::new(),
                         parameters: serde_json::json!({}),
                         success: false,
@@ -575,7 +594,6 @@ impl AgentExecutor {
 
         Ok((actions_executed, notifications_sent))
     }
-
 
     pub(crate) async fn send_alert_for_decision(
         &self,
@@ -701,7 +719,6 @@ impl AgentExecutor {
         }
     }
 
-
     pub(crate) async fn maybe_generate_report(
         &self,
         agent: &AiAgent,
@@ -734,7 +751,6 @@ impl AgentExecutor {
 
         Ok(None)
     }
-
 
     pub(crate) async fn generate_report_content(
         &self,

@@ -35,8 +35,10 @@ impl std::fmt::Display for DeliveryLogId {
 /// Delivery status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum DeliveryStatus {
     /// Waiting to be sent
+    #[default]
     Pending,
     /// Successfully delivered
     Success,
@@ -67,11 +69,6 @@ impl DeliveryStatus {
     }
 }
 
-impl Default for DeliveryStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
-}
 
 /// Delivery log entry for tracking DataPush messages.
 #[derive(Debug, Clone, Serialize, Deserialize)]

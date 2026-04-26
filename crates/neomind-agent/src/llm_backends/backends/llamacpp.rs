@@ -208,11 +208,7 @@ impl LlamaCppRuntime {
             .and_then(|s| s.n_ctx)
             .unwrap_or(128000);
 
-        let supports_multimodal = props
-            .modalities
-            .as_ref()
-            .map(|m| m.vision)
-            .unwrap_or(false);
+        let supports_multimodal = props.modalities.as_ref().map(|m| m.vision).unwrap_or(false);
 
         let supports_tools = props
             .chat_template_caps
@@ -326,7 +322,10 @@ impl LlmRuntime for LlamaCppRuntime {
         }
     }
 
-    async fn generate(&self, input: neomind_core::llm::backend::LlmInput) -> Result<LlmOutput, LlmError> {
+    async fn generate(
+        &self,
+        input: neomind_core::llm::backend::LlmInput,
+    ) -> Result<LlmOutput, LlmError> {
         let start_time = Instant::now();
         let model = input.model.unwrap_or_else(|| self.model.clone());
         let url = format!("{}/v1/chat/completions", self.config.base_url());
@@ -393,10 +392,13 @@ impl LlmRuntime for LlamaCppRuntime {
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
         if !status.is_success() {
-            self.metrics.write().unwrap_or_else(|e| {
-                tracing::error!("Failed to acquire write lock on metrics: {}", e);
-                e.into_inner()
-            }).record_failure();
+            self.metrics
+                .write()
+                .unwrap_or_else(|e| {
+                    tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                    e.into_inner()
+                })
+                .record_failure();
 
             // Check for context overflow and return specific error for retry
             if body.contains("exceed_context_size_error") {
@@ -435,16 +437,12 @@ impl LlmRuntime for LlamaCppRuntime {
         // Handle tool calls
         if let Some(ref tool_calls) = choice.message.tool_calls {
             if !tool_calls.is_empty() {
-                tracing::debug!(
-                    "llama.cpp: received {} native tool calls",
-                    tool_calls.len()
-                );
+                tracing::debug!("llama.cpp: received {} native tool calls", tool_calls.len());
                 let tool_calls_json: Vec<serde_json::Value> = tool_calls
                     .iter()
                     .map(|tc| {
-                        let args: serde_json::Value =
-                            serde_json::from_str(&tc.function.arguments)
-                                .unwrap_or_else(|_| serde_json::json!({}));
+                        let args: serde_json::Value = serde_json::from_str(&tc.function.arguments)
+                            .unwrap_or_else(|_| serde_json::json!({}));
                         serde_json::json!({
                             "id": tc.id,
                             "name": tc.function.name,
@@ -491,10 +489,13 @@ impl LlmRuntime for LlamaCppRuntime {
                     .record_success(tokens, latency_ms);
             }
             Err(_) => {
-                self.metrics.write().unwrap_or_else(|e| {
-                    tracing::error!("Failed to acquire write lock on metrics: {}", e);
-                    e.into_inner()
-                }).record_failure();
+                self.metrics
+                    .write()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                        e.into_inner()
+                    })
+                    .record_failure();
             }
         }
 
@@ -608,7 +609,8 @@ impl LlmRuntime for LlamaCppRuntime {
                                 .and_then(|v| v.get("error"))
                                 .and_then(|e| e.get("n_prompt_tokens"))
                                 .and_then(|t| t.as_u64())
-                                .unwrap_or(0) as usize;
+                                .unwrap_or(0)
+                                as usize;
                             let _ = tx
                                 .send(Err(LlmError::ContextOverflow {
                                     prompt_tokens,
@@ -691,17 +693,21 @@ impl LlmRuntime for LlamaCppRuntime {
                                                 // Check for usage data in final chunk (stream_options.include_usage=true)
                                                 if let Some(ref usage) = evt.usage {
                                                     if usage.prompt_tokens > 0 {
-                                                        let _ = tx.send(Ok((
-                                                            format!("\n__NEOMIND_TOKEN_PROMPT:{}__", usage.prompt_tokens),
-                                                            false,
-                                                        ))).await;
+                                                        let _ = tx
+                                                            .send(Ok((
+                                                                format!(
+                                                                    "\n__NEOMIND_TOKEN_PROMPT:{}__",
+                                                                    usage.prompt_tokens
+                                                                ),
+                                                                false,
+                                                            )))
+                                                            .await;
                                                     }
                                                 }
 
                                                 if let Some(choice) = evt.choices.first() {
                                                     // Handle content
-                                                    if let Some(ref content) =
-                                                        choice.delta.content
+                                                    if let Some(ref content) = choice.delta.content
                                                     {
                                                         if !content.is_empty() {
                                                             let _ = tx
@@ -716,10 +722,7 @@ impl LlmRuntime for LlamaCppRuntime {
                                                     {
                                                         if !reasoning.is_empty() {
                                                             let _ = tx
-                                                                .send(Ok((
-                                                                    reasoning.clone(),
-                                                                    true,
-                                                                )))
+                                                                .send(Ok((reasoning.clone(), true)))
                                                                 .await;
                                                         }
                                                     }
@@ -743,15 +746,12 @@ impl LlmRuntime for LlamaCppRuntime {
 
                                                             if let Some(ref func) = tc.function {
                                                                 if let Some(ref name) = func.name {
-                                                                    entry.name =
-                                                                        Some(name.clone());
+                                                                    entry.name = Some(name.clone());
                                                                 }
                                                                 if let Some(ref args) =
                                                                     func.arguments
                                                                 {
-                                                                    entry
-                                                                        .arguments
-                                                                        .push_str(args);
+                                                                    entry.arguments.push_str(args);
                                                                 }
                                                             }
                                                         }
@@ -859,10 +859,13 @@ impl LlmRuntime for LlamaCppRuntime {
     }
 
     fn metrics(&self) -> BackendMetrics {
-        self.metrics.read().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire read lock on metrics: {}", e);
-            e.into_inner()
-        }).clone()
+        self.metrics
+            .read()
+            .unwrap_or_else(|e| {
+                tracing::error!("Failed to acquire read lock on metrics: {}", e);
+                e.into_inner()
+            })
+            .clone()
     }
 }
 
@@ -1136,8 +1139,7 @@ mod tests {
         let config = LlamaCppConfig::default();
         assert_eq!(config.base_url(), "http://127.0.0.1:8080");
 
-        let config_with_slash =
-            LlamaCppConfig::default().with_endpoint("http://127.0.0.1:8080/");
+        let config_with_slash = LlamaCppConfig::default().with_endpoint("http://127.0.0.1:8080/");
         assert_eq!(config_with_slash.base_url(), "http://127.0.0.1:8080");
     }
 

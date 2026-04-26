@@ -13,9 +13,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use neomind_agent::skills::{
-    match_skills, Skill, SkillCategory, SkillRegistry, TokenBudgetConfig,
-};
+use neomind_agent::skills::{match_skills, Skill, SkillCategory, SkillRegistry, TokenBudgetConfig};
 
 use super::ServerState;
 
@@ -41,7 +39,9 @@ fn default_page_size() -> u32 {
 fn is_safe_skill_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
-        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Helper: get the skills directory, creating it if needed.
@@ -61,8 +61,7 @@ fn persist_skill(data_dir: &std::path::Path, id: &str, content: &str) -> Result<
     }
     let dir = skills_dir(data_dir)?;
     let path = dir.join(format!("{}.md", id));
-    std::fs::write(&path, content)
-        .map_err(|e| format!("Failed to persist skill '{}': {}", id, e))
+    std::fs::write(&path, content).map_err(|e| format!("Failed to persist skill '{}': {}", id, e))
 }
 
 /// Helper: delete a skill file from disk.
@@ -228,7 +227,11 @@ pub async fn list_skills_handler(
     let registry = state.agents.session_manager.skill_registry();
     let guard = registry.read().await;
 
-    let mut all: Vec<SkillSummary> = guard.list().iter().map(|s| SkillSummary::from(*s)).collect();
+    let mut all: Vec<SkillSummary> = guard
+        .list()
+        .iter()
+        .map(|s| SkillSummary::from(*s))
+        .collect();
 
     // Filter by origin if specified
     if let Some(ref origin) = params.origin {
@@ -265,11 +268,7 @@ pub async fn get_skill_handler(
     let guard = registry.read().await;
 
     match guard.get(&id) {
-        Some(skill) => (
-            StatusCode::OK,
-            Json(SkillDetail::from(skill)),
-        )
-            .into_response(),
+        Some(skill) => (StatusCode::OK, Json(SkillDetail::from(skill))).into_response(),
         None => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({ "error": format!("Skill '{}' not found", id) })),
@@ -292,11 +291,14 @@ pub async fn create_skill_handler(
                 tracing::error!(error = %e, "Skill created in memory but not persisted to disk");
             }
             match guard.get(&id) {
-                Some(skill) => (StatusCode::CREATED, Json(SkillDetail::from(skill))).into_response(),
+                Some(skill) => {
+                    (StatusCode::CREATED, Json(SkillDetail::from(skill))).into_response()
+                }
                 None => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(serde_json::json!({ "error": "Failed to retrieve created skill" })),
-                ).into_response(),
+                )
+                    .into_response(),
             }
         }
         Err(e) => (
@@ -326,7 +328,8 @@ pub async fn update_skill_handler(
                 None => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(serde_json::json!({ "error": "Failed to retrieve updated skill" })),
-                ).into_response(),
+                )
+                    .into_response(),
             }
         }
         Err(e) => {

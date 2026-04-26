@@ -689,7 +689,7 @@ impl TimeSeriesStore {
                 value.value().len()
             );
 
-            if limit.map_or(true, |n| collected < n) {
+            if limit.is_none_or(|n| collected < n) {
                 let point: DataPoint = serde_json::from_slice(value.value())?;
                 points.push(point);
                 collected += 1;
@@ -753,7 +753,7 @@ impl TimeSeriesStore {
             total_count += 1;
             let (_key, value) = result?;
 
-            if limit.map_or(true, |n| collected < n) {
+            if limit.is_none_or(|n| collected < n) {
                 match serde_json::from_slice(value.value()) {
                     Ok(point) => {
                         points.push(point);
@@ -958,7 +958,9 @@ impl TimeSeriesStore {
         end: i64,
         bucket_size_secs: i64,
     ) -> Result<Vec<TimeSeriesBucket>, Error> {
-        let result = self.query_range(source_id, metric, start, end, None).await?;
+        let result = self
+            .query_range(source_id, metric, start, end, None)
+            .await?;
 
         let mut buckets: std::collections::HashMap<i64, TimeSeriesBucket> =
             std::collections::HashMap::new();

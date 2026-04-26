@@ -31,8 +31,8 @@
 
 use std::sync::Arc;
 
-pub mod ai_metric;
 pub mod aggregated;
+pub mod ai_metric;
 pub mod error;
 pub mod extension_tools;
 pub mod registry;
@@ -81,7 +81,7 @@ pub use shell::{ShellConfig, ShellTool};
 // ============================================================================
 
 pub use aggregated::{
-    AgentInvoker, AgentInvokeResult, AgentTool, AggregatedMessageInfo, AggregatedMessageLevel,
+    AgentInvokeResult, AgentInvoker, AgentTool, AggregatedMessageInfo, AggregatedMessageLevel,
     AggregatedToolsBuilder, DeviceTool, ExtensionAggregatedTool, MessageTool, RuleTool,
     TransformStore,
 };

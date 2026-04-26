@@ -6,9 +6,9 @@
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::panic::{self, AssertUnwindSafe};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::RwLock as StdRwLock;
-use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
@@ -38,7 +38,11 @@ type OptionExtensionActionExecutor = Arc<tokio::sync::RwLock<Option<Arc<Extensio
 /// Callback type for triggering agents from rules.
 /// Takes (agent_id, input_text, data) and returns Ok(()) on success.
 type AgentTriggerCallback = Arc<
-    dyn Fn(String, Option<String>, Option<serde_json::Value>) -> Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
+    dyn Fn(
+            String,
+            Option<String>,
+            Option<serde_json::Value>,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
         + Send
         + Sync,
 >;
@@ -515,7 +519,10 @@ impl RuleEngine {
                 // Check if we should stop
                 {
                     let running = scheduler_running.read().unwrap_or_else(|e| {
-                        tracing::error!("Failed to acquire scheduler_running read lock in scheduler: {}", e);
+                        tracing::error!(
+                            "Failed to acquire scheduler_running read lock in scheduler: {}",
+                            e
+                        );
                         e.into_inner()
                     });
                     if !*running {
@@ -631,7 +638,10 @@ impl RuleEngine {
         // Check if running
         {
             let running = self.scheduler_running.read().unwrap_or_else(|e| {
-                tracing::error!("Failed to acquire scheduler_running read lock in stop: {}", e);
+                tracing::error!(
+                    "Failed to acquire scheduler_running read lock in stop: {}",
+                    e
+                );
                 e.into_inner()
             });
             if !*running {
@@ -644,7 +654,10 @@ impl RuleEngine {
         // Signal the task to stop
         {
             let mut running = self.scheduler_running.write().unwrap_or_else(|e| {
-                tracing::error!("Failed to acquire scheduler_running write lock in stop: {}", e);
+                tracing::error!(
+                    "Failed to acquire scheduler_running write lock in stop: {}",
+                    e
+                );
                 e.into_inner()
             });
             *running = false;
@@ -653,7 +666,10 @@ impl RuleEngine {
         // Abort the task if it exists
         {
             let mut handle_guard = self.scheduler_handle.write().unwrap_or_else(|e| {
-                tracing::error!("Failed to acquire scheduler_handle write lock in stop: {}", e);
+                tracing::error!(
+                    "Failed to acquire scheduler_handle write lock in stop: {}",
+                    e
+                );
                 e.into_inner()
             });
             if let Some(handle) = handle_guard.take() {
@@ -668,7 +684,10 @@ impl RuleEngine {
     /// Check if the scheduler is currently running.
     pub fn is_scheduler_running(&self) -> bool {
         let running = self.scheduler_running.read().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire scheduler_running read lock in is_running: {}", e);
+            tracing::error!(
+                "Failed to acquire scheduler_running read lock in is_running: {}",
+                e
+            );
             e.into_inner()
         });
         *running
@@ -720,7 +739,10 @@ impl RuleEngine {
         // Remove from dependency manager first
         {
             let mut dep_manager = self.dependency_manager.write().unwrap_or_else(|e| {
-                tracing::error!("Failed to acquire dependency_manager write lock in remove_rule: {}", e);
+                tracing::error!(
+                    "Failed to acquire dependency_manager write lock in remove_rule: {}",
+                    e
+                );
                 e.into_inner()
             });
             dep_manager.remove_rule(id);
@@ -736,7 +758,10 @@ impl RuleEngine {
     /// After calling this, `dependent` will only execute after `dependency` has completed.
     pub fn add_dependency(&self, dependent: RuleId, dependency: RuleId) -> Result<(), RuleError> {
         let mut dep_manager = self.dependency_manager.write().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire dependency_manager write lock in add_dependency: {}", e);
+            tracing::error!(
+                "Failed to acquire dependency_manager write lock in add_dependency: {}",
+                e
+            );
             e.into_inner()
         });
         dep_manager.add_dependency(dependent, dependency);
@@ -750,7 +775,10 @@ impl RuleEngine {
         dependency: &RuleId,
     ) -> Result<(), RuleError> {
         let mut dep_manager = self.dependency_manager.write().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire dependency_manager write lock in remove_dependency: {}", e);
+            tracing::error!(
+                "Failed to acquire dependency_manager write lock in remove_dependency: {}",
+                e
+            );
             e.into_inner()
         });
         dep_manager.remove_dependency(dependent, dependency);
@@ -760,7 +788,10 @@ impl RuleEngine {
     /// Get all dependencies for a rule.
     pub fn get_dependencies(&self, rule_id: &RuleId) -> Vec<RuleId> {
         let dep_manager = self.dependency_manager.read().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire dependency_manager read lock in get_dependencies: {}", e);
+            tracing::error!(
+                "Failed to acquire dependency_manager read lock in get_dependencies: {}",
+                e
+            );
             e.into_inner()
         });
         dep_manager.get_dependencies(rule_id)
@@ -769,7 +800,10 @@ impl RuleEngine {
     /// Get all rules that depend on this rule.
     pub fn get_dependents(&self, rule_id: &RuleId) -> Vec<RuleId> {
         let dep_manager = self.dependency_manager.read().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire dependency_manager read lock in get_dependents: {}", e);
+            tracing::error!(
+                "Failed to acquire dependency_manager read lock in get_dependents: {}",
+                e
+            );
             e.into_inner()
         });
         dep_manager.get_dependents(rule_id)
@@ -890,7 +924,7 @@ impl RuleEngine {
                 rule.update_state(value_provider);
             }));
 
-            if let Err(_) = update_result {
+            if update_result.is_err() {
                 tracing::error!(
                     rule_id = %rule_id,
                     rule_name = %rule_name,
@@ -1354,10 +1388,7 @@ impl RuleEngine {
                 if let Some(callback) = trigger.as_ref() {
                     match callback(agent_id.clone(), input.clone(), data.clone()).await {
                         Ok(()) => {
-                            tracing::debug!(
-                                "TRIGGER_AGENT: {} triggered successfully",
-                                agent_id
-                            );
+                            tracing::debug!("TRIGGER_AGENT: {} triggered successfully", agent_id);
                             Ok(format!("TRIGGER_AGENT: {} (triggered)", agent_id))
                         }
                         Err(e) => {
@@ -1436,7 +1467,10 @@ impl InMemoryValueProvider {
     /// Set a value for a device metric.
     pub fn set_value(&self, device_id: &str, metric: &str, value: f64) {
         let mut values = self.values.write().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire InMemoryValueProvider values write lock: {}", e);
+            tracing::error!(
+                "Failed to acquire InMemoryValueProvider values write lock: {}",
+                e
+            );
             e.into_inner()
         });
         let key = format!("{}:{}", device_id, metric);
@@ -1454,7 +1488,10 @@ impl ValueProvider for InMemoryValueProvider {
     fn get_value(&self, device_id: &str, metric: &str) -> Option<f64> {
         let key = format!("{}:{}", device_id, metric);
         let values = self.values.read().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire InMemoryValueProvider values read lock: {}", e);
+            tracing::error!(
+                "Failed to acquire InMemoryValueProvider values read lock: {}",
+                e
+            );
             e.into_inner()
         });
         values.get(&key).copied()

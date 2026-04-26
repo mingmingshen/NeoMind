@@ -174,7 +174,6 @@ impl AgentExecutor {
     }
 
     /// Build available data sources description for LLM.
-
     pub(crate) fn build_available_data_sources_description(agent: &AiAgent) -> String {
         let mut device_metrics: std::collections::HashMap<String, Vec<&AgentResource>> =
             std::collections::HashMap::new();
@@ -344,17 +343,19 @@ impl AgentExecutor {
 
     /// Build structured data table for Focused Mode prompt.
     /// Returns markdown tables of current data and available commands.
-    pub(crate) fn build_focused_data_table(
-        agent: &AiAgent,
-        data: &[DataCollected],
-    ) -> String {
+    pub(crate) fn build_focused_data_table(agent: &AiAgent, data: &[DataCollected]) -> String {
         let mut sections = Vec::new();
 
         // --- Current Data Table ---
-        let data_entries: Vec<&DataCollected> = data.iter()
+        let data_entries: Vec<&DataCollected> = data
+            .iter()
             .filter(|d| {
                 d.source != "system"
-                && !d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false)
+                    && !d
+                        .values
+                        .get("_is_image")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
             })
             .take(15)
             .collect();
@@ -368,15 +369,26 @@ impl AgentExecutor {
                     format!("{}", v)
                 } else {
                     let json_str = serde_json::to_string(&d.values).unwrap_or_default();
-                    if json_str.len() > 100 { json_str[..100].to_string() + "..." } else { json_str }
+                    if json_str.len() > 100 {
+                        json_str[..100].to_string() + "..."
+                    } else {
+                        json_str
+                    }
                 };
                 sections.push(format!("| {} | {} | {} |", d.source, d.data_type, value));
             }
         }
 
         // --- Available Commands Table ---
-        let commands: Vec<&AgentResource> = agent.resources.iter()
-            .filter(|r| matches!(r.resource_type, ResourceType::Command | ResourceType::ExtensionTool))
+        let commands: Vec<&AgentResource> = agent
+            .resources
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r.resource_type,
+                    ResourceType::Command | ResourceType::ExtensionTool
+                )
+            })
             .collect();
 
         if !commands.is_empty() {
@@ -385,7 +397,11 @@ impl AgentExecutor {
             sections.push("| Name | Action Value |".to_string());
             sections.push("|------|-------------|".to_string());
             for cmd in &commands {
-                let display_name = if cmd.name.is_empty() { &cmd.resource_id } else { &cmd.name };
+                let display_name = if cmd.name.is_empty() {
+                    &cmd.resource_id
+                } else {
+                    &cmd.name
+                };
                 sections.push(format!("| {} | `{}` |", display_name, cmd.resource_id));
             }
         }
@@ -404,7 +420,6 @@ impl AgentExecutor {
 
         sections.join("\n")
     }
-
 
     pub(crate) async fn analyze_situation_with_intent(
         &self,
@@ -436,7 +451,13 @@ impl AgentExecutor {
                         "Tool mode enabled - using function calling"
                     );
                     match self
-                        .execute_with_tools(agent, data, llm.clone(), execution_id, invocation_input)
+                        .execute_with_tools(
+                            agent,
+                            data,
+                            llm.clone(),
+                            execution_id,
+                            invocation_input,
+                        )
                         .await
                     {
                         Ok((dp, exec_result)) => {
@@ -511,7 +532,6 @@ impl AgentExecutor {
             conclusion,
         })
     }
-
 
     pub(crate) async fn analyze_with_llm(
         &self,
@@ -1106,8 +1126,7 @@ impl AgentExecutor {
             Ok(output) => {
                 let json_str = output.text.trim();
                 // Extract JSON if wrapped in markdown
-                let json_str = extract_json_from_codeblock(json_str)
-                    .unwrap_or(json_str);
+                let json_str = extract_json_from_codeblock(json_str).unwrap_or(json_str);
 
                 // Sanitize control characters that may break JSON parsing
                 let sanitized_json = sanitize_json_string(json_str);
@@ -1584,7 +1603,6 @@ impl AgentExecutor {
         }
     }
 
-
     pub(crate) async fn analyze_rule_based(
         &self,
         agent: &AiAgent,
@@ -1673,7 +1691,6 @@ impl AgentExecutor {
         Ok((situation_analysis, reasoning_steps, decisions, conclusion))
     }
 
-
     pub(crate) async fn evaluate_condition(&self, condition: &str, data: &[DataCollected]) -> bool {
         let condition_lower = condition.to_lowercase();
 
@@ -1702,6 +1719,4 @@ impl AgentExecutor {
 
         false
     }
-
-
 }

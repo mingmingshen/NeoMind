@@ -76,8 +76,7 @@ impl ShellTool {
         let (shell, is_login) = shell_path();
         let mut cmd = std::process::Command::new(shell);
         shell_arg(&mut cmd, command, is_login);
-        cmd.stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         set_process_group(&mut cmd);
         cmd
     }
@@ -124,10 +123,7 @@ impl ShellTool {
                 stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
                 timed_out: false,
             }),
-            Ok(Err(e)) => Err(ToolError::Execution(format!(
-                "Execution failed: {}",
-                e
-            ))),
+            Ok(Err(e)) => Err(ToolError::Execution(format!("Execution failed: {}", e))),
             Err(_) => {
                 // Timeout — kill the process
                 kill_process_by_pid(child_pid);
@@ -474,9 +470,7 @@ mod tests {
     #[tokio::test]
     async fn test_empty_command_rejected() {
         let tool = ShellTool::new(test_config());
-        let result = tool
-            .execute(serde_json::json!({ "command": "  " }))
-            .await;
+        let result = tool.execute(serde_json::json!({ "command": "  " })).await;
         assert!(result.is_err());
     }
 

@@ -1013,7 +1013,13 @@ mod tests {
 
         // Clear title
         store
-            .save_session_metadata("test-session", &SessionMetadata { title: None, ..Default::default() })
+            .save_session_metadata(
+                "test-session",
+                &SessionMetadata {
+                    title: None,
+                    ..Default::default()
+                },
+            )
             .unwrap();
         let meta = store.get_session_metadata("test-session").unwrap();
         assert!(meta.title.is_none());

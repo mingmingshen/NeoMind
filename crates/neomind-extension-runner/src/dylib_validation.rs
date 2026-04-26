@@ -89,8 +89,7 @@ fn validate_macos_dylib(path: &Path) -> Result<(), ValidationError> {
         .arg(path)
         .output()
         .map_err(|e| {
-            ValidationError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ValidationError::IoError(std::io::Error::other(
                 format!("Failed to run otool: {}", e),
             ))
         })?;

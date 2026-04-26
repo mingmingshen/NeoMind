@@ -1314,16 +1314,17 @@ pub async fn push_extension_metrics_handler(
     for (key, val) in obj {
         let mv = match val {
             serde_json::Value::Number(n) if n.is_f64() => {
-                MetricValue::Float(n.as_f64().ok_or_else(|| ErrorResponse::bad_request(format!(
-                    "Invalid float value for metric '{}'",
-                    key
-                )))?)
+                MetricValue::Float(n.as_f64().ok_or_else(|| {
+                    ErrorResponse::bad_request(format!("Invalid float value for metric '{}'", key))
+                })?)
             }
             serde_json::Value::Number(n) if n.is_i64() => {
-                MetricValue::Integer(n.as_i64().ok_or_else(|| ErrorResponse::bad_request(format!(
-                    "Invalid integer value for metric '{}'",
-                    key
-                )))?)
+                MetricValue::Integer(n.as_i64().ok_or_else(|| {
+                    ErrorResponse::bad_request(format!(
+                        "Invalid integer value for metric '{}'",
+                        key
+                    ))
+                })?)
             }
             serde_json::Value::String(s) => MetricValue::String(s.clone()),
             serde_json::Value::Bool(b) => MetricValue::Boolean(*b),
@@ -1341,7 +1342,12 @@ pub async fn push_extension_metrics_handler(
 
     for (name, value) in &metrics {
         let dp = neomind_devices::telemetry::DataPoint::new(timestamp_ms, value.clone());
-        if let Err(e) = state.extensions.metrics_storage.write(&source_part, name, dp).await {
+        if let Err(e) = state
+            .extensions
+            .metrics_storage
+            .write(&source_part, name, dp)
+            .await
+        {
             tracing::warn!(extension_id = %extension_id, metric = %name, error = %e, "[PUSH] Failed to store");
             continue;
         }
@@ -3403,7 +3409,7 @@ pub async fn serve_extension_asset_handler(
             "public, max-age=3600", // Cache for 1 hour
         )
         .body(Body::from(content))
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to build response: {}", e)))
+        .map_err(|e| ErrorResponse::internal(format!("Failed to build response: {}", e)))
 }
 
 /// GET /api/extensions/dashboard-components

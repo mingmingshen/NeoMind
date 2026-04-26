@@ -1,13 +1,17 @@
 use super::*;
 
-fn metric_value_to_json(v: &neomind_core::extension::system::ParamMetricValue) -> serde_json::Value {
+fn metric_value_to_json(
+    v: &neomind_core::extension::system::ParamMetricValue,
+) -> serde_json::Value {
     match v {
         neomind_core::extension::system::ParamMetricValue::Float(v) => serde_json::json!(*v),
         neomind_core::extension::system::ParamMetricValue::Integer(v) => serde_json::json!(*v),
         neomind_core::extension::system::ParamMetricValue::Boolean(v) => serde_json::json!(*v),
         neomind_core::extension::system::ParamMetricValue::String(v) => serde_json::json!(v),
         neomind_core::extension::system::ParamMetricValue::Null => serde_json::Value::Null,
-        neomind_core::extension::system::ParamMetricValue::Binary(_) => serde_json::json!("<binary data>"),
+        neomind_core::extension::system::ParamMetricValue::Binary(_) => {
+            serde_json::json!("<binary data>")
+        }
     }
 }
 
@@ -59,7 +63,6 @@ pub(crate) fn get_time_context() -> String {
         utc_time, local_time, timezone, date_str, day_of_week, time_period
     )
 }
-
 
 impl AgentExecutor {
     pub(crate) async fn collect_data(&self, agent: &AiAgent) -> AgentResult<Vec<DataCollected>> {
@@ -195,7 +198,6 @@ impl AgentExecutor {
         Ok(data)
     }
 
-
     pub(crate) async fn collect_metric_data_parallel(
         &self,
         _agent: &AiAgent, // Reserved for future use
@@ -327,7 +329,6 @@ impl AgentExecutor {
         Ok(collected)
     }
 
-
     pub(crate) async fn collect_single_metric(
         storage: Arc<neomind_storage::TimeSeriesStore>,
         device_id: &str,
@@ -447,7 +448,6 @@ impl AgentExecutor {
         }))
     }
 
-
     pub(crate) async fn collect_device_data_parallel(
         &self,
         _agent: &AiAgent, // Reserved for future use
@@ -522,7 +522,6 @@ impl AgentExecutor {
     ///
     /// This collects:
     /// 1. Device metadata (device_info)
-
     pub(crate) async fn collect_single_device_data(
         device_service: Arc<DeviceService>,
         storage: Arc<neomind_storage::TimeSeriesStore>,
@@ -871,7 +870,6 @@ impl AgentExecutor {
         Ok(collected)
     }
 
-
     pub(crate) fn collect_memory_summary(
         &self,
         agent: &AiAgent,
@@ -941,7 +939,6 @@ impl AgentExecutor {
     }
 
     /// Collect data including the triggering event data.
-
     pub(crate) async fn collect_data_with_event(
         &self,
         agent: &AiAgent,
@@ -985,9 +982,7 @@ impl AgentExecutor {
             // execution record is later returned via the API.  The image is
             // already available as `image_base64` or `image_url`.
             if image_base64.is_some() || image_url.is_some() {
-                event_values
-                    .as_object_mut()
-                    .map(|o| o.remove("value"));
+                event_values.as_object_mut().map(|o| o.remove("value"));
             }
 
             tracing::info!(
@@ -1001,7 +996,10 @@ impl AgentExecutor {
         }
 
         data.push(DataCollected {
-            source: format!("{}:{}", event_data.source.source_id, event_data.source.field),
+            source: format!(
+                "{}:{}",
+                event_data.source.source_id, event_data.source.field
+            ),
             data_type: event_data.source.field.clone(),
             values: event_values,
             timestamp: event_data.timestamp,
@@ -1017,7 +1015,12 @@ impl AgentExecutor {
                 continue;
             }
             // Skip if it's the same event we already added
-            if item.source == format!("{}:{}", event_data.source.source_id, event_data.source.field) {
+            if item.source
+                == format!(
+                    "{}:{}",
+                    event_data.source.source_id, event_data.source.field
+                )
+            {
                 continue;
             }
             data.push(item);
@@ -1035,7 +1038,6 @@ impl AgentExecutor {
         Ok(data)
     }
 }
-
 
 pub(crate) struct Stats {
     min: f64,

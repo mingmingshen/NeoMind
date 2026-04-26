@@ -10,14 +10,12 @@ use std::time::Instant;
 use dashmap::DashMap;
 use neomind_core::llm::backend::{LlmError, LlmInput, LlmRuntime};
 use neomind_core::llm::detect_vision_capability;
-use neomind_storage::{
-    ConnectionTestResult, LlmBackendInstance, LlmBackendStore, LlmBackendType,
-};
+use neomind_storage::{ConnectionTestResult, LlmBackendInstance, LlmBackendStore, LlmBackendType};
 
 use super::backends::create_backend;
-use super::backends::ollama::{OllamaConfig, OllamaRuntime, detect_model_context};
 #[cfg(feature = "llamacpp")]
 use super::backends::llamacpp::{LlamaCppConfig, LlamaCppRuntime};
+use super::backends::ollama::{detect_model_context, OllamaConfig, OllamaRuntime};
 
 /// Ensure an instance has correct capabilities.
 ///
@@ -157,7 +155,8 @@ impl LlmBackendInstanceManager {
 
         // Get instance configuration - DashMap read is lock-free
         // Apply capability correction to ensure consistent capabilities
-        let instance = self.instances
+        let instance = self
+            .instances
             .get(id)
             .map(|item| ensure_instance_capabilities(item.value().clone()))
             .ok_or_else(|| LlmError::BackendUnavailable(format!("Backend instance {}", id)))?;
@@ -177,39 +176,130 @@ impl LlmBackendInstanceManager {
         instance: &LlmBackendInstance,
     ) -> Result<Arc<dyn LlmRuntime>, LlmError> {
         // Build config based on backend type
-        let runtime: Arc<dyn LlmRuntime> =
-            if matches!(instance.backend_type, LlmBackendType::Ollama) {
-                // For Ollama, create runtime and detect capabilities from /api/show
-                let endpoint = instance
-                    .endpoint
-                    .as_deref()
-                    .unwrap_or("http://localhost:11434");
+        let runtime: Arc<dyn LlmRuntime> = if matches!(
+            instance.backend_type,
+            LlmBackendType::Ollama
+        ) {
+            // For Ollama, create runtime and detect capabilities from /api/show
+            let endpoint = instance
+                .endpoint
+                .as_deref()
+                .unwrap_or("http://localhost:11434");
 
-                let config = OllamaConfig::new(&instance.model)
-                    .with_endpoint(endpoint)
-                    .with_timeout_secs(180);
+            let config = OllamaConfig::new(&instance.model)
+                .with_endpoint(endpoint)
+                .with_timeout_secs(180);
 
-                let ollama_runtime = OllamaRuntime::new(config)
+            let ollama_runtime = OllamaRuntime::new(config)
+                .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?;
+
+            // Try to detect capabilities from /api/show endpoint first,
+            // fall back to stored capabilities
+            let detected = ollama_runtime.fetch_capabilities_from_api().await;
+
+            let (multimodal, thinking, tools, max_ctx) = match &detected {
+                Some(caps) => {
+                    // Update stored capabilities if detection succeeded and values differ
+                    let changed = instance.capabilities.supports_multimodal
+                        != caps.supports_multimodal
+                        || instance.capabilities.supports_thinking != caps.supports_thinking
+                        || instance.capabilities.supports_tools != caps.supports_tools
+                        || instance.capabilities.max_context != caps.max_context;
+                    if changed {
+                        tracing::info!(
+                            backend_id = %instance.id,
+                            model = %instance.model,
+                            old_ctx = instance.capabilities.max_context,
+                            new_ctx = caps.max_context,
+                            "Updated Ollama capabilities from /api/show"
+                        );
+                        // Write back to storage and in-memory cache
+                        let mut updated = instance.clone();
+                        updated.capabilities.supports_multimodal = caps.supports_multimodal;
+                        updated.capabilities.supports_thinking = caps.supports_thinking;
+                        updated.capabilities.supports_tools = caps.supports_tools;
+                        updated.capabilities.max_context = caps.max_context;
+                        let _ = self.storage.save_instance(&updated);
+                        self.instances.insert(instance.id.clone(), updated);
+                    }
+                    (
+                        caps.supports_multimodal,
+                        caps.supports_thinking,
+                        caps.supports_tools,
+                        caps.max_context,
+                    )
+                }
+                None => {
+                    tracing::debug!(
+                        backend_id = %instance.id,
+                        "Could not detect Ollama capabilities from /api/show, using stored values"
+                    );
+                    let caps = &instance.capabilities;
+                    // Fallback to name-based context detection if stored value is 0
+                    let max_ctx = if caps.max_context > 0 {
+                        caps.max_context
+                    } else {
+                        let detected = detect_model_context(&instance.model);
+                        tracing::info!(
+                            backend_id = %instance.id,
+                            model = %instance.model,
+                            detected_context = detected,
+                            "Using name-based context detection as fallback"
+                        );
+                        detected
+                    };
+                    (
+                        caps.supports_multimodal,
+                        caps.supports_thinking,
+                        caps.supports_tools,
+                        max_ctx,
+                    )
+                }
+            };
+
+            let ollama_runtime =
+                ollama_runtime.with_capabilities_override(multimodal, thinking, tools, max_ctx);
+
+            Arc::new(ollama_runtime) as Arc<dyn LlmRuntime>
+        } else if matches!(instance.backend_type, LlmBackendType::LlamaCpp) {
+            #[cfg(feature = "llamacpp")]
+            {
+                // For llama.cpp, create runtime with proper config and capabilities override
+                let mut config = LlamaCppConfig::new(&instance.model)
+                    .with_endpoint(
+                        instance
+                            .endpoint
+                            .as_deref()
+                            .unwrap_or("http://127.0.0.1:8080"),
+                    )
+                    .with_timeout_secs(600);
+
+                if let Some(ref key) = instance.api_key {
+                    config = config.with_api_key(key);
+                }
+
+                let llamacpp_runtime = LlamaCppRuntime::new(config)
                     .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?;
 
-                // Try to detect capabilities from /api/show endpoint first,
+                // Try to detect capabilities from /props endpoint first,
                 // fall back to stored capabilities
-                let detected = ollama_runtime.fetch_capabilities_from_api().await;
+                let detected = llamacpp_runtime.detect_capabilities().await;
 
                 let (multimodal, thinking, tools, max_ctx) = match &detected {
                     Some(caps) => {
                         // Update stored capabilities if detection succeeded and values differ
-                        let changed = instance.capabilities.supports_multimodal != caps.supports_multimodal
-                            || instance.capabilities.supports_thinking != caps.supports_thinking
-                            || instance.capabilities.supports_tools != caps.supports_tools
-                            || instance.capabilities.max_context != caps.max_context;
+                        let changed = instance.capabilities.supports_multimodal
+                            != caps.supports_multimodal
+                            || instance.capabilities.max_context != caps.max_context
+                            || instance.capabilities.supports_tools != caps.supports_tools;
                         if changed {
                             tracing::info!(
                                 backend_id = %instance.id,
-                                model = %instance.model,
+                                old_multimodal = instance.capabilities.supports_multimodal,
+                                new_multimodal = caps.supports_multimodal,
                                 old_ctx = instance.capabilities.max_context,
                                 new_ctx = caps.max_context,
-                                "Updated Ollama capabilities from /api/show"
+                                "Updated llama.cpp capabilities from /props detection"
                             );
                             // Write back to storage and in-memory cache
                             let mut updated = instance.clone();
@@ -230,128 +320,40 @@ impl LlmBackendInstanceManager {
                     None => {
                         tracing::debug!(
                             backend_id = %instance.id,
-                            "Could not detect Ollama capabilities from /api/show, using stored values"
+                            "Could not detect llama.cpp capabilities from /props, using stored values"
                         );
                         let caps = &instance.capabilities;
-                        // Fallback to name-based context detection if stored value is 0
-                        let max_ctx = if caps.max_context > 0 {
-                            caps.max_context
-                        } else {
-                            let detected = detect_model_context(&instance.model);
-                            tracing::info!(
-                                backend_id = %instance.id,
-                                model = %instance.model,
-                                detected_context = detected,
-                                "Using name-based context detection as fallback"
-                            );
-                            detected
-                        };
                         (
                             caps.supports_multimodal,
                             caps.supports_thinking,
                             caps.supports_tools,
-                            max_ctx,
+                            caps.max_context,
                         )
                     }
                 };
 
-                let ollama_runtime = ollama_runtime.with_capabilities_override(
-                    multimodal, thinking, tools, max_ctx,
-                );
+                let llamacpp_runtime = llamacpp_runtime
+                    .with_capabilities_override(multimodal, thinking, tools, max_ctx);
 
-                Arc::new(ollama_runtime) as Arc<dyn LlmRuntime>
-            } else if matches!(instance.backend_type, LlmBackendType::LlamaCpp) {
-                #[cfg(feature = "llamacpp")]
-                {
-                    // For llama.cpp, create runtime with proper config and capabilities override
-                    let mut config = LlamaCppConfig::new(&instance.model)
-                        .with_endpoint(
-                            instance
-                                .endpoint
-                                .as_deref()
-                                .unwrap_or("http://127.0.0.1:8080"),
-                        )
-                        .with_timeout_secs(600);
+                Arc::new(llamacpp_runtime) as Arc<dyn LlmRuntime>
+            }
+            #[cfg(not(feature = "llamacpp"))]
+            {
+                return Err(LlmError::BackendUnavailable(
+                    "llamacpp feature not enabled".to_string(),
+                ));
+            }
+        } else {
+            // For cloud backends, use the generic create_backend
+            let config = serde_json::json!({
+                "base_url": instance.endpoint,
+                "model": instance.model,
+                "api_key": instance.api_key,
+            });
 
-                    if let Some(ref key) = instance.api_key {
-                        config = config.with_api_key(key);
-                    }
-
-                    let llamacpp_runtime = LlamaCppRuntime::new(config)
-                        .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?;
-
-                    // Try to detect capabilities from /props endpoint first,
-                    // fall back to stored capabilities
-                    let detected = llamacpp_runtime.detect_capabilities().await;
-
-                    let (multimodal, thinking, tools, max_ctx) = match &detected {
-                        Some(caps) => {
-                            // Update stored capabilities if detection succeeded and values differ
-                            let changed = instance.capabilities.supports_multimodal != caps.supports_multimodal
-                                || instance.capabilities.max_context != caps.max_context
-                                || instance.capabilities.supports_tools != caps.supports_tools;
-                            if changed {
-                                tracing::info!(
-                                    backend_id = %instance.id,
-                                    old_multimodal = instance.capabilities.supports_multimodal,
-                                    new_multimodal = caps.supports_multimodal,
-                                    old_ctx = instance.capabilities.max_context,
-                                    new_ctx = caps.max_context,
-                                    "Updated llama.cpp capabilities from /props detection"
-                                );
-                                // Write back to storage and in-memory cache
-                                let mut updated = instance.clone();
-                                updated.capabilities.supports_multimodal = caps.supports_multimodal;
-                                updated.capabilities.supports_thinking = caps.supports_thinking;
-                                updated.capabilities.supports_tools = caps.supports_tools;
-                                updated.capabilities.max_context = caps.max_context;
-                                let _ = self.storage.save_instance(&updated);
-                                self.instances.insert(instance.id.clone(), updated);
-                            }
-                            (
-                                caps.supports_multimodal,
-                                caps.supports_thinking,
-                                caps.supports_tools,
-                                caps.max_context,
-                            )
-                        }
-                        None => {
-                            tracing::debug!(
-                                backend_id = %instance.id,
-                                "Could not detect llama.cpp capabilities from /props, using stored values"
-                            );
-                            let caps = &instance.capabilities;
-                            (
-                                caps.supports_multimodal,
-                                caps.supports_thinking,
-                                caps.supports_tools,
-                                caps.max_context,
-                            )
-                        }
-                    };
-
-                    let llamacpp_runtime =
-                        llamacpp_runtime.with_capabilities_override(multimodal, thinking, tools, max_ctx);
-
-                    Arc::new(llamacpp_runtime) as Arc<dyn LlmRuntime>
-                }
-                #[cfg(not(feature = "llamacpp"))]
-                {
-                    return Err(LlmError::BackendUnavailable(
-                        "llamacpp feature not enabled".to_string(),
-                    ));
-                }
-            } else {
-                // For cloud backends, use the generic create_backend
-                let config = serde_json::json!({
-                    "base_url": instance.endpoint,
-                    "model": instance.model,
-                    "api_key": instance.api_key,
-                });
-
-                create_backend(instance.backend_name(), &config)
-                    .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?
-            };
+            create_backend(instance.backend_name(), &config)
+                .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?
+        };
 
         Ok(runtime)
     }
@@ -539,7 +541,10 @@ impl LlmBackendInstanceManager {
         for instance in llamacpp_instances {
             let config = LlamaCppConfig::new(&instance.model)
                 .with_endpoint(
-                    instance.endpoint.as_deref().unwrap_or("http://127.0.0.1:8080"),
+                    instance
+                        .endpoint
+                        .as_deref()
+                        .unwrap_or("http://127.0.0.1:8080"),
                 )
                 .with_timeout_secs(10);
 

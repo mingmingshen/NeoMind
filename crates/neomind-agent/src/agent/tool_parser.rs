@@ -3,9 +3,9 @@
 //! Priority: JSON > XML (fallback)
 //! JSON format preserves tool IDs from Ollama/OpenAI API.
 
+use regex::Regex;
 use serde_json::Value;
 use uuid::Uuid;
-use regex::Regex;
 
 use super::types::ToolCall;
 use crate::error::Result;
@@ -314,15 +314,16 @@ pub fn remove_tool_calls_from_response(response: &str) -> String {
 
     // Remove ```json ... ``` code blocks that contain tool call JSON
     // Match ```json or ``` followed by content containing "name" and "arguments"
-    let code_block_re = Regex::new(
-        r#"```(?:json)?\s*\n?\s*(\[\s*\{[\s\S]*?"name"[\s\S]*?\}\s*\])\s*\n?\s*```"#
-    ).unwrap();
+    let code_block_re =
+        Regex::new(r#"```(?:json)?\s*\n?\s*(\[\s*\{[\s\S]*?"name"[\s\S]*?\}\s*\])\s*\n?\s*```"#)
+            .unwrap();
     result = code_block_re.replace_all(&result, "").to_string();
 
     // Also remove ```json ... ``` with single object tool calls
     let code_block_obj_re = Regex::new(
-        r#"```(?:json)?\s*\n?\s*(\{\s*"name"[\s\S]*?"arguments"[\s\S]*?\})\s*\n?\s*```"#
-    ).unwrap();
+        r#"```(?:json)?\s*\n?\s*(\{\s*"name"[\s\S]*?"arguments"[\s\S]*?\})\s*\n?\s*```"#,
+    )
+    .unwrap();
     result = code_block_obj_re.replace_all(&result, "").to_string();
 
     // Remove JSON array format

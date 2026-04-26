@@ -52,14 +52,14 @@ pub mod dedup;
 pub mod embeddings;
 pub mod error;
 pub mod extractor;
-pub mod long_term;
 pub mod lifecycle;
+pub mod long_term;
 pub mod manager;
 pub mod mid_term;
 pub mod scheduler;
+pub mod security;
 pub mod short_term;
 pub mod snapshot;
-pub mod security;
 pub mod tiered;
 
 // Re-export commonly used types

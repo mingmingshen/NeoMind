@@ -409,13 +409,29 @@ async fn run_chat(session_id: Option<String>) -> Result<()> {
                             println!("[Plan: {} - {}]", stage, step);
                         }
                         neomind_agent::AgentEvent::ExecutionPlanCreated { plan, .. } => {
-                            println!("[ExecutionPlan: {} steps ({:?})]", plan.steps.len(), plan.mode);
+                            println!(
+                                "[ExecutionPlan: {} steps ({:?})]",
+                                plan.steps.len(),
+                                plan.mode
+                            );
                         }
-                        neomind_agent::AgentEvent::PlanStepStarted { step_id, description } => {
+                        neomind_agent::AgentEvent::PlanStepStarted {
+                            step_id,
+                            description,
+                        } => {
                             println!("[PlanStep {} started: {}]", step_id, description);
                         }
-                        neomind_agent::AgentEvent::PlanStepCompleted { step_id, success, summary } => {
-                            println!("[PlanStep {} {}: {}]", step_id, if success { "done" } else { "failed" }, summary);
+                        neomind_agent::AgentEvent::PlanStepCompleted {
+                            step_id,
+                            success,
+                            summary,
+                        } => {
+                            println!(
+                                "[PlanStep {} {}: {}]",
+                                step_id,
+                                if success { "done" } else { "failed" },
+                                summary
+                            );
                         }
                         neomind_agent::AgentEvent::Progress { message, .. } => {
                             println!("[Progress: {}]", message);
@@ -582,9 +598,7 @@ async fn run_check_update() -> Result<()> {
             });
 
             if let Some(asset) = server_asset {
-                if let (Some(name), Some(size)) =
-                    (asset["name"].as_str(), asset["size"].as_u64())
-                {
+                if let (Some(name), Some(size)) = (asset["name"].as_str(), asset["size"].as_u64()) {
                     let size_mb = size as f64 / (1024.0 * 1024.0);
                     println!(
                         "\nServer binary for your platform: {} ({:.1} MB)",
@@ -607,10 +621,7 @@ async fn run_check_update() -> Result<()> {
 
 /// Parse a semver string like "0.6.6" into [u32, u32, u32].
 fn semver(v: &str) -> [u32; 3] {
-    let parts: Vec<u32> = v
-        .split('.')
-        .filter_map(|s| s.parse().ok())
-        .collect();
+    let parts: Vec<u32> = v.split('.').filter_map(|s| s.parse().ok()).collect();
     match parts.as_slice() {
         [a, b, c] => [*a, *b, *c],
         [a, b] => [*a, *b, 0],

@@ -1019,9 +1019,12 @@ impl RuleDslParser {
                 let parts: Vec<&str> = left_part.split('.').collect();
                 if parts.len() >= 2 {
                     // Last part is the property, everything before is the device_id
-                    let property = parts.last().ok_or_else(|| RuleError::Parse(
-                        "Missing property in SET action".to_string()
-                    ))?.to_string();
+                    let property = parts
+                        .last()
+                        .ok_or_else(|| {
+                            RuleError::Parse("Missing property in SET action".to_string())
+                        })?
+                        .to_string();
                     let device_id = parts[..parts.len() - 1].join(".");
 
                     let value = if let Ok(num) = value_str.parse::<i64>() {

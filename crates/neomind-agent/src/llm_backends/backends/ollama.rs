@@ -178,7 +178,14 @@ impl OllamaRuntime {
             "verbose": false
         });
 
-        match self.client.post(&url).json(&request).timeout(self.config.timeout()).send().await {
+        match self
+            .client
+            .post(&url)
+            .json(&request)
+            .timeout(self.config.timeout())
+            .send()
+            .await
+        {
             Ok(response) if response.status().is_success() => {
                 match response.json::<OllamaShowResponse>().await {
                     Ok(show_response) => {
@@ -282,7 +289,9 @@ impl OllamaRuntime {
         result.push_str("## Important Rules\n");
         result.push_str("1. ALWAYS output tool calls as a JSON array\n");
         result.push_str("2. Don't explain, just call the tool directly\n");
-        result.push_str("3. Use the exact tool names and parameters from the Available Tools section above\n");
+        result.push_str(
+            "3. Use the exact tool names and parameters from the Available Tools section above\n",
+        );
 
         result
     }
@@ -296,7 +305,9 @@ impl OllamaRuntime {
     ) -> Vec<OllamaMessage> {
         // Safe: tools.is_some_and() guarantees Some if the condition is true
         let tool_instructions = if !supports_native_tools && tools.is_some_and(|t| !t.is_empty()) {
-            Some(Self::format_tools_for_text_calling(tools.expect("tools must be Some when is_some_and is true")))
+            Some(Self::format_tools_for_text_calling(
+                tools.expect("tools must be Some when is_some_and is true"),
+            ))
         } else {
             None
         };
@@ -1190,8 +1201,7 @@ impl LlmRuntime for OllamaRuntime {
                                                 // Content from Ollama's message.content is the actual response.
                                                 // Thinking is already separated in message.thinking field.
                                                 total_chars += content.chars().count();
-                                                let _ =
-                                                    tx.send(Ok((content.clone(), false))).await;
+                                                let _ = tx.send(Ok((content.clone(), false))).await;
                                             }
 
                                             if ollama_chunk.done {
@@ -1210,11 +1220,18 @@ impl LlmRuntime for OllamaRuntime {
                                                 );
 
                                                 // Send token usage as in-band marker before closing
-                                                if let Some(prompt_tokens) = ollama_chunk.prompt_eval_count {
-                                                    let _ = tx.send(Ok((
-                                                        format!("\n__NEOMIND_TOKEN_PROMPT:{}__", prompt_tokens),
-                                                        false,
-                                                    ))).await;
+                                                if let Some(prompt_tokens) =
+                                                    ollama_chunk.prompt_eval_count
+                                                {
+                                                    let _ = tx
+                                                        .send(Ok((
+                                                            format!(
+                                                                "\n__NEOMIND_TOKEN_PROMPT:{}__",
+                                                                prompt_tokens
+                                                            ),
+                                                            false,
+                                                        )))
+                                                        .await;
                                                 }
 
                                                 // Warn if no content was generated (possible token budget issue)
@@ -1553,7 +1570,10 @@ pub fn detect_model_context(model_name: &str) -> usize {
     }
 
     // Mistral family (including ministral/Mistral Small)
-    if name_lower.starts_with("mistral") || name_lower.starts_with("ministral") || name_lower.contains("mixtral") {
+    if name_lower.starts_with("mistral")
+        || name_lower.starts_with("ministral")
+        || name_lower.contains("mixtral")
+    {
         // Ministral (Mistral Small) supports 128k context
         if name_lower.starts_with("ministral") {
             return 128_000;

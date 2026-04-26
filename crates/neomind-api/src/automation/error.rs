@@ -110,4 +110,3 @@ impl From<neomind_core::LlmError> for AutomationError {
         AutomationError::LlmError(err.to_string())
     }
 }
-

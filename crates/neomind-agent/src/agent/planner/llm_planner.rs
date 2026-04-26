@@ -6,7 +6,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use super::keyword::KeywordPlanner;
-use super::types::{ExecutionPlan, PlanningMode, PlanStep, StepId};
+use super::types::{ExecutionPlan, PlanStep, PlanningMode, StepId};
 use crate::agent::staged::IntentResult;
 use crate::context_selector::ContextBundle;
 use crate::llm::LlmInterface;

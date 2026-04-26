@@ -1,8 +1,11 @@
-
 pub(crate) fn extract_command_from_description(description: &str) -> Option<String> {
     // Use a helper to find patterns case-insensitively
     // and return the trimmed result as a String
-    pub(crate) fn find_and_extract(text: &str, pattern: &str, pattern_len: usize) -> Option<String> {
+    pub(crate) fn find_and_extract(
+        text: &str,
+        pattern: &str,
+        pattern_len: usize,
+    ) -> Option<String> {
         let text_lower = text.to_lowercase();
         if let Some(idx) = text_lower.find(pattern) {
             let after = &text[idx + pattern_len..];
@@ -24,7 +27,11 @@ pub(crate) fn extract_command_from_description(description: &str) -> Option<Stri
 }
 
 pub(crate) fn extract_device_from_description(description: &str) -> Option<String> {
-    pub(crate) fn find_and_extract(text: &str, pattern: &str, pattern_len: usize) -> Option<String> {
+    pub(crate) fn find_and_extract(
+        text: &str,
+        pattern: &str,
+        pattern_len: usize,
+    ) -> Option<String> {
         let text_lower = text.to_lowercase();
         if let Some(idx) = text_lower.find(pattern) {
             let after = &text[idx + pattern_len..];
@@ -65,7 +72,10 @@ pub(crate) fn json_value_to_string(value: &serde_json::Value) -> String {
     }
 }
 
-pub(crate) fn extract_string_field(obj: &serde_json::Map<String, serde_json::Value>, key: &str) -> String {
+pub(crate) fn extract_string_field(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> String {
     obj.get(key).map(json_value_to_string).unwrap_or_default()
 }
 

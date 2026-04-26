@@ -183,10 +183,10 @@ pub type MetricDefinition = MetricDescriptor;
 pub use host::Extension;
 
 pub use host::{
-    set_native_capability_bridge,
-    set_push_output_writer,
     send_push_output,
 
+    set_native_capability_bridge,
+    set_push_output_writer,
     AvailableCapabilities,
     CapabilityError,
     CapabilityManifest,

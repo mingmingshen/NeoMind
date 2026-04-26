@@ -495,11 +495,8 @@ impl LlmInterface {
         let system_tokens = estimate_tokens(system_prompt);
         let user_tokens = estimate_tokens(user_message);
 
-        let reserved = system_tokens
-            + user_tokens
-            + tool_overhead_tokens
-            + template_overhead_tokens
-            + 200; // additional safety margin
+        let reserved =
+            system_tokens + user_tokens + tool_overhead_tokens + template_overhead_tokens + 200; // additional safety margin
 
         let available_tokens = prompt_budget.saturating_sub(reserved);
 
@@ -985,7 +982,8 @@ impl LlmInterface {
                     .filter(|m| !pinned.contains(&m.skill_id))
                     .collect();
                 if !auto_matches.is_empty() {
-                    let names: Vec<&str> = auto_matches.iter().map(|m| m.skill_name.as_str()).collect();
+                    let names: Vec<&str> =
+                        auto_matches.iter().map(|m| m.skill_name.as_str()).collect();
                     prompt.push_str(&format!(
                         "\n## Skill Hints\nThis conversation may involve the following operation domains: {}. \
                          For detailed steps and parameter formats, use the skill tool to search for relevant guides.\n",
@@ -1938,8 +1936,8 @@ impl LlmInterface {
         };
 
         let use_compact_prompt = prompt_budget < 3000; // < ~3000 tokens → use compact prompt
-        let skip_history = prompt_budget < 1500;       // < ~1500 tokens → skip history entirely
-        let skip_tools = prompt_budget < 2000;         // < ~2000 tokens → no tool definitions
+        let skip_history = prompt_budget < 1500; // < ~1500 tokens → skip history entirely
+        let skip_tools = prompt_budget < 2000; // < ~2000 tokens → no tool definitions
 
         tracing::info!(
             max_ctx = max_ctx,
@@ -1956,7 +1954,8 @@ impl LlmInterface {
                 // Compact prompt for small context models (< 4096)
                 "You are NeoMind, a helpful IoT assistant. Answer questions concisely. \
                  You can help with device management, data queries, and automation rules. \
-                 Keep responses brief.".to_string()
+                 Keep responses brief."
+                    .to_string()
             } else {
                 self.build_system_prompt_with_tools(Some(&user_message))
                     .await
@@ -2076,7 +2075,8 @@ impl LlmInterface {
         let compact_fallback_messages = if let Some(hist) = history {
             let mut compact = vec![Message::system(&compact_fallback_system)];
             // Keep only the last few messages (most recent tool round + user message)
-            let non_system: Vec<&Message> = hist.iter()
+            let non_system: Vec<&Message> = hist
+                .iter()
                 .filter(|m| m.role != neomind_core::MessageRole::System)
                 .collect();
             // Take last 4 messages max (covers: user → assistant tool_call → tool result → assistant response)
@@ -2134,7 +2134,8 @@ impl LlmInterface {
                 }
             } else {
                 // Find the first user message index (original question) — always preserve it
-                let original_user_idx = history_msgs.iter()
+                let original_user_idx = history_msgs
+                    .iter()
                     .position(|m| m.role == neomind_core::MessageRole::User);
                 let user_msg_tokens = original_user_idx
                     .map(|idx| estimate_tokens(&history_msgs[idx].content.as_text()))
@@ -2303,7 +2304,11 @@ fn extract_token_marker(content: &str, is_thinking: bool) -> (String, bool, Opti
         let after = &content[start + "__NEOMIND_TOKEN_PROMPT:".len()..];
         if let Some(end) = after.find("__") {
             if let Ok(tokens) = after[..end].parse::<u32>() {
-                let clean = format!("{}{}", &content[..start], &content[start + "__NEOMIND_TOKEN_PROMPT:".len() + end + 2..]);
+                let clean = format!(
+                    "{}{}",
+                    &content[..start],
+                    &content[start + "__NEOMIND_TOKEN_PROMPT:".len() + end + 2..]
+                );
                 return (clean.trim().to_string(), is_thinking, Some(tokens));
             }
         }

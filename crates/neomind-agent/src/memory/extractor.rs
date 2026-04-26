@@ -284,7 +284,12 @@ mod tests {
         let json = r#"{"memories":[{"content":"User has 3 IoT devices","category":"domain_knowledge","importance":70,"action":{"merge":{"targets":["2 IoT devices"]}}}]}"#;
         let result = ChatExtractor::parse_response(json).unwrap();
         assert_eq!(result.memories.len(), 1);
-        assert_eq!(result.memories[0].action, MemoryAction::Merge { targets: vec!["2 IoT devices".to_string()] });
+        assert_eq!(
+            result.memories[0].action,
+            MemoryAction::Merge {
+                targets: vec!["2 IoT devices".to_string()]
+            }
+        );
     }
 
     #[test]

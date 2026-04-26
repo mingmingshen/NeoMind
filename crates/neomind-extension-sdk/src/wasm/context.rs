@@ -33,9 +33,7 @@ pub struct ExtensionContext {
 impl ExtensionContext {
     /// Create a new WASM extension context
     pub fn new(extension_id: String) -> Self {
-        Self {
-            extension_id,
-        }
+        Self { extension_id }
     }
 
     /// Get extension ID

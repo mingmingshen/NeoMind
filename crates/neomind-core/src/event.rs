@@ -522,9 +522,9 @@ impl NeoMindEvent {
     /// to skip device status updates for synthetic metrics.
     pub fn is_virtual_metric(&self) -> bool {
         match self {
-            Self::DeviceMetric { is_virtual, metric, .. } => {
-                is_virtual.unwrap_or(false) || metric.starts_with("transform.")
-            }
+            Self::DeviceMetric {
+                is_virtual, metric, ..
+            } => is_virtual.unwrap_or(false) || metric.starts_with("transform."),
             _ => false,
         }
     }

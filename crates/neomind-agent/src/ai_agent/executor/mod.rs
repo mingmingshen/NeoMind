@@ -81,35 +81,28 @@ struct ToolLoopOutput {
     round_data_list_raw: Vec<(Option<String>, Vec<ToolCallRecord>)>,
 }
 
-
 // Sub-modules
-mod response_parser;
-mod context;
-mod data_collector;
 mod analyzer;
 mod command_executor;
-mod memory;
+mod context;
+mod data_collector;
 mod intent;
+mod memory;
+mod response_parser;
 
 // Re-export public types
-pub use context::{EventTriggerData, DataSourceRef, ChainState, ChainResult};
 pub(crate) use analyzer::AnalysisResult;
+pub use context::{ChainResult, ChainState, DataSourceRef, EventTriggerData};
 
 // Re-export functions needed by sibling modules (via use super::*)
+pub(crate) use context::{clean_and_truncate_text, score_turn_relevance, truncate_to};
+pub(crate) use data_collector::get_time_context;
+pub(crate) use intent::extract_threshold;
 pub(crate) use response_parser::{
-    extract_command_from_description, extract_device_from_description,
-    json_value_to_string, extract_string_field, sanitize_json_string,
-    extract_json_from_mixed_text, try_recover_truncated_json,
-    parse_final_tool_response, summarize_tool_output, extract_json_from_codeblock,
-};
-pub(crate) use context::{
-    clean_and_truncate_text, truncate_to, score_turn_relevance,
-};
-pub(crate) use data_collector::{
-    get_time_context,
-};
-pub(crate) use intent::{
-    extract_threshold,
+    extract_command_from_description, extract_device_from_description, extract_json_from_codeblock,
+    extract_json_from_mixed_text, extract_string_field, json_value_to_string,
+    parse_final_tool_response, sanitize_json_string, summarize_tool_output,
+    try_recover_truncated_json,
 };
 
 /// Build JSON Schema parameters from extension command parameters.
@@ -326,7 +319,11 @@ impl AgentExecutor {
         }
 
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
-        let registry_available = self.tool_registry.read().unwrap_or_else(|e| e.into_inner()).is_some();
+        let registry_available = self
+            .tool_registry
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some();
         let result = llm_supports_tools && registry_available;
         if !result {
             tracing::warn!(
@@ -356,13 +353,14 @@ impl AgentExecutor {
             .cloned()
             .unwrap_or_default();
 
-        let to_tool_def = |t: &serde_json::Value| -> Option<neomind_core::llm::backend::ToolDefinition> {
-            Some(neomind_core::llm::backend::ToolDefinition {
-                name: t.get("name")?.as_str()?.to_string(),
-                description: t.get("description")?.as_str()?.to_string(),
-                parameters: t.get("parameters")?.clone(),
-            })
-        };
+        let to_tool_def =
+            |t: &serde_json::Value| -> Option<neomind_core::llm::backend::ToolDefinition> {
+                Some(neomind_core::llm::backend::ToolDefinition {
+                    name: t.get("name")?.as_str()?.to_string(),
+                    description: t.get("description")?.as_str()?.to_string(),
+                    parameters: t.get("parameters")?.clone(),
+                })
+            };
 
         match tool_config {
             Some(config) if !config.allowed_tools.is_empty() => tools_list
@@ -386,7 +384,11 @@ impl AgentExecutor {
     /// (learned patterns, baselines, recent conclusions, user messages) so the
     /// agent can leverage accumulated experience and make progressively better
     /// decisions.
-    fn build_tool_system_prompt(agent: &AiAgent, data_collected: &[DataCollected], invocation_input: Option<&super::AgentInput>) -> String {
+    fn build_tool_system_prompt(
+        agent: &AiAgent,
+        data_collected: &[DataCollected],
+        invocation_input: Option<&super::AgentInput>,
+    ) -> String {
         let time_ctx = get_time_context();
 
         // Collect non-image, non-placeholder data.
@@ -395,12 +397,18 @@ impl AgentExecutor {
             .iter()
             .filter(|d| {
                 // Exclude images
-                if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if d.values
+                    .get("_is_image")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
                     return false;
                 }
                 // Exclude placeholder data from collect_data
                 if d.source == "system"
-                    && d.values.get("message").and_then(|v| v.as_str())
+                    && d.values
+                        .get("message")
+                        .and_then(|v| v.as_str())
                         .map(|s| s.contains("No pre-collected data"))
                         .unwrap_or(false)
                 {
@@ -417,10 +425,15 @@ impl AgentExecutor {
         let resource_info = if agent.resources.is_empty() {
             String::new()
         } else {
-            let items: Vec<String> = agent.resources.iter()
+            let items: Vec<String> = agent
+                .resources
+                .iter()
                 .map(|r| format!("- {} ({})", r.name, r.resource_id))
                 .collect();
-            format!("\nRecommended resources to focus on:\n{}\n", items.join("\n"))
+            format!(
+                "\nRecommended resources to focus on:\n{}\n",
+                items.join("\n")
+            )
         };
 
         let current_data_section = if data_text.is_empty() {
@@ -440,7 +453,10 @@ impl AgentExecutor {
 
         // 1. Recent conclusions from short-term memory
         if !agent.memory.short_term.summaries.is_empty() {
-            let recent: Vec<String> = agent.memory.short_term.summaries
+            let recent: Vec<String> = agent
+                .memory
+                .short_term
+                .summaries
                 .iter()
                 .rev()
                 .take(3)
@@ -454,11 +470,20 @@ impl AgentExecutor {
 
         // 2. Learned patterns (high confidence only)
         if !agent.memory.learned_patterns.is_empty() {
-            let patterns: Vec<String> = agent.memory.learned_patterns
+            let patterns: Vec<String> = agent
+                .memory
+                .learned_patterns
                 .iter()
                 .filter(|p| p.confidence >= 0.6)
                 .take(5)
-                .map(|p| format!("- [{}] {} ({:.0}%)", p.pattern_type, p.description, p.confidence * 100.0))
+                .map(|p| {
+                    format!(
+                        "- [{}] {} ({:.0}%)",
+                        p.pattern_type,
+                        p.description,
+                        p.confidence * 100.0
+                    )
+                })
                 .collect();
             if !patterns.is_empty() {
                 history_parts.push(format!("### Learned Patterns\n{}", patterns.join("\n")));
@@ -467,7 +492,9 @@ impl AgentExecutor {
 
         // 3. Baseline values
         if !agent.memory.baselines.is_empty() {
-            let bl: Vec<String> = agent.memory.baselines
+            let bl: Vec<String> = agent
+                .memory
+                .baselines
                 .iter()
                 .take(5)
                 .map(|(k, v)| format!("- {}: {:.2}", k, v))
@@ -477,7 +504,8 @@ impl AgentExecutor {
 
         // 4. User messages (highest priority instructions)
         if !agent.user_messages.is_empty() {
-            let msgs: Vec<String> = agent.user_messages
+            let msgs: Vec<String> = agent
+                .user_messages
                 .iter()
                 .rev()
                 .take(5)
@@ -498,7 +526,10 @@ impl AgentExecutor {
         let history_section = if history_parts.is_empty() {
             String::new()
         } else {
-            format!("\n## Historical Context (learn from past experience)\n{}\n", history_parts.join("\n\n"))
+            format!(
+                "\n## Historical Context (learn from past experience)\n{}\n",
+                history_parts.join("\n\n")
+            )
         };
 
         // Build invocation input section
@@ -518,7 +549,10 @@ impl AgentExecutor {
                 if parts.is_empty() {
                     String::new()
                 } else {
-                    format!("\n## Caller Input (invoked by external request)\n{}\n", parts.join("\n"))
+                    format!(
+                        "\n## Caller Input (invoked by external request)\n{}\n",
+                        parts.join("\n")
+                    )
                 }
             }
             None => String::new(),
@@ -545,14 +579,16 @@ impl AgentExecutor {
     }
 
     /// Build initial messages (system + user) with multimodal image support.
-    fn build_tool_messages(
-        system_prompt: &str,
-        data_collected: &[DataCollected],
-    ) -> Vec<Message> {
+    fn build_tool_messages(system_prompt: &str, data_collected: &[DataCollected]) -> Vec<Message> {
         // Collect image parts
         let image_parts: Vec<ContentPart> = data_collected
             .iter()
-            .filter(|d| d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false))
+            .filter(|d| {
+                d.values
+                    .get("_is_image")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            })
             .filter_map(|d| {
                 if let Some(url) = d.values.get("image_url").and_then(|v| v.as_str()) {
                     if !url.is_empty() {
@@ -561,10 +597,15 @@ impl AgentExecutor {
                 }
                 if let Some(base64) = d.values.get("image_base64").and_then(|v| v.as_str()) {
                     if !base64.is_empty() {
-                        let mime = d.values.get("image_mime_type")
+                        let mime = d
+                            .values
+                            .get("image_mime_type")
                             .and_then(|v| v.as_str())
                             .unwrap_or("image/jpeg");
-                        return Some(ContentPart::image_base64(base64.to_string(), mime.to_string()));
+                        return Some(ContentPart::image_base64(
+                            base64.to_string(),
+                            mime.to_string(),
+                        ));
                     }
                 }
                 None
@@ -645,9 +686,12 @@ impl AgentExecutor {
             };
 
             self.send_thinking(
-                &agent.id, execution_id, step_num,
+                &agent.id,
+                execution_id,
+                step_num,
                 &format!("Tool execution round {} - calling LLM", round + 1),
-            ).await;
+            )
+            .await;
             step_num += 1;
 
             let output = match llm_runtime.generate(input).await {
@@ -684,16 +728,27 @@ impl AgentExecutor {
             );
 
             self.send_thinking(
-                &agent.id, execution_id, step_num,
+                &agent.id,
+                execution_id,
+                step_num,
                 &format!(
                     "Round {}: Executing {} tool(s): {}",
-                    round + 1, tool_calls.len(),
-                    tool_calls.iter().map(|tc| tc.name.as_str()).collect::<Vec<_>>().join(", ")
+                    round + 1,
+                    tool_calls.len(),
+                    tool_calls
+                        .iter()
+                        .map(|tc| tc.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
-            ).await;
+            )
+            .await;
             step_num += 1;
 
-            messages.push(Message::new(MessageRole::Assistant, Content::text(&output.text)));
+            messages.push(Message::new(
+                MessageRole::Assistant,
+                Content::text(&output.text),
+            ));
 
             let registry_calls: Vec<crate::toolkit::registry::ToolCall> = tool_calls
                 .iter()
@@ -707,10 +762,16 @@ impl AgentExecutor {
 
             let mut round_tool_calls: Vec<ToolCallRecord> = Vec::new();
             for (i, tc) in tool_calls.iter().enumerate() {
-                let result = results.get(i).cloned().unwrap_or_else(|| crate::toolkit::ToolResult {
-                    name: tc.name.clone(),
-                    result: Err(crate::toolkit::error::ToolError::Execution("No result".to_string())),
-                });
+                let result =
+                    results
+                        .get(i)
+                        .cloned()
+                        .unwrap_or_else(|| crate::toolkit::ToolResult {
+                            name: tc.name.clone(),
+                            result: Err(crate::toolkit::error::ToolError::Execution(
+                                "No result".to_string(),
+                            )),
+                        });
                 round_tool_calls.push(ToolCallRecord {
                     name: tc.name.clone(),
                     input: tc.arguments.clone(),
@@ -719,7 +780,11 @@ impl AgentExecutor {
             }
 
             round_data_list.push(RoundData {
-                thought: if remaining_text.is_empty() { None } else { Some(remaining_text) },
+                thought: if remaining_text.is_empty() {
+                    None
+                } else {
+                    Some(remaining_text)
+                },
                 tool_calls: round_tool_calls,
             });
 
@@ -730,11 +795,15 @@ impl AgentExecutor {
                         let raw = serde_json::to_string_pretty(&output.data)
                             .unwrap_or_else(|_| "Success".to_string());
                         // Sanitize base64/image data to prevent context bloat
-                        let sanitized = crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
+                        let sanitized =
+                            crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
                         // UTF-8 safe truncation
                         const MAX_TOOL_RESULT_IN_MSG: usize = 4000;
                         if sanitized.chars().count() > MAX_TOOL_RESULT_IN_MSG {
-                            crate::agent::streaming::truncate_result_utf8(&sanitized, MAX_TOOL_RESULT_IN_MSG)
+                            crate::agent::streaming::truncate_result_utf8(
+                                &sanitized,
+                                MAX_TOOL_RESULT_IN_MSG,
+                            )
                         } else {
                             sanitized
                         }
@@ -769,9 +838,12 @@ impl AgentExecutor {
                     Err(e) => format!("Error: {}", e),
                 };
                 self.send_thinking(
-                    &agent.id, execution_id, step_num,
+                    &agent.id,
+                    execution_id,
+                    step_num,
                     &format!("tool '{}' → {}", result.name, result_preview),
-                ).await;
+                )
+                .await;
                 step_num += 1;
             }
         }
@@ -809,9 +881,13 @@ impl AgentExecutor {
                         let raw = serde_json::to_string_pretty(&output.data)
                             .unwrap_or_else(|_| "Success".to_string());
                         // Sanitize base64/image data to prevent context bloat
-                        let sanitized = crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
+                        let sanitized =
+                            crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
                         if sanitized.chars().count() > TOOL_RESULT_MAX_LEN {
-                            crate::agent::streaming::truncate_result_utf8(&sanitized, TOOL_RESULT_MAX_LEN)
+                            crate::agent::streaming::truncate_result_utf8(
+                                &sanitized,
+                                TOOL_RESULT_MAX_LEN,
+                            )
                         } else {
                             sanitized
                         }
@@ -916,9 +992,13 @@ impl AgentExecutor {
         // When the LLM didn't produce structured JSON:
         // - If Phase 2 generated natural language, use it as situation_analysis
         // - Otherwise fall back to reasoning texts or generic summary
-        if is_generic_fallback || situation_analysis.is_empty() || situation_analysis == "Completed tool execution rounds." {
+        if is_generic_fallback
+            || situation_analysis.is_empty()
+            || situation_analysis == "Completed tool execution rounds."
+        {
             // Phase 2 natural language response — use as situation_analysis
-            if is_generic_fallback && !final_text.is_empty()
+            if is_generic_fallback
+                && !final_text.is_empty()
                 && final_text != "Completed tool execution rounds."
                 && final_text != "LLM generation failed during tool execution."
             {
@@ -1098,7 +1178,9 @@ impl AgentExecutor {
 
         // summary: the actual LLM response text (Phase 2 or natural).
         // Skip generic/error strings — the frontend already shows conclusion separately.
-        let summary_text = if is_generic_fallback || final_text == "LLM generation failed during tool execution." {
+        let summary_text = if is_generic_fallback
+            || final_text == "LLM generation failed during tool execution."
+        {
             String::new()
         } else {
             final_text.clone()
@@ -1144,7 +1226,14 @@ impl AgentExecutor {
         let mut messages = Self::build_tool_messages(&system_prompt, data_collected);
 
         let loop_output = self
-            .run_tool_loop(agent, &registry, &llm_runtime, &filtered_tools, &mut messages, execution_id)
+            .run_tool_loop(
+                agent,
+                &registry,
+                &llm_runtime,
+                &filtered_tools,
+                &mut messages,
+                execution_id,
+            )
             .await;
 
         let (decision_process, execution_result) =
@@ -1160,7 +1249,10 @@ impl AgentExecutor {
 
     /// Update the tool registry (e.g. after extensions are loaded).
     pub fn set_tool_registry(&self, registry: Arc<crate::toolkit::ToolRegistry>) {
-        *self.tool_registry.write().unwrap_or_else(|e| e.into_inner()) = Some(registry);
+        *self
+            .tool_registry
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = Some(registry);
     }
 
     // ========================================================================
@@ -1363,126 +1455,170 @@ impl AgentExecutor {
                         "LLM runtime cache miss, creating new runtime"
                     );
 
-                    let runtime: Result<Arc<dyn LlmRuntime + Send + Sync>, _> =
-                        match backend.backend_type {
-                            LlmBackendType::Ollama => {
-                                let endpoint = backend
-                                    .endpoint
-                                    .clone()
-                                    .unwrap_or_else(|| "http://localhost:11434".to_string());
-                                let model = backend.model.clone();
-                                let timeout = std::env::var("OLLAMA_TIMEOUT_SECS")
-                                    .ok()
-                                    .and_then(|s| s.parse().ok())
-                                    .unwrap_or(120);
+                    let runtime: Result<Arc<dyn LlmRuntime + Send + Sync>, _> = match backend
+                        .backend_type
+                    {
+                        LlmBackendType::Ollama => {
+                            let endpoint = backend
+                                .endpoint
+                                .clone()
+                                .unwrap_or_else(|| "http://localhost:11434".to_string());
+                            let model = backend.model.clone();
+                            let timeout = std::env::var("OLLAMA_TIMEOUT_SECS")
+                                .ok()
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(120);
 
-                                OllamaRuntime::new(
-                                    OllamaConfig::new(&model)
-                                        .with_endpoint(&endpoint)
-                                        .with_timeout_secs(timeout),
+                            OllamaRuntime::new(
+                                OllamaConfig::new(&model)
+                                    .with_endpoint(&endpoint)
+                                    .with_timeout_secs(timeout),
+                            )
+                            .map(|runtime| {
+                                let runtime = runtime.with_capabilities_override(
+                                    backend.capabilities.supports_multimodal,
+                                    backend.capabilities.supports_thinking,
+                                    backend.capabilities.supports_tools,
+                                    backend.capabilities.max_context,
+                                );
+                                Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                            })
+                        }
+                        LlmBackendType::OpenAi => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let endpoint = backend
+                                .endpoint
+                                .clone()
+                                .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+                            let timeout = Self::env_timeout_secs("OPENAI_TIMEOUT_SECS", 60);
+                            Self::create_cloud_runtime(
+                                CloudConfig::custom(&api_key, &endpoint)
+                                    .with_model(&backend.model)
+                                    .with_timeout_secs(timeout),
+                                &backend.capabilities,
+                            )
+                        }
+                        LlmBackendType::Anthropic => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let timeout = Self::env_timeout_secs("ANTHROPIC_TIMEOUT_SECS", 60);
+                            Self::create_cloud_runtime(
+                                CloudConfig::anthropic(&api_key)
+                                    .with_model(&backend.model)
+                                    .with_timeout_secs(timeout),
+                                &backend.capabilities,
+                            )
+                        }
+                        LlmBackendType::Google => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let timeout = Self::env_timeout_secs("GOOGLE_TIMEOUT_SECS", 60);
+                            Self::create_cloud_runtime(
+                                CloudConfig::google(&api_key)
+                                    .with_model(&backend.model)
+                                    .with_timeout_secs(timeout),
+                                &backend.capabilities,
+                            )
+                        }
+                        LlmBackendType::XAi => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let timeout = Self::env_timeout_secs("XAI_TIMEOUT_SECS", 60);
+                            Self::create_cloud_runtime(
+                                CloudConfig::grok(&api_key)
+                                    .with_model(&backend.model)
+                                    .with_timeout_secs(timeout),
+                                &backend.capabilities,
+                            )
+                        }
+                        LlmBackendType::Qwen => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let endpoint = backend.endpoint.clone().unwrap_or_else(|| {
+                                "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string()
+                            });
+                            let timeout = Self::env_timeout_secs("QWEN_TIMEOUT_SECS", 60);
+                            Self::create_cloud_runtime(
+                                CloudConfig::custom(&api_key, &endpoint)
+                                    .with_model(&backend.model)
+                                    .with_timeout_secs(timeout),
+                                &backend.capabilities,
+                            )
+                        }
+                        LlmBackendType::DeepSeek => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let endpoint = backend
+                                .endpoint
+                                .clone()
+                                .unwrap_or_else(|| "https://api.deepseek.com".to_string());
+                            let timeout = Self::env_timeout_secs("DEEPSEEK_TIMEOUT_SECS", 60);
+                            Self::create_cloud_runtime(
+                                CloudConfig::custom(&api_key, &endpoint)
+                                    .with_model(&backend.model)
+                                    .with_timeout_secs(timeout),
+                                &backend.capabilities,
+                            )
+                        }
+                        LlmBackendType::GLM => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let endpoint = backend.endpoint.clone().unwrap_or_else(|| {
+                                "https://open.bigmodel.cn/api/paas/v4".to_string()
+                            });
+                            let timeout = Self::env_timeout_secs("GLM_TIMEOUT_SECS", 60);
+                            Self::create_cloud_runtime(
+                                CloudConfig::custom(&api_key, &endpoint)
+                                    .with_model(&backend.model)
+                                    .with_timeout_secs(timeout),
+                                &backend.capabilities,
+                            )
+                        }
+                        LlmBackendType::MiniMax => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let endpoint = backend
+                                .endpoint
+                                .clone()
+                                .unwrap_or_else(|| "https://api.minimax.chat/v1".to_string());
+                            let timeout = Self::env_timeout_secs("MINIMAX_TIMEOUT_SECS", 60);
+                            Self::create_cloud_runtime(
+                                CloudConfig::custom(&api_key, &endpoint)
+                                    .with_model(&backend.model)
+                                    .with_timeout_secs(timeout),
+                                &backend.capabilities,
+                            )
+                        }
+                        #[cfg(feature = "llamacpp")]
+                        LlmBackendType::LlamaCpp => {
+                            let endpoint = backend
+                                .endpoint
+                                .clone()
+                                .unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
+                            let timeout = Self::env_timeout_secs("LLAMACPP_TIMEOUT_SECS", 180);
+                            let config =
+                                crate::llm_backends::backends::llamacpp::LlamaCppConfig::new(
+                                    &backend.model,
                                 )
-                                .map(|runtime| {
-                                    let runtime = runtime.with_capabilities_override(
+                                .with_endpoint(&endpoint)
+                                .with_timeout_secs(timeout);
+                            crate::llm_backends::backends::llamacpp::LlamaCppRuntime::new(config)
+                                .map(|rt| {
+                                    let rt = rt.with_capabilities_override(
                                         backend.capabilities.supports_multimodal,
                                         backend.capabilities.supports_thinking,
                                         backend.capabilities.supports_tools,
                                         backend.capabilities.max_context,
                                     );
-                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                                    std::sync::Arc::new(rt)
+                                        as std::sync::Arc<
+                                            dyn neomind_core::llm::backend::LlmRuntime
+                                                + Send
+                                                + Sync,
+                                        >
                                 })
-                            }
-                            LlmBackendType::OpenAi => {
-                                let api_key = backend.api_key.clone().unwrap_or_default();
-                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-                                let timeout = Self::env_timeout_secs("OPENAI_TIMEOUT_SECS", 60);
-                                Self::create_cloud_runtime(
-                                    CloudConfig::custom(&api_key, &endpoint).with_model(&backend.model).with_timeout_secs(timeout),
-                                    &backend.capabilities,
-                                )
-                            }
-                            LlmBackendType::Anthropic => {
-                                let api_key = backend.api_key.clone().unwrap_or_default();
-                                let timeout = Self::env_timeout_secs("ANTHROPIC_TIMEOUT_SECS", 60);
-                                Self::create_cloud_runtime(
-                                    CloudConfig::anthropic(&api_key).with_model(&backend.model).with_timeout_secs(timeout),
-                                    &backend.capabilities,
-                                )
-                            }
-                            LlmBackendType::Google => {
-                                let api_key = backend.api_key.clone().unwrap_or_default();
-                                let timeout = Self::env_timeout_secs("GOOGLE_TIMEOUT_SECS", 60);
-                                Self::create_cloud_runtime(
-                                    CloudConfig::google(&api_key).with_model(&backend.model).with_timeout_secs(timeout),
-                                    &backend.capabilities,
-                                )
-                            }
-                            LlmBackendType::XAi => {
-                                let api_key = backend.api_key.clone().unwrap_or_default();
-                                let timeout = Self::env_timeout_secs("XAI_TIMEOUT_SECS", 60);
-                                Self::create_cloud_runtime(
-                                    CloudConfig::grok(&api_key).with_model(&backend.model).with_timeout_secs(timeout),
-                                    &backend.capabilities,
-                                )
-                            }
-                            LlmBackendType::Qwen => {
-                                let api_key = backend.api_key.clone().unwrap_or_default();
-                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string());
-                                let timeout = Self::env_timeout_secs("QWEN_TIMEOUT_SECS", 60);
-                                Self::create_cloud_runtime(
-                                    CloudConfig::custom(&api_key, &endpoint).with_model(&backend.model).with_timeout_secs(timeout),
-                                    &backend.capabilities,
-                                )
-                            }
-                            LlmBackendType::DeepSeek => {
-                                let api_key = backend.api_key.clone().unwrap_or_default();
-                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.deepseek.com".to_string());
-                                let timeout = Self::env_timeout_secs("DEEPSEEK_TIMEOUT_SECS", 60);
-                                Self::create_cloud_runtime(
-                                    CloudConfig::custom(&api_key, &endpoint).with_model(&backend.model).with_timeout_secs(timeout),
-                                    &backend.capabilities,
-                                )
-                            }
-                            LlmBackendType::GLM => {
-                                let api_key = backend.api_key.clone().unwrap_or_default();
-                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://open.bigmodel.cn/api/paas/v4".to_string());
-                                let timeout = Self::env_timeout_secs("GLM_TIMEOUT_SECS", 60);
-                                Self::create_cloud_runtime(
-                                    CloudConfig::custom(&api_key, &endpoint).with_model(&backend.model).with_timeout_secs(timeout),
-                                    &backend.capabilities,
-                                )
-                            }
-                            LlmBackendType::MiniMax => {
-                                let api_key = backend.api_key.clone().unwrap_or_default();
-                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.minimax.chat/v1".to_string());
-                                let timeout = Self::env_timeout_secs("MINIMAX_TIMEOUT_SECS", 60);
-                                Self::create_cloud_runtime(
-                                    CloudConfig::custom(&api_key, &endpoint).with_model(&backend.model).with_timeout_secs(timeout),
-                                    &backend.capabilities,
-                                )
-                            }
-                            #[cfg(feature = "llamacpp")]
-                            LlmBackendType::LlamaCpp => {
-                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
-                                let timeout = Self::env_timeout_secs("LLAMACPP_TIMEOUT_SECS", 180);
-                                let config = crate::llm_backends::backends::llamacpp::LlamaCppConfig::new(&backend.model)
-                                    .with_endpoint(&endpoint)
-                                    .with_timeout_secs(timeout);
-                                crate::llm_backends::backends::llamacpp::LlamaCppRuntime::new(config)
-                                    .map(|rt| {
-                                        let rt = rt.with_capabilities_override(
-                                            backend.capabilities.supports_multimodal,
-                                            backend.capabilities.supports_thinking,
-                                            backend.capabilities.supports_tools,
-                                            backend.capabilities.max_context,
-                                        );
-                                        std::sync::Arc::new(rt) as std::sync::Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>
-                                    })
-                            }
-                            #[cfg(not(feature = "llamacpp"))]
-                            LlmBackendType::LlamaCpp => {
-                                Err(neomind_core::llm::backend::LlmError::BackendUnavailable("llama.cpp backend is not available (feature not enabled)".to_string()))
-                            }
-                        };
+                        }
+                        #[cfg(not(feature = "llamacpp"))]
+                        LlmBackendType::LlamaCpp => {
+                            Err(neomind_core::llm::backend::LlmError::BackendUnavailable(
+                                "llama.cpp backend is not available (feature not enabled)"
+                                    .to_string(),
+                            ))
+                        }
+                    };
 
                     match runtime {
                         Ok(rt) => {
@@ -1606,10 +1742,15 @@ impl AgentExecutor {
                     let agent_id_for_log = agent.id.clone();
                     let backend_sems = self.backend_semaphores.clone();
                     let executor_skill_registry = self._config.skill_registry.clone();
-                    let executor_tool_registry = self.tool_registry.read().unwrap_or_else(|e| e.into_inner()).clone();
+                    let executor_tool_registry = self
+                        .tool_registry
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clone();
                     let executor_extension_registry = self.extension_registry.clone();
                     let executor_memory_store = self.memory_store.clone();
-                    let backend_id = agent.llm_backend_id
+                    let backend_id = agent
+                        .llm_backend_id
                         .clone()
                         .unwrap_or_else(|| "default".to_string());
 
@@ -1816,13 +1957,21 @@ impl AgentExecutor {
             let agent_id_for_log = agent.id.clone();
             let backend_sems = self.backend_semaphores.clone();
             let executor_skill_registry = self._config.skill_registry.clone();
-            let executor_tool_registry = self.tool_registry.read().unwrap_or_else(|e| {
-                tracing::error!("Tool registry lock poisoned in data event spawn, recovering: {}", e);
-                e.into_inner()
-            }).clone();
+            let executor_tool_registry = self
+                .tool_registry
+                .read()
+                .unwrap_or_else(|e| {
+                    tracing::error!(
+                        "Tool registry lock poisoned in data event spawn, recovering: {}",
+                        e
+                    );
+                    e.into_inner()
+                })
+                .clone();
             let executor_extension_registry = self.extension_registry.clone();
             let executor_memory_store = self.memory_store.clone();
-            let backend_id = agent.llm_backend_id
+            let backend_id = agent
+                .llm_backend_id
                 .clone()
                 .unwrap_or_else(|| "default".to_string());
 
@@ -1841,7 +1990,7 @@ impl AgentExecutor {
                     // Use expect with clear message - semaphore acquisition should not fail
                     // unless the semaphore is closed, which indicates a serious bug
                     let _backend_permit = backend_sem.acquire().await.expect(
-                        "Backend semaphore acquisition failed - semaphore was closed or is broken"
+                        "Backend semaphore acquisition failed - semaphore was closed or is broken",
                     );
                     tracing::debug!(
                         agent_id = %agent_id_for_log,
@@ -1976,7 +2125,9 @@ impl AgentExecutor {
                 // Legacy event_type-based matching (backward compat)
                 if let Some(event_type) = filter.get("event_type").and_then(|v| v.as_str()) {
                     if event_type == "device.metric" {
-                        if let Some(filter_device) = filter.get("device_id").and_then(|v| v.as_str()) {
+                        if let Some(filter_device) =
+                            filter.get("device_id").and_then(|v| v.as_str())
+                        {
                             if filter_device == "all" || filter_device == source_id {
                                 if source_type == "device" {
                                     return true;
@@ -1984,7 +2135,9 @@ impl AgentExecutor {
                             }
                         }
                     } else if event_type == "extension.output" {
-                        if let Some(filter_ext) = filter.get("extension_id").and_then(|v| v.as_str()) {
+                        if let Some(filter_ext) =
+                            filter.get("extension_id").and_then(|v| v.as_str())
+                        {
                             if filter_ext == "all" || filter_ext == source_id {
                                 if source_type == "extension" {
                                     return true;
@@ -2000,9 +2153,7 @@ impl AgentExecutor {
         //    without explicit event_filter.sources)
         let has_matching_resource = agent.resources.iter().any(|r| {
             match r.resource_type {
-                ResourceType::Device => {
-                    source_type == "device" && r.resource_id == source_id
-                }
+                ResourceType::Device => source_type == "device" && r.resource_id == source_id,
                 ResourceType::Metric => {
                     if source_type == "device" {
                         if r.resource_id.contains(':') {
@@ -2016,12 +2167,15 @@ impl AgentExecutor {
                             if parts.len() == 2 {
                                 let res_device = parts[0];
                                 let res_field = parts[1];
-                                res_device == source_id && (field == res_field || field.ends_with(&format!(".{}", res_field)))
+                                res_device == source_id
+                                    && (field == res_field
+                                        || field.ends_with(&format!(".{}", res_field)))
                             } else {
                                 false
                             }
                         } else {
-                            r.resource_id == field || field.ends_with(&format!(".{}", r.resource_id))
+                            r.resource_id == field
+                                || field.ends_with(&format!(".{}", r.resource_id))
                         }
                     } else {
                         false
@@ -2220,7 +2374,9 @@ impl AgentExecutor {
 
         // Execute with error handling for stability
         // Use execute_with_chaining to support multi-round tool chaining
-        let execution_result = self.execute_with_chaining(context, event_data.clone()).await;
+        let execution_result = self
+            .execute_with_chaining(context, event_data.clone())
+            .await;
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
@@ -2529,7 +2685,8 @@ impl AgentExecutor {
         };
 
         // Build action summary
-        let action_details: Vec<String> = actions.iter()
+        let action_details: Vec<String> = actions
+            .iter()
             .take(5)
             .map(|a| {
                 format!(
@@ -2537,7 +2694,12 @@ impl AgentExecutor {
                     a.action_type,
                     a.target,
                     if a.success { "success" } else { "failed" },
-                    a.result.as_deref().unwrap_or("no result").chars().take(100).collect::<String>()
+                    a.result
+                        .as_deref()
+                        .unwrap_or("no result")
+                        .chars()
+                        .take(100)
+                        .collect::<String>()
                 )
             })
             .collect();
@@ -2566,11 +2728,14 @@ impl AgentExecutor {
         );
 
         use neomind_core::llm::backend::{GenerationParams, LlmInput};
-        use neomind_core::message::{Message, MessageRole, Content};
+        use neomind_core::message::{Content, Message, MessageRole};
 
         let input = LlmInput {
             messages: vec![
-                Message::new(MessageRole::System, Content::text("你是一个简洁的总结助手。用1-2句话总结执行结果。")),
+                Message::new(
+                    MessageRole::System,
+                    Content::text("你是一个简洁的总结助手。用1-2句话总结执行结果。"),
+                ),
                 Message::new(MessageRole::User, Content::text(&prompt)),
             ],
             params: GenerationParams {
@@ -2587,7 +2752,11 @@ impl AgentExecutor {
             Ok(output) => {
                 let conclusion = output.text.trim().to_string();
                 if conclusion.is_empty() {
-                    Ok(format!("Execution complete: {} rounds, success rate {:.0}%", chain_depth, success_rate * 100.0))
+                    Ok(format!(
+                        "Execution complete: {} rounds, success rate {:.0}%",
+                        chain_depth,
+                        success_rate * 100.0
+                    ))
                 } else {
                     Ok(conclusion)
                 }
@@ -2661,8 +2830,9 @@ impl AgentExecutor {
             }
 
             // Execute one round with retry
-            let (decision_process, execution_result) =
-                self.execute_with_retry(context.clone(), event_data.clone()).await?;
+            let (decision_process, execution_result) = self
+                .execute_with_retry(context.clone(), event_data.clone())
+                .await?;
 
             // Collect results from this round
             all_actions_executed.extend(execution_result.actions_executed.clone());
@@ -2768,16 +2938,17 @@ impl AgentExecutor {
                 let total_count = all_actions_executed.len();
                 format!(
                     "Execution complete: {} rounds, {} / {} actions succeeded",
-                    chain_state.depth,
-                    success_count,
-                    total_count
+                    chain_state.depth, success_count, total_count
                 )
             } else {
                 format!("Execution complete: {} tool call rounds", chain_state.depth)
             };
 
             DecisionProcess {
-                situation_analysis: format!("Agent executed {} rounds via tool chaining", chain_state.depth),
+                situation_analysis: format!(
+                    "Agent executed {} rounds via tool chaining",
+                    chain_state.depth
+                ),
                 data_collected: vec![],
                 reasoning_steps: vec![],
                 decisions: vec![],
@@ -2990,7 +3161,9 @@ impl AgentExecutor {
                 self.store
                     .update_agent_memory(&agent.id, updated_memory.clone())
                     .await
-                    .map_err(|e| NeoMindError::Storage(format!("Failed to update memory: {}", e)))?;
+                    .map_err(|e| {
+                        NeoMindError::Storage(format!("Failed to update memory: {}", e))
+                    })?;
 
                 // Extract learned patterns into system memory
                 // DISABLED: The memory scheduler already runs periodic extraction.
@@ -3120,7 +3293,9 @@ impl AgentExecutor {
                 self.store
                     .update_agent_memory(&agent.id, updated_memory.clone())
                     .await
-                    .map_err(|e| NeoMindError::Storage(format!("Failed to update memory: {}", e)))?;
+                    .map_err(|e| {
+                        NeoMindError::Storage(format!("Failed to update memory: {}", e))
+                    })?;
 
                 // Bridge: extract learned patterns into system memory
                 // DISABLED: The memory scheduler already runs periodic extraction.
@@ -3131,7 +3306,8 @@ impl AgentExecutor {
                 let confidence = if reasoning_steps.is_empty() {
                     0.5
                 } else {
-                    reasoning_steps.iter().map(|s| s.confidence).sum::<f32>() / reasoning_steps.len() as f32
+                    reasoning_steps.iter().map(|s| s.confidence).sum::<f32>()
+                        / reasoning_steps.len() as f32
                 };
 
                 // No truncation — preserve full LLM output for quality
@@ -3149,7 +3325,8 @@ impl AgentExecutor {
                 let success_rate = if actions_executed.is_empty() {
                     1.0
                 } else {
-                    let success_count = actions_executed.iter().filter(|a| a.success).count() as f32;
+                    let success_count =
+                        actions_executed.iter().filter(|a| a.success).count() as f32;
                     success_count / actions_executed.len() as f32
                 };
 

@@ -53,13 +53,13 @@ pub async fn list_messages_handler(
         .filter(|m| {
             if let Some(ref sev) = params.severity {
                 let msg_sev = format!("{:?}", m.severity).to_lowercase();
-                if &msg_sev != sev.to_lowercase().as_str() {
+                if msg_sev != sev.to_lowercase().as_str() {
                     return false;
                 }
             }
             if let Some(ref st) = params.status {
                 let msg_st = format!("{:?}", m.status).to_lowercase();
-                if &msg_st != st.to_lowercase().as_str() {
+                if msg_st != st.to_lowercase().as_str() {
                     return false;
                 }
             }
@@ -70,7 +70,7 @@ pub async fn list_messages_handler(
             }
             if let Some(ref mt) = params.message_type {
                 let msg_mt = format!("{:?}", m.message_type).to_lowercase();
-                if &msg_mt != mt.to_lowercase().as_str() {
+                if msg_mt != mt.to_lowercase().as_str() {
                     return false;
                 }
             }
@@ -85,11 +85,7 @@ pub async fn list_messages_handler(
     sorted.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
     // Apply pagination
-    let paginated: Vec<&Message> = sorted
-        .into_iter()
-        .skip(offset)
-        .take(limit)
-        .collect();
+    let paginated: Vec<&Message> = sorted.into_iter().skip(offset).take(limit).collect();
 
     ok(json!({
         "messages": paginated,

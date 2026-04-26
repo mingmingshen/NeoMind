@@ -727,13 +727,11 @@ impl ChannelRegistry {
             };
 
             let mut count = 0;
-            for result in iter {
-                if let Ok((key, value)) = result {
-                    if let Ok(loaded) = serde_json::from_str::<Vec<String>>(value.value()) {
-                        let mut recipients = self.recipients.write().await;
-                        recipients.insert(key.value().to_string(), loaded);
-                        count += 1;
-                    }
+            for (key, value) in iter.flatten() {
+                if let Ok(loaded) = serde_json::from_str::<Vec<String>>(value.value()) {
+                    let mut recipients = self.recipients.write().await;
+                    recipients.insert(key.value().to_string(), loaded);
+                    count += 1;
                 }
             }
 

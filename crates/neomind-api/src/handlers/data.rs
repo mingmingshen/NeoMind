@@ -122,7 +122,9 @@ pub async fn list_all_data_sources_handler(
                 || s.source_display_name.to_lowercase().contains(&q_lower)
                 || s.field_display_name.to_lowercase().contains(&q_lower)
                 || s.source_name.to_lowercase().contains(&q_lower)
-                || s.description.as_ref().map_or(false, |d| d.to_lowercase().contains(&q_lower))
+                || s.description
+                    .as_ref()
+                    .is_some_and(|d| d.to_lowercase().contains(&q_lower))
         });
     }
 
@@ -153,7 +155,10 @@ pub async fn list_all_data_sources_handler(
 }
 
 /// Build source name options, optionally filtered by source_type.
-fn build_source_options(sources: &[UnifiedDataSourceInfo], source_type: Option<&str>) -> Vec<[String; 2]> {
+fn build_source_options(
+    sources: &[UnifiedDataSourceInfo],
+    source_type: Option<&str>,
+) -> Vec<[String; 2]> {
     let mut seen = std::collections::HashSet::new();
     let mut options = Vec::new();
     for s in sources {
@@ -403,7 +408,10 @@ async fn collect_transform_sources(state: &ServerState, sources: &mut Vec<Unifie
                 field_display_name: format!("{}: {}", automation.metadata.name, metric_name),
                 data_type: "float".to_string(),
                 unit: None,
-                description: Some(format!("Output from Transform: {}", automation.metadata.name)),
+                description: Some(format!(
+                    "Output from Transform: {}",
+                    automation.metadata.name
+                )),
                 current_value: None,
                 last_update: None,
                 quality: None,
@@ -502,8 +510,8 @@ pub async fn query_telemetry_handler(
     let limit = params.limit.unwrap_or(100).min(1000);
 
     // Parse source into a DataSourceId to extract the storage key
-    let ds_id = DataSourceId::parse(&format!("{}:{}", params.source, params.metric))
-        .or_else(|| {
+    let ds_id =
+        DataSourceId::parse(&format!("{}:{}", params.source, params.metric)).or_else(|| {
             // Try treating source as a raw storage prefix (e.g. "device:sensor1" → device)
             let parts: Vec<&str> = params.source.splitn(2, ':').collect();
             if parts.len() == 2 {
@@ -539,7 +547,7 @@ pub async fn query_telemetry_handler(
         let aggregated = telemetry
             .aggregate(&source_part, metric_part, start, end)
             .await
-            .map_err(|e| crate::models::error::ErrorResponse::internal(&e.to_string()))?;
+            .map_err(|e| crate::models::error::ErrorResponse::internal(e.to_string()))?;
 
         let value = match agg.as_str() {
             "avg" => aggregated.avg,
@@ -566,7 +574,7 @@ pub async fn query_telemetry_handler(
     let (points, total_count) = telemetry
         .query_with_limit(&source_part, metric_part, start, end, Some(limit))
         .await
-        .map_err(|e| crate::models::error::ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| crate::models::error::ErrorResponse::internal(e.to_string()))?;
 
     let data: Vec<serde_json::Value> = points
         .iter()

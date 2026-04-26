@@ -27,7 +27,10 @@ pub async fn trigger_summarization(
     let llm_interface = match state.agents.session_manager.get_agent_llm(session_id).await {
         Some(llm) => llm,
         None => {
-            tracing::debug!("No agent found for session {}, skipping summarization", session_id);
+            tracing::debug!(
+                "No agent found for session {}, skipping summarization",
+                session_id
+            );
             return Ok(());
         }
     };
@@ -91,7 +94,11 @@ pub async fn trigger_summarization(
             }
             "tool" => {
                 if let Some(ref tool_name) = msg.tool_call_name {
-                    conv_text.push_str(&format!("[Tool {}: {}]\n", tool_name, truncate_str(&msg.content, 200)));
+                    conv_text.push_str(&format!(
+                        "[Tool {}: {}]\n",
+                        tool_name,
+                        truncate_str(&msg.content, 200)
+                    ));
                 }
             }
             _ => {}

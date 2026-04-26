@@ -621,9 +621,9 @@ impl CloudRuntime {
             .json(&request);
 
         // Build the request - reqwest::RequestBuilder::build() can fail if headers are invalid
-        let built_request = req.build().map_err(|e| {
-            LlmError::Network(format!("Failed to build HTTP request: {}", e))
-        })?;
+        let built_request = req
+            .build()
+            .map_err(|e| LlmError::Network(format!("Failed to build HTTP request: {}", e)))?;
 
         let response = self
             .client
@@ -638,10 +638,13 @@ impl CloudRuntime {
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
         if !status.is_success() {
-            self.metrics.write().unwrap_or_else(|e| {
-                tracing::error!("Failed to acquire write lock on metrics: {}", e);
-                e.into_inner()
-            }).record_failure();
+            self.metrics
+                .write()
+                .unwrap_or_else(|e| {
+                    tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                    e.into_inner()
+                })
+                .record_failure();
             return Err(LlmError::Generation(format!(
                 "API error {}: {}",
                 status.as_u16(),
@@ -715,10 +718,13 @@ impl CloudRuntime {
                     .record_success(tokens, latency_ms);
             }
             Err(_) => {
-                self.metrics.write().unwrap_or_else(|e| {
-                    tracing::error!("Failed to acquire write lock on metrics: {}", e);
-                    e.into_inner()
-                }).record_failure();
+                self.metrics
+                    .write()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                        e.into_inner()
+                    })
+                    .record_failure();
             }
         }
 
@@ -750,9 +756,9 @@ impl CloudRuntime {
             .json(&request);
 
         // Build the request - reqwest::RequestBuilder::build() can fail if headers are invalid
-        let built_request = req.build().map_err(|e| {
-            LlmError::Network(format!("Failed to build HTTP request: {}", e))
-        })?;
+        let built_request = req
+            .build()
+            .map_err(|e| LlmError::Network(format!("Failed to build HTTP request: {}", e)))?;
 
         let response = self
             .client
@@ -767,10 +773,13 @@ impl CloudRuntime {
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
         if !status.is_success() {
-            self.metrics.write().unwrap_or_else(|e| {
-                tracing::error!("Failed to acquire write lock on metrics: {}", e);
-                e.into_inner()
-            }).record_failure();
+            self.metrics
+                .write()
+                .unwrap_or_else(|e| {
+                    tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                    e.into_inner()
+                })
+                .record_failure();
             return Err(LlmError::Generation(format!(
                 "Anthropic API error {}: {}",
                 status.as_u16(),
@@ -785,10 +794,13 @@ impl CloudRuntime {
                 || (val.get("code").is_some() && val.get("msg").is_some())
                 || (val.get("code").is_some() && val.get("success").is_some())
             {
-                self.metrics.write().unwrap_or_else(|e| {
-                    tracing::error!("Failed to acquire write lock on metrics: {}", e);
-                    e.into_inner()
-                }).record_failure();
+                self.metrics
+                    .write()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                        e.into_inner()
+                    })
+                    .record_failure();
                 return Err(LlmError::Generation(format!(
                     "Anthropic API error (HTTP {}): {}",
                     status.as_u16(),
@@ -797,11 +809,12 @@ impl CloudRuntime {
             }
         }
 
-        let api_response: AnthropicResponse =
-            serde_json::from_str(&body).map_err(|e| LlmError::Generation(format!(
+        let api_response: AnthropicResponse = serde_json::from_str(&body).map_err(|e| {
+            LlmError::Generation(format!(
                 "Anthropic deserialization error: {} - body: {}",
                 e, body
-            )))?;
+            ))
+        })?;
 
         // Build response text from content blocks
         let mut response_text = String::new();
@@ -861,10 +874,13 @@ impl CloudRuntime {
                     .record_success(tokens, latency_ms);
             }
             Err(_) => {
-                self.metrics.write().unwrap_or_else(|e| {
-                    tracing::error!("Failed to acquire write lock on metrics: {}", e);
-                    e.into_inner()
-                }).record_failure();
+                self.metrics
+                    .write()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                        e.into_inner()
+                    })
+                    .record_failure();
             }
         }
 
@@ -912,7 +928,9 @@ impl CloudRuntime {
             tools: input
                 .tools
                 .map(|tools| tools.into_iter().map(OpenAiTool::from).collect()),
-            stream_options: Some(StreamOptions { include_usage: true }),
+            stream_options: Some(StreamOptions {
+                include_usage: true,
+            }),
         };
 
         tokio::spawn(async move {
@@ -1019,10 +1037,15 @@ impl CloudRuntime {
                                                 // Check for usage data in final chunk (stream_options.include_usage=true)
                                                 if let Some(ref usage) = evt.usage {
                                                     if usage.prompt_tokens > 0 {
-                                                        let _ = tx.send(Ok((
-                                                            format!("\n__NEOMIND_TOKEN_PROMPT:{}__", usage.prompt_tokens),
-                                                            false,
-                                                        ))).await;
+                                                        let _ = tx
+                                                            .send(Ok((
+                                                                format!(
+                                                                    "\n__NEOMIND_TOKEN_PROMPT:{}__",
+                                                                    usage.prompt_tokens
+                                                                ),
+                                                                false,
+                                                            )))
+                                                            .await;
                                                     }
                                                 }
 
@@ -1243,7 +1266,11 @@ impl CloudRuntime {
                                                                 .map(|s| s.to_string());
                                                             accumulated_tool_calls
                                                                 .entry(index)
-                                                                .or_insert((id, name, String::new()));
+                                                                .or_insert((
+                                                                    id,
+                                                                    name,
+                                                                    String::new(),
+                                                                ));
                                                         }
                                                     }
                                                     AnthropicStreamEvent::ContentBlockDelta {
@@ -1307,17 +1334,17 @@ impl CloudRuntime {
                                                                 let json_str =
                                                                     serde_json::to_string(&tc_json)
                                                                         .unwrap_or_default();
-                                                                let _ =
-                                                                    tx.send(Ok((json_str, false)))
-                                                                        .await;
+                                                                let _ = tx
+                                                                    .send(Ok((json_str, false)))
+                                                                    .await;
                                                             }
                                                         }
                                                     }
                                                     AnthropicStreamEvent::MessageStop => {
                                                         // Signal end of stream
-                                                        let _ =
-                                                            tx.send(Ok((String::new(), false)))
-                                                                .await;
+                                                        let _ = tx
+                                                            .send(Ok((String::new(), false)))
+                                                            .await;
                                                     }
                                                     _ => {}
                                                 }
@@ -1467,10 +1494,13 @@ impl LlmRuntime for CloudRuntime {
     }
 
     fn metrics(&self) -> BackendMetrics {
-        self.metrics.read().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire read lock on metrics: {}", e);
-            e.into_inner()
-        }).clone()
+        self.metrics
+            .read()
+            .unwrap_or_else(|e| {
+                tracing::error!("Failed to acquire read lock on metrics: {}", e);
+                e.into_inner()
+            })
+            .clone()
     }
 }
 

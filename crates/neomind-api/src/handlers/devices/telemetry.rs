@@ -45,7 +45,7 @@ pub async fn get_device_telemetry_handler(
     Path(device_id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> HandlerResult<serde_json::Value> {
-    use crate::validator::{validate_string_length, validate_numeric_range};
+    use crate::validator::{validate_numeric_range, validate_string_length};
 
     // Validate device_id if provided
     validate_string_length(&device_id, "device_id", 1, 100)?;
@@ -72,7 +72,9 @@ pub async fn get_device_telemetry_handler(
     const MAX_TIME_RANGE_SECS: i64 = 30 * 86400;
     let time_range = end - start;
     if time_range < 0 {
-        return Err(ErrorResponse::bad_request("Invalid time range: end must be after start"));
+        return Err(ErrorResponse::bad_request(
+            "Invalid time range: end must be after start",
+        ));
     }
     if time_range > MAX_TIME_RANGE_SECS {
         return Err(ErrorResponse::bad_request(format!(
@@ -211,7 +213,11 @@ pub async fn get_device_telemetry_handler(
                     let _permit = match semaphore.acquire().await {
                         Ok(p) => p,
                         Err(e) => {
-                            tracing::warn!("telemetry semaphore acquire failed for {}: {}", metric_name, e);
+                            tracing::warn!(
+                                "telemetry semaphore acquire failed for {}: {}",
+                                metric_name,
+                                e
+                            );
                             return (metric_name, json!([]), 0);
                         }
                     };
@@ -257,7 +263,11 @@ pub async fn get_device_telemetry_handler(
                     let _permit = match semaphore.acquire().await {
                         Ok(p) => p,
                         Err(e) => {
-                            tracing::warn!("telemetry semaphore acquire failed for {}: {}", metric_name, e);
+                            tracing::warn!(
+                                "telemetry semaphore acquire failed for {}: {}",
+                                metric_name,
+                                e
+                            );
                             return (metric_name, json!([]), 0);
                         }
                     };
@@ -288,9 +298,12 @@ pub async fn get_device_telemetry_handler(
                             // When offset > 0 we still need all points for correct pagination,
                             // but when offset == 0 we can push the limit to the DB layer.
                             let db_limit = if offset == 0 { Some(limit) } else { None };
-                            match telemetry.query_with_limit(&device_id, &metric_name, start, end, db_limit).await {
+                            match telemetry
+                                .query_with_limit(&device_id, &metric_name, start, end, db_limit)
+                                .await
+                            {
                                 Ok((all_points, total_from_db)) => {
-                                    let total = total_from_db.unwrap_or_else(|| all_points.len());
+                                    let total = total_from_db.unwrap_or(all_points.len());
                                     // DB returns points in timestamp-asc order.
                                     // Reverse for "newest first" without O(n log n) sort.
                                     let paginated: Vec<_> = all_points

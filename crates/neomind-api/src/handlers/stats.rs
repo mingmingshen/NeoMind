@@ -4,10 +4,10 @@ use super::{
     common::{ok, HandlerResult},
     ServerState,
 };
+use crate::models::error::ErrorResponse;
 use axum::extract::State;
 use axum::Json;
 use serde_json::json;
-use crate::models::error::ErrorResponse;
 
 // Re-export ConnectionStatus from mdl_format for DeviceInstance
 

@@ -151,12 +151,12 @@ impl MessageManager {
                 #[cfg(feature = "webhook")]
                 "webhook" => {
                     let factory = crate::WebhookChannelFactory;
-                    factory.create(&config).map(|c| Some(c))
+                    factory.create(&config).map(Some)
                 }
                 #[cfg(feature = "email")]
                 "email" => {
                     let factory = crate::EmailChannelFactory;
-                    factory.create(&config).map(|c| Some(c))
+                    factory.create(&config).map(Some)
                 }
                 _ => {
                     tracing::warn!("Unknown channel type: {}, skipping", stored.channel_type);
@@ -215,7 +215,7 @@ impl MessageManager {
             let mt = meta
                 .get("message_type")
                 .and_then(|v| v.as_str())
-                .and_then(|s| MessageType::from_string(s))
+                .and_then(MessageType::from_string)
                 .unwrap_or(MessageType::Notification);
             let sid = meta
                 .get("source_id")
@@ -806,8 +806,10 @@ impl MessageManager {
     pub async fn get_delivery_stats(&self) -> DeliveryStats {
         let logs = self.delivery_logs.read().await;
 
-        let mut stats = DeliveryStats::default();
-        stats.total = logs.len();
+        let mut stats = DeliveryStats {
+            total: logs.len(),
+            ..Default::default()
+        };
 
         for log in logs.values() {
             match log.status {

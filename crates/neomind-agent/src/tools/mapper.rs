@@ -313,7 +313,9 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
         if !obj.contains_key("action") {
             let inferred_action = match tool_name {
                 // Device aliases (legacy)
-                "device_discover" | "list_devices" | "get_device_data" | "device_query" => Some("list"),
+                "device_discover" | "list_devices" | "get_device_data" | "device_query" => {
+                    Some("list")
+                }
                 "device_analyze" => Some("latest"),
                 "device_control" | "control_device" => Some("control"),
                 "query_data" => Some("history"),
@@ -330,7 +332,9 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 "create_alert" => Some("send"),
                 "acknowledge_alert" => Some("read"),
                 // Transform aliases (legacy)
-                "list_transforms" | "data_transforms" | "data_transform" | "get_transform" => Some("list"),
+                "list_transforms" | "data_transforms" | "data_transform" | "get_transform" => {
+                    Some("list")
+                }
                 "create_transform" => Some("create"),
                 "delete_transform" => Some("delete"),
                 "update_transform" => Some("update"),
@@ -339,7 +343,10 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 // Default actions for aggregated tools when LLM omits action
                 // Infer from other parameters present
                 "device" => {
-                    if obj.contains_key("command") || obj.contains_key("value") || obj.contains_key("params") {
+                    if obj.contains_key("command")
+                        || obj.contains_key("value")
+                        || obj.contains_key("params")
+                    {
                         Some("control")
                     } else if obj.contains_key("metric_name") || obj.contains_key("metric_value") {
                         Some("write_metric")
@@ -361,7 +368,9 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                     }
                 }
                 "agent" => {
-                    if obj.contains_key("prompt") || (obj.contains_key("name") && !obj.contains_key("agent_id")) {
+                    if obj.contains_key("prompt")
+                        || (obj.contains_key("name") && !obj.contains_key("agent_id"))
+                    {
                         Some("create")
                     } else if obj.contains_key("content") || obj.contains_key("message") {
                         Some("send_message")
@@ -372,7 +381,10 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                     }
                 }
                 "message" => {
-                    if obj.contains_key("title") || obj.contains_key("content") || obj.contains_key("message") {
+                    if obj.contains_key("title")
+                        || obj.contains_key("content")
+                        || obj.contains_key("message")
+                    {
                         Some("send")
                     } else if obj.contains_key("message_id") {
                         Some("read")
@@ -416,7 +428,10 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                             mapped.insert("command".to_string(), value.clone());
                             // Also set action=control when the LLM passes a command as action
                             if !mapped.contains_key("action") {
-                                mapped.insert("action".to_string(), Value::String("control".to_string()));
+                                mapped.insert(
+                                    "action".to_string(),
+                                    Value::String("control".to_string()),
+                                );
                             }
                             continue;
                         }
@@ -428,7 +443,10 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                             _ => action_val,
                         };
                         if normalized != action_val {
-                            mapped.insert("action".to_string(), Value::String(normalized.to_string()));
+                            mapped.insert(
+                                "action".to_string(),
+                                Value::String(normalized.to_string()),
+                            );
                             continue;
                         }
                     }
@@ -473,7 +491,10 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                             _ => action_val,
                         };
                         if normalized != action_val || mapped.contains_key("action") {
-                            mapped.insert("action".to_string(), Value::String(normalized.to_string()));
+                            mapped.insert(
+                                "action".to_string(),
+                                Value::String(normalized.to_string()),
+                            );
                             continue;
                         }
                     }
@@ -487,7 +508,7 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
 
                 // ===== message tool (aggregated) =====
                 ("message", "message_id") => "message_id",
-                ("message", "alert_id") => "message_id",  // backward compat
+                ("message", "alert_id") => "message_id", // backward compat
                 ("message", other) => other,
 
                 // ===== Legacy tool names (now map to aggregated) =====

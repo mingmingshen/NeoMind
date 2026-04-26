@@ -183,9 +183,9 @@ impl DataSourceId {
         match source_id.split_once(':') {
             Some(("extension", id)) => Some(Self::extension(id, metric)),
             Some(("transform", id)) => Some(Self::transform(id, metric)),
-            Some(("ai", id))        => Some(Self::ai(id, metric)),
-            Some(("device", id))    => Some(Self::device(id, metric)),
-            _                       => Some(Self::device(source_id, metric)),
+            Some(("ai", id)) => Some(Self::ai(id, metric)),
+            Some(("device", id)) => Some(Self::device(id, metric)),
+            _ => Some(Self::device(source_id, metric)),
         }
     }
 

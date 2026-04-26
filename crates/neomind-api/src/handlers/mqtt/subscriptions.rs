@@ -66,7 +66,9 @@ pub async fn subscribe_handler(
     State(state): State<ServerState>,
     Json(req): Json<MqttSubscribeRequest>,
 ) -> HandlerResult<serde_json::Value> {
-    use crate::validator::{validate_required_string, validate_string_length, validate_numeric_range};
+    use crate::validator::{
+        validate_numeric_range, validate_required_string, validate_string_length,
+    };
 
     // Validate topic
     validate_required_string(&req.topic, "topic")?;
@@ -77,9 +79,7 @@ pub async fn subscribe_handler(
 
     // Get the first MQTT adapter
     let adapters = state.devices.service.list_adapters().await;
-    let mqtt_adapter = adapters
-        .iter()
-        .find(|a| a.adapter_type == "mqtt");
+    let mqtt_adapter = adapters.iter().find(|a| a.adapter_type == "mqtt");
 
     let adapter_id = match mqtt_adapter {
         Some(a) => &a.id,
@@ -152,9 +152,7 @@ pub async fn unsubscribe_handler(
 
     // Get the first MQTT adapter
     let adapters = state.devices.service.list_adapters().await;
-    let mqtt_adapter = adapters
-        .iter()
-        .find(|a| a.adapter_type == "mqtt");
+    let mqtt_adapter = adapters.iter().find(|a| a.adapter_type == "mqtt");
 
     let adapter_id = match mqtt_adapter {
         Some(a) => &a.id,

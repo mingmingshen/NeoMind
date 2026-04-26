@@ -16,7 +16,6 @@ impl AgentExecutor {
         self.parse_intent_keywords(user_prompt).await
     }
 
-
     async fn parse_intent_with_llm(
         &self,
         llm: &Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>,
@@ -87,8 +86,7 @@ Respond in JSON format:
                 // Try to parse JSON from LLM output
                 let json_str = output.text.trim();
                 // Extract JSON if it's wrapped in markdown code blocks
-                let json_str = extract_json_from_codeblock(json_str)
-                    .unwrap_or(json_str);
+                let json_str = extract_json_from_codeblock(json_str).unwrap_or(json_str);
 
                 serde_json::from_str(json_str).map_err(|_| {
                     NeoMindError::Llm("Failed to parse LLM intent response".to_string())
@@ -97,7 +95,6 @@ Respond in JSON format:
             Err(_) => Err(NeoMindError::Llm("LLM call failed".to_string())),
         }
     }
-
 
     async fn parse_intent_keywords(
         &self,

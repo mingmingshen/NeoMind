@@ -820,9 +820,7 @@ impl TransformAutomation {
         }
         match &self.scope {
             TransformScope::Global => true,
-            TransformScope::DeviceType(dt) => {
-                device_type.map(|t| t == dt).unwrap_or(false)
-            }
+            TransformScope::DeviceType(dt) => device_type.map(|t| t == dt).unwrap_or(false),
             TransformScope::Device(d) => d == device_id,
         }
     }

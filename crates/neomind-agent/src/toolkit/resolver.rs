@@ -82,9 +82,18 @@ mod tests {
 
     fn sample_candidates() -> Vec<(String, String)> {
         vec![
-            ("550e8400-aaaa-bbbb-cccc-111111111111".to_string(), "Temperature Monitor".to_string()),
-            ("550e8400-aaaa-bbbb-cccc-222222222222".to_string(), "Humidity Sensor".to_string()),
-            ("550e8400-aaaa-bbbb-cccc-333333333333".to_string(), "Temp Alert Agent".to_string()),
+            (
+                "550e8400-aaaa-bbbb-cccc-111111111111".to_string(),
+                "Temperature Monitor".to_string(),
+            ),
+            (
+                "550e8400-aaaa-bbbb-cccc-222222222222".to_string(),
+                "Humidity Sensor".to_string(),
+            ),
+            (
+                "550e8400-aaaa-bbbb-cccc-333333333333".to_string(),
+                "Temp Alert Agent".to_string(),
+            ),
             ("ne101".to_string(), "Living Room Light".to_string()),
         ]
     }
@@ -107,21 +116,13 @@ mod tests {
 
     #[test]
     fn test_exact_name_match() {
-        let result = EntityResolver::resolve(
-            "Temperature Monitor",
-            &sample_candidates(),
-            "agent",
-        );
+        let result = EntityResolver::resolve("Temperature Monitor", &sample_candidates(), "agent");
         assert_eq!(result.unwrap(), "550e8400-aaaa-bbbb-cccc-111111111111");
     }
 
     #[test]
     fn test_case_insensitive_name() {
-        let result = EntityResolver::resolve(
-            "temperature monitor",
-            &sample_candidates(),
-            "agent",
-        );
+        let result = EntityResolver::resolve("temperature monitor", &sample_candidates(), "agent");
         assert_eq!(result.unwrap(), "550e8400-aaaa-bbbb-cccc-111111111111");
     }
 
@@ -146,11 +147,7 @@ mod tests {
 
     #[test]
     fn test_ambiguous_returns_error_with_candidates() {
-        let result = EntityResolver::resolve(
-            "Temp",
-            &sample_candidates(),
-            "agent",
-        );
+        let result = EntityResolver::resolve("Temp", &sample_candidates(), "agent");
         let err = result.unwrap_err();
         assert!(err.contains("多个匹配"));
         assert!(err.contains("Temperature Monitor"));
@@ -159,11 +156,7 @@ mod tests {
 
     #[test]
     fn test_no_match_returns_error_with_hint() {
-        let result = EntityResolver::resolve(
-            "nonexistent",
-            &sample_candidates(),
-            "agent",
-        );
+        let result = EntityResolver::resolve("nonexistent", &sample_candidates(), "agent");
         let err = result.unwrap_err();
         assert!(err.contains("未找到"));
         assert!(err.contains("list"));
@@ -177,11 +170,7 @@ mod tests {
 
     #[test]
     fn test_empty_candidates() {
-        let result = EntityResolver::resolve(
-            "anything",
-            &[],
-            "agent",
-        );
+        let result = EntityResolver::resolve("anything", &[], "agent");
         assert!(result.unwrap_err().contains("未找到"));
     }
 }

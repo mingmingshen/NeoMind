@@ -237,7 +237,11 @@ fn get_30_rounds() -> Vec<AgentRound> {
     ]
 }
 
-async fn create_extractor() -> (tempfile::TempDir, Arc<RwLock<MarkdownMemoryStore>>, MemoryExtractor) {
+async fn create_extractor() -> (
+    tempfile::TempDir,
+    Arc<RwLock<MarkdownMemoryStore>>,
+    MemoryExtractor,
+) {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let store = MarkdownMemoryStore::new(temp_dir.path().to_path_buf());
     store.init().unwrap();
@@ -296,7 +300,10 @@ async fn test_30_rounds_memory_extraction() -> anyhow::Result<()> {
 
         total_extracted += count;
         round_results.push((round_num, count));
-        println!("  Extracted: {} memories (total so far: {})\n", count, total_extracted);
+        println!(
+            "  Extracted: {} memories (total so far: {})\n",
+            count, total_extracted
+        );
     }
 
     // Print round summary
@@ -318,7 +325,10 @@ async fn test_30_rounds_memory_extraction() -> anyhow::Result<()> {
 
     for category in MemoryCategory::all() {
         let content = store_guard.read_category(&category).unwrap_or_default();
-        let entry_count = content.lines().filter(|l| l.trim().starts_with("- [")).count();
+        let entry_count = content
+            .lines()
+            .filter(|l| l.trim().starts_with("- ["))
+            .count();
         category_stats.push((category.display_name().to_string(), entry_count, content));
     }
 
@@ -337,19 +347,30 @@ async fn test_30_rounds_memory_extraction() -> anyhow::Result<()> {
     println!("  Assertions");
     println!("============================================================");
 
-    assert!(total_extracted > 0, "Should extract memories across 30 rounds");
+    assert!(
+        total_extracted > 0,
+        "Should extract memories across 30 rounds"
+    );
     println!("  [PASS] Total extracted > 0: {}", total_extracted);
 
-    let se_count = category_stats.iter()
+    let se_count = category_stats
+        .iter()
         .find(|(name, _, _)| name == "System Evolution")
         .map(|(_, c, _)| *c)
         .unwrap_or(0);
 
-    assert!(se_count > 0, "system_evolution must have entries after 30 rounds");
+    assert!(
+        se_count > 0,
+        "system_evolution must have entries after 30 rounds"
+    );
     println!("  [PASS] system_evolution has {} entries", se_count);
 
     let non_empty = category_stats.iter().filter(|(_, c, _)| *c > 0).count();
-    assert!(non_empty >= 3, "At least 3 categories should be populated, got {}", non_empty);
+    assert!(
+        non_empty >= 3,
+        "At least 3 categories should be populated, got {}",
+        non_empty
+    );
     println!("  [PASS] {} out of 4 categories populated", non_empty);
 
     println!("\nAll 30-round tests passed!");

@@ -654,7 +654,7 @@ impl ServerState {
             extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
             telemetry_query_semaphore: Arc::new(tokio::sync::Semaphore::new(16)),
             data_dir: std::path::PathBuf::from(
-                std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string())
+                std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string()),
             ),
         }
     }
@@ -1170,7 +1170,7 @@ impl ServerState {
                 self.agents.agent_store.clone(),
                 agent_invoker,
                 self.automation.rule_engine.clone(),
-                None,                                    // rule_history
+                None,                                               // rule_history
                 Some(self.core.message_manager.clone()), // message_manager for alert tool
                 transform_store,                         // transform store for transform tool
                 Some(self.agents.session_manager.skill_registry()), // skill registry
@@ -1227,7 +1227,10 @@ impl ServerState {
                 self.devices.service.clone(),
                 self.devices.telemetry.clone(),
                 self.agents.agent_store.clone(),
-                self.get_or_init_agent_manager().await.ok().map(|m| Arc::new(AgentInvokerImpl { manager: m }) as Arc<dyn neomind_agent::toolkit::aggregated::AgentInvoker>),
+                self.get_or_init_agent_manager().await.ok().map(|m| {
+                    Arc::new(AgentInvokerImpl { manager: m })
+                        as Arc<dyn neomind_agent::toolkit::aggregated::AgentInvoker>
+                }),
                 self.automation.rule_engine.clone(),
                 None,
                 Some(self.core.message_manager.clone()),
@@ -1235,7 +1238,7 @@ impl ServerState {
                 Some(self.agents.session_manager.skill_registry()),
                 Some(self.data_dir.clone()),
                 Some(self.agents.ai_metrics_registry.clone()), // ai_metrics_registry
-                self.core.event_bus.clone(),             // event_bus for AI metric events
+                self.core.event_bus.clone(),                   // event_bus for AI metric events
             )
             .with_shell_tool(Some(neomind_agent::toolkit::ShellConfig {
                 enabled: true,
@@ -2039,12 +2042,7 @@ impl ServerState {
                         ..
                     } => {
                         if let Err(e) = executor
-                            .check_and_trigger_data_event(
-                                "device",
-                                device_id,
-                                metric,
-                                &value,
-                            )
+                            .check_and_trigger_data_event("device", device_id, metric, &value)
                             .await
                         {
                             tracing::debug!("No agent triggered for device event: {}", e);

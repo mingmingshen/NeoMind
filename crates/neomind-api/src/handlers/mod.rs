@@ -22,11 +22,11 @@ pub mod mqtt;
 pub mod rules;
 pub mod sessions;
 pub mod settings;
-pub mod skills;
 pub mod setup;
+pub mod skills;
 pub mod stats;
-pub mod summarization;
 pub mod suggestions;
+pub mod summarization;
 pub mod tools;
 pub mod ws;
 

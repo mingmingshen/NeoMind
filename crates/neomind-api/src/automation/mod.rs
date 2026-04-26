@@ -35,11 +35,10 @@ pub use discovery::{
 
 // Re-export transform-specific types
 pub use types::{
-    AggregationFunc, Automation, AutomationFilter, AutomationList,
-    AutomationMetadata, AutomationTemplate, AutomationType,
-    ExecutionRecord, ExecutionStatus, IntentResult, SuggestedAutomation,
-    TemplateParameter, TemplateParameterType, TimeWindow, TransformAutomation, TransformOperation,
-    TransformScope, TypeCounts,
+    AggregationFunc, Automation, AutomationFilter, AutomationList, AutomationMetadata,
+    AutomationTemplate, AutomationType, ExecutionRecord, ExecutionStatus, IntentResult,
+    SuggestedAutomation, TemplateParameter, TemplateParameterType, TimeWindow, TransformAutomation,
+    TransformOperation, TransformScope, TypeCounts,
 };
 
 // Re-export transform engine
