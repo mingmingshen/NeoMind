@@ -805,11 +805,11 @@ impl MqttAdapter {
     /// Load a PEM-encoded private key from a string.
     fn load_private_key(pem: &str) -> Result<PrivateKeyDer<'static>, Box<dyn std::error::Error>> {
         let mut pem_cursor = Cursor::new(pem.as_bytes());
-        let keys_iter = rustls_pemfile::pkcs8_private_keys(&mut pem_cursor);
-        for key in keys_iter {
-            return Ok(PrivateKeyDer::Pkcs8(key?));
-        }
-        Err("No PKCS#8 private key found in PEM".into())
+        let mut keys_iter = rustls_pemfile::pkcs8_private_keys(&mut pem_cursor);
+        let key = keys_iter
+            .next()
+            .ok_or("No PKCS#8 private key found in PEM")??;
+        Ok(PrivateKeyDer::Pkcs8(key))
     }
 
     /// Remove a broker connection from this adapter.
