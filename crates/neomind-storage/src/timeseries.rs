@@ -1054,6 +1054,36 @@ impl TimeSeriesStore {
         Ok(metrics.into_iter().collect())
     }
 
+    /// Get all metrics for ALL sources in a single table scan.
+    /// Returns a map of source_id → set of metric names.
+    /// Much faster than calling list_metrics() per source when you need all sources.
+    pub async fn list_all_metrics_grouped(
+        &self,
+    ) -> Result<std::collections::HashMap<String, std::collections::HashSet<String>>, Error>
+    {
+        let read_txn = self.db.begin_read()?;
+
+        let table = match read_txn.open_table(TIMESERIES_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(std::collections::HashMap::new()),
+            Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
+        };
+
+        let mut grouped: std::collections::HashMap<String, std::collections::HashSet<String>> =
+            std::collections::HashMap::new();
+
+        for result in table.iter()? {
+            let (key, _value) = result?;
+            let (source_id, metric, _) = key.value();
+            grouped
+                .entry(source_id.to_string())
+                .or_default()
+                .insert(metric.to_string());
+        }
+
+        Ok(grouped)
+    }
+
     /// Delete all data for a specific metric.
     pub async fn delete_metric(&self, source_id: &str, metric: &str) -> Result<usize, Error> {
         self.delete_range(source_id, metric, i64::MIN, i64::MAX)

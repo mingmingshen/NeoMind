@@ -224,6 +224,14 @@ async fn populate_latest_values(state: &ServerState, sources: &mut Vec<UnifiedDa
 async fn collect_device_sources(state: &ServerState, sources: &mut Vec<UnifiedDataSourceInfo>) {
     let devices = state.devices.service.list_devices().await;
 
+    // Single batch query for all telemetry metrics instead of N per-device queries
+    let all_telemetry_metrics = state
+        .devices
+        .telemetry
+        .list_all_metrics_grouped()
+        .await
+        .unwrap_or_default();
+
     for device in devices {
         let mut known_metrics: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -268,18 +276,14 @@ async fn collect_device_sources(state: &ServerState, sources: &mut Vec<UnifiedDa
         }
 
         // 2. Add virtual metrics from telemetry storage (metrics not in template)
-        if let Ok(telemetry_metrics) = state
-            .devices
-            .telemetry
-            .list_metrics(&device.device_id)
-            .await
-        {
+        // Uses pre-fetched batch data instead of per-device query
+        if let Some(telemetry_metrics) = all_telemetry_metrics.get(&device.device_id) {
             for metric_name in telemetry_metrics {
-                if known_metrics.contains(&metric_name) {
+                if known_metrics.contains(metric_name) {
                     continue; // Already added from template
                 }
 
-                let source_id = DataSourceId::device(&device.device_id, &metric_name);
+                let source_id = DataSourceId::device(&device.device_id, metric_name);
 
                 sources.push(UnifiedDataSourceInfo {
                     id: source_id.storage_key(),

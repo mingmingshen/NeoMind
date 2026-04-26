@@ -424,6 +424,19 @@ impl TimeSeriesStorage {
         Ok(metrics)
     }
 
+    /// List all metrics for ALL sources in a single table scan.
+    /// Returns a map of source_id → set of metric names.
+    /// Much faster than calling list_metrics() per source.
+    pub async fn list_all_metrics_grouped(
+        &self,
+    ) -> Result<std::collections::HashMap<String, std::collections::HashSet<String>>, DeviceError>
+    {
+        self.store
+            .list_all_metrics_grouped()
+            .await
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))
+    }
+
     /// Get a reference to the underlying storage time series store
     ///
     /// This allows sharing the same storage instance between components.
