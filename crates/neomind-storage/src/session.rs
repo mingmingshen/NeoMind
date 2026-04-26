@@ -181,6 +181,18 @@ impl SessionMessage {
         self.timestamp = timestamp;
         self
     }
+
+    /// Add round contents.
+    pub fn with_round_contents(mut self, round_contents: serde_json::Value) -> Self {
+        self.round_contents = Some(round_contents);
+        self
+    }
+
+    /// Add round thinking.
+    pub fn with_round_thinking(mut self, round_thinking: serde_json::Value) -> Self {
+        self.round_thinking = Some(round_thinking);
+        self
+    }
 }
 
 /// P0.3: Pending stream state for tracking in-progress streaming responses.
@@ -1059,5 +1071,843 @@ mod tests {
         let tool_calls = vec![serde_json::json!({"name": "test"})];
         let msg = SessionMessage::assistant("I'll use a tool").with_tool_calls(tool_calls);
         assert!(msg.tool_calls.is_some());
+    }
+
+    #[test]
+    fn test_append_message() {
+        let store = create_temp_store();
+
+        // Save session
+        store.save_session_id("test-session").unwrap();
+
+        // Append single message
+        let msg = SessionMessage::user("Hello");
+        let index = store.append_message("test-session", &msg).unwrap();
+        assert_eq!(index, 0);
+
+        // Append another message
+        let msg2 = SessionMessage::assistant("Hi there!");
+        let index2 = store.append_message("test-session", &msg2).unwrap();
+        assert_eq!(index2, 1);
+
+        // Verify both messages are stored
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].content, "Hello");
+        assert_eq!(loaded[1].content, "Hi there!");
+    }
+
+    #[test]
+    fn test_append_messages() {
+        let store = create_temp_store();
+
+        // Save session
+        store.save_session_id("test-session").unwrap();
+
+        // Append batch of messages
+        let messages = vec![
+            SessionMessage::user("First"),
+            SessionMessage::assistant("Response 1"),
+            SessionMessage::user("Second"),
+        ];
+        let count = store.append_messages("test-session", &messages).unwrap();
+        assert_eq!(count, 3);
+
+        // Append another batch
+        let more_messages = vec![
+            SessionMessage::assistant("Response 2"),
+            SessionMessage::user("Third"),
+        ];
+        let count2 = store.append_messages("test-session", &more_messages).unwrap();
+        assert_eq!(count2, 2);
+
+        // Verify all messages are stored
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 5);
+        assert_eq!(loaded[0].content, "First");
+        assert_eq!(loaded[4].content, "Third");
+    }
+
+    #[test]
+    fn test_append_messages_empty() {
+        let store = create_temp_store();
+
+        // Save session (this creates the sessions table)
+        store.save_session_id("test-session").unwrap();
+
+        // First, create the history table by saving at least one message
+        store
+            .append_message("test-session", &SessionMessage::user("First"))
+            .unwrap();
+
+        // Now test appending empty batch
+        let count = store.append_messages("test-session", &[]).unwrap();
+        assert_eq!(count, 0);
+
+        // Verify only the first message exists
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 1);
+    }
+
+    #[test]
+    fn test_clear_history() {
+        let store = create_temp_store();
+
+        // Save session with messages
+        store.save_session_id("test-session").unwrap();
+        let messages = vec![
+            SessionMessage::user("Hello"),
+            SessionMessage::assistant("Hi"),
+        ];
+        store.save_history("test-session", &messages).unwrap();
+
+        // Verify messages exist
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 2);
+
+        // Clear history
+        store.clear_history("test-session").unwrap();
+
+        // Verify history is cleared
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 0);
+
+        // Session should still exist
+        assert!(store.session_exists("test-session").unwrap());
+    }
+
+    #[test]
+    fn test_message_count() {
+        let store = create_temp_store();
+
+        // Save session (this creates the sessions table)
+        store.save_session_id("test-session").unwrap();
+
+        // Add messages (this creates the history table)
+        let messages = vec![
+            SessionMessage::user("First"),
+            SessionMessage::assistant("Response 1"),
+            SessionMessage::user("Second"),
+        ];
+        store.save_history("test-session", &messages).unwrap();
+
+        // Count should be 3
+        let count = store.message_count("test-session").unwrap();
+        assert_eq!(count, 3);
+
+        // Add more messages via append
+        store.append_message("test-session", &SessionMessage::assistant("Response 2")).unwrap();
+
+        // Count should be 4
+        let count = store.message_count("test-session").unwrap();
+        assert_eq!(count, 4);
+    }
+
+    #[test]
+    fn test_save_history_empty_prevents_data_loss() {
+        let store = create_temp_store();
+
+        // Save session with initial messages
+        store.save_session_id("test-session").unwrap();
+        let messages = vec![
+            SessionMessage::user("Original message"),
+            SessionMessage::assistant("Original response"),
+        ];
+        store.save_history("test-session", &messages).unwrap();
+
+        // Verify messages exist
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 2);
+
+        // Try to save empty history - should be rejected to prevent data loss
+        store.save_history("test-session", &[]).unwrap();
+
+        // Original messages should still be there
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].content, "Original message");
+    }
+
+    #[test]
+    fn test_get_session_timestamp() {
+        let store = create_temp_store();
+
+        // Save session
+        store.save_session_id("test-session").unwrap();
+
+        // Get timestamp
+        let timestamp = store
+            .get_session_timestamp("test-session")
+            .unwrap()
+            .expect("Timestamp should exist");
+        assert!(timestamp > 0);
+
+        // Non-existent session should return None
+        let timestamp = store.get_session_timestamp("non-existent").unwrap();
+        assert!(timestamp.is_none());
+    }
+
+    #[test]
+    fn test_toggle_memory() {
+        let store = create_temp_store();
+
+        // Save session
+        store.save_session_id("test-session").unwrap();
+
+        // Initially memory_enabled should be false (default)
+        let meta = store.get_session_metadata("test-session").unwrap();
+        assert!(!meta.memory_enabled);
+
+        // Enable memory
+        store.toggle_memory("test-session", true).unwrap();
+        let meta = store.get_session_metadata("test-session").unwrap();
+        assert!(meta.memory_enabled);
+
+        // Disable memory
+        store.toggle_memory("test-session", false).unwrap();
+        let meta = store.get_session_metadata("test-session").unwrap();
+        assert!(!meta.memory_enabled);
+    }
+
+    #[test]
+    fn test_delete_session_metadata() {
+        let store = create_temp_store();
+
+        // Save session with metadata
+        store.save_session_id("test-session").unwrap();
+        let metadata = SessionMetadata {
+            title: Some("Test Session".to_string()),
+            memory_enabled: true,
+            ..Default::default()
+        };
+        store.save_session_metadata("test-session", &metadata).unwrap();
+
+        // Verify metadata exists
+        let meta = store.get_session_metadata("test-session").unwrap();
+        assert_eq!(meta.title, Some("Test Session".to_string()));
+        assert!(meta.memory_enabled);
+
+        // Delete metadata
+        store.delete_session_metadata("test-session").unwrap();
+
+        // Metadata should be default
+        let meta = store.get_session_metadata("test-session").unwrap();
+        assert!(meta.title.is_none());
+        assert!(!meta.memory_enabled);
+    }
+
+    #[test]
+    fn test_session_not_found() {
+        let store = create_temp_store();
+
+        // First create a session to ensure tables exist
+        store.save_session_id("dummy-session").unwrap();
+        store
+            .append_message("dummy-session", &SessionMessage::user("Dummy"))
+            .unwrap();
+
+        // Now test operations on non-existent session
+        assert!(!store.session_exists("non-existent").unwrap());
+
+        // Load history should return empty vec
+        let loaded = store.load_history("non-existent").unwrap();
+        assert_eq!(loaded.len(), 0);
+
+        // Message count should be 0
+        let count = store.message_count("non-existent").unwrap();
+        assert_eq!(count, 0);
+
+        // Delete should succeed (no-op)
+        store.delete_session("non-existent").unwrap();
+
+        // Clear history should succeed (no-op)
+        store.clear_history("non-existent").unwrap();
+    }
+
+    #[test]
+    fn test_multiple_sessions() {
+        let store = create_temp_store();
+
+        // Create multiple sessions
+        store.save_session_id("session-1").unwrap();
+        store.save_session_id("session-2").unwrap();
+        store.save_session_id("session-3").unwrap();
+
+        // List all sessions
+        let sessions = store.list_sessions().unwrap();
+        assert_eq!(sessions.len(), 3);
+        assert!(sessions.contains(&"session-1".to_string()));
+        assert!(sessions.contains(&"session-2".to_string()));
+        assert!(sessions.contains(&"session-3".to_string()));
+
+        // Add messages to each session
+        store
+            .save_history("session-1", &[SessionMessage::user("Message 1")])
+            .unwrap();
+        store
+            .save_history("session-2", &[SessionMessage::user("Message 2")])
+            .unwrap();
+        store
+            .save_history("session-3", &[SessionMessage::user("Message 3")])
+            .unwrap();
+
+        // Verify each session has its own messages
+        let loaded1 = store.load_history("session-1").unwrap();
+        let loaded2 = store.load_history("session-2").unwrap();
+        let loaded3 = store.load_history("session-3").unwrap();
+        assert_eq!(loaded1.len(), 1);
+        assert_eq!(loaded2.len(), 1);
+        assert_eq!(loaded3.len(), 1);
+        assert_eq!(loaded1[0].content, "Message 1");
+        assert_eq!(loaded2[0].content, "Message 2");
+        assert_eq!(loaded3[0].content, "Message 3");
+
+        // Delete one session
+        store.delete_session("session-2").unwrap();
+
+        // Verify only session-2 is deleted
+        assert!(store.session_exists("session-1").unwrap());
+        assert!(!store.session_exists("session-2").unwrap());
+        assert!(store.session_exists("session-3").unwrap());
+
+        let sessions = store.list_sessions().unwrap();
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
+    fn test_save_history_overwrites() {
+        let store = create_temp_store();
+
+        // Save session with initial messages
+        store.save_session_id("test-session").unwrap();
+        let messages1 = vec![
+            SessionMessage::user("Original 1"),
+            SessionMessage::assistant("Original 2"),
+        ];
+        store.save_history("test-session", &messages1).unwrap();
+
+        // Overwrite with new messages
+        let messages2 = vec![
+            SessionMessage::user("New 1"),
+            SessionMessage::assistant("New 2"),
+            SessionMessage::user("New 3"),
+        ];
+        store.save_history("test-session", &messages2).unwrap();
+
+        // Verify new messages replaced old ones
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 3);
+        assert_eq!(loaded[0].content, "New 1");
+        assert_eq!(loaded[1].content, "New 2");
+        assert_eq!(loaded[2].content, "New 3");
+    }
+
+    #[test]
+    fn test_session_metadata_with_all_fields() {
+        let store = create_temp_store();
+
+        // Save session
+        store.save_session_id("test-session").unwrap();
+
+        // Set all metadata fields
+        let metadata = SessionMetadata {
+            title: Some("Test Session".to_string()),
+            memory_enabled: true,
+            conversation_summary: Some("This is a summary".to_string()),
+            summary_up_to_index: Some(5),
+        };
+        store.save_session_metadata("test-session", &metadata).unwrap();
+
+        // Retrieve and verify
+        let loaded = store.get_session_metadata("test-session").unwrap();
+        assert_eq!(loaded.title, Some("Test Session".to_string()));
+        assert!(loaded.memory_enabled);
+        assert_eq!(loaded.conversation_summary, Some("This is a summary".to_string()));
+        assert_eq!(loaded.summary_up_to_index, Some(5));
+    }
+
+    #[test]
+    fn test_pending_stream_state() {
+        let store = create_temp_store();
+
+        // Create and save pending stream state
+        let mut state = PendingStreamState::new("test-session".to_string(), "Hello".to_string());
+        state.update_content("Response so far");
+        state.update_thinking("Thinking...");
+        state.set_stage(StreamStage::Generating);
+
+        store.save_pending_stream(&state).unwrap();
+
+        // Retrieve state
+        let loaded = store.get_pending_stream("test-session").unwrap();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.session_id, "test-session");
+        assert_eq!(loaded.user_message, "Hello");
+        assert_eq!(loaded.content, "Response so far");
+        assert_eq!(loaded.thinking, "Thinking...");
+        assert!(matches!(loaded.stage, StreamStage::Generating));
+
+        // Delete state
+        store.delete_pending_stream("test-session").unwrap();
+
+        // Verify deleted
+        let loaded = store.get_pending_stream("test-session").unwrap();
+        assert!(loaded.is_none());
+    }
+
+    #[test]
+    fn test_pending_stream_state_not_found() {
+        let store = create_temp_store();
+
+        // Non-existent session should return None
+        let loaded = store.get_pending_stream("non-existent").unwrap();
+        assert!(loaded.is_none());
+
+        // Delete should succeed (no-op)
+        store.delete_pending_stream("non-existent").unwrap();
+    }
+
+    #[test]
+    fn test_get_all_pending_streams() {
+        let store = create_temp_store();
+
+        // Initially empty
+        let all = store.get_all_pending_streams().unwrap();
+        assert_eq!(all.len(), 0);
+
+        // Add multiple pending streams
+        let state1 = PendingStreamState::new("session-1".to_string(), "Message 1".to_string());
+        let state2 = PendingStreamState::new("session-2".to_string(), "Message 2".to_string());
+        let state3 = PendingStreamState::new("session-3".to_string(), "Message 3".to_string());
+
+        store.save_pending_stream(&state1).unwrap();
+        store.save_pending_stream(&state2).unwrap();
+        store.save_pending_stream(&state3).unwrap();
+
+        // Retrieve all
+        let all = store.get_all_pending_streams().unwrap();
+        assert_eq!(all.len(), 3);
+
+        let session_ids: Vec<&str> = all.iter().map(|s| s.session_id.as_str()).collect();
+        assert!(session_ids.contains(&"session-1"));
+        assert!(session_ids.contains(&"session-2"));
+        assert!(session_ids.contains(&"session-3"));
+    }
+
+    #[test]
+    fn test_cleanup_stale_pending_streams() {
+        let store = create_temp_store();
+
+        // Create a stale stream state (manually set old timestamp)
+        let mut stale_state = PendingStreamState::new("stale-session".to_string(), "Old".to_string());
+        stale_state.updated_at = chrono::Utc::now().timestamp() - 700; // 11.6 minutes ago
+        store.save_pending_stream(&stale_state).unwrap();
+
+        // Create a fresh stream state
+        let fresh_state = PendingStreamState::new("fresh-session".to_string(), "New".to_string());
+        store.save_pending_stream(&fresh_state).unwrap();
+
+        // Cleanup should remove the stale one
+        let cleaned = store.cleanup_stale_pending_streams().unwrap();
+        assert_eq!(cleaned, 1);
+
+        // Verify stale is gone, fresh remains
+        let stale = store.get_pending_stream("stale-session").unwrap();
+        assert!(stale.is_none());
+
+        let fresh = store.get_pending_stream("fresh-session").unwrap();
+        assert!(fresh.is_some());
+    }
+
+    #[test]
+    fn test_pending_stream_state_tool_calls() {
+        let store = create_temp_store();
+
+        // Create state with tool calls
+        let mut state = PendingStreamState::new("test-session".to_string(), "Use tools".to_string());
+        let tool_calls = vec![
+            serde_json::json!({"name": "search", "args": {"query": "test"}}),
+            serde_json::json!({"name": "calculate", "args": {"x": 1, "y": 2}}),
+        ];
+        state.set_tool_calls(tool_calls);
+
+        store.save_pending_stream(&state).unwrap();
+
+        // Retrieve and verify
+        let loaded = store.get_pending_stream("test-session").unwrap();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert!(loaded.tool_calls.is_some());
+        let tool_calls = loaded.tool_calls.unwrap();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[0]["name"], "search");
+        assert!(matches!(loaded.stage, StreamStage::ToolExecution));
+    }
+
+    #[test]
+    fn test_pending_stream_state_interrupted() {
+        let store = create_temp_store();
+
+        // Create and mark as interrupted
+        let mut state = PendingStreamState::new("test-session".to_string(), "Hello".to_string());
+        state.mark_interrupted();
+
+        store.save_pending_stream(&state).unwrap();
+
+        // Retrieve and verify
+        let loaded = store.get_pending_stream("test-session").unwrap();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert!(loaded.interrupted);
+
+        // Check elapsed time
+        let elapsed = loaded.elapsed_secs();
+        assert!(elapsed >= 0);
+    }
+
+    #[test]
+    fn test_session_message_with_images() {
+        let store = create_temp_store();
+
+        // Create message with images
+        let images = vec![
+            SessionMessageImage {
+                data: "data:image/png;base64,iVBORw0KG...".to_string(),
+                mime_type: Some("image/png".to_string()),
+            },
+            SessionMessageImage {
+                data: "data:image/jpeg;base64,/9j/4AAQ...".to_string(),
+                mime_type: Some("image/jpeg".to_string()),
+            },
+        ];
+
+        let msg = SessionMessage::user_with_images("Look at these images", images);
+        store.save_session_id("test-session").unwrap();
+        store.append_message("test-session", &msg).unwrap();
+
+        // Retrieve and verify
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].content, "Look at these images");
+        assert!(loaded[0].images.is_some());
+        let images = loaded[0].images.as_ref().unwrap();
+        assert_eq!(images.len(), 2);
+        assert_eq!(images[0].mime_type, Some("image/png".to_string()));
+        assert_eq!(images[1].mime_type, Some("image/jpeg".to_string()));
+    }
+
+    #[test]
+    fn test_session_message_with_round_contents() {
+        let store = create_temp_store();
+
+        // Create message with round contents
+        let msg = SessionMessage::assistant("Multi-step response")
+            .with_round_contents(serde_json::json!({
+                "0": "First step result",
+                "1": "Second step result",
+                "2": "Final step result"
+            }))
+            .with_round_thinking(serde_json::json!({
+                "0": "Thinking about step 1",
+                "1": "Thinking about step 2",
+                "2": "Thinking about step 3"
+            }));
+
+        store.save_session_id("test-session").unwrap();
+        store.append_message("test-session", &msg).unwrap();
+
+        // Retrieve and verify
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded[0].round_contents.is_some());
+        assert!(loaded[0].round_thinking.is_some());
+    }
+
+    #[test]
+    fn test_tool_message() {
+        let store = create_temp_store();
+
+        // Create tool message
+        let msg = SessionMessage::tool("call_123", "Tool execution result");
+        store.save_session_id("test-session").unwrap();
+        store.append_message("test-session", &msg).unwrap();
+
+        // Retrieve and verify
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].role, "tool");
+        assert_eq!(loaded[0].tool_call_id, Some("call_123".to_string()));
+        assert_eq!(loaded[0].content, "Tool execution result");
+    }
+
+    #[test]
+    fn test_system_message() {
+        let store = create_temp_store();
+
+        // Create system message
+        let msg = SessionMessage::system("You are a helpful assistant");
+        store.save_session_id("test-session").unwrap();
+        store.append_message("test-session", &msg).unwrap();
+
+        // Retrieve and verify
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].role, "system");
+        assert_eq!(loaded[0].content, "You are a helpful assistant");
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_session_access() {
+        let store = create_temp_store();
+
+        // Create session
+        store.save_session_id("test-session").unwrap();
+
+        // Spawn multiple tasks that append messages concurrently
+        let store_clone = store.clone();
+        let handle1 = tokio::spawn(async move {
+            for i in 0..5 {
+                store_clone
+                    .append_message("test-session", &SessionMessage::user(format!("Msg1-{}", i)))
+                    .unwrap();
+            }
+        });
+
+        let store_clone = store.clone();
+        let handle2 = tokio::spawn(async move {
+            for i in 0..5 {
+                store_clone
+                    .append_message("test-session", &SessionMessage::assistant(format!("Msg2-{}", i)))
+                    .unwrap();
+            }
+        });
+
+        let store_clone = store.clone();
+        let handle3 = tokio::spawn(async move {
+            for i in 0..5 {
+                store_clone
+                    .append_message(
+                        "test-session",
+                        &SessionMessage::user(format!("Msg3-{}", i)),
+                    )
+                    .unwrap();
+            }
+        });
+
+        // Wait for all tasks to complete
+        let results = tokio::join!(handle1, handle2, handle3);
+        assert!(results.0.is_ok());
+        assert!(results.1.is_ok());
+        assert!(results.2.is_ok());
+
+        // Verify all messages were saved
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 15);
+
+        // Verify message count
+        let count = store.message_count("test-session").unwrap();
+        assert_eq!(count, 15);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_different_sessions() {
+        let store = create_temp_store();
+
+        let store_clone = store.clone();
+        let handle1 = tokio::spawn(async move {
+            for i in 0..3 {
+                let session_id = format!("session-1-{}", i);
+                store_clone.save_session_id(&session_id).unwrap();
+                store_clone
+                    .append_message(&session_id, &SessionMessage::user(format!("Msg {}", i)))
+                    .unwrap();
+            }
+        });
+
+        let store_clone = store.clone();
+        let handle2 = tokio::spawn(async move {
+            for i in 0..3 {
+                let session_id = format!("session-2-{}", i);
+                store_clone.save_session_id(&session_id).unwrap();
+                store_clone
+                    .append_message(&session_id, &SessionMessage::user(format!("Msg {}", i)))
+                    .unwrap();
+            }
+        });
+
+        // Wait for completion
+        let results = tokio::join!(handle1, handle2);
+        assert!(results.0.is_ok());
+        assert!(results.1.is_ok());
+
+        // Verify all sessions exist
+        let sessions = store.list_sessions().unwrap();
+        assert_eq!(sessions.len(), 6);
+
+        // Verify each session has its messages
+        for session_id in sessions {
+            let loaded = store.load_history(&session_id).unwrap();
+            assert_eq!(loaded.len(), 1);
+        }
+    }
+
+    #[test]
+    fn test_session_metadata_default_values() {
+        let store = create_temp_store();
+
+        // Save session
+        store.save_session_id("test-session").unwrap();
+
+        // Get metadata without setting it first
+        let meta = store.get_session_metadata("test-session").unwrap();
+
+        // Should have default values
+        assert!(meta.title.is_none());
+        assert!(!meta.memory_enabled);
+        assert!(meta.conversation_summary.is_none());
+        assert!(meta.summary_up_to_index.is_none());
+    }
+
+    #[test]
+    fn test_duplicate_session_id() {
+        let store = create_temp_store();
+
+        // Save session twice with same ID
+        store.save_session_id("test-session").unwrap();
+        store.save_session_id("test-session").unwrap();
+
+        // Should only have one session
+        let sessions = store.list_sessions().unwrap();
+        assert_eq!(sessions.len(), 1);
+
+        // Session should exist
+        assert!(store.session_exists("test-session").unwrap());
+
+        // Save messages and verify
+        store
+            .save_history("test-session", &[SessionMessage::user("Test")])
+            .unwrap();
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 1);
+    }
+
+    #[test]
+    fn test_large_message_history() {
+        let store = create_temp_store();
+
+        // Save session
+        store.save_session_id("test-session").unwrap();
+
+        // Add many messages (100 messages)
+        let messages: Vec<SessionMessage> = (0..100)
+            .map(|i| {
+                SessionMessage::user(format!("This is message number {} with some content", i))
+                    .with_thinking(format!("Thinking about message {}", i))
+            })
+            .collect();
+
+        store.save_history("test-session", &messages).unwrap();
+
+        // Verify all messages are saved
+        let loaded = store.load_history("test-session").unwrap();
+        assert_eq!(loaded.len(), 100);
+
+        // Verify message count
+        let count = store.message_count("test-session").unwrap();
+        assert_eq!(count, 100);
+
+        // Verify first and last messages
+        assert_eq!(loaded[0].content, "This is message number 0 with some content");
+        assert_eq!(
+            loaded[99].content,
+            "This is message number 99 with some content"
+        );
+        assert_eq!(loaded[0].thinking, Some("Thinking about message 0".to_string()));
+        assert_eq!(
+            loaded[99].thinking,
+            Some("Thinking about message 99".to_string())
+        );
+    }
+
+    #[test]
+    fn test_save_history_updates_timestamp() {
+        let store = create_temp_store();
+
+        // Save session
+        store.save_session_id("test-session").unwrap();
+
+        // Get initial timestamp
+        let timestamp1 = store
+            .get_session_timestamp("test-session")
+            .unwrap()
+            .unwrap();
+
+        // Wait a bit and save again
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        store.save_session_id("test-session").unwrap();
+
+        // Get updated timestamp
+        let timestamp2 = store
+            .get_session_timestamp("test-session")
+            .unwrap()
+            .unwrap();
+
+        // Timestamp should be updated
+        assert!(timestamp2 >= timestamp1);
+    }
+
+    #[test]
+    fn test_pending_stream_state_default_values() {
+        let state = PendingStreamState::new("test-session".to_string(), "Hello".to_string());
+
+        // Check default values
+        assert_eq!(state.session_id, "test-session");
+        assert_eq!(state.user_message, "Hello");
+        assert!(state.content.is_empty());
+        assert!(state.thinking.is_empty());
+        assert!(matches!(state.stage, StreamStage::Waiting));
+        assert!(state.tool_calls.is_none());
+        assert!(!state.interrupted);
+
+        // Elapsed time should be small
+        let elapsed = state.elapsed_secs();
+        assert!(elapsed >= 0 && elapsed < 2);
+
+        // Should not be stale
+        assert!(!state.is_stale());
+    }
+
+    #[test]
+    fn test_pending_stream_state_stage_transitions() {
+        let mut state = PendingStreamState::new("test".to_string(), "Msg".to_string());
+
+        // Initial stage
+        assert!(matches!(state.stage, StreamStage::Waiting));
+
+        // Transition to thinking
+        state.update_thinking("Thinking...");
+        assert!(matches!(state.stage, StreamStage::Thinking));
+
+        // Transition to generating
+        state.set_stage(StreamStage::Generating);
+        assert!(matches!(state.stage, StreamStage::Generating));
+
+        // Transition to tool execution
+        state.set_tool_calls(vec![serde_json::json!({"name": "test"})]);
+        assert!(matches!(state.stage, StreamStage::ToolExecution));
+
+        // Transition to complete
+        state.set_stage(StreamStage::Complete);
+        assert!(matches!(state.stage, StreamStage::Complete));
+    }
+
+    #[test]
+    fn test_cleanup_stale_pending_streams_empty() {
+        let store = create_temp_store();
+
+        // Cleanup on empty database should return 0
+        let cleaned = store.cleanup_stale_pending_streams().unwrap();
+        assert_eq!(cleaned, 0);
     }
 }
