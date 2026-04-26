@@ -934,6 +934,22 @@ IPC 协议使用带 4 字节长度前缀（小端序）的 JSON 消息。
 - 扩展有复杂的异步操作
 - 扩展需要共享内存访问
 
+### 6.6 扩展实例重置
+
+`neomind_extension_reset_instance` FFI 导出允许 runner 在不重启进程的情况下重新初始化扩展。此功能由 `neomind_export!` 宏自动处理。
+
+扩展实例存储从 `OnceLock` 变更为 `RwLock<Option<...>>`，使用双重检查锁定以支持重置。
+
+### 6.7 已移除的能力 (v0.6.11)
+
+以下能力已被移除：
+
+- **HTTP_REQUEST** (`HttpRequest`) — 扩展可以原生发起 HTTP 调用
+- **KV_STORAGE** (`KvStorage`) — 扩展可以原生管理键值数据
+- **PermissionDenied 错误** — 能力访问现在仅由提供者注册决定
+
+`ExtensionStateEnum` 已简化为 4 种状态：`Running`、`RunningIsolated`、`Stopped`、`Error`。
+
 ---
 
 ## 7. 流式扩展
