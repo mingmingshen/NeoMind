@@ -294,21 +294,22 @@ export function AgentsPage() {
   }, [loadItems])
 
   // Handlers
-  const handleCreate = async () => {
-    await loadEditorResources()
+  const handleCreate = () => {
     setEditingAgent(undefined)
     setShowAgentDialog(true)
+    loadEditorResources()
   }
 
   const handleEdit = async (agent: AiAgent) => {
     try {
+      setShowAgentDialog(true)
       const [detail] = await Promise.all([
         api.getAgent(agent.id),
         loadEditorResources(),
       ])
       setEditingAgent(detail)
-      setShowAgentDialog(true)
     } catch (error) {
+      setShowAgentDialog(false)
       handleError(error, { operation: 'Load agent details', showToast: false })
       showErrorToast(toast, error, tCommon('failed'))
     }
@@ -420,11 +421,11 @@ export function AgentsPage() {
   }
 
   // Edit from detail: close detail first to avoid scroll-through bug
-  const handleEditFromDetail = async (agent: AiAgentDetail) => {
+  const handleEditFromDetail = (agent: AiAgentDetail) => {
     setDetailDialogOpen(false)
-    await loadEditorResources()
     setEditingAgent(agent)
     setShowAgentDialog(true)
+    loadEditorResources()
   }
 
   // Refresh detail when sheet is open
