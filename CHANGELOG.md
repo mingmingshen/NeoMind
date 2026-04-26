@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.7.0] - 2026-04-26
+
+### Added
+
+- **API Input Validation** — All POST/PUT endpoints validate parameters before processing
+- **Settings Persistence** — Settings saved to redb database, survive server restarts
+- **MQTT Topic Unsubscription** — Custom MQTT topics can be unsubscribed via API
+- **Empty State Guidance** — All list pages show helpful guidance when empty
+- **Confirmation Dialogs** — Destructive operations require explicit confirmation
+- **Form Validation** — Agent, device, and rule editors validate input with inline error messages
+- **Error Boundaries** — React Error Boundaries for graceful page failure handling
+- **User-Friendly Error Messages** — Toast notifications show clear messages instead of raw errors
+
+### Changed
+
+- **Error Handling** — Replaced 1000+ hot-path `unwrap()` calls with safe error propagation across 8 crates
+- **Pagination** — Standardized default page size to 10 across all pages
+- **Loading States** — All page-level loading uses skeleton screens instead of spinners
+- **Notifications** — Replaced `alert()` with toast notifications throughout the UI
+- **Event Trigger Cooldown** — Default changed from 5s to 60s (configurable)
+
+### Fixed
+
+- **Rule Engine** — Catch-all error recovery prevents scheduler crashes
+- **Console Cleanup** — Removed 130+ non-essential console statements from frontend
+- **Extension Runner** — Improved crash loop detection and panic handling
+
+### Testing
+
+- Added comprehensive unit tests to neomind-storage (42+ new tests)
+- Added comprehensive unit tests to neomind-agent (125+ tests in tools module)
+- Added comprehensive unit tests to neomind-rules (93+ new tests for DSL parser and engine)
+- Added comprehensive unit tests to neomind-messages (118+ total tests)
+- Added comprehensive unit tests to neomind-extension-runner (79+ new tests)
+- Added comprehensive unit tests to neomind-api (24 validation tests)
+
+---
+
 ## [v0.6.12] - 2026-04-26
 
 ### Added
