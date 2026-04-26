@@ -32,9 +32,25 @@ pub async fn generate_mdl_handler(
     State(_state): State<ServerState>,
     Json(req): Json<GenerateMdlRequest>,
 ) -> HandlerResult<DeviceTypeDefinition> {
+    use crate::validator::{validate_required_string, validate_string_length};
+
     // Validate device name
-    if req.device_name.trim().is_empty() {
-        return Err(ErrorResponse::bad_request("Device name is required"));
+    validate_required_string(&req.device_name, "device_name")?;
+    validate_string_length(&req.device_name, "device_name", 1, 100)?;
+
+    // Validate description if provided (max 500 chars)
+    if !req.description.is_empty() {
+        validate_string_length(&req.description, "description", 0, 500)?;
+    }
+
+    // Validate uplink example if provided (max 10KB)
+    if !req.uplink_example.is_empty() {
+        validate_string_length(&req.uplink_example, "uplink_example", 0, 10240)?;
+    }
+
+    // Validate downlink example if provided (max 10KB)
+    if !req.downlink_example.is_empty() {
+        validate_string_length(&req.downlink_example, "downlink_example", 0, 10240)?;
     }
 
     // Generate device_type from device_name (lowercase, replace spaces with underscores)

@@ -357,6 +357,8 @@ pub async fn update_rule_handler(
     Path(id): Path<String>,
     Json(req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
+    use crate::validator::{validate_required_string, validate_string_length};
+
     let rule_id = RuleId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
@@ -366,6 +368,23 @@ pub async fn update_rule_handler(
     let description = req.get("description").and_then(|v| v.as_str());
     let enabled = req.get("enabled").and_then(|v| v.as_bool());
     let source = req.get("source").cloned();
+
+    // Validate DSL if provided
+    if let Some(dsl_value) = dsl {
+        validate_required_string(dsl_value, "dsl")?;
+        validate_string_length(dsl_value, "dsl", 10, 50000)?;
+    }
+
+    // Validate name if provided
+    if let Some(name_value) = name {
+        validate_required_string(name_value, "name")?;
+        validate_string_length(name_value, "name", 1, 100)?;
+    }
+
+    // Validate description if provided
+    if let Some(desc_value) = description {
+        validate_string_length(desc_value, "description", 0, 500)?;
+    }
 
     // If DSL is provided, re-parse and replace the entire rule
     if let Some(dsl) = dsl {
@@ -781,10 +800,22 @@ pub async fn create_rule_handler(
     State(state): State<ServerState>,
     Json(req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
+    use crate::validator::{validate_required_string, validate_string_length};
+
+    // Validate required DSL field
     let dsl = req
         .get("dsl")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorResponse::bad_request("Missing 'dsl' field"))?;
+
+    validate_required_string(dsl, "dsl")?;
+    validate_string_length(dsl, "dsl", 10, 50000)?;
+
+    // Validate rule name if provided
+    if let Some(name) = req.get("name").and_then(|v| v.as_str()) {
+        validate_required_string(name, "name")?;
+        validate_string_length(name, "name", 1, 100)?;
+    }
 
     // Extract source from frontend for UI state preservation
     let source = req.get("source").cloned();

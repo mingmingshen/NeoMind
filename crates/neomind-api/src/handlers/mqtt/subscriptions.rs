@@ -13,6 +13,9 @@ use crate::handlers::{
 };
 use crate::models::ErrorResponse;
 
+// Import MqttAdapter for downcasting
+use neomind_devices::adapters::mqtt::MqttAdapter;
+
 /// List MQTT subscriptions.
 ///
 /// GET /api/mqtt/subscriptions
@@ -63,14 +66,23 @@ pub async fn subscribe_handler(
     State(state): State<ServerState>,
     Json(req): Json<MqttSubscribeRequest>,
 ) -> HandlerResult<serde_json::Value> {
+    use crate::validator::{validate_required_string, validate_string_length, validate_numeric_range};
+
+    // Validate topic
+    validate_required_string(&req.topic, "topic")?;
+    validate_string_length(&req.topic, "topic", 1, 200)?;
+
+    // Validate QoS range (0-2)
+    validate_numeric_range(req.qos as f64, "qos", 0.0, 2.0)?;
+
     // Get the first MQTT adapter
     let adapters = state.devices.service.list_adapters().await;
     let mqtt_adapter = adapters
         .iter()
         .find(|a| a.adapter_type == "mqtt");
 
-    let adapter = match mqtt_adapter {
-        Some(a) => a,
+    let adapter_id = match mqtt_adapter {
+        Some(a) => &a.id,
         None => {
             return ok(json!({
                 "success": false,
@@ -83,29 +95,46 @@ pub async fn subscribe_handler(
     let adapter_instance = state
         .devices
         .service
-        .get_adapter(&adapter.id)
+        .get_adapter(adapter_id)
         .await
         .ok_or_else(|| ErrorResponse::internal("MQTT adapter not found".to_string()))?;
 
-    // Subscribe to the custom topic using the adapter's subscribe_topic method
-    // Note: This requires the adapter to have a subscribe_topic method
-    // For now, we'll return a message indicating this needs adapter support
-    tracing::info!(
-        category = "mqtt",
-        topic = %req.topic,
-        qos = req.qos,
-        "Custom topic subscription requested"
-    );
+    // Downcast to MqttAdapter to access subscribe_topic
+    let mqtt_adapter = adapter_instance
+        .as_any()
+        .downcast_ref::<MqttAdapter>()
+        .ok_or_else(|| ErrorResponse::internal("Adapter is not an MQTT adapter".to_string()))?;
 
-    // Since the DeviceAdapter trait doesn't have a generic subscribe_topic method,
-    // we'll need to downcast to MqttAdapter to access it
-    // For now, return success with a message
-    ok(json!({
-        "success": false,
-        "message": "Custom topic subscription requires MQTT adapter-specific interface. Use subscribe_device for device-specific subscriptions.",
-        "topic": req.topic,
-        "qos": req.qos,
-    }))
+    // Subscribe to the custom topic
+    match mqtt_adapter.subscribe_topic(&req.topic).await {
+        Ok(_) => {
+            tracing::info!(
+                category = "mqtt",
+                topic = %req.topic,
+                qos = req.qos,
+                "Successfully subscribed to custom topic"
+            );
+            ok(json!({
+                "success": true,
+                "message": "Subscribed to topic",
+                "topic": req.topic,
+                "qos": req.qos,
+            }))
+        }
+        Err(e) => {
+            tracing::error!(
+                category = "mqtt",
+                topic = %req.topic,
+                error = %e,
+                "Failed to subscribe to custom topic"
+            );
+            ok(json!({
+                "success": false,
+                "message": format!("Failed to subscribe: {}", e),
+                "topic": req.topic,
+            }))
+        }
+    }
 }
 
 /// Unsubscribe from a topic.
@@ -115,14 +144,20 @@ pub async fn unsubscribe_handler(
     State(state): State<ServerState>,
     Json(req): Json<MqttUnsubscribeRequest>,
 ) -> HandlerResult<serde_json::Value> {
+    use crate::validator::{validate_required_string, validate_string_length};
+
+    // Validate topic
+    validate_required_string(&req.topic, "topic")?;
+    validate_string_length(&req.topic, "topic", 1, 200)?;
+
     // Get the first MQTT adapter
     let adapters = state.devices.service.list_adapters().await;
     let mqtt_adapter = adapters
         .iter()
         .find(|a| a.adapter_type == "mqtt");
 
-    let adapter = match mqtt_adapter {
-        Some(a) => a,
+    let adapter_id = match mqtt_adapter {
+        Some(a) => &a.id,
         None => {
             return ok(json!({
                 "success": false,
@@ -135,32 +170,44 @@ pub async fn unsubscribe_handler(
     let adapter_instance = state
         .devices
         .service
-        .get_adapter(&adapter.id)
+        .get_adapter(adapter_id)
         .await
         .ok_or_else(|| ErrorResponse::internal("MQTT adapter not found".to_string()))?;
 
-    // Since the DeviceAdapter trait doesn't have a generic unsubscribe_topic method,
-    // we'll need to downcast to MqttAdapter to access it
-    // For now, we'll track this as a best-effort operation
-    tracing::info!(
-        category = "mqtt",
-        topic = %req.topic,
-        "Custom topic unsubscription requested"
-    );
+    // Downcast to MqttAdapter to access unsubscribe_topic
+    let mqtt_adapter = adapter_instance
+        .as_any()
+        .downcast_ref::<MqttAdapter>()
+        .ok_or_else(|| ErrorResponse::internal("Adapter is not an MQTT adapter".to_string()))?;
 
-    // Try to unsubscribe using the adapter's unsubscribe_device method
-    // This is a workaround since we don't have direct access to unsubscribe_topic
-    // In a full implementation, we would:
-    // 1. Downcast to MqttAdapter
-    // 2. Call adapter.unsubscribe_topic(&req.topic).await
-    // 3. Return success/failure
-
-    // For now, return success with a message indicating the limitation
-    ok(json!({
-        "success": false,
-        "message": "Custom topic unsubscription requires MQTT adapter-specific interface. Use unsubscribe_device for device-specific unsubscriptions.",
-        "topic": req.topic,
-    }))
+    // Unsubscribe from the custom topic
+    match mqtt_adapter.unsubscribe_topic(&req.topic).await {
+        Ok(_) => {
+            tracing::info!(
+                category = "mqtt",
+                topic = %req.topic,
+                "Successfully unsubscribed from custom topic"
+            );
+            ok(json!({
+                "success": true,
+                "message": "Unsubscribed from topic",
+                "topic": req.topic,
+            }))
+        }
+        Err(e) => {
+            tracing::error!(
+                category = "mqtt",
+                topic = %req.topic,
+                error = %e,
+                "Failed to unsubscribe from custom topic"
+            );
+            ok(json!({
+                "success": false,
+                "message": format!("Failed to unsubscribe: {}", e),
+                "topic": req.topic,
+            }))
+        }
+    }
 }
 
 /// Subscribe to a device's metrics.

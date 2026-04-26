@@ -45,9 +45,20 @@ pub async fn get_device_telemetry_handler(
     Path(device_id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> HandlerResult<serde_json::Value> {
+    use crate::validator::{validate_string_length, validate_numeric_range};
+
+    // Validate device_id if provided
+    validate_string_length(&device_id, "device_id", 1, 100)?;
+
     // Parse query parameters
     // Note: All timestamps in the storage layer are seconds since epoch
     let metric = params.get("metric").cloned();
+
+    // Validate metric name if provided
+    if let Some(ref m) = metric {
+        validate_string_length(m, "metric", 1, 100)?;
+    }
+
     let start = params
         .get("start")
         .and_then(|s| s.parse::<i64>().ok())
@@ -56,26 +67,37 @@ pub async fn get_device_telemetry_handler(
         .get("end")
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or_else(|| chrono::Utc::now().timestamp()); // now in seconds
-    let limit = params
-        .get("limit")
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(100)
-        .min(1000); // Cap at 1000
-    let offset = params
-        .get("offset")
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(0);
-    let aggregate = params.get("aggregate").cloned();
 
-    // Enforce maximum time range to prevent resource exhaustion (max 30 days)
+    // Validate time range (max 30 days)
     const MAX_TIME_RANGE_SECS: i64 = 30 * 86400;
-    if end - start > MAX_TIME_RANGE_SECS {
+    let time_range = end - start;
+    if time_range < 0 {
+        return Err(ErrorResponse::bad_request("Invalid time range: end must be after start"));
+    }
+    if time_range > MAX_TIME_RANGE_SECS {
         return Err(ErrorResponse::bad_request(format!(
             "Time range too large: {} seconds (max {} days)",
-            end - start,
+            time_range,
             MAX_TIME_RANGE_SECS / 86400
         )));
     }
+
+    // Validate and cap limit
+    let limit = params
+        .get("limit")
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(100.0);
+    validate_numeric_range(limit, "limit", 1.0, 1000.0)?;
+    let limit = limit as usize;
+
+    let offset = params
+        .get("offset")
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    validate_numeric_range(offset, "offset", 0.0, 100000.0)?;
+    let offset = offset as usize;
+
+    let aggregate = params.get("aggregate").cloned();
 
     // Query device with template once to avoid duplicate database calls
     let device_with_template = state
