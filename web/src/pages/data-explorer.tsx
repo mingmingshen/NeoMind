@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PageLayout } from '@/components/layout/PageLayout'
-import { ResponsiveTable, type TableColumn, Pagination } from '@/components/shared'
+import { ResponsiveTable, type TableColumn, Pagination, EmptyState } from '@/components/shared'
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav } from '@/components/shared/PageTabs'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -248,12 +248,11 @@ export function DataExplorerPage() {
       loading={loading}
       flexHeight
       emptyState={
-        <div className="text-center py-12">
-          <Database className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
-          <p className="text-sm text-muted-foreground">
-            {search ? t('data:noResults', 'No data sources match your search') : t('data:noSources', 'No data sources found')}
-          </p>
-        </div>
+        <EmptyState
+          icon={<Database className="h-12 w-12" />}
+          title={search ? t('data:noResults', 'No data sources match your search') : t('data:noSources', 'No data sources available')}
+          description={search ? undefined : t('data:noSourcesDesc', 'Data sources will appear here once devices are connected or extensions are registered')}
+        />
       }
     />
   )
