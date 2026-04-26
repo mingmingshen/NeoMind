@@ -288,7 +288,7 @@ export function DeviceDetail({
                 "w-12 h-12 rounded-xl flex items-center justify-center",
                 device.status === 'online'
                   ? "bg-gradient-to-br from-green-500/20 to-emerald-500/10"
-                  : "bg-gradient-to-br from-gray-500/20 to-gray-500/10"
+                  : "bg-gradient-to-br from-muted to-muted/50"
               )}>
                 <Zap className={cn(
                   "h-6 w-6",

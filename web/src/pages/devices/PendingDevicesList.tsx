@@ -224,7 +224,7 @@ export function PendingDevicesList({
         description: draft.generated_type.description,
       })
       // Initialize editing metrics
-      setEditingMetrics(draft.generated_type.metrics.map(m => ({
+      setEditingMetrics((draft.generated_type.metrics || []).map(m => ({
         name: m.name,
         display_name: m.display_name || m.name,
         path: m.path,
@@ -664,7 +664,7 @@ export function PendingDevicesList({
                           setIsEditingMetrics(false)
                           // Reset to original values
                           if (selectedDraftForApproval.generated_type) {
-                            setEditingMetrics(selectedDraftForApproval.generated_type.metrics.map(m => ({
+                            setEditingMetrics((selectedDraftForApproval.generated_type.metrics || []).map(m => ({
                               name: m.name,
                               display_name: m.display_name || m.name,
                               path: m.path,
@@ -692,7 +692,7 @@ export function PendingDevicesList({
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {(isEditingMetrics ? editingMetrics : selectedDraftForApproval.generated_type.metrics).map((metric, idx) => (
+                        {(isEditingMetrics ? editingMetrics : (selectedDraftForApproval.generated_type.metrics || [])).map((metric, idx) => (
                           <TableRow key={metric.name}>
                             <TableCell className="font-mono text-xs">{metric.path}</TableCell>
                             <TableCell>

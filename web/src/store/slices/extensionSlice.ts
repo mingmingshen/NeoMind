@@ -104,7 +104,7 @@ export const createExtensionSlice: StateCreator<
       set({ extensions })
       // Cache commands for each extension
       const commandsMap: Record<string, ExtensionCommandDescriptor[]> = {}
-      extensions.forEach((ext) => {
+      ;(extensions || []).forEach((ext) => {
         commandsMap[ext.id] = ext.commands
       })
       set({ commands: commandsMap })
@@ -240,7 +240,7 @@ export const createExtensionSlice: StateCreator<
   fetchExtensionTypes: async () => {
     try {
       const types = await api.listExtensionTypes()
-      set({ extensionTypes: types })
+      set({ extensionTypes: types || [] })
     } catch (error) {
       logError(error, { operation: 'Fetch extension types' })
       set({ extensionTypes: [] })

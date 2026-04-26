@@ -28,65 +28,29 @@ const AgentsPage = lazy(() => import('@/pages/agents').then(m => ({ default: m.A
 const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default: m.SettingsPage })))
 const MessagesPage = lazy(() => import('@/pages/messages').then(m => ({ default: m.default })))
 const ExtensionsPage = lazy(() => import('@/pages/extensions').then(m => ({ default: m.ExtensionsPage })))
-// Suppress Radix UI Portal cleanup errors during page transitions
-// This is a known issue with React 18 + Radix UI + fast page navigation
+// Suppress only the specific Radix UI Portal cleanup error during fast page transitions
+// Known issue: React 18 + Radix UI race condition where removeChild fails on unmounted portals
 const originalError = console.error
+const SUPPRESSED_ERROR = "NotFoundError: Failed to execute 'removeChild' on 'Node'"
 console.error = (...args) => {
   const message = args[0]
-  if (typeof message === 'string' && (
-    message.includes('NotFoundError: Failed to execute \'removeChild\'') ||
-    (message.includes('NotFoundError') || message.includes('removeChild'))
-  )) {
-    // Check if any arg contains Portal or Select related strings
-    const hasPortalOrSelect = args.some(arg =>
-      typeof arg === 'string' && (
-        arg.includes('Portal') ||
-        arg.includes('Select') ||
-        arg.includes('Radix') ||
-        arg.includes('@radix-ui')
-      )
-    )
-    if (hasPortalOrSelect) {
-      // Suppress Portal cleanup errors
-      return
-    }
+  // Only suppress the exact Radix UI removeChild error — nothing else
+  if (typeof message === 'string' && message.includes(SUPPRESSED_ERROR)) {
+    return
   }
   originalError.apply(console, args)
 }
 
-// Prevent Backspace/Delete from triggering browser back navigation in Tauri WebView
-// This is a known issue where these keys act as "go back" in embedded webviews
-if (isTauriEnv()) {
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-      const target = e.target as HTMLElement
-      const isEditable = target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target.isContentEditable
-      if (!isEditable) {
-        e.preventDefault()
-      }
-    }
-  })
-}
-
+// Suppress only the exact global error from the same Radix UI race condition
 window.addEventListener('error', (event) => {
-  if (
-    event.message?.includes('NotFoundError') ||
-    event.message?.includes('removeChild')
-  ) {
+  if (event.message?.includes(SUPPRESSED_ERROR)) {
     event.preventDefault()
-    event.stopPropagation()
     return false
   }
 })
 
 window.addEventListener('unhandledrejection', (event) => {
-  if (
-    event.reason?.message?.includes('NotFoundError') ||
-    event.reason?.message?.includes('removeChild') ||
-    event.reason?.toString().includes('Portal')
-  ) {
+  if (event.reason?.message?.includes(SUPPRESSED_ERROR)) {
     event.preventDefault()
     return false
   }
@@ -197,6 +161,19 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
 }
 
 // Loading component for lazy-loaded routes
+
+// Prevent Backspace/Delete from triggering browser back navigation in Tauri WebView
+function handleTauriBackspace(e: KeyboardEvent) {
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    const target = e.target as HTMLElement
+    const isEditable = target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target.isContentEditable
+    if (!isEditable) {
+      e.preventDefault()
+    }
+  }
+}
 function PageLoading() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
@@ -273,7 +250,16 @@ function App() {
 
   // Check if running in Tauri environment
   useEffect(() => {
-    setIsTauri(isTauriEnv())
+    const tauri = isTauriEnv()
+    setIsTauri(tauri)
+    if (tauri) {
+      window.addEventListener('keydown', handleTauriBackspace)
+    }
+    return () => {
+      if (tauri) {
+        window.removeEventListener('keydown', handleTauriBackspace)
+      }
+    }
   }, [])
 
   // Initial setup check - runs before routes are rendered

@@ -1071,9 +1071,9 @@ export default function MessagesPage() {
                     return (
                       <div className="text-sm">
                         <div className="text-muted-foreground line-clamp-2">{message.message}</div>
-                        {message.tags.length > 0 && (
+                        {(message.tags || []).length > 0 && (
                           <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                            {message.tags.slice(0, 4).map((tag, i) => (
+                            {(message.tags || []).slice(0, 4).map((tag, i) => (
                               <Badge key={i} variant="secondary" className="text-xs h-5 px-1.5">
                                 {tag}
                               </Badge>
@@ -1540,7 +1540,7 @@ export default function MessagesPage() {
                 description={t('messages.tags.hint', 'Comma-separated tags for categorization')}
               >
                 <div className="flex flex-wrap gap-1">
-                  {selectedMessage.tags.map((tag, i) => (
+                  {(selectedMessage.tags || []).map((tag, i) => (
                     <Badge key={i} variant="secondary" className="text-xs">{tag}</Badge>
                   ))}
                 </div>

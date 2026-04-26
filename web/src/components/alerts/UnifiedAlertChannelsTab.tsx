@@ -193,6 +193,8 @@ export function UnifiedAlertChannelsTab({
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
   const [editingInstance, setEditingInstance] = useState<PluginInstance | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
+  const [testingId, setTestingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Filter configuration dialog state
   const [filterDialogChannel, setFilterDialogChannel] = useState<AlertChannel | null>(null)
@@ -574,16 +576,26 @@ export function UnifiedAlertChannelsTab({
                             variant="ghost"
                             size="sm"
                             className="h-8 w-8 p-0"
+                            disabled={testingId === instance.id}
                             onClick={async () => {
-                              const result = await onTestChannel(instance.id)
-                              setTestResults(prev => ({
-                                ...prev,
-                                [instance.id]: result,
-                              }))
+                              setTestingId(instance.id)
+                              try {
+                                const result = await onTestChannel(instance.id)
+                                setTestResults(prev => ({
+                                  ...prev,
+                                  [instance.id]: result,
+                                }))
+                              } finally {
+                                setTestingId(null)
+                              }
                             }}
                             title={t('plugins:test')}
                           >
-                            <TestTube className="h-4 w-4" />
+                            {testingId === instance.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <TestTube className="h-4 w-4" />
+                            )}
                           </Button>
                         )}
                         {!hideFilterButton && (
@@ -616,19 +628,27 @@ export function UnifiedAlertChannelsTab({
                           variant="ghost"
                           size="sm"
                           className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          disabled={deletingId === instance.id}
                           onClick={async () => {
                             if (confirm(t('common:messages.channels.confirmDelete', 'Are you sure you want to delete this channel?', { name: instance.name }))) {
+                              setDeletingId(instance.id)
                               try {
                                 await handleDelete(instance.id)
                                 await loadData()
                               } catch (err) {
                                 handleError(err, { operation: 'Delete channel' })
+                              } finally {
+                                setDeletingId(null)
                               }
                             }
                           }}
                           title={t('plugins:delete')}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {deletingId === instance.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                         </Button>
                       </div>
                     </div>

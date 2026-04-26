@@ -1473,11 +1473,10 @@ function MetricEditorCompact({
             variant="ghost"
             size="icon"
             onClick={() => setExpanded(!expanded)}
-            className="h-6 w-6"
           >
             {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="icon" onClick={onRemove} className="h-6 w-6">
+          <Button variant="ghost" size="icon" onClick={onRemove}>
             <Trash2 className="h-4 w-4 text-destructive" />
           </Button>
         </div>
@@ -1744,11 +1743,10 @@ function CommandEditorCompact({
             variant="ghost"
             size="icon"
             onClick={() => setExpanded(!expanded)}
-            className="h-6 w-6"
           >
             {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="icon" onClick={onRemove} className="h-6 w-6">
+          <Button variant="ghost" size="icon" onClick={onRemove}>
             <Trash2 className="h-4 w-4 text-destructive" />
           </Button>
         </div>
@@ -2418,7 +2416,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                             <span className="text-sm">{metric.display_name}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs text-purple-500">{formatDataType(metric.data_type)}</Badge>
+                            <Badge variant="outline" className="text-xs text-purple-600 dark:text-purple-400">{formatDataType(metric.data_type)}</Badge>
                             <span className="text-xs text-muted-foreground">via {metric.transform_name}</span>
                           </div>
                         </div>

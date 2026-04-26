@@ -340,7 +340,7 @@ export const createDeviceSlice: StateCreator<
           d.id === deviceId || d.device_id === deviceId
             ? {
                 ...d,
-                current_values: buildNestedValues(data.metrics),
+                current_values: buildNestedValues(data.metrics || {}),
               }
             : d
         ),
@@ -396,9 +396,10 @@ export const createDeviceSlice: StateCreator<
       }
 
       // Update devices array with fetched current_values
+      const deviceDataMap = data.devices || {}
       set((state) => ({
         devices: state.devices.map((device) => {
-          const deviceData = data.devices[device.id || device.device_id]
+          const deviceData = deviceDataMap[device.id || device.device_id]
           if (!deviceData) {
             return device
           }

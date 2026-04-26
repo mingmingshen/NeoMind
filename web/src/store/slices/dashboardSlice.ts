@@ -874,7 +874,7 @@ export const createDashboardSlice: StateCreator<
       try {
         const api = (await import('@/lib/api')).api
         const data = await api.getDashboardTemplates()
-        const validTemplates = data.filter((t: any) =>
+        const validTemplates = (data || []).filter((t: any) =>
           ['overview', 'monitoring', 'automation', 'agents', 'custom'].includes(t.category)
         ) as DashboardTemplate[]
         set({ templates: [...DEFAULT_TEMPLATES, ...validTemplates] })

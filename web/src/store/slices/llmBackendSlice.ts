@@ -69,7 +69,7 @@ export const createLlmBackendSlice: StateCreator<
     try {
       const data = await api.listLlmBackends()
       set({
-        llmBackends: data.backends,
+        llmBackends: data.backends || [],
         activeBackendId: data.active_id,
         llmBackendLoading: false,
       })
@@ -83,7 +83,7 @@ export const createLlmBackendSlice: StateCreator<
   loadBackendTypes: async () => {
     try {
       const data = await api.listLlmBackendTypes()
-      set({ backendTypes: data.types })
+      set({ backendTypes: data.types || [] })
     } catch (err) {
       logError(err, { operation: 'Load backend types' })
       // Don't set error state for this - it's not critical

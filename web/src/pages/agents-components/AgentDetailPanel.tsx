@@ -340,12 +340,12 @@ export function AgentDetailPanel({
                 </div>
 
                 {/* Resources - Full width */}
-                <DetailSection title={`${t('agents:detail.resources')} (${agent.resources.length})`} icon={Zap}>
+                <DetailSection title={`${t('agents:detail.resources')} (${(agent.resources || []).length})`} icon={Zap}>
                   <div className="space-y-3">
                     {/* Resource summary counts - group by actual types */}
                     <div className="flex flex-wrap gap-3">
                       {Object.entries(
-                        agent.resources.reduce((acc, r) => {
+                        (agent.resources || []).reduce((acc, r) => {
                           const type = r.resource_type.toLowerCase()
                           acc[type] = (acc[type] || 0) + 1
                           return acc
@@ -359,7 +359,7 @@ export function AgentDetailPanel({
                     </div>
                     {/* Resource list */}
                     <div className="grid grid-cols-2 gap-2">
-                      {agent.resources.slice(0, 8).map((resource, idx) => (
+                      {(agent.resources || []).slice(0, 8).map((resource, idx) => (
                         <div key={idx} className="flex items-center justify-between px-2.5 py-1.5 rounded bg-background border">
                           <span className="text-sm truncate flex-1 mr-2" title={resource.resource_id}>
                             {resource.name || resource.resource_id}
@@ -370,9 +370,9 @@ export function AgentDetailPanel({
                         </div>
                       ))}
                     </div>
-                    {agent.resources.length > 8 && (
+                    {(agent.resources || []).length > 8 && (
                       <div className="text-xs text-muted-foreground text-center pt-1">
-                        {t('agents:detail.moreResources', { count: agent.resources.length - 8 })}
+                        {t('agents:detail.moreResources', { count: (agent.resources || []).length - 8 })}
                       </div>
                     )}
                   </div>
@@ -764,7 +764,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
             icon={TrendingUp}
           >
             <div className="space-y-2">
-              {memory.learned_patterns.map((pattern: any, idx: number) => (
+              {(memory.learned_patterns || []).map((pattern: any, idx: number) => (
                 <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/10">
                   <div className="flex items-center justify-between mb-2">
                     <Badge variant="outline" className="text-xs">

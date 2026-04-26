@@ -240,6 +240,7 @@ export function UnifiedDeviceConnectionsTab() {
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
   const [editingInstance, setEditingInstance] = useState<PluginInstance | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
+  const [testingId, setTestingId] = useState<string | null>(null)
 
   // Delete confirmation dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -799,16 +800,26 @@ export function UnifiedDeviceConnectionsTab() {
                               variant="ghost"
                               size="sm"
                               className="h-8 w-8 p-0"
+                              disabled={testingId === instance.id}
                               onClick={async () => {
-                                const result = await handleTest(instance.id)
-                                setTestResults((prev) => ({
-                                  ...prev,
-                                  [instance.id]: result,
-                                }))
+                                setTestingId(instance.id)
+                                try {
+                                  const result = await handleTest(instance.id)
+                                  setTestResults((prev) => ({
+                                    ...prev,
+                                    [instance.id]: result,
+                                  }))
+                                } finally {
+                                  setTestingId(null)
+                                }
                               }}
                               title={t('plugins:testConnection')}
                             >
-                              <TestTube className="h-4 w-4" />
+                              {testingId === instance.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <TestTube className="h-4 w-4" />
+                              )}
                             </Button>
                             <Button
                               variant="ghost"
