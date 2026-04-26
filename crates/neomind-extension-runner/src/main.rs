@@ -3473,3 +3473,101 @@ async fn main() {
     debug!("Extension runner exiting normally");
     std::process::exit(0);
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // Test ExtensionType::from_path()
+    #[test]
+    fn test_extension_type_detection_wasm() {
+        let path = PathBuf::from("/tmp/test.wasm");
+        let ext_type = ExtensionType::from_path(&path);
+        assert_eq!(ext_type, ExtensionType::Wasm);
+    }
+
+    #[test]
+    fn test_extension_type_detection_wasm_uppercase() {
+        let path = PathBuf::from("/tmp/test.WASM");
+        let ext_type = ExtensionType::from_path(&path);
+        assert_eq!(ext_type, ExtensionType::Wasm);
+    }
+
+    #[test]
+    fn test_extension_type_detection_dylib() {
+        let path = PathBuf::from("/tmp/test.dylib");
+        let ext_type = ExtensionType::from_path(&path);
+        assert_eq!(ext_type, ExtensionType::Native);
+    }
+
+    #[test]
+    fn test_extension_type_detection_so() {
+        let path = PathBuf::from("/tmp/test.so");
+        let ext_type = ExtensionType::from_path(&path);
+        assert_eq!(ext_type, ExtensionType::Native);
+    }
+
+    #[test]
+    fn test_extension_type_detection_dll() {
+        let path = PathBuf::from("/tmp/test.dll");
+        let ext_type = ExtensionType::from_path(&path);
+        assert_eq!(ext_type, ExtensionType::Native);
+    }
+
+    #[test]
+    fn test_extension_type_detection_no_extension() {
+        let path = PathBuf::from("/tmp/test");
+        let ext_type = ExtensionType::from_path(&path);
+        assert_eq!(ext_type, ExtensionType::Native);
+    }
+
+    #[test]
+    fn test_extension_type_detection_empty_path() {
+        let path = PathBuf::from("");
+        let ext_type = ExtensionType::from_path(&path);
+        assert_eq!(ext_type, ExtensionType::Native);
+    }
+
+    #[test]
+    fn test_extension_type_detection_weird_extensions() {
+        // Unknown extensions should default to Native
+        let path = PathBuf::from("/tmp/test.xyz");
+        let ext_type = ExtensionType::from_path(&path);
+        assert_eq!(ext_type, ExtensionType::Native);
+
+        let path = PathBuf::from("/tmp/test.txt");
+        let ext_type = ExtensionType::from_path(&path);
+        assert_eq!(ext_type, ExtensionType::Native);
+    }
+
+    #[test]
+    fn test_extension_type_detection_multiple_extensions() {
+        // Test files with multiple dots like "my.ext.wasm"
+        let path = PathBuf::from("/tmp/my.ext.wasm");
+        let ext_type = ExtensionType::from_path(&path);
+        assert_eq!(ext_type, ExtensionType::Wasm);
+
+        let path = PathBuf::from("/tmp/my.ext.dylib");
+        let ext_type = ExtensionType::from_path(&path);
+        assert_eq!(ext_type, ExtensionType::Native);
+    }
+
+    #[test]
+    fn test_extension_type_equality() {
+        assert_eq!(ExtensionType::Wasm, ExtensionType::Wasm);
+        assert_eq!(ExtensionType::Native, ExtensionType::Native);
+        assert_ne!(ExtensionType::Wasm, ExtensionType::Native);
+    }
+
+    #[test]
+    fn test_extension_type_copy() {
+        let ext_type = ExtensionType::Wasm;
+        let copied = ext_type;
+        assert_eq!(ext_type, copied);
+    }
+}

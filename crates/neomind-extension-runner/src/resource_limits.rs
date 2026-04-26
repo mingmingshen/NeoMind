@@ -286,5 +286,178 @@ mod tests {
         let config = ResourceLimitsConfig::default();
         assert_eq!(config.memory_limit_mb, Some(512));
         assert_eq!(config.nice_level, Some(10));
+        assert!(config.cpu_affinity.is_none());
+        assert!(config.memory_limit_hard_mb.is_none());
+    }
+
+    #[test]
+    fn test_config_custom() {
+        let config = ResourceLimitsConfig {
+            memory_limit_mb: Some(1024),
+            memory_limit_hard_mb: Some(2048),
+            cpu_affinity: Some(vec![0, 1]),
+            nice_level: Some(5),
+        };
+
+        assert_eq!(config.memory_limit_mb, Some(1024));
+        assert_eq!(config.memory_limit_hard_mb, Some(2048));
+        assert_eq!(config.cpu_affinity, Some(vec![0, 1]));
+        assert_eq!(config.nice_level, Some(5));
+    }
+
+    #[test]
+    fn test_config_no_limits() {
+        let config = ResourceLimitsConfig {
+            memory_limit_mb: None,
+            memory_limit_hard_mb: None,
+            cpu_affinity: None,
+            nice_level: None,
+        };
+
+        assert!(config.memory_limit_mb.is_none());
+        assert!(config.memory_limit_hard_mb.is_none());
+        assert!(config.cpu_affinity.is_none());
+        assert!(config.nice_level.is_none());
+    }
+
+    #[test]
+    fn test_config_zero_memory_limit() {
+        let config = ResourceLimitsConfig {
+            memory_limit_mb: Some(0),
+            memory_limit_hard_mb: Some(0),
+            cpu_affinity: None,
+            nice_level: None,
+        };
+
+        // Zero limits are valid (though possibly not useful)
+        assert_eq!(config.memory_limit_mb, Some(0));
+        assert_eq!(config.memory_limit_hard_mb, Some(0));
+    }
+
+    #[test]
+    fn test_config_large_memory_limit() {
+        let config = ResourceLimitsConfig {
+            memory_limit_mb: Some(8192), // 8GB
+            memory_limit_hard_mb: Some(16384), // 16GB
+            cpu_affinity: None,
+            nice_level: None,
+        };
+
+        assert_eq!(config.memory_limit_mb, Some(8192));
+        assert_eq!(config.memory_limit_hard_mb, Some(16384));
+    }
+
+    #[test]
+    fn test_config_single_cpu_affinity() {
+        let config = ResourceLimitsConfig {
+            memory_limit_mb: None,
+            memory_limit_hard_mb: None,
+            cpu_affinity: Some(vec![0]),
+            nice_level: None,
+        };
+
+        assert_eq!(config.cpu_affinity, Some(vec![0]));
+    }
+
+    #[test]
+    fn test_config_multiple_cpu_affinity() {
+        let config = ResourceLimitsConfig {
+            memory_limit_mb: None,
+            memory_limit_hard_mb: None,
+            cpu_affinity: Some(vec![0, 1, 2, 3]),
+            nice_level: None,
+        };
+
+        assert_eq!(config.cpu_affinity, Some(vec![0, 1, 2, 3]));
+    }
+
+    #[test]
+    fn test_nice_level_range() {
+        // Test various nice levels (-20 to 19)
+        for nice in -20..=19 {
+            let config = ResourceLimitsConfig {
+                memory_limit_mb: None,
+                memory_limit_hard_mb: None,
+                cpu_affinity: None,
+                nice_level: Some(nice),
+            };
+            assert_eq!(config.nice_level, Some(nice));
+        }
+    }
+
+    #[test]
+    fn test_nice_level_extreme_values() {
+        let config = ResourceLimitsConfig {
+            memory_limit_mb: None,
+            memory_limit_hard_mb: None,
+            cpu_affinity: None,
+            nice_level: Some(-20), // Highest priority
+        };
+        assert_eq!(config.nice_level, Some(-20));
+
+        let config = ResourceLimitsConfig {
+            memory_limit_mb: None,
+            memory_limit_hard_mb: None,
+            cpu_affinity: None,
+            nice_level: Some(19), // Lowest priority
+        };
+        assert_eq!(config.nice_level, Some(19));
+    }
+
+    #[test]
+    fn test_resource_limit_error_display() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "test");
+        let limit_err = ResourceLimitError::Io(io_err);
+        assert!(limit_err.to_string().contains("test"));
+
+        let sys_err = ResourceLimitError::SystemError("test error".to_string());
+        assert!(sys_err.to_string().contains("test error"));
+
+        let cfg_err = ResourceLimitError::InvalidConfig("bad config".to_string());
+        assert!(cfg_err.to_string().contains("bad config"));
+    }
+
+    #[test]
+    fn test_resource_limit_error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let limit_err: ResourceLimitError = io_err.into();
+        match limit_err {
+            ResourceLimitError::Io(_) => {
+                // Expected
+            }
+            _ => panic!("Expected IoError variant"),
+        }
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config1 = ResourceLimitsConfig {
+            memory_limit_mb: Some(256),
+            memory_limit_hard_mb: Some(512),
+            cpu_affinity: Some(vec![0, 1]),
+            nice_level: Some(15),
+        };
+
+        let config2 = config1.clone();
+
+        assert_eq!(config1.memory_limit_mb, config2.memory_limit_mb);
+        assert_eq!(config1.memory_limit_hard_mb, config2.memory_limit_hard_mb);
+        assert_eq!(config1.cpu_affinity, config2.cpu_affinity);
+        assert_eq!(config1.nice_level, config2.nice_level);
+    }
+
+    #[test]
+    fn test_config_debug_format() {
+        let config = ResourceLimitsConfig {
+            memory_limit_mb: Some(512),
+            memory_limit_hard_mb: Some(1024),
+            cpu_affinity: Some(vec![0, 1]),
+            nice_level: Some(10),
+        };
+
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("512"));
+        assert!(debug_str.contains("1024"));
+        assert!(debug_str.contains("10"));
     }
 }

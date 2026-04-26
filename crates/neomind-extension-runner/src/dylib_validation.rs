@@ -234,6 +234,10 @@ fn validate_windows_dll(path: &Path) -> Result<(), ValidationError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::{self, File};
+    use std::io::Write;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
 
     #[test]
     fn test_validation_error_display() {
@@ -242,5 +246,197 @@ mod tests {
 
         let err = ValidationError::InvalidDylibId("bad id".to_string());
         assert!(err.to_string().contains("bad id"));
+    }
+
+    #[test]
+    fn test_validate_library_file_not_found() {
+        let path = PathBuf::from("/nonexistent/path/test.dylib");
+        let result = validate_library(&path);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::FileNotFound(msg)) => {
+                assert!(msg.contains("nonexistent"));
+            }
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_library_file_too_small() {
+        let temp_dir = TempDir::new().unwrap();
+        let small_file = temp_dir.path().join("tiny.dylib");
+
+        // Create a file smaller than MIN_SIZE (4KB)
+        let mut file = File::create(&small_file).unwrap();
+        file.write_all(b"tiny").unwrap();
+        file.sync_all().unwrap();
+
+        let result = validate_library(&small_file);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::FileTooSmall(size)) => {
+                assert_eq!(size, 4);
+            }
+            _ => panic!("Expected FileTooSmall error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_library_exactly_min_size() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("exact.dylib");
+
+        // Create a file exactly MIN_SIZE bytes
+        let mut file = File::create(&file_path).unwrap();
+        let data = vec![0u8; 4096];
+        file.write_all(&data).unwrap();
+        file.sync_all().unwrap();
+
+        let result = validate_library(&file_path);
+        // Should fail at format validation (not a real library)
+        // but should NOT fail at size check
+        #[cfg(target_os = "linux")]
+        match result {
+            Err(ValidationError::InvalidFormat(_)) => {
+                // Expected - not a real ELF file
+            }
+            _ => {
+                panic!("Expected InvalidFormat error for fake library");
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        match result {
+            Err(ValidationError::InvalidFormat(_)) | Err(ValidationError::IoError(_)) => {
+                // Expected - not a real dylib
+            }
+            _ => {
+                panic!("Expected validation error for fake library");
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        match result {
+            Err(ValidationError::InvalidFormat(_)) => {
+                // Expected - not a real DLL
+            }
+            _ => {
+                panic!("Expected validation error for fake library");
+            }
+        }
+    }
+
+    #[test]
+    fn test_validate_library_zero_size() {
+        let temp_dir = TempDir::new().unwrap();
+        let empty_file = temp_dir.path().join("empty.dylib");
+
+        // Create an empty file
+        File::create(&empty_file).unwrap().sync_all().unwrap();
+
+        let result = validate_library(&empty_file);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::FileTooSmall(size)) => {
+                assert_eq!(size, 0);
+            }
+            _ => panic!("Expected FileTooSmall error for empty file"),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_validate_linux_so_magic_number() {
+        let temp_dir = TempDir::new().unwrap();
+        let fake_elf = temp_dir.path().join("fake.so");
+
+        // Create a file with wrong magic number
+        let mut file = File::create(&fake_elf).unwrap();
+        let data = vec![0u8; 8192]; // Large enough to pass size check
+        file.write_all(&data).unwrap();
+        file.sync_all().unwrap();
+
+        let result = validate_library(&fake_elf);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::InvalidFormat(msg)) => {
+                assert!(msg.contains("ELF") || msg.contains("magic"));
+            }
+            _ => panic!("Expected InvalidFormat error for bad magic number"),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_validate_linux_so_correct_magic() {
+        let temp_dir = TempDir::new().unwrap();
+        let elf_file = temp_dir.path().join("elf.so");
+
+        // Create a file with correct ELF magic but otherwise invalid
+        let mut file = File::create(&elf_file).unwrap();
+        let magic: [u8; 4] = [0x7f, 0x45, 0x4c, 0x46]; // ELF magic
+        file.write_all(&magic).unwrap();
+        let padding = vec![0u8; 8192 - 4];
+        file.write_all(&padding).unwrap();
+        file.sync_all().unwrap();
+
+        let result = validate_library(&elf_file);
+        // Should pass magic number check but will fail later validation
+        // or succeed if we only check magic (which we do)
+        // The current implementation only checks magic, so it should succeed
+        assert!(result.is_ok());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_validate_windows_dll_magic_number() {
+        let temp_dir = TempDir::new().unwrap();
+        let fake_dll = temp_dir.path().join("fake.dll");
+
+        // Create a file with wrong magic number
+        let mut file = File::create(&fake_dll).unwrap();
+        let data = vec![0u8; 8192]; // Large enough
+        file.write_all(&data).unwrap();
+        file.sync_all().unwrap();
+
+        let result = validate_library(&fake_dll);
+        assert!(result.is_err());
+        match result {
+            Err(ValidationError::InvalidFormat(msg)) => {
+                assert!(msg.contains("PE") || msg.contains("magic"));
+            }
+            _ => panic!("Expected InvalidFormat error for bad magic number"),
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_validate_windows_dll_correct_magic() {
+        let temp_dir = TempDir::new().unwrap();
+        let dll_file = temp_dir.path().join("dll.dll");
+
+        // Create a file with correct DOS magic (MZ)
+        let mut file = File::create(&dll_file).unwrap();
+        let magic: [u8; 2] = [0x4d, 0x5a]; // "MZ"
+        file.write_all(&magic).unwrap();
+        let padding = vec![0u8; 8192 - 2];
+        file.write_all(&padding).unwrap();
+        file.sync_all().unwrap();
+
+        let result = validate_library(&dll_file);
+        // Should pass magic number check
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validation_error_from_io_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "test");
+        let validation_err: ValidationError = io_err.into();
+        match validation_err {
+            ValidationError::IoError(_) => {
+                // Expected
+            }
+            _ => panic!("Expected IoError variant"),
+        }
     }
 }
