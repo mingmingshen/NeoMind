@@ -291,8 +291,13 @@ pub async fn create_skill_handler(
             if let Err(e) = persist_skill(&state.data_dir, &id, &req.content) {
                 tracing::error!(error = %e, "Skill created in memory but not persisted to disk");
             }
-            let skill = guard.get(&id).unwrap();
-            (StatusCode::CREATED, Json(SkillDetail::from(skill))).into_response()
+            match guard.get(&id) {
+                Some(skill) => (StatusCode::CREATED, Json(SkillDetail::from(skill))).into_response(),
+                None => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": "Failed to retrieve created skill" })),
+                ).into_response(),
+            }
         }
         Err(e) => (
             StatusCode::BAD_REQUEST,
@@ -316,8 +321,13 @@ pub async fn update_skill_handler(
             if let Err(e) = persist_skill(&state.data_dir, &id, &req.content) {
                 tracing::error!(error = %e, "Skill updated in memory but not persisted to disk");
             }
-            let skill = guard.get(&id).unwrap();
-            (StatusCode::OK, Json(SkillDetail::from(skill))).into_response()
+            match guard.get(&id) {
+                Some(skill) => (StatusCode::OK, Json(SkillDetail::from(skill))).into_response(),
+                None => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": "Failed to retrieve updated skill" })),
+                ).into_response(),
+            }
         }
         Err(e) => {
             let status = if e.contains("not found") {

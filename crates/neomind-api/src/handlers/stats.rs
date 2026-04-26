@@ -7,6 +7,7 @@ use super::{
 use axum::extract::State;
 use axum::Json;
 use serde_json::json;
+use crate::models::error::ErrorResponse;
 
 // Re-export ConnectionStatus from mdl_format for DeviceInstance
 
@@ -137,7 +138,7 @@ pub async fn get_system_stats_handler(
     let start_of_today = now
         .date_naive()
         .and_hms_opt(0, 0, 0)
-        .unwrap()
+        .ok_or_else(|| ErrorResponse::internal("Failed to calculate start of day"))?
         .and_utc()
         .timestamp();
 
@@ -211,7 +212,7 @@ pub async fn get_system_stats_handler(
     let start_of_day = chrono::Utc::now()
         .date_naive()
         .and_hms_opt(0, 0, 0)
-        .unwrap()
+        .ok_or_else(|| ErrorResponse::internal("Failed to calculate start of day"))?
         .and_utc();
     let messages_today = active_messages
         .iter()

@@ -18,7 +18,7 @@ use neomind_devices::{
 };
 
 use crate::handlers::common::{ok, HandlerResult};
-use crate::models::ErrorResponse;
+use crate::models::error::ErrorResponse;
 use crate::server::types::ServerState;
 use axum::{
     extract::{Path, State},
@@ -96,38 +96,45 @@ fn create_default_llm_runtime() -> Arc<dyn LlmRuntime> {
 
 /// Helper to get or create the AutoOnboardManager from ServerState
 /// Uses double-checked locking to ensure only one instance is created.
-async fn get_auto_onboard_manager(state: &ServerState) -> Arc<AutoOnboardManager> {
+async fn get_auto_onboard_manager(
+    state: &ServerState,
+) -> Result<Arc<AutoOnboardManager>, ErrorResponse> {
     // First check: read lock (fast path)
     {
         let manager_guard = state.auto_onboard_manager.read().await;
         if let Some(manager) = manager_guard.as_ref() {
-            return manager.clone();
+            return Ok(manager.clone());
         }
     }
 
     // Second check: write lock (create if needed)
     let mut manager_guard = state.auto_onboard_manager.write().await;
     if let Some(manager) = manager_guard.as_ref() {
-        return manager.clone();
+        return Ok(manager.clone());
     }
 
     // Create the manager
     let llm = create_default_llm_runtime();
-    let event_bus = state.core.event_bus.as_ref().unwrap().clone();
+    let event_bus = state
+        .core
+        .event_bus
+        .as_ref()
+        .ok_or_else(|| ErrorResponse::internal("EventBus not initialized"))?
+        .clone();
     let manager = Arc::new(AutoOnboardManager::new(llm, event_bus));
 
     // Store in state
     *manager_guard = Some(manager.clone());
 
     tracing::info!("AutoOnboardManager initialized and cached");
-    manager
+    Ok(manager)
 }
 
 /// List all draft devices
 pub async fn list_draft_devices(
     State(state): State<ServerState>,
 ) -> HandlerResult<DraftDevicesResponse> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
     let drafts = manager.get_drafts().await;
 
     let items: Vec<DraftDeviceDto> = drafts.into_iter().map(DraftDeviceDto::from).collect();
@@ -143,7 +150,7 @@ pub async fn get_draft_device(
     State(state): State<ServerState>,
     Path(device_id): Path<String>,
 ) -> HandlerResult<DraftDeviceDto> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
     let draft = manager.get_draft(&device_id).await.ok_or_else(|| {
         ErrorResponse::not_found(format!("Draft device '{}' not found", device_id))
     })?;
@@ -157,7 +164,7 @@ pub async fn update_draft_device(
     Path(device_id): Path<String>,
     Json(request): Json<UpdateDraftDeviceRequest>,
 ) -> HandlerResult<SuccessResponse> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
     manager
         .update_draft(&device_id, request.name, request.description)
         .await
@@ -181,7 +188,7 @@ pub async fn approve_draft_device(
     Path(device_id): Path<String>,
     Json(request): Json<Option<ApproveDraftDeviceRequest>>,
 ) -> HandlerResult<ApproveDraftResponse> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
     let device_service = state.devices.service.clone();
 
     // Get the draft
@@ -444,7 +451,7 @@ pub async fn reject_draft_device(
     Path(device_id): Path<String>,
     Json(request): Json<RejectDraftDeviceRequest>,
 ) -> HandlerResult<SuccessResponse> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
     manager
         .reject_device(&device_id, &request.reason)
         .await
@@ -460,7 +467,7 @@ pub async fn trigger_draft_analysis(
     State(state): State<ServerState>,
     Path(device_id): Path<String>,
 ) -> HandlerResult<SuccessResponse> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
     let draft = manager.get_draft(&device_id).await.ok_or_else(|| {
         ErrorResponse::not_found(format!("Draft device '{}' not found", device_id))
     })?;
@@ -496,7 +503,7 @@ pub async fn enhance_draft_with_llm(
     State(state): State<ServerState>,
     Path(device_id): Path<String>,
 ) -> HandlerResult<DraftDeviceDto> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
 
     // Get the draft
     let draft = manager.get_draft(&device_id).await.ok_or_else(|| {
@@ -555,7 +562,7 @@ pub async fn enhance_draft_with_llm(
 pub async fn cleanup_draft_devices(
     State(state): State<ServerState>,
 ) -> HandlerResult<CleanupResponse> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
     let count = manager.cleanup_old_drafts().await;
 
     ok(CleanupResponse {
@@ -572,7 +579,7 @@ pub async fn cleanup_draft_devices(
 pub async fn get_type_signatures(
     State(state): State<ServerState>,
 ) -> HandlerResult<TypeSignaturesResponse> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
     let signatures = manager.get_all_type_signatures().await;
     let count = signatures.len().to_string();
 
@@ -588,7 +595,7 @@ pub async fn suggest_device_types(
     State(state): State<ServerState>,
     Path(device_id): Path<String>,
 ) -> HandlerResult<SuggestedTypesResponse> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
     let device_service = state.devices.service.clone();
 
     // Get the draft
@@ -684,7 +691,7 @@ pub async fn suggest_device_types(
 pub async fn get_onboard_config(
     State(state): State<ServerState>,
 ) -> HandlerResult<AutoOnboardConfig> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
     let config = manager.get_config().await;
     ok(config)
 }
@@ -694,7 +701,7 @@ pub async fn update_onboard_config(
     State(state): State<ServerState>,
     Json(config): Json<AutoOnboardConfig>,
 ) -> HandlerResult<SuccessResponse> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
     manager.update_config(config).await;
     ok(SuccessResponse {
         message: "Configuration updated".to_string(),
@@ -710,7 +717,7 @@ pub async fn upload_device_data(
     State(state): State<ServerState>,
     Json(request): Json<UploadDeviceDataRequest>,
 ) -> HandlerResult<SuccessResponse> {
-    let manager = get_auto_onboard_manager(&state).await;
+    let manager = get_auto_onboard_manager(&state).await?;
 
     let device_id = request
         .device_id

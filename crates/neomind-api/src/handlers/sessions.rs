@@ -853,11 +853,15 @@ async fn send_session_history(
                     });
                     // Include round_contents if present (for multi-step tool call display)
                     if let Some(ref rc) = msg.round_contents {
-                        history_json.as_object_mut().unwrap().insert("round_contents".to_string(), rc.clone());
+                        if let Some(obj) = history_json.as_object_mut() {
+                            obj.insert("round_contents".to_string(), rc.clone());
+                        }
                     }
                     // Include round_thinking if present (for per-round thinking display)
                     if let Some(ref rt) = msg.round_thinking {
-                        history_json.as_object_mut().unwrap().insert("round_thinking".to_string(), rt.clone());
+                        if let Some(obj) = history_json.as_object_mut() {
+                            obj.insert("round_thinking".to_string(), rt.clone());
+                        }
                     }
                     let history_msg = history_json.to_string();
 
