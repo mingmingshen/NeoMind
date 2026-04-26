@@ -526,7 +526,7 @@ impl RuleDslParser {
 
             // Find first non-whitespace position
             while chars.peek().is_some_and(|c| c.is_whitespace()) {
-                result.push(chars.next().unwrap());
+                result.push(chars.next().expect("peek() guarantees Some"));
                 start += 1;
             }
 
@@ -1019,7 +1019,9 @@ impl RuleDslParser {
                 let parts: Vec<&str> = left_part.split('.').collect();
                 if parts.len() >= 2 {
                     // Last part is the property, everything before is the device_id
-                    let property = parts.last().unwrap().to_string();
+                    let property = parts.last().ok_or_else(|| RuleError::Parse(
+                        "Missing property in SET action".to_string()
+                    ))?.to_string();
                     let device_id = parts[..parts.len() - 1].join(".");
 
                     let value = if let Ok(num) = value_str.parse::<i64>() {
@@ -1065,13 +1067,12 @@ impl RuleDslParser {
                 let title = parts[0].clone();
                 let message = parts[1].clone();
 
-                // Check for severity
-                let remaining = &rest[rest.find('"').unwrap()..];
-                let severity_str = if remaining.to_uppercase().contains(" CRITICAL") {
+                // Check for severity in the remaining text after the two quoted strings
+                let severity_str = if rest.to_uppercase().contains(" CRITICAL") {
                     "CRITICAL"
-                } else if remaining.to_uppercase().contains(" ERROR") {
+                } else if rest.to_uppercase().contains(" ERROR") {
                     "ERROR"
-                } else if remaining.to_uppercase().contains(" WARNING") {
+                } else if rest.to_uppercase().contains(" WARNING") {
                     "WARNING"
                 } else {
                     "INFO"
