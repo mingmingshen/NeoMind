@@ -620,9 +620,14 @@ impl CloudRuntime {
             .timeout(self.config.timeout())
             .json(&request);
 
+        // Build the request - reqwest::RequestBuilder::build() can fail if headers are invalid
+        let built_request = req.build().map_err(|e| {
+            LlmError::Network(format!("Failed to build HTTP request: {}", e))
+        })?;
+
         let response = self
             .client
-            .execute_request(&rate_limit_key, req.build().unwrap())
+            .execute_request(&rate_limit_key, built_request)
             .await
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
@@ -633,7 +638,10 @@ impl CloudRuntime {
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
         if !status.is_success() {
-            self.metrics.write().unwrap().record_failure();
+            self.metrics.write().unwrap_or_else(|e| {
+                tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                e.into_inner()
+            }).record_failure();
             return Err(LlmError::Generation(format!(
                 "API error {}: {}",
                 status.as_u16(),
@@ -700,11 +708,17 @@ impl CloudRuntime {
                 let tokens = output.usage.map_or(0, |u| u.completion_tokens as u64);
                 self.metrics
                     .write()
-                    .unwrap()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                        e.into_inner()
+                    })
                     .record_success(tokens, latency_ms);
             }
             Err(_) => {
-                self.metrics.write().unwrap().record_failure();
+                self.metrics.write().unwrap_or_else(|e| {
+                    tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                    e.into_inner()
+                }).record_failure();
             }
         }
 
@@ -735,9 +749,14 @@ impl CloudRuntime {
             .timeout(self.config.timeout())
             .json(&request);
 
+        // Build the request - reqwest::RequestBuilder::build() can fail if headers are invalid
+        let built_request = req.build().map_err(|e| {
+            LlmError::Network(format!("Failed to build HTTP request: {}", e))
+        })?;
+
         let response = self
             .client
-            .execute_request(&rate_limit_key, req.build().unwrap())
+            .execute_request(&rate_limit_key, built_request)
             .await
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
@@ -748,7 +767,10 @@ impl CloudRuntime {
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
         if !status.is_success() {
-            self.metrics.write().unwrap().record_failure();
+            self.metrics.write().unwrap_or_else(|e| {
+                tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                e.into_inner()
+            }).record_failure();
             return Err(LlmError::Generation(format!(
                 "Anthropic API error {}: {}",
                 status.as_u16(),
@@ -763,7 +785,10 @@ impl CloudRuntime {
                 || (val.get("code").is_some() && val.get("msg").is_some())
                 || (val.get("code").is_some() && val.get("success").is_some())
             {
-                self.metrics.write().unwrap().record_failure();
+                self.metrics.write().unwrap_or_else(|e| {
+                    tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                    e.into_inner()
+                }).record_failure();
                 return Err(LlmError::Generation(format!(
                     "Anthropic API error (HTTP {}): {}",
                     status.as_u16(),
@@ -829,11 +854,17 @@ impl CloudRuntime {
                 let tokens = output.usage.map_or(0, |u| u.completion_tokens as u64);
                 self.metrics
                     .write()
-                    .unwrap()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                        e.into_inner()
+                    })
                     .record_success(tokens, latency_ms);
             }
             Err(_) => {
-                self.metrics.write().unwrap().record_failure();
+                self.metrics.write().unwrap_or_else(|e| {
+                    tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                    e.into_inner()
+                }).record_failure();
             }
         }
 
@@ -1436,7 +1467,10 @@ impl LlmRuntime for CloudRuntime {
     }
 
     fn metrics(&self) -> BackendMetrics {
-        self.metrics.read().unwrap().clone()
+        self.metrics.read().unwrap_or_else(|e| {
+            tracing::error!("Failed to acquire read lock on metrics: {}", e);
+            e.into_inner()
+        }).clone()
     }
 }
 

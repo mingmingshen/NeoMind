@@ -294,8 +294,9 @@ impl OllamaRuntime {
         tools: Option<&[neomind_core::llm::backend::ToolDefinition]>,
         supports_native_tools: bool,
     ) -> Vec<OllamaMessage> {
+        // Safe: tools.is_some_and() guarantees Some if the condition is true
         let tool_instructions = if !supports_native_tools && tools.is_some_and(|t| !t.is_empty()) {
-            Some(Self::format_tools_for_text_calling(tools.unwrap()))
+            Some(Self::format_tools_for_text_calling(tools.expect("tools must be Some when is_some_and is true")))
         } else {
             None
         };

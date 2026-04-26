@@ -128,21 +128,30 @@ impl BackendRegistry {
     /// Register a backend plugin.
     #[cfg(feature = "cloud")]
     pub fn register(&self, plugin: Arc<dyn LlmBackendPlugin>) {
-        let mut backends = self.backends.write().unwrap();
+        let mut backends = self.backends.write().unwrap_or_else(|e| {
+            tracing::error!("Failed to acquire write lock on backend registry: {}", e);
+            e.into_inner()
+        });
         backends.insert(plugin.backend_id().to_string(), plugin);
     }
 
     /// Get a registered plugin by ID.
     #[cfg(feature = "cloud")]
     pub fn get(&self, id: &str) -> Option<Arc<dyn LlmBackendPlugin>> {
-        let backends = self.backends.read().unwrap();
+        let backends = self.backends.read().unwrap_or_else(|e| {
+            tracing::error!("Failed to acquire read lock on backend registry: {}", e);
+            e.into_inner()
+        });
         backends.get(id).cloned()
     }
 
     /// List all registered backend IDs.
     #[cfg(feature = "cloud")]
     pub fn list(&self) -> Vec<String> {
-        let backends = self.backends.read().unwrap();
+        let backends = self.backends.read().unwrap_or_else(|e| {
+            tracing::error!("Failed to acquire read lock on backend registry: {}", e);
+            e.into_inner()
+        });
         backends.keys().cloned().collect()
     }
 }

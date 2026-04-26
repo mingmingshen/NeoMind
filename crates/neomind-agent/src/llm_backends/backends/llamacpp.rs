@@ -393,7 +393,10 @@ impl LlmRuntime for LlamaCppRuntime {
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
         if !status.is_success() {
-            self.metrics.write().unwrap().record_failure();
+            self.metrics.write().unwrap_or_else(|e| {
+                tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                e.into_inner()
+            }).record_failure();
 
             // Check for context overflow and return specific error for retry
             if body.contains("exceed_context_size_error") {
@@ -481,11 +484,17 @@ impl LlmRuntime for LlamaCppRuntime {
                 let tokens = output.usage.map_or(0, |u| u.completion_tokens as u64);
                 self.metrics
                     .write()
-                    .unwrap()
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                        e.into_inner()
+                    })
                     .record_success(tokens, latency_ms);
             }
             Err(_) => {
-                self.metrics.write().unwrap().record_failure();
+                self.metrics.write().unwrap_or_else(|e| {
+                    tracing::error!("Failed to acquire write lock on metrics: {}", e);
+                    e.into_inner()
+                }).record_failure();
             }
         }
 
@@ -850,7 +859,10 @@ impl LlmRuntime for LlamaCppRuntime {
     }
 
     fn metrics(&self) -> BackendMetrics {
-        self.metrics.read().unwrap().clone()
+        self.metrics.read().unwrap_or_else(|e| {
+            tracing::error!("Failed to acquire read lock on metrics: {}", e);
+            e.into_inner()
+        }).clone()
     }
 }
 

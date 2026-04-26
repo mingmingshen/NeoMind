@@ -106,7 +106,8 @@ impl GlobalRateLimiter {
                     ApiRateLimiter::new(self.default_max_requests, self.default_window_duration),
                 );
             }
-            limiters.get(key).unwrap().clone()
+            // Safe: we just inserted the key if it didn't exist
+            limiters.get(key).expect("limiter should exist after insert").clone()
         };
         limiter.acquire().await;
     }
@@ -189,7 +190,16 @@ impl RateLimitedClient {
         let mut backoff = BASE_BACKOFF;
 
         loop {
-            let response = self.client.execute(request.try_clone().unwrap()).await?;
+            // Try to clone the request for retry attempts
+            let request_clone = match request.try_clone() {
+                Some(clone) => clone,
+                None => {
+                    // If we can't clone (e.g., streaming body), execute without retry capability
+                    return self.client.execute(request).await;
+                }
+            };
+
+            let response = self.client.execute(request_clone).await?;
 
             if response.status() == StatusCode::TOO_MANY_REQUESTS {
                 let retry_after = self.parse_retry_after(&response).unwrap_or(backoff);
