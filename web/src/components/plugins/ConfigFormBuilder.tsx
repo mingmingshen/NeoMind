@@ -448,7 +448,7 @@ function FormField({
                   onClick={triggerFileUpload}
                   className="text-xs"
                 >
-                  <Upload className="h-3 w-3 mr-1" />
+                  <Upload className="h-4 w-4 mr-1" />
                   {t('plugins:uploadFile', { defaultValue: 'Upload File' })}
                 </Button>
                 <span className="text-xs text-muted-foreground">

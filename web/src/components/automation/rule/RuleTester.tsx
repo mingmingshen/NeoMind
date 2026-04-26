@@ -192,8 +192,8 @@ export function RuleTester({
                             : 'outline'
                       }
                     >
-                      {status === 'triggered' && <Check className="h-3 w-3 mr-1" />}
-                      {status === 'notTriggered' && <X className="h-3 w-3 mr-1" />}
+                      {status === 'triggered' && <Check className="h-4 w-4 mr-1" />}
+                      {status === 'notTriggered' && <X className="h-4 w-4 mr-1" />}
                       {status === 'triggered'
                         ? t('automation:wouldTrigger')
                         : status === 'notTriggered'

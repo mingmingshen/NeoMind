@@ -292,7 +292,7 @@ export function AiAnalyst({
     return (
       <div
         className={cn(
-          'bg-card rounded-xl border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]',
+          'bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]',
           className,
         )}
       >
@@ -313,7 +313,7 @@ export function AiAnalyst({
     return (
       <div
         className={cn(
-          'bg-card rounded-xl border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]',
+          'bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]',
           className,
         )}
       >
@@ -330,7 +330,7 @@ export function AiAnalyst({
     return (
       <div
         className={cn(
-          'bg-card rounded-xl border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]',
+          'bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]',
           className,
         )}
       >
@@ -349,7 +349,7 @@ export function AiAnalyst({
   return (
     <div
       className={cn(
-        'bg-card rounded-xl border shadow-sm overflow-hidden flex flex-col w-full h-full',
+        'bg-card rounded-lg border shadow-sm overflow-hidden flex flex-col w-full h-full',
         className,
       )}
     >
@@ -399,18 +399,18 @@ export function AiAnalyst({
             {/* Stats row */}
             <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1">
-                <MessageSquare className="h-3 w-3" />
+                <MessageSquare className="h-4 w-4" />
                 {messageCount} msgs
               </span>
               {avgDuration > 0 && (
                 <span className="flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
+                  <Clock className="h-4 w-4" />
                   {avgDuration}s avg
                 </span>
               )}
               {config.modelName && (
                 <span className="flex items-center gap-1">
-                  <Activity className="h-3 w-3" />
+                  <Activity className="h-4 w-4" />
                   {config.modelName}
                 </span>
               )}

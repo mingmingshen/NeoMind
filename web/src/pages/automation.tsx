@@ -585,7 +585,7 @@ export function AutomationPage() {
               activeTab === 'rules' ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-9 gap-1">
+                    <Button variant="outline" size="sm" className="gap-1">
                       <Download className="h-4 w-4" />
                       {tAuto('importExport')}
                     </Button>
@@ -604,7 +604,7 @@ export function AutomationPage() {
               ) : activeTab === 'transforms' ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-9 gap-1">
+                    <Button variant="outline" size="sm" className="gap-1">
                       <Download className="h-4 w-4" />
                       {tAuto('importExport')}
                     </Button>

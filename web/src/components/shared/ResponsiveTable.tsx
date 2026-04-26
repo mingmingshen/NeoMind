@@ -85,10 +85,10 @@ export function ResponsiveTable({
     return (
       <>
         {/* Desktop skeleton */}
-        <div className="hidden md:block rounded-xl border bg-card overflow-hidden">
+        <div className="hidden md:block rounded-lg border bg-card overflow-hidden">
           <table className={cn("w-full caption-bottom text-sm", className)}>
             <thead className="[&_tr]:border-b">
-              <tr className="bg-muted/30 rounded-t-xl">
+              <tr className="bg-muted/30 rounded-t-lg">
                 {columns.map((column) => (
                   <th
                     key={column.key}
@@ -129,7 +129,7 @@ export function ResponsiveTable({
         {/* Mobile skeleton */}
         <div className="md:hidden space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="rounded-xl border bg-card overflow-hidden">
+            <div key={i} className="rounded-lg border bg-card overflow-hidden">
               <div className="bg-muted/30 px-4 py-3 border-b">
                 <Skeleton className="h-4 w-1/3" />
               </div>
@@ -151,7 +151,7 @@ export function ResponsiveTable({
   return (
     <>
       {/* Desktop Table - uses page scroll with sticky header */}
-      <div className="hidden md:block rounded-xl border bg-card overflow-hidden">
+      <div className="hidden md:block rounded-lg border bg-card overflow-hidden">
         <table className={cn("w-full caption-bottom text-sm", className)}>
           <thead className={cn(
             "[&_tr]:border-b",
@@ -382,7 +382,7 @@ export interface MobileCardProps {
 
 export function MobileCard({ title, subtitle, icon, actions, children, className, onClick }: MobileCardProps) {
   return (
-    <Card className={cn('overflow-hidden border-border/60 rounded-xl shadow-sm', onClick && 'cursor-pointer active:scale-[0.99] transition-all', className)}>
+    <Card className={cn('overflow-hidden border-border/60 rounded-lg shadow-sm', onClick && 'cursor-pointer active:scale-[0.99] transition-all', className)}>
       {/* Card Header */}
       <div className="bg-muted/30 px-4 py-3 border-b border-border/60 rounded-t-xl">
         <div className="flex items-center justify-between gap-3">

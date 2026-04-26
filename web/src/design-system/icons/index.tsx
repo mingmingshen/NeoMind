@@ -191,12 +191,12 @@ export function EntityIcon({ type, className, size = 24 }: EntityIconProps) {
 // Status icons
 export const statusIcons = {
   online: { icon: Wifi, color: 'text-green-500' },
-  offline: { icon: WifiOff, color: 'text-gray-400' },
+  offline: { icon: WifiOff, color: 'text-muted-foreground' },
   error: { icon: XCircle, color: 'text-red-500' },
   warning: { icon: AlertTriangle, color: 'text-yellow-500' },
   success: { icon: CheckCircle2, color: 'text-green-500' },
   loading: { icon: Clock, color: 'text-blue-500 animate-spin' },
-  unknown: { icon: Minus, color: 'text-gray-400' },
+  unknown: { icon: Minus, color: 'text-muted-foreground' },
 } as const
 
 export type StatusIconName = keyof typeof statusIcons

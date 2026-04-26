@@ -98,7 +98,7 @@ export function StreamProgress({
       </div>
       {warning && (
         <span className="text-yellow-600 text-xs flex items-center gap-1 shrink-0">
-          <AlertTriangle className="h-3 w-3" />
+          <AlertTriangle className="h-4 w-4" />
           {warning}
         </span>
       )}

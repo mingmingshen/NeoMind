@@ -867,7 +867,7 @@ export function DeviceTypeGeneratorDialog({
             disabled={analyzing || creating}
             className={isMobile ? "h-12 min-w-[100px]" : ""}
           >
-            <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "mr-1")} />
+            <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "mr-1")} />
             {t('common:previous')}
           </Button>
         )}
@@ -882,7 +882,7 @@ export function DeviceTypeGeneratorDialog({
             className={isMobile ? "h-12 min-w-[100px]" : ""}
           >
             {t('common:next')}
-            <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "ml-1")} />
+            <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "ml-1")} />
           </Button>
         ) : (
           <Button

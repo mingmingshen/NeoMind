@@ -309,7 +309,7 @@ export function SessionSidebar({
               variant="ghost"
               size="icon"
               onClick={onToggleCollapse}
-              className={cn("h-7 w-7 rounded-lg", collapsed && "mx-auto")}
+              className={cn("h-6 w-6 rounded-lg", collapsed && "mx-auto")}
             >
               {collapsed ? (
                 <PanelLeftOpen className="h-4 w-4" />
@@ -322,7 +322,7 @@ export function SessionSidebar({
               variant="ghost"
               size="icon"
               onClick={onClose}
-              className="h-7 w-7 rounded-lg"
+              className="h-6 w-6 rounded-lg"
             >
               <X className="h-4 w-4" />
             </Button>
@@ -383,7 +383,7 @@ export function SessionSidebar({
           {/* Search */}
           <div className="px-3 py-2">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 ref={searchInputRef}
                 type="text"
@@ -403,7 +403,7 @@ export function SessionSidebar({
               variant="outline"
               className="w-full h-8 text-sm rounded-lg"
             >
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              <Plus className="h-4 w-4 mr-1.5" />
               {t('session.newChat')}
             </Button>
           </div>
@@ -452,20 +452,20 @@ export function SessionSidebar({
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 shrink-0"
+                              className="h-6 w-6 shrink-0"
                               onClick={() => handleEditSave(session.sessionId)}
                               disabled={isUpdating || !editingTitle.trim()}
                             >
-                              <Check className="h-3.5 w-3.5 text-green-500" />
+                              <Check className="h-4 w-4 text-green-500" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 shrink-0"
+                              className="h-6 w-6 shrink-0"
                               onClick={handleEditCancel}
                               disabled={isUpdating}
                             >
-                              <X className="h-3.5 w-3.5" />
+                              <X className="h-4 w-4" />
                             </Button>
                           </div>
                         ) : (
@@ -473,7 +473,7 @@ export function SessionSidebar({
                           <>
                             <div className="flex items-start gap-2">
                               <MessageSquare className={cn(
-                                "h-3.5 w-3.5 mt-0.5 shrink-0",
+                                "h-4 w-4 mt-0.5 shrink-0",
                                 isActive ? "text-foreground" : "text-muted-foreground"
                               )} />
                               <div className="flex-1 min-w-0">
@@ -510,7 +510,7 @@ export function SessionSidebar({
                                   "text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                                 )}
                               >
-                                <Pencil className="h-3.5 w-3.5" />
+                                <Pencil className="h-4 w-4" />
                               </button>
                               {/* Delete button */}
                               <button
@@ -523,7 +523,7 @@ export function SessionSidebar({
                                   isDeleting && "opacity-50"
                                 )}
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Trash2 className="h-4 w-4" />
                               </button>
                             </div>
                           </>

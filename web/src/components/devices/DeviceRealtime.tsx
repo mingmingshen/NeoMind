@@ -310,7 +310,7 @@ export function DeviceRealtime({
       case "AlertCreated":
         return <AlertTriangle className="h-4 w-4 text-yellow-500" />
       default:
-        return <Zap className="h-4 w-4 text-gray-500" />
+        return <Zap className="h-4 w-4 text-muted-foreground" />
     }
   }, [])
 
@@ -328,7 +328,7 @@ export function DeviceRealtime({
             {isConnected ? (
               <Wifi className="h-5 w-5 text-green-500" />
             ) : (
-              <WifiOff className="h-5 w-5 text-gray-400" />
+              <WifiOff className="h-5 w-5 text-muted-foreground" />
             )}
             <h2 className="text-xl font-semibold">{t('devices:realtime.title')}</h2>
           </div>
@@ -420,7 +420,7 @@ export function DeviceRealtime({
                       </div>
                     )}
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" />
+                      <Clock className="h-4 w-4" />
                       {status?.lastSeen ? formatTs(status.lastSeen) : "-"}
                     </div>
                   </div>
@@ -582,7 +582,7 @@ export function DeviceMetricCard({
       case "down":
         return <span className="text-red-500">↓</span>
       default:
-        return <span className="text-gray-400">−</span>
+        return <span className="text-muted-foreground">−</span>
     }
   }
 

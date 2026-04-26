@@ -134,12 +134,12 @@ const AgentListItem = memo<AgentListItemProps>(({
         {/* Icon with executing indicator */}
         <div className="relative shrink-0">
           <div className={cn(
-            "w-7 h-7 rounded flex items-center justify-center",
+            "w-6 h-6 rounded flex items-center justify-center",
             isSelected || agent.status === 'Active' || agent.status === 'Executing'
               ? "bg-purple-500/20 text-purple-500"
               : "bg-muted text-muted-foreground"
           )}>
-            <Bot className="h-3.5 w-3.5" />
+            <Bot className="h-4 w-4" />
           </div>
           {agent.status === 'Executing' && (
             <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-blue-500 rounded-full border-2 border-card" />
@@ -153,7 +153,7 @@ const AgentListItem = memo<AgentListItemProps>(({
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             <statusConfig.icon className={cn(
-              "h-3 w-3",
+              "h-4 w-4",
               statusConfig.color,
               agent.status === 'Executing' && "animate-spin"
             )} />
@@ -180,7 +180,7 @@ const AgentListItem = memo<AgentListItemProps>(({
                 className="h-8 w-8 flex items-center justify-center rounded hover:bg-muted/80 transition-colors"
                 aria-label="More options"
               >
-                <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                <MoreVertical className="h-4 w-4 text-muted-foreground" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-32">

@@ -69,7 +69,7 @@ const ImagePreviews = memo(function ImagePreviews({
             onClick={() => onRemove(idx)}
             className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
           >
-            <X className="h-3 w-3" />
+            <X className="h-4 w-4" />
           </button>
         </div>
       ))}
@@ -101,13 +101,13 @@ const ModelSelector = memo(function ModelSelector({
           size="sm"
           className="h-7 sm:h-7 px-1.5 sm:px-2 rounded-lg text-muted-foreground hover:text-foreground text-xs gap-1 max-w-[120px] sm:max-w-[140px]"
         >
-          <Zap className="h-3 w-3 shrink-0" />
+          <Zap className="h-4 w-4 shrink-0" />
           <span className="truncate">
             {backends.find(b => b.id === activeBackendId)?.name ||
              backends.find(b => b.id === activeBackendId)?.model ||
              t('chat:input.selectModel')}
           </span>
-          <ChevronDown className="h-3 w-3 shrink-0" />
+          <ChevronDown className="h-4 w-4 shrink-0" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64 max-h-[50vh] overflow-y-auto">

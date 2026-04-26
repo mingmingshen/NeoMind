@@ -127,7 +127,7 @@ export function SearchBar({ placeholder }: SearchBarProps) {
       rule: "bg-purple-500",
       alert: "bg-red-500",
     }
-    return colors[type] || "bg-gray-500"
+    return colors[type] || "bg-muted-foreground"
   }
 
   return (
@@ -164,7 +164,7 @@ export function SearchBar({ placeholder }: SearchBarProps) {
               className="h-6 w-6"
               onClick={() => setQuery("")}
             >
-              <X className="h-3 w-3" />
+              <X className="h-4 w-4" />
             </Button>
           )}
         </div>

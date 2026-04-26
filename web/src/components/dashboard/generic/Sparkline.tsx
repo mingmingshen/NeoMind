@@ -71,6 +71,9 @@ export interface SparklineProps {
   // How to aggregate time-series data
   aggregate?: TelemetryAggregate
 
+  // Edit mode (passed by config dialog preview)
+  editMode?: boolean
+
   className?: string
 }
 
@@ -288,6 +291,7 @@ export function Sparkline({
   size = 'md',
   timeWindow,
   aggregate = 'raw',
+  editMode = false,
   className,
 }: SparklineProps) {
   // Get effective aggregate and time window from dataSource or props
@@ -368,7 +372,8 @@ export function Sparkline({
 
   // Convert data to number array using the updated toNumberArray function
   const chartData = useMemo(() => {
-    if (error) return []
+    // In edit mode, always show data (sample if real data unavailable)
+    if (error && !editMode) return []
 
     // Use propData only when there's no dataSource (static mode)
     // When dataSource exists, always use live data to avoid stale data during drag
@@ -386,13 +391,13 @@ export function Sparkline({
     }
 
     const result = toNumberArray(rawData, [])
-    // Only use DEFAULT_SAMPLE_DATA if there's no dataSource configured
-    if (result.length === 0 && !hasDataSource) {
+    // In editMode, fall back to sample data when real data is insufficient
+    if (result.length < 2 && (editMode || !hasDataSource)) {
       return DEFAULT_SAMPLE_DATA
     }
 
     return result
-  }, [data, propData, error, hasDataSource])
+  }, [data, propData, error, hasDataSource, editMode])
 
   const sizeConfig = dashboardComponentSize[size]
 
@@ -463,13 +468,13 @@ export function Sparkline({
     </>
   )
 
-  // Error state - use unified ErrorState
-  if (error) {
+  // Error state - use unified ErrorState (skip in editMode to keep preview visible)
+  if (error && !editMode) {
     return <ErrorState size={size} className={className} />
   }
 
   // Empty state - use unified EmptyState (when dataSource is configured but no data available)
-  if (hasDataSource && chartData.length < 2) {
+  if (!editMode && hasDataSource && chartData.length < 2) {
     return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 

@@ -630,7 +630,7 @@ export function ImageDisplay({
             }
           }}
         >
-          <RefreshCw className="h-3.5 w-3.5" />
+          <RefreshCw className="h-4 w-4" />
           {t('imageDisplay.retry')}
         </Button>
       </div>
@@ -666,7 +666,7 @@ export function ImageDisplay({
           {/* Floating title overlay - same style as ImageHistory */}
           {title && showTitle && (
             <div className="absolute top-2 left-2 flex items-center gap-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
-              <ImageIcon className="h-3.5 w-3.5 text-white/90 shrink-0" />
+              <ImageIcon className="h-4 w-4 text-white/90 shrink-0" />
               <span className="font-medium text-xs truncate max-w-[150px] text-white drop-shadow-md">{title}</span>
             </div>
           )}
@@ -678,25 +678,25 @@ export function ImageDisplay({
                 <Button
                   variant="secondary"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-6 w-6"
                   onClick={handleDownload}
                   title={normalizedImage?.isBase64
                     ? t('imageDisplay.downloadAs', { format: normalizedImage.format.toUpperCase() })
                     : t('imageDisplay.download')
                   }
                 >
-                  <Download className="h-3.5 w-3.5" />
+                  <Download className="h-4 w-4" />
                 </Button>
               )}
               {zoomable && (
                 <Button
                   variant="secondary"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-6 w-6"
                   onClick={() => setIsFullscreen(true)}
                   title={t('imageDisplay.viewFullscreen')}
                 >
-                  <Maximize2 className="h-3.5 w-3.5" />
+                  <Maximize2 className="h-4 w-4" />
                 </Button>
               )}
             </div>

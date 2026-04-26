@@ -62,7 +62,7 @@ export function FullScreenDialog({
         className={cn(
           "flex flex-col flex-1 m-3 md:m-4 overflow-hidden",
           // Glass card effect
-          "bg-white/90 dark:bg-zinc-900/90",
+          "bg-background/95",
           "backdrop-blur-xl",
           "border border-black/5 dark:border-white/10",
           "rounded-2xl md:rounded-3xl",

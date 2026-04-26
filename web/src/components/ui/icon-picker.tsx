@@ -251,7 +251,7 @@ export function IconPicker({
                   onClick={handleClear}
                   className="h-7 px-2 text-xs"
                 >
-                  <X className="h-3 w-3 mr-1" />
+                  <X className="h-4 w-4 mr-1" />
                   {t('common.clear', 'Clear')}
                 </Button>
               </div>

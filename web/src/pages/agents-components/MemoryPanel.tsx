@@ -419,7 +419,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
             key: "entry_count",
             label: (
               <div className="flex items-center gap-1">
-                <Hash className="h-3.5 w-3.5" />
+                <Hash className="h-4 w-4" />
                 {t("systemMemory.headers.entries", "Entries")}
               </div>
             ),
@@ -436,7 +436,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
             key: "modified_at",
             label: (
               <div className="flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" />
+                <Clock className="h-4 w-4" />
                 {t("systemMemory.headers.modified", "Modified")}
               </div>
             ),
@@ -804,17 +804,17 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                                 <div className="flex items-center gap-0.5 text-muted-foreground">
                                   {backend.capabilities?.supports_multimodal && (
                                     <span title={t("systemMemory.config.supportsVision", "Supports vision")}>
-                                      <Eye className="h-3 w-3" />
+                                      <Eye className="h-4 w-4" />
                                     </span>
                                   )}
                                   {backend.capabilities?.supports_tools && (
                                     <span title={t("systemMemory.config.supportsTools", "Supports tools")}>
-                                      <Wrench className="h-3 w-3" />
+                                      <Wrench className="h-4 w-4" />
                                     </span>
                                   )}
                                   {backend.capabilities?.supports_thinking && (
                                     <span title={t("systemMemory.config.supportsThinking", "Supports thinking")}>
-                                      <Brain className="h-3 w-3" />
+                                      <Brain className="h-4 w-4" />
                                     </span>
                                   )}
                                 </div>
@@ -858,17 +858,17 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                                 <div className="flex items-center gap-0.5 text-muted-foreground">
                                   {backend.capabilities?.supports_multimodal && (
                                     <span title={t("systemMemory.config.supportsVision", "Supports vision")}>
-                                      <Eye className="h-3 w-3" />
+                                      <Eye className="h-4 w-4" />
                                     </span>
                                   )}
                                   {backend.capabilities?.supports_tools && (
                                     <span title={t("systemMemory.config.supportsTools", "Supports tools")}>
-                                      <Wrench className="h-3 w-3" />
+                                      <Wrench className="h-4 w-4" />
                                     </span>
                                   )}
                                   {backend.capabilities?.supports_thinking && (
                                     <span title={t("systemMemory.config.supportsThinking", "Supports thinking")}>
-                                      <Brain className="h-3 w-3" />
+                                      <Brain className="h-4 w-4" />
                                     </span>
                                   )}
                                 </div>

@@ -159,7 +159,7 @@ function IntentIcon({ type, size = 20 }: { type: IntentType; size?: number }) {
     monitor: <Eye className="text-blue-500" size={size} />,
     control: <Zap className="text-orange-500" size={size} />,
     analysis: <BarChart3 className="text-purple-500" size={size} />,
-    unknown: <Sparkles className="text-gray-400" size={size} />,
+    unknown: <Sparkles className="text-muted-foreground" size={size} />,
   }
   return icons[type] || icons.unknown
 }
@@ -200,7 +200,7 @@ function TriggerCard({ props }: { props: AgentLogicPreviewProps }) {
   }
 
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
       <div className="flex items-center gap-2 mb-2">
         <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
         <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
@@ -224,7 +224,7 @@ function DataInputCard({ resources }: { resources: SelectedResource[] }) {
 
   if (resources.length === 0) {
     return (
-      <div className="bg-muted/50 rounded-xl p-4 border border-dashed border-muted-foreground/30">
+      <div className="bg-muted/50 rounded-lg p-4 border border-dashed border-muted-foreground/30">
         <div className="flex items-center justify-center gap-2 text-muted-foreground">
           <Target className="h-4 w-4" />
           <span className="text-sm">{t('preview.noResources')}</span>
@@ -234,7 +234,7 @@ function DataInputCard({ resources }: { resources: SelectedResource[] }) {
   }
 
   return (
-    <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-xl p-4 border border-green-200 dark:border-green-800">
+    <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-4 border border-green-200 dark:border-green-800">
       <div className="flex items-center gap-2 mb-3">
         <Activity className="h-4 w-4 text-green-600 dark:text-green-400" />
         <span className="text-sm font-medium text-green-900 dark:text-green-100">
@@ -259,11 +259,11 @@ function DataInputCard({ resources }: { resources: SelectedResource[] }) {
         {deviceResources.length > 0 && (
           <div className="space-y-1.5">
             <div className="text-xs text-green-700 dark:text-green-300 font-medium flex items-center gap-1">
-              <Target className="h-3 w-3" />
+              <Target className="h-4 w-4" />
               {t('preview.dataInput.devices')} ({deviceResources.length})
             </div>
             {deviceResources.map(r => (
-              <div key={r.id} className="bg-white/50 dark:bg-black/20 rounded-lg p-2">
+              <div key={r.id} className="bg-muted/50 rounded-lg p-2">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-medium">{r.name}</span>
                   <Badge variant="outline" className="text-xs h-5 px-1">
@@ -287,11 +287,11 @@ function DataInputCard({ resources }: { resources: SelectedResource[] }) {
         {extResources.length > 0 && (
           <div className="space-y-1.5">
             <div className="text-xs text-green-700 dark:text-green-300 font-medium flex items-center gap-1">
-              <Puzzle className="h-3 w-3" />
+              <Puzzle className="h-4 w-4" />
               {t('preview.dataInput.extensions')} ({extResources.length})
             </div>
             {extResources.map(r => (
-              <div key={r.id} className="bg-white/50 dark:bg-black/20 rounded-lg p-2">
+              <div key={r.id} className="bg-muted/50 rounded-lg p-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium">{r.name}</span>
                   <Badge variant="outline" className="text-xs h-5 px-1">
@@ -325,7 +325,7 @@ function ProcessingCard({ intent, prompt }: { intent: ParsedIntent; prompt: stri
   }
 
   return (
-    <div className="bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30 rounded-xl p-4 border border-purple-200 dark:border-purple-800">
+    <div className="bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
       <div className="flex items-center gap-2 mb-3">
         <Split className="h-4 w-4 text-purple-600 dark:text-purple-400" />
         <span className="text-sm font-medium text-purple-900 dark:text-purple-100">
@@ -352,7 +352,7 @@ function ProcessingCard({ intent, prompt }: { intent: ParsedIntent; prompt: stri
 
         {/* User prompt preview */}
         {prompt && (
-          <div className="mt-2 p-2 bg-white/50 dark:bg-black/20 rounded-lg">
+          <div className="mt-2 p-2 bg-muted/50 rounded-lg">
             <p className="text-xs text-muted-foreground line-clamp-3 italic">
               "{prompt.length > 100 ? prompt.slice(0, 100) + '...' : prompt}"
             </p>
@@ -391,7 +391,7 @@ function ActionsCard({ resources }: { resources: SelectedResource[] }) {
   const allCommands = [...deviceCommands, ...extCommands]
 
   return (
-    <div className="bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 rounded-xl p-4 border border-orange-200 dark:border-orange-800">
+    <div className="bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
       <div className="flex items-center gap-2 mb-3">
         <Wrench className="h-4 w-4 text-orange-600 dark:text-orange-400" />
         <span className="text-sm font-medium text-orange-900 dark:text-orange-100">
@@ -411,14 +411,14 @@ function ActionsCard({ resources }: { resources: SelectedResource[] }) {
       ) : (
         <div className="space-y-1.5">
           {allCommands.slice(0, 5).map((cmd, i) => (
-            <div key={i} className="flex items-center gap-2 bg-white/50 dark:bg-black/20 rounded px-2 py-1">
+            <div key={i} className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
               {cmd.type === 'device' ? (
-                <Target className="h-3 w-3 text-orange-500" />
+                <Target className="h-4 w-4 text-orange-500" />
               ) : (
-                <Puzzle className="h-3 w-3 text-purple-500" />
+                <Puzzle className="h-4 w-4 text-purple-500" />
               )}
               <span className="text-xs font-medium truncate">{cmd.resource}</span>
-              <ArrowRight className="h-3 w-3 text-muted-foreground" />
+              <ArrowRight className="h-4 w-4 text-muted-foreground" />
               <span className="text-xs text-muted-foreground truncate">{cmd.command}</span>
             </div>
           ))}
@@ -434,7 +434,7 @@ function ActionsCard({ resources }: { resources: SelectedResource[] }) {
       {resources.some(r => r.type === 'device') && (
         <div className="mt-3 pt-3 border-t border-orange-200 dark:border-orange-800">
           <div className="flex items-center gap-2 text-xs text-orange-700 dark:text-orange-300">
-            <Bell className="h-3 w-3" />
+            <Bell className="h-4 w-4" />
             <span>{t('preview.actions.canAlert')}</span>
           </div>
         </div>
@@ -501,9 +501,9 @@ function IssueDetection({ props, intent }: { props: AgentLogicPreviewProps; inte
           issue.type === 'warning' && "text-orange-600 dark:text-orange-400",
           issue.type === 'info' && "text-blue-600 dark:text-blue-400"
         )}>
-          {issue.type === 'error' && <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />}
-          {issue.type === 'warning' && <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />}
-          {issue.type === 'info' && <Info className="h-3 w-3 mt-0.5 shrink-0" />}
+          {issue.type === 'error' && <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />}
+          {issue.type === 'warning' && <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />}
+          {issue.type === 'info' && <Info className="h-4 w-4 mt-0.5 shrink-0" />}
           <span>{issue.message}</span>
         </div>
       ))}
@@ -519,7 +519,7 @@ export function AgentLogicPreview({ props }: { props: AgentLogicPreviewProps }) 
   const intent = useMemo(() => parseIntent(props.userPrompt), [props.userPrompt])
 
   return (
-    <div className="h-full flex flex-col bg-muted/30 rounded-xl p-4">
+    <div className="h-full flex flex-col bg-muted/30 rounded-lg p-4">
       {/* Header */}
       <div className="flex items-center gap-2 mb-4 pb-3 border-b">
         <Sparkles className="h-5 w-5 text-primary" />

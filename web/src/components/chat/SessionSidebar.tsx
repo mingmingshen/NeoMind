@@ -183,7 +183,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 lg:hidden"
+                  className="h-6 w-6 lg:hidden"
                   onClick={onClose}
                 >
                   <X className="h-4 w-4" />
@@ -195,7 +195,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 onClick={handleNewChat}
                 disabled={loading}
                 title={t('newChat')}
@@ -205,7 +205,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                className="h-6 w-6 text-muted-foreground hover:text-destructive"
                 onClick={() => setClearAllDialogOpen(true)}
                 disabled={loading || sessions.length === 0}
                 title={t('clearHistory')}

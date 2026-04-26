@@ -42,8 +42,8 @@ export function AgentExecutionsList({
       case 'Running': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
       case 'Completed': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
       case 'Failed': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-      case 'Cancelled': return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
-      default: return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+      case 'Cancelled': return 'bg-muted text-muted-foreground'
+      default: return 'bg-muted text-muted-foreground'
     }
   }
 
@@ -78,7 +78,7 @@ export function AgentExecutionsList({
                 <TableCell className="text-muted-foreground">{index + 1}</TableCell>
                 <TableCell className="text-sm">
                   <div className="flex items-center gap-2">
-                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    <Clock className="h-4 w-4 text-muted-foreground" />
                     {formatTimestamp(execution.timestamp, false)}
                   </div>
                 </TableCell>
@@ -98,7 +98,7 @@ export function AgentExecutionsList({
                 <TableCell className="text-sm">
                   {execution.error ? (
                     <div className="flex items-center gap-1 text-destructive">
-                      <AlertCircle className="h-3.5 w-3.5" />
+                      <AlertCircle className="h-4 w-4" />
                       <span className="truncate max-w-xs">{execution.error}</span>
                     </div>
                   ) : '-'}

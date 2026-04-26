@@ -129,7 +129,7 @@ export function LEDStateRulesConfig({
               disabled={readonly}
               className="h-7 text-xs"
             >
-              <Plus className="h-3 w-3 mr-1" />
+              <Plus className="h-4 w-4 mr-1" />
               {t('stateMapping.addThreshold')}
             </Button>
             <Button
@@ -139,7 +139,7 @@ export function LEDStateRulesConfig({
               disabled={readonly}
               className="h-7 text-xs"
             >
-              <Plus className="h-3 w-3 mr-1" />
+              <Plus className="h-4 w-4 mr-1" />
               {t('stateMapping.addString')}
             </Button>
           </div>
@@ -181,7 +181,7 @@ export function LEDStateRulesConfig({
                     conditionType === 'threshold' && "bg-blue-500/10 text-blue-600",
                     conditionType === 'pattern' && "bg-purple-500/10 text-purple-600",
                     conditionType === 'values' && "bg-amber-500/10 text-amber-600",
-                    conditionType === 'always' && "bg-gray-500/10 text-gray-600"
+                    conditionType === 'always' && "bg-muted text-muted-foreground"
                   )}>
                     {conditionType === 'threshold' && t('stateMapping.thresholdLabel')}
                     {conditionType === 'pattern' && t('stateMapping.patternLabel')}
@@ -216,7 +216,7 @@ export function LEDStateRulesConfig({
                     )}
                     {rule.color && (
                       <span
-                        className="w-3 h-3 rounded-full border"
+                        className="w-4 h-4 rounded-full border"
                         style={{ backgroundColor: rule.color }}
                         title={t('stateMapping.customColor')}
                       />
@@ -242,9 +242,9 @@ export function LEDStateRulesConfig({
                       removeRule(index)
                     }}
                     disabled={readonly}
-                    className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-destructive"
+                    className="h-6 w-6 p-0 shrink-0 text-muted-foreground hover:text-destructive"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
 

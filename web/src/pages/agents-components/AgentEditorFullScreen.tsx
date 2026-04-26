@@ -176,7 +176,7 @@ const PROMPT_TEMPLATES = [
   {
     id: 'monitor',
     label: 'Monitor',
-    icon: <Activity className="h-3 w-3" />,
+    icon: <Activity className="h-4 w-4" />,
     description: 'Monitor data and detect anomalies',
     template: `Monitor the following metrics and alert when anomalies are detected:
 
@@ -198,7 +198,7 @@ When an anomaly is detected, send an alert with:
   {
     id: 'control',
     label: 'Control',
-    icon: <Zap className="h-3 w-3" />,
+    icon: <Zap className="h-4 w-4" />,
     description: 'Automatically control devices',
     template: `Automatically control devices based on the following conditions:
 
@@ -221,7 +221,7 @@ Please:
   {
     id: 'analysis',
     label: 'Analysis',
-    icon: <BarChart3 className="h-3 w-3" />,
+    icon: <BarChart3 className="h-4 w-4" />,
     description: 'Analyze trends and generate reports',
     template: `Analyze the following data and generate a comprehensive report:
 
@@ -242,7 +242,7 @@ Please provide specific numbers and percentages when describing trends and chang
   {
     id: 'alert',
     label: 'Alert',
-    icon: <Bell className="h-3 w-3" />,
+    icon: <Bell className="h-4 w-4" />,
     description: 'Send notifications based on conditions',
     template: `Monitor the selected metrics and send alerts when specific conditions occur:
 
@@ -1300,7 +1300,7 @@ export function AgentEditorFullScreen({
                   type="button"
                   onClick={() => setExecutionMode('focused')}
                   className={cn(
-                    "relative flex flex-col items-start gap-1.5 rounded-xl border-2 p-3 text-left transition-all",
+                    "relative flex flex-col items-start gap-1.5 rounded-lg border-2 p-3 text-left transition-all",
                     isFocusedMode
                       ? "border-primary bg-primary/5 shadow-sm"
                       : "border-border hover:border-primary/30"
@@ -1331,7 +1331,7 @@ export function AgentEditorFullScreen({
                   type="button"
                   onClick={() => { setExecutionMode('free'); setSelectedResources([]) }}
                   className={cn(
-                    "relative flex flex-col items-start gap-1.5 rounded-xl border-2 p-3 text-left transition-all",
+                    "relative flex flex-col items-start gap-1.5 rounded-lg border-2 p-3 text-left transition-all",
                     isFreeMode
                       ? "border-primary bg-primary/5 shadow-sm"
                       : "border-border hover:border-primary/30"
@@ -1454,9 +1454,9 @@ export function AgentEditorFullScreen({
                   disabled={llmValidating}
                 >
                   {llmValidating ? (
-                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                   ) : llmValid === true ? (
-                    <Check className="h-3 w-3 mr-1 text-green-500" />
+                    <Check className="h-4 w-4 mr-1 text-green-500" />
                   ) : llmValid === false ? (
                     <span className="text-destructive">!</span>
                   ) : null}
@@ -1484,13 +1484,13 @@ export function AgentEditorFullScreen({
                         <span>{backend.name}</span>
                         <div className="flex items-center gap-0.5 text-muted-foreground">
                           {backend.capabilities?.supports_multimodal && (
-                            <span title={tAgent('creator.basicInfo.supportsVision')}><Eye className="h-3 w-3" /></span>
+                            <span title={tAgent('creator.basicInfo.supportsVision')}><Eye className="h-4 w-4" /></span>
                           )}
                           {backend.capabilities?.supports_tools && (
-                            <span title={tAgent('creator.basicInfo.supportsTools')}><Wrench className="h-3 w-3" /></span>
+                            <span title={tAgent('creator.basicInfo.supportsTools')}><Wrench className="h-4 w-4" /></span>
                           )}
                           {backend.capabilities?.supports_thinking && (
-                            <span title={tAgent('creator.basicInfo.supportsThinking')}><Brain className="h-3 w-3" /></span>
+                            <span title={tAgent('creator.basicInfo.supportsThinking')}><Brain className="h-4 w-4" /></span>
                           )}
                         </div>
                         <span className="text-xs text-muted-foreground ml-auto">{backend.model}</span>
@@ -1523,7 +1523,7 @@ export function AgentEditorFullScreen({
               </div>
 
               {showAdvanced && (
-                <div className="bg-muted/50 rounded-xl p-4 border space-y-4">
+                <div className="bg-muted/50 rounded-lg p-4 border space-y-4">
                   {/* Tool Chaining — Free mode only */}
                   {!isFocusedMode && (
                   <div className="space-y-3">
@@ -1652,7 +1652,7 @@ export function AgentEditorFullScreen({
               </div>
 
               {/* Schedule Configuration */}
-              <div className={cn("border rounded-xl", isMobile ? "p-4" : "p-4 bg-muted/50")}>
+              <div className={cn("border rounded-lg", isMobile ? "p-4" : "p-4 bg-muted/50")}>
                 {scheduleType === 'timer' && (
                   <div className="space-y-3">
                     {/* Timer sub-type tabs */}
@@ -1992,7 +1992,7 @@ export function AgentEditorFullScreen({
                                   "hover:bg-muted/60"
                                 )}
                               >
-                                {getSourceIcon(e.type, "h-3 w-3 shrink-0 text-muted-foreground")}
+                                {getSourceIcon(e.type, "h-4 w-4 shrink-0 text-muted-foreground")}
                                 <span className="truncate flex-1">{e.name}</span>
                                 {hasTrigger && (
                                   <Badge variant="secondary" className="h-4 min-w-[18px] text-[10px] px-1 rounded-full">
@@ -2079,7 +2079,7 @@ export function AgentEditorFullScreen({
                             }
                             return (
                               <div key={`${g.type}-${g.id}`} className="flex items-center gap-1.5 flex-wrap">
-                                {getSourceIcon(g.type, "h-3 w-3 shrink-0 text-muted-foreground")}
+                                {getSourceIcon(g.type, "h-4 w-4 shrink-0 text-muted-foreground")}
                                 <span className="text-xs font-medium truncate max-w-[100px]">{g.name}</span>
                                 {hasAll ? (
                                   <Badge
@@ -2183,7 +2183,7 @@ export function AgentEditorFullScreen({
                     <p className="text-xs text-muted-foreground">{sectionHint}</p>
                     {selectedResources.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-6 border rounded-lg bg-background">
-                        <Target className="h-7 w-7 text-muted-foreground/40 mb-2" />
+                        <Target className="h-6 w-6 text-muted-foreground/40 mb-2" />
                         <p className="text-xs text-muted-foreground">
                           {tAgent('creator.resources.dialog.noResourcesHint')}
                         </p>
@@ -2307,7 +2307,7 @@ export function AgentEditorFullScreen({
             "flex items-center gap-2 text-muted-foreground border-t pt-2",
             isMobile ? "text-xs" : "text-xs"
           )}>
-            <Info className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "shrink-0")} />
+            <Info className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "shrink-0")} />
             <span className="line-clamp-1">{agentSummary}</span>
           </div>
         )}
@@ -2408,7 +2408,7 @@ function ResourceSelectionDialog({
               <div className="flex items-center gap-2 mb-2">
                 <Sparkles className="h-4 w-4 text-primary" />
                 <span className="text-sm font-medium">{tAgent('creator.resources.dialog.recommended')}</span>
-                {generatingRecommendations && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                {generatingRecommendations && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {recommendations.map((rec) => (
@@ -2555,7 +2555,7 @@ function ResourceSelectionDialog({
               <div className="flex items-center gap-2 mb-2">
                 <Sparkles className="h-4 w-4 text-primary" />
                 <span className="text-sm font-medium">{tAgent('creator.resources.dialog.recommended')}</span>
-                {generatingRecommendations && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                {generatingRecommendations && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {recommendations.map((rec) => (
@@ -2573,7 +2573,7 @@ function ResourceSelectionDialog({
           {/* Dual-pane layout */}
           <div className="flex-1 flex gap-4 min-h-0 p-4 overflow-hidden">
             {/* Available Resources */}
-            <div className="flex-1 flex flex-col bg-muted/30 rounded-xl overflow-hidden">
+            <div className="flex-1 flex flex-col bg-muted/30 rounded-lg overflow-hidden">
               <div className="p-3 border-b bg-background/50">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">{tAgent('creator.resources.dialog.available')}</span>
@@ -2612,7 +2612,7 @@ function ResourceSelectionDialog({
             </div>
 
             {/* Selected Resources */}
-            <div className="flex-1 flex flex-col bg-background rounded-xl overflow-hidden border">
+            <div className="flex-1 flex flex-col bg-background rounded-lg overflow-hidden border">
               <div className="p-3 border-b">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">{tAgent('creator.resources.dialog.selected')}</span>
@@ -2712,7 +2712,7 @@ function ScheduleCard({ icon, label, description, active, onClick, isMobile = fa
       type="button"
       onClick={onClick}
       className={cn(
-        "flex flex-col items-center rounded-xl border-2 transition-all",
+        "flex flex-col items-center rounded-lg border-2 transition-all",
         isMobile ? "gap-3 p-4" : "gap-2 p-3",
         active
           ? "border-primary bg-primary/5"
@@ -2750,7 +2750,7 @@ function RecommendationCard({ recommendation, selected, onClick }: Recommendatio
         "p-1 rounded",
         selected ? "bg-primary text-primary-foreground" : "bg-muted"
       )}>
-        {recommendation.type === 'extension' ? <Puzzle className="h-3 w-3" /> : <Target className="h-3 w-3" />}
+        {recommendation.type === 'extension' ? <Puzzle className="h-4 w-4" /> : <Target className="h-4 w-4" />}
       </div>
       <div className="min-w-0">
         <div className="text-sm font-medium truncate">{recommendation.name}</div>
@@ -2797,7 +2797,7 @@ function ResourceListItem({ resource, selected, onClick, isMobile = false }: Res
           isMobile ? "p-2" : "p-1.5",
           selected ? "bg-primary text-primary-foreground" : "bg-muted"
         )}>
-          {resource.type === 'extension' ? <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")} /> : <Target className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")} />}
+          {resource.type === 'extension' ? <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} /> : <Target className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} />}
         </div>
         <div className="min-w-0">
           <div className={cn("font-medium truncate", isMobile ? "text-base" : "text-sm")}>{resource.name}</div>
@@ -2885,7 +2885,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
             isMobile ? "p-2" : "p-1",
             resource.type === 'extension' ? "bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300" : "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300"
           )}>
-            {resource.type === 'extension' ? <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-3 w-3")} /> : <Target className={cn(isMobile ? "h-4 w-4" : "h-3 w-3")} />}
+            {resource.type === 'extension' ? <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} /> : <Target className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} />}
           </div>
           <span className={cn("font-medium truncate", isMobile ? "text-base" : "text-sm")}>{resource.name}</span>
           {(hasMetrics || hasCommands) && (
@@ -2901,7 +2901,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
           className={cn("transition-opacity", isMobile ? "h-9 w-9" : "h-6 w-6", isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100")}
           onClick={onRemove}
         >
-          <X className={cn(isMobile ? "h-4 w-4" : "h-3 w-3")} />
+          <X className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} />
         </Button>
       </div>
 
@@ -2953,7 +2953,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                   >
                     <Checkbox
                       checked={resource.selectedMetrics.has(metric.name)}
-                      className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")}
+                      className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")}
                     />
                     <span className="truncate">{metric.display_name}</span>
                   </div>
@@ -3007,7 +3007,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                   >
                     <Checkbox
                       checked={resource.selectedCommands.has(command.name)}
-                      className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")}
+                      className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")}
                     />
                     <span className="truncate">{command.display_name}</span>
                   </div>
@@ -3028,7 +3028,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 onClick={() => setDataCollectionExpanded(!dataCollectionExpanded)}
               >
-                <ChevronRight className={`h-3 w-3 transition-transform ${dataCollectionExpanded ? 'rotate-90' : ''}`} />
+                <ChevronRight className={`h-4 w-4 transition-transform ${dataCollectionExpanded ? 'rotate-90' : ''}`} />
                 {tAgent('creator.advanced.dataCollection', 'Data Collection')}
               </button>
               {dataCollectionExpanded && (
@@ -3059,7 +3059,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                       <Checkbox
                         checked={getResourceConfig()?.include_history ?? false}
                         onCheckedChange={(checked) => updateResourceDataCollection('include_history', !!checked)}
-                        className="h-3.5 w-3.5"
+                        className="h-4 w-4"
                       />
                       <Label className="text-xs text-muted-foreground cursor-pointer">
                         {tAgent('creator.advanced.includeHistory', 'Include History')}
@@ -3069,7 +3069,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                       <Checkbox
                         checked={getResourceConfig()?.include_trend ?? false}
                         onCheckedChange={(checked) => updateResourceDataCollection('include_trend', !!checked)}
-                        className="h-3.5 w-3.5"
+                        className="h-4 w-4"
                       />
                       <Label className="text-xs text-muted-foreground cursor-pointer">
                         {tAgent('creator.advanced.includeTrend', 'Include Trend')}
@@ -3079,7 +3079,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                       <Checkbox
                         checked={getResourceConfig()?.include_baseline ?? false}
                         onCheckedChange={(checked) => updateResourceDataCollection('include_baseline', !!checked)}
-                        className="h-3.5 w-3.5"
+                        className="h-4 w-4"
                       />
                       <Label className="text-xs text-muted-foreground cursor-pointer">
                         {tAgent('creator.advanced.includeBaseline', 'Include Baseline')}

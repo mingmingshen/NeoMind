@@ -85,7 +85,7 @@ export const SessionListItem = React.memo<SessionListItemProps>(
               )}
               onClick={(e) => onRename(e, session.sessionId!, session.title || session.preview || "")}
             >
-              <Edit2 className="h-3 w-3" />
+              <Edit2 className="h-4 w-4" />
             </Button>
             {/* Delete button */}
             <Button
@@ -96,7 +96,7 @@ export const SessionListItem = React.memo<SessionListItemProps>(
               )}
               onClick={(e) => onDelete(e, session.sessionId!)}
             >
-              <Trash2 className="h-3 w-3" />
+              <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         )}

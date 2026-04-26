@@ -363,7 +363,7 @@ export function LayerEditorDialog({
                 }}
                 title={t('common.edit')}
               >
-                <Edit3 className="h-3 w-3" />
+                <Edit3 className="h-4 w-4" />
               </Button>
             )}
             <Button
@@ -376,7 +376,7 @@ export function LayerEditorDialog({
               }}
               title={t('common.delete')}
             >
-              <Trash2 className="h-3 w-3" />
+              <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -412,7 +412,7 @@ export function LayerEditorDialog({
                   setEditingTextBinding(null)
                 }}
               >
-                <X className="h-3 w-3 mr-1" />
+                <X className="h-4 w-4 mr-1" />
                 {t('common.done')}
               </Button>
             </div>
@@ -508,7 +508,7 @@ export function LayerEditorDialog({
                   setEditingIconBinding(null)
                 }}
               >
-                <X className="h-3 w-3 mr-1" />
+                <X className="h-4 w-4 mr-1" />
                 {t('common.done')}
               </Button>
             </div>

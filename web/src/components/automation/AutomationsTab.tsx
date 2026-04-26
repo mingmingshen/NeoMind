@@ -145,7 +145,7 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
       <span
         key={i}
         className={`w-2 h-2 rounded-full ${
-          i < complexity ? 'bg-yellow-500' : 'bg-gray-300 dark:bg-gray-600'
+          i < complexity ? 'bg-yellow-500' : 'bg-muted-foreground/30 dark:bg-muted-foreground/50'
         }`}
       />
     ))

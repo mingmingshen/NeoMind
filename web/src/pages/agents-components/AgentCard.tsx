@@ -39,7 +39,7 @@ export function CreateCard({ onClick }: CreateCardProps) {
   return (
     <button
       onClick={onClick}
-      className="group flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-muted-foreground/20 hover:border-primary/50 hover:bg-muted/20 transition-all min-h-[200px]"
+      className="group flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-muted-foreground/20 hover:border-primary/50 hover:bg-muted/20 transition-all min-h-[200px]"
     >
       <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
         <Plus className="h-6 w-6 text-muted-foreground group-hover:text-primary transition-colors" />
@@ -113,7 +113,7 @@ export function AgentCard({
   return (
     <div
       className={cn(
-        "group relative bg-card rounded-xl border transition-all cursor-pointer p-4",
+        "group relative bg-card rounded-lg border transition-all cursor-pointer p-4",
         "hover:border-primary/50 hover:shadow-md"
       )}
       onClick={onClick}
@@ -220,7 +220,7 @@ export function AgentCard({
       {/* Footer: Executing status or Last Execution + Toggle */}
       {agent.status === 'Executing' ? (
         <div className="flex items-center gap-2 pt-1.5 border-t border-blue-200/50 dark:border-blue-800/50 bg-blue-50/60 dark:bg-blue-900/20 -mx-1 px-1">
-          <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin shrink-0" />
+          <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0" />
           <span className="text-xs text-blue-700 dark:text-blue-300 truncate flex-1">
             {agent.currentThinking || t('agents:thinking.executing')}
           </span>
@@ -228,7 +228,7 @@ export function AgentCard({
       ) : (
         <div className="flex items-center justify-between pt-1.5 border-t border-border/50">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" />
+            <Clock className="h-4 w-4" />
             <span className="truncate max-w-[120px]">
               {agent.last_execution_at ? formatTimestamp(agent.last_execution_at, false) : t('agents:card.neverExecuted')}
             </span>

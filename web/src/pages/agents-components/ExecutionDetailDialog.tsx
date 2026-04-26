@@ -86,7 +86,7 @@ export function ExecutionDetailDialog({
       case 'Running':
         return <Clock className="h-4 w-4 text-blue-500" />
       default:
-        return <AlertCircle className="h-4 w-4 text-gray-500" />
+        return <AlertCircle className="h-4 w-4 text-muted-foreground" />
     }
   }
 
@@ -293,7 +293,7 @@ export function ExecutionDetailDialog({
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
-              <Clock className="h-3 w-3" />
+              <Clock className="h-4 w-4" />
               {formatTimestamp(execution.timestamp, false)}
             </span>
             <span>{execution.duration_ms}ms</span>
@@ -303,7 +303,7 @@ export function ExecutionDetailDialog({
         {execution.error && (
           <Card className="p-2 border-destructive/50 bg-destructive/5">
             <div className="flex items-start gap-1.5 text-destructive">
-              <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
               <div className="text-xs break-words">{execution.error}</div>
             </div>
           </Card>
@@ -341,15 +341,15 @@ export function ExecutionDetailDialog({
                           onClick={() => toggleDataExpanded(idx)}
                         >
                           <div className="flex items-center gap-2 min-w-0 flex-1">
-                            {hasImage && <ImageIcon className="h-3 w-3 text-purple-500 shrink-0" />}
+                            {hasImage && <ImageIcon className="h-4 w-4 text-purple-500 shrink-0" />}
                             <span className="text-[10px] font-medium truncate">{data.source}</span>
                             <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0">{data.data_type}</Badge>
                           </div>
                           {dataPairs.length > 0 && (
                             isExpanded ? (
-                              <ChevronUp className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
                             ) : (
-                              <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                             )
                           )}
                         </div>

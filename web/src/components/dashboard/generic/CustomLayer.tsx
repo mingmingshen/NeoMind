@@ -339,7 +339,7 @@ function LayerItemComponent({
 
   const getIconSizeClass = () => {
     switch (item.markerSize) {
-      case 'xs': return 'h-3 w-3' // 12px
+      case 'xs': return 'h-4 w-4' // 12px
       case 'sm': return 'h-4 w-4' // 16px
       case 'md': return 'h-5 w-5' // 20px (default)
       case 'lg': return 'h-6 w-6' // 24px
@@ -361,7 +361,7 @@ function LayerItemComponent({
   const getStatusColor = () => {
     switch (item.status) {
       case 'online': return 'bg-green-500'
-      case 'offline': return 'bg-gray-400'
+      case 'offline': return 'bg-muted-foreground'
       case 'error': return 'bg-red-500'
       case 'warning': return 'bg-yellow-500'
       default: return null
@@ -405,14 +405,14 @@ function LayerItemComponent({
             {/* Status indicator for devices */}
             {item.type === 'device' && item.status && (
               <span className={cn(
-                'absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background',
+                'absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-background',
                 getStatusColor()
               )} />
             )}
 
             {/* Command indicator */}
             {item.type === 'command' && (
-              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-background animate-pulse" />
+              <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-blue-500 rounded-full border-2 border-background animate-pulse" />
             )}
           </div>
         ) : (
@@ -437,7 +437,7 @@ function LayerItemComponent({
             {item.icon ? (
               <span className="flex-shrink-0">{item.icon}</span>
             ) : (
-              <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+              <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
             )}
 
             {/* Label */}
@@ -503,7 +503,7 @@ function LayerItemComponent({
             className="absolute top-1.5 right-1.5 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center"
             onClick={() => setShowDetails(false)}
           >
-            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -537,7 +537,7 @@ function LayerItemComponent({
                   <span className={cn(
                     'flex items-center gap-1.5',
                     item.status === 'online' && 'text-green-600',
-                    item.status === 'offline' && 'text-gray-500'
+                    item.status === 'offline' && 'text-muted-foreground'
                   )}>
                     <span className={cn('w-2 h-2 rounded-full', getStatusColor())} />
                     {item.status === 'online' ? t('customLayer.online') : t('customLayer.offline')}
@@ -587,7 +587,7 @@ function LayerItemComponent({
                     setShowDetails(false)
                   }}
                 >
-                  <Zap className="h-3.5 w-3.5 mr-1" />
+                  <Zap className="h-4 w-4 mr-1" />
                   {t('mapDisplay.executeCommand')}
                 </Button>
               </>
@@ -1147,31 +1147,31 @@ export function CustomLayer({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="h-6 w-6"
               onClick={handleZoomOut}
               title={t('customLayer.zoomOut')}
             >
-              <ZoomOut className="h-3.5 w-3.5" />
+              <ZoomOut className="h-4 w-4" />
             </Button>
             <span className="text-xs text-muted-foreground w-12 text-center">{Math.round(zoom * 100)}%</span>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="h-6 w-6"
               onClick={handleZoomIn}
               title={t('customLayer.zoomIn')}
             >
-              <ZoomIn className="h-3.5 w-3.5" />
+              <ZoomIn className="h-4 w-4" />
             </Button>
             {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 onClick={handleResetZoom}
                 title={t('customLayer.reset')}
               >
-                <RotateCcw className="h-3.5 w-3.5" />
+                <RotateCcw className="h-4 w-4" />
               </Button>
             )}
             <div className="w-px h-4 bg-border mx-1" />
@@ -1179,30 +1179,30 @@ export function CustomLayer({
               <Button
                 variant="ghost"
                 size="icon"
-                className={cn('h-7 w-7', isEditing && 'bg-accent')}
+                className={cn('h-6 w-6', isEditing && 'bg-accent')}
                 onClick={() => setIsEditing(!isEditing)}
               >
-                <Settings className="h-3.5 w-3.5" />
+                <Settings className="h-4 w-4" />
               </Button>
             )}
             {isEditing && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 onClick={handleAddItem}
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-4 w-4" />
               </Button>
             )}
             {showFullscreen && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 onClick={() => setIsFullscreen(!isFullscreen)}
               >
-                {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </Button>
             )}
           </div>

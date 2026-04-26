@@ -1089,7 +1089,7 @@ function RulePreviewPanel({
             "w-6 h-6 rounded flex items-center justify-center text-xs",
             isExtension ? "bg-purple-500/20 text-purple-500" : "bg-blue-500/20 text-blue-500"
           )}>
-            {isExtension ? <Puzzle className="h-3.5 w-3.5" /> : <Lightbulb className="h-3.5 w-3.5" />}
+            {isExtension ? <Puzzle className="h-4 w-4" /> : <Lightbulb className="h-4 w-4" />}
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-medium truncate">{resourceName}</div>
@@ -1108,7 +1108,7 @@ function RulePreviewPanel({
         {forDuration > 0 && (
           <div className="mt-3 pt-3 border-t border-border/50">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Clock className="h-3.5 w-3.5" />
+              <Clock className="h-4 w-4" />
               <span>{tBuilder('forDuration') || '持续'}: {forDuration} {forUnit}</span>
             </div>
           </div>
@@ -1130,14 +1130,14 @@ function RulePreviewPanel({
 
     const getActionIcon = (type: string) => {
       switch (type) {
-        case 'Execute': return <Zap className="h-3.5 w-3.5" />
-        case 'Notify': return <Bell className="h-3.5 w-3.5" />
-        case 'Log': return <FileText className="h-3.5 w-3.5" />
-        case 'Set': return <Settings className="h-3.5 w-3.5" />
-        case 'Delay': return <Clock className="h-3.5 w-3.5" />
-        case 'CreateAlert': return <AlertTriangle className="h-3.5 w-3.5" />
-        case 'HttpRequest': return <Globe className="h-3.5 w-3.5" />
-        default: return <Zap className="h-3.5 w-3.5" />
+        case 'Execute': return <Zap className="h-4 w-4" />
+        case 'Notify': return <Bell className="h-4 w-4" />
+        case 'Log': return <FileText className="h-4 w-4" />
+        case 'Set': return <Settings className="h-4 w-4" />
+        case 'Delay': return <Clock className="h-4 w-4" />
+        case 'CreateAlert': return <AlertTriangle className="h-4 w-4" />
+        case 'HttpRequest': return <Globe className="h-4 w-4" />
+        default: return <Zap className="h-4 w-4" />
       }
     }
 
@@ -1145,7 +1145,7 @@ function RulePreviewPanel({
       switch (type) {
         case 'Execute': return 'bg-purple-500/20 text-purple-500'
         case 'Notify': return 'bg-blue-500/20 text-blue-500'
-        case 'Log': return 'bg-gray-500/20 text-gray-500'
+        case 'Log': return 'bg-muted text-muted-foreground'
         case 'Set': return 'bg-orange-500/20 text-orange-500'
         case 'Delay': return 'bg-yellow-500/20 text-yellow-500'
         case 'CreateAlert': return 'bg-red-500/20 text-red-500'
@@ -1158,7 +1158,7 @@ function RulePreviewPanel({
       <div className="p-3 space-y-2">
         {actions.map((action, index) => (
           <div key={index} className="flex items-start gap-2 p-2 rounded bg-muted/30">
-            <div className={cn("w-7 h-7 rounded flex items-center justify-center shrink-0", getActionColor(action.type))}>
+            <div className={cn("w-6 h-6 rounded flex items-center justify-center shrink-0", getActionColor(action.type))}>
               {getActionIcon(action.type)}
             </div>
             <div className="flex-1 min-w-0">
@@ -1196,7 +1196,7 @@ function RulePreviewPanel({
     if (cond.type === 'and' || cond.type === 'or' || cond.type === 'not') {
       return (
         <div className="space-y-1">
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/50 dark:bg-black/20">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted/50">
             <span className="font-medium">{cond.type.toUpperCase()}</span>
             <span className="text-muted-foreground">({cond.conditions?.length || 0})</span>
           </span>
@@ -1210,8 +1210,8 @@ function RulePreviewPanel({
       : (devices.find(d => d.id === cond.device_id)?.name || cond.device_id || '')
 
     return (
-      <div className="flex items-center gap-2 bg-white/50 dark:bg-black/20 rounded px-2 py-1">
-        {isExtension ? <Puzzle className="h-3 w-3 text-purple-500" /> : <Lightbulb className="h-3 w-3 text-blue-500" />}
+      <div className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+        {isExtension ? <Puzzle className="h-4 w-4 text-purple-500" /> : <Lightbulb className="h-4 w-4 text-blue-500" />}
         <span className="truncate">{resourceName}</span>
         <span className="font-mono text-[10px]">{cond.operator}</span>
         <span>{cond.type === 'range' ? `[${cond.range_min}~${cond.range_max}]` : cond.threshold}</span>
@@ -1220,7 +1220,7 @@ function RulePreviewPanel({
   }
 
   return (
-    <div className="h-full flex flex-col bg-muted/30 rounded-xl p-4">
+    <div className="h-full flex flex-col bg-muted/30 rounded-lg p-4">
       {/* Header with toggle */}
       <div className="flex items-center justify-between mb-4 pb-3 border-b">
         <div className="flex items-center gap-2">
@@ -1236,7 +1236,7 @@ function RulePreviewPanel({
               : "bg-muted hover:bg-muted/70"
           )}
         >
-          <Code className="h-3 w-3" />
+          <Code className="h-4 w-4" />
           {showDSL ? 'DSL' : (tBuilder('overview') || '预览')}
         </button>
       </div>
@@ -1251,7 +1251,7 @@ function RulePreviewPanel({
           <div className="space-y-3">
         {/* Trigger Card */}
         <div className={cn(
-          "rounded-xl p-4 border",
+          "rounded-lg p-4 border",
           triggerType === 'device_state' && "bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800",
           triggerType === 'schedule' && "bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-green-200 dark:border-green-800",
           triggerType === 'manual' && "bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 border-orange-200 dark:border-orange-800"
@@ -1281,7 +1281,7 @@ function RulePreviewPanel({
           </p>
           {triggerType === 'schedule' && nextExecution && (
             <div className="mt-2 flex items-center gap-2 text-xs opacity-80">
-              <Calendar className="h-3 w-3" />
+              <Calendar className="h-4 w-4" />
               <span>{nextExecution.toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
             </div>
           )}
@@ -1293,7 +1293,7 @@ function RulePreviewPanel({
         </div>
 
         {/* Condition Card */}
-        <div className="bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30 rounded-xl p-4 border border-purple-200 dark:border-purple-800">
+        <div className="bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
           <div className="flex items-center gap-2 mb-3">
             <FileText className="h-4 w-4 text-purple-600 dark:text-purple-400" />
             <span className="text-sm font-medium text-purple-900 dark:text-purple-100">
@@ -1308,7 +1308,7 @@ function RulePreviewPanel({
               {renderCompactCondition(condition)}
               {forDuration > 0 && (
                 <div className="flex items-center gap-2 text-[10px] mt-2 pt-2 border-t border-purple-200 dark:border-purple-800">
-                  <Clock className="h-3 w-3" />
+                  <Clock className="h-4 w-4" />
                   <span>{tBuilder('forDuration') || '持续'}: {forDuration} {forUnit}</span>
                 </div>
               )}
@@ -1326,7 +1326,7 @@ function RulePreviewPanel({
         </div>
 
         {/* Actions Card */}
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-xl p-4 border border-green-200 dark:border-green-800">
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-4 border border-green-200 dark:border-green-800">
           <div className="flex items-center gap-2 mb-3">
             <Zap className="h-4 w-4 text-green-600 dark:text-green-400" />
             <span className="text-sm font-medium text-green-900 dark:text-green-100">
@@ -1341,18 +1341,18 @@ function RulePreviewPanel({
               {actions.slice(0, 4).map((action, index) => {
                 const getActionIcon = (type: string) => {
                   switch (type) {
-                    case 'Execute': return <Zap className="h-3 w-3" />
-                    case 'Notify': return <Bell className="h-3 w-3" />
-                    case 'Log': return <FileText className="h-3 w-3" />
-                    case 'Set': return <Settings className="h-3 w-3" />
-                    case 'Delay': return <Clock className="h-3 w-3" />
-                    case 'CreateAlert': return <AlertTriangle className="h-3 w-3" />
-                    case 'HttpRequest': return <Globe className="h-3 w-3" />
-                    default: return <Zap className="h-3 w-3" />
+                    case 'Execute': return <Zap className="h-4 w-4" />
+                    case 'Notify': return <Bell className="h-4 w-4" />
+                    case 'Log': return <FileText className="h-4 w-4" />
+                    case 'Set': return <Settings className="h-4 w-4" />
+                    case 'Delay': return <Clock className="h-4 w-4" />
+                    case 'CreateAlert': return <AlertTriangle className="h-4 w-4" />
+                    case 'HttpRequest': return <Globe className="h-4 w-4" />
+                    default: return <Zap className="h-4 w-4" />
                   }
                 }
                 return (
-                  <div key={index} className="flex items-center gap-2 bg-white/50 dark:bg-black/20 rounded px-2 py-1">
+                  <div key={index} className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
                     <div className="text-green-500">{getActionIcon(action.type)}</div>
                     <span className="text-xs font-medium truncate">{action.type}</span>
                   </div>
@@ -1885,7 +1885,7 @@ export function SimpleRuleBuilderSplit({
       <FullScreenDialogFooter>
         {!isFirstStep && (
           <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handlePrevious} disabled={saving} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-            <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "mr-1")} />
+            <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "mr-1")} />
             {tBuilder('previous')}
           </Button>
         )}
@@ -1899,7 +1899,7 @@ export function SimpleRuleBuilderSplit({
         ) : (
           <Button size={isMobile ? "default" : "sm"} onClick={handleNext} disabled={!name.trim() && currentStep === 'basic'} className={isMobile ? "h-12 min-w-[100px]" : ""}>
             {tBuilder('next')}
-            <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "ml-1")} />
+            <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "ml-1")} />
           </Button>
         )}
       </FullScreenDialogFooter>
@@ -2005,7 +2005,7 @@ function BasicInfoStep({
                 onClick={() => removeTag(tag)}
                 className="rounded-full p-0 hover:bg-destructive/20"
               >
-                <X className="h-3 w-3" />
+                <X className="h-4 w-4" />
               </button>
             </Badge>
           ))}
@@ -2863,8 +2863,8 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
           </Select>
 
           {renderValueInput()}
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onChange(null as any)}>
-            <X className="h-3.5 w-3.5" />
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onChange(null as any)}>
+            <X className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -2961,8 +2961,8 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
             placeholder="Max"
             disabled={!hasValidId}
           />
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onChange(null as any)}>
-            <X className="h-3.5 w-3.5" />
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onChange(null as any)}>
+            <X className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -2986,7 +2986,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
             {condition.type === 'and' ? tBuilder('allConditionsMustMeet') : condition.type === 'or' ? tBuilder('anyConditionMustMeet') : tBuilder('conditionNotMet')}
           </span>
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onChange(null as any)}>
-            <X className="h-3 w-3" />
+            <X className="h-4 w-4" />
           </Button>
         </div>
 
@@ -3023,7 +3023,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
                     className="h-6 w-6 absolute right-0 top-2 opacity-0 group-hover:opacity-100"
                     onClick={() => removeNestedCondition(i)}
                   >
-                    <X className="h-3 w-3" />
+                    <X className="h-4 w-4" />
                   </Button>
                 )}
               </div>
@@ -3081,7 +3081,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
                 })
               }}
             >
-              <Plus className="h-3.5 w-3.5 mr-1" />{tBuilder('addCondition')}
+              <Plus className="h-4 w-4 mr-1" />{tBuilder('addCondition')}
             </Button>
           </div>
         </div>
@@ -3485,7 +3485,7 @@ function ActionEditorCompact({ action, devices, deviceTypes, extensions, message
                   className="h-5 px-1 text-xs text-muted-foreground hover:text-foreground"
                   onClick={() => onUpdate({ headers: { ...headers, '': '' } })}
                 >
-                  <Plus className="h-3 w-3 mr-0.5" />
+                  <Plus className="h-4 w-4 mr-0.5" />
                   {t('automation:add') || 'Add'}
                 </Button>
               </div>
@@ -3530,7 +3530,7 @@ function ActionEditorCompact({ action, devices, deviceTypes, extensions, message
                           onUpdate({ headers: newHeaders })
                         }}
                       >
-                        <X className="h-3 w-3" />
+                        <X className="h-4 w-4" />
                       </Button>
                     </div>
                   ))}
@@ -3587,12 +3587,12 @@ function ActionEditorCompact({ action, devices, deviceTypes, extensions, message
     switch (action.type) {
       case 'Execute': return 'text-yellow-600 dark:text-yellow-500 bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
       case 'Notify': return 'text-blue-600 dark:text-blue-500 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800'
-      case 'Log': return 'text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-700'
+      case 'Log': return 'text-muted-foreground bg-muted border-border'
       case 'Set': return 'text-purple-600 dark:text-purple-500 bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800'
       case 'Delay': return 'text-orange-600 dark:text-orange-500 bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800'
       case 'CreateAlert': return 'text-red-600 dark:text-red-500 bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800'
       case 'HttpRequest': return 'text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800'
-      default: return 'text-gray-600 bg-gray-50 border-gray-200'
+      default: return 'text-muted-foreground bg-muted border-border'
     }
   }
 
@@ -3620,7 +3620,7 @@ function ActionEditorCompact({ action, devices, deviceTypes, extensions, message
               className="h-6 w-6 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={onRemove}
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-4 w-4" />
             </Button>
           </div>
           {renderActionContent()}

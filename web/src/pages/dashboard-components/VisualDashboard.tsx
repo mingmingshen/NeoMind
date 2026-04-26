@@ -1869,7 +1869,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               onClick={handleClear}
               className="h-8 text-destructive hover:text-destructive"
             >
-              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              <Trash2 className="h-4 w-4 mr-1" />
               {t('visualDashboard.clear')}
             </Button>
           </div>
@@ -4386,7 +4386,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                             <div className={`px-3 py-2 ${config.bgColor} border-b ${config.borderColor} flex items-center justify-between`}>
                               <div className="flex items-center gap-2">
                                 <div className={`w-5 h-5 rounded-full ${config.color} flex items-center justify-center`}>
-                                  <Icon className="h-3 w-3 text-white" />
+                                  <Icon className="h-4 w-4 text-white" />
                                 </div>
                                 <span className="text-sm font-medium">{config.label}</span>
                                 <span className="text-xs text-muted-foreground">({typeBindings.length})</span>
@@ -4451,19 +4451,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   {/* Legend */}
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                      <div className="w-4 h-4 rounded-full bg-blue-500"></div>
                       <span>{t('mapDisplay.device')}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                      <div className="w-4 h-4 rounded-full bg-green-500"></div>
                       <span>{t('mapDisplay.metric')}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+                      <div className="w-4 h-4 rounded-full bg-orange-500"></div>
                       <span>{t('mapDisplay.command')}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                      <div className="w-4 h-4 rounded-full bg-purple-500"></div>
                       <span>{t('mapDisplay.marker')}</span>
                     </div>
                   </div>
@@ -4762,10 +4762,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                         },
                         text: {
                           label: t('layerDisplay.text'),
-                          color: 'bg-gray-500',
-                          textColor: 'text-gray-600',
-                          bgColor: 'bg-gray-50 dark:bg-gray-950/30',
-                          borderColor: 'border-gray-200 dark:border-gray-800',
+                          color: 'bg-muted-foreground',
+                          textColor: 'text-muted-foreground',
+                          bgColor: 'bg-muted',
+                          borderColor: 'border-border',
                           icon: Type,
                           description: t('layerDisplay.textDesc')
                         },
@@ -4802,7 +4802,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                             <div className={`px-3 py-2 ${typeConfig.bgColor} border-b ${typeConfig.borderColor} flex items-center justify-between`}>
                               <div className="flex items-center gap-2">
                                 <div className={`w-5 h-5 rounded-full ${typeConfig.color} flex items-center justify-center`}>
-                                  <Icon className="h-3 w-3 text-white" />
+                                  <Icon className="h-4 w-4 text-white" />
                                 </div>
                                 <span className="text-sm font-medium">{typeConfig.label}</span>
                                 <span className="text-xs text-muted-foreground">({typeBindings.length})</span>
@@ -5204,7 +5204,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 size="icon"
                 onClick={() => isMobile ? handleSidebarOpenChange(true) : handleSidebarOpenChange(!sidebarOpen)}
                 className={cn(
-                  "h-7 w-7 active:scale-95",
+                  "h-6 w-6 active:scale-95",
                   !isDesktop && sidebarOpen && "bg-muted"
                 )}
               >
@@ -5224,13 +5224,13 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               >
                 {editMode ? (
                   <>
-                    <Check className="h-3.5 w-3.5 mr-1" />
+                    <Check className="h-4 w-4 mr-1" />
                     <span className="hidden sm:inline">Done</span>
                     <span className="sm:hidden">Done</span>
                   </>
                 ) : (
                   <>
-                    <Settings2 className="h-3.5 w-3.5 mr-1" />
+                    <Settings2 className="h-4 w-4 mr-1" />
                     <span className="hidden sm:inline">Edit</span>
                     <span className="sm:hidden">Edit</span>
                   </>
@@ -5249,7 +5249,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     className="h-7 text-xs shadow-sm"
                     disabled={!editMode}
                   >
-                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    <Plus className="h-4 w-4 mr-1" />
                     <span className="hidden sm:inline">{t('visualDashboard.add')}</span>
                     <span className="sm:hidden">{t('visualDashboard.add')}</span>
                   </Button>
@@ -5296,7 +5296,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 onClick={toggleFullscreen}
                 title={t('visualDashboard.fullscreen')}
               >

@@ -113,7 +113,7 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
       rule: "bg-purple-500/10 text-purple-500 border-purple-500/20",
       alert: "bg-red-500/10 text-red-500 border-red-500/20",
     }
-    return colors[type] || "bg-gray-500/10 text-gray-500 border-gray-500/20"
+    return colors[type] || "bg-muted text-muted-foreground border-border"
   }
 
   // Group results by type

@@ -278,7 +278,7 @@ export function LEDIndicator({
         <div
           className={cn(
             'rounded-full transition-all duration-300',
-            size === 'sm' ? 'h-2.5 w-2.5' : size === 'md' ? 'h-3 w-3' : 'h-4 w-4',
+            size === 'sm' ? 'h-2.5 w-2.5' : size === 'md' ? 'h-4 w-4' : 'h-4 w-4',
             isActive && 'ring-2 ring-white/20'
           )}
           style={{

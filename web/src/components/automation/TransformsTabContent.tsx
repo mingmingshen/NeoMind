@@ -189,7 +189,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
     return Array.from({ length: 5 }, (_, i) => (
       <span
         key={i}
-        className={`h-2 w-2 rounded-full ${i < complexity ? 'bg-blue-500' : 'bg-gray-300'}`}
+        className={`h-2 w-2 rounded-full ${i < complexity ? 'bg-blue-500' : 'bg-muted-foreground/30'}`}
       />
     ))
   }

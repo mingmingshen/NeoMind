@@ -602,7 +602,7 @@ export function ImageHistory({
       )}>
         {title && showTitle && (
           <>
-            <Images className="h-3.5 w-3.5 text-white/90 shrink-0" />
+            <Images className="h-4 w-4 text-white/90 shrink-0" />
             <span className="font-medium text-xs truncate max-w-[120px] text-white drop-shadow-md">{title}</span>
             {canNavigate && <span className="w-px h-3 bg-white/30" />}
           </>

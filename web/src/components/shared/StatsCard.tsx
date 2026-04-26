@@ -86,9 +86,9 @@ export function StatsCard({
               )}
             >
               {trend.isPositive ? (
-                <TrendingUp className="w-3 h-3" />
+                <TrendingUp className="w-4 h-4" />
               ) : (
-                <TrendingDown className="w-3 h-3" />
+                <TrendingDown className="w-4 h-4" />
               )}
               {trend.value}%
             </div>

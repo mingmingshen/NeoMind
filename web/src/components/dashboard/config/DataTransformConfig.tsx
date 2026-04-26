@@ -240,7 +240,7 @@ export function DataTransformConfig({
       {/* Multi-source indicator */}
       {hasMultipleSources && (
         <div className="flex items-center gap-2 px-2.5 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-md">
-          <Layers className="h-3.5 w-3.5 text-blue-500" />
+          <Layers className="h-4 w-4 text-blue-500" />
           <span className="text-xs text-blue-600 font-medium">
             {t('dataTransform.appliesToAll', { count: sources.length })}
           </span>

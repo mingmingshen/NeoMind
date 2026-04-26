@@ -125,7 +125,7 @@ export function ColorPicker({
   // Get icon for theme-aware colors
   const getThemeIcon = (color: string) => {
     if (color === THEME_FOREGROUND) {
-      return <Sun className="h-3 w-3 text-foreground drop-shadow-md mx-auto" />
+      return <Sun className="h-4 w-4 text-foreground drop-shadow-md mx-auto" />
     }
     return null
   }
@@ -186,7 +186,7 @@ export function ColorPicker({
                           </div>
                         )}
                         {isSelected && !themeIcon && (
-                          <Check className="h-3 w-3 text-white drop-shadow-md mx-auto" />
+                          <Check className="h-4 w-4 text-white drop-shadow-md mx-auto" />
                         )}
                         {isSelected && themeIcon && (
                           <div className="absolute inset-0 flex items-center justify-center">
@@ -200,7 +200,7 @@ export function ColorPicker({
                 {/* Legend for theme-aware colors */}
                 <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground px-1">
                   <div className="flex items-center gap-1">
-                    <Sun className="h-3 w-3" />
+                    <Sun className="h-4 w-4" />
                     <span>{t('colorPicker.themeForegroundColor')}</span>
                   </div>
                 </div>
@@ -279,7 +279,7 @@ export function CompactColorPicker({
   // Get icon for theme-aware colors
   const getThemeIcon = (color: string) => {
     if (color === THEME_FOREGROUND) {
-      return <Sun className="h-3 w-3" />
+      return <Sun className="h-4 w-4" />
     }
     return null
   }
@@ -320,7 +320,7 @@ export function CompactColorPicker({
               onClick={() => onChange?.(color)}
               disabled={disabled}
               className={cn(
-                'h-7 w-7 rounded-sm border transition-all hover:scale-110 shrink-0 relative flex items-center justify-center',
+                'h-6 w-6 rounded-sm border transition-all hover:scale-110 shrink-0 relative flex items-center justify-center',
                 isSelected
                   ? 'ring-2 ring-ring ring-offset-2'
                   : 'border-border'

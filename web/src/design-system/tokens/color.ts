@@ -118,9 +118,9 @@ export const colorScaleClasses = {
     border: 'border-blue-500/20',
   },
   gray: {
-    text: 'text-gray-600 dark:text-gray-400',
-    bg: 'bg-gray-500/15',
-    border: 'border-gray-500/20',
+    text: 'text-muted-foreground',
+    bg: 'bg-muted',
+    border: 'border-border',
   },
 } as const
 

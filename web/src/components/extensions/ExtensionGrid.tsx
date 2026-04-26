@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { EmptyState } from "@/components/shared/EmptyState"
 import {
   Package,
   Search,
@@ -127,34 +128,28 @@ export function ExtensionGrid({
 
   if (!extensions || extensions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 px-4">
-        <div className="p-4 rounded-full bg-muted/50 mb-4">
-          <Package className="h-12 w-12 text-muted-foreground" />
-        </div>
-        <h3 className="text-lg font-semibold mb-2">{t("noExtensions", { defaultValue: "No Extensions" })}</h3>
-        <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-          {t("noExtensionsDesc", { defaultValue: "Install extensions to add new capabilities to NeoMind." })}
-        </p>
-      </div>
+      <EmptyState
+        icon={<Package className="h-12 w-12" />}
+        title={t("noExtensions", { defaultValue: "No Extensions" })}
+        description={t("noExtensionsDesc", { defaultValue: "Install extensions to add new capabilities to NeoMind." })}
+      />
     )
   }
 
   // Empty state for filtered results
   if (filteredExtensions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 px-4">
-        <div className="p-4 rounded-full bg-muted/50 mb-4">
-          <Search className="h-12 w-12 text-muted-foreground" />
-        </div>
-        <h3 className="text-lg font-semibold mb-2">{t("noMatchingExtensions", { defaultValue: "No Matching Extensions" })}</h3>
-        <p className="text-sm text-muted-foreground mb-6">
-          {t("tryDifferentFilters", { defaultValue: "Try adjusting your search or filters" })}
-        </p>
-        <Button onClick={clearFilters} variant="outline">
-          <X className="h-4 w-4 mr-2" />
-          {t("clearFilters", { ns: "common" })}
-        </Button>
-      </div>
+      <EmptyState
+        icon={<Search className="h-12 w-12" />}
+        title={t("noMatchingExtensions", { defaultValue: "No Matching Extensions" })}
+        description={t("tryDifferentFilters", { defaultValue: "Try adjusting your search or filters" })}
+        action={{
+          label: t("clearFilters", { ns: "common" }),
+          onClick: clearFilters,
+          variant: 'outline',
+          icon: <X className="h-4 w-4" />,
+        }}
+      />
     )
   }
 

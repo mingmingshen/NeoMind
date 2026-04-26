@@ -64,7 +64,7 @@ function getRoleConfig(t: (key: string) => string) {
 function getStatusConfig(t: (key: string) => string) {
   return {
     Active: { icon: CheckCircle2, label: 'agentStatusCard.status.active', color: 'text-green-600 bg-green-50 border-green-200' },
-    Paused: { icon: XCircle, label: 'agentStatusCard.status.paused', color: 'text-gray-600 bg-gray-50 border-gray-200' },
+    Paused: { icon: XCircle, label: 'agentStatusCard.status.paused', color: 'text-muted-foreground bg-muted border-border' },
     Error: { icon: XCircle, label: 'agentStatusCard.status.error', color: 'text-red-600 bg-red-50 border-red-200' },
     Executing: { icon: Loader2, label: 'agentStatusCard.status.executing', color: 'text-blue-600 bg-blue-50 border-blue-200' },
   }
@@ -185,7 +185,7 @@ export function AgentStatusCard({
             <Bot className="h-5 w-5" />
           </div>
           {isExecuting && (
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full animate-pulse" />
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full animate-pulse" />
           )}
         </div>
 
@@ -205,7 +205,7 @@ export function AgentStatusCard({
         {/* Execution count */}
         {showExecutions && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Activity className="h-3 w-3" />
+            <Activity className="h-4 w-4" />
             <span className="tabular-nums">{agent?.execution_count || 0}</span>
           </div>
         )}
@@ -228,7 +228,7 @@ export function AgentStatusCard({
               <Bot className="h-5.5 w-5.5" />
             </div>
             {isExecuting && (
-              <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-blue-500 rounded-full animate-pulse border-2 border-background" />
+              <div className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-blue-500 rounded-full animate-pulse border-2 border-background" />
             )}
           </div>
 
@@ -263,18 +263,18 @@ export function AgentStatusCard({
       <div className="px-4 pb-3">
         <div className="flex items-center gap-4 text-xs">
           <div className="flex items-center gap-1.5">
-            <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+            <Activity className="h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground">{t('agentStatusCard.executions')}:</span>
             <span className="font-medium tabular-nums">{agent?.execution_count || 0}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
             <span className="text-muted-foreground">{t('agentStatusCard.success')}:</span>
             <span className="font-medium tabular-nums text-green-600">{agent?.success_count || 0}</span>
           </div>
           {agent?.error_count > 0 && (
             <div className="flex items-center gap-1.5">
-              <XCircle className="h-3.5 w-3.5 text-red-500" />
+              <XCircle className="h-4 w-4 text-red-500" />
               <span className="text-muted-foreground">{t('agentStatusCard.failure')}:</span>
               <span className="font-medium tabular-nums text-red-500">{agent?.error_count}</span>
             </div>
@@ -303,7 +303,7 @@ export function AgentStatusCard({
       {isExecuting && currentExecution && (
         <div className="mx-4 mb-3 p-2 bg-blue-50 dark:bg-blue-950/30 rounded-md border border-blue-200 dark:border-blue-800">
           <div className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-400">
-            <Loader2 className="h-3 w-3 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" />
             <span className="font-medium">{t('agentStatusCard.executing')}</span>
             <span className="text-muted-foreground">·</span>
             <span className="text-muted-foreground">#{currentExecution.id?.slice(0, 8)}</span>
@@ -346,7 +346,7 @@ export function AgentStatusCard({
                   : "bg-primary text-primary-foreground hover:bg-primary/90"
               )}
             >
-              <Play className="h-3 w-3" />
+              <Play className="h-4 w-4" />
               {t('agentStatusCard.execute')}
             </button>
           )}

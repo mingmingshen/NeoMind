@@ -374,7 +374,7 @@ function JsonFormField({ field, value, onChange, isReadOnly, id }: JsonFormField
             onClick={formatJson}
             className="h-6 px-2 text-xs"
           >
-            <Code className="mr-1 h-3 w-3" />
+            <Code className="mr-1 h-4 w-4" />
             {t('plugins:formatJson')}
           </Button>
         )}

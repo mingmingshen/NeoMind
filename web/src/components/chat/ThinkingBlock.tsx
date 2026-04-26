@@ -53,7 +53,7 @@ export function ThinkingBlock({
           className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/30 transition-colors"
         >
           <BrainCircuit className={cn(
-            "h-3.5 w-3.5",
+            "h-4 w-4",
             isStreaming ? "text-blue-500 animate-pulse" : "text-muted-foreground"
           )} />
           <span className="text-[13px] font-medium">{t("thinking.title")}</span>
@@ -62,7 +62,7 @@ export function ThinkingBlock({
           )}
           <div className="flex-1" />
           <ChevronDown className={cn(
-            "h-3 w-3 text-muted-foreground transition-transform duration-200",
+            "h-4 w-4 text-muted-foreground transition-transform duration-200",
             isExpanded && "rotate-180"
           )} />
         </button>

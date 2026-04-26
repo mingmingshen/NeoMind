@@ -39,7 +39,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
       <>
         <div className="flex items-start gap-2">
           <div className="w-6 h-6 rounded-md bg-blue-500/20 flex items-center justify-center shrink-0 mt-0.5">
-            <Camera className="h-3 w-3 text-blue-500" />
+            <Camera className="h-4 w-4 text-blue-500" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-center">
@@ -82,7 +82,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
       <>
         <div className="flex items-start gap-2">
           <div className="w-6 h-6 rounded-md bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
-            <Database className="h-3 w-3 text-amber-500" />
+            <Database className="h-4 w-4 text-amber-500" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-center">
@@ -145,7 +145,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
     return (
       <div className="flex items-start gap-2">
         <div className="w-6 h-6 rounded-md bg-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
-          <Bot className="h-3 w-3 text-purple-500" />
+          <Bot className="h-4 w-4 text-purple-500" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-center">
@@ -168,7 +168,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
           <div className="mt-1 rounded-lg px-3 py-2 bg-purple-500/6 border border-purple-500/15 max-w-[320px]">
             {isStreaming ? (
               <div className="flex items-center gap-1.5">
-                <Loader2 className="h-3 w-3 animate-spin text-purple-500" />
+                <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
                 <span className="text-xs text-muted-foreground">Waiting for response...</span>
               </div>
             ) : (
@@ -207,7 +207,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
     return (
       <div className="flex items-start gap-2">
         <div className="w-6 h-6 rounded-md bg-red-500/20 flex items-center justify-center shrink-0 mt-0.5">
-          <AlertCircle className="h-3 w-3 text-red-500" />
+          <AlertCircle className="h-4 w-4 text-red-500" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="rounded-lg px-3 py-2 bg-red-500/10 border border-red-500/20 max-w-[320px]">

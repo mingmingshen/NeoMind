@@ -382,7 +382,7 @@ export function SetupPage() {
         <div className="fixed inset-0">
           <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
           <div className="absolute inset-0" style={{
-            backgroundImage: 'radial-gradient(circle, #80808015 1px, transparent 1px)',
+            backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
             backgroundSize: '32px 32px'
           }} />
           <svg className="absolute inset-0 w-full h-full opacity-[0.03]" xmlns="http://www.w3.org/2000/svg">
@@ -434,7 +434,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-lg">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-4 sm:p-8">
+            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-lg p-4 sm:p-8">
               {/* Welcome Icon */}
               <div className="flex justify-center mb-4 sm:mb-6">
                 <div className="flex size-12 sm:size-16 items-center justify-center rounded-full bg-primary/10 text-primary dark:bg-primary/20">
@@ -487,7 +487,7 @@ export function SetupPage() {
         <div className="fixed inset-0">
           <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
           <div className="absolute inset-0" style={{
-            backgroundImage: 'radial-gradient(circle, #80808015 1px, transparent 1px)',
+            backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
             backgroundSize: '32px 32px'
           }} />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 dark:bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
@@ -534,7 +534,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-6 sm:p-8">
+            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -731,7 +731,7 @@ export function SetupPage() {
         <div className="fixed inset-0">
           <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
           <div className="absolute inset-0" style={{
-            backgroundImage: 'radial-gradient(circle, #80808015 1px, transparent 1px)',
+            backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
             backgroundSize: '32px 32px'
           }} />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 dark:bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
@@ -778,7 +778,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-6 sm:p-8">
+            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -861,7 +861,7 @@ export function SetupPage() {
         <div className="fixed inset-0">
           <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
           <div className="absolute inset-0" style={{
-            backgroundImage: 'radial-gradient(circle, #80808015 1px, transparent 1px)',
+            backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
             backgroundSize: '32px 32px'
           }} />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 dark:bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
@@ -908,7 +908,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-6 sm:p-8">
+            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -1049,7 +1049,7 @@ export function SetupPage() {
         <div className="fixed inset-0">
           <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
           <div className="absolute inset-0" style={{
-            backgroundImage: 'radial-gradient(circle, #80808015 1px, transparent 1px)',
+            backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
             backgroundSize: '32px 32px'
           }} />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-green-500/10 dark:bg-green-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '3s' }} />
@@ -1058,7 +1058,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md text-center">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-6 sm:p-8">
+            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Success Icon */}
               <div className="flex justify-center mb-6">
                 <div className="flex size-16 items-center justify-center rounded-full bg-green-500/10 text-green-500 dark:bg-green-500/20">

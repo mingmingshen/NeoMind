@@ -501,7 +501,7 @@ function VideoPlayer({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-white hover:text-white hover:bg-white/20"
+                className="h-6 w-6 text-white hover:text-white hover:bg-white/20"
                 onClick={togglePlay}
               >
                 {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
@@ -509,7 +509,7 @@ function VideoPlayer({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-white hover:text-white hover:bg-white/20"
+                className="h-6 w-6 text-white hover:text-white hover:bg-white/20"
                 onClick={toggleMute}
               >
                 {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
@@ -687,7 +687,7 @@ export function VideoDisplay({
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={handleRetry}>
-          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          <RefreshCw className="h-4 w-4 mr-1.5" />
           Retry
         </Button>
       </div>
@@ -727,10 +727,10 @@ export function VideoDisplay({
           <Button
             variant="secondary"
             size="icon"
-            className="absolute top-2 right-2 h-7 w-7 bg-background/80 backdrop-blur"
+            className="absolute top-2 right-2 h-6 w-6 bg-background/80 backdrop-blur"
             onClick={() => setIsFullscreen(true)}
           >
-            <Maximize2 className="h-3.5 w-3.5" />
+            <Maximize2 className="h-4 w-4" />
           </Button>
         )}
 

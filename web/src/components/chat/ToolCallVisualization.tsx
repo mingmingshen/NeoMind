@@ -123,7 +123,7 @@ export function ToolProcessBlock({
           {isStreaming ? (
             <Loader2 className="h-2.5 w-2.5 animate-spin" />
           ) : allComplete ? (
-            <CheckCircle2 className="h-3 w-3" />
+            <CheckCircle2 className="h-4 w-4" />
           ) : (
             <Wrench className="h-2.5 w-2.5" />
           )}
@@ -136,7 +136,7 @@ export function ToolProcessBlock({
         </span>
         <div className="flex-1" />
         <ChevronDown className={cn(
-          "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
+          "h-4 w-4 text-muted-foreground transition-transform duration-200",
           isExpanded && "rotate-180"
         )} />
       </button>
@@ -187,7 +187,7 @@ function RoundContent({ content }: { content: string }) {
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/30 transition-colors"
       >
-        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
         {!isExpanded && (
           <span className="text-[13px] text-muted-foreground truncate">
             {content.slice(0, 100)}{content.length > 100 && "..."}
@@ -198,7 +198,7 @@ function RoundContent({ content }: { content: string }) {
         )}
         <div className="flex-1" />
         <ChevronDown className={cn(
-          "h-3 w-3 text-muted-foreground transition-transform",
+          "h-4 w-4 text-muted-foreground transition-transform",
           isExpanded && "rotate-180"
         )} />
       </button>
@@ -243,7 +243,7 @@ function ToolCallItem({
     <div className="border-t border-border/15 first:border-t-0">
       <div className="flex items-center gap-2.5 px-3 py-1.5">
         <div className={cn(
-          "h-3.5 w-3.5 rounded flex items-center justify-center shrink-0",
+          "h-4 w-4 rounded flex items-center justify-center shrink-0",
           status === "completed" && "text-emerald-600",
           status === "running" && "text-amber-600",
           status === "pending" && "text-muted-foreground"
@@ -268,7 +268,7 @@ function ToolCallItem({
         <div className="flex-1" />
         {hasDetails && (
           <button onClick={() => setIsExpanded(!isExpanded)} className="p-0.5 rounded hover:bg-muted/50 text-muted-foreground">
-            <ChevronDown className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-180")} />
+            <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
           </button>
         )}
       </div>
@@ -277,7 +277,7 @@ function ToolCallItem({
           {hasArguments && (
             <div className="rounded-lg bg-muted/50 p-1.5">
               <div className="text-[11px] text-muted-foreground mb-0.5 flex items-center gap-1">
-                <Code className="h-3 w-3" />{t("toolCall.arguments")}
+                <Code className="h-4 w-4" />{t("toolCall.arguments")}
               </div>
               <pre className="text-[13px] font-mono text-muted-foreground whitespace-pre-wrap break-words">
                 {formatJson(toolCall.arguments)}
@@ -287,7 +287,7 @@ function ToolCallItem({
           {hasResult && (
             <div className="rounded-lg bg-muted/50 p-1.5">
               <div className="text-[11px] text-muted-foreground mb-0.5 flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3" />{t("toolCall.result")}
+                <CheckCircle2 className="h-4 w-4" />{t("toolCall.result")}
               </div>
               <pre className="text-[13px] font-mono text-muted-foreground whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                 {formatJson(toolCall.result)}

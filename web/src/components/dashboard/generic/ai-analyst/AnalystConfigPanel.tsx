@@ -66,7 +66,7 @@ export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSou
           {/* Model Selection */}
           <div>
             <label className="text-xs text-muted-foreground flex items-center gap-1">
-              <Cpu className="h-3 w-3" />
+              <Cpu className="h-4 w-4" />
               Analysis Model
             </label>
             {loading ? (
@@ -92,7 +92,7 @@ export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSou
           {/* System Prompt */}
           <div>
             <label className="text-xs text-muted-foreground flex items-center gap-1">
-              <MessageSquare className="h-3 w-3" />
+              <MessageSquare className="h-4 w-4" />
               System Prompt
             </label>
             <Textarea
@@ -106,7 +106,7 @@ export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSou
           {/* Context Window */}
           <div>
             <label className="text-xs text-muted-foreground flex items-center gap-1">
-              <Gauge className="h-3 w-3" />
+              <Gauge className="h-4 w-4" />
               Context Window
             </label>
             <div className="mt-1 flex items-center gap-3">

@@ -70,7 +70,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
       case "active":
         return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
       case "pending":
-        return <Circle className="h-4 w-4 text-gray-300" />
+        return <Circle className="h-4 w-4 text-muted-foreground/50" />
     }
   }
 
@@ -149,7 +149,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
                 )}
 
                 {status === "active" && step.prompt && (
-                  <div className="mt-2 p-2 rounded bg-white border border-blue-200">
+                  <div className="mt-2 p-2 rounded bg-background border border-blue-200">
                     <p className="text-xs text-blue-700">{step.prompt}</p>
                   </div>
                 )}
@@ -160,7 +160,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
                 "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
                 status === "completed" && "bg-green-500 text-white",
                 status === "active" && "bg-blue-500 text-white",
-                status === "pending" && "bg-gray-200 text-gray-600"
+                status === "pending" && "bg-muted text-muted-foreground"
               )}>
                 {index + 1}
               </div>
@@ -221,7 +221,7 @@ export function CompactTaskProgress({ task, className }: TaskProgressProps) {
                 "w-2 h-2 rounded-full transition-colors",
                 isCompleted && "bg-green-500",
                 isCurrent && "bg-blue-500 animate-pulse",
-                !isCompleted && !isCurrent && "bg-gray-300"
+                !isCompleted && !isCurrent && "bg-muted-foreground/30"
               )}
             />
           )
@@ -234,7 +234,7 @@ export function CompactTaskProgress({ task, className }: TaskProgressProps) {
       </span>
 
       {/* Progress bar */}
-      <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
         <div
           className={cn(
             "h-full transition-all duration-300",

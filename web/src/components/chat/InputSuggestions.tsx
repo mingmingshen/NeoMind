@@ -250,7 +250,7 @@ export function InputSuggestions({ input, onSelect, visible }: InputSuggestionsP
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {timeGreeting && (
                 <>
-                  <Clock className="h-3 w-3" />
+                  <Clock className="h-4 w-4" />
                   <span>{timeGreeting}</span>
                 </>
               )}
@@ -269,7 +269,7 @@ export function InputSuggestions({ input, onSelect, visible }: InputSuggestionsP
             {input.trim() && (
               <div className="px-3 py-1.5 border-b border-[var(--border)] bg-[var(--muted)]/30">
                 <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Badge className="h-3 w-3" />
+                  <Badge className="h-4 w-4" />
                   {t("inputSuggestions.recommended")}
                 </p>
               </div>

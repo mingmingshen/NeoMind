@@ -311,9 +311,9 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                 )}
               >
                 {isConnected ? (
-                  <Wifi className="h-3.5 w-3.5" />
+                  <Wifi className="h-4 w-4" />
                 ) : (
-                  <WifiOff className="h-3.5 w-3.5" />
+                  <WifiOff className="h-4 w-4" />
                 )}
                 <span className="hidden sm:inline">
                   {isConnected ? t('connection.connected') : t('connection.disconnected')}
@@ -425,7 +425,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                               onClick={() => handleAcknowledgeAlert(alert.id)}
                               title={t('alerts.acknowledge')}
                             >
-                              <Check className="h-3 w-3" />
+                              <Check className="h-4 w-4" />
                             </Button>
                           )}
                         </div>

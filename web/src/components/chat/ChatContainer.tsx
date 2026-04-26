@@ -722,13 +722,13 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                       size="sm"
                       className="h-7 px-2 rounded-lg text-muted-foreground hover:text-foreground text-xs gap-1 max-w-[140px]"
                     >
-                      <Zap className="h-3 w-3 shrink-0" />
+                      <Zap className="h-4 w-4 shrink-0" />
                       <span className="truncate">
                         {llmBackends.find(b => b.id === activeBackendId)?.name ||
                          llmBackends.find(b => b.id === activeBackendId)?.model ||
                          t("input.selectModel")}
                       </span>
-                      <ChevronDown className="h-3 w-3 shrink-0" />
+                      <ChevronDown className="h-4 w-4 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-56">
@@ -767,7 +767,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                className="h-6 w-6 text-muted-foreground hover:text-foreground"
               >
                 <Paperclip className="h-4 w-4" />
               </Button>
@@ -786,7 +786,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                           : "text-muted-foreground hover:text-foreground"
                       )}
                     >
-                      <BookOpen className="h-3 w-3 shrink-0" />
+                      <BookOpen className="h-4 w-4 shrink-0" />
                       <span className="truncate">
                         {selectedSkills.length > 0
                           ? t("input.activeSkills", `${selectedSkills.length}`)
@@ -814,7 +814,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                         )}
                       >
                         <div className={cn(
-                          "w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0",
+                          "w-4 h-4 rounded border flex items-center justify-center shrink-0",
                           selectedSkills.includes(skill.id)
                             ? "bg-primary border-primary text-primary-foreground"
                             : "border-muted-foreground/40"
@@ -845,7 +845,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                className="h-6 w-6 text-muted-foreground hover:text-foreground"
               >
                 <MoreVertical className="h-4 w-4" />
               </Button>
@@ -862,7 +862,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                       onClick={() => toggleSkill(skillId)}
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
                     >
-                      <BookOpen className="h-3 w-3" />
+                      <BookOpen className="h-4 w-4" />
                       <span>{skill?.name || skillId}</span>
                       <X className="h-2.5 w-2.5 opacity-60" />
                     </button>

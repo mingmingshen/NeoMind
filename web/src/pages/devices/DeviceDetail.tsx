@@ -285,14 +285,14 @@ export function DeviceDetail({
             </Button>
             <div className="flex items-center gap-3">
               <div className={cn(
-                "w-12 h-12 rounded-2xl flex items-center justify-center",
+                "w-12 h-12 rounded-xl flex items-center justify-center",
                 device.status === 'online'
                   ? "bg-gradient-to-br from-green-500/20 to-emerald-500/10"
                   : "bg-gradient-to-br from-gray-500/20 to-gray-500/10"
               )}>
                 <Zap className={cn(
                   "h-6 w-6",
-                  device.status === 'online' ? "text-green-600 dark:text-green-400" : "text-gray-500"
+                  device.status === 'online' ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
                 )} />
               </div>
               <div>
@@ -308,11 +308,11 @@ export function DeviceDetail({
               "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm",
               device.status === 'online'
                 ? "bg-green-500/10 text-green-700 dark:text-green-400"
-                : "bg-gray-500/10 text-gray-600 dark:text-gray-400"
+                : "bg-muted text-muted-foreground"
             )}>
               <span className={cn(
                 "h-2 w-2 rounded-full animate-pulse",
-                device.status === 'online' ? "bg-green-500" : "bg-gray-400"
+                device.status === 'online' ? "bg-green-500" : "bg-muted-foreground"
               )} />
               {device.status === 'online' ? t('devices:status.online') : t('devices:status.offline')}
             </div>
@@ -327,7 +327,7 @@ export function DeviceDetail({
           <div className="max-w-6xl mx-auto space-y-5">
 
             {/* Device Info Card */}
-            <div className="bg-gradient-to-br from-card to-muted/30 rounded-3xl p-6 shadow-sm">
+            <div className="bg-gradient-to-br from-card to-muted/30 rounded-lg p-6 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <Info className="h-5 w-5 text-muted-foreground" />
                 <h2 className="font-semibold">{t('devices:detailPage.deviceInfo')}</h2>
@@ -360,7 +360,7 @@ export function DeviceDetail({
 
             {/* Raw Data Section - for Simple Mode devices */}
             {deviceType?.mode === 'simple' && (
-              <div className="bg-gradient-to-br from-card to-muted/30 rounded-3xl p-6 shadow-sm">
+              <div className="bg-gradient-to-br from-card to-muted/30 rounded-lg p-6 shadow-sm">
                 <div className="flex items-center gap-2 mb-4">
                   <Database className="h-5 w-5 text-muted-foreground" />
                   <h2 className="font-semibold">{t('devices:detailPage.rawDataTitle')}</h2>
@@ -417,7 +417,7 @@ export function DeviceDetail({
                         key={metricDef.name}
                         onClick={() => handleMetricCardClick(metricDef.name)}
                         className={cn(
-                          "group rounded-2xl p-5 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border",
+                          "group rounded-lg p-5 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border",
                           isVirtual
                             ? "bg-gradient-to-br from-purple-500/10 to-blue-500/5 border-purple-500/20 hover:border-purple-500/40"
                             : "bg-gradient-to-br from-primary/5 to-primary/0 border-primary/10 hover:border-primary/30"
@@ -470,7 +470,7 @@ export function DeviceDetail({
                     <button
                       key={cmd.name}
                       onClick={() => handleCommandClick(cmd)}
-                      className="group bg-gradient-to-br from-card to-muted/30 rounded-2xl p-5 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border border-border/50 hover:border-primary/30"
+                      className="group bg-gradient-to-br from-card to-muted/30 rounded-lg p-5 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border border-border/50 hover:border-primary/30"
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1 min-w-0">
@@ -736,7 +736,7 @@ export function DeviceDetail({
                             : e.target.value
                           setDialogParams(p => ({ ...p, [param.name]: parsed }))
                         }}
-                        className="rounded-xl"
+                        className="rounded-md"
                       />
                     )}
                   </div>

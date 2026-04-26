@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { Badge } from "@/components/ui/badge"
 import { ResponsiveTable } from "@/components/shared"
-import { Eye, Cpu, Globe, Badge as BadgeIcon, Clock, Activity, Check, ChevronDown, X } from "lucide-react"
+import { Eye, Cpu, Globe, Badge as BadgeIcon, Clock, Activity, Check, ChevronDown, X, Loader2, Search as SearchIcon, Hourglass, CheckCircle2, XCircle, AlertTriangle } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -384,20 +384,21 @@ export function PendingDevicesList({
 
   // Get status badge
   const getStatusBadge = (status: string) => {
-    const statusMap: Record<string, { color: string; label: string }> = {
-      collecting: { color: "bg-blue-500/20 text-blue-700", label: t('devices:pending.status.collecting') },
-      analyzing: { color: "bg-purple-500/20 text-purple-700", label: t('devices:pending.status.analyzing') },
-      waiting_processing: { color: "bg-yellow-500/20 text-yellow-700", label: t('devices:pending.status.waitingProcessing') },
-      registered: { color: "bg-green-500/20 text-green-700", label: t('devices:pending.status.registered') },
-      rejected: { color: "bg-red-500/20 text-red-700", label: t('devices:pending.status.rejected') },
-      failed: { color: "bg-red-500/20 text-red-700", label: t('devices:pending.status.failed') },
+    const statusMap: Record<string, { color: string; label: string; icon: React.ReactNode }> = {
+      collecting: { color: "bg-blue-500/20 text-blue-700", label: t('devices:pending.status.collecting'), icon: <Loader2 className="h-4 w-4" /> },
+      analyzing: { color: "bg-purple-500/20 text-purple-700", label: t('devices:pending.status.analyzing'), icon: <SearchIcon className="h-4 w-4" /> },
+      waiting_processing: { color: "bg-yellow-500/20 text-yellow-700", label: t('devices:pending.status.waitingProcessing'), icon: <Hourglass className="h-4 w-4" /> },
+      registered: { color: "bg-green-500/20 text-green-700", label: t('devices:pending.status.registered'), icon: <CheckCircle2 className="h-4 w-4" /> },
+      rejected: { color: "bg-red-500/20 text-red-700", label: t('devices:pending.status.rejected'), icon: <XCircle className="h-4 w-4" /> },
+      failed: { color: "bg-red-500/20 text-red-700", label: t('devices:pending.status.failed'), icon: <AlertTriangle className="h-4 w-4" /> },
     }
 
     const key = normalizeStatus(status)
-    const info = statusMap[key] || { color: "bg-gray-500/20 text-gray-700", label: status }
+    const info = statusMap[key] || { color: "bg-muted text-foreground", label: status, icon: <Activity className="h-4 w-4" /> }
 
     return (
-      <Badge className={cn("font-normal", info.color)}>
+      <Badge className={cn("font-normal gap-1", info.color)}>
+        {info.icon}
         {info.label}
       </Badge>
     )
@@ -777,7 +778,7 @@ export function PendingDevicesList({
                             e.preventDefault()
                             setSelectedSampleIndex(index)
                           }}
-                          className={`w-7 h-7 text-xs rounded ${
+                          className={`w-6 h-6 text-xs rounded ${
                             selectedSampleIndex === index
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-background hover:bg-muted'

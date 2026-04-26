@@ -322,7 +322,7 @@ export function DataSourceSidebar({
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="h-6 w-6 shrink-0"
           onClick={onToggle}
         >
           {open ? (
@@ -339,7 +339,7 @@ export function DataSourceSidebar({
           {/* Search */}
           <div className="p-2 border-b">
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder={t('dataSource.searchPlaceholder')}
                 value={searchQuery}
@@ -364,7 +364,7 @@ export function DataSourceSidebar({
                       : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
                   )}
                 >
-                  <Icon className="h-3 w-3" />
+                  <Icon className="h-4 w-4" />
                   <span>{cat.name}</span>
                 </button>
               )
@@ -387,7 +387,7 @@ export function DataSourceSidebar({
                       >
                         <span className="text-xs font-medium truncate">{device.name || device.id}</span>
                         <ChevronRight className={cn(
-                          'h-3 w-3 transition-transform',
+                          'h-4 w-4 transition-transform',
                           isExpanded && 'rotate-90'
                         )} />
                       </button>
@@ -405,7 +405,7 @@ export function DataSourceSidebar({
                             )}
                           >
                             <span>{metric.display_name || metric.name}</span>
-                            {isSelected && <Check className="h-3 w-3 text-primary" />}
+                            {isSelected && <Check className="h-4 w-4 text-primary" />}
                           </button>
                         )
                       })}
@@ -429,7 +429,7 @@ export function DataSourceSidebar({
                       >
                         <span className="text-xs font-medium truncate">{device.name || device.id}</span>
                         <ChevronRight className={cn(
-                          'h-3 w-3 transition-transform',
+                          'h-4 w-4 transition-transform',
                           isExpanded && 'rotate-90'
                         )} />
                       </button>
@@ -447,7 +447,7 @@ export function DataSourceSidebar({
                             )}
                           >
                             <span>{command.display_name || command.name}</span>
-                            {isSelected && <Check className="h-3 w-3 text-primary" />}
+                            {isSelected && <Check className="h-4 w-4 text-primary" />}
                           </button>
                         )
                       })}
@@ -470,7 +470,7 @@ export function DataSourceSidebar({
                       >
                         <span className="text-xs font-medium truncate">{device.name || device.id}</span>
                         <ChevronRight className={cn(
-                          'h-3 w-3 transition-transform',
+                          'h-4 w-4 transition-transform',
                           isExpanded && 'rotate-90'
                         )} />
                       </button>
@@ -488,7 +488,7 @@ export function DataSourceSidebar({
                             )}
                           >
                             <span>{prop.name}</span>
-                            {isSelected && <Check className="h-3 w-3 text-primary" />}
+                            {isSelected && <Check className="h-4 w-4 text-primary" />}
                           </button>
                         )
                       })}

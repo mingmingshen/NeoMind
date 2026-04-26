@@ -60,7 +60,7 @@ const LLM_PROVIDER_CONFIG: Record<string, {
   },
   xai: {
     icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400',
+    iconBg: 'bg-muted text-foreground',
   },
   qwen: {
     icon: <Server className="h-6 w-6" />,

@@ -28,7 +28,7 @@ interface RulesListProps {
 const ACTION_CONFIG: Record<string, { icon: typeof Zap; label: string; color: string }> = {
   Execute: { icon: Zap, label: 'automation:ruleBuilder.actionType.execute', color: 'text-yellow-700 bg-yellow-50 border-yellow-200 dark:text-yellow-400 dark:bg-yellow-950/30 dark:border-yellow-800' },
   Notify: { icon: Bell, label: 'automation:ruleBuilder.actionType.notify', color: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950/30 dark:border-blue-800' },
-  Log: { icon: FileText, label: 'automation:ruleBuilder.actionType.log', color: 'text-gray-700 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-800 dark:border-gray-700' },
+  Log: { icon: FileText, label: 'automation:ruleBuilder.actionType.log', color: 'text-foreground bg-muted border-border' },
   Set: { icon: FlaskConical, label: 'automation:ruleBuilder.actionType.set', color: 'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-950/30 dark:border-purple-800' },
   Delay: { icon: Timer, label: 'automation:ruleBuilder.actionType.delay', color: 'text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-950/30 dark:border-orange-800' },
   CreateAlert: { icon: AlertTriangle, label: 'automation:ruleBuilder.actionType.createAlert', color: 'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/30 dark:border-red-800' },
@@ -272,7 +272,7 @@ export function RulesList({
                   {forClause && (
                     <div className="flex items-center gap-1.5">
                       <Badge variant="outline" className="text-xs gap-1 px-2 py-0 text-blue-600 border-blue-200 dark:border-blue-800">
-                        <Timer className="h-3 w-3" />
+                        <Timer className="h-4 w-4" />
                         {forClause.duration}{forClause.unit}
                       </Badge>
                     </div>
@@ -305,7 +305,7 @@ export function RulesList({
                         variant="outline"
                         className={cn("text-xs gap-1", config.color)}
                       >
-                        <Icon className="h-3 w-3" />
+                        <Icon className="h-4 w-4" />
                         {t(config.label)}
                       </Badge>
                     )
@@ -328,13 +328,13 @@ export function RulesList({
               <div className="flex items-center justify-center">
                 {!hasTriggered ? (
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="h-3.5 w-3.5" />
+                    <Clock className="h-4 w-4" />
                     <span>{t('automation:never', 'Never')}</span>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-0.5">
                     <div className="flex items-center gap-1.5 text-xs">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
                       <span>{formatTimestamp(rule.last_triggered)}</span>
                     </div>
                     {triggerCount > 1 && (
@@ -360,9 +360,9 @@ export function RulesList({
                   "text-xs gap-1 hidden sm:flex",
                   rule.enabled
                     ? "text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800"
-                    : "text-gray-700 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-800 dark:border-gray-700"
+                    : "text-foreground bg-muted border-border"
                 )}>
-                  <CheckCircle2 className="h-3 w-3" />
+                  <CheckCircle2 className="h-4 w-4" />
                   {rule.enabled ? t('automation:statusEnabled') : t('automation:statusDisabled')}
                 </Badge>
               </div>

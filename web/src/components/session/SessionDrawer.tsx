@@ -97,7 +97,7 @@ function SessionItem({
               "flex items-center gap-1 text-xs flex-shrink-0",
               isActive ? "text-foreground/70" : "text-muted-foreground"
             )}>
-              <Clock className="h-3 w-3" />
+              <Clock className="h-4 w-4" />
               {session.updatedAt ? formatTimestamp(session.updatedAt / 1000, false) : '-'}
             </span>
           </div>
@@ -125,7 +125,7 @@ function SessionItem({
         )}
         title={t('deleteSession')}
       >
-        <Trash2 className="h-3.5 w-3.5" />
+        <Trash2 className="h-4 w-4" />
       </button>
     </button>
   )

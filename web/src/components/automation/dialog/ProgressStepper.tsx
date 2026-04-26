@@ -46,7 +46,7 @@ function StepDot({
 }) {
   const sizeClasses = size === 'large'
     ? 'w-9 h-9 text-sm'
-    : 'w-7 h-7 text-xs'
+    : 'w-6 h-6 text-xs'
 
   return (
     <div
@@ -62,7 +62,7 @@ function StepDot({
       )}
     >
       {status === 'completed' ? (
-        <Check className={size === 'large' ? 'h-4.5 w-4.5' : 'h-3.5 w-3.5'} />
+        <Check className={size === 'large' ? 'h-4.5 w-4.5' : 'h-4 w-4'} />
       ) : icon ? (
         icon
       ) : null}

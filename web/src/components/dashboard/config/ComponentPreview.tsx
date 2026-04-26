@@ -218,7 +218,7 @@ export const ComponentPreview = memo(function ComponentPreview({
             <Eye className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">{t('componentPreview.title')}</span>
             {(loading || isTransitioning) && (
-              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/50" />
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/50" />
             )}
           </div>
         </div>

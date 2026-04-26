@@ -160,7 +160,7 @@ export function DeviceList({
             case 'adapter':
               return (
                 <div className="flex items-center gap-2">
-                  <AdapterIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <AdapterIcon className="h-4 w-4 text-muted-foreground" />
                   <Badge variant="outline" className="text-xs">
                     {device.adapter_type || 'mqtt'}
                   </Badge>

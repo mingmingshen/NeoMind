@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyStateInline, Pagination } from "@/components/shared"
 import { Bot, Edit, Play, Trash2, MoreVertical, Clock, Activity, Zap, CheckCircle2, XCircle, Loader2, History, Bell, Brain } from "lucide-react"
 import { useTranslation } from "react-i18next"
@@ -44,7 +45,7 @@ interface AgentsListProps {
 // Status configuration
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof CheckCircle2; color: string }> = {
   Active: { label: 'agents:status.active', icon: CheckCircle2, color: 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800' },
-  Paused: { label: 'agents:status.paused', icon: XCircle, color: 'text-gray-700 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-800 dark:border-gray-700' },
+  Paused: { label: 'agents:status.paused', icon: XCircle, color: 'text-muted-foreground bg-muted border-border dark:text-muted-foreground dark:bg-muted dark:border-border' },
   Error: { label: 'agents:status.error', icon: XCircle, color: 'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/30 dark:border-red-800' },
   Executing: { label: 'agents:status.executing', icon: Loader2, color: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950/30 dark:border-blue-800' },
 }
@@ -116,7 +117,23 @@ export function AgentsList({
           </TableHeader>
           <TableBody>
             {loading ? (
-              <EmptyStateInline title={t('common:loading')} colSpan={6} />
+              <>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="text-center"><Skeleton className="h-4 w-4 mx-auto" /></TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Skeleton className="h-9 w-9 rounded-lg" />
+                        <Skeleton className="h-4 w-32" />
+                      </div>
+                    </TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16 mx-auto" /></TableCell>
+                    <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                  </TableRow>
+                ))}
+              </>
             ) : agents.length === 0 ? (
               <EmptyStateInline title={t('agents:noAgents')} colSpan={6} />
             ) : (
@@ -155,16 +172,16 @@ export function AgentsList({
                     <TableCell>
                       <div className="flex items-center gap-4 text-xs">
                         <div className="flex items-center gap-1.5">
-                          <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                          <Activity className="h-4 w-4 text-muted-foreground" />
                           <span className="font-medium">{agent.execution_count}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
                           <span className="font-medium text-green-600">{agent.success_count}</span>
                         </div>
                         {agent.error_count > 0 && (
                           <div className="flex items-center gap-1.5">
-                            <XCircle className="h-3.5 w-3.5 text-red-500" />
+                            <XCircle className="h-4 w-4 text-red-500" />
                             <span className="font-medium text-red-500">{agent.error_count}</span>
                           </div>
                         )}
@@ -184,7 +201,7 @@ export function AgentsList({
                           className="scale-90"
                         />
                         <Badge variant="outline" className={cn("text-xs gap-1 hidden sm:flex", statusConfig.color)}>
-                          <StatusIcon className={cn("h-3 w-3", agent.status === 'Executing' && "animate-spin")} />
+                          <StatusIcon className={cn("h-4 w-4", agent.status === 'Executing' && "animate-spin")} />
                           {t(statusConfig.label)}
                         </Badge>
                       </div>

@@ -244,11 +244,11 @@ export function getStatusColorClass(
     success: 'text-green-500',
     completed: 'text-green-500',
 
-    offline: 'text-gray-400',
-    inactive: 'text-gray-400',
-    disabled: 'text-gray-400',
-    unknown: 'text-gray-400',
-    idle: 'text-gray-400',
+    offline: 'text-muted-foreground',
+    inactive: 'text-muted-foreground',
+    disabled: 'text-muted-foreground',
+    unknown: 'text-muted-foreground',
+    idle: 'text-muted-foreground',
 
     error: 'text-red-500',
     failed: 'text-red-500',
@@ -264,7 +264,7 @@ export function getStatusColorClass(
     busy: 'text-blue-500',
   }
 
-  return statusColors[statusLower] || 'text-gray-400'
+  return statusColors[statusLower] || 'text-muted-foreground'
 }
 
 /**
@@ -278,8 +278,8 @@ export function getStatusBgClass(status: string): string {
     active: 'bg-green-500/15',
     success: 'bg-green-500/15',
 
-    offline: 'bg-gray-400/15',
-    idle: 'bg-gray-400/15',
+    offline: 'bg-muted',
+    idle: 'bg-muted',
 
     error: 'bg-red-500/15',
     failed: 'bg-red-500/15',
@@ -292,7 +292,7 @@ export function getStatusBgClass(status: string): string {
     loading: 'bg-blue-500/15',
   }
 
-  return bgColors[statusLower] || 'bg-gray-400/15'
+  return bgColors[statusLower] || 'bg-muted'
 }
 
 // ============================================================================

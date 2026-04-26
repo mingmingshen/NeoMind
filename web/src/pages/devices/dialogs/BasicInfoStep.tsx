@@ -90,7 +90,7 @@ export function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
         />
         {errors.name && (
           <p className="text-xs text-destructive flex items-center gap-1">
-            <AlertCircle className="h-3 w-3" />
+            <AlertCircle className="h-4 w-4" />
             {errors.name}
           </p>
         )}
@@ -113,7 +113,7 @@ export function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
         </p>
         {errors.device_type && (
           <p className="text-xs text-destructive flex items-center gap-1">
-            <AlertCircle className="h-3 w-3" />
+            <AlertCircle className="h-4 w-4" />
             {errors.device_type}
           </p>
         )}

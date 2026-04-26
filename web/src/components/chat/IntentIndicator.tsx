@@ -95,7 +95,7 @@ function getStrategyConfig(strategy: ProcessingStrategy, t: (key: string) => str
     standard: { key: "intent.path.standard", color: "text-blue-600 bg-blue-50" },
     quality: { key: "intent.path.quality", color: "text-purple-600 bg-purple-50" },
     multi_turn: { key: "intent.path.multiTurn", color: "text-amber-600 bg-amber-50" },
-    fallback: { key: "intent.path.fallback", color: "text-gray-600 bg-gray-50" }
+    fallback: { key: "intent.path.fallback", color: "text-muted-foreground bg-muted" }
   }
   const config = configs[strategy]
   return {
@@ -112,7 +112,7 @@ function getEntityConfig(entityType: EntityType, t: (key: string) => string) {
     value: { key: "intent.entity.value", icon: "🔢", color: "bg-purple-100 text-purple-700" },
     time_range: { key: "intent.entity.time", icon: "⏰", color: "bg-orange-100 text-orange-700" },
     action: { key: "intent.entity.action", icon: "▶️", color: "bg-red-100 text-red-700" },
-    unknown: { key: "intent.entity.unknown", icon: "❓", color: "bg-gray-100 text-gray-700" }
+    unknown: { key: "intent.entity.unknown", icon: "❓", color: "bg-muted text-muted-foreground" }
   }
   const config = configs[entityType]
   return {
@@ -151,7 +151,7 @@ export function IntentIndicator({
           title={config.description}
           className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted border border-border/50 cursor-help"
         >
-          <Icon className={cn("h-3.5 w-3.5", config.color)} />
+          <Icon className={cn("h-4 w-4", config.color)} />
           <span className="text-sm font-medium">{config.label}</span>
           {isStreaming && (
             <span className="flex h-2 w-2">
@@ -275,7 +275,7 @@ export function IntentFlow({ steps, currentStep = 0 }: IntentFlowProps) {
           if (step.status === "completed") return "text-green-500"
           if (isCurrent) return "text-blue-500"
           if (isCompleted) return "text-green-500"
-          return "text-gray-400"
+          return "text-muted-foreground"
         }
 
         return (
@@ -289,17 +289,17 @@ export function IntentFlow({ steps, currentStep = 0 }: IntentFlowProps) {
               )}
             >
               {step.status === "completed" || isCompleted ? (
-                <CheckCircle2 className="h-3.5 w-3.5" />
+                <CheckCircle2 className="h-4 w-4" />
               ) : step.status === "error" ? (
-                <AlertTriangle className="h-3.5 w-3.5" />
+                <AlertTriangle className="h-4 w-4" />
               ) : (
-                <config.icon className="h-3.5 w-3.5" />
+                <config.icon className="h-4 w-4" />
               )}
             </div>
             {index < steps.length - 1 && (
               <div className={cn(
                 "w-8 h-0.5 mx-0.5 transition-colors",
-                index < currentStep ? "bg-green-300" : "bg-gray-200"
+                index < currentStep ? "bg-green-300" : "bg-muted"
               )} />
             )}
           </div>

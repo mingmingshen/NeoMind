@@ -54,7 +54,7 @@ export function ConnectionStatus({ state, className, onManualReconnect }: Connec
             </svg>
           ),
           text: t('connection.disconnected'),
-          bgClass: 'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:border-gray-700'
+          bgClass: 'bg-muted text-foreground border-border'
         }
     }
   }
@@ -85,7 +85,7 @@ export function ConnectionStatus({ state, className, onManualReconnect }: Connec
           className="h-6 px-2 text-xs gap-1 hover:bg-inherit"
           onClick={onManualReconnect}
         >
-          <RotateCcw className="w-3 h-3" />
+          <RotateCcw className="w-4 h-4" />
           重新连接
         </Button>
       )}

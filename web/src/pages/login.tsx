@@ -253,7 +253,7 @@ export function LoginPage() {
 
         {/* Dot grid pattern - representing distributed nodes/edge devices */}
         <div className="absolute inset-0" style={{
-          backgroundImage: 'radial-gradient(circle, #80808015 1px, transparent 1px)',
+          backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
           backgroundSize: '32px 32px'
         }} />
 
@@ -298,7 +298,7 @@ export function LoginPage() {
           {/* Right - Language Switcher */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-1 h-9 px-2 sm:px-3">
+              <Button variant="ghost" size="sm" className="gap-1 px-2 sm:px-3">
                 <Languages className="h-4 w-4" />
                 <span>{languages.find(l => l.code === i18n.language)?.name || 'Language'}</span>
               </Button>
@@ -329,7 +329,7 @@ export function LoginPage() {
       >
         <div className="w-full max-w-md">
           {/* Login Card */}
-          <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-6 sm:p-8">
+          <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-lg p-6 sm:p-8">
             {/* Login Title */}
             <h2 className="text-2xl sm:text-3xl font-semibold mb-4 sm:mb-6 text-center">{t('auth:login')}</h2>
 
@@ -375,7 +375,7 @@ export function LoginPage() {
                     onChange={(e) => setRememberMe(e.target.checked)}
                     className="peer appearance-none h-4 w-4 rounded border border-border bg-background/70 dark:bg-background/30 transition-all cursor-pointer checked:bg-primary checked:border-primary dark:checked:bg-foreground/90 dark:checked:border-foreground/90"
                   />
-                  <svg className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 text-white dark:text-background pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                  <svg className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-white dark:text-background pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </div>

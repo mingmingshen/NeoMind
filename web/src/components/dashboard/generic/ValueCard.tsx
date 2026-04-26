@@ -391,8 +391,8 @@ export function ValueCard({
             trendDirection === 'down' && indicatorColors.error.text,
             trendDirection === 'neutral' && indicatorColors.neutral.text
           )}>
-            {trendDirection === 'up' && <TrendingUp className={cn('h-3 w-3')} />}
-            {trendDirection === 'down' && <TrendingDown className={cn('h-3 w-3')} />}
+            {trendDirection === 'up' && <TrendingUp className={cn('h-4 w-4')} />}
+            {trendDirection === 'down' && <TrendingDown className={cn('h-4 w-4')} />}
             <span className={cn(indicatorFontWeight.meta, 'text-xs', sizeConfig.labelText)}>
               {Math.abs(trendValue ?? 0)}%
             </span>
@@ -445,9 +445,9 @@ export function ValueCard({
             trendDirection === 'down' && indicatorColors.error.bg + ' ' + indicatorColors.error.text,
             trendDirection === 'neutral' && indicatorColors.neutral.bg + ' ' + indicatorColors.neutral.text
           )}>
-            {trendDirection === 'up' && <ArrowUpRight className="h-3 w-3" />}
-            {trendDirection === 'down' && <ArrowDownRight className="h-3 w-3" />}
-            {trendDirection === 'neutral' && <Minus className="h-3 w-3" />}
+            {trendDirection === 'up' && <ArrowUpRight className="h-4 w-4" />}
+            {trendDirection === 'down' && <ArrowDownRight className="h-4 w-4" />}
+            {trendDirection === 'neutral' && <Minus className="h-4 w-4" />}
             <span className={cn(indicatorFontWeight.meta, 'text-xs', sizeConfig.labelText)}>
               {Math.abs(trendValue ?? 0)}%
             </span>
@@ -490,8 +490,8 @@ export function ValueCard({
             trendDirection === 'up' && indicatorColors.success.bg + ' ' + indicatorColors.success.text,
             trendDirection === 'down' && indicatorColors.error.bg + ' ' + indicatorColors.error.text,
           )}>
-            {trendDirection === 'up' && <ArrowUpRight className="h-3 w-3" />}
-            {trendDirection === 'down' && <ArrowDownRight className="h-3 w-3" />}
+            {trendDirection === 'up' && <ArrowUpRight className="h-4 w-4" />}
+            {trendDirection === 'down' && <ArrowDownRight className="h-4 w-4" />}
             <span className={cn(indicatorFontWeight.meta, 'text-xs tabular-nums')}>{Math.abs(trendValue ?? 0)}%</span>
           </div>
         )}
@@ -539,9 +539,9 @@ export function ValueCard({
             trendDirection === 'down' && 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
             trendDirection === 'neutral' && 'bg-muted text-muted-foreground'
           )}>
-            {trendDirection === 'up' && <ArrowUpRight className="h-3 w-3" />}
-            {trendDirection === 'down' && <ArrowDownRight className="h-3 w-3" />}
-            {trendDirection === 'neutral' && <Minus className="h-3 w-3" />}
+            {trendDirection === 'up' && <ArrowUpRight className="h-4 w-4" />}
+            {trendDirection === 'down' && <ArrowDownRight className="h-4 w-4" />}
+            {trendDirection === 'neutral' && <Minus className="h-4 w-4" />}
             <span>{Math.abs(trendValue ?? 0)}%</span>
           </div>
         )}

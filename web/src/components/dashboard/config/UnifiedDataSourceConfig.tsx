@@ -841,7 +841,7 @@ export function UnifiedDataSourceConfig({
         {/* Search input inside device list */}
         <div className="p-2 border-b bg-muted/20">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder={t('dataSource.searchPlaceholder')}
               value={searchQuery}
@@ -1101,7 +1101,7 @@ export function UnifiedDataSourceConfig({
         <div className="flex flex-col h-full">
           <div className="px-3 py-2.5 border-b text-xs font-medium text-muted-foreground bg-muted/30 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
-              <Database className="h-3.5 w-3.5" />
+              <Database className="h-4 w-4" />
               {t('dataSource.metricsOf', { device: selectedDevice.name || selectedDevice.id })}
             </span>
             <span className="text-[10px] text-muted-foreground/60 bg-muted/50 px-1.5 py-0.5 rounded">
@@ -1131,7 +1131,7 @@ export function UnifiedDataSourceConfig({
                       : 'bg-muted text-muted-foreground group-hover:bg-muted-foreground/10'
                   )}>
                     <Check className={cn(
-                      'h-3 w-3',
+                      'h-4 w-4',
                       item.isSelected ? 'opacity-100' : 'opacity-0'
                     )} />
                   </div>
@@ -1150,7 +1150,7 @@ export function UnifiedDataSourceConfig({
                         <DataIndicator hasData={item.hasData} count={item.dataPointCount} />
                       )}
                       {item.hasData === null && checkingData && (
-                        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/50" />
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/50" />
                       )}
                     </div>
 
@@ -1246,7 +1246,7 @@ export function UnifiedDataSourceConfig({
         {/* Search input inside extension list */}
         <div className="p-2 border-b bg-muted/20">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder={t('dataSource.searchPlaceholder')}
               value={searchQuery}
@@ -1473,7 +1473,7 @@ export function UnifiedDataSourceConfig({
                         : 'bg-muted text-muted-foreground'
                     )}>
                       <Check className={cn(
-                        'h-3.5 w-3.5',
+                        'h-4 w-4',
                         isSelected ? 'opacity-100' : 'opacity-0'
                       )} />
                     </div>
@@ -1531,7 +1531,7 @@ export function UnifiedDataSourceConfig({
                       : 'bg-muted text-muted-foreground'
                   )}>
                     <Check className={cn(
-                      'h-3.5 w-3.5',
+                      'h-4 w-4',
                       isSelected ? 'opacity-100' : 'opacity-0'
                     )} />
                   </div>
@@ -1593,7 +1593,7 @@ export function UnifiedDataSourceConfig({
                         : 'bg-muted text-muted-foreground'
                     )}>
                       <Check className={cn(
-                        'h-3.5 w-3.5',
+                        'h-4 w-4',
                         isSelected ? 'opacity-100' : 'opacity-0'
                       )} />
                     </div>
@@ -1666,7 +1666,7 @@ export function UnifiedDataSourceConfig({
                         : 'bg-muted text-muted-foreground'
                     )}>
                       <Check className={cn(
-                        'h-3.5 w-3.5',
+                        'h-4 w-4',
                         isSelected ? 'opacity-100' : 'opacity-0'
                       )} />
                     </div>
@@ -1717,7 +1717,7 @@ export function UnifiedDataSourceConfig({
       {selectedItems.size > 0 && (
         <div className="px-3 py-2 border-b bg-gradient-to-r from-primary/5 via-primary/5 to-muted/20 flex flex-wrap gap-2 items-center">
           <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
-            <Check className="h-3.5 w-3.5" />
+            <Check className="h-4 w-4" />
             {t('dataSource.selectedItems', { count: selectedItems.size })}
           </div>
           <div className="h-4 w-px bg-border" />
@@ -1772,7 +1772,7 @@ export function UnifiedDataSourceConfig({
                   key={itemKey}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-background border border-border/50 text-xs group hover:border-primary/40 transition-all max-w-[140px]"
                 >
-                  <TypeIcon className={cn('h-3 w-3 shrink-0', iconColor)} />
+                  <TypeIcon className={cn('h-4 w-4 shrink-0', iconColor)} />
                   <span className="max-w-[80px] truncate text-foreground/70" title={entityName}>{entityName}</span>
                   {showSeparator && <span className="text-muted-foreground/40">·</span>}
                   {displayLabel && <span className="truncate text-foreground" title={displayLabel}>{displayLabel}</span>}
@@ -1792,7 +1792,7 @@ export function UnifiedDataSourceConfig({
             className="h-7 px-2 text-xs hover:bg-destructive/10 hover:text-destructive shrink-0"
             title={t('dataSource.clearAllSelections')}
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-4 w-4" />
           </Button>
         </div>
       )}
@@ -2198,7 +2198,7 @@ function MobileMetricsList({
           onClick={() => onSelectItem(item.key)}
           className={cn(
             'w-full text-left transition-colors duration-150',
-            'group relative rounded-2xl border p-4',
+            'group relative rounded-lg border p-4',
             item.isSelected
               ? 'bg-primary/10 border-primary/50'
               : 'bg-card border-border active:bg-accent/40'
@@ -2305,7 +2305,7 @@ function MobileCommandsList({
             onClick={() => onSelectItem(itemKey)}
             className={cn(
               'w-full text-left transition-colors duration-150',
-              'group relative rounded-2xl border p-4',
+              'group relative rounded-lg border p-4',
               isSelected
                 ? 'bg-primary/10 border-primary/50'
                 : 'bg-card border-border active:bg-accent/40'
@@ -2385,7 +2385,7 @@ function MobileExtensionMetricsList({
             onClick={() => onSelectItem(itemKey)}
             className={cn(
               'w-full text-left transition-colors duration-150',
-              'group relative rounded-2xl border p-4',
+              'group relative rounded-lg border p-4',
               isSelected
                 ? 'bg-primary/10 border-primary/50'
                 : 'bg-card border-border active:bg-accent/40'
@@ -2460,7 +2460,7 @@ function MobileExtensionCommandsList({
             onClick={() => onSelectItem(itemKey)}
             className={cn(
               'w-full text-left transition-colors duration-150',
-              'group relative rounded-2xl border p-4',
+              'group relative rounded-lg border p-4',
               isSelected
                 ? 'bg-primary/10 border-primary/50'
                 : 'bg-card border-border active:bg-accent/40'

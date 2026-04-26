@@ -813,7 +813,7 @@ export function ChatPage() {
       {/* Pending stream recovery dialog */}
       {pendingStream?.hasPending && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="max-w-md w-full mx-4 bg-card border border-border rounded-xl shadow-lg p-6">
+          <div className="max-w-md w-full mx-4 bg-card border border-border rounded-lg shadow-lg p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
                 <RotateCcw className="h-5 w-5 text-blue-600 dark:text-blue-300" />
@@ -930,11 +930,11 @@ export function ChatPage() {
                     <div className="h-4 w-48 bg-foreground/10 rounded" />
                   </div>
                 </div>
-                <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-muted" />
+                <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-muted" />
               </div>
               {/* Skeleton message - assistant */}
               <div className="flex gap-2 sm:gap-3 justify-start animate-pulse">
-                <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-foreground/20" />
+                <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-foreground/20" />
                 <div className="max-w-[85%] sm:max-w-[80%]">
                   <div className="rounded-2xl px-3 py-2 sm:px-4 sm:py-3 bg-muted">
                     <div className="space-y-2">
@@ -952,7 +952,7 @@ export function ChatPage() {
                     <div className="h-4 w-32 bg-foreground/10 rounded" />
                   </div>
                 </div>
-                <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-muted" />
+                <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-muted" />
               </div>
             </div>
           </div>
@@ -1009,9 +1009,9 @@ export function ChatPage() {
                   className={`flex gap-2 sm:gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   {message.role === "assistant" && (
-                    <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-foreground flex items-center justify-center">
+                    <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-foreground flex items-center justify-center">
                       <Sparkles className={cn(
-                        "h-3.5 w-3.5 sm:h-4 sm:w-4 text-background",
+                        "h-4 w-4 sm:h-4 sm:w-4 text-background",
                         isCurrentlyStreaming && "animate-pulse"
                       )} />
                     </div>
@@ -1139,7 +1139,7 @@ export function ChatPage() {
                   </div>
 
                   {message.role === "user" && user && (
-                    <Avatar className="h-7 w-7 sm:h-8 sm:w-8 order-2">
+                    <Avatar className="h-6 w-6 sm:h-8 sm:w-8 order-2">
                       <AvatarFallback className="bg-muted text-muted-foreground text-[10px] sm:text-xs">
                         {getUserInitials(user.username)}
                       </AvatarFallback>
@@ -1206,7 +1206,7 @@ export function ChatPage() {
                     />
                     <button
                       type="button"
-                      className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() => removeAttachedImage(index)}
                     >
                       <X className="h-2 w-2" />
@@ -1227,13 +1227,13 @@ export function ChatPage() {
                       size="sm"
                       className="h-7 sm:h-7 px-1.5 sm:px-2 rounded-lg text-muted-foreground hover:text-foreground text-xs gap-1 max-w-[120px] sm:max-w-[140px]"
                     >
-                      <Zap className="h-3 w-3 shrink-0" />
+                      <Zap className="h-4 w-4 shrink-0" />
                       <span className="truncate">
                         {llmBackends.find(b => b.id === activeBackendId)?.name ||
                          llmBackends.find(b => b.id === activeBackendId)?.model ||
                          t('chat:input.selectModel')}
                       </span>
-                      <ChevronDown className="h-3 w-3 shrink-0" />
+                      <ChevronDown className="h-4 w-4 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-64 max-h-[50vh] overflow-y-auto">
@@ -1260,13 +1260,13 @@ export function ChatPage() {
                             {/* Capability icons - simple monochrome style */}
                             <div className="flex items-center gap-0.5 text-muted-foreground">
                               {backend.capabilities?.supports_multimodal && (
-                                <span title={t('chat:model.supportsVision')}><Eye className="h-3 w-3" /></span>
+                                <span title={t('chat:model.supportsVision')}><Eye className="h-4 w-4" /></span>
                               )}
                               {backend.capabilities?.supports_tools && (
-                                <span title={t('chat:model.supportsTools')}><Wrench className="h-3 w-3" /></span>
+                                <span title={t('chat:model.supportsTools')}><Wrench className="h-4 w-4" /></span>
                               )}
                               {backend.capabilities?.supports_thinking && (
-                                <span title={t('chat:model.supportsThinking')}><Brain className="h-3 w-3" /></span>
+                                <span title={t('chat:model.supportsThinking')}><Brain className="h-4 w-4" /></span>
                               )}
                             </div>
                           </div>
@@ -1301,7 +1301,7 @@ export function ChatPage() {
                   ? t('chat:memory.enabled', 'Memory on')
                   : t('chat:memory.disabled', 'Memory off')}
               >
-                <BookOpen className="h-3 w-3 shrink-0" />
+                <BookOpen className="h-4 w-4 shrink-0" />
                 <span className="hidden sm:inline">{t('chat:memory.label', 'Memory')}</span>
               </Button>
 
@@ -1319,7 +1319,7 @@ export function ChatPage() {
                           : "text-muted-foreground hover:text-foreground"
                       )}
                     >
-                      <Sparkles className="h-3 w-3 shrink-0" />
+                      <Sparkles className="h-4 w-4 shrink-0" />
                       <span className="hidden sm:inline">
                         {selectedSkills.length > 0
                           ? t('chat:input.activeSkills')

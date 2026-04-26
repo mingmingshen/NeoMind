@@ -116,7 +116,7 @@ export function DashboardListSidebar({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="h-6 w-6"
             onClick={() => onOpenChange?.(false)}
           >
             <ChevronLeft className="h-4 w-4" />
@@ -126,7 +126,7 @@ export function DashboardListSidebar({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="h-6 w-6"
             onClick={() => onOpenChange?.(false)}
           >
             <X className="h-4 w-4" />
@@ -167,18 +167,18 @@ export function DashboardListSidebar({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7"
+                    className="h-6 w-6"
                     onClick={handleSaveEdit}
                   >
-                    <Check className="h-3.5 w-3.5 text-green-500" />
+                    <Check className="h-4 w-4 text-green-500" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7"
+                    className="h-6 w-6"
                     onClick={handleCancelEdit}
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="h-4 w-4" />
                   </Button>
                 </div>
               ) : (
@@ -213,7 +213,7 @@ export function DashboardListSidebar({
                         onClick={() => handleStartEdit(dashboard)}
                         title="Rename"
                       >
-                        <Edit2 className="h-3 w-3" />
+                        <Edit2 className="h-4 w-4" />
                       </Button>
                       {dashboards.length > 1 && (
                         <Button
@@ -223,7 +223,7 @@ export function DashboardListSidebar({
                           onClick={() => handleDelete(dashboard.id)}
                           title="Delete"
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
@@ -258,19 +258,19 @@ export function DashboardListSidebar({
                 className="h-7 px-2 text-xs flex-1"
                 onClick={handleCreate}
               >
-                <Check className="h-3 w-3 mr-1 text-green-500" />
+                <Check className="h-4 w-4 mr-1 text-green-500" />
                 Create
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 w-7 p-0"
+                className="h-6 w-6 p-0"
                 onClick={() => {
                   setShowCreateInput(false)
                   setNewDashboardName('')
                 }}
               >
-                <X className="h-3 w-3" />
+                <X className="h-4 w-4" />
               </Button>
             </div>
           </div>

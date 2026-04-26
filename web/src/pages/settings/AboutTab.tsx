@@ -259,14 +259,14 @@ export function AboutTab() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-muted/30 rounded-lg text-center">
                   <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground mb-1">
-                    <Database className="h-3 w-3" />
+                    <Database className="h-4 w-4" />
                     {t("settings:usedMemory")}
                   </div>
                   <div className="text-sm font-medium">{formatBytes(systemInfo.used_memory)}</div>
                 </div>
                 <div className="p-3 bg-muted/30 rounded-lg text-center">
                   <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground mb-1">
-                    <Layers className="h-3 w-3" />
+                    <Layers className="h-4 w-4" />
                     {t("settings:availableMemory")}
                   </div>
                   <div className="text-sm font-medium">{formatBytes(systemInfo.available_memory)}</div>
@@ -310,7 +310,7 @@ export function AboutTab() {
               rel="noopener noreferrer"
               className="text-blue-500 hover:underline flex items-center gap-1"
             >
-              <Github className="h-3 w-3" />
+              <Github className="h-4 w-4" />
               github.com/camthink-ai/NeoMind
             </a>
           </div>

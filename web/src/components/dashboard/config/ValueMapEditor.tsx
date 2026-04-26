@@ -200,7 +200,6 @@ export function ValueMapEditor({ valueMap, onChange }: ValueMapEditorProps) {
             onClick={addMapping}
             disabled={!newMapping.values.trim()}
             size="sm"
-            className="h-9"
           >
             <Plus className="h-4 w-4" />
           </Button>

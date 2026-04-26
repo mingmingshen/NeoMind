@@ -89,9 +89,9 @@ export function AgentExecutionTimeline({
       case 'Failed':
         return { icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10 border-red-500/20', label: t('agents:executionStatus.failed') }
       case 'Cancelled':
-        return { icon: XCircle, color: 'text-gray-500', bg: 'bg-gray-500/10 border-gray-500/20', label: t('agents:executionStatus.cancelled') }
+        return { icon: XCircle, color: 'text-muted-foreground', bg: 'bg-muted border-border', label: t('agents:executionStatus.cancelled') }
       default:
-        return { icon: AlertCircle, color: 'text-gray-500', bg: 'bg-gray-500/10 border-gray-500/20', label: status }
+        return { icon: AlertCircle, color: 'text-muted-foreground', bg: 'bg-muted border-border', label: status }
     }
   }
 
@@ -165,18 +165,18 @@ export function AgentExecutionTimeline({
                             </div>
                             <div className="flex items-center gap-3 text-sm text-muted-foreground">
                               <span className="flex items-center gap-1">
-                                <Clock className="h-3.5 w-3.5" />
+                                <Clock className="h-4 w-4" />
                                 {formatTimestamp(execution.timestamp, false)}
                               </span>
                               {execution.duration_ms > 0 && (
                                 <span className="flex items-center gap-1">
-                                  <Zap className="h-3.5 w-3.5" />
+                                  <Zap className="h-4 w-4" />
                                   {formatDuration(execution.duration_ms)}
                                 </span>
                               )}
                               {execution.error && (
                                 <span className="flex items-center gap-1 text-destructive">
-                                  <AlertCircle className="h-3.5 w-3.5" />
+                                  <AlertCircle className="h-4 w-4" />
                                   <span className="truncate max-w-[200px]">{execution.error}</span>
                                 </span>
                               )}
@@ -247,7 +247,7 @@ export function AgentExecutionTimeline({
                                 {/* Report */}
                                 {detail.result?.report && (
                                   <TimelineSection
-                                    icon={<FileText className="h-4 w-4 text-gray-500" />}
+                                    icon={<FileText className="h-4 w-4 text-muted-foreground" />}
                                     title={t('agents:memory.generatedReport')}
                                   >
                                     <Card className="p-3">
@@ -385,7 +385,7 @@ export function AgentExecutionTimeline({
                                               </div>
                                               {notification.sent_at && (
                                                 <div className="text-xs text-muted-foreground flex items-center gap-1">
-                                                  <Clock className="h-3 w-3" />
+                                                  <Clock className="h-4 w-4" />
                                                   {formatTimestamp(notification.sent_at, false)}
                                                 </div>
                                               )}
@@ -493,9 +493,9 @@ function DataCollectedItem({ data }: { data: DataCollected }) {
           className="text-xs text-primary hover:underline mt-0.5 flex items-center gap-0.5"
         >
           {expanded ? (
-            <>{t('agents:memory.showLess', 'Show less')} <ChevronUp className="h-3 w-3" /></>
+            <>{t('agents:memory.showLess', 'Show less')} <ChevronUp className="h-4 w-4" /></>
           ) : (
-            <>{t('agents:memory.showMore', 'Show more')} <ChevronDown className="h-3 w-3" /></>
+            <>{t('agents:memory.showMore', 'Show more')} <ChevronDown className="h-4 w-4" /></>
           )}
         </button>
       )}
@@ -530,9 +530,9 @@ function CollapsibleText({ content, maxLines = 6 }: { content: string; maxLines?
           className="text-xs text-primary hover:underline mt-1 flex items-center gap-0.5"
         >
           {expanded ? (
-            <>{t('agents:memory.showLess', 'Show less')} <ChevronUp className="h-3 w-3" /></>
+            <>{t('agents:memory.showLess', 'Show less')} <ChevronUp className="h-4 w-4" /></>
           ) : (
-            <>{t('agents:memory.showMore', 'Show more')} <ChevronDown className="h-3 w-3" /></>
+            <>{t('agents:memory.showMore', 'Show more')} <ChevronDown className="h-4 w-4" /></>
           )}
         </button>
       )}
@@ -560,9 +560,9 @@ function CollapsibleOutput({ label, content }: { label: string; content: string 
           className="text-xs text-primary hover:underline mt-0.5 flex items-center gap-0.5"
         >
           {expanded ? (
-            <>{t('memory.showLess', 'Show less')} <ChevronUp className="h-3 w-3" /></>
+            <>{t('memory.showLess', 'Show less')} <ChevronUp className="h-4 w-4" /></>
           ) : (
-            <>{t('memory.showMore', 'Show more')} <ChevronDown className="h-3 w-3" /></>
+            <>{t('memory.showMore', 'Show more')} <ChevronDown className="h-4 w-4" /></>
           )}
         </button>
       )}
@@ -626,9 +626,9 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
             className="text-xs text-primary hover:underline mt-0.5 flex items-center gap-0.5"
           >
             {descExpanded ? (
-              <>{t('agents:memory.showLess', 'Show less')} <ChevronUp className="h-3 w-3" /></>
+              <>{t('agents:memory.showLess', 'Show less')} <ChevronUp className="h-4 w-4" /></>
             ) : (
-              <>{t('agents:memory.showMore', 'Show more')} <ChevronDown className="h-3 w-3" /></>
+              <>{t('agents:memory.showMore', 'Show more')} <ChevronDown className="h-4 w-4" /></>
             )}
           </button>
         )}
@@ -766,7 +766,7 @@ function ToolCallStep({ step }: { step: ReasoningStep }) {
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <Wrench className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <Wrench className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="font-mono text-sm truncate">{toolName}</span>
             <span className={cn(
               "text-[10px] px-1.5 py-0.5 rounded shrink-0",

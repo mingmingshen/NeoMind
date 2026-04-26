@@ -230,7 +230,7 @@ export function ComponentConfigDialog({
                     isExpanded={expandedSections.has('preview')}
                     onToggle={() => toggleSection('preview')}
                   >
-                    <div className="rounded-xl border bg-muted/20 p-4">
+                    <div className="rounded-lg border bg-muted/20 p-4">
                       <ComponentPreview
                         key={previewKey}
                         componentType={componentType}
@@ -252,7 +252,7 @@ export function ComponentConfigDialog({
                       {shouldShowDataTransform ? (
                         <div className="space-y-3">
                           {/* Inner tabs */}
-                          <div className="flex gap-2 p-1 bg-muted/50 rounded-xl">
+                          <div className="flex gap-2 p-1 bg-muted/50 rounded-lg">
                             <button
                               onClick={() => setMobileDataSourceTab('datasource')}
                               className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-all ${
@@ -602,7 +602,7 @@ function MobileConfigCard({
   status,
 }: MobileConfigCardProps) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
+    <div className="overflow-hidden rounded-lg border border-border/50 bg-card">
       <button
         onClick={onToggle}
         className="w-full flex items-center justify-between px-4 py-4 bg-muted/30 hover:bg-muted/40 active:bg-muted/50 transition-colors touch-action-manipulation"

@@ -241,7 +241,7 @@ export function ActionBuilder({
                       <Badge key={index} variant="secondary" className="gap-1">
                         {param.key}: {param.value}
                         <X
-                          className="h-3 w-3 cursor-pointer hover:text-destructive"
+                          className="h-4 w-4 cursor-pointer hover:text-destructive"
                           onClick={() => handleRemoveParam(index)}
                         />
                       </Badge>
@@ -257,7 +257,7 @@ export function ActionBuilder({
               <div className="flex items-center justify-between mb-2">
                 <Label className="text-xs text-muted-foreground">{t('automation:commandParameters')}</Label>
                 <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={handleAddParam}>
-                  <Plus className="h-3 w-3 mr-1" />
+                  <Plus className="h-4 w-4 mr-1" />
                   {t('automation:addParameter')}
                 </Button>
               </div>

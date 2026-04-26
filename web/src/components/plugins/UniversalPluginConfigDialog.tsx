@@ -431,19 +431,19 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     <div className="flex flex-wrap gap-2 mt-2">
       {detectedCapabilities.supports_multimodal && (
         <Badge variant="outline" className="text-xs">
-          <Eye className="h-3 w-3 mr-1" />
+          <Eye className="h-4 w-4 mr-1" />
           Vision
         </Badge>
       )}
       {detectedCapabilities.supports_thinking && (
         <Badge variant="outline" className="text-xs">
-          <Brain className="h-3 w-3 mr-1" />
+          <Brain className="h-4 w-4 mr-1" />
           Thinking
         </Badge>
       )}
       {detectedCapabilities.supports_tools && (
         <Badge variant="outline" className="text-xs">
-          <Wrench className="h-3 w-3 mr-1" />
+          <Wrench className="h-4 w-4 mr-1" />
           Tools
         </Badge>
       )}
@@ -457,9 +457,9 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
   const getModelIcon = (model: OllamaModel) => {
     const icons = []
-    if (model.supports_multimodal) icons.push(<Eye key="vision" className="h-3 w-3 text-blue-500" />)
-    if (model.supports_thinking) icons.push(<Brain key="thinking" className="h-3 w-3 text-purple-500" />)
-    if (model.supports_tools) icons.push(<Wrench key="tools" className="h-3 w-3 text-orange-500" />)
+    if (model.supports_multimodal) icons.push(<Eye key="vision" className="h-4 w-4 text-blue-500" />)
+    if (model.supports_thinking) icons.push(<Brain key="thinking" className="h-4 w-4 text-purple-500" />)
+    if (model.supports_tools) icons.push(<Wrench key="tools" className="h-4 w-4 text-orange-500" />)
     if (icons.length === 0) return null
     return <span className="flex items-center gap-0.5">{icons}</span>
   }

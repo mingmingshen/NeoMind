@@ -628,7 +628,7 @@ export function DeviceControl({
                       setCommandParams(defaults)
                     }}
                   >
-                    <RotateCcw className="h-3 w-3 mr-1" />
+                    <RotateCcw className="h-4 w-4 mr-1" />
                     {t('devices:control.reset')}
                   </Button>
                 </div>

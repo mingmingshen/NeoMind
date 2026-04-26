@@ -159,7 +159,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
   const getStatusColor = (status?: string) => {
     switch (status) {
       case 'online': return 'bg-green-500'
-      case 'offline': return 'bg-gray-400'
+      case 'offline': return 'bg-muted-foreground'
       case 'error': return 'bg-red-500'
       case 'warning': return 'bg-yellow-500'
       default: return null
@@ -185,7 +185,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
             <div className="flex items-center gap-1 text-muted-foreground">
               <span className={`w-2 h-2 rounded-full ${
                 marker.status === 'online' ? 'bg-green-500' :
-                marker.status === 'offline' ? 'bg-gray-400' :
+                marker.status === 'offline' ? 'bg-muted-foreground' :
                 marker.status === 'error' ? 'bg-red-500' : 'bg-yellow-500'
               }`}></span>
               <span>{marker.status || 'unknown'}</span>
@@ -271,13 +271,13 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
         className={cn(
           'relative inline-flex rounded-full items-center justify-center',
           finalBgColor,
-          'h-7 w-7 border-2 border-background shadow-sm',
+          'h-6 w-6 border-2 border-background shadow-sm',
           'group-hover:scale-125 transition-transform',
           isSelected && 'ring-2 ring-white ring-offset-2'
         )}
       >
         {/* Icon inside marker */}
-        <Icon className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
+        <Icon className="h-4 w-4 text-white" strokeWidth={2.5} />
       </span>
 
       {/* Enhanced tooltip - always visible when selected, or on hover */}
@@ -621,24 +621,24 @@ function SimpleSvgMap({
           <Button
             variant="secondary"
             size="icon"
-            className="h-7 w-7 bg-background/80 backdrop-blur"
+            className="h-6 w-6 bg-background/80 backdrop-blur"
             onClick={onZoomIn}
           >
-            <ZoomIn className="h-3.5 w-3.5" />
+            <ZoomIn className="h-4 w-4" />
           </Button>
           <Button
             variant="secondary"
             size="icon"
-            className="h-7 w-7 bg-background/80 backdrop-blur"
+            className="h-6 w-6 bg-background/80 backdrop-blur"
             onClick={onZoomOut}
           >
-            <ZoomOut className="h-3.5 w-3.5" />
+            <ZoomOut className="h-4 w-4" />
           </Button>
         </div>
       )}
 
       {/* Center point indicator */}
-      <div className="absolute top-1/2 left-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary/30 bg-primary/10 pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary/30 bg-primary/10 pointer-events-none" />
     </div>
   )
 }
@@ -1066,10 +1066,10 @@ export function MapDisplay({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-6 w-6"
                   onClick={() => setIsFullscreen(true)}
                 >
-                  <Maximize2 className="h-3.5 w-3.5" />
+                  <Maximize2 className="h-4 w-4" />
                 </Button>
               )}
             </div>
@@ -1116,7 +1116,7 @@ export function MapDisplay({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 onClick={() => setIsFullscreen(false)}
               >
                 <X className="h-4 w-4" />
@@ -1165,7 +1165,7 @@ export function MapDisplay({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="h-6 w-6"
             onClick={() => setIsFullscreen(false)}
           >
             <X className="h-4 w-4" />

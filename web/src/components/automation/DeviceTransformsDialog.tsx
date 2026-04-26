@@ -329,7 +329,7 @@ export function DeviceTransformsDialog({
     onToggle: () => void
     children: React.ReactNode
   }) => (
-    <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
+    <div className="overflow-hidden rounded-lg border border-border/50 bg-card">
       <button
         onClick={onToggle}
         className="w-full flex items-center justify-between px-4 py-4 bg-muted/30 hover:bg-muted/40 active:bg-muted/50 transition-colors touch-action-manipulation"

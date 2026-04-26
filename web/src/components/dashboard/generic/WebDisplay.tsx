@@ -210,10 +210,10 @@ export function WebDisplay({
           <div className={cn('flex items-center gap-2 px-3 py-2 bg-muted/30 border-b', size === 'sm' ? 'py-1.5' : '')}>
             <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
             {title && <span className="font-medium text-sm truncate flex-1">{title}</span>}
-            {sandbox && <Lock className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />}
+            {sandbox && <Lock className="h-4 w-4 text-muted-foreground/60 shrink-0" />}
             <div className="flex-1" />
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleRefresh}>
-              <RefreshCw className="h-3.5 w-3.5" />
+            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={handleRefresh}>
+              <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
         )}
@@ -241,15 +241,15 @@ export function WebDisplay({
     <div className={cn('flex items-center gap-2 px-3 py-2 bg-muted/30 border-b', size === 'sm' ? 'py-1.5' : '')}>
       <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
       {title && <span className="font-medium text-sm truncate flex-1">{title}</span>}
-      {sandbox && <Lock className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />}
+      {sandbox && <Lock className="h-4 w-4 text-muted-foreground/60 shrink-0" />}
       <div className="flex-1" />
-      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleRefresh}>
-        <RefreshCw className={cn('h-3.5 w-3.5', iframeLoading && 'animate-spin')} />
+      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={handleRefresh}>
+        <RefreshCw className={cn('h-4 w-4', iframeLoading && 'animate-spin')} />
       </Button>
       {src && (
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" asChild>
+        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" asChild>
           <a href={src} target="_blank" rel="noopener noreferrer">
-            <ExternalLink className="h-3.5 w-3.5" />
+            <ExternalLink className="h-4 w-4" />
           </a>
         </Button>
       )}

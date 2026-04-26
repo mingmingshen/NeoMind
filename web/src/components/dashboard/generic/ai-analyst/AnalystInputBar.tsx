@@ -40,9 +40,9 @@ export function AnalystInputBar({ onSend, disabled }: AnalystInputBarProps) {
           className="h-9 px-3 shrink-0"
         >
           {disabled ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
-            <Send className="h-3.5 w-3.5" />
+            <Send className="h-4 w-4" />
           )}
         </Button>
       </div>

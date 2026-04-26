@@ -276,7 +276,7 @@ export function AutomationCreatorDialog({
                                       'bg-purple-500/10 text-purple-500'
                                     )}
                                   >
-                                    <Zap className="h-3 w-3 mr-1" />
+                                    <Zap className="h-4 w-4 mr-1" />
                                     {template.automation_type}
                                   </Badge>
                                   <span className="font-medium">{template.name}</span>

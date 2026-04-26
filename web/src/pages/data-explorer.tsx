@@ -43,7 +43,7 @@ function SourceTypeBadge({ type }: { type: string }) {
   const Icon = iconMap[type] || Database
   return (
     <Badge variant="outline" className={`text-[11px] px-1.5 py-0 h-6 gap-1 ${colorMap[type] || ''}`}>
-      <Icon className="h-3 w-3" />
+      <Icon className="h-4 w-4" />
       {type}
     </Badge>
   )
@@ -230,7 +230,7 @@ export function DataExplorerPage() {
             className="h-7 px-2"
             onClick={(e) => { e.stopPropagation(); setSelectedSource(source) }}
           >
-            <Eye className="h-3.5 w-3.5" />
+            <Eye className="h-4 w-4" />
           </Button>
         )
       default:
@@ -392,7 +392,7 @@ export function DataExplorerPage() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-1.5 text-sm font-medium">
-                    <History className="h-3.5 w-3.5" />
+                    <History className="h-4 w-4" />
                     History
                   </div>
                   <Select value={historyRange} onValueChange={setHistoryRange}>

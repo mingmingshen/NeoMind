@@ -335,12 +335,12 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                 {/* Timing */}
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                   <div className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
+                    <Clock className="h-4 w-4" />
                     {new Date(execution.timestamp).toLocaleString()}
                   </div>
                   {execution.duration_ms > 0 && (
                     <div className="flex items-center gap-1">
-                      <Activity className="h-3 w-3" />
+                      <Activity className="h-4 w-4" />
                       {execution.duration_ms < 1000 ? `${execution.duration_ms}ms` : `${(execution.duration_ms / 1000).toFixed(1)}s`}
                     </div>
                   )}
@@ -357,7 +357,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                 {(images.length > 0 || metricTags.length > 0) && (
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                      <Database className="h-3 w-3" />
+                      <Database className="h-4 w-4" />
                       Input Data
                     </div>
 
@@ -380,7 +380,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                               <span className="text-[9px] text-white/90 truncate block">{img.source}</span>
                             </div>
                             <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded p-0.5">
-                              <Maximize2 className="h-3 w-3 text-white" />
+                              <Maximize2 className="h-4 w-4 text-white" />
                             </div>
                           </div>
                         ))}
@@ -406,7 +406,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                     {decisionProcess.situation_analysis && (
                       <div>
                         <div className="flex items-center gap-1.5 mb-1.5 text-xs font-medium text-muted-foreground">
-                          <Target className="h-3 w-3" />
+                          <Target className="h-4 w-4" />
                           Analysis
                         </div>
                         <p className="text-sm bg-muted/50 p-3 rounded-lg">{decisionProcess.situation_analysis}</p>
@@ -416,7 +416,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                     {decisionProcess.reasoning_steps.length > 0 && (
                       <div>
                         <div className="flex items-center gap-1.5 mb-1.5 text-xs font-medium text-muted-foreground">
-                          <Brain className="h-3 w-3" />
+                          <Brain className="h-4 w-4" />
                           Reasoning
                         </div>
                         <div className="space-y-1">
@@ -433,7 +433,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                     {decisionProcess.conclusion && (
                       <div>
                         <div className="flex items-center gap-1.5 mb-1.5 text-xs font-medium text-muted-foreground">
-                          <CheckCircle2 className="h-3 w-3" />
+                          <CheckCircle2 className="h-4 w-4" />
                           Conclusion
                         </div>
                         <p className="text-sm bg-green-500/10 p-3 rounded-lg border border-green-500/20">{decisionProcess.conclusion}</p>
@@ -446,7 +446,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                 {detail?.result?.actions_executed && detail.result.actions_executed.length > 0 && (
                   <div>
                     <div className="flex items-center gap-1.5 mb-1.5 text-xs font-medium text-muted-foreground">
-                      <Zap className="h-3 w-3" />
+                      <Zap className="h-4 w-4" />
                       Actions Executed
                     </div>
                     <div className="space-y-1">
@@ -457,9 +457,9 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                         )}>
                           <span>{action.description}</span>
                           {action.success ? (
-                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
                           ) : (
-                            <XCircle className="h-3.5 w-3.5 text-red-500" />
+                            <XCircle className="h-4 w-4 text-red-500" />
                           )}
                         </div>
                       ))}
@@ -536,11 +536,11 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
       <div className="px-3 py-2 border-b border-border/30">
         <div className="flex flex-wrap items-center gap-1.5">
           {execution.status === 'Running' ? (
-            <Loader2 className="h-3.5 w-3.5 text-blue-500 shrink-0 animate-spin" />
+            <Loader2 className="h-4 w-4 text-blue-500 shrink-0 animate-spin" />
           ) : execution.status === 'Completed' ? (
-            <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+            <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
           ) : (
-            <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+            <XCircle className="h-4 w-4 text-red-500 shrink-0" />
           )}
 
           <span className="text-[10px] font-mono text-muted-foreground">
@@ -561,7 +561,7 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
           {execution.duration_ms > 0 && (
             <span className="text-[10px] font-mono text-muted-foreground">{formatDuration(execution.duration_ms)}</span>
           )}
-          <ChevronRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+          <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
         </div>
       </div>
 
@@ -826,7 +826,7 @@ export function AgentMonitorWidget({
   // Empty state
   if (!agentId && !loading && !editMode) {
     return (
-      <div className={cn("bg-card rounded-xl border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
+      <div className={cn("bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
         <div className="text-center p-6">
           <Bot className="h-12 w-12 opacity-20 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">
@@ -840,7 +840,7 @@ export function AgentMonitorWidget({
   // Loading state
   if (loading && !editMode) {
     return (
-      <div className={cn("bg-card rounded-xl border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
+      <div className={cn("bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">{t('common:loading')}</p>
@@ -852,7 +852,7 @@ export function AgentMonitorWidget({
   // Agent not found
   if (!agent && !editMode) {
     return (
-      <div className={cn("bg-card rounded-xl border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
+      <div className={cn("bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
         <div className="text-center">
           <AlertCircle className="h-12 w-12 opacity-20 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">{t('dashboardComponents:agentMonitorWidget.agentNotFound')}</p>
@@ -867,7 +867,7 @@ export function AgentMonitorWidget({
   return (
     <>
       <div className={cn(
-        "bg-card rounded-xl border shadow-sm overflow-hidden flex flex-col w-full h-full",
+        "bg-card rounded-lg border shadow-sm overflow-hidden flex flex-col w-full h-full",
         className
       )}>
         {/* Header: Agent Info */}
@@ -912,19 +912,19 @@ export function AgentMonitorWidget({
               {/* Stats inline */}
               <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                 <span className="flex items-center gap-1">
-                  <Activity className="h-3 w-3" />
+                  <Activity className="h-4 w-4" />
                   {executionCount} runs
                 </span>
                 <span className={cn(
                   "flex items-center gap-1",
                   successRate >= 80 ? "text-green-600" : successRate >= 50 ? "text-yellow-600" : "text-red-600"
                 )}>
-                  <Target className="h-3 w-3" />
+                  <Target className="h-4 w-4" />
                   {successRate}% success
                 </span>
                 {avgDurationMs > 0 && (
                   <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
+                    <Clock className="h-4 w-4" />
                     {avgDurationMs < 1000 ? `${avgDurationMs}ms` : `${(avgDurationMs / 1000).toFixed(1)}s`}
                   </span>
                 )}
@@ -936,7 +936,7 @@ export function AgentMonitorWidget({
           {promptText && (
             <div className="mt-3 p-2.5 rounded-lg bg-muted/30 border border-border/50">
               <div className="flex items-center gap-1.5 mb-1">
-                <Target className="h-3 w-3 text-primary" />
+                <Target className="h-4 w-4 text-primary" />
                 <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Task Prompt</span>
               </div>
               <p className="text-xs text-foreground/80 line-clamp-2">{promptText}</p>
@@ -1029,7 +1029,7 @@ export function AgentMonitorWidget({
                     return (
                       <div key={`msg-${msg.id}`} className="flex items-start gap-2">
                         <div className="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                          <MessageSquare className="h-3 w-3 text-purple-500" />
+                          <MessageSquare className="h-4 w-4 text-purple-500" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-[10px] text-muted-foreground mb-0.5">
@@ -1090,9 +1090,9 @@ export function AgentMonitorWidget({
               className="h-9 px-3 shrink-0"
             >
               {sendingMessage ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Send className="h-3.5 w-3.5" />
+                <Send className="h-4 w-4" />
               )}
             </Button>
           </div>

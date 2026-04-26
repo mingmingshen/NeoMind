@@ -175,7 +175,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
           variant="ghost"
           size="sm"
           onClick={scrollLeft}
-          className="h-7 w-7 p-0 flex-shrink-0 text-muted-foreground hover:text-foreground rounded-lg"
+          className="h-6 w-6 p-0 flex-shrink-0 text-muted-foreground hover:text-foreground rounded-lg"
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
@@ -203,7 +203,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
               )}
             >
-              <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 opacity-60" />
+              <MessageSquare className="h-4 w-4 flex-shrink-0 opacity-60" />
               <span className="truncate max-w-[120px] sm:max-w-[140px]">
                 {getSessionTitle(session)}
               </span>
@@ -219,7 +219,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
                     : "opacity-0 group-hover:opacity-50 hover:!opacity-100"
                 )}
               >
-                <X className="h-3 w-3" />
+                <X className="h-4 w-4" />
               </span>
             </button>
           )
@@ -232,7 +232,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
           variant="ghost"
           size="sm"
           onClick={scrollRight}
-          className="h-7 w-7 p-0 flex-shrink-0 text-muted-foreground hover:text-foreground rounded-lg"
+          className="h-6 w-6 p-0 flex-shrink-0 text-muted-foreground hover:text-foreground rounded-lg"
         >
           <ChevronRight className="h-4 w-4" />
         </Button>
@@ -245,7 +245,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 w-7 p-0 flex-shrink-0 text-muted-foreground hover:text-foreground rounded-lg"
+              className="h-6 w-6 p-0 flex-shrink-0 text-muted-foreground hover:text-foreground rounded-lg"
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
@@ -258,14 +258,14 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
                 className="flex items-center justify-between gap-2"
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 opacity-60" />
+                  <MessageSquare className="h-4 w-4 flex-shrink-0 opacity-60" />
                   <span className="truncate">{getSessionTitle(session)}</span>
                 </div>
                 <span
                   onClick={(e) => handleDeleteSession(e, session.sessionId)}
                   className="p-1 rounded hover:bg-muted flex-shrink-0"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-4 w-4" />
                 </span>
               </DropdownMenuItem>
             ))}

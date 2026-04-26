@@ -138,7 +138,6 @@ export function PageTabsBar({
                   size="sm"
                   onClick={action.onClick}
                   disabled={action.disabled || action.loading}
-                  className="h-9"
                 >
                   {action.loading ? (
                     <span className="mr-2 shrink-0 h-4 w-4 flex items-center justify-center">{action.icon || '⟳'}</span>
@@ -274,7 +273,7 @@ export function PageTabs({
                       size="sm"
                       onClick={action.onClick}
                       disabled={action.disabled || action.loading}
-                      className="h-9"
+                      className=""
                     >
                       {action.loading ? (
                         <span className="mr-2 h-4 w-4 animate-spin">⟳</span>
@@ -339,7 +338,7 @@ export function PageTabs({
           <div
             className={cn(
               /* mobile: full-width segmented control, horizontal scroll */
-              'flex w-full flex-nowrap overflow-x-auto rounded-xl border border-border bg-muted/30 p-1',
+              'flex w-full flex-nowrap overflow-x-auto rounded-lg border border-border bg-muted/30 p-1',
               '[-webkit-overflow-scrolling:touch]',
               /* desktop: inline tabs with full text */
               'md:inline-flex md:w-auto md:flex-wrap md:overflow-visible md:rounded-md md:border-0 md:bg-muted md:p-0.5',
@@ -457,7 +456,7 @@ export function PageTabsGrid({
           <div
             className={cn(
               /* mobile: 2-col grid, segmented style */
-              'grid w-full shrink-0 grid-cols-2 overflow-x-auto rounded-xl border border-border bg-muted/30 p-1',
+              'grid w-full shrink-0 grid-cols-2 overflow-x-auto rounded-lg border border-border bg-muted/30 p-1',
               '[-webkit-overflow-scrolling:touch]',
               /* desktop: compact inline grid */
               'md:w-auto md:overflow-visible md:rounded-md md:border-0 md:bg-muted',

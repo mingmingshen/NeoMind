@@ -129,7 +129,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
           </span>
           {currentExecution.duration_ms !== undefined && (
             <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
-              <Clock className="h-3 w-3" />
+              <Clock className="h-4 w-4" />
               {currentExecution.duration_ms < 1000
                 ? `${currentExecution.duration_ms}ms`
                 : `${(currentExecution.duration_ms / 1000).toFixed(1)}s`
@@ -163,7 +163,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
             }}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
       </button>
@@ -183,7 +183,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
                 {thinkingSteps.length > 0 && (
                   <div>
                     <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                      <Brain className="h-3.5 w-3.5 text-purple-500" />
+                      <Brain className="h-4 w-4 text-purple-500" />
                       {t('agents:thinking.reasoningSteps')}
                     </h4>
                     <div className="space-y-2">
@@ -198,7 +198,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
                 {decisions.length > 0 && (
                   <div>
                     <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                      <Play className="h-3.5 w-3.5 text-green-500" />
+                      <Play className="h-4 w-4 text-green-500" />
                       {t('agents:thinking.decisions')}
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -218,7 +218,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
                   return (
                     <div>
                       <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                        <FileText className="h-3.5 w-3.5 text-green-500" />
+                        <FileText className="h-4 w-4 text-green-500" />
                         {t('agents:memory.conclusion')}
                       </h4>
                       <div className="space-y-2">
@@ -309,7 +309,7 @@ function ThinkingStep({ step }: ThinkingStepProps) {
         )}
         <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
+            <Clock className="h-4 w-4" />
             {formatTimestamp(step.timestamp, false)}
           </span>
         </div>
@@ -339,7 +339,7 @@ function Decision({ decision }: DecisionProps) {
       )}
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-1.5">
-          <Zap className="h-3 w-3 text-green-500" />
+          <Zap className="h-4 w-4 text-green-500" />
           <Badge variant="secondary" className="h-5">
             {decision.action}
           </Badge>

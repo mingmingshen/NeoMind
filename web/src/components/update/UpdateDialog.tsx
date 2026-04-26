@@ -298,8 +298,7 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
                 </div>
               </div>
               {canClose && (
-                <Button variant="ghost" size="icon" onClick={handleClose} className="shrink-0">
-                  <X className="h-5 w-5" />
+                <Button variant="ghost" size="icon" onClick={handleClose} className="shrink-0" aria-label={t('common:close')}>
                 </Button>
               )}
             </div>
@@ -374,6 +373,7 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
             {canClose && (
               <button
                 onClick={handleClose}
+                aria-label={t('common:close')}
                 className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               >
                 <X className="h-4 w-4" />

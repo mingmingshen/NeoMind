@@ -296,7 +296,7 @@ export function MapEditorDialog({
             }}
             title={t('common.delete')}
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       </div>

@@ -379,7 +379,7 @@ function VariablesPanel({
       case 'object': return 'text-orange-500'
       case 'array': return 'text-cyan-500'
       case 'binary': return 'text-yellow-500'
-      default: return 'text-gray-500'
+      default: return 'text-muted-foreground'
     }
   }
 
@@ -467,14 +467,14 @@ return ${resultParam}`
               "flex-1",
               isMobile ? "h-9 px-3 text-sm" : "h-7 px-2 text-xs"
             )}>
-              <Database className={cn(isMobile ? "h-4 w-4" : "h-3 w-3", "mr-1")} />
+              <Database className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "mr-1")} />
               {tBuilder('device') || 'Device'}
             </TabsTrigger>
             <TabsTrigger value="extension" className={cn(
               "flex-1",
               isMobile ? "h-9 px-3 text-sm" : "h-7 px-2 text-xs"
             )}>
-              <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-3 w-3", "mr-1")} />
+              <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "mr-1")} />
               {tBuilder('extension') || 'Extension'}
             </TabsTrigger>
           </TabsList>
@@ -576,7 +576,7 @@ return ${resultParam}`
                   {extensions.map((ext) => (
                     <div key={ext.extension_id} className="space-y-1.5">
                       <div className="font-medium text-xs flex items-center gap-2">
-                        <Puzzle className="h-3 w-3 text-purple-500" />
+                        <Puzzle className="h-4 w-4 text-purple-500" />
                         {ext.extension_name}
                       </div>
                       {ext.commands.map((cmd) => (
@@ -586,7 +586,7 @@ return ${resultParam}`
                               <Checkbox
                                 id={`field-${ext.extension_id}-${cmd.command}-${field.field}`}
                                 checked={isSourceSelected(ext.extension_id, field.field)}
-                                className="h-3 w-3"
+                                className="h-4 w-4"
                                 onCheckedChange={() => toggleSource(
                                   ext.extension_id,
                                   ext.extension_name,
@@ -692,7 +692,7 @@ return ${resultParam}`
                     {/* Header */}
                     <div className="flex items-center justify-between px-3 py-2 bg-amber-100/50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-900/50">
                       <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <Zap className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                        <Zap className="h-4 w-4 text-amber-500 shrink-0" />
                         <div className="min-w-0">
                           <div className="text-sm font-medium text-amber-700 dark:text-amber-300 truncate">
                             {cmd.display_name}
@@ -823,7 +823,7 @@ function TransformPreviewPanel({
     const hasSources = deviceMetricCount > 0 || extensionSourceCount > 0
 
     return (
-      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
         <div className="flex items-center gap-2 mb-3">
           <Database className="h-4 w-4 text-blue-600 dark:text-blue-400" />
           <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
@@ -838,11 +838,11 @@ function TransformPreviewPanel({
             {deviceMetricCount > 0 && (
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300">
-                  <Lightbulb className="h-3 w-3" />
+                  <Lightbulb className="h-4 w-4" />
                   <span>{deviceMetricCount} {tBuilder('deviceMetrics') || '设备指标'}</span>
                 </div>
                 {deviceTypeMetrics?.slice(0, 3).map((metric, idx) => (
-                  <div key={idx} className="flex items-center gap-2 bg-white/50 dark:bg-black/20 rounded px-2 py-1">
+                  <div key={idx} className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
                     <span className="text-xs truncate">{metric.display_name || metric.name}</span>
                     {metric.unit && <span className="text-[10px] text-muted-foreground">({metric.unit})</span>}
                   </div>
@@ -857,12 +857,12 @@ function TransformPreviewPanel({
             {extensionSourceCount > 0 && (
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300">
-                  <Puzzle className="h-3 w-3" />
+                  <Puzzle className="h-4 w-4" />
                   <span>{extensionSourceCount} {tBuilder('extensionDataSources') || '扩展数据源'}</span>
                 </div>
                 {extensionSources?.slice(0, 2).map((source, idx) => (
-                  <div key={idx} className="flex items-center gap-2 bg-white/50 dark:bg-black/20 rounded px-2 py-1">
-                    <Puzzle className="h-3 w-3 text-purple-500" />
+                  <div key={idx} className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+                    <Puzzle className="h-4 w-4 text-purple-500" />
                     <span className="text-xs truncate">{source.extension_name}</span>
                     <span className="text-[10px] text-muted-foreground">·</span>
                     <span className="text-xs truncate">{source.display_name || source.field}</span>
@@ -888,7 +888,7 @@ function TransformPreviewPanel({
   // Render transform logic card
   const renderLogicCard = () => {
     return (
-      <div className="bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30 rounded-xl p-4 border border-purple-200 dark:border-purple-800">
+      <div className="bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
         <div className="flex items-center gap-2 mb-3">
           <Code className="h-4 w-4 text-purple-600 dark:text-purple-400" />
           <span className="text-sm font-medium text-purple-900 dark:text-purple-100">
@@ -899,8 +899,8 @@ function TransformPreviewPanel({
           </Badge>
         </div>
         <div className="text-xs text-purple-700 dark:text-purple-300 space-y-2">
-          <div className="flex items-center gap-2 bg-white/50 dark:bg-black/20 rounded px-2 py-1">
-            <Globe className="h-3 w-3" />
+          <div className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+            <Globe className="h-4 w-4" />
             <span className="font-medium">{tBuilder('scopeLabel') || '作用范围'}:</span>
             <span>
               {scopeType === 'global' ? (tBuilder('scope.global') || '全局') :
@@ -908,8 +908,8 @@ function TransformPreviewPanel({
                scopeValue}
             </span>
           </div>
-          <div className="flex items-center gap-2 bg-white/50 dark:bg-black/20 rounded px-2 py-1">
-            <FileCode className="h-3 w-3" />
+          <div className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+            <FileCode className="h-4 w-4" />
             <span className="font-mono">{outputPrefix || 'transform'}</span>
             <span className="text-[10px] text-muted-foreground">.key</span>
           </div>
@@ -921,7 +921,7 @@ function TransformPreviewPanel({
   // Render output preview card
   const renderOutputCard = () => {
     return (
-      <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-xl p-4 border border-green-200 dark:border-green-800">
+      <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-4 border border-green-200 dark:border-green-800">
         <div className="flex items-center gap-2 mb-3">
           <Zap className="h-4 w-4 text-green-600 dark:text-green-400" />
           <span className="text-sm font-medium text-green-900 dark:text-green-100">
@@ -934,8 +934,8 @@ function TransformPreviewPanel({
         {outputMetrics.length > 0 ? (
           <div className="space-y-1.5">
             {outputMetrics.slice(0, 4).map((metric, idx) => (
-              <div key={idx} className="flex items-center gap-2 bg-white/50 dark:bg-black/20 rounded px-2 py-1">
-                <Zap className="h-3 w-3 text-green-500" />
+              <div key={idx} className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+                <Zap className="h-4 w-4 text-green-500" />
                 <span className="text-xs font-mono">{outputPrefix}.{metric}</span>
               </div>
             ))}
@@ -955,7 +955,7 @@ function TransformPreviewPanel({
   }
 
   return (
-    <div className="h-full flex flex-col bg-muted/30 rounded-xl p-4">
+    <div className="h-full flex flex-col bg-muted/30 rounded-lg p-4">
       {/* Header with toggle */}
       <div className="flex items-center justify-between mb-4 pb-3 border-b">
         <div className="flex items-center gap-2">
@@ -971,7 +971,7 @@ function TransformPreviewPanel({
               : "bg-muted hover:bg-muted/70"
           )}
         >
-          <Code className="h-3 w-3" />
+          <Code className="h-4 w-4" />
           {showDSL ? 'DSL' : (tBuilder('overview') || '预览')}
         </button>
       </div>
@@ -1489,7 +1489,7 @@ export function TransformBuilder({
       <FullScreenDialogFooter>
         {!isFirstStep && (
           <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handlePrevious} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-            <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "mr-1")} />
+            <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "mr-1")} />
             {tBuilder('previous')}
           </Button>
         )}
@@ -1503,7 +1503,7 @@ export function TransformBuilder({
           className={isMobile ? "h-12 min-w-[100px]" : ""}
         >
           {currentStep === 'test' ? tBuilder('save') : tBuilder('next')}
-          <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "ml-1")} />
+          <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-4 w-4", "ml-1")} />
         </Button>
       </FullScreenDialogFooter>
     </FullScreenDialog>
@@ -1919,18 +1919,16 @@ function TestStep({
               size="sm"
               onClick={onTest}
               disabled={!jsCode || testRunning}
-              className="h-8"
             >
-              {testRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3 mr-1" />}
+              {testRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}
               {tBuilder('run')}
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={generateMockData}
-              className="h-8"
             >
-              <FlaskConical className="h-3 w-3 mr-1" />
+              <FlaskConical className="h-4 w-4 mr-1" />
               {tBuilder('generateMock')}
             </Button>
             {(testOutput || testError) && (
@@ -1938,7 +1936,6 @@ function TestStep({
                 size="sm"
                 variant="ghost"
                 onClick={onClearTest}
-                className="h-8"
               >
                 {tBuilder('clear')}
               </Button>

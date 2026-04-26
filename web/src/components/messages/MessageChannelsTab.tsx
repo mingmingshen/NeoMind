@@ -50,7 +50,7 @@ interface MessageChannelsTabProps {
 
 // Channel type icons and colors
 const CHANNEL_CONFIG: Record<string, { icon: string; color: string }> = {
-  console: { icon: 'Terminal', color: 'bg-gray-500' },
+  console: { icon: 'Terminal', color: 'bg-muted-foreground' },
   memory: { icon: 'Database', color: 'bg-blue-500' },
   webhook: { icon: 'Webhook', color: 'bg-green-500' },
   email: { icon: 'Mail', color: 'bg-purple-500' },
@@ -275,7 +275,7 @@ export function MessageChannelsTab({
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="w-2 h-8 rounded-full bg-gray-500" />
+                <div className="w-2 h-8 rounded-full bg-muted-foreground" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('messages.channels.types')}</p>
                   <p className="text-2xl font-bold">{channelTypes.length}</p>

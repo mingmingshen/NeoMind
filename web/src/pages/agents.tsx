@@ -570,11 +570,11 @@ export function AgentsPage() {
           actions={
             <>
               <Button variant="outline" size="sm" onClick={() => selectedAgent && handleEditFromDetail(selectedAgent)}>
-                <Edit className="h-3.5 w-3.5 mr-1.5" />
+                <Edit className="h-4 w-4 mr-1.5" />
                 {tAgent('detail.edit')}
               </Button>
               <Button size="sm" onClick={() => selectedAgent && handleExecute(selectedAgent)} disabled={selectedAgent?.status === 'Executing'}>
-                <Play className="h-3.5 w-3.5 mr-1.5" />
+                <Play className="h-4 w-4 mr-1.5" />
                 {tAgent('detail.execute')}
               </Button>
             </>

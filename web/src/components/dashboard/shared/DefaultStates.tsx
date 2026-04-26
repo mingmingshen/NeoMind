@@ -108,7 +108,7 @@ export function ErrorState({
             className="gap-1.5 mt-3"
             onClick={onRetry}
           >
-            <RefreshCw className="h-3.5 w-3.5" />
+            <RefreshCw className="h-4 w-4" />
             {retryLabel}
           </Button>
         )}

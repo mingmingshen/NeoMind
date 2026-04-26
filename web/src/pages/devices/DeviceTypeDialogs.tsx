@@ -479,7 +479,7 @@ function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
         />
         {errors.name && (
           <p className="text-xs text-destructive flex items-center gap-1">
-            <AlertCircle className="h-3 w-3" />
+            <AlertCircle className="h-4 w-4" />
             {errors.name}
           </p>
         )}
@@ -502,7 +502,7 @@ function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
         </p>
         {errors.device_type && (
           <p className="text-xs text-destructive flex items-center gap-1">
-            <AlertCircle className="h-3 w-3" />
+            <AlertCircle className="h-4 w-4" />
             {errors.device_type}
           </p>
         )}
@@ -875,7 +875,7 @@ function DataDefinitionStep({
                   onClick={() => setShowImportDialog(true)}
                   className="h-8 text-xs"
                 >
-                  <Code className="mr-1 h-3 w-3" />
+                  <Code className="mr-1 h-4 w-4" />
                   {t('devices:metricEditor.generateFromJson')}
                 </Button>
               </div>
@@ -895,11 +895,11 @@ function DataDefinitionStep({
                   onClick={() => setShowImportDialog(true)}
                   className="gap-1 h-8"
                 >
-                  <Code className="h-3 w-3" />
+                  <Code className="h-4 w-4" />
                   {t('devices:metricEditor.importJson')}
                 </Button>
-                <Button onClick={addMetric} size="sm" variant="outline" className="h-8">
-                  <Plus className="mr-1 h-3 w-3" />
+                <Button onClick={addMetric} size="sm" variant="outline">
+                  <Plus className="mr-1 h-4 w-4" />
                   {t('devices:metricEditor.addMetric')}
                 </Button>
               </div>
@@ -970,7 +970,7 @@ function DataDefinitionStep({
             />
             {importError && (
               <p className="text-xs text-destructive flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" />
+                <AlertCircle className="h-4 w-4" />
                 {importError}
               </p>
             )}
@@ -1159,24 +1159,24 @@ function CommandsStep({
               </h4>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline" className="h-8">
-                    <Plus className="mr-1 h-3 w-3" />
+                  <Button size="sm" variant="outline">
+                    <Plus className="mr-1 h-4 w-4" />
                     Add Command
-                    <MoreVertical className="ml-1 h-3 w-3" />
+                    <MoreVertical className="ml-1 h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={addCommand}>
-                    <Plus className="mr-2 h-3 w-3" />
+                    <Plus className="mr-2 h-4 w-4" />
                     Empty Command
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={importFromJson}>
-                    <Code className="mr-2 h-3 w-3" />
+                    <Code className="mr-2 h-4 w-4" />
                     {t('devices:commandsStep.importJson', 'Import from JSON')}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-                    <Database className="mr-2 h-3 w-3" />
+                    <Database className="mr-2 h-4 w-4" />
                     {t('devices:commandsStep.importFromFile', 'Import from File')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -1475,10 +1475,10 @@ function MetricEditorCompact({
             onClick={() => setExpanded(!expanded)}
             className="h-6 w-6"
           >
-            {expanded ? <ChevronLeft className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </Button>
           <Button variant="ghost" size="icon" onClick={onRemove} className="h-6 w-6">
-            <Trash2 className="h-3 w-3 text-destructive" />
+            <Trash2 className="h-4 w-4 text-destructive" />
           </Button>
         </div>
       </div>
@@ -1746,10 +1746,10 @@ function CommandEditorCompact({
             onClick={() => setExpanded(!expanded)}
             className="h-6 w-6"
           >
-            {expanded ? <ChevronLeft className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </Button>
           <Button variant="ghost" size="icon" onClick={onRemove} className="h-6 w-6">
-            <Trash2 className="h-3 w-3 text-destructive" />
+            <Trash2 className="h-4 w-4 text-destructive" />
           </Button>
         </div>
       </div>
@@ -1903,7 +1903,7 @@ function CommandEditorCompact({
                 onClick={addParameter}
                 className="h-7 text-xs"
               >
-                <Plus className="mr-1 h-3 w-3" />
+                <Plus className="mr-1 h-4 w-4" />
                 {t('devices:commandEditor.addParam')}
               </Button>
             </div>
@@ -1967,7 +1967,7 @@ function CommandEditorCompact({
                             type="checkbox"
                             checked={param.required || false}
                             onChange={(e) => updateParameter(pIdx, { required: e.target.checked })}
-                            className="h-3 w-3"
+                            className="h-4 w-4"
                           />
                         </td>
                         <td className="px-2 py-1">
@@ -2010,7 +2010,7 @@ function CommandEditorCompact({
                             onClick={() => removeParameter(pIdx)}
                             className="h-6 w-6"
                           >
-                            <Trash2 className="h-3 w-3 text-destructive" />
+                            <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </td>
                       </tr>
@@ -2047,7 +2047,7 @@ function CommandEditorCompact({
                     onClick={addFixedValue}
                     className="h-6 text-xs"
                   >
-                    <Plus className="mr-1 h-3 w-3" />
+                    <Plus className="mr-1 h-4 w-4" />
                     {t('devices:commandEditor.add')}
                   </Button>
                 </div>
@@ -2079,7 +2079,7 @@ function CommandEditorCompact({
                       onClick={() => removeFixedValue(key)}
                       className="h-6 w-6"
                     >
-                      <Trash2 className="h-3 w-3 text-destructive" />
+                      <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
                 ))}
@@ -2270,7 +2270,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
             </Badge>
             {isRawMode && (
               <Badge variant="secondary" className="text-xs">
-                <Zap className="h-3 w-3 mr-1" />
+                <Zap className="h-4 w-4 mr-1" />
                 Raw Data Mode
               </Badge>
             )}
@@ -2356,7 +2356,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                 </h4>
                 {isRawMode && (
                   <Badge variant="secondary" className="text-xs">
-                    <Zap className="h-3 w-3 mr-1" />
+                    <Zap className="h-4 w-4 mr-1" />
                     Raw Data Mode
                   </Badge>
                 )}
@@ -2412,7 +2412,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                       <div key={i} className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <Sparkles className="h-3 w-3 text-purple-500" />
+                            <Sparkles className="h-4 w-4 text-purple-500" />
                             <code className="text-sm text-purple-700 dark:text-purple-300">{metric.name}</code>
                             <span className="text-muted-foreground">•</span>
                             <span className="text-sm">{metric.display_name}</span>
@@ -2733,7 +2733,7 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
                           : "border-muted-foreground"
                       )}>
                         {selectedIds.has(dt.device_type) && (
-                          <Check className="h-3 w-3 text-primary-foreground" />
+                          <Check className="h-4 w-4 text-primary-foreground" />
                         )}
                       </div>
                     </div>

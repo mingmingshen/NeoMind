@@ -39,14 +39,14 @@ function generateQuickActions(message: Message, t: (key: string) => string): Qui
       id: "refresh-devices",
       label: t("quickActions.refreshDevices"),
       prompt: t("quickActions.refreshPrompt"),
-      icon: <RefreshCw className="h-3.5 w-3.5" />,
+      icon: <RefreshCw className="h-4 w-4" />,
       category: "device"
     })
     actions.push({
       id: "device-details",
       label: t("quickActions.viewDeviceDetails"),
       prompt: t("quickActions.viewDevicePrompt"),
-      icon: <Cpu className="h-3.5 w-3.5" />,
+      icon: <Cpu className="h-4 w-4" />,
       category: "device"
     })
   }
@@ -58,14 +58,14 @@ function generateQuickActions(message: Message, t: (key: string) => string): Qui
       id: "create-automation",
       label: t("quickActions.createAutomation"),
       prompt: t("quickActions.createAutomationPrompt"),
-      icon: <Zap className="h-3.5 w-3.5" />,
+      icon: <Zap className="h-4 w-4" />,
       category: "automation"
     })
     actions.push({
       id: "list-automations",
       label: t("quickActions.viewAllAutomations"),
       prompt: t("quickActions.viewAllAutomationsPrompt"),
-      icon: <FileText className="h-3.5 w-3.5" />,
+      icon: <FileText className="h-4 w-4" />,
       category: "automation"
     })
   }
@@ -77,7 +77,7 @@ function generateQuickActions(message: Message, t: (key: string) => string): Qui
       id: "show-analytics",
       label: t("quickActions.viewAnalytics"),
       prompt: t("quickActions.viewAnalyticsPrompt"),
-      icon: <TrendingUp className="h-3.5 w-3.5" />,
+      icon: <TrendingUp className="h-4 w-4" />,
       category: "analytics"
     })
   }
@@ -89,7 +89,7 @@ function generateQuickActions(message: Message, t: (key: string) => string): Qui
       id: "check-alerts",
       label: t("quickActions.checkAlerts"),
       prompt: t("quickActions.checkAlertsPrompt"),
-      icon: <AlertTriangle className="h-3.5 w-3.5" />,
+      icon: <AlertTriangle className="h-4 w-4" />,
       category: "general"
     })
   }
@@ -100,7 +100,7 @@ function generateQuickActions(message: Message, t: (key: string) => string): Qui
       id: "open-settings",
       label: t("quickActions.openSettings"),
       prompt: t("quickActions.openSettingsPrompt"),
-      icon: <Settings className="h-3.5 w-3.5" />,
+      icon: <Settings className="h-4 w-4" />,
       category: "general"
     })
   }
@@ -112,14 +112,14 @@ function generateQuickActions(message: Message, t: (key: string) => string): Qui
         id: "continue",
         label: t("quickActions.continue"),
         prompt: t("quickActions.continuePrompt"),
-        icon: <ChevronRight className="h-3.5 w-3.5" />,
+        icon: <ChevronRight className="h-4 w-4" />,
         category: "general"
       },
       {
         id: "explain-more",
         label: t("quickActions.elaborate"),
         prompt: t("quickActions.elaboratePrompt"),
-        icon: <Sparkles className="h-3.5 w-3.5" />,
+        icon: <Sparkles className="h-4 w-4" />,
         category: "general"
       }
     )
@@ -163,7 +163,7 @@ export function QuickActions({ message, onActionClick }: QuickActionsProps) {
         >
           {action.icon}
           <span>{action.label}</span>
-          <ChevronRight className="h-3 w-3 opacity-50" />
+          <ChevronRight className="h-4 w-4 opacity-50" />
         </button>
       ))}
     </div>
