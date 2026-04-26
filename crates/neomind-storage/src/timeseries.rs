@@ -415,7 +415,10 @@ impl TimeSeriesStore {
 
         // Check if we already have a store for this path
         {
-            let singleton = TIMESERIES_STORE_SINGLETON.lock().unwrap();
+            let singleton = TIMESERIES_STORE_SINGLETON.lock().unwrap_or_else(|e| {
+                tracing::error!("Timeseries store singleton mutex poisoned: {}", e);
+                e.into_inner()
+            });
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
                     return Ok(store.clone());
@@ -443,7 +446,10 @@ impl TimeSeriesStore {
             path: path_str,
         });
 
-        *TIMESERIES_STORE_SINGLETON.lock().unwrap() = Some(store.clone());
+        *TIMESERIES_STORE_SINGLETON.lock().unwrap_or_else(|e| {
+            tracing::error!("Timeseries store singleton mutex poisoned: {}", e);
+            e.into_inner()
+        }) = Some(store.clone());
         Ok(store)
     }
 
