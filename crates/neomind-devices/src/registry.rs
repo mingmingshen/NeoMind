@@ -995,7 +995,7 @@ impl DeviceRegistry {
             return Err(DeviceError::NotFoundStr(device_id.to_string()));
         }
 
-        let device_type = device_type.unwrap();
+        let device_type = device_type.expect("device_type checked for None above");
 
         // Remove device
         {
