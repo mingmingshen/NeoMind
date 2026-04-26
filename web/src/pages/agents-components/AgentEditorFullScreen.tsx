@@ -1015,9 +1015,11 @@ export function AgentEditorFullScreen({
 
   // Validation - name and prompt are required
   // Metric selection is optional for event-triggered agents (device-level deduplication prevents loops)
-  const nameError = validateRequired(name, 'Name') || validateLength(name, 'Name', 1, 100)
-  const promptError = validateRequired(userPrompt, 'Prompt') || validateLength(userPrompt, 'Prompt', 1, 5000)
-  const isValid: boolean = !nameError && !promptError
+  const nameError = fieldErrors.name ??
+    (validateRequired(name, 'Name') || validateLength(name, 'Name', 1, 100))
+  const promptError = fieldErrors.prompt ??
+    (validateRequired(userPrompt, 'Prompt') || validateLength(userPrompt, 'Prompt', 1, 5000))
+  const isValid: boolean = name.trim().length > 0 && userPrompt.trim().length > 0
 
   // ========================================================================
   // Handlers
@@ -1365,8 +1367,14 @@ export function AgentEditorFullScreen({
               </Label>
               <Input
                 value={name}
-                onChange={(e) => { setName(e.target.value); setFieldErrors(prev => { const next = { ...prev }; delete next.name; return next }) }}
-                onBlur={() => { const err = validateRequired(name, 'Name') || validateLength(name, 'Name', 1, 100); if (err) setFieldErrors(prev => ({ ...prev, name: err })) }}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  if (fieldErrors.name) setFieldErrors(prev => { const next = { ...prev }; delete next.name; return next })
+                }}
+                onBlur={() => {
+                  const err = validateRequired(name, 'Name') || validateLength(name, 'Name', 1, 100)
+                  if (err) setFieldErrors(prev => ({ ...prev, name: err }))
+                }}
                 placeholder={tAgent('creator.basicInfo.namePlaceholder')}
                 className={cn(isMobile ? "h-12 text-base" : "h-10", fieldErrors.name && "border-destructive")}
               />
@@ -1409,8 +1417,14 @@ export function AgentEditorFullScreen({
 
               <Textarea
                 value={userPrompt}
-                onChange={(e) => { setUserPrompt(e.target.value); setFieldErrors(prev => { const next = { ...prev }; delete next.prompt; return next }) }}
-                onBlur={() => { const err = validateRequired(userPrompt, 'Prompt') || validateLength(userPrompt, 'Prompt', 1, 5000); if (err) setFieldErrors(prev => ({ ...prev, prompt: err })) }}
+                onChange={(e) => {
+                  setUserPrompt(e.target.value)
+                  if (fieldErrors.prompt) setFieldErrors(prev => { const next = { ...prev }; delete next.prompt; return next })
+                }}
+                onBlur={() => {
+                  const err = validateRequired(userPrompt, 'Prompt') || validateLength(userPrompt, 'Prompt', 1, 5000)
+                  if (err) setFieldErrors(prev => ({ ...prev, prompt: err }))
+                }}
                 placeholder={tAgent('creator.basicInfo.promptPlaceholder')}
                 className={cn("min-h-[140px] resize-y text-sm leading-relaxed", fieldErrors.prompt && "border-destructive")}
               />
