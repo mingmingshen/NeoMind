@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
+import { confirm } from '@/hooks/use-confirm'
 import {
   ArrowLeft,
   Server,
@@ -274,10 +275,15 @@ export function UnifiedLLMBackendsTab({
     const instance = instances.find(i => i.id === id)
     const instanceName = instance?.name || instance?.model || id
 
-    // Confirm deletion
-    if (!confirm(t('plugins:llm.confirmDelete', { name: instanceName, defaultValue: `确定要删除 "${instanceName}" 吗？` }))) {
-      return
-    }
+    // Confirm deletion using project's confirm dialog
+    const confirmed = await confirm({
+      title: t('plugins:llm.deleteBackend', { defaultValue: 'Delete Backend' }),
+      description: t('plugins:llm.confirmDelete', { name: instanceName, defaultValue: `Are you sure you want to delete "${instanceName}"? This action cannot be undone.` }),
+      confirmText: t('common:delete', { defaultValue: 'Delete' }),
+      cancelText: t('common:cancel', { defaultValue: 'Cancel' }),
+      variant: 'destructive',
+    })
+    if (!confirmed) return
 
     const success = await onDeleteBackend(id)
     if (success) {

@@ -32,6 +32,7 @@ import {
 } from "@/components/automation/dialog"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useToast } from "@/hooks/use-toast"
+import { confirm } from "@/hooks/use-confirm"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { SkillSummary, SkillDetail } from "@/types/skill"
@@ -242,6 +243,15 @@ anti_triggers:
 
   // Delete skill
   const handleDelete = async (id: string, name: string) => {
+    const confirmed = await confirm({
+      title: "Delete Skill",
+      description: `Are you sure you want to delete "${name}"? This action cannot be undone.`,
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      variant: "destructive",
+    })
+    if (!confirmed) return
+
     try {
       await api.delete(`/skills/${id}`)
       toast({ title: `Skill "${name}" deleted` })
