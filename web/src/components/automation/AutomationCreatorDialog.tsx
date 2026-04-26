@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Loader2, Sparkles, Zap, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { validateRequired, validateLength } from '@/lib/form-validation'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
@@ -57,6 +58,7 @@ export function AutomationCreatorDialog({
   const [automationName, setAutomationName] = useState('')
   const [enabled, setEnabled] = useState(true)
   const [creating, setCreating] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
   // Templates tab state
   const [templates, setTemplates] = useState<AutomationTemplate[]>([])
@@ -76,6 +78,7 @@ export function AutomationCreatorDialog({
       setEnabled(true)
       setSelectedTemplate(null)
       setTemplateParams({})
+      setErrors({})
     }
   }, [open, initialDescription, suggestedType])
 
@@ -106,13 +109,12 @@ export function AutomationCreatorDialog({
   }
 
   const handleCreateManual = async () => {
-    if (!selectedType || !automationName.trim()) {
-      toast({
-        title: t('automation:nameRequired', { defaultValue: 'Automation name is required' }),
-        variant: 'destructive',
-      })
-      return
-    }
+    const newErrors: Record<string, string> = {}
+    const nameErr = validateRequired(automationName, 'Automation name') || validateLength(automationName, 'Automation name', 1, 100)
+    if (nameErr) newErrors.name = nameErr
+    setErrors(newErrors)
+    if (Object.keys(newErrors).length > 0) return
+    if (!selectedType) return
 
     setCreating(true)
     const request: CreateAutomationRequest = {
@@ -156,25 +158,22 @@ export function AutomationCreatorDialog({
   }
 
   const handleCreateFromTemplate = async () => {
-    if (!selectedTemplate || !automationName.trim()) {
-      toast({
-        title: t('automation:nameRequired', { defaultValue: 'Automation name is required' }),
-        variant: 'destructive',
-      })
-      return
-    }
+    const newErrors: Record<string, string> = {}
+    const nameErr = validateRequired(automationName, 'Automation name') || validateLength(automationName, 'Automation name', 1, 100)
+    if (nameErr) newErrors.name = nameErr
 
     // Validate required params
-    for (const param of selectedTemplate.parameters) {
-      if (param.required && !templateParams[param.name]) {
-        toast({
-          title: t('common:failed'),
-          description: `${param.label} is required`,
-          variant: 'destructive',
-        })
-        return
+    if (selectedTemplate) {
+      for (const param of selectedTemplate.parameters) {
+        if (param.required && !templateParams[param.name]) {
+          newErrors[`param-${param.name}`] = `${param.label} is required`
+        }
       }
     }
+
+    setErrors(newErrors)
+    if (Object.keys(newErrors).length > 0) return
+    if (!selectedTemplate) return
 
     setCreating(true)
     const request: CreateAutomationRequest = {
@@ -313,6 +312,9 @@ export function AutomationCreatorDialog({
                             {param.label}
                             {param.required && <span className="text-destructive">*</span>}
                           </Label>
+                          {errors[`param-${param.name}`] && (
+                            <p className="text-sm text-destructive mt-1">{errors[`param-${param.name}`]}</p>
+                          )}
 
                           {param.param_type === 'device' ? (
                             <Select
@@ -391,9 +393,14 @@ export function AutomationCreatorDialog({
                       <Input
                         id="template-automation-name"
                         value={automationName}
-                        onChange={(e) => setAutomationName(e.target.value)}
+                        onChange={(e) => { setAutomationName(e.target.value); setErrors(prev => { const next = { ...prev }; delete next.name; return next }) }}
+                        onBlur={() => { const err = validateRequired(automationName, 'Automation name') || validateLength(automationName, 'Automation name', 1, 100); if (err) setErrors(prev => ({ ...prev, name: err })) }}
                         placeholder={t('automation:automationNamePlaceholder')}
+                        className={cn(errors.name && "border-destructive")}
                       />
+                      {errors.name && (
+                        <p className="text-sm text-destructive mt-1">{errors.name}</p>
+                      )}
                     </div>
 
                     <Button
@@ -434,9 +441,14 @@ export function AutomationCreatorDialog({
                   <Input
                     id="manual-name"
                     value={automationName}
-                    onChange={(e) => setAutomationName(e.target.value)}
+                    onChange={(e) => { setAutomationName(e.target.value); setErrors(prev => { const next = { ...prev }; delete next.name; return next }) }}
+                    onBlur={() => { const err = validateRequired(automationName, 'Automation name') || validateLength(automationName, 'Automation name', 1, 100); if (err) setErrors(prev => ({ ...prev, name: err })) }}
                     placeholder={t('automation:automationNamePlaceholder')}
+                    className={cn(errors.name && "border-destructive")}
                   />
+                  {errors.name && (
+                    <p className="text-sm text-destructive mt-1">{errors.name}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Switch

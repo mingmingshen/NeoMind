@@ -18,6 +18,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { createPortal } from "react-dom"
 import { api } from "@/lib/api"
+import { validateRequired, validateLength } from "@/lib/form-validation"
 import { useToast } from "@/hooks/use-toast"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
@@ -334,6 +335,9 @@ export function AgentEditorFullScreen({
   const [llmValid, setLlmValid] = useState<boolean | null>(null)
   const [llmValidationError, setLlmValidationError] = useState<string | null>(null)
 
+  // Form field validation errors
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+
   // ========================================================================
   // Mode Helpers
   // ========================================================================
@@ -452,6 +456,7 @@ export function AgentEditorFullScreen({
 
   // Reset/Load form when dialog opens
   useEffect(() => {
+    setFieldErrors({})
     if (open) {
       if (agent) {
         // Edit mode
@@ -1009,7 +1014,9 @@ export function AgentEditorFullScreen({
 
   // Validation - name and prompt are required
   // Metric selection is optional for event-triggered agents (device-level deduplication prevents loops)
-  const isValid: boolean = name.trim().length > 0 && userPrompt.trim().length > 0
+  const nameError = validateRequired(name, 'Name') || validateLength(name, 'Name', 1, 100)
+  const promptError = validateRequired(userPrompt, 'Prompt') || validateLength(userPrompt, 'Prompt', 1, 5000)
+  const isValid: boolean = !nameError && !promptError
 
   // ========================================================================
   // Handlers
@@ -1357,10 +1364,14 @@ export function AgentEditorFullScreen({
               </Label>
               <Input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { setName(e.target.value); setFieldErrors(prev => { const next = { ...prev }; delete next.name; return next }) }}
+                onBlur={() => { const err = validateRequired(name, 'Name') || validateLength(name, 'Name', 1, 100); if (err) setFieldErrors(prev => ({ ...prev, name: err })) }}
                 placeholder={tAgent('creator.basicInfo.namePlaceholder')}
-                className={cn(isMobile ? "h-12 text-base" : "h-10")}
+                className={cn(isMobile ? "h-12 text-base" : "h-10", fieldErrors.name && "border-destructive")}
               />
+              {fieldErrors.name && (
+                <p className="text-sm text-destructive mt-1">{fieldErrors.name}</p>
+              )}
             </div>
 
             {/* Description (Optional) */}
@@ -1397,10 +1408,14 @@ export function AgentEditorFullScreen({
 
               <Textarea
                 value={userPrompt}
-                onChange={(e) => setUserPrompt(e.target.value)}
+                onChange={(e) => { setUserPrompt(e.target.value); setFieldErrors(prev => { const next = { ...prev }; delete next.prompt; return next }) }}
+                onBlur={() => { const err = validateRequired(userPrompt, 'Prompt') || validateLength(userPrompt, 'Prompt', 1, 5000); if (err) setFieldErrors(prev => ({ ...prev, prompt: err })) }}
                 placeholder={tAgent('creator.basicInfo.promptPlaceholder')}
-                className="min-h-[140px] resize-y text-sm leading-relaxed"
+                className={cn("min-h-[140px] resize-y text-sm leading-relaxed", fieldErrors.prompt && "border-destructive")}
               />
+              {fieldErrors.prompt && (
+                <p className="text-sm text-destructive mt-1">{fieldErrors.prompt}</p>
+              )}
 
               {/* AI Helper Tip */}
               <div className="flex items-start gap-2 p-3 bg-primary/5 rounded-lg border border-primary/20">

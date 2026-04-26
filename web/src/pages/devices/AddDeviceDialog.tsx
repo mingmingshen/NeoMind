@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils"
 import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 import { FormField } from "@/components/ui/field"
 import { getServerOrigin } from "@/lib/api"
+import { validateRequired, validateIdentifier, validateUrl } from "@/lib/form-validation"
 function generateRandomId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
   let result = ''
@@ -53,6 +54,7 @@ export function AddDeviceDialog({
   const [deviceName, setDeviceName] = useState("")
   const [adapterType, setAdapterType] = useState<"mqtt" | "http" | "webhook">("mqtt")
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
   // Lock body scroll on mobile
   useMobileBodyScrollLock(isMobile && open)
@@ -84,7 +86,17 @@ export function AddDeviceDialog({
   }, [adapterType, selectedDeviceType, deviceId])
 
   const handleAdd = async () => {
-    if (!selectedDeviceType) return
+    // Validate required fields
+    const newErrors: Record<string, string> = {}
+    if (!selectedDeviceType) {
+      newErrors.deviceType = t('devices:deviceType') + ' is required'
+    }
+    if (adapterType === 'http' && connectionConfig.url) {
+      const urlError = validateUrl(connectionConfig.url, 'URL')
+      if (urlError) newErrors.httpUrl = urlError
+    }
+    setErrors(newErrors)
+    if (Object.keys(newErrors).length > 0) return
 
     const request: AddDeviceRequest = {
       device_id: deviceId || undefined,
@@ -122,6 +134,7 @@ export function AddDeviceDialog({
       setDeviceName("")
       setAdapterType("mqtt")
       setConnectionConfig({})
+      setErrors({})
       onOpenChange(false)
     }
   }, [adding, onOpenChange])
@@ -135,8 +148,9 @@ export function AddDeviceDialog({
       <FormField
         label={t('devices:deviceType')}
         required
+        error={errors.deviceType}
       >
-        <Select value={selectedDeviceType} onValueChange={setSelectedDeviceType}>
+        <Select value={selectedDeviceType} onValueChange={(v) => { setSelectedDeviceType(v); setErrors(prev => { const next = { ...prev }; delete next.deviceType; return next }) }}>
           <SelectTrigger>
             <SelectValue placeholder={t('devices:add.typePlaceholder')} />
           </SelectTrigger>
@@ -234,10 +248,10 @@ export function AddDeviceDialog({
           defaultExpanded
         >
           <div className="space-y-3">
-            <FormField label={t('devices:add.httpUrl')}>
+            <FormField label={t('devices:add.httpUrl')} error={errors.httpUrl}>
               <Input
                 value={connectionConfig.url || ''}
-                onChange={(e) => setConnectionConfig({ ...connectionConfig, url: e.target.value })}
+                onChange={(e) => { setConnectionConfig({ ...connectionConfig, url: e.target.value }); setErrors(prev => { const next = { ...prev }; delete next.httpUrl; return next }) }}
                 placeholder="http://192.168.1.100/api/telemetry"
                 className="font-mono text-sm"
               />
