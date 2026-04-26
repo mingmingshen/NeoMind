@@ -7,12 +7,14 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { useDataSource } from '@/hooks/useDataSource'
+import { toast } from '@/components/ui/use-toast'
 import {
   MapPin,
   Navigation,
@@ -734,6 +736,8 @@ export function MapDisplay({
   onMapClick,
 }: MapDisplayProps) {
   const { t } = useTranslation('dashboardComponents')
+  const navigate = useNavigate()
+  const sendCommand = useSendCommand()
 
   // Get devices from store for real-time metric updates
   const devices = useStore(state => state.devices)
@@ -961,7 +965,7 @@ export function MapDisplay({
     setCurrentZoom(prev => Math.max(prev - 1, minZoom))
   }, [minZoom])
 
-  const handleMarkerClick = useCallback((marker: MapMarker) => {
+  const handleMarkerClick = useCallback(async (marker: MapMarker) => {
     if (!interactive) return
 
     // Toggle selection: if clicking the same marker, deselect it
@@ -972,20 +976,54 @@ export function MapDisplay({
 
     // Different actions based on marker type
     switch (marker.markerType) {
-      case 'device':
-        // For devices: show device details (status, last seen, etc.)
-        // TODO: Show device detail panel or navigate to device page
+      case 'device': {
+        // For devices: navigate to device detail page
+        const deviceId = marker.sourceId || marker.deviceId
+        if (deviceId) {
+          navigate(`/devices/${deviceId}`)
+        }
         break
+      }
 
-      case 'metric':
-        // For metrics: show current value and trend
-        // TODO: Show metric value tooltip or panel
+      case 'metric': {
+        // For metrics: show current value and trend in toast
+        const metricValue = marker.metricValue ?? '-'
+        toast({
+          title: t('mapDisplay.metricValue'),
+          description: `${t('mapDisplay.metric')}: ${marker.metricName || '-'}\n${t('mapDisplay.value')}: ${metricValue}`,
+        })
         break
+      }
 
-      case 'command':
+      case 'command': {
         // For commands: execute the command
-        // TODO: Execute command via API
+        const deviceId = marker.sourceId || marker.deviceId
+        const commandName = marker.commandName
+        if (deviceId && commandName) {
+          try {
+            const success = await sendCommand(deviceId, commandName)
+            if (success) {
+              toast({
+                title: t('mapDisplay.commandSent'),
+                description: `${t('mapDisplay.command')}: ${commandName}`,
+              })
+            } else {
+              toast({
+                title: t('mapDisplay.commandFailed'),
+                description: `${t('mapDisplay.command')}: ${commandName}`,
+                variant: 'destructive',
+              })
+            }
+          } catch (error) {
+            toast({
+              title: t('mapDisplay.commandError'),
+              description: `${t('mapDisplay.command')}: ${commandName}`,
+              variant: 'destructive',
+            })
+          }
+        }
         break
+      }
 
       default:
         // For regular markers: just show tooltip
@@ -998,7 +1036,7 @@ export function MapDisplay({
     if (marker.onClick) {
       marker.onClick()
     }
-  }, [interactive, selectedMarker])
+  }, [interactive, selectedMarker, navigate, sendCommand, t])
 
   // Loading state - only show loading when we have a dataSource to load
   if (loading && dataSource) {

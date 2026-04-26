@@ -213,7 +213,14 @@
     "add": "Add",
     "emptyDashboard": "Dashboard is empty",
     "addComponentsHint": "Click the + button to add components",
-    "enterEditModeHint": "Click Edit Layout to add components"
+    "enterEditModeHint": "Click Edit Layout to add components",
+    "deviceNotFound": "Device Not Found",
+    "deviceNotFoundDesc": "The requested device could not be found",
+    "metricInfo": "Metric Information",
+    "commandSent": "Command Sent",
+    "commandFailed": "Command Failed",
+    "commandError": "Command Error",
+    "metric": "Metric"
   },
   "mobileEditBar": {
     "component": "Component",
@@ -511,7 +518,11 @@
     "clickToSelectCenter": "Click on the map to select center point",
     "selectedCenter": "Selected Center Point",
     "centerSelected": "New position selected",
-    "visualSelectCenter": "Visual Select Center"
+    "visualSelectCenter": "Visual Select Center",
+    "metricValue": "Metric Value",
+    "commandSent": "Command Sent",
+    "commandFailed": "Command Failed",
+    "commandError": "Command Error"
   },
   "customLayer": {
     "title": "Custom Layer",

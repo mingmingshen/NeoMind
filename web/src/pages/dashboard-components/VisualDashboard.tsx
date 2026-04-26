@@ -120,6 +120,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
+import { toast } from '@/components/ui/use-toast'
 
 // Config system
 import {
@@ -1075,6 +1076,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     fetchDevices,
     fetchDeviceTypes,
     fetchDevicesCurrentBatch,
+    sendCommand,
   } = useStore()
 
   // Extension lifecycle management for hot updates
@@ -1141,6 +1143,49 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     setCurrentDashboard(id)
     // URL will be updated automatically by the Store → URL sync effect
   }, [setCurrentDashboard])
+
+  // Dashboard interaction handlers
+  const handleDeviceClick = useCallback(async (deviceId: string) => {
+    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+    if (device) {
+      // Navigate to device detail page
+      navigate(`/devices/${device.id}`)
+    } else {
+      toast({
+        title: t('visualDashboard.deviceNotFound'),
+        description: t('visualDashboard.deviceNotFoundDesc'),
+        variant: 'destructive',
+      })
+    }
+  }, [devices, navigate, t])
+
+  const handleMetricClick = useCallback(async (metricId: string, deviceId?: string) => {
+    // Show metric info in toast
+    toast({
+      title: t('visualDashboard.metricInfo'),
+      description: `${t('visualDashboard.metric')}: ${metricId}${deviceId ? `\n${t('visualDashboard.device')}: ${deviceId.slice(0, 8)}...` : ''}`,
+    })
+  }, [t])
+
+  const handleCommandClick = useCallback(async (deviceId: string, command: string) => {
+    try {
+      const success = await sendCommand(deviceId, command)
+      if (success) {
+        toast({
+          title: t('visualDashboard.commandSent'),
+          description: `${t('visualDashboard.command')}: ${command}\n${t('visualDashboard.device')}: ${deviceId.slice(0, 8)}...`,
+        })
+      } else {
+        toast({
+          title: t('visualDashboard.commandFailed'),
+          description: `${t('visualDashboard.command')}: ${command}`,
+          variant: 'destructive',
+        })
+      }
+    } catch (error) {
+      handleError(error, t('visualDashboard.commandError'))
+    }
+  }, [sendCommand, t, handleError])
 
   const handleDashboardCreate = useCallback(async (name: string) => {
     const newId = await createDashboard({
@@ -4367,15 +4412,12 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                                     className={`flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors cursor-pointer`}
                                     onClick={() => {
                                       // Different interactions based on type
-                                      if (type === 'device') {
-                                        // Show device details
-                                        // TODO: Open device details panel
+                                      if (type === 'device' && deviceId) {
+                                        handleDeviceClick(deviceId)
                                       } else if (type === 'metric') {
-                                        // Show metric value/trend
-                                        // TODO: Show metric tooltip
-                                      } else if (type === 'command') {
-                                        // Execute command
-                                        // TODO: Execute command
+                                        handleMetricClick(metricId || '', deviceId)
+                                      } else if (type === 'command' && deviceId && command) {
+                                        handleCommandClick(deviceId, command)
                                       }
                                     }}
                                   >
