@@ -1321,7 +1321,6 @@ export function useDataSource<T = unknown>(
           const prevDevice = prevDeviceMap.get(deviceId)
 
           if (device && prevDevice) {
-            // DEBUG: Log comparison details
             const currentCV = device.current_values as Record<string, unknown> | null
             const prevCV = prevDevice.current_values as Record<string, unknown> | null
             const refEqual = currentCV === prevCV

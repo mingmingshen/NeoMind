@@ -431,10 +431,8 @@ export function useAnalystSession({
     api.getAgentExecutions(agentId, 1)
       .then((resp) => {
         const exec = resp?.executions?.[0]
-        console.log('[AI Analyst] Recovery poll:', { agentId, status: exec?.status, id: exec?.id })
         if (!exec || exec.status === 'Running') return
         // Execution completed but we missed the event — recover
-        console.log('[AI Analyst] Recovery: execution completed, clearing streaming state')
 
         // Clear the polling interval
         if (streamingPollRef.current) {
@@ -524,7 +522,6 @@ export function useAnalystSession({
 
       switch (event.type) {
         case 'AgentExecutionStarted': {
-          console.log('[AI Analyst] AgentExecutionStarted, agent_id:', data.agent_id, 'seenExecIds:', [...seenExecIdsRef.current])
           setIsStreaming(true)
           const id = `stream-${Date.now()}`
           setStreamingMsgId(id)
@@ -543,12 +540,10 @@ export function useAnalystSession({
           // This proactively recovers if AgentExecutionCompleted event is lost.
           if (streamingPollRef.current) clearInterval(streamingPollRef.current)
           streamingPollRef.current = setInterval(recoverFromStuckStreaming, 5_000)
-          console.log('[AI Analyst] Polling started (5s interval)')
           break
         }
 
         case 'AgentExecutionCompleted': {
-          console.log('[AI Analyst] AgentExecutionCompleted received, agent_id:', data.agent_id)
           // Stop the polling — event arrived successfully
           if (streamingPollRef.current) {
             clearInterval(streamingPollRef.current)
@@ -573,7 +568,6 @@ export function useAnalystSession({
           seenExecIdsRef.current.add(completedData.execution_id)
           // Dedup key — prevent recovery polling and live event from adding the same execution twice
           const dedupKey = `exec-${completedData.execution_id}`
-          console.log('[AI Analyst] Completed event, exec_id:', completedData.execution_id, 'duration_ms:', completedData.duration_ms)
           api.getExecution(completedData.agent_id, completedData.execution_id)
             .then((detail) => {
               const conclusion = detail?.decision_process?.conclusion

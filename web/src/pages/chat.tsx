@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
+import { useToast } from "@/hooks/use-toast"
 import { mergeMessagesForDisplay, cleanToolCallJson } from "@/lib/messageUtils"
 
 /** Image gallery component for user messages */
@@ -156,6 +157,7 @@ async function compressImage(file: File, maxSizeMB: number = 2): Promise<string>
 
 export function ChatPage() {
   const { t } = useTranslation(['common', 'chat'])
+  const { toast } = useToast()
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>()
   const navigate = useNavigate()
   const { handleError } = useErrorHandler()
@@ -569,7 +571,7 @@ export function ChatPage() {
 
     // Check if images are attached but current model doesn't support vision
     if (attachedImages.length > 0 && !supportsMultimodal) {
-      alert(t('chat:model.visionError'))
+      toast({ title: t('chat:model.visionError'), variant: "destructive" })
       return
     }
 
@@ -652,7 +654,7 @@ export function ChatPage() {
 
         // Limit original file size to 10MB
         if (file.size > 10 * 1024 * 1024) {
-          alert(`Image ${file.name} is too large. Maximum size is 10MB.`)
+          toast({ title: `Image ${file.name} is too large. Maximum size is 10MB.`, variant: "destructive" })
           continue
         }
 
@@ -669,7 +671,7 @@ export function ChatPage() {
       }
     } catch (error) {
       handleError(error, { operation: 'Process images', showToast: false })
-      alert(t('common:imageProcessFailed'))
+      toast({ title: t('common:imageProcessFailed'), variant: "destructive" })
     } finally {
       setIsUploadingImage(false)
       // Reset file input

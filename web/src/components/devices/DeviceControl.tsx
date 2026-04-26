@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
+import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -149,6 +150,7 @@ export function DeviceControl({
   maxHistory = 50,
 }: DeviceControlProps) {
   const { t } = useTranslation(['common', 'devices'])
+  const { toast } = useToast()
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const [selectedCommand, setSelectedCommand] = useState<string | null>(null)
   const [commandParams, setCommandParams] = useState<Record<string, unknown>>({})
@@ -317,7 +319,7 @@ export function DeviceControl({
     try {
       payload = JSON.parse(quickCommandPayload)
     } catch {
-      alert(t('devices:control.jsonFormatError'))
+      toast({ title: t('devices:control.jsonFormatError'), variant: "destructive" })
       return
     }
 

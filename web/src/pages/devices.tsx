@@ -463,16 +463,16 @@ export function DevicesPage() {
         try {
           params = JSON.parse(paramsJson)
         } catch {
-          alert(t('devices:paramsError'))
+          toast({ title: t('devices:paramsError'), variant: "destructive" })
           return
         }
       }
       const success = await sendCommand(deviceDetailView, commandName, params)
       if (!success) {
-        alert(t('devices:sendCommandFailed'))
+        toast({ title: t('devices:sendCommandFailed'), variant: "destructive" })
       }
     } catch {
-      alert(t('devices:sendCommandFailed'))
+      toast({ title: t('devices:sendCommandFailed'), variant: "destructive" })
     }
   }
 

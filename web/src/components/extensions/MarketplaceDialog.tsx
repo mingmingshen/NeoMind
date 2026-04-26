@@ -239,7 +239,6 @@ export function MarketplaceDialog({
         try {
           const { syncExtensionComponents } = await import('@/hooks/useExtensionComponents')
           await syncExtensionComponents()
-          console.log('[Marketplace] Extension components synced successfully')
         } catch (e) {
           console.warn('[Marketplace] Failed to sync extension components:', e)
         }
