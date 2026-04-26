@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
+import { showErrorToast } from '@/lib/error-messages'
 import {
   ArrowLeft,
   Server,
@@ -441,11 +442,7 @@ export function UnifiedDeviceConnectionsTab() {
       await loadData()
     } catch (error) {
       handleError(error, { operation: 'Delete broker', showToast: true })
-      toast({
-        title: t('common:failed', { defaultValue: 'Failed' }),
-        description: (error as Error).message || t('plugins:deleteFailed', { defaultValue: 'Failed to delete broker' }),
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, t('common:failed', { defaultValue: 'Failed' }))
     } finally {
       setDeleting(false)
     }

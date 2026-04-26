@@ -16,6 +16,7 @@ import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { showErrorToast } from "@/lib/error-messages"
 import { useIsMobile } from "@/hooks/useMobile"
 import { Button } from "@/components/ui/button"
 import {
@@ -235,11 +236,7 @@ export function AutomationPage() {
       setShowRuleDialog(true)
     } catch (error) {
       handleError(error, { operation: 'Load rule details', showToast: false })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
     }
   }
 
@@ -262,11 +259,7 @@ export function AutomationPage() {
       })
     } catch (error) {
       handleError(error, { operation: 'Delete rule', showToast: true })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
     }
   }
 
@@ -280,11 +273,7 @@ export function AutomationPage() {
       await loadItems()
     } catch (error) {
       handleError(error, { operation: 'Toggle rule', showToast: true })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
     }
   }
 
@@ -304,11 +293,7 @@ export function AutomationPage() {
       }
     } catch (error) {
       handleError(error, { operation: 'Execute rule', showToast: true })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
     }
   }
 
@@ -338,11 +323,7 @@ export function AutomationPage() {
       })
     } catch (error) {
       handleError(error, { operation: 'Delete transform', showToast: true })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
     }
   }
 
@@ -352,11 +333,7 @@ export function AutomationPage() {
       await loadItems()
     } catch (error) {
       handleError(error, { operation: 'Toggle transform', showToast: true })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
     }
   }
 
@@ -418,11 +395,7 @@ export function AutomationPage() {
       })
     } catch (error) {
       handleError(error, { operation: 'Save rule', showToast: true })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
       throw error
     }
   }
@@ -464,11 +437,7 @@ export function AutomationPage() {
       })
     } catch (error) {
       handleError(error, { operation: 'Save transform', showToast: true })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
       throw error
     }
   }

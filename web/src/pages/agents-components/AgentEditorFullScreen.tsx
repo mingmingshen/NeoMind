@@ -21,6 +21,7 @@ import { api } from "@/lib/api"
 import { validateRequired, validateLength } from "@/lib/form-validation"
 import { useToast } from "@/hooks/use-toast"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { showErrorToast } from "@/lib/error-messages"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { cn } from "@/lib/utils"
@@ -1216,7 +1217,7 @@ export function AgentEditorFullScreen({
       toast({ title: tCommon('success'), description: agent ? tAgent('agentUpdated') : tAgent('agentCreated') })
     } catch (error) {
       handleError(error, { operation: 'Save agent', showToast: false })
-      toast({ title: tCommon('failed'), description: (error as Error).message, variant: 'destructive' })
+      showErrorToast(toast, error, tCommon('failed'))
     } finally {
       setSaving(false)
     }

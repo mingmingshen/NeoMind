@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
 import { useEvents } from "@/hooks/useEvents"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { showErrorToast } from "@/lib/error-messages"
 import { useIsMobile } from "@/hooks/useMobile"
 import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw, Settings, Sparkles, Zap, BookOpen, Edit, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -309,11 +310,7 @@ export function AgentsPage() {
       setShowAgentDialog(true)
     } catch (error) {
       handleError(error, { operation: 'Load agent details', showToast: false })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
     }
   }
 
@@ -339,11 +336,7 @@ export function AgentsPage() {
       })
     } catch (error) {
       handleError(error, { operation: 'Delete agent', showToast: true })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
     }
   }
 
@@ -354,11 +347,7 @@ export function AgentsPage() {
       await loadItems()
     } catch (error) {
       handleError(error, { operation: 'Toggle agent status', showToast: true })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
     }
   }
 
@@ -387,11 +376,7 @@ export function AgentsPage() {
         return next
       })
       handleError(error, { operation: 'Execute agent', showToast: true })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
     }
   }
 
@@ -430,11 +415,7 @@ export function AgentsPage() {
       setDetailDialogOpen(true)
     } catch (error) {
       handleError(error, { operation: 'Load agent details for panel', showToast: false })
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tCommon('failed'))
     }
   }
 

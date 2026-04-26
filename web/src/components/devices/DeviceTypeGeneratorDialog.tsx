@@ -32,6 +32,7 @@ import {
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
+import { showErrorToast } from '@/lib/error-messages'
 import { useIsMobile } from '@/hooks/useMobile'
 import { FormField } from '@/components/ui/field'
 // Unified dialog components
@@ -234,11 +235,7 @@ export function DeviceTypeGeneratorDialog({
         }),
       })
     } catch (error) {
-      toast({
-        title: tGen('toast.analysisFailed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tGen('toast.analysisFailed'))
     } finally {
       setAnalyzing(false)
     }
@@ -363,11 +360,7 @@ export function DeviceTypeGeneratorDialog({
       setCurrentStep('samples')
       setValidation(null)
     } catch (error) {
-      toast({
-        title: tGen('toast.creationFailed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, tGen('toast.creationFailed'))
     } finally {
       setCreating(false)
     }

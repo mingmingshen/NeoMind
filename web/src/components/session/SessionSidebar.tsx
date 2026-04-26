@@ -38,6 +38,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
+import { showErrorToast } from "@/lib/error-messages"
 
 interface SessionSidebarProps {
   /** Mobile drawer mode: open state */
@@ -229,13 +230,7 @@ export function SessionSidebar({
         title: t('session.sessionDeleted'),
       })
     } catch (error: any) {
-      // Show user-friendly error message
-      const errorMessage = error?.message || error?.error?.message || t('session.deleteFailed')
-      toast({
-        variant: "destructive",
-        title: t('error'),
-        description: errorMessage,
-      })
+      showErrorToast(toast, error, t('error'))
     } finally {
       setDeletingId(null)
       setSessionToDelete(null)

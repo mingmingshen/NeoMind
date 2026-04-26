@@ -17,6 +17,7 @@ import { AutomationCreatorDialog } from '@/components/automation'
 import { formatTimestamp } from '@/lib/utils/format'
 import { useToast } from '@/hooks/use-toast'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
+import { showErrorToast } from '@/lib/error-messages'
 import { confirm } from '@/hooks/use-confirm'
 import {
   RefreshCw,
@@ -91,11 +92,7 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
       })
       loadAutomations()
     } catch (error) {
-      toast({
-        title: t('common:failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, t('common:failed'))
     }
   }
 
@@ -106,11 +103,7 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
         description: t('automation:executed'),
       })
     } catch (error) {
-      toast({
-        title: t('common:failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, t('common:failed'))
     }
   }
 
@@ -132,11 +125,7 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
       })
       loadAutomations()
     } catch (error) {
-      toast({
-        title: t('common:failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
+      showErrorToast(toast, error, t('common:failed'))
     }
   }
 
