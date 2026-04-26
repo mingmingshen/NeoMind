@@ -250,4 +250,115 @@ mod tests {
         assert!(formatted.contains("Step 1"));
         assert!(formatted.contains("Step 2"));
     }
+
+    // ===== Parameter Type Validation Tests =====
+
+    #[tokio::test]
+    async fn test_think_tool_thought_wrong_type() {
+        let tool = ThinkTool::new();
+        let args = serde_json::json!({
+            "thought": 123  // Should be string, not number
+        });
+
+        let result = tool.execute(args).await;
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert!(e.to_string().contains("thought must be a string"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_think_tool_thought_null() {
+        let tool = ThinkTool::new();
+        let args = serde_json::json!({
+            "thought": null
+        });
+
+        let result = tool.execute(args).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_think_tool_empty_task_breakdown() {
+        let tool = ThinkTool::new();
+        let args = serde_json::json!({
+            "thought": "Test thought",
+            "task_breakdown": []
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Empty breakdown should be handled gracefully
+        let breakdown = result.data["task_breakdown"].as_array();
+        assert!(breakdown.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_think_tool_task_breakdown_with_non_strings() {
+        let tool = ThinkTool::new();
+        let args = serde_json::json!({
+            "thought": "Test thought",
+            "task_breakdown": ["Step 1", 123, null, "Step 2"]
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Non-string items should be filtered out
+        let breakdown = result.data["task_breakdown"].as_array().unwrap();
+        assert_eq!(breakdown.len(), 2); // Only "Step 1" and "Step 2"
+    }
+
+    #[tokio::test]
+    async fn test_think_tool_extra_parameters() {
+        let tool = ThinkTool::new();
+        let args = serde_json::json!({
+            "thought": "Test thought",
+            "extra_param": "some_value",
+            "another_param": 123
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Extra parameters should be ignored
+    }
+
+    #[tokio::test]
+    async fn test_think_tool_very_long_thought() {
+        let tool = ThinkTool::new();
+        let long_thought = "A".repeat(10000);
+        let args = serde_json::json!({
+            "thought": long_thought
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        assert_eq!(result.data["thought"], long_thought);
+    }
+
+    #[tokio::test]
+    async fn test_think_tool_unicode_thought() {
+        let tool = ThinkTool::new();
+        let args = serde_json::json!({
+            "thought": "Thinking in 中文 with emoji 🧠",
+            "task_breakdown": ["步骤 1", "步骤 2", "Step 3"]
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        assert!(result.data["formatted"].as_str().unwrap().contains("中文"));
+        assert!(result.data["formatted"].as_str().unwrap().contains("🧠"));
+    }
+
+    #[tokio::test]
+    async fn test_think_tool_task_breakdown_not_array() {
+        let tool = ThinkTool::new();
+        let args = serde_json::json!({
+            "thought": "Test thought",
+            "task_breakdown": "not an array"
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Non-array task_breakdown should be handled (treated as None)
+    }
 }

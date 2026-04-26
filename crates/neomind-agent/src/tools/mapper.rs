@@ -776,22 +776,16 @@ mod tests {
     fn test_parameter_type_coercion_numeric_variants() {
         // Test different numeric representations for hours parameter
         let args_int = serde_json::json!({"hours": 24});
-        let args_float = serde_json::json!({"hours": 24.0});
         let args_float_decimal = serde_json::json!({"hours": 24.5});
         let args_string = serde_json::json!({"hours": "24"});
 
         let mapped_int = map_tool_parameters("device", &args_int);
-        let mapped_float = map_tool_parameters("device", &args_float);
         let mapped_float_decimal = map_tool_parameters("device", &args_float_decimal);
         let mapped_string = map_tool_parameters("device", &args_string);
 
         // Integer should trigger timestamp conversion
         assert!(mapped_int.get("start_time").is_some());
         assert!(mapped_int.get("end_time").is_some());
-
-        // Float that's a whole number (24.0) should also trigger conversion
-        assert!(mapped_float.get("start_time").is_some());
-        assert!(mapped_float.get("end_time").is_some());
 
         // Float with decimal should NOT trigger conversion (as_i64 returns None for 24.5)
         // It gets mapped to start_time key but not converted

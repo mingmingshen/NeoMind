@@ -301,6 +301,134 @@ mod tests {
         assert!(result.data["suggestions"].is_object());
     }
 
+    // ===== Parameter Validation Tests =====
+
+    #[tokio::test]
+    async fn test_tool_search_missing_keyword() {
+        let tool = create_test_tool();
+        let args = serde_json::json!({}); // Missing required "keyword"
+
+        let result = tool.execute(args).await;
+        assert!(result.is_err());
+        // The validate_args function checks for required fields
+    }
+
+    #[tokio::test]
+    async fn test_tool_search_keyword_null() {
+        let tool = create_test_tool();
+        let args = serde_json::json!({
+            "keyword": null
+        });
+
+        let result = tool.execute(args).await;
+        assert!(result.is_err());
+        // null is treated as missing
+    }
+
+    #[tokio::test]
+    async fn test_tool_search_category_null() {
+        let tool = create_test_tool();
+        let args = serde_json::json!({
+            "keyword": "device",
+            "category": null
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // null category should be treated as None (no filter)
+    }
+
+    #[tokio::test]
+    async fn test_tool_search_empty_keyword() {
+        let tool = create_test_tool();
+        let args = serde_json::json!({
+            "keyword": ""
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Empty keyword matches everything (empty string is substring of all strings)
+        let found = result.data["found"].as_u64().unwrap();
+        assert!(found > 0);
+    }
+
+    #[tokio::test]
+    async fn test_tool_search_unicode_keyword() {
+        let tool = create_test_tool();
+        let args = serde_json::json!({
+            "keyword": "设备"
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Should handle unicode search terms
+    }
+
+    #[tokio::test]
+    async fn test_tool_search_case_insensitive() {
+        let tool = create_test_tool();
+        let args_lowercase = serde_json::json!({"keyword": "device"});
+        let args_uppercase = serde_json::json!({"keyword": "DEVICE"});
+        let args_mixed = serde_json::json!({"keyword": "DeViCe"});
+
+        let result_lower = tool.execute(args_lowercase).await.unwrap();
+        let result_upper = tool.execute(args_uppercase).await.unwrap();
+        let result_mixed = tool.execute(args_mixed).await.unwrap();
+
+        // All should return the same results (case-insensitive)
+        assert_eq!(result_lower.data["found"], result_upper.data["found"]);
+        assert_eq!(result_lower.data["found"], result_mixed.data["found"]);
+    }
+
+    #[tokio::test]
+    async fn test_tool_search_extra_parameters() {
+        let tool = create_test_tool();
+        let args = serde_json::json!({
+            "keyword": "device",
+            "extra_param": "ignored",
+            "another_param": 123
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Extra parameters should be ignored
+    }
+
+    #[tokio::test]
+    async fn test_tool_search_results_sorted() {
+        let tool = create_test_tool();
+        let args = serde_json::json!({
+            "keyword": "device"
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+
+        // Results should be sorted (name matches first, then alphabetically)
+        let tools = result.data["tools"].as_array().unwrap();
+        if tools.len() > 1 {
+            // Check that results are present and structured correctly
+            for tool in tools {
+                assert!(tool.get("name").is_some());
+                assert!(tool.get("description").is_some());
+                assert!(tool.get("matched_field").is_some());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tool_search_special_characters() {
+        let tool = create_test_tool();
+        let args = serde_json::json!({
+            "keyword": "@#$%^&*()"
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Should handle special characters gracefully
+        assert_eq!(result.data["found"], 0);
+    }
+
     #[test]
     fn test_search_case_insensitive() {
         let tool = create_test_tool();

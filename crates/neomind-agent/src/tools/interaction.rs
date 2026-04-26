@@ -497,4 +497,136 @@ mod tests {
         assert!(result.success);
         assert_eq!(result.data["type"], "clarify_intent");
     }
+
+    // ===== Parameter Validation Tests =====
+
+    #[tokio::test]
+    async fn test_ask_user_tool_missing_required_parameter() {
+        let tool = AskUserTool::new();
+        let args = serde_json::json!({}); // Missing required "question"
+
+        let result = tool.execute(args).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_ask_user_tool_wrong_type_for_question() {
+        let tool = AskUserTool::new();
+        let args = serde_json::json!({
+            "question": 123  // Should be string, not number
+        });
+
+        let result = tool.execute(args).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_ask_user_tool_options_array_with_non_strings() {
+        let tool = AskUserTool::new();
+        let args = serde_json::json!({
+            "question": "Choose an option",
+            "options": [1, 2, 3]  // Numbers instead of strings
+        });
+
+        // Should succeed but filter out non-string options
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Options array should be empty or filtered
+        let options = result.data["options"].as_array();
+        assert!(options.is_some() || options.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_ask_user_tool_with_context() {
+        let tool = AskUserTool::new();
+        let args = serde_json::json!({
+            "question": "What should I do?",
+            "context": "The temperature is 30 degrees"
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        assert_eq!(result.data["context"], "The temperature is 30 degrees");
+    }
+
+    #[tokio::test]
+    async fn test_confirm_action_tool_missing_action() {
+        let tool = ConfirmActionTool::new();
+        let args = serde_json::json!({
+            "description": "Delete all rules"
+            // Missing "action"
+        });
+
+        let result = tool.execute(args).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_confirm_action_tool_default_risk_level() {
+        let tool = ConfirmActionTool::new();
+        let args = serde_json::json!({
+            "action": "delete all rules"
+            // No risk_level specified
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Should default to "medium"
+        assert_eq!(result.data["risk_level"], "medium");
+    }
+
+    #[tokio::test]
+    async fn test_confirm_action_tool_custom_risk_level() {
+        let tool = ConfirmActionTool::new();
+        let args = serde_json::json!({
+            "action": "delete all rules",
+            "risk_level": "low"
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        assert_eq!(result.data["risk_level"], "low");
+    }
+
+    #[tokio::test]
+    async fn test_clarify_intent_tool_empty_intents() {
+        let tool = ClarifyIntentTool::new();
+        let args = serde_json::json!({
+            "question": "What do you want?",
+            "possible_intents": []
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Should handle empty intents array gracefully
+        let intents = result.data["possible_intents"].as_array().unwrap();
+        assert_eq!(intents.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_clarify_intent_tool_intents_with_non_strings() {
+        let tool = ClarifyIntentTool::new();
+        let args = serde_json::json!({
+            "question": "What do you want?",
+            "possible_intents": ["valid", 123, null, "also_valid"]
+        });
+
+        let result = tool.execute(args).await.unwrap();
+        assert!(result.success);
+        // Should filter out non-string intents
+        let intents = result.data["possible_intents"].as_array().unwrap();
+        assert_eq!(intents.len(), 2); // Only "valid" and "also_valid"
+    }
+
+    #[tokio::test]
+    async fn test_clarify_intent_tool_missing_question() {
+        let tool = ClarifyIntentTool::new();
+        let args = serde_json::json!({
+            "possible_intents": ["intent1", "intent2"]
+            // Missing "question"
+        });
+
+        let result = tool.execute(args).await;
+        assert!(result.is_err());
+    }
 }
