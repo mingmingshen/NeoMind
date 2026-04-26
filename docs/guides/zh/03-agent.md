@@ -1,7 +1,7 @@
 # Agent 模块
 
 **包名**: `neomind-agent`
-**版本**: 0.6.5
+**版本**: 0.7.0
 **完成度**: 95%
 **用途**: AI会话代理，集成LLM、内存和工具
 
@@ -38,7 +38,9 @@ crates/neomind-agent/src/
 │   ├── mod.rs                  # Agent工具
 │   ├── dsl.rs                  # DSL工具
 │   ├── mapper.rs               # 映射工具
-│   └── rule_gen.rs             # 规则生成
+│   ├── rule_gen.rs             # 规则生成
+│   ├── shell.rs                # Shell命令执行 (v0.6.10)
+│   └── skill.rs                # 技能管理 (v0.6.10)
 ├── toolkit/
 │   ├── mod.rs                  # 工具包模块
 │   ├── resolver.rs             # EntityResolver（模糊名称/ID匹配）(v0.6.4)
@@ -74,18 +76,34 @@ tools: [device_tools, automation_tools, system_tools, ...]
 - 更清晰的工具组织
 
 ### 执行模式
-智能体支持不同的执行模式：
+智能体支持两种执行模式（v0.6.10 中由 Chat/React 重命名）：
 
 ```rust
 pub enum ExecutionMode {
-    /// 单步执行（默认）
-    Single,
-    /// 多步带规划
-    MultiStep,
-    /// 自主连续执行
-    Autonomous,
+    /// 聚焦模式 — 用户定义范围，单次分析，绑定资源。
+    /// 设置 enable_tool_chaining 后支持工具调用。
+    #[serde(rename = "focused", alias = "chat")]
+    Focused,
+    /// 自由模式 — LLM 自由探索，完整工具访问，多轮推理。
+    /// 支持最多 max_chain_depth 轮工具链调用。
+    #[serde(rename = "free", alias = "react")]
+    Free,
 }
 ```
+
+**聚焦模式（Focused）**：
+- 用户绑定资源（必需）— 智能体在定义范围内工作
+- 结构化 Markdown 表格（数据表 + 命令表 + 决策模板）确保 LLM 输出可靠
+- 单次执行，token 高效
+- 范围校验：超出绑定资源的命令会被拒绝
+- 适用场景：监控、告警、数据分析
+
+**自由模式（Free）**：
+- 无需绑定资源 — LLM 自由使用所有工具
+- 多轮推理，支持最多 8 种工具（设备、Agent、规则、消息、扩展、转换、技能、Shell）
+- 适用场景：复杂自动化、设备控制、探索性任务
+
+**向后兼容**：旧值 `"chat"` 和 `"react"` 仍通过 serde alias 接受。
 
 ### 每步结果
 智能体执行现在捕获每步结果，提升可观测性：
@@ -213,6 +231,43 @@ let device_id = EntityResolver::resolve(
 - **指标名称解析** — 用户友好的别名映射到内部指标名称
 
 这减少了获取设备详情所需的后续工具调用。
+
+### 技能系统 (v0.6.10)
+
+技能系统支持用户自定义的场景驱动操作指南，供 AI 智能体使用。技能由 YAML 前置信息 + Markdown 文件组成，提供多工具工作流指令。
+
+```rust
+// 技能工具操作：
+// - search: 按关键词搜索技能
+// - list: 列出所有技能
+// - get: 获取技能内容
+// - create: 创建新技能
+// - update: 更新已有技能
+// - delete: 删除技能
+```
+
+技能通过 `skill` 聚合工具管理。前端在智能体设置中提供技能面板，支持使用代码编辑器创建、编辑和删除技能。技能包含关键词匹配、token 预算注入和持久化等功能。
+
+### Shell 工具 (v0.6.10)
+
+`shell` 工具使 AI 智能体能够在主机上执行系统命令。
+
+功能特性：
+- **登录 Shell**: 使用 `$SHELL -l -c` 获取完整用户环境（PATH、别名）；在最小环境（Docker、IoT 边缘）中回退到 `/bin/sh -c`
+- **跨平台**: 支持 Unix/macOS/Windows
+- **可配置超时**: 最大 600 秒，默认 30 秒
+- **输出截断**: 10K 字符限制，UTF-8 安全截断
+- **进程组隔离**: 通过进程组实现干净的超时终止
+
+参数说明：
+- `command`（必需）: 要执行的 Shell 命令
+- `timeout`: 执行超时时间（秒）
+- `working_dir`: 工作目录
+- `description`: 审计日志描述
+
+### Agent 状态同步 (v0.6.12)
+
+智能体的暂停/激活操作现在能正确与调度器同步。暂停智能体会将其从执行器中取消调度；激活智能体会重新调度。这确保了 UI 状态与后端执行状态一致。
 
 ## 核心组件
 

@@ -1,7 +1,7 @@
 # Storage 模块
 
 **包名**: `neomind-storage`
-**版本**: 0.5.11
+**版本**: 0.7.0
 **完成度**: 95%
 **用途**: 持久化存储层
 
@@ -292,7 +292,7 @@ impl SettingsStore {
     pub fn load_mqtt_config(&self) -> Result<MqttSettings>;
 
     /// 保存MQTT配置
-    pub fn save_mqtt_config(&self, config: &MqttSettings) -> Result<>;
+    pub fn save_mqtt_config(&self, config: &MqttSettings) -> Result<()>;
 
     /// 全局时区设置
     pub fn load_global_timezone(&self) -> Result<String>;
