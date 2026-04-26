@@ -103,6 +103,7 @@ pub fn setup_resource_limits(config: &ResourceLimitsConfig) -> Result<(), Resour
 
 /// Error types for resource limit operations
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum ResourceLimitError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
