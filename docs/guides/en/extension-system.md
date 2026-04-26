@@ -1556,5 +1556,5 @@ NeoMind Extension SDK is licensed under MIT License.
 
 ---
 
-**Document Maintainer**: CamThink Team  
-**Last Updated**: 2026-03-12
+**Document Maintainer**: CamThink Team
+**Last Updated**: 2026-04-26
