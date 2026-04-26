@@ -940,6 +940,22 @@ The IPC protocol uses JSON messages with a 4-byte length prefix (little-endian).
 - Extension has complex async operations
 - Extension needs shared memory access
 
+### 6.6 Extension Instance Reset
+
+The `neomind_extension_reset_instance` FFI export allows the runner to re-initialize extensions without restarting the process. This is handled automatically by `neomind_export!`.
+
+Extension instance storage changed from `OnceLock` to `RwLock<Option<...>>` with double-checked locking to support reset.
+
+### 6.7 Removed Capabilities (v0.6.11)
+
+The following capabilities have been removed:
+
+- **HTTP_REQUEST** (`HttpRequest`) -- Extensions can make HTTP calls natively
+- **KV_STORAGE** (`KvStorage`) -- Extensions can manage key-value data natively
+- **PermissionDenied Error** -- Capability access is now determined solely by provider registration
+
+The `ExtensionStateEnum` has been simplified to 4 states: `Running`, `RunningIsolated`, `Stopped`, `Error`.
+
 ---
 
 ## 7. Streaming Extensions

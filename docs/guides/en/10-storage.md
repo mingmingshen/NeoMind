@@ -1,7 +1,7 @@
 # Storage Module
 
 **Package**: `neomind-storage`
-**Version**: 0.5.9
+**Version**: 0.7.0
 **Completion**: 95%
 **Purpose**: Persistent storage layer
 
@@ -80,13 +80,16 @@ pub fn create_backend(
 
 ## Time-Series Storage
 
-**Important Change (v0.5.x)**: All time-series data is now unified in `data/telemetry.redb`:
+**Important Change (v0.6.x)**: All time-series data is unified in `data/telemetry.redb`. The first-level key was renamed from `device_id` to `source_id` in v0.6.11 to reflect that telemetry stores data from multiple source types, not just devices.
 
-| Data Type | device_part | metric_part | Description |
-|-----------|-------------|-------------|-------------|
+| Data Type | source_id (source_part) | metric_part | Description |
+|-----------|-------------------------|-------------|-------------|
 | Device telemetry | `{device_id}` | `{metric_name}` | Metrics reported by devices |
 | Extension metrics | `extension:{ext_id}` | `{metric_name}` | Metrics collected by extensions |
 | Transform metrics | `transform:{trans_id}` | `{metric_name}` | Virtual metrics from transforms |
+| AI metrics | `ai:{group}` | `{field}` | Custom metrics created by AI agents |
+
+**DataSourceId Format**: `{type}:{id}:{field}` (e.g., `extension:weather:temp`, `ai:anomaly:score`)
 
 ```rust
 pub struct TimeSeriesStore {
@@ -515,8 +518,48 @@ pub async fn migrate_from_sled(sled_path: &Path, redb_path: &Path) -> Result<()>
 
 ## API Endpoints
 
+### Generic Telemetry API (v0.6.11)
+
+A unified endpoint for querying time-series data from any source type:
+
 ```
-# Access via handlers in each module
+GET /api/telemetry?source={source_id}&metric={metric_name}&start={timestamp}&end={timestamp}&limit={n}&aggregate={type}
+```
+
+**Parameters**:
+- `source` (required): Source ID (e.g., `sensor_1`, `extension:weather`)
+- `metric` (required): Metric name (e.g., `temperature`)
+- `start` (required): Start timestamp (Unix epoch)
+- `end` (required): End timestamp (Unix epoch)
+- `limit` (optional): Maximum number of data points
+- `aggregate` (optional): Aggregation type (`avg`, `min`, `max`, `sum`, `count`)
+
+Returns data in a consistent format with `"source_id"` as the key. This endpoint is independent of the device-specific `/api/devices/:id/telemetry` routes.
+
+### Data Sources API (v0.6.11)
+
+Server-side pagination for data source listing:
+
+```
+GET /api/data/sources?offset={n}&limit={n}&source_type={type}&source={id}&search={query}&skip_telemetry={bool}
+```
+
+**Parameters**:
+- `offset` / `limit`: Pagination (default page size 10)
+- `source_type`: Filter by source type (`device`, `extension`, `ai`, `transform`)
+- `source`: Filter by source name
+- `search`: Full-text search across source names
+- `skip_telemetry`: Skip expensive telemetry population for bulk listing
+
+`populate_latest_values` runs only on the paginated subset, significantly reducing DB queries for large deployments.
+
+### Extension Metrics API
+
+```
+GET    /api/extensions/:id/metrics         # List extension metrics
+POST   /api/extensions/:id/metrics         # Register metric
+DELETE /api/extensions/:id/metrics/:name   # Delete metric
+POST   /api/extensions/:id/push-metrics    # Push metric values from external source
 ```
 
 ## Usage Examples
