@@ -132,21 +132,15 @@ export function AgentsPage() {
   const loadEditorResources = useCallback(async () => {
     if (editorResourcesLoaded) return
     try {
-      const [devicesData, typesResult, extResult] = await Promise.all([
+      const [devicesData, typesResult, extData] = await Promise.all([
         api.getDevices().catch((): any => ({ devices: [] })),
         api.getDeviceTypes().catch((): any => ({ device_types: [] })),
-        Promise.all([
-          api.listExtensions().catch((): Extension[] => []),
-          api.listUnifiedDataSources({ limit: 500, skip_telemetry: 'true' }).catch((): { data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] } => ({ data: [], total: 0, source_options: [] })),
-        ]),
+        api.listExtensions().catch((): Extension[] => []),
       ])
 
       setDevices(devicesData.devices || [])
       setDeviceTypes(typesResult.device_types || [])
-
-      const [extData, unifiedDsData] = extResult
       setExtensions(extData)
-      setUnifiedDataSources(unifiedDsData.data || [])
       setEditorResourcesLoaded(true)
     } catch (error) {
       handleError(error, { operation: 'Load editor resources', showToast: false })
