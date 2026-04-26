@@ -8,6 +8,7 @@
 
 use axum::extract::{Query, State};
 use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 
 use crate::handlers::common::{ok, HandlerResult};
 use crate::server::types::ServerState;
@@ -15,7 +16,7 @@ use neomind_core::datasource::DataSourceId;
 
 /// Unified data source information.
 /// Aggregates all data sources from devices, extensions, and transforms.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UnifiedDataSourceInfo {
     /// Unique identifier: "{type}:{source}:{field}"
     /// Examples: "device:sensor1:temperature", "extension:weather:temp", "transform:temp_converter:temp_f"
@@ -45,7 +46,7 @@ pub struct UnifiedDataSourceInfo {
 }
 
 /// Query parameters for listing data sources
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct ListDataSourcesQuery {
     /// Filter by source type
     pub source_type: Option<String>,
@@ -63,7 +64,7 @@ pub struct ListDataSourcesQuery {
 }
 
 /// Paginated response for data sources
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ListDataSourcesResponse {
     pub data: Vec<UnifiedDataSourceInfo>,
     pub total: usize,
@@ -76,6 +77,13 @@ pub struct ListDataSourcesResponse {
 ///
 /// List all data sources across devices, extensions, and transforms.
 /// Supports server-side filtering, search, and pagination.
+#[utoipa::path(
+    get,
+    path = "/api/data/sources",
+    tag = "data-sources",
+    params(ListDataSourcesQuery),
+    responses((status = 200, description = "List of unified data sources", body = ListDataSourcesResponse))
+)]
 pub async fn list_all_data_sources_handler(
     State(state): State<ServerState>,
     Query(params): Query<ListDataSourcesQuery>,
@@ -474,7 +482,7 @@ fn title_case(s: &str) -> String {
 // ============================================================================
 
 /// Query parameters for the generic telemetry endpoint.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct TelemetryQueryParams {
     /// Source identifier (e.g. "device:sensor1", "extension:weather", "ai:demo", "transform:proc")
     /// Required.
@@ -494,6 +502,13 @@ pub struct TelemetryQueryParams {
 /// GET /api/telemetry
 ///
 /// Generic telemetry query endpoint for any source type.
+#[utoipa::path(
+    get,
+    path = "/api/telemetry",
+    tag = "data-sources",
+    params(TelemetryQueryParams),
+    responses((status = 200, description = "Telemetry data points or aggregated result"))
+)]
 ///
 /// Examples:
 /// - `GET /api/telemetry?source=device:sensor1&metric=temperature&start=1713360000`
