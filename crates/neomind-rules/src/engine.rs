@@ -1505,6 +1505,7 @@ impl ValueProvider for InMemoryValueProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dsl::ComparisonOperator;
 
     #[tokio::test]
     async fn test_rule_engine_basic() {
@@ -1661,5 +1662,1250 @@ mod tests {
 
         // Stop the scheduler
         engine.stop_scheduler().unwrap();
+    }
+
+    // ============================================================================
+    // Engine Evaluation Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_condition_evaluation_simple_greater_than() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        // Create rule with > condition
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "High Temperature".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 50.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: value below threshold should not trigger
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty(), "Should not trigger when temp < 50");
+
+        // Test: value above threshold should trigger
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Should trigger when temp > 50");
+
+        // Test: value exactly at threshold should not trigger
+        mem_provider.set_value("sensor1", "temp", 50.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty(), "Should not trigger when temp == 50");
+    }
+
+    #[tokio::test]
+    async fn test_condition_evaluation_simple_less_than() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Low Temperature".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::LessThan,
+                threshold: 10.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: value above threshold should not trigger
+        mem_provider.set_value("sensor1", "temp", 20.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty());
+
+        // Test: value below threshold should trigger
+        mem_provider.set_value("sensor1", "temp", 5.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_condition_evaluation_greater_equal() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "High or Equal".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterEqual,
+                threshold: 50.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: value at threshold should trigger
+        mem_provider.set_value("sensor1", "temp", 50.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Should trigger when temp >= 50 (equal)");
+
+        // Test: value above threshold should trigger
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Should trigger when temp >= 50 (greater)");
+
+        // Test: value below threshold should not trigger
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty(), "Should not trigger when temp < 50");
+    }
+
+    #[tokio::test]
+    async fn test_condition_evaluation_less_equal() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Low or Equal".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::LessEqual,
+                threshold: 10.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: value at threshold should trigger
+        mem_provider.set_value("sensor1", "temp", 10.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1);
+
+        // Test: value below threshold should trigger
+        mem_provider.set_value("sensor1", "temp", 5.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1);
+
+        // Test: value above threshold should not trigger
+        mem_provider.set_value("sensor1", "temp", 15.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_condition_evaluation_equal() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Exact Match".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "value".to_string(),
+                operator: ComparisonOperator::Equal,
+                threshold: 42.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: exact match should trigger
+        mem_provider.set_value("sensor1", "value", 42.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1);
+
+        // Test: close value should trigger (within epsilon)
+        mem_provider.set_value("sensor1", "value", 42.00005);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1);
+
+        // Test: different value should not trigger
+        mem_provider.set_value("sensor1", "value", 43.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_condition_evaluation_not_equal() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Not Equal".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "value".to_string(),
+                operator: ComparisonOperator::NotEqual,
+                threshold: 42.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: different value should trigger
+        mem_provider.set_value("sensor1", "value", 43.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1);
+
+        // Test: exact match should not trigger
+        mem_provider.set_value("sensor1", "value", 42.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_condition_evaluation_and() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "AND Condition".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::And(vec![
+                RuleCondition::Device {
+                    device_id: "sensor1".to_string(),
+                    metric: "temp".to_string(),
+                    operator: ComparisonOperator::GreaterThan,
+                    threshold: 50.0,
+                },
+                RuleCondition::Device {
+                    device_id: "sensor2".to_string(),
+                    metric: "humidity".to_string(),
+                    operator: ComparisonOperator::LessThan,
+                    threshold: 30.0,
+                },
+            ]),
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: neither condition met
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        mem_provider.set_value("sensor2", "humidity", 50.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty(), "Should not trigger when neither condition met");
+
+        // Test: only first condition met
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        mem_provider.set_value("sensor2", "humidity", 50.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty(), "Should not trigger when only first condition met");
+
+        // Test: only second condition met
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        mem_provider.set_value("sensor2", "humidity", 20.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty(), "Should not trigger when only second condition met");
+
+        // Test: both conditions met
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        mem_provider.set_value("sensor2", "humidity", 20.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Should trigger when both conditions met");
+    }
+
+    #[tokio::test]
+    async fn test_condition_evaluation_or() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "OR Condition".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Or(vec![
+                RuleCondition::Device {
+                    device_id: "sensor1".to_string(),
+                    metric: "temp".to_string(),
+                    operator: ComparisonOperator::GreaterThan,
+                    threshold: 50.0,
+                },
+                RuleCondition::Device {
+                    device_id: "sensor2".to_string(),
+                    metric: "temp".to_string(),
+                    operator: ComparisonOperator::GreaterThan,
+                    threshold: 50.0,
+                },
+            ]),
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: neither condition met
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        mem_provider.set_value("sensor2", "temp", 30.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty(), "Should not trigger when neither condition met");
+
+        // Test: only first condition met
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        mem_provider.set_value("sensor2", "temp", 30.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Should trigger when only first condition met");
+
+        // Test: only second condition met
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        mem_provider.set_value("sensor2", "temp", 75.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Should trigger when only second condition met");
+
+        // Test: both conditions met
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        mem_provider.set_value("sensor2", "temp", 75.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Should trigger when both conditions met");
+    }
+
+    #[tokio::test]
+    async fn test_condition_evaluation_not() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "NOT Condition".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Not(Box::new(RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 50.0,
+            })),
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: condition is true, so NOT should be false
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(
+            triggered.is_empty(),
+            "Should not trigger when inner condition is true"
+        );
+
+        // Test: condition is false, so NOT should be true
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Should trigger when inner condition is false");
+    }
+
+    #[tokio::test]
+    async fn test_condition_evaluation_range() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Range Condition".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::DeviceRange {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                min: 20.0,
+                max: 25.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: value below range
+        mem_provider.set_value("sensor1", "temp", 15.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty(), "Should not trigger when value below range");
+
+        // Test: value at lower bound
+        mem_provider.set_value("sensor1", "temp", 20.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Should trigger when value at lower bound");
+
+        // Test: value in range
+        mem_provider.set_value("sensor1", "temp", 22.5);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Should trigger when value in range");
+
+        // Test: value at upper bound
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Should trigger when value at upper bound");
+
+        // Test: value above range
+        mem_provider.set_value("sensor1", "temp", 30.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty(), "Should not trigger when value above range");
+    }
+
+    #[tokio::test]
+    async fn test_condition_evaluation_extension() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Extension Condition".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Extension {
+                extension_id: "weather:ext:temp".to_string(),
+                metric: "temperature".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 30.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: extension value below threshold
+        mem_provider.set_value("weather:ext:temp", "temperature", 25.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty());
+
+        // Test: extension value above threshold
+        mem_provider.set_value("weather:ext:temp", "temperature", 35.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_action_execution_notify() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Notify Action".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 50.0,
+            },
+            for_duration: None,
+            actions: vec![RuleAction::Notify {
+                message: "High temperature detected".to_string(),
+                channels: Some(vec!["alert".to_string()]),
+            }],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        let rule_id = rule.id.clone();
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+        mem_provider.set_value("sensor1", "temp", 75.0);
+
+        // Execute the rule
+        let result = engine.execute_rule(&rule_id).await;
+
+        assert!(result.success, "Execution should succeed");
+        assert_eq!(result.actions_executed.len(), 1);
+        assert!(result.actions_executed[0].contains("NOTIFY"));
+        assert!(result.actions_executed[0].contains("High temperature detected"));
+
+        // Verify trigger count updated
+        let rule = engine.get_rule(&rule_id).await.unwrap();
+        assert_eq!(rule.state.trigger_count, 1);
+        assert!(rule.state.last_triggered.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_action_execution_multiple_actions() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Multiple Actions".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 50.0,
+            },
+            for_duration: None,
+            actions: vec![
+                RuleAction::Notify {
+                    message: "Alert 1".to_string(),
+                    channels: Some(vec!["alert".to_string()]),
+                },
+                RuleAction::Notify {
+                    message: "Alert 2".to_string(),
+                    channels: Some(vec!["alert".to_string()]),
+                },
+            ],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        let rule_id = rule.id.clone();
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+        mem_provider.set_value("sensor1", "temp", 75.0);
+
+        let result = engine.execute_rule(&rule_id).await;
+
+        assert!(result.success);
+        assert_eq!(result.actions_executed.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_duration_tracking_with_for_clause() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Duration Rule".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 50.0,
+            },
+            for_duration: Some(Duration::from_millis(100)),
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+        mem_provider.set_value("sensor1", "temp", 75.0);
+
+        // Update state to start tracking
+        engine.update_states().await;
+
+        // Should not trigger immediately
+        let triggered = engine.evaluate_rules().await;
+        assert!(
+            triggered.is_empty(),
+            "Should not trigger immediately when FOR clause is set"
+        );
+
+        // Wait for duration to pass
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // Now should trigger
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(
+            triggered.len(),
+            1,
+            "Should trigger after duration has elapsed"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_duration_tracking_resets_on_condition_false() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Duration Reset Rule".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 50.0,
+            },
+            for_duration: Some(Duration::from_millis(100)),
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Set condition true
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        engine.update_states().await;
+
+        // Wait a bit
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Set condition false
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        engine.update_states().await;
+
+        // Wait more
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Set condition true again
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        engine.update_states().await;
+
+        // Should not trigger because timer was reset
+        let triggered = engine.evaluate_rules().await;
+        assert!(
+            triggered.is_empty(),
+            "Should not trigger because duration tracking was reset"
+        );
+
+        // Wait for full duration after reset
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // Now should trigger
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_edge_case_empty_rule_set() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider);
+
+        // No rules added
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty(), "No rules should trigger with empty rule set");
+
+        let rules = engine.list_rules().await;
+        assert!(rules.is_empty(), "Rule list should be empty");
+    }
+
+    #[tokio::test]
+    async fn test_edge_case_missing_data_source() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Missing Data".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "nonexistent".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 50.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        // Don't set any values - data source is missing
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+
+        // Should not trigger when data is missing
+        assert!(
+            triggered.is_empty(),
+            "Should not trigger when data source is missing"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_edge_case_paused_rule() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Paused Rule".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 50.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Paused,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+        mem_provider.set_value("sensor1", "temp", 75.0);
+
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+
+        // Paused rules should not be evaluated
+        assert!(
+            triggered.is_empty(),
+            "Paused rules should not trigger"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_edge_case_disabled_rule() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Disabled Rule".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 50.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Disabled,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+        mem_provider.set_value("sensor1", "temp", 75.0);
+
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+
+        // Disabled rules should not be evaluated
+        assert!(
+            triggered.is_empty(),
+            "Disabled rules should not trigger"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_edge_case_multiple_rules_same_condition() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        let rule1 = CompiledRule {
+            id: RuleId::new(),
+            name: "Rule 1".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 50.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        let rule2 = CompiledRule {
+            id: RuleId::new(),
+            name: "Rule 2".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Device {
+                device_id: "sensor1".to_string(),
+                metric: "temp".to_string(),
+                operator: ComparisonOperator::GreaterThan,
+                threshold: 50.0,
+            },
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        let id1 = rule1.id.clone();
+        let id2 = rule2.id.clone();
+        engine.add_rule(rule1).await.unwrap();
+        engine.add_rule(rule2).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+        mem_provider.set_value("sensor1", "temp", 75.0);
+
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+
+        // Both rules should trigger
+        assert_eq!(triggered.len(), 2);
+        assert!(triggered.contains(&id1));
+        assert!(triggered.contains(&id2));
+    }
+
+    #[tokio::test]
+    async fn test_edge_case_complex_nested_conditions() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        // (A AND B) OR (C AND D)
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Complex Nested".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Or(vec![
+                RuleCondition::And(vec![
+                    RuleCondition::Device {
+                        device_id: "sensor1".to_string(),
+                        metric: "temp".to_string(),
+                        operator: ComparisonOperator::GreaterThan,
+                        threshold: 50.0,
+                    },
+                    RuleCondition::Device {
+                        device_id: "sensor2".to_string(),
+                        metric: "humidity".to_string(),
+                        operator: ComparisonOperator::LessThan,
+                        threshold: 30.0,
+                    },
+                ]),
+                RuleCondition::And(vec![
+                    RuleCondition::Device {
+                        device_id: "sensor3".to_string(),
+                        metric: "pressure".to_string(),
+                        operator: ComparisonOperator::GreaterThan,
+                        threshold: 100.0,
+                    },
+                    RuleCondition::Device {
+                        device_id: "sensor4".to_string(),
+                        metric: "flow".to_string(),
+                        operator: ComparisonOperator::LessThan,
+                        threshold: 10.0,
+                    },
+                ]),
+            ]),
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Test: neither AND group is true
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        mem_provider.set_value("sensor2", "humidity", 50.0);
+        mem_provider.set_value("sensor3", "pressure", 50.0);
+        mem_provider.set_value("sensor4", "flow", 20.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(triggered.is_empty());
+
+        // Test: first AND group is true
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        mem_provider.set_value("sensor2", "humidity", 20.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1);
+
+        // Test: second AND group is true
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        mem_provider.set_value("sensor2", "humidity", 50.0);
+        mem_provider.set_value("sensor3", "pressure", 150.0);
+        mem_provider.set_value("sensor4", "flow", 5.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1);
+
+        // Test: both AND groups are true
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        mem_provider.set_value("sensor2", "humidity", 20.0);
+        mem_provider.set_value("sensor3", "pressure", 150.0);
+        mem_provider.set_value("sensor4", "flow", 5.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_edge_case_double_negation() {
+        let provider = Arc::new(InMemoryValueProvider::new());
+        let engine = RuleEngine::new(provider.clone());
+
+        // NOT(NOT(condition))
+        let rule = CompiledRule {
+            id: RuleId::new(),
+            name: "Double Negation".to_string(),
+            description: None,
+            dsl: String::new(),
+            condition: RuleCondition::Not(Box::new(RuleCondition::Not(Box::new(
+                RuleCondition::Device {
+                    device_id: "sensor1".to_string(),
+                    metric: "temp".to_string(),
+                    operator: ComparisonOperator::GreaterThan,
+                    threshold: 50.0,
+                },
+            )))),
+            for_duration: None,
+            actions: vec![],
+            status: RuleStatus::Active,
+            state: RuleState {
+                trigger_count: 0,
+                last_triggered: None,
+                last_evaluation: false,
+                condition_true_since: None,
+            },
+            created_at: Utc::now(),
+            source: None,
+        };
+
+        engine.add_rule(rule).await.unwrap();
+
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
+
+        // Double negation should be equivalent to original condition
+        mem_provider.set_value("sensor1", "temp", 75.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert_eq!(triggered.len(), 1, "Double negation of true should be true");
+
+        mem_provider.set_value("sensor1", "temp", 25.0);
+        engine.update_states().await;
+        let triggered = engine.evaluate_rules().await;
+        assert!(
+            triggered.is_empty(),
+            "Double negation of false should be false"
+        );
     }
 }
