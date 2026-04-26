@@ -5,7 +5,7 @@
  * Used for complex forms like TransformBuilder, RuleBuilder, AgentEditor.
  */
 
-import { ReactNode } from 'react'
+import { ReactNode, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -37,6 +37,19 @@ export function FullScreenDialog({
 
   // Lock body scroll when dialog is open
   useBodyScrollLock(open, { mobileOnly: true })
+
+  // Handle Escape key to close dialog
+  useEffect(() => {
+    if (!open) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onOpenChange(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [open, onOpenChange])
 
   // Get dialog root for portal rendering
   const dialogRoot = typeof document !== 'undefined'

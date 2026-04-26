@@ -417,7 +417,7 @@ export function DeviceDetail({
                         key={metricDef.name}
                         onClick={() => handleMetricCardClick(metricDef.name)}
                         className={cn(
-                          "group rounded-lg p-5 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border",
+                          "group rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border",
                           isVirtual
                             ? "bg-gradient-to-br from-purple-500/10 to-blue-500/5 border-purple-500/20 hover:border-purple-500/40"
                             : "bg-gradient-to-br from-primary/5 to-primary/0 border-primary/10 hover:border-primary/30"
@@ -470,7 +470,7 @@ export function DeviceDetail({
                     <button
                       key={cmd.name}
                       onClick={() => handleCommandClick(cmd)}
-                      className="group bg-gradient-to-br from-card to-muted/30 rounded-lg p-5 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border border-border/50 hover:border-primary/30"
+                      className="group bg-gradient-to-br from-card to-muted/30 rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border border-border/50 hover:border-primary/30"
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1 min-w-0">

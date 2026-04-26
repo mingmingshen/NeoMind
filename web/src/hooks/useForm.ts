@@ -44,16 +44,24 @@ export function useForm<T extends Record<string, any>>(
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const setValue = useCallback(<K extends keyof T>(name: K, value: T[K]) => {
-    setValues(prev => ({ ...prev, [name]: value }))
-    if (errors[name as string]) {
-      setErrors(prev => {
-        const newErrors = { ...prev }
-        delete newErrors[name as string]
-        return newErrors
-      })
-    }
+    setValues(prev => {
+      const next = { ...prev, [name]: value }
+      // Re-validate on change so errors update live, instead of disappearing
+      if (options.validate) {
+        const validationErrors = options.validate(next)
+        setErrors(validationErrors && Object.keys(validationErrors).length > 0 ? validationErrors : {})
+      } else if (errors[name as string]) {
+        // No validator — just clear the error for this field
+        setErrors(prev => {
+          const newErrors = { ...prev }
+          delete newErrors[name as string]
+          return newErrors
+        })
+      }
+      return next
+    })
     setSubmitError(null)
-  }, [errors])
+  }, [errors, options])
 
   const setError = useCallback((name: string, error: string) => {
     setErrors(prev => ({ ...prev, [name]: error }))

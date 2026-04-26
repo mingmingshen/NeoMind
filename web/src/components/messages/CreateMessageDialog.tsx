@@ -251,6 +251,7 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
                   if (titleError) setTitleError(null)
                 }}
                 placeholder={t('messages.formTitle.placeholder')}
+                autoFocus
               />
             </FormField>
 

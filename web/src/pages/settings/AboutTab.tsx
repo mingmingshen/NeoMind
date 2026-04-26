@@ -286,7 +286,7 @@ export function AboutTab() {
         <CardHeader>
           <CardTitle>{t("settings:projectInfo")}</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3 text-sm">
+        <CardContent className="space-y-4 text-sm">
           <div className="flex items-center justify-between border-b pb-2">
             <span className="text-muted-foreground">{t("settings:version")}</span>
             <div className="flex items-center gap-2">

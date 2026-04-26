@@ -6,6 +6,7 @@ import { PageTabsBar, PageTabsContent, PageTabsBottomNav } from '@/components/sh
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { debounce } from '@/lib/utils/async'
 import {
   Select,
   SelectContent,
@@ -88,6 +89,7 @@ export function DataExplorerPage() {
   // Debounced search value
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const updateSearch = useMemo(() => debounce(setDebouncedSearch, 300), [])
 
   // Detail dialog
   const [selectedSource, setSelectedSource] = useState<UnifiedDataSourceInfo | null>(null)
@@ -129,10 +131,8 @@ export function DataExplorerPage() {
 
   // Debounce search input
   useEffect(() => {
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
-    searchTimerRef.current = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
-  }, [search])
+    updateSearch(search)
+  }, [search, updateSearch])
 
   // Refresh on device events
   useEvents({
@@ -307,6 +307,7 @@ export function DataExplorerPage() {
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                     className="pl-9 w-[180px] md:w-[240px] h-9"
+                    autoFocus
                   />
                 </div>
               </div>

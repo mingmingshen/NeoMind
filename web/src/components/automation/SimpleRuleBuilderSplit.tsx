@@ -1979,6 +1979,7 @@ function BasicInfoStep({
           onChange={e => onNameChange(e.target.value)}
           placeholder={tBuilder('ruleNamePlaceholder')}
           className={cn(errors.name && "border-destructive")}
+          autoFocus
         />
         {errors.name && (
           <p className="text-xs text-destructive">{errors.name}</p>
@@ -2175,7 +2176,7 @@ function ConditionStep({
       <div className="max-w-3xl mx-auto">
         {/* Device State Trigger Configuration */}
         {triggerType === 'device_state' && (
-          <div className="p-5 rounded-lg border bg-purple-500/5 border-purple-500/20">
+          <div className="p-6 rounded-lg border bg-purple-500/5 border-purple-500/20">
             <div className="flex items-center gap-2 pb-4 border-b border-purple-500/20 mb-4">
               <div className="p-2 rounded-full bg-purple-500/10">
                 <Lightbulb className="h-5 w-5 text-purple-500" />
@@ -2287,7 +2288,7 @@ function ConditionStep({
 
         {/* Schedule Trigger Configuration */}
         {triggerType === 'schedule' && (
-          <div className="p-5 rounded-lg border bg-blue-500/5 border-blue-500/20">
+          <div className="p-6 rounded-lg border bg-blue-500/5 border-blue-500/20">
             <div className="flex items-center gap-2 pb-4 border-b border-blue-500/20 mb-4">
               <div className="p-2 rounded-full bg-blue-500/10">
                 <Clock className="h-5 w-5 text-blue-500" />
@@ -2389,7 +2390,7 @@ function ConditionStep({
 
         {/* Manual Trigger Configuration */}
         {triggerType === 'manual' && (
-          <div className="p-5 rounded-lg border bg-green-500/5 border-green-500/20">
+          <div className="p-6 rounded-lg border bg-green-500/5 border-green-500/20">
             <div className="flex items-center gap-2 pb-4 border-b border-green-500/20 mb-4">
               <div className="p-2 rounded-full bg-green-500/10">
                 <Play className="h-5 w-5 text-green-500" />

@@ -14,7 +14,7 @@
  * Using unified FullScreenDialog components with glassmorphism style.
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from "react"
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { createPortal } from "react-dom"
 import { api } from "@/lib/api"
@@ -289,6 +289,9 @@ export function AgentEditorFullScreen({
   // State
   // ========================================================================
 
+  // Ref for auto-focusing name input on create
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
   // Basic info
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
@@ -501,6 +504,17 @@ export function AgentEditorFullScreen({
       }
     }
   }, [agent, open])
+
+  // Auto-focus name input when creating a new agent
+  useEffect(() => {
+    if (open && !agent) {
+      // Use requestAnimationFrame to ensure the DOM is ready
+      const raf = requestAnimationFrame(() => {
+        nameInputRef.current?.focus()
+      })
+      return () => cancelAnimationFrame(raf)
+    }
+  }, [open, agent])
 
   // Generate recommendations when prompt changes or dialog opens
   useEffect(() => {
@@ -1366,6 +1380,7 @@ export function AgentEditorFullScreen({
                 {tAgent('creator.basicInfo.name')} <span className="text-destructive">*</span>
               </Label>
               <Input
+                ref={nameInputRef}
                 value={name}
                 onChange={(e) => {
                   setName(e.target.value)

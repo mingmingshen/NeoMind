@@ -47,7 +47,7 @@ export function LoadingState({ size = 'md', variant = 'default', text, className
         {/* Content skeleton - cards grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="border rounded-lg p-5 space-y-4">
+            <div key={i} className="border rounded-lg p-6 space-y-4">
               <div className="flex items-start gap-3">
                 <Skeleton className="h-10 w-10 rounded-lg" />
                 <div className="flex-1 space-y-2">
