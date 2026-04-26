@@ -5,6 +5,7 @@
 
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 use std::sync::RwLock as StdRwLock;
 use std::pin::Pin;
@@ -529,12 +530,26 @@ impl RuleEngine {
                     rules_guard
                         .iter()
                         .filter_map(|(id, rule)| {
-                            if rule.status == RuleStatus::Active
-                                && rule.should_trigger(value_provider.as_ref())
-                            {
-                                Some((id.clone(), rule.clone()))
-                            } else {
-                                None
+                            if rule.status != RuleStatus::Active {
+                                return None;
+                            }
+
+                            // Catch panics during rule evaluation to prevent one failing rule from crashing the entire scheduler
+                            let eval_result = panic::catch_unwind(AssertUnwindSafe(|| {
+                                rule.should_trigger(value_provider.as_ref())
+                            }));
+
+                            match eval_result {
+                                Ok(true) => Some((id.clone(), rule.clone())),
+                                Ok(false) => None,
+                                Err(_) => {
+                                    tracing::error!(
+                                        rule_id = %id,
+                                        rule_name = %rule.name,
+                                        "Rule panicked during scheduler evaluation, skipping"
+                                    );
+                                    None
+                                }
                             }
                         })
                         .collect()
@@ -832,8 +847,25 @@ impl RuleEngine {
                 continue;
             }
 
-            if rule.should_trigger(self.value_provider.as_ref()) {
-                triggered.push(id.clone());
+            // Catch panics during rule evaluation to prevent one failing rule from crashing the entire scheduler
+            let eval_result = panic::catch_unwind(AssertUnwindSafe(|| {
+                rule.should_trigger(self.value_provider.as_ref())
+            }));
+
+            match eval_result {
+                Ok(true) => {
+                    triggered.push(id.clone());
+                }
+                Ok(false) => {
+                    // Condition not met, continue to next rule
+                }
+                Err(_) => {
+                    tracing::error!(
+                        rule_id = %id,
+                        rule_name = %rule.name,
+                        "Rule panicked during evaluation, skipping"
+                    );
+                }
             }
         }
 
@@ -849,7 +881,22 @@ impl RuleEngine {
                 continue;
             }
 
-            rule.update_state(self.value_provider.as_ref());
+            // Catch panics during rule state update to prevent one failing rule from crashing the entire update
+            let rule_id = rule.id.clone();
+            let rule_name = rule.name.clone();
+            let value_provider = self.value_provider.as_ref();
+
+            let update_result = panic::catch_unwind(AssertUnwindSafe(|| {
+                rule.update_state(value_provider);
+            }));
+
+            if let Err(_) = update_result {
+                tracing::error!(
+                    rule_id = %rule_id,
+                    rule_name = %rule_name,
+                    "Rule panicked during state update, skipping"
+                );
+            }
         }
     }
 
