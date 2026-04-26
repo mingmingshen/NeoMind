@@ -1159,4 +1159,852 @@ mod tests {
         assert!(filter.matches(&device_msg));
         assert!(!filter.matches(&system_msg));
     }
+
+    // =========================================================================
+    // CRUD Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_create_and_retrieve_message() {
+        let manager = MessageManager::new();
+        let msg = Message::alert(
+            MessageSeverity::Critical,
+            "High Temperature".to_string(),
+            "Temperature exceeded 80°C".to_string(),
+            "sensor_1".to_string(),
+        );
+
+        let created = manager.create_message(msg).await.unwrap();
+        assert_eq!(created.title, "High Temperature");
+        assert_eq!(created.severity, MessageSeverity::Critical);
+        assert!(created.is_active());
+
+        let retrieved = manager.get_message(&created.id).await;
+        assert!(retrieved.is_some());
+        let retrieved = retrieved.unwrap();
+        assert_eq!(retrieved.id, created.id);
+        assert_eq!(retrieved.title, "High Temperature");
+    }
+
+    #[tokio::test]
+    async fn test_create_message_with_tags() {
+        let manager = MessageManager::new();
+        let msg = Message::alert(
+            MessageSeverity::Warning,
+            "Test".to_string(),
+            "Test message".to_string(),
+            "test_source".to_string(),
+        )
+        .with_tags(vec!["tag1".to_string(), "tag2".to_string(), "tag3".to_string()]);
+
+        let created = manager.create_message(msg).await.unwrap();
+        assert_eq!(created.tags.len(), 3);
+        assert!(created.tags.contains(&"tag1".to_string()));
+        assert!(created.tags.contains(&"tag2".to_string()));
+        assert!(created.tags.contains(&"tag3".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_create_message_with_metadata() {
+        let manager = MessageManager::new();
+        let metadata = serde_json::json!({
+            "temperature": 85.5,
+            "unit": "celsius",
+            "location": "server_room"
+        });
+
+        let msg = Message::alert(
+            MessageSeverity::Critical,
+            "High Temp".to_string(),
+            "Temperature alert".to_string(),
+            "sensor_1".to_string(),
+        )
+        .with_metadata(metadata.clone());
+
+        let created = manager.create_message(msg).await.unwrap();
+        assert!(created.metadata.is_some());
+        assert_eq!(created.metadata.unwrap(), metadata);
+    }
+
+    #[tokio::test]
+    async fn test_update_message_status() {
+        let manager = MessageManager::new();
+        let msg = Message::system("Test".to_string(), "Test message".to_string());
+
+        let created = manager.create_message(msg).await.unwrap();
+        assert_eq!(created.status, MessageStatus::Active);
+
+        // Acknowledge
+        manager.acknowledge(&created.id).await.unwrap();
+        let retrieved = manager.get_message(&created.id).await.unwrap();
+        assert_eq!(retrieved.status, MessageStatus::Acknowledged);
+
+        // Resolve
+        manager.resolve(&created.id).await.unwrap();
+        let retrieved = manager.get_message(&created.id).await.unwrap();
+        assert_eq!(retrieved.status, MessageStatus::Resolved);
+
+        // Archive
+        manager.archive(&created.id).await.unwrap();
+        let retrieved = manager.get_message(&created.id).await.unwrap();
+        assert_eq!(retrieved.status, MessageStatus::Archived);
+    }
+
+    #[tokio::test]
+    async fn test_update_nonexistent_message() {
+        let manager = MessageManager::new();
+        let fake_id = MessageId::new();
+
+        let result = manager.acknowledge(&fake_id).await;
+        assert!(result.is_err());
+        assert!(matches!(result, Err(Error::NotFound(_))));
+
+        let result = manager.resolve(&fake_id).await;
+        assert!(result.is_err());
+
+        let result = manager.archive(&fake_id).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_single_message() {
+        let manager = MessageManager::new();
+        let msg = Message::system("Test".to_string(), "Test message".to_string());
+
+        let created = manager.create_message(msg).await.unwrap();
+        assert!(manager.get_message(&created.id).await.is_some());
+
+        manager.delete(&created.id).await.unwrap();
+        assert!(manager.get_message(&created.id).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_delete_nonexistent_message() {
+        let manager = MessageManager::new();
+        let fake_id = MessageId::new();
+
+        let result = manager.delete(&fake_id).await;
+        assert!(result.is_err());
+        assert!(matches!(result, Err(Error::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_delete_multiple_messages() {
+        let manager = MessageManager::new();
+
+        let msg1 = manager
+            .create_message(Message::system("Test1".to_string(), "Message1".to_string()))
+            .await
+            .unwrap();
+        let msg2 = manager
+            .create_message(Message::system("Test2".to_string(), "Message2".to_string()))
+            .await
+            .unwrap();
+        let msg3 = manager
+            .create_message(Message::system("Test3".to_string(), "Message3".to_string()))
+            .await
+            .unwrap();
+
+        assert_eq!(manager.list_messages().await.len(), 3);
+
+        let count = manager
+            .delete_multiple(&[msg1.id.clone(), msg2.id.clone()])
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
+
+        assert_eq!(manager.list_messages().await.len(), 1);
+        assert!(manager.get_message(&msg1.id).await.is_none());
+        assert!(manager.get_message(&msg2.id).await.is_none());
+        assert!(manager.get_message(&msg3.id).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_acknowledge_multiple_messages() {
+        let manager = MessageManager::new();
+
+        let msg1 = manager
+            .create_message(Message::system("Test1".to_string(), "Message1".to_string()))
+            .await
+            .unwrap();
+        let msg2 = manager
+            .create_message(Message::system("Test2".to_string(), "Message2".to_string()))
+            .await
+            .unwrap();
+        let msg3 = manager
+            .create_message(Message::system("Test3".to_string(), "Message3".to_string()))
+            .await
+            .unwrap();
+
+        let count = manager
+            .acknowledge_multiple(&[msg1.id.clone(), msg2.id.clone(), msg3.id.clone()])
+            .await
+            .unwrap();
+        assert_eq!(count, 3);
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.active, 0);
+        assert_eq!(stats.by_status.get("acknowledged"), Some(&3));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_multiple_messages() {
+        let manager = MessageManager::new();
+
+        let msg1 = manager
+            .create_message(Message::system("Test1".to_string(), "Message1".to_string()))
+            .await
+            .unwrap();
+        let msg2 = manager
+            .create_message(Message::system("Test2".to_string(), "Message2".to_string()))
+            .await
+            .unwrap();
+
+        let count = manager
+            .resolve_multiple(&[msg1.id.clone(), msg2.id.clone()])
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.by_status.get("resolved"), Some(&2));
+    }
+
+    // =========================================================================
+    // Message Filtering Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_list_messages_by_category() {
+        let manager = MessageManager::new();
+
+        manager
+            .create_message(Message::alert(
+                MessageSeverity::Critical,
+                "Alert1".to_string(),
+                "Alert message".to_string(),
+                "sensor1".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        manager
+            .create_message(Message::system("System1".to_string(), "System message".to_string()))
+            .await
+            .unwrap();
+
+        manager
+            .create_message(Message::alert(
+                MessageSeverity::Warning,
+                "Alert2".to_string(),
+                "Another alert".to_string(),
+                "sensor2".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        let alerts = manager.list_messages_by_category("alert").await;
+        assert_eq!(alerts.len(), 2);
+
+        let system = manager.list_messages_by_category("system").await;
+        assert_eq!(system.len(), 1);
+
+        let empty = manager.list_messages_by_category("nonexistent").await;
+        assert_eq!(empty.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_list_messages_by_status() {
+        let manager = MessageManager::new();
+
+        let msg1 = manager
+            .create_message(Message::system("Test1".to_string(), "Message1".to_string()))
+            .await
+            .unwrap();
+        let _msg2 = manager
+            .create_message(Message::system("Test2".to_string(), "Message2".to_string()))
+            .await
+            .unwrap();
+
+        manager.acknowledge(&msg1.id).await.unwrap();
+
+        let active = manager.list_messages_by_status(MessageStatus::Active).await;
+        assert_eq!(active.len(), 1);
+
+        let acknowledged = manager
+            .list_messages_by_status(MessageStatus::Acknowledged)
+            .await;
+        assert_eq!(acknowledged.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_list_active_messages() {
+        let manager = MessageManager::new();
+
+        let msg1 = manager
+            .create_message(Message::system("Test1".to_string(), "Message1".to_string()))
+            .await
+            .unwrap();
+        let msg2 = manager
+            .create_message(Message::system("Test2".to_string(), "Message2".to_string()))
+            .await
+            .unwrap();
+
+        manager.acknowledge(&msg1.id).await.unwrap();
+
+        let active = manager.list_active_messages().await;
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id, msg2.id);
+    }
+
+    #[tokio::test]
+    async fn test_message_filtering_by_severity() {
+        let manager = MessageManager::new();
+
+        manager
+            .create_message(Message::alert(
+                MessageSeverity::Emergency,
+                "Emergency".to_string(),
+                "Emergency message".to_string(),
+                "sensor1".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        manager
+            .create_message(Message::alert(
+                MessageSeverity::Critical,
+                "Critical".to_string(),
+                "Critical message".to_string(),
+                "sensor2".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        manager
+            .create_message(Message::alert(
+                MessageSeverity::Info,
+                "Info".to_string(),
+                "Info message".to_string(),
+                "sensor3".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        let all_messages = manager.list_messages().await;
+        assert_eq!(all_messages.len(), 3);
+
+        let high_severity: Vec<_> = all_messages
+            .iter()
+            .filter(|m| m.severity >= MessageSeverity::Critical)
+            .collect();
+        assert_eq!(high_severity.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_message_filtering_by_source() {
+        let manager = MessageManager::new();
+
+        manager
+            .create_message(Message::device(
+                MessageSeverity::Warning,
+                "Device1".to_string(),
+                "Device message".to_string(),
+                "sensor_1".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        manager
+            .create_message(Message::device(
+                MessageSeverity::Warning,
+                "Device2".to_string(),
+                "Another device".to_string(),
+                "sensor_2".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        manager
+            .create_message(Message::rule(
+                MessageSeverity::Critical,
+                "Rule1".to_string(),
+                "Rule message".to_string(),
+                "rule_1".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        let all_messages = manager.list_messages().await;
+
+        let device_messages: Vec<_> = all_messages
+            .iter()
+            .filter(|m| m.source_type == "device")
+            .collect();
+        assert_eq!(device_messages.len(), 2);
+
+        let rule_messages: Vec<_> = all_messages
+            .iter()
+            .filter(|m| m.source_type == "rule")
+            .collect();
+        assert_eq!(rule_messages.len(), 1);
+    }
+
+    // =========================================================================
+    // Delivery Log Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_delivery_log_tracking() {
+        let manager = MessageManager::new();
+
+        // Create a data push message
+        let payload = serde_json::json!({"temperature": 85.5});
+        let msg = Message::data_push(
+            "temperature".to_string(),
+            "High Temp".to_string(),
+            payload,
+            "device".to_string(),
+            "sensor_1".to_string(),
+        );
+
+        let _ = manager.create_message(msg).await;
+
+        // Check delivery logs (should have logs even if no channels are configured)
+        let logs = manager.list_delivery_logs(DeliveryLogQuery::default()).await;
+        // No channels configured, so no delivery logs should be created
+        assert_eq!(logs.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_delivery_log_filtering() {
+        let manager = MessageManager::new();
+
+        // Manually add some delivery logs for testing
+        let log1 = DeliveryLog::new("event_1".to_string(), "webhook_1".to_string(), r#"{"temp":80}"#.to_string())
+            .with_status(DeliveryStatus::Success);
+
+        let log2 = DeliveryLog::new("event_2".to_string(), "webhook_1".to_string(), r#"{"temp":85}"#.to_string())
+            .with_status(DeliveryStatus::Failed)
+            .with_error("Connection timeout".to_string());
+
+        let log3 = DeliveryLog::new("event_3".to_string(), "webhook_2".to_string(), r#"{"temp":90}"#.to_string())
+            .with_status(DeliveryStatus::Success);
+
+        {
+            let mut logs = manager.delivery_logs.write().await;
+            logs.insert(log1.id.clone(), log1);
+            logs.insert(log2.id.clone(), log2);
+            logs.insert(log3.id.clone(), log3);
+        }
+
+        // Test filtering by channel
+        let webhook1_logs = manager
+            .list_delivery_logs(DeliveryLogQuery {
+                channel: Some("webhook_1".to_string()),
+                ..Default::default()
+            })
+            .await;
+        assert_eq!(webhook1_logs.len(), 2);
+
+        // Test filtering by status
+        let failed_logs = manager
+            .list_delivery_logs(DeliveryLogQuery {
+                status: Some("failed".to_string()),
+                ..Default::default()
+            })
+            .await;
+        assert_eq!(failed_logs.len(), 1);
+        assert_eq!(failed_logs[0].status, DeliveryStatus::Failed);
+
+        // Test filtering by event_id
+        let event_logs = manager
+            .list_delivery_logs(DeliveryLogQuery {
+                event_id: Some("event_1".to_string()),
+                ..Default::default()
+            })
+            .await;
+        assert_eq!(event_logs.len(), 1);
+        assert_eq!(event_logs[0].event_id, "event_1");
+    }
+
+    #[tokio::test]
+    async fn test_delivery_log_stats() {
+        let manager = MessageManager::new();
+
+        let log1 = DeliveryLog::new("event_1".to_string(), "webhook_1".to_string(), r#"{"temp":80}"#.to_string())
+            .with_status(DeliveryStatus::Success);
+
+        let log2 = DeliveryLog::new("event_2".to_string(), "webhook_1".to_string(), r#"{"temp":85}"#.to_string())
+            .with_status(DeliveryStatus::Failed)
+            .with_error("Timeout".to_string());
+
+        let log3 = DeliveryLog::new("event_3".to_string(), "webhook_2".to_string(), r#"{"temp":90}"#.to_string())
+            .with_status(DeliveryStatus::Pending);
+
+        {
+            let mut logs = manager.delivery_logs.write().await;
+            logs.insert(log1.id.clone(), log1);
+            logs.insert(log2.id.clone(), log2);
+            logs.insert(log3.id.clone(), log3);
+        }
+
+        let stats = manager.get_delivery_stats().await;
+        assert_eq!(stats.total, 3);
+        assert_eq!(stats.success, 1);
+        assert_eq!(stats.failed, 1);
+        assert_eq!(stats.pending, 1);
+    }
+
+    #[tokio::test]
+    async fn test_delivery_log_cleanup() {
+        let manager = MessageManager::new();
+
+        // Create an old log (simulated by creating a log and then manually setting its timestamp)
+        let mut old_log = DeliveryLog::new("old_event".to_string(), "webhook_1".to_string(), "old".to_string());
+        old_log.created_at = chrono::Utc::now() - chrono::Duration::days(2);
+        old_log.updated_at = old_log.created_at;
+
+        let new_log = DeliveryLog::new("new_event".to_string(), "webhook_1".to_string(), "new".to_string());
+
+        {
+            let mut logs = manager.delivery_logs.write().await;
+            logs.insert(old_log.id.clone(), old_log);
+            logs.insert(new_log.id.clone(), new_log);
+        }
+
+        assert_eq!(manager.get_delivery_stats().await.total, 2);
+
+        // Cleanup logs older than 1 day
+        let cleaned = manager.cleanup_delivery_logs(1).await;
+        assert_eq!(cleaned, 1);
+
+        assert_eq!(manager.get_delivery_stats().await.total, 1);
+    }
+
+    #[tokio::test]
+    async fn test_clear_delivery_logs() {
+        let manager = MessageManager::new();
+
+        let log1 = DeliveryLog::new("event_1".to_string(), "webhook_1".to_string(), "test".to_string());
+        let log2 = DeliveryLog::new("event_2".to_string(), "webhook_1".to_string(), "test".to_string());
+
+        {
+            let mut logs = manager.delivery_logs.write().await;
+            logs.insert(log1.id.clone(), log1);
+            logs.insert(log2.id.clone(), log2);
+        }
+
+        assert_eq!(manager.get_delivery_stats().await.total, 2);
+
+        manager.clear_delivery_logs().await;
+
+        assert_eq!(manager.get_delivery_stats().await.total, 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_delivery_log_by_id() {
+        let manager = MessageManager::new();
+
+        let log = DeliveryLog::new("event_1".to_string(), "webhook_1".to_string(), "test".to_string());
+        let log_id = log.id.clone();
+
+        {
+            let mut logs = manager.delivery_logs.write().await;
+            logs.insert(log_id.clone(), log);
+        }
+
+        let retrieved = manager.get_delivery_log(&log_id).await;
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().event_id, "event_1");
+
+        let fake_id = DeliveryLogId::new();
+        let not_found = manager.get_delivery_log(&fake_id).await;
+        assert!(not_found.is_none());
+    }
+
+    // =========================================================================
+    // Edge Cases and Error Handling
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_empty_message_fields() {
+        let manager = MessageManager::new();
+
+        // Test with empty strings
+        let msg = Message::new(
+            "",
+            MessageSeverity::Info,
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+        );
+
+        let created = manager.create_message(msg).await.unwrap();
+        assert_eq!(created.category, "");
+        assert_eq!(created.title, "");
+        assert_eq!(created.message, "");
+        assert_eq!(created.source, "");
+    }
+
+    #[tokio::test]
+    async fn test_message_with_special_characters() {
+        let manager = MessageManager::new();
+
+        let msg = Message::alert(
+            MessageSeverity::Warning,
+            "Temperature: 100°C & Humidity: 90%".to_string(),
+            "Test <script>alert('xss')</script> & \"quotes\"".to_string(),
+            "sensor-with-dash_1".to_string(),
+        );
+
+        let created = manager.create_message(msg).await.unwrap();
+        assert!(created.title.contains("°C"));
+        assert!(created.title.contains("&"));
+        assert!(created.message.contains("<script>"));
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_message_creation() {
+        let manager = MessageManager::new();
+        let manager = Arc::new(manager);
+
+        let handles: Vec<_> = (0..10)
+            .map(|i| {
+                let mgr = manager.clone();
+                tokio::spawn(async move {
+                    mgr.create_message(Message::system(
+                        format!("Concurrent {}", i),
+                        format!("Message {}", i),
+                    ))
+                    .await
+                })
+            })
+            .collect();
+
+        // Wait for all tasks to complete
+        for handle in handles {
+            let result = handle.await.unwrap();
+            assert!(result.is_ok());
+        }
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.total, 10);
+    }
+
+    #[tokio::test]
+    async fn test_message_persistence_in_memory() {
+        let manager = MessageManager::new();
+
+        let msg = Message::system("Test".to_string(), "Test message".to_string());
+        let created = manager.create_message(msg).await.unwrap();
+
+        // Retrieve multiple times
+        let retrieved1 = manager.get_message(&created.id).await.unwrap();
+        let retrieved2 = manager.get_message(&created.id).await.unwrap();
+
+        assert_eq!(retrieved1.id, retrieved2.id);
+        assert_eq!(retrieved1.title, retrieved2.title);
+    }
+
+    #[tokio::test]
+    async fn test_clear_all_messages() {
+        let manager = MessageManager::new();
+
+        manager
+            .create_message(Message::system("Test1".to_string(), "Message1".to_string()))
+            .await
+            .unwrap();
+        manager
+            .create_message(Message::system("Test2".to_string(), "Message2".to_string()))
+            .await
+            .unwrap();
+
+        assert_eq!(manager.list_messages().await.len(), 2);
+
+        manager.clear().await.unwrap();
+
+        assert_eq!(manager.list_messages().await.len(), 0);
+        assert_eq!(manager.get_stats().await.total, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_old_messages() {
+        let manager = MessageManager::new();
+
+        // Create a message and manually age it
+        let mut msg = Message::system("Old Message".to_string(), "This should be cleaned up".to_string());
+        msg.timestamp = chrono::Utc::now() - chrono::Duration::days(10);
+
+        let old_msg = manager.create_message(msg).await.unwrap();
+
+        // Create a recent message
+        manager
+            .create_message(Message::system("Recent".to_string(), "This should stay".to_string()))
+            .await
+            .unwrap();
+
+        assert_eq!(manager.list_messages().await.len(), 2);
+
+        // Clean up messages older than 5 days
+        let cleaned = manager.cleanup_old(5).await.unwrap();
+        assert_eq!(cleaned, 1);
+
+        assert_eq!(manager.list_messages().await.len(), 1);
+        assert!(manager.get_message(&old_msg.id).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_message_stats_accuracy() {
+        let manager = MessageManager::new();
+
+        // Create messages with different properties
+        manager
+            .create_message(Message::alert(
+                MessageSeverity::Emergency,
+                "Emergency".to_string(),
+                "Emergency".to_string(),
+                "sensor1".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        manager
+            .create_message(Message::alert(
+                MessageSeverity::Critical,
+                "Critical".to_string(),
+                "Critical".to_string(),
+                "sensor2".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        manager
+            .create_message(Message::alert(
+                MessageSeverity::Warning,
+                "Warning".to_string(),
+                "Warning".to_string(),
+                "sensor3".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        let msg = manager
+            .create_message(Message::alert(
+                MessageSeverity::Info,
+                "Info".to_string(),
+                "Info".to_string(),
+                "sensor4".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        manager.acknowledge(&msg.id).await.unwrap();
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.total, 4);
+        assert_eq!(stats.active, 3);
+        assert_eq!(*stats.by_severity.get("emergency").unwrap_or(&0), 1);
+        assert_eq!(*stats.by_severity.get("critical").unwrap_or(&0), 1);
+        assert_eq!(*stats.by_severity.get("warning").unwrap_or(&0), 1);
+        assert_eq!(*stats.by_severity.get("info").unwrap_or(&0), 1);
+        assert_eq!(*stats.by_status.get("active").unwrap_or(&0), 3);
+        assert_eq!(*stats.by_status.get("acknowledged").unwrap_or(&0), 1);
+    }
+
+    #[tokio::test]
+    async fn test_device_alert_creation() {
+        let manager = MessageManager::new();
+
+        let msg = manager
+            .device_alert(
+                MessageSeverity::Critical,
+                "Device Offline".to_string(),
+                "Sensor stopped responding".to_string(),
+                "sensor_123".to_string(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(msg.source_type, "device");
+        assert_eq!(msg.source, "sensor_123");
+        assert!(msg.tags.contains(&"device".to_string()));
+        assert_eq!(msg.severity, MessageSeverity::Critical);
+    }
+
+    #[tokio::test]
+    async fn test_rule_alert_creation() {
+        let manager = MessageManager::new();
+
+        let msg = manager
+            .rule_alert(
+                MessageSeverity::Warning,
+                "Rule Triggered".to_string(),
+                "Temperature threshold exceeded".to_string(),
+                "rule_temp_check".to_string(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(msg.source_type, "rule");
+        assert_eq!(msg.source, "rule_temp_check");
+        assert!(msg.tags.contains(&"rule".to_string()));
+        assert_eq!(msg.severity, MessageSeverity::Warning);
+    }
+
+    #[tokio::test]
+    async fn test_system_message_creation() {
+        let manager = MessageManager::new();
+
+        let msg = manager
+            .system_message(
+                "System Started".to_string(),
+                "NeoMind system initialized successfully".to_string(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(msg.category, "system");
+        assert_eq!(msg.title, "System Started");
+        assert_eq!(msg.source_type, "system");
+        assert_eq!(msg.severity, MessageSeverity::Info);
+    }
+
+    #[tokio::test]
+    async fn test_message_duration() {
+        let manager = MessageManager::new();
+
+        let msg = Message::system("Test".to_string(), "Test".to_string());
+        let created = manager.create_message(msg).await.unwrap();
+
+        // Message should have a duration
+        let duration = created.duration();
+        assert!(duration.num_seconds() >= 0);
+        assert!(duration.num_seconds() < 10); // Should be very recent
+    }
+
+    #[tokio::test]
+    async fn test_data_push_message_creation() {
+        let manager = MessageManager::new();
+
+        let payload = serde_json::json!({
+            "temperature": 85.5,
+            "humidity": 90,
+            "timestamp": 1234567890
+        });
+
+        let msg = Message::data_push(
+            "sensor_data".to_string(),
+            "Temperature Reading".to_string(),
+            payload.clone(),
+            "device".to_string(),
+            "sensor_1".to_string(),
+        );
+
+        let created = manager.create_message(msg).await.unwrap();
+        assert_eq!(created.message_type, MessageType::DataPush);
+        assert_eq!(created.source_type, "device");
+        assert_eq!(created.source_id, Some("sensor_1".to_string()));
+        assert_eq!(created.payload, Some(payload));
+    }
 }

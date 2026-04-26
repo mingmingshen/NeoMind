@@ -341,4 +341,251 @@ mod tests {
         assert_eq!(query.channel, Some("webhook_1".to_string()));
         assert_eq!(query.hours, Some(48));
     }
+
+    #[test]
+    fn test_delivery_log_increment_retry() {
+        let mut log = DeliveryLog::new(
+            "event_123".to_string(),
+            "webhook_1".to_string(),
+            String::new(),
+        );
+
+        assert_eq!(log.retry_count, 0);
+
+        log.increment_retry();
+        assert_eq!(log.retry_count, 1);
+
+        log.increment_retry();
+        assert_eq!(log.retry_count, 2);
+    }
+
+    #[test]
+    fn test_delivery_log_can_retry() {
+        let mut log = DeliveryLog::new(
+            "event_123".to_string(),
+            "webhook_1".to_string(),
+            String::new(),
+        );
+
+        // Initially can retry
+        assert!(log.can_retry());
+
+        // After max retries, cannot retry
+        for _ in 0..3 {
+            log.increment_retry();
+        }
+        assert!(!log.can_retry());
+
+        // Even with retries, success means no more retries needed
+        let mut log2 = DeliveryLog::new(
+            "event_456".to_string(),
+            "webhook_2".to_string(),
+            String::new(),
+        );
+        log2 = log2.with_status(DeliveryStatus::Success);
+        assert!(!log2.can_retry());
+    }
+
+    #[test]
+    fn test_delivery_log_is_expired() {
+        let log = DeliveryLog::new(
+            "event_123".to_string(),
+            "webhook_1".to_string(),
+            String::new(),
+        );
+
+        // Fresh log should not be expired for 1 day retention
+        assert!(!log.is_expired(1));
+        assert!(!log.is_expired(7));
+
+        // A log created 2 days ago should be expired for 1 day retention
+        let mut old_log = DeliveryLog::new(
+            "event_456".to_string(),
+            "webhook_2".to_string(),
+            String::new(),
+        );
+        old_log.created_at = chrono::Utc::now() - chrono::Duration::days(2);
+        assert!(old_log.is_expired(1));
+        assert!(!old_log.is_expired(7));
+    }
+
+    #[test]
+    fn test_delivery_log_summary() {
+        let log = DeliveryLog::new(
+            "event_123".to_string(),
+            "webhook_1".to_string(),
+            r#"{"temp":85}"#.to_string(),
+        )
+        .with_status(DeliveryStatus::Success);
+
+        let summary = log.summary();
+        assert!(summary.contains("[success]"));
+        assert!(summary.contains("event_123"));
+        assert!(summary.contains("webhook_1"));
+        assert!(summary.contains("ok"));
+
+        let failed_log = DeliveryLog::new(
+            "event_456".to_string(),
+            "webhook_2".to_string(),
+            String::new(),
+        )
+        .with_status(DeliveryStatus::Failed)
+        .with_error("Connection error".to_string());
+
+        let failed_summary = failed_log.summary();
+        assert!(failed_summary.contains("[failed]"));
+        assert!(failed_summary.contains("failed"));
+    }
+
+    #[test]
+    fn test_delivery_status_from_string() {
+        assert_eq!(
+            DeliveryStatus::from_string("pending"),
+            Some(DeliveryStatus::Pending)
+        );
+        assert_eq!(
+            DeliveryStatus::from_string("success"),
+            Some(DeliveryStatus::Success)
+        );
+        assert_eq!(
+            DeliveryStatus::from_string("failed"),
+            Some(DeliveryStatus::Failed)
+        );
+        assert_eq!(
+            DeliveryStatus::from_string("retrying"),
+            Some(DeliveryStatus::Retrying)
+        );
+        assert_eq!(DeliveryStatus::from_string("invalid"), None);
+        // Case-insensitive matching
+        assert_eq!(
+            DeliveryStatus::from_string("PENDING"),
+            Some(DeliveryStatus::Pending)
+        );
+        assert_eq!(
+            DeliveryStatus::from_string("Failed"),
+            Some(DeliveryStatus::Failed)
+        );
+    }
+
+    #[test]
+    fn test_delivery_status_as_str() {
+        assert_eq!(DeliveryStatus::Pending.as_str(), "pending");
+        assert_eq!(DeliveryStatus::Success.as_str(), "success");
+        assert_eq!(DeliveryStatus::Failed.as_str(), "failed");
+        assert_eq!(DeliveryStatus::Retrying.as_str(), "retrying");
+    }
+
+    #[test]
+    fn test_delivery_log_with_status_updates_timestamp() {
+        let log = DeliveryLog::new(
+            "event_123".to_string(),
+            "webhook_1".to_string(),
+            String::new(),
+        );
+
+        let original_updated_at = log.updated_at;
+
+        // Give it a moment to ensure timestamp would be different
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        let updated_log = log.with_status(DeliveryStatus::Success);
+        assert!(updated_log.updated_at > original_updated_at);
+    }
+
+    #[test]
+    fn test_delivery_log_with_error_updates_timestamp() {
+        let log = DeliveryLog::new(
+            "event_123".to_string(),
+            "webhook_1".to_string(),
+            String::new(),
+        );
+
+        let original_updated_at = log.updated_at;
+
+        // Give it a moment to ensure timestamp would be different
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        let updated_log = log.with_error("Test error".to_string());
+        assert!(updated_log.updated_at > original_updated_at);
+    }
+
+    #[test]
+    fn test_delivery_log_default_max_retries() {
+        let log = DeliveryLog::new(
+            "event_123".to_string(),
+            "webhook_1".to_string(),
+            String::new(),
+        );
+
+        assert_eq!(log.max_retries, 3);
+    }
+
+    #[test]
+    fn test_delivery_stats_default() {
+        let stats = DeliveryStats::default();
+        assert_eq!(stats.total, 0);
+        assert_eq!(stats.pending, 0);
+        assert_eq!(stats.success, 0);
+        assert_eq!(stats.failed, 0);
+        assert_eq!(stats.retrying, 0);
+    }
+
+    #[test]
+    fn test_delivery_log_query_default() {
+        let query = DeliveryLogQuery::default();
+        assert!(query.channel.is_none());
+        assert!(query.status.is_none());
+        assert!(query.event_id.is_none());
+        assert!(query.hours.is_none());
+        assert!(query.limit.is_none());
+    }
+
+    #[test]
+    fn test_delivery_log_id_default() {
+        let id1 = DeliveryLogId::default();
+        let id2 = DeliveryLogId::default();
+        // Default creates new IDs, so they should be different
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn test_delivery_log_id_from_string() {
+        let test_id = "test-id-123";
+        let id = DeliveryLogId::from_string(test_id);
+        assert_eq!(id.0, test_id);
+        assert_eq!(id.to_string(), test_id);
+    }
+
+    #[test]
+    fn test_delivery_log_increment_updates_timestamp() {
+        let mut log = DeliveryLog::new(
+            "event_123".to_string(),
+            "webhook_1".to_string(),
+            String::new(),
+        );
+
+        let original_updated_at = log.updated_at;
+
+        // Give it a moment to ensure timestamp would be different
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        log.increment_retry();
+        assert!(log.updated_at > original_updated_at);
+    }
+
+    #[test]
+    fn test_delivery_log_combination() {
+        let log = DeliveryLog::new(
+            "event_123".to_string(),
+            "webhook_1".to_string(),
+            r#"{"data":"test"}"#.to_string(),
+        )
+        .with_status(DeliveryStatus::Retrying)
+        .with_error("Temporary failure".to_string());
+
+        assert_eq!(log.status, DeliveryStatus::Retrying);
+        assert_eq!(log.error_message, Some("Temporary failure".to_string()));
+        assert_eq!(log.retry_count, 0);
+        assert!(log.can_retry());
+    }
 }

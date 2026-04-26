@@ -603,4 +603,242 @@ mod tests {
         let parsed: MessageType = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, MessageType::DataPush);
     }
+
+    #[test]
+    fn test_message_id_default() {
+        let id = MessageId::default();
+        assert_eq!(id.0.get_version(), Some(uuid::Version::Random));
+    }
+
+    #[test]
+    fn test_message_id_from_string() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let id = MessageId::from_string(uuid_str).unwrap();
+        assert_eq!(id.to_string(), uuid_str);
+    }
+
+    #[test]
+    fn test_message_id_from_string_invalid() {
+        let result = MessageId::from_string("invalid-uuid");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_message_id_display() {
+        let id = MessageId::new();
+        let display_str = format!("{}", id);
+        assert_eq!(display_str, id.to_string());
+    }
+
+    #[test]
+    fn test_message_status_from_string() {
+        assert_eq!(
+            MessageStatus::from_string("active"),
+            Some(MessageStatus::Active)
+        );
+        assert_eq!(
+            MessageStatus::from_string("acknowledged"),
+            Some(MessageStatus::Acknowledged)
+        );
+        assert_eq!(
+            MessageStatus::from_string("resolved"),
+            Some(MessageStatus::Resolved)
+        );
+        assert_eq!(
+            MessageStatus::from_string("archived"),
+            Some(MessageStatus::Archived)
+        );
+        assert_eq!(MessageStatus::from_string("invalid"), None);
+    }
+
+    #[test]
+    fn test_message_status_as_str() {
+        assert_eq!(MessageStatus::Active.as_str(), "active");
+        assert_eq!(MessageStatus::Acknowledged.as_str(), "acknowledged");
+        assert_eq!(MessageStatus::Resolved.as_str(), "resolved");
+        assert_eq!(MessageStatus::Archived.as_str(), "archived");
+    }
+
+    #[test]
+    fn test_message_status_display() {
+        assert_eq!(format!("{}", MessageStatus::Active), "Active");
+        assert_eq!(format!("{}", MessageStatus::Acknowledged), "Acknowledged");
+        assert_eq!(format!("{}", MessageStatus::Resolved), "Resolved");
+        assert_eq!(format!("{}", MessageStatus::Archived), "Archived");
+    }
+
+    #[test]
+    fn test_message_with_tags() {
+        let msg = Message::alert(
+            MessageSeverity::Warning,
+            "Test".to_string(),
+            "Test message".to_string(),
+            "test_source".to_string(),
+        )
+        .with_tags(vec!["tag1".to_string(), "tag2".to_string()]);
+
+        assert_eq!(msg.tags.len(), 2);
+        assert!(msg.tags.contains(&"tag1".to_string()));
+    }
+
+    #[test]
+    fn test_message_add_tag() {
+        let mut msg = Message::system("Test".to_string(), "Test".to_string());
+        assert_eq!(msg.tags.len(), 0);
+
+        msg.add_tag("tag1".to_string());
+        assert_eq!(msg.tags.len(), 1);
+
+        msg.add_tag("tag1".to_string()); // Duplicate should not be added
+        assert_eq!(msg.tags.len(), 1);
+
+        msg.add_tag("tag2".to_string());
+        assert_eq!(msg.tags.len(), 2);
+    }
+
+    #[test]
+    fn test_message_with_metadata() {
+        let metadata = serde_json::json!({
+            "temperature": 85.5,
+            "unit": "celsius"
+        });
+
+        let msg = Message::alert(
+            MessageSeverity::Critical,
+            "High Temp".to_string(),
+            "Test".to_string(),
+            "sensor1".to_string(),
+        )
+        .with_metadata(metadata.clone());
+
+        assert_eq!(msg.metadata, Some(metadata));
+    }
+
+    #[test]
+    fn test_message_with_status() {
+        let msg = Message::system("Test".to_string(), "Test".to_string())
+            .with_status(MessageStatus::Resolved);
+
+        assert_eq!(msg.status, MessageStatus::Resolved);
+    }
+
+    #[test]
+    fn test_message_archive() {
+        let mut msg = Message::system("Test".to_string(), "Test".to_string());
+        assert!(msg.is_active());
+
+        msg.archive();
+        assert_eq!(msg.status, MessageStatus::Archived);
+        assert!(!msg.is_active());
+    }
+
+    #[test]
+    fn test_message_severity_display() {
+        assert_eq!(format!("{}", MessageSeverity::Info), "Info");
+        assert_eq!(format!("{}", MessageSeverity::Warning), "Warning");
+        assert_eq!(format!("{}", MessageSeverity::Critical), "Critical");
+        assert_eq!(format!("{}", MessageSeverity::Emergency), "Emergency");
+    }
+
+    #[test]
+    fn test_message_severity_level() {
+        assert_eq!(MessageSeverity::Info.level(), 0);
+        assert_eq!(MessageSeverity::Warning.level(), 1);
+        assert_eq!(MessageSeverity::Critical.level(), 2);
+        assert_eq!(MessageSeverity::Emergency.level(), 3);
+    }
+
+    #[test]
+    fn test_message_type_display() {
+        assert_eq!(format!("{}", MessageType::Notification), "notification");
+        assert_eq!(format!("{}", MessageType::DataPush), "data_push");
+    }
+
+    #[test]
+    fn test_message_data_push() {
+        let payload = serde_json::json!({"temperature": 85.5});
+
+        let msg = Message::data_push(
+            "sensor_data".to_string(),
+            "Temperature Reading".to_string(),
+            payload.clone(),
+            "device".to_string(),
+            "sensor_1".to_string(),
+        );
+
+        assert_eq!(msg.message_type, MessageType::DataPush);
+        assert_eq!(msg.source_type, "device");
+        assert_eq!(msg.source_id, Some("sensor_1".to_string()));
+        assert_eq!(msg.payload, Some(payload));
+    }
+
+    #[test]
+    fn test_message_serialization() {
+        let msg = Message::alert(
+            MessageSeverity::Critical,
+            "High Temp".to_string(),
+            "Temperature alert".to_string(),
+            "sensor1".to_string(),
+        );
+
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("High Temp"));
+        assert!(json.contains("sensor1"));
+        assert!(json.contains("critical"));
+
+        let parsed: Message = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.title, msg.title);
+        assert_eq!(parsed.severity, msg.severity);
+    }
+
+    #[test]
+    fn test_message_duration() {
+        let msg = Message::system("Test".to_string(), "Test".to_string());
+        let duration = msg.duration();
+        assert!(duration.num_seconds() >= 0);
+    }
+
+    #[test]
+    fn test_message_system_with_severity() {
+        let msg = Message::system_with_severity(
+            MessageSeverity::Critical,
+            "System Critical".to_string(),
+            "Critical system event".to_string(),
+        );
+
+        assert_eq!(msg.category, "system");
+        assert_eq!(msg.severity, MessageSeverity::Critical);
+    }
+
+    #[test]
+    fn test_message_business() {
+        let msg = Message::business(
+            "Order Placed".to_string(),
+            "New order #12345".to_string(),
+            "shop_system".to_string(),
+        );
+
+        assert_eq!(msg.category, "business");
+        assert_eq!(msg.source, "shop_system");
+    }
+
+    #[test]
+    fn test_message_chaining_builders() {
+        let metadata = serde_json::json!({"key": "value"});
+        let tags = vec!["tag1".to_string(), "tag2".to_string()];
+
+        let msg = Message::alert(
+            MessageSeverity::Warning,
+            "Test".to_string(),
+            "Test message".to_string(),
+            "source1".to_string(),
+        )
+        .with_status(MessageStatus::Acknowledged)
+        .with_metadata(metadata.clone())
+        .with_tags(tags);
+
+        assert_eq!(msg.status, MessageStatus::Acknowledged);
+        assert_eq!(msg.metadata, Some(metadata));
+        assert_eq!(msg.tags.len(), 2);
+    }
 }
