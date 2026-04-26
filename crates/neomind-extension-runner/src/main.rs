@@ -284,7 +284,10 @@ unsafe extern "C" fn push_output_writer(data: *const u8, len: usize) -> i32 {
     let frame = IpcFrame::new(payload);
     let encoded = frame.encode();
 
-    let _guard = STDOUT_WRITE_MUTEX.lock().unwrap();
+    let _guard = STDOUT_WRITE_MUTEX.lock().unwrap_or_else(|e| {
+        error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
+        e.into_inner()
+    });
     let mut stdout = std::io::stdout();
     if let Err(e) = stdout.write_all(&encoded) {
         error!("PushOutputWriter: write error: {e}");
@@ -864,7 +867,9 @@ impl WasmRuntime {
         }
 
         // Read result from memory
-        let memory = store.data().memory.unwrap();
+        let memory = store.data().memory.ok_or_else(|| {
+            format!("WASM memory not available")
+        })?;
         let mut result_bytes = vec![0u8; result_len];
         memory
             .read(&store, WASM_RESULT_OFFSET, &mut result_bytes)
@@ -1409,7 +1414,10 @@ impl SyncIpcClient {
             Err(e) => {
                 error!("SyncIpcClient: failed to serialize request: {e}");
                 // Remove pending request on error
-                get_pending_requests().lock().unwrap().remove(&request_id);
+                get_pending_requests().lock().unwrap_or_else(|e| {
+    error!("get_pending_requests() mutex poisoned: {}", e);
+    e.into_inner()
+}).remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to serialize request: {}", e)});
             }
         };
@@ -1419,18 +1427,27 @@ impl SyncIpcClient {
 
         // Write to stdout (protected by global mutex)
         {
-            let _guard = STDOUT_WRITE_MUTEX.lock().unwrap();
+            let _guard = STDOUT_WRITE_MUTEX.lock().unwrap_or_else(|e| {
+        error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
+        e.into_inner()
+    });
             let mut stdout = std::io::stdout();
             if let Err(e) = stdout.write_all(&bytes) {
                 drop(_guard);
                 error!("SyncIpcClient: failed to write request: {e}");
-                get_pending_requests().lock().unwrap().remove(&request_id);
+                get_pending_requests().lock().unwrap_or_else(|e| {
+    error!("get_pending_requests() mutex poisoned: {}", e);
+    e.into_inner()
+}).remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to write request: {}", e)});
             }
             if let Err(e) = stdout.flush() {
                 drop(_guard);
                 error!("SyncIpcClient: failed to flush request: {e}");
-                get_pending_requests().lock().unwrap().remove(&request_id);
+                get_pending_requests().lock().unwrap_or_else(|e| {
+    error!("get_pending_requests() mutex poisoned: {}", e);
+    e.into_inner()
+}).remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to flush request: {}", e)});
             }
         }
@@ -1465,12 +1482,18 @@ impl SyncIpcClient {
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 error!("SyncIpcClient: timeout waiting for response");
-                get_pending_requests().lock().unwrap().remove(&request_id);
+                get_pending_requests().lock().unwrap_or_else(|e| {
+    error!("get_pending_requests() mutex poisoned: {}", e);
+    e.into_inner()
+}).remove(&request_id);
                 json!({"success": false, "error": "Timeout waiting for response"})
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 error!("SyncIpcClient: response channel disconnected");
-                get_pending_requests().lock().unwrap().remove(&request_id);
+                get_pending_requests().lock().unwrap_or_else(|e| {
+    error!("get_pending_requests() mutex poisoned: {}", e);
+    e.into_inner()
+}).remove(&request_id);
                 json!({"success": false, "error": "Response channel disconnected"})
             }
         }
@@ -2288,7 +2311,10 @@ impl Runner {
 
         debug!(frame_len = bytes.len(), "Frame encoded");
 
-        let _guard = STDOUT_WRITE_MUTEX.lock().unwrap();
+        let _guard = STDOUT_WRITE_MUTEX.lock().unwrap_or_else(|e| {
+        error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
+        e.into_inner()
+    });
         if let Err(e) = std::io::stdout().write_all(&bytes) {
             error!(error = %e, "Failed to write response");
             return;
@@ -2340,7 +2366,10 @@ impl Runner {
         let bytes = frame.encode();
 
         {
-            let _guard = STDOUT_WRITE_MUTEX.lock().unwrap();
+            let _guard = STDOUT_WRITE_MUTEX.lock().unwrap_or_else(|e| {
+        error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
+        e.into_inner()
+    });
             if let Err(e) = std::io::stdout().write_all(&bytes) {
                 drop(_guard);
                 error!(error = %e, "Failed to write CapabilityRequest");

@@ -62,16 +62,21 @@ pub(crate) fn create_event_channel() -> tokio::sync::mpsc::UnboundedReceiver<Ipc
 /// Register a pending request and return the response receiver
 pub(crate) fn register_pending_request(request_id: u64) -> Receiver<IpcResponse> {
     let (tx, rx) = channel();
-    get_pending_requests()
-        .lock()
-        .unwrap()
-        .insert(request_id, tx);
+    let mut pending = get_pending_requests().lock().unwrap_or_else(|e| {
+        eprintln!("ERROR: get_pending_requests() mutex poisoned in register: {}", e);
+        e.into_inner()
+    });
+    pending.insert(request_id, tx);
     rx
 }
 
 /// Complete a pending request with the response
 pub(crate) fn complete_pending_request(request_id: u64, response: IpcResponse) {
-    if let Some(tx) = get_pending_requests().lock().unwrap().remove(&request_id) {
+    let mut pending = get_pending_requests().lock().unwrap_or_else(|e| {
+        eprintln!("ERROR: get_pending_requests() mutex poisoned in complete: {}", e);
+        e.into_inner()
+    });
+    if let Some(tx) = pending.remove(&request_id) {
         let _ = tx.send(response);
     }
 }
