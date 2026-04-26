@@ -53,8 +53,6 @@ async-trait = { workspace = true }
 get_if_addrs = "0.5"
 base64 = { workspace = true }
 async-stream = { workspace = true }
-utoipa = "5"
-utoipa-swagger-ui = { version = "8", features = ["axum"] }
 atty = "0.2"
 sysinfo = "0.32"
 tempfile = { workspace = true }

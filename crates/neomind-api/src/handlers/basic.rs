@@ -2,13 +2,12 @@
 
 use axum::{extract::State, Json};
 use serde::Serialize;
-use utoipa::ToSchema;
 use serde_json::json;
 
 use super::ServerState;
 
 /// Health check response.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct HealthStatus {
     pub status: String,
     pub service: String,
@@ -17,7 +16,7 @@ pub struct HealthStatus {
 }
 
 /// Dependency health status.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DependencyStatus {
     pub llm: bool,
     pub mqtt: bool,
@@ -31,19 +30,13 @@ impl DependencyStatus {
 }
 
 /// Readiness check response.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ReadinessStatus {
     pub ready: bool,
     pub dependencies: DependencyStatus,
 }
 
 /// Basic health check handler (public endpoint).
-#[utoipa::path(
-    get,
-    path = "/api/health",
-    tag = "health",
-    responses((status = 200, description = "Service is healthy"))
-)]
 pub async fn health_handler() -> Json<serde_json::Value> {
     Json(json!({
         "status": "ok",
@@ -53,12 +46,6 @@ pub async fn health_handler() -> Json<serde_json::Value> {
 }
 
 /// Detailed health check with uptime.
-#[utoipa::path(
-    get,
-    path = "/api/health/status",
-    tag = "health",
-    responses((status = 200, description = "Detailed health status", body = HealthStatus))
-)]
 pub async fn health_status_handler(State(state): State<ServerState>) -> Json<HealthStatus> {
     let uptime = chrono::Utc::now().timestamp() - state.started_at;
 
@@ -71,12 +58,6 @@ pub async fn health_status_handler(State(state): State<ServerState>) -> Json<Hea
 }
 
 /// Liveness probe - simple check if server is running.
-#[utoipa::path(
-    get,
-    path = "/api/health/live",
-    tag = "health",
-    responses((status = 200, description = "Server is alive"))
-)]
 pub async fn liveness_handler() -> Json<serde_json::Value> {
     Json(json!({
         "status": "alive",
@@ -84,12 +65,6 @@ pub async fn liveness_handler() -> Json<serde_json::Value> {
 }
 
 /// Readiness probe - check if dependencies are ready.
-#[utoipa::path(
-    get,
-    path = "/api/health/ready",
-    tag = "health",
-    responses((status = 200, description = "Readiness status with dependency checks", body = ReadinessStatus))
-)]
 pub async fn readiness_handler(State(state): State<ServerState>) -> Json<ReadinessStatus> {
     // Check if session manager is working (just check if we can access it)
     let _sessions = state.agents.session_manager.list_sessions().await;

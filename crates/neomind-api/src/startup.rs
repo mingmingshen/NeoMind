@@ -377,21 +377,6 @@ impl StartupLogger {
             color(format!("  http://{}                     ", addr), ANSI_CYAN)
         );
         println!(
-            "{} {} {}",
-            color("  ║", ANSI_GREEN),
-            color("API:", ANSI_BOLD),
-            color(
-                format!("   http://{}/api/openapi.json    ", addr),
-                ANSI_CYAN
-            )
-        );
-        println!(
-            "{} {} {}",
-            color("  ║", ANSI_GREEN),
-            color("Docs:", ANSI_BOLD),
-            color(format!("  http://{}/api-docs            ", addr), ANSI_CYAN)
-        );
-        println!(
             "{}",
             color(
                 "  ╚══════════════════════════════════════════════════════╝",

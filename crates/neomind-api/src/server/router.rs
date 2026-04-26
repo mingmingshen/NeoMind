@@ -243,8 +243,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions/:id/stream/sessions",
             get(extension_stream::list_stream_sessions_handler),
         )
-        // API documentation (public)
-        .merge(crate::openapi::swagger_ui());
+        ;
 
     // JWT protected routes (require JWT token authentication)
     let jwt_routes = Router::new()

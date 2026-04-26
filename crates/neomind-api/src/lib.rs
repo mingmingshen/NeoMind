@@ -12,7 +12,7 @@ pub mod crypto;
 pub mod event_services;
 pub mod handlers;
 pub mod models;
-pub mod openapi;
+
 pub mod rate_limit;
 pub mod server;
 pub mod shutdown;
