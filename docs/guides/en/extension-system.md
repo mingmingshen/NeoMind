@@ -3,7 +3,7 @@
 **Version**: 2.2.0
 **SDK Version**: 0.6.1
 **ABI Version**: 3
-**Last Updated**: 2026-03-12
+**Last Updated**: 2026-04-26
 
 ---
 
@@ -338,8 +338,14 @@ pub struct ExtensionRuntimeState {
     pub error_count: u64,
     /// Last error message
     pub last_error: Option<String>,
+    /// Health status: "ok", "warning", "error", "unknown"
+    pub health_status: String,
+    /// Timestamp of last error
+    pub last_error_at: Option<i64>,
 }
 ```
+
+The `health_status` field is populated from persistent storage (`data/extensions.redb`) and reflects the extension's current health. The `config_parameters` field from `ExtensionMetadata` defines configurable parameters for the extension, with validation on config update.
 
 ---
 
@@ -1054,6 +1060,33 @@ impl Extension for VideoAnalyzerExtension {
 
 Push mode allows extensions to proactively push data to clients:
 
+#### Native Push Mode (FFI Callback)
+
+Extensions running in isolated mode can use the native FFI push callback, bypassing the JSON FFI round-trip:
+
+```rust
+use neomind_extension_sdk::host::{send_push_output, PushOutputWriterFn};
+use neomind_extension_sdk::ipc_types::PushOutputMessage;
+
+// The runner registers a PushOutputWriterFn FFI callback on load.
+// Extensions can call send_push_output() to push data directly:
+
+fn push_sensor_data(temperature: f64) {
+    let msg = PushOutputMessage::json(
+        "session-id",
+        sequence,
+        json!({ "temperature": temperature }),
+    ).unwrap();
+    let _ = send_push_output(&msg);
+}
+```
+
+The `neomind_extension_register_push_writer` FFI export is handled automatically by `neomind_export!`.
+
+#### Channel-Based Push Mode (In-Process)
+
+In-process extensions use the channel-based approach:
+
 ```rust
 pub struct SensorStreamExtension {
     output_sender: RwLock<Option<Arc<mpsc::Sender<PushOutputMessage>>>>,
@@ -1086,7 +1119,7 @@ impl Extension for SensorStreamExtension {
                         sequence,
                         json!({ "temperature": data }),
                     ).unwrap();
-                    
+
                     if sender.send(msg).await.is_err() {
                         break;
                     }

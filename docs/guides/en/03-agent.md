@@ -1,7 +1,7 @@
 # Agent Module
 
 **Package**: `neomind-agent`
-**Version**: 0.6.5
+**Version**: 0.7.0
 **Completion**: 95%
 **Purpose**: AI chat agent with LLM, memory, and tools integration
 
@@ -38,7 +38,9 @@ crates/neomind-agent/src/
 │   ├── mod.rs                  # Agent tools
 │   ├── dsl.rs                  # DSL tools
 │   ├── mapper.rs               # Mapping tools
-│   └── rule_gen.rs             # Rule generation
+│   ├── rule_gen.rs             # Rule generation
+│   ├── shell.rs                # Shell command execution (v0.6.10)
+│   └── skill.rs                # Skill management (v0.6.10)
 ├── toolkit/
 │   ├── mod.rs                  # Toolkit module
 │   ├── resolver.rs             # EntityResolver (fuzzy name/ID matching) (v0.6.4)
@@ -74,7 +76,7 @@ Benefits:
 - Cleaner tool organization
 
 ### Execution Mode
-Agents support two execution modes:
+Agents support two execution modes (renamed from Chat/React in v0.6.10):
 
 ```rust
 pub enum ExecutionMode {
@@ -88,6 +90,20 @@ pub enum ExecutionMode {
     Free,
 }
 ```
+
+**Focused Mode**:
+- User binds resources (required) — the agent works within a defined scope
+- Structured Markdown tables (data table + command table + decision template) for reliable LLM output
+- Single-pass, token-efficient analysis
+- Scope validation: commands outside bound resources are rejected
+- Best for: monitoring, alerts, data analysis
+
+**Free Mode**:
+- No resource binding needed — LLM freely explores with all tools
+- Multi-round reasoning with up to 8 tools (device, agent, rule, message, extension, transform, skill, shell)
+- Best for: complex automation, device control, exploratory tasks
+
+**Backward Compatibility**: The old values `"chat"` and `"react"` are still accepted via serde aliases.
 
 ### Per-Step Results
 Agent execution now captures per-step results for better observability:
@@ -215,6 +231,43 @@ Device query results now include:
 - **Metric name resolution** — user-friendly aliases mapped to internal metric names
 
 This reduces the need for follow-up tool calls to get device details.
+
+### Agent Skill System (v0.6.10)
+
+The Skill System enables user-defined scenario-driven operation guides for the AI agent. Skills are YAML frontmatter + Markdown files that provide multi-tool workflow instructions.
+
+```rust
+// Skill tool actions:
+// - search: Find skills by keyword
+// - list: List all skills
+// - get: Get skill content
+// - create: Create new skill
+// - update: Update existing skill
+// - delete: Delete skill
+```
+
+Skills are managed via the `skill` aggregated tool. The frontend provides a Skills Panel in agent settings for creating, editing, and deleting skills with a code editor. Skills include keyword matching, token budget injection, and persistence.
+
+### Shell Tool (v0.6.10)
+
+The `shell` tool enables AI agents to execute system commands on the host.
+
+Features:
+- **Login Shell**: Uses `$SHELL -l -c` for full user environment (PATH, aliases); falls back to `/bin/sh -c` in minimal environments (Docker, IoT edge)
+- **Cross-Platform**: Unix/macOS/Windows support
+- **Configurable Timeout**: Max 600 seconds, default 30 seconds
+- **Output Truncation**: 10K character limit with UTF-8 safe truncation
+- **Process Group Isolation**: Clean timeout kill via process groups
+
+Parameters:
+- `command` (required): Shell command to execute
+- `timeout`: Execution timeout in seconds
+- `working_dir`: Working directory
+- `description`: Audit log description
+
+### Agent Status Sync (v0.6.12)
+
+Agent pause/activate actions now properly sync with the scheduler. Pausing an agent unschedules it from the executor; activating reschedules it. This ensures the UI state matches backend execution state.
 
 ## Core Components
 
@@ -464,6 +517,12 @@ pub enum ToolCallStatus {
 
 /// Rule tools
 - RuleGenTool           // Rule generation
+
+/// Shell tools
+- ShellTool             // System command execution (v0.6.10)
+
+/// Skill tools
+- SkillTool             // User-defined skill management (v0.6.10)
 
 /// Thinking tools
 - ThinkTool             // Reasoning
