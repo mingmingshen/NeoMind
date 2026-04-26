@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState, useRef } from "react"
 import { Routes, Route, Navigate, useLocation } from "react-router-dom"
+import { ErrorBoundary } from "@/components/shared/ErrorBoundary"
 import { useStore } from "@/store"
 import { TopNav } from "@/components/layout/TopNav"
 import { Toaster } from "@/components/ui/toaster"
@@ -429,6 +430,7 @@ function App() {
                   <TopNav />
                   <main className="flex flex-1 min-h-0 overflow-hidden" style={{paddingTop: 'var(--topnav-height, 4rem)'}}>
                     <div className="w-full h-full overflow-hidden" id="main-scroll-container">
+                    <ErrorBoundary>
                     <Routes>
                       <Route path="/" element={<ChatPage />} />
                       <Route path="/chat" element={<ChatPage />} />
@@ -460,6 +462,7 @@ function App() {
                       {/* Catch all - redirect to chat */}
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
+                    </ErrorBoundary>
                     </div>
                   </main>
                   <Toaster />
