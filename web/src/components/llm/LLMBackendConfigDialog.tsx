@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { fetchAPI } from "@/lib/api"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
+import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 import { FormField } from "@/components/ui/field"
@@ -17,6 +18,8 @@ interface LLMBackendConfigDialogProps {
   onOpenChange: (open: boolean) => void
   backend?: LlmBackendInstance | null
   mode: 'create' | 'edit'
+  backendType?: string  // Required for create mode
+  onRefresh?: () => void  // Callback to refresh the backend list
 }
 
 interface LlmBackendInstance {
@@ -39,14 +42,20 @@ export function LLMBackendConfigDialog({
   onOpenChange,
   backend,
   mode,
+  backendType,
+  onRefresh,
 }: LLMBackendConfigDialogProps) {
   const { t } = useTranslation()
   const isMobile = useIsMobile()
   const insets = useSafeAreaInsets()
+  const { toast } = useToast()
 
   const [loading, setLoading] = useState(false)
   const [config, setConfig] = useState<Record<string, unknown>>({})
   const [name, setName] = useState('')
+  const [endpoint, setEndpoint] = useState('')
+  const [model, setModel] = useState('')
+  const [apiKey, setApiKey] = useState('')
 
   // Lock body scroll on mobile
   useMobileBodyScrollLock(isMobile && open)
@@ -55,9 +64,15 @@ export function LLMBackendConfigDialog({
     if (backend && mode === 'edit') {
       setName(backend.name)
       setConfig(backend.config || {})
+      setEndpoint((backend.config as any)?.endpoint || '')
+      setModel((backend.config as any)?.model || '')
+      setApiKey('')
     } else {
       setName('')
       setConfig({})
+      setEndpoint('')
+      setModel('')
+      setApiKey('')
     }
   }, [backend, mode])
 
@@ -65,7 +80,34 @@ export function LLMBackendConfigDialog({
     setLoading(true)
     try {
       if (mode === 'create') {
-        // TODO: Implement create
+        if (!backendType) {
+          toast({
+            title: t('common:error'),
+            description: t('settings:llm.backendTypeRequired', { defaultValue: 'Backend type is required' }),
+            variant: 'destructive',
+          })
+          return
+        }
+
+        const createData = {
+          name,
+          backend_type: backendType,
+          endpoint: endpoint || undefined,
+          model,
+          api_key: apiKey || undefined,
+        }
+
+        await fetchAPI('/llm-backends', {
+          method: 'POST',
+          body: JSON.stringify(createData),
+        })
+
+        toast({
+          title: t('common:success'),
+          description: t('settings:llm.backendCreated', { defaultValue: 'Backend created successfully' }),
+        })
+
+        onRefresh?.()
       } else {
         await fetchAPI(`/api/llm-backends/${backend?.id}`, {
           method: 'PUT',
@@ -75,6 +117,13 @@ export function LLMBackendConfigDialog({
       onOpenChange(false)
     } catch (error) {
       console.error('Failed to save backend:', error)
+      toast({
+        title: t('common:error'),
+        description: mode === 'create'
+          ? t('settings:llm.createFailed', { defaultValue: 'Failed to create backend' })
+          : t('settings:llm.updateFailed', { defaultValue: 'Failed to update backend' }),
+        variant: 'destructive',
+      })
     } finally {
       setLoading(false)
     }
@@ -99,9 +148,47 @@ export function LLMBackendConfigDialog({
         />
       </FormField>
 
-      <div className="text-sm text-muted-foreground p-4 border rounded-lg bg-muted/30">
-        {t('settings:llm.configPlaceholder', { defaultValue: 'Configuration fields will be dynamically generated based on backend type' })}
-      </div>
+      {mode === 'create' && (
+        <>
+          <FormField
+            label={t('settings:llm.endpoint')}
+          >
+            <Input
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              placeholder="http://localhost:11434"
+            />
+          </FormField>
+
+          <FormField
+            label={t('settings:llm.model')}
+            required
+          >
+            <Input
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="qwen2.5:7b"
+            />
+          </FormField>
+
+          <FormField
+            label={t('settings:llm.apiKey')}
+          >
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={t('settings:llm.apiKeyPlaceholder', { defaultValue: 'Optional API key' })}
+            />
+          </FormField>
+        </>
+      )}
+
+      {mode === 'edit' && (
+        <div className="text-sm text-muted-foreground p-4 border rounded-lg bg-muted/30">
+          {t('settings:llm.configPlaceholder', { defaultValue: 'Configuration fields will be dynamically generated based on backend type' })}
+        </div>
+      )}
     </FormSectionGroup>
   )
 
