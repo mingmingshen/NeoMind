@@ -75,3 +75,21 @@ pub struct MqttSubscriptionDto {
     pub qos: u8,
     pub device_id: Option<String>,
 }
+
+/// Request body for subscribing to a custom topic.
+#[derive(Debug, Deserialize)]
+pub struct MqttSubscribeRequest {
+    pub topic: String,
+    #[serde(default = "default_qos")]
+    pub qos: u8,
+}
+
+fn default_qos() -> u8 {
+    1
+}
+
+/// Request body for unsubscribing from a custom topic.
+#[derive(Debug, Deserialize)]
+pub struct MqttUnsubscribeRequest {
+    pub topic: String,
+}

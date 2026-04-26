@@ -7,6 +7,7 @@ use axum::{extract::State, http::StatusCode, response::Json};
 use serde::{Deserialize, Serialize};
 
 use crate::auth_users::UserRole;
+use crate::config;
 use crate::models::error::ErrorResponse;
 use crate::server::ServerState;
 
@@ -250,24 +251,31 @@ pub async fn save_llm_config_handler(
     }
 
     // Save to settings storage
-    // This will integrate with the existing settings system
-    let _config = serde_json::json!({
-        "backend": req.provider,
-        "model": req.model,
-        "endpoint": req.endpoint,
-        "api_key": req.api_key,
-    });
+    // Convert LlmConfigRequest to LlmSettingsRequest
+    let settings_req = config::LlmSettingsRequest {
+        backend: req.provider.clone(),
+        endpoint: req.endpoint.clone(),
+        model: req.model.clone(),
+        api_key: req.api_key.clone(),
+    };
+
+    // Convert to LlmSettings and persist to database
+    let llm_settings = settings_req.to_llm_settings();
+    config::save_llm_settings(&llm_settings)
+        .await
+        .map_err(|e| ErrorResponse {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "SETTINGS_SAVE_FAILED".to_string(),
+            message: format!("Failed to save LLM settings: {}", e),
+            request_id: None,
+        })?;
 
     tracing::info!(
         category = "setup",
         provider = req.provider,
         model = req.model,
-        "LLM configured during setup"
+        "LLM configured and saved during setup"
     );
-
-    // TODO: Save to persistent settings storage
-    // For now, we'll log it and return success
-    // The settings system needs to be extended to handle LLM configuration
 
     Ok(Json(serde_json::json!({
         "message": "LLM configuration saved",

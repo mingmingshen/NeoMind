@@ -854,6 +854,40 @@ pub async fn create_agent(
     State(state): State<ServerState>,
     Json(request): Json<CreateAgentRequest>,
 ) -> HandlerResult<Value> {
+    use crate::validator::{validate_required_string, validate_string_length};
+
+    // Validate required fields
+    validate_required_string(&request.name, "name")?;
+    validate_string_length(&request.name, "name", 1, 100)?;
+    validate_required_string(&request.user_prompt, "user_prompt")?;
+    validate_string_length(&request.user_prompt, "user_prompt", 10, 10000)?;
+
+    // Validate description if provided
+    if let Some(ref desc) = request.description {
+        validate_string_length(desc, "description", 0, 500)?;
+    }
+
+    // Validate schedule type
+    if !["interval", "cron", "event"].contains(&request.schedule.schedule_type.as_str()) {
+        return Err(ErrorResponse::bad_request(format!(
+            "Invalid schedule type: {} (must be 'interval', 'cron', or 'event')",
+            request.schedule.schedule_type
+        )));
+    }
+
+    // Validate execution_mode and check Focused mode requires resources
+    let has_resources = request.resources.as_ref().map_or(false, |r| !r.is_empty())
+        || !request.device_ids.is_empty()
+        || !request.metrics.is_empty()
+        || !request.commands.is_empty();
+
+    let execution_mode = request.execution_mode.as_deref();
+    if execution_mode == Some("focused") && !has_resources {
+        return Err(ErrorResponse::validation(
+            "Focused mode requires at least one resource binding"
+        ));
+    }
+
     // Convert request to storage types
     let schedule_type = match request.schedule.schedule_type.as_str() {
         "interval" => ScheduleType::Interval,
@@ -1050,6 +1084,21 @@ pub async fn update_agent(
     Path(id): Path<String>,
     Json(request): Json<UpdateAgentRequest>,
 ) -> HandlerResult<Value> {
+    use crate::validator::{validate_required_string, validate_string_length};
+
+    // Validate fields if provided
+    if let Some(ref name) = request.name {
+        validate_required_string(name, "name")?;
+        validate_string_length(name, "name", 1, 100)?;
+    }
+    if let Some(ref desc) = request.description {
+        validate_string_length(desc, "description", 0, 500)?;
+    }
+    if let Some(ref prompt) = request.user_prompt {
+        validate_required_string(prompt, "user_prompt")?;
+        validate_string_length(prompt, "user_prompt", 10, 10000)?;
+    }
+
     let store = &state.agents.agent_store;
 
     // Get existing agent
