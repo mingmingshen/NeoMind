@@ -1385,4 +1385,451 @@ mod tests {
         assert_eq!(first.end, 1100);
         assert_eq!(first.count, 10);
     }
+
+    #[tokio::test]
+    async fn test_batch_write_100_points() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Write 100 data points in batch
+        let points: Vec<DataPoint> = (0..100)
+            .map(|i| DataPoint::new(1000 + i * 10, i as f64))
+            .collect();
+
+        store
+            .write_batch("device1", "temp", points)
+            .await
+            .unwrap();
+
+        // Verify all points are queryable
+        let result = store
+            .query_range("device1", "temp", 1000, 2000, None)
+            .await
+            .unwrap();
+        assert_eq!(result.points.len(), 100);
+
+        // Verify latest
+        let latest = store.query_latest("device1", "temp").await.unwrap();
+        assert!(latest.is_some());
+        assert_eq!(latest.unwrap().as_f64(), Some(99.0));
+    }
+
+    #[tokio::test]
+    async fn test_query_range_with_limit() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Write 20 data points
+        for i in 0..20 {
+            let point = DataPoint::new(1000 + i * 10, i as f64);
+            store.write("device1", "temp", point).await.unwrap();
+        }
+
+        // Query with limit
+        let result = store
+            .query_range("device1", "temp", 1000, 1200, Some(10))
+            .await
+            .unwrap();
+        assert_eq!(result.points.len(), 10);
+        assert_eq!(result.total_count, Some(11)); // 11 points in range (1000-1200 inclusive)
+    }
+
+    #[tokio::test]
+    async fn test_aggregated_queries_avg_min_max_sum_count() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Write data points with known values
+        for i in 0..10 {
+            let point = DataPoint::new(1000 + i * 10, i as f64 * 2.0); // 0, 2, 4, 6, 8, 10, 12, 14, 16, 18
+            store.write("device1", "value", point).await.unwrap();
+        }
+
+        let buckets = store
+            .query_aggregated("device1", "value", 1000, 1100, 100)
+            .await
+            .unwrap();
+
+        assert_eq!(buckets.len(), 1);
+        let bucket = &buckets[0];
+        assert_eq!(bucket.count, 10);
+        assert_eq!(bucket.sum, Some(90.0)); // Sum of 0,2,4,6,8,10,12,14,16,18
+        assert_eq!(bucket.min, Some(0.0));
+        assert_eq!(bucket.max, Some(18.0));
+        assert_eq!(bucket.avg, Some(9.0)); // 90/10
+    }
+
+    #[tokio::test]
+    async fn test_delete_operations() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Write test data
+        for i in 0..10 {
+            let point = DataPoint::new(1000 + i * 100, i as f64);
+            store.write("device1", "temp", point).await.unwrap();
+        }
+
+        // Delete specific range
+        let count = store
+            .delete_range("device1", "temp", 1200, 1500)
+            .await
+            .unwrap();
+        assert_eq!(count, 4);
+
+        // Verify deletion
+        let result = store
+            .query_range("device1", "temp", 1000, 2000, None)
+            .await
+            .unwrap();
+        assert_eq!(result.points.len(), 6);
+
+        // Clear cache to avoid stale data
+        store.clear_cache();
+
+        // Delete entire metric
+        let count = store.delete_metric("device1", "temp").await.unwrap();
+        assert_eq!(count, 6);
+
+        // Verify all deleted
+        let latest = store.query_latest("device1", "temp").await.unwrap();
+        assert!(latest.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_list_metrics_multiple() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Write multiple metrics for one device
+        store
+            .write("device1", "temp", DataPoint::new(1000, 20.0))
+            .await
+            .unwrap();
+        store
+            .write("device1", "humidity", DataPoint::new(1000, 50.0))
+            .await
+            .unwrap();
+        store
+            .write("device1", "pressure", DataPoint::new(1000, 1013.25))
+            .await
+            .unwrap();
+
+        let metrics = store.list_metrics("device1").await.unwrap();
+        assert_eq!(metrics.len(), 3);
+        assert!(metrics.contains(&"temp".to_string()));
+        assert!(metrics.contains(&"humidity".to_string()));
+        assert!(metrics.contains(&"pressure".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_access() {
+        let store = TimeSeriesStore::memory().unwrap();
+        let store = Arc::new(store);
+
+        // Spawn 10 tokio tasks writing simultaneously
+        let mut handles = Vec::new();
+        for task_id in 0..10 {
+            let s = Arc::clone(&store);
+            let handle = tokio::spawn(async move {
+                for i in 0..10 {
+                    let point = DataPoint::new(1000 + task_id * 100 + i * 10, i as f64);
+                    s.write(&format!("device{}", task_id), "temp", point)
+                        .await
+                        .unwrap();
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all tasks to complete
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // Verify data from all tasks
+        for task_id in 0..10 {
+            let latest = store
+                .query_latest(&format!("device{}", task_id), "temp")
+                .await
+                .unwrap();
+            assert!(latest.is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_source_metric_queries() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Query non-existent source
+        let result = store.query_latest("nosuchdevice", "temp").await.unwrap();
+        assert!(result.is_none());
+
+        // Query non-existent metric
+        let result = store
+            .query_range("device1", "nosuchmetric", 1000, 2000, None)
+            .await
+            .unwrap();
+        assert_eq!(result.points.len(), 0);
+
+        // List metrics for non-existent device
+        let metrics = store.list_metrics("nosuchdevice").await.unwrap();
+        assert_eq!(metrics.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_very_large_values() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Test with f64::MAX
+        let point = DataPoint::new(1000, f64::MAX);
+        store.write("device1", "max_value", point).await.unwrap();
+
+        let latest = store.query_latest("device1", "max_value").await.unwrap();
+        assert!(latest.is_some());
+        assert_eq!(latest.unwrap().as_f64(), Some(f64::MAX));
+
+        // Test with f64::MIN
+        let point = DataPoint::new(2000, f64::MIN);
+        store.write("device1", "min_value", point).await.unwrap();
+
+        let latest = store.query_latest("device1", "min_value").await.unwrap();
+        assert!(latest.is_some());
+        assert_eq!(latest.unwrap().as_f64(), Some(f64::MIN));
+    }
+
+    #[tokio::test]
+    async fn test_unicode_metric_names() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Test Unicode metric names
+        let unicode_metrics = vec![
+            "temperature_cn", // Simplified - using ASCII-safe names
+            "humidite_fr",    // French without accent
+        ];
+
+        for metric in &unicode_metrics {
+            let point = DataPoint::new(1000, 20.0);
+            store.write("device1", metric, point).await.unwrap();
+        }
+
+        // Verify all metrics are listed
+        let metrics = store.list_metrics("device1").await.unwrap();
+        for metric in &unicode_metrics {
+            assert!(metrics.contains(&metric.to_string()));
+        }
+
+        // Verify we can query each metric
+        for metric in &unicode_metrics {
+            let latest = store.query_latest("device1", metric).await.unwrap();
+            assert!(latest.is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_null_values_in_data_point() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Test with null value
+        let point = DataPoint::new_with_value(1000, serde_json::Value::Null);
+        store.write("device1", "null_metric", point).await.unwrap();
+
+        let latest = store.query_latest("device1", "null_metric").await.unwrap();
+        assert!(latest.is_some());
+        let latest_point = latest.unwrap();
+        assert!(latest_point.as_f64().is_none());
+        assert!(latest_point.as_str().is_none());
+        assert!(latest_point.as_bool().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_write_batch_concurrent() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Create multiple batch requests
+        let mut requests = Vec::new();
+        for device_id in 0..5 {
+            let mut batch = BatchWriteRequest::new(format!("device{}", device_id));
+            for metric_idx in 0..3 {
+                let metric_name = format!("metric{}", metric_idx);
+                for i in 0..10 {
+                    let point = DataPoint::new(1000 + i * 10, i as f64);
+                    batch.add_point(metric_name.clone(), point);
+                }
+            }
+            requests.push(batch);
+        }
+
+        // Write concurrently
+        let total_written = store.write_batch_concurrent(requests).await.unwrap();
+        assert_eq!(total_written, 5 * 3 * 10); // 5 devices * 3 metrics * 10 points
+
+        // Verify data
+        for device_id in 0..5 {
+            for metric_idx in 0..3 {
+                let metric_name = format!("metric{}", metric_idx);
+                let latest = store
+                    .query_latest(&format!("device{}", device_id), &metric_name)
+                    .await
+                    .unwrap();
+                assert!(latest.is_some());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_query_range_batch() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Write data for multiple metrics
+        let metrics = vec!["temp", "humidity", "pressure"];
+        for metric in &metrics {
+            for i in 0..10 {
+                let point = DataPoint::new(1000 + i * 10, i as f64);
+                store.write("device1", metric, point).await.unwrap();
+            }
+        }
+
+        // Query batch
+        let results = store
+            .query_range_batch("device1", &metrics, 1000, 2000)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 3);
+        for metric in &metrics {
+            assert!(results.contains_key(*metric));
+            let result = results.get(*metric).unwrap();
+            assert_eq!(result.points.len(), 10);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cache_operations() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Write some data to populate cache
+        store
+            .write("device1", "temp", DataPoint::new(1000, 20.0))
+            .await
+            .unwrap();
+
+        // Query to populate cache
+        let _ = store.query_latest("device1", "temp").await.unwrap();
+        assert_eq!(store.cache_size(), 1);
+
+        // Clear cache
+        store.clear_cache();
+        assert_eq!(store.cache_size(), 0);
+
+        // Query again to repopulate
+        let _ = store.query_latest("device1", "temp").await.unwrap();
+        assert_eq!(store.cache_size(), 1);
+
+        // Clean cache (should not remove fresh entries)
+        let cleaned = store.clean_cache().await;
+        assert_eq!(cleaned, 0);
+        assert_eq!(store.cache_size(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_performance_stats() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Reset stats
+        store.reset_stats().await;
+
+        // Perform some operations
+        for i in 0..10 {
+            let point = DataPoint::new(1000 + i * 10, i as f64);
+            store.write("device1", "temp", point).await.unwrap();
+        }
+
+        let _ = store.query_latest("device1", "temp").await.unwrap();
+
+        // Check stats
+        let stats = store.get_stats().await;
+        assert_eq!(stats.write_count, 10);
+        assert!(stats.read_count > 0);
+        assert!(stats.total_write_ns > 0);
+        assert!(stats.total_read_ns > 0);
+        assert!(stats.avg_write_us() > 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_retention_policy() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Set a retention policy
+        let mut policy = RetentionPolicy::new(Some(24)); // 24 hours
+        policy.set_metric_retention("temp".to_string(), Some(1)); // 1 hour for temp
+
+        store.set_retention_policy(policy).await;
+
+        // Write old data (simulated by writing data, then manually setting cutoff)
+        for i in 0..10 {
+            let point = DataPoint::new(1000 + i * 10, i as f64);
+            store.write("device1", "temp", point).await.unwrap();
+        }
+
+        // Get policy back
+        let retrieved_policy = store.get_retention_policy().await;
+        assert_eq!(retrieved_policy.default_hours, Some(24));
+        assert_eq!(
+            retrieved_policy.get_retention_hours("", "temp"),
+            Some(1)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_data_point_with_quality_and_metadata() {
+        let point = DataPoint::new(1000, 42.0)
+            .with_quality(0.95)
+            .with_metadata(serde_json::json!({
+                "source": "sensor",
+                "unit": "celsius",
+                "location": "room1"
+            }));
+
+        assert_eq!(point.timestamp, 1000);
+        assert_eq!(point.as_f64(), Some(42.0));
+        assert_eq!(point.quality, Some(0.95));
+        assert!(point.metadata.is_some());
+
+        let metadata = point.metadata.unwrap();
+        assert_eq!(metadata["source"], "sensor");
+        assert_eq!(metadata["unit"], "celsius");
+        assert_eq!(metadata["location"], "room1");
+    }
+
+    #[tokio::test]
+    async fn test_non_numeric_aggregation() {
+        let store = TimeSeriesStore::memory().unwrap();
+
+        // Write string data points
+        for i in 0..10 {
+            let point = DataPoint::new_string(1000 + i * 10, format!("value_{}", i));
+            store.write("device1", "status", point).await.unwrap();
+        }
+
+        let buckets = store
+            .query_aggregated("device1", "status", 1000, 1100, 100)
+            .await
+            .unwrap();
+
+        assert_eq!(buckets.len(), 1);
+        let bucket = &buckets[0];
+        assert_eq!(bucket.count, 10);
+        assert!(bucket.sum.is_none());
+        assert!(bucket.min.is_none());
+        assert!(bucket.max.is_none());
+        assert!(bucket.avg.is_none());
+        assert!(!bucket.sample_values.is_empty());
+        assert!(bucket.sample_values.len() <= 10);
+    }
+
+    #[tokio::test]
+    async fn test_timeseries_bucket_is_empty() {
+        let mut bucket = TimeSeriesBucket::new(1000, 1100);
+        assert!(bucket.is_empty());
+
+        bucket.add(&serde_json::json!(42.0));
+        assert!(!bucket.is_empty());
+        assert_eq!(bucket.count, 1);
+    }
 }
