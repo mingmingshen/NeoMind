@@ -110,6 +110,7 @@ import type {
   // Memory System Types
   MemorySystemConfig,
 } from '@/types'
+import type { SkillSummary, SkillDetail } from '@/types/skill'
 import { notifyFromError, notifySuccess } from './notify'
 import { tokenManager as unifiedTokenManager } from './auth'
 
@@ -723,7 +724,10 @@ export const api = {
     }),
 
   // Messages (replaces Alerts) - response format: { messages: NotificationMessage[], count: number }
-  getMessages: () => fetchAPI<{ messages: NotificationMessage[]; count: number }>('/messages'),
+  getMessages: (params?: Record<string, string>) =>
+    fetchAPI<{ messages: NotificationMessage[]; count: number }>(
+      `/messages${params ? `?${new URLSearchParams(params)}` : ''}`
+    ),
   getMessage: (id: string) => fetchAPI<NotificationMessage>(`/messages/${id}`),
   createMessage: (req: {
     category?: string
@@ -796,6 +800,11 @@ export const api = {
   testMessageChannel: (name: string) =>
     fetchAPI<ChannelTestResult>(`/messages/channels/${encodeURIComponent(name)}/test`, {
       method: 'POST',
+    }),
+  updateChannelEnabled: (name: string, enabled: boolean) =>
+    fetchAPI<{ message: string }>(`/messages/channels/${encodeURIComponent(name)}/enabled`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
     }),
   getChannelStats: () => fetchAPI<ChannelStats>('/messages/channels/stats'),
   // Channel Filter API
@@ -1867,6 +1876,31 @@ export const api = {
     fetchAPI<ValidateLlmResponse>('/agents/validate-llm', {
       method: 'POST',
       body: JSON.stringify(req),
+    }),
+
+  // ==========================================================================
+  // Skills APIs
+  // ==========================================================================
+
+  listSkills: (page = 1, pageSize = 10) =>
+    fetchAPI<{ skills: SkillSummary[]; total: number; page: number; page_size: number; total_pages: number }>(
+      `/skills?page=${page}&page_size=${pageSize}`
+    ),
+  getSkill: (id: string) =>
+    fetchAPI<SkillDetail>(`/skills/${id}`),
+  createSkill: (content: string) =>
+    fetchAPI<{ message: string }>('/skills', {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
+  updateSkill: (id: string, content: string) =>
+    fetchAPI<{ message: string }>(`/skills/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
+  deleteSkill: (id: string) =>
+    fetchAPI<{ message: string }>(`/skills/${id}`, {
+      method: 'DELETE',
     }),
 
   // ==========================================================================

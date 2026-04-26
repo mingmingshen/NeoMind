@@ -7,13 +7,8 @@
 
 import type { StateCreator } from 'zustand'
 import type { AlertState } from '../types'
-import { api, getApiBase } from '@/lib/api'
+import { api } from '@/lib/api'
 import { logError } from '@/lib/errors'
-
-// Get auth token
-const getToken = (): string | null => {
-  return localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session')
-}
 
 export interface AlertSlice extends AlertState {
   // Actions
@@ -36,28 +31,8 @@ export const createAlertSlice: StateCreator<
   fetchAlerts: async () => {
     set({ alertsLoading: true })
     try {
-      const token = getToken()
-      // Use correct API base for Tauri environment
-      const apiBase = getApiBase()
-      // Use the messages API instead of alerts
-      const response = await fetch(`${apiBase}/messages`, {
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-        },
-      })
-      const rawData = await response.json()
-
-      // Handle different response formats from messages endpoint
-      let messagesArray: any[] = []
-      if (Array.isArray(rawData)) {
-        messagesArray = rawData
-      } else if (rawData?.data?.messages && Array.isArray(rawData.data.messages)) {
-        messagesArray = rawData.data.messages
-      } else if (rawData?.messages && Array.isArray(rawData.messages)) {
-        messagesArray = rawData.messages
-      } else if (rawData?.data && Array.isArray(rawData.data)) {
-        messagesArray = rawData.data
-      }
+      const response = await api.getMessages()
+      const messagesArray = response.messages || []
 
       // Convert messages to alert format for backward compatibility
       const alertsArray = messagesArray.map((msg: any) => ({
@@ -75,7 +50,6 @@ export const createAlertSlice: StateCreator<
       alertsArray.sort((a: any, b: any) => {
         const aTime = new Date(a.timestamp).getTime()
         const bTime = new Date(b.timestamp).getTime()
-        // If either timestamp is invalid, treat it as oldest
         if (isNaN(aTime)) return 1
         if (isNaN(bTime)) return -1
         return bTime - aTime

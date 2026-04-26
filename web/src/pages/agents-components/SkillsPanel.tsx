@@ -51,7 +51,7 @@ const categoryConfig: Record<
   agent: { label: "Agent", icon: Wrench, color: "bg-green-500/10 text-green-600 border-green-500/20" },
   message: { label: "Message", icon: BookOpen, color: "bg-orange-500/10 text-orange-600 border-orange-500/20" },
   extension: { label: "Extension", icon: Wrench, color: "bg-teal-500/10 text-teal-600 border-teal-500/20" },
-  general: { label: "General", icon: BookOpen, color: "bg-gray-500/10 text-gray-600 border-gray-500/20" },
+  general: { label: "General", icon: BookOpen, color: "bg-muted text-muted-foreground border-border" },
 }
 
 // Table row type
@@ -122,9 +122,7 @@ export const SkillsPanel = forwardRef<SkillsPanelHandle>(function SkillsPanel(
   const loadSkills = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await api.get<{ skills: SkillSummary[]; total: number; page: number; page_size: number; total_pages: number }>(
-        `/skills?page=${currentPage}&page_size=${pageSize}`
-      )
+      const res = await api.listSkills(currentPage, pageSize)
       setSkills(res.skills)
       setTotal(res.total)
     } catch (e) {
@@ -167,7 +165,7 @@ anti_triggers:
     setDialogOpen(true)
     setDialogMode("view")
     try {
-      const detail = await api.get<SkillDetail>(`/skills/${id}`)
+      const detail = await api.getSkill(id)
       setDialogSkill(detail)
       setDialogContent(reconstructContent(detail))
     } catch (e) {
@@ -184,7 +182,7 @@ anti_triggers:
     setDialogOpen(true)
     setDialogMode("edit")
     try {
-      const detail = await api.get<SkillDetail>(`/skills/${id}`)
+      const detail = await api.getSkill(id)
       setDialogSkill(detail)
       setDialogContent(reconstructContent(detail))
     } catch (e) {
@@ -227,9 +225,9 @@ anti_triggers:
     setSaving(true)
     try {
       if (dialogMode === "create") {
-        await api.post("/skills", { content: dialogContent })
+        await api.createSkill(dialogContent)
       } else if (dialogSkill) {
-        await api.put(`/skills/${dialogSkill.id}`, { content: dialogContent })
+        await api.updateSkill(dialogSkill.id, dialogContent)
       }
       toast({ title: dialogMode === "create" ? "Skill created" : "Skill updated" })
       closeDialog()
@@ -253,7 +251,7 @@ anti_triggers:
     if (!confirmed) return
 
     try {
-      await api.delete(`/skills/${id}`)
+      await api.deleteSkill(id)
       toast({ title: `Skill "${name}" deleted` })
       loadSkills()
     } catch (e) {
@@ -292,7 +290,7 @@ anti_triggers:
             key: "priority",
             label: (
               <div className="flex items-center gap-1">
-                <Hash className="h-3.5 w-3.5" />
+                <Hash className="h-4 w-4" />
                 Priority
               </div>
             ),

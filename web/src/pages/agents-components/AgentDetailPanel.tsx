@@ -178,30 +178,8 @@ export function AgentDetailPanel({
     if (!agent?.id) return
 
     try {
-      const response = await api.get(`/api/agents/${agent.id}/available-resources`) as {
-        data: {
-          devices: Array<{
-            id: string
-            name: string
-            type: string
-            status: string
-          }>
-          extensions: Array<{
-            id: string
-            name: string
-            version: string
-            description: string
-            metrics: Array<{
-              name: string
-              display_name: string
-              data_type: string
-              unit: string
-            }>
-            state: string
-          }>
-        }
-      }
-      setAvailableResources(response.data)
+      const resources = await api.getAgentAvailableResources(agent.id)
+      setAvailableResources(resources)
     } catch (error) {
       handleError(error, { operation: 'Load available resources', showToast: false })
     }
@@ -254,19 +232,19 @@ export function AgentDetailPanel({
         <div className="px-4 pt-3">
           <TabsList className="w-full justify-start bg-muted/50 h-9">
             <TabsTrigger value="overview" className="h-7 text-sm">
-              <Eye className="h-3.5 w-3.5 mr-1.5" />
+              <Eye className="h-4 w-4 mr-1.5" />
               {t('agents:detail.overview')}
             </TabsTrigger>
             <TabsTrigger value="history" className="h-7 text-sm">
-              <Clock className="h-3.5 w-3.5 mr-1.5" />
+              <Clock className="h-4 w-4 mr-1.5" />
               {t('agents:detail.history')}
             </TabsTrigger>
             <TabsTrigger value="memory" className="h-7 text-sm">
-              <Brain className="h-3.5 w-3.5 mr-1.5" />
+              <Brain className="h-4 w-4 mr-1.5" />
               {t('agents:detail.memory')}
             </TabsTrigger>
             <TabsTrigger value="messages" className="h-7 text-sm">
-              <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
+              <MessageSquare className="h-4 w-4 mr-1.5" />
               {t('agents:detail.messages')}
             </TabsTrigger>
           </TabsList>
@@ -282,25 +260,25 @@ export function AgentDetailPanel({
                 <DetailSection title="" icon={null}>
                   <div className="grid grid-cols-4 gap-2">
                     <StatItem
-                      icon={<Activity className="h-3.5 w-3.5" />}
+                      icon={<Activity className="h-4 w-4" />}
                       label={t('agents:detail.executions')}
                       value={formatCount(agent.stats?.total_executions ?? agent.execution_count)}
                       color="text-blue-500"
                     />
                     <StatItem
-                      icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+                      icon={<CheckCircle2 className="h-4 w-4" />}
                       label={t('agents:detail.success')}
                       value={formatCount(agent.stats?.successful_executions ?? agent.success_count)}
                       color="text-green-500"
                     />
                     <StatItem
-                      icon={<XCircle className="h-3.5 w-3.5" />}
+                      icon={<XCircle className="h-4 w-4" />}
                       label={t('agents:detail.failed')}
                       value={formatCount(agent.stats?.failed_executions ?? agent.error_count)}
                       color="text-red-500"
                     />
                     <StatItem
-                      icon={<Clock className="h-3.5 w-3.5" />}
+                      icon={<Clock className="h-4 w-4" />}
                       label={t('agents:detail.avgDuration')}
                       value={formatDuration(agent.stats?.avg_duration_ms ?? agent.avg_duration_ms)}
                       color="text-orange-500"
@@ -699,7 +677,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
 
                     {summary.decisions && summary.decisions.length > 0 && (
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Zap className="h-3 w-3" />
+                        <Zap className="h-4 w-4" />
                         <span>{summary.decisions.length} {t('agents:memory.decisions')}</span>
                       </div>
                     )}
@@ -825,7 +803,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
         {/* Updated At footer */}
         {memory.updated_at && (
           <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground py-3 border-t border-border/50">
-            <Clock className="h-3 w-3" />
+            <Clock className="h-4 w-4" />
             <span>{t('agents:memory.updatedAt')}: {
               typeof memory.updated_at === 'number'
                 ? new Date(memory.updated_at * 1000).toLocaleString()

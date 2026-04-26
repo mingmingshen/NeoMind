@@ -7,7 +7,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination, ResponsiveTable } from '@/components/shared'
 import { MessageSquare, Network, Settings, Filter as FilterIcon, Inbox } from 'lucide-react'
-import { api, getApiBase } from '@/lib/api'
+import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { confirm } from '@/hooks/use-confirm'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
@@ -15,31 +15,6 @@ import { useIsMobile } from '@/hooks/useMobile'
 import type { NotificationMessage, MessageSeverity, MessageStatus, MessageCategory, MessageChannel, MessageType, DeliveryLog, ChannelFilter } from '@/types'
 import type { StandardError } from '@/lib/errors'
 
-// Raw API response types
-interface RawNotificationMessage {
-  id?: string
-  category?: string
-  severity?: MessageSeverity
-  title?: string
-  message?: string
-  source?: string
-  source_type?: string
-  timestamp?: string
-  created_at?: string
-  status?: MessageStatus
-  tags?: string[]
-  metadata?: Record<string, unknown>
-  message_type?: MessageType
-  source_id?: string
-  payload?: Record<string, unknown>
-}
-
-interface MessagesApiResponse {
-  messages?: RawNotificationMessage[]
-  data?: {
-    messages?: RawNotificationMessage[]
-  } | RawNotificationMessage[]
-}
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -158,12 +133,6 @@ export default function MessagesPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const isMobile = useIsMobile()
-
-  // Helper to get API base URL for Tauri environment
-  const getApiUrl = (path: string) => {
-    const apiBase = getApiBase()
-    return `${apiBase}${path}`
-  }
 
   // Tab state - sync with URL
   const [activeTab, setActiveTab] = useState<TabValue>(() => getTabFromPath(location.pathname))
@@ -315,17 +284,8 @@ export default function MessagesPage() {
   const fetchRecipients = async (channelName: string) => {
     setLoadingRecipients(true)
     try {
-      const response = await fetch(getApiUrl(`/messages/channels/${encodeURIComponent(channelName)}/recipients`), {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-        },
-      })
-      if (response.ok) {
-        const result = await response.json()
-        // Handle wrapped response format: { success: true, data: { recipients: [...] } }
-        const recipients = result.data?.recipients || result.recipients || []
-        setRecipients(recipients)
-      }
+      const result = await api.listChannelRecipients(channelName)
+      setRecipients(result.recipients || [])
     } catch (error) {
       handleError(error, { operation: 'Fetch recipients' })
     } finally {
@@ -347,42 +307,14 @@ export default function MessagesPage() {
     setAddingRecipient(true)
     setRecipientError(null)
     try {
-      const response = await fetch(
-        getApiUrl(`/messages/channels/${encodeURIComponent(recipientsDialogChannel.name)}/recipients`),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ email: newRecipientEmail.trim() }),
-        }
-      )
-      if (response.ok) {
-        const result = await response.json()
-        // Handle wrapped response format: { success: true, data: { recipients: [...] } }
-        const recipients = result.data?.recipients || result.recipients || []
-        setRecipients(recipients)
-        setNewRecipientEmail('')
-        toast({
-          title: t('success'),
-          description: t('messages.channels.recipientAdded', 'Recipient added successfully'),
-        })
-        fetchChannels() // Refresh channel list
-      } else {
-        const text = await response.text()
-        let errorMessage = t('messages.channels.addRecipientError', 'Failed to add recipient')
-        try {
-          if (text) {
-            const result = JSON.parse(text)
-            // Handle nested error format: { success: false, error: { message: "..." } }
-            errorMessage = result.error?.message || result.message || result.error || errorMessage
-          }
-        } catch {
-          // Ignore JSON parse errors
-        }
-        setRecipientError(errorMessage)
-      }
+      const result = await api.addChannelRecipient(recipientsDialogChannel.name, newRecipientEmail.trim())
+      setRecipients(result.recipients || [])
+      setNewRecipientEmail('')
+      toast({
+        title: t('success'),
+        description: t('messages.channels.recipientAdded', 'Recipient added successfully'),
+      })
+      fetchChannels()
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setRecipientError(message)
@@ -396,38 +328,13 @@ export default function MessagesPage() {
     if (!recipientsDialogChannel) return
 
     try {
-      const response = await fetch(
-        getApiUrl(`/messages/channels/${encodeURIComponent(recipientsDialogChannel.name)}/recipients/${encodeURIComponent(email)}`),
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-          },
-        }
-      )
-      if (response.ok) {
-        const result = await response.json()
-        // Handle wrapped response format: { success: true, data: { recipients: [...] } }
-        const recipients = result.data?.recipients || result.recipients || []
-        setRecipients(recipients)
-        toast({
-          title: t('success'),
-          description: t('messages.channels.recipientRemoved', 'Recipient removed successfully'),
-        })
-        fetchChannels() // Refresh channel list
-      } else {
-        const text = await response.text()
-        let errorMessage = t('messages.channels.removeRecipientError', 'Failed to remove recipient')
-        try {
-          if (text) {
-            const result = JSON.parse(text)
-            errorMessage = result.message || result.error || errorMessage
-          }
-        } catch {
-          // Ignore JSON parse errors
-        }
-        throw new Error(errorMessage)
-      }
+      const result = await api.removeChannelRecipient(recipientsDialogChannel.name, email)
+      setRecipients(result.recipients || [])
+      toast({
+        title: t('success'),
+        description: t('messages.channels.recipientRemoved', 'Recipient removed successfully'),
+      })
+      fetchChannels()
     } catch (error) {
       handleError(error, { operation: 'Remove recipient' })
     }
@@ -437,18 +344,7 @@ export default function MessagesPage() {
   const handleTestChannel = async (channelName: string) => {
     setTestingChannel(channelName)
     try {
-      const response = await fetch(getApiUrl(`/messages/channels/${encodeURIComponent(channelName)}/test`), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: 'Test message from NeoMind',
-          title: 'Channel Test',
-        }),
-      })
-      const result = await response.json()
+      const result = await api.testMessageChannel(channelName)
       if (result.success) {
         setTestResults(prev => ({ ...prev, [channelName]: { success: true, message: result.message || 'Test sent successfully' } }))
         toast({ title: t('common.success'), description: `Channel "${channelName}" test successful` })
@@ -467,39 +363,16 @@ export default function MessagesPage() {
   // Toggle channel enabled state
   const handleToggleEnabled = async (channelName: string, enabled: boolean) => {
     try {
-      const response = await fetch(getApiUrl(`/messages/channels/${encodeURIComponent(channelName)}/enabled`), {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ enabled }),
+      await api.updateChannelEnabled(channelName, enabled)
+      setChannels(prev => prev.map(c =>
+        c.name === channelName ? { ...c, enabled } : c
+      ))
+      toast({
+        title: t('common.success'),
+        description: enabled
+          ? t('messages.channels.enableSuccess', 'Channel enabled')
+          : t('messages.channels.disableSuccess', 'Channel disabled')
       })
-      if (response.ok) {
-        // Update local state
-        setChannels(prev => prev.map(c =>
-          c.name === channelName ? { ...c, enabled } : c
-        ))
-        toast({
-          title: t('common.success'),
-          description: enabled
-            ? t('messages.channels.enableSuccess', 'Channel enabled')
-            : t('messages.channels.disableSuccess', 'Channel disabled')
-        })
-      } else {
-        // Try to parse error response, handle empty responses gracefully
-        let errorMessage = 'Failed to update channel'
-        try {
-          const text = await response.text()
-          if (text) {
-            const result = JSON.parse(text)
-            errorMessage = result.message || result.error || errorMessage
-          }
-        } catch {
-          // Ignore JSON parse errors
-        }
-        throw new Error(errorMessage)
-      }
     } catch (error) {
       handleError(error, { operation: 'Toggle channel', showToast: true })
     }
@@ -523,31 +396,12 @@ export default function MessagesPage() {
     if (!confirmed) return
 
     try {
-      const response = await fetch(getApiUrl(`/messages/channels/${encodeURIComponent(channelName)}`), {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-        },
+      await api.deleteMessageChannel(channelName)
+      toast({
+        title: t('success'),
+        description: t('messages.channels.deleteSuccess', 'Channel deleted successfully'),
       })
-      if (response.ok) {
-        toast({
-          title: t('success'),
-          description: t('messages.channels.deleteSuccess', 'Channel deleted successfully'),
-        })
-        fetchChannels()
-      } else {
-        const text = await response.text()
-        let errorMessage = t('messages.channels.deleteError', 'Failed to delete channel')
-        try {
-          if (text) {
-            const result = JSON.parse(text)
-            errorMessage = result.message || result.error || errorMessage
-          }
-        } catch {
-          // Ignore JSON parse errors
-        }
-        throw new Error(errorMessage)
-      }
+      fetchChannels()
     } catch (error) {
       handleError(error, { operation: 'Delete channel', showToast: true })
     }
@@ -601,92 +455,33 @@ export default function MessagesPage() {
     setLoading(true)
     try {
       // Build query params for server-side filtering and pagination
-      const params = new URLSearchParams({ limit: '200', offset: '0' })
+      const params: Record<string, string> = { limit: '200', offset: '0' }
       if (selectedSeverities.size === 1) {
-        params.set('severity', [...selectedSeverities][0])
+        params.severity = [...selectedSeverities][0]
       }
       if (selectedStatuses.size === 1) {
-        params.set('status', [...selectedStatuses][0])
+        params.status = [...selectedStatuses][0]
       }
       if (selectedCategories.size === 1) {
-        params.set('category', [...selectedCategories][0])
+        params.category = [...selectedCategories][0]
       }
       if (selectedMessageTypes.size === 1) {
-        params.set('message_type', [...selectedMessageTypes][0])
+        params.message_type = [...selectedMessageTypes][0]
       }
 
       // Fetch both notifications and delivery logs in parallel
       const [messagesResponse, deliveryLogsResponse] = await Promise.all([
-        fetch(getApiUrl(`/messages?${params.toString()}`), {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-          },
-        }),
-        fetch(getApiUrl('/messages/delivery-logs?hours=24'), {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-          },
-        }).catch(() => null) // Gracefully handle if delivery logs endpoint is not available
+        api.getMessages(params),
+        api.getDeliveryLogs({ hours: 24 }).catch(() => null) // Gracefully handle if delivery logs endpoint is not available
       ])
 
-      // Check if messages response is successful
-      if (!messagesResponse.ok) {
-        const errorData = await messagesResponse.json().catch(() => ({}))
-        throw new Error(`Failed to fetch messages: ${messagesResponse.status} - ${errorData.error || 'Unknown error'}`)
-      }
-
-      const rawData: unknown = await messagesResponse.json()
-
-      // Handle different response formats from messages endpoint
-      let messagesArray: RawNotificationMessage[] = []
-      if (Array.isArray(rawData)) {
-        messagesArray = rawData as RawNotificationMessage[]
-      } else {
-        // Try to extract messages from various response formats
-        const apiResponse = rawData as MessagesApiResponse & { data?: RawNotificationMessage[] | { messages?: RawNotificationMessage[] } }
-        if (apiResponse.messages && Array.isArray(apiResponse.messages)) {
-          messagesArray = apiResponse.messages
-        } else if (apiResponse.data) {
-          if (Array.isArray(apiResponse.data)) {
-            messagesArray = apiResponse.data
-          } else if (apiResponse.data.messages && Array.isArray(apiResponse.data.messages)) {
-            messagesArray = apiResponse.data.messages
-          }
-        }
-      }
-
-      // Convert to NotificationMessage format
-      let messages: NotificationMessage[] = messagesArray.map((msg: RawNotificationMessage) => ({
-        id: msg.id || '',
-        category: msg.category || 'alert',
-        severity: msg.severity || 'info',
-        title: msg.title || '',
-        message: msg.message || '',
-        source: msg.source || 'system',
-        source_type: msg.source_type || '',
-        timestamp: msg.timestamp || msg.created_at || new Date().toISOString(),
-        status: msg.status || 'active',
-        tags: msg.tags || [],
-        metadata: msg.metadata,
-        // Get message_type directly from msg, fallback to metadata, then default to 'notification'
-        message_type: (msg.message_type as MessageType) || (msg.metadata?.message_type as MessageType) || 'notification',
-        // Preserve payload for data_push messages
-        payload: msg.payload,
-        source_id: msg.source_id,
-      }))
+      // Extract messages array from response
+      let messagesArray: NotificationMessage[] = messagesResponse.messages || []
 
       // Fetch and process delivery logs
       let allDeliveryLogs: DeliveryLog[] = []
-      if (deliveryLogsResponse && deliveryLogsResponse.ok) {
-        const logsData = await deliveryLogsResponse.json()
-        // Ensure we always get an array
-        if (Array.isArray(logsData)) {
-          allDeliveryLogs = logsData
-        } else if (logsData && Array.isArray(logsData.logs)) {
-          allDeliveryLogs = logsData.logs
-        } else if (logsData && Array.isArray(logsData.delivery_logs)) {
-          allDeliveryLogs = logsData.delivery_logs
-        }
+      if (deliveryLogsResponse) {
+        allDeliveryLogs = deliveryLogsResponse.logs || []
         setDeliveryLogs(allDeliveryLogs)
 
         // Convert delivery logs to message format for display
@@ -706,33 +501,34 @@ export default function MessagesPage() {
         }))
 
         // Merge messages with delivery logs
-        messages = [...messages, ...deliveryLogMessages]
+        messagesArray = [...messagesArray, ...deliveryLogMessages]
       }
 
       // Extract unique categories from the data
-      const categories = [...new Set(messages.map(m => m.category))].sort()
+      const categories = [...new Set(messagesArray.map(m => m.category))].sort()
       setAvailableCategories(categories)
 
       // Apply filters using Sets
+      let filtered = messagesArray
       if (selectedSeverities.size > 0) {
-        messages = messages.filter((m: NotificationMessage) => selectedSeverities.has(m.severity as MessageSeverity))
+        filtered = filtered.filter((m: NotificationMessage) => selectedSeverities.has(m.severity as MessageSeverity))
       }
       if (selectedStatuses.size > 0) {
-        messages = messages.filter((m: NotificationMessage) => selectedStatuses.has(m.status as MessageStatus))
+        filtered = filtered.filter((m: NotificationMessage) => selectedStatuses.has(m.status as MessageStatus))
       }
       if (selectedCategories.size > 0) {
-        messages = messages.filter((m: NotificationMessage) => selectedCategories.has(m.category))
+        filtered = filtered.filter((m: NotificationMessage) => selectedCategories.has(m.category))
       }
       // Filter by message type
       if (selectedMessageTypes.size > 0) {
-        messages = messages.filter((m: NotificationMessage) => {
+        filtered = filtered.filter((m: NotificationMessage) => {
           const msgType = m.message_type || 'notification'
           return selectedMessageTypes.has(msgType)
         })
       }
 
       // Sort by timestamp descending (handle invalid timestamps)
-      messages.sort((a: NotificationMessage, b: NotificationMessage) => {
+      filtered.sort((a: NotificationMessage, b: NotificationMessage) => {
         const aTime = new Date(a.timestamp).getTime()
         const bTime = new Date(b.timestamp).getTime()
         // If either timestamp is invalid, treat it as oldest
@@ -741,7 +537,7 @@ export default function MessagesPage() {
         return bTime - aTime
       })
 
-      setMessages(messages)
+      setMessages(filtered)
       setMessagePage(1) // Reset to first page when data changes
     } catch (error) {
       handleError(error, { operation: 'Fetch messages', showToast: false })
@@ -775,21 +571,11 @@ export default function MessagesPage() {
   // Message actions - using messages API endpoints
   const handleAcknowledge = async (id: string) => {
     try {
-      const response = await fetch(getApiUrl(`/messages/${id}/acknowledge`), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-          'Content-Type': 'application/json',
-        },
-      })
-      if (response.ok) {
-        setMessages(prev => prev.map(m =>
-          m.id === id ? { ...m, status: 'acknowledged' as MessageStatus, acknowledged: true } : m
-        ))
-        toast({ title: t('messages.acknowledgeSuccess', 'Acknowledged') })
-      } else {
-        throw new Error('Failed to acknowledge')
-      }
+      await api.acknowledgeMessage(id)
+      setMessages(prev => prev.map(m =>
+        m.id === id ? { ...m, status: 'acknowledged' as MessageStatus, acknowledged: true } : m
+      ))
+      toast({ title: t('messages.acknowledgeSuccess', 'Acknowledged') })
     } catch (error) {
       handleError(error, { operation: 'Acknowledge message', showToast: true })
       toast({ title: t('messages.acknowledgeError', 'Failed'), variant: 'destructive' })
@@ -798,21 +584,11 @@ export default function MessagesPage() {
 
   const handleResolve = async (id: string) => {
     try {
-      const response = await fetch(getApiUrl(`/messages/${id}/resolve`), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-          'Content-Type': 'application/json',
-        },
-      })
-      if (response.ok) {
-        setMessages(prev => prev.map(m =>
-          m.id === id ? { ...m, status: 'resolved' as MessageStatus, acknowledged: true } : m
-        ))
-        toast({ title: t('messages.resolveSuccess', 'Resolved') })
-      } else {
-        throw new Error('Failed to resolve')
-      }
+      await api.resolveMessage(id)
+      setMessages(prev => prev.map(m =>
+        m.id === id ? { ...m, status: 'resolved' as MessageStatus, acknowledged: true } : m
+      ))
+      toast({ title: t('messages.resolveSuccess', 'Resolved') })
     } catch (error) {
       handleError(error, { operation: 'Resolve message', showToast: true })
       toast({ title: t('messages.resolveError', 'Failed'), variant: 'destructive' })
@@ -821,21 +597,11 @@ export default function MessagesPage() {
 
   const handleArchive = async (id: string) => {
     try {
-      const response = await fetch(getApiUrl(`/messages/${id}/archive`), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-          'Content-Type': 'application/json',
-        },
-      })
-      if (response.ok) {
-        setMessages(prev => prev.map(m =>
-          m.id === id ? { ...m, status: 'archived' as MessageStatus } : m
-        ))
-        toast({ title: t('messages.archiveSuccess', 'Archived') })
-      } else {
-        throw new Error('Failed to archive')
-      }
+      await api.archiveMessage(id)
+      setMessages(prev => prev.map(m =>
+        m.id === id ? { ...m, status: 'archived' as MessageStatus } : m
+      ))
+      toast({ title: t('messages.archiveSuccess', 'Archived') })
     } catch (error) {
       handleError(error, { operation: 'Archive message', showToast: true })
       toast({ title: t('messages.archiveError', 'Failed'), variant: 'destructive' })
@@ -853,18 +619,9 @@ export default function MessagesPage() {
     if (!confirmed) return
 
     try {
-      const response = await fetch(getApiUrl(`/messages/${id}`), {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-        },
-      })
-      if (response.ok) {
-        setMessages(prev => prev.filter(m => m.id !== id))
-        toast({ title: t('messages.deleteSuccess', 'Deleted') })
-      } else {
-        throw new Error('Failed to delete')
-      }
+      await api.deleteMessage(id)
+      setMessages(prev => prev.filter(m => m.id !== id))
+      toast({ title: t('messages.deleteSuccess', 'Deleted') })
     } catch (error) {
       handleError(error, { operation: 'Delete message', showToast: true })
       toast({ title: t('messages.deleteError', 'Failed to delete'), variant: 'destructive' })
@@ -890,7 +647,7 @@ export default function MessagesPage() {
   const filterExtra = activeTab === 'messages' ? (
     <Sheet>
       <SheetTrigger asChild>
-        <Button variant="outline" size="sm" className="h-9 gap-2">
+        <Button variant="outline" size="sm" className="gap-2">
           <FilterIcon className="h-4 w-4" />
           {t('messages.filter.title')}
           {getActiveFilterCount() > 0 && (
@@ -914,7 +671,7 @@ export default function MessagesPage() {
                 className="h-8 text-xs text-muted-foreground hover:text-foreground"
                 onClick={clearAllFilters}
               >
-                <X className="h-3.5 w-3.5 mr-1" />
+                <X className="h-4 w-4 mr-1" />
                 {t('messages.filter.clear')}
               </Button>
             )}
@@ -1018,7 +775,7 @@ export default function MessagesPage() {
                   active: { color: "text-blue-500", bg: "bg-blue-500/10 border-blue-500/30" },
                   acknowledged: { color: "text-yellow-500", bg: "bg-yellow-500/10 border-yellow-500/30" },
                   resolved: { color: "text-green-500", bg: "bg-green-500/10 border-green-500/30" },
-                  archived: { color: "text-gray-500", bg: "bg-gray-500/10 border-gray-500/30" },
+                  archived: { color: "text-muted-foreground", bg: "bg-muted border-border" },
                 }
                 return (
                   <button
@@ -1033,7 +790,7 @@ export default function MessagesPage() {
                   >
                     <span className="text-sm">{t(`messages.status.${stat}`)}</span>
                     {selectedStatuses.has(stat) && (
-                      <Check className={cn("h-3.5 w-3.5 ml-auto", statusConfig[stat].color)} />
+                      <Check className={cn("h-4 w-4 ml-auto", statusConfig[stat].color)} />
                     )}
                   </button>
                 )
@@ -1066,7 +823,7 @@ export default function MessagesPage() {
                             : "border-border hover:border-primary/50 hover:bg-muted/50"
                         )}
                       >
-                        <Icon className="h-3.5 w-3.5" />
+                        <Icon className="h-4 w-4" />
                         {t(config.label)}
                       </button>
                     )
@@ -1183,9 +940,9 @@ export default function MessagesPage() {
                   className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
                   onClick={() => toggleMessageType(mt)}
                 >
-                  <Bell className="h-3 w-3" />
+                  <Bell className="h-4 w-4" />
                   {t(`messages.type.${mt === 'notification' ? 'notification' : 'data_push'}`)}
-                  <X className="h-3 w-3 ml-1 text-muted-foreground" />
+                  <X className="h-4 w-4 ml-1 text-muted-foreground" />
                 </Badge>
               ))}
 
@@ -1196,12 +953,12 @@ export default function MessagesPage() {
                   className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
                   onClick={() => toggleSeverity(sev)}
                 >
-                  {sev === 'info' && <Info className="h-3 w-3 text-blue-500" />}
-                  {sev === 'warning' && <AlertTriangle className="h-3 w-3 text-yellow-500" />}
-                  {sev === 'critical' && <AlertCircle className="h-3 w-3 text-orange-500" />}
-                  {sev === 'emergency' && <ShieldAlert className="h-3 w-3 text-red-500" />}
+                  {sev === 'info' && <Info className="h-4 w-4 text-blue-500" />}
+                  {sev === 'warning' && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
+                  {sev === 'critical' && <AlertCircle className="h-4 w-4 text-orange-500" />}
+                  {sev === 'emergency' && <ShieldAlert className="h-4 w-4 text-red-500" />}
                   {t(`messages.severity.${sev}`)}
-                  <X className="h-3 w-3 ml-1 text-muted-foreground" />
+                  <X className="h-4 w-4 ml-1 text-muted-foreground" />
                 </Badge>
               ))}
 
@@ -1213,7 +970,7 @@ export default function MessagesPage() {
                   onClick={() => toggleStatus(stat)}
                 >
                   {t(`messages.status.${stat}`)}
-                  <X className="h-3 w-3 ml-1 text-muted-foreground" />
+                  <X className="h-4 w-4 ml-1 text-muted-foreground" />
                 </Badge>
               ))}
 
@@ -1227,9 +984,9 @@ export default function MessagesPage() {
                     className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
                     onClick={() => toggleCategory(cat)}
                   >
-                    <Icon className="h-3 w-3" />
+                    <Icon className="h-4 w-4" />
                     {t(config.label)}
-                    <X className="h-3 w-3 ml-1 text-muted-foreground" />
+                    <X className="h-4 w-4 ml-1 text-muted-foreground" />
                   </Badge>
                 )
               })}
@@ -1337,7 +1094,7 @@ export default function MessagesPage() {
                   case 'category':
                     return (
                       <div className="flex items-center gap-1.5">
-                        <CategoryIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                        <CategoryIcon className="h-4 w-4 text-muted-foreground" />
                         <span className="text-xs">{t(categoryConfig.label)}</span>
                       </div>
                     )
@@ -1355,9 +1112,9 @@ export default function MessagesPage() {
                         )}
                       >
                         {isDataPush ? (
-                          <Send className="h-3 w-3 mr-1" />
+                          <Send className="h-4 w-4 mr-1" />
                         ) : (
-                          <Bell className="h-3 w-3 mr-1" />
+                          <Bell className="h-4 w-4 mr-1" />
                         )}
                         {t(`messages.type.${msgType}`)}
                       </Badge>
@@ -1464,7 +1221,7 @@ export default function MessagesPage() {
             renderCell={(columnKey, rowData) => {
               const channel = rowData as unknown as MessageChannel
               const config: Record<string, { icon: typeof Bell; color: string }> = {
-                console: { icon: Bell, color: 'bg-gray-500/10 text-gray-500' },
+                console: { icon: Bell, color: 'bg-muted text-muted-foreground' },
                 memory: { icon: RefreshCw, color: 'bg-blue-500/10 text-blue-500' },
                 webhook: { icon: Megaphone, color: 'bg-green-500/10 text-green-500' },
                 email: { icon: Bell, color: 'bg-purple-500/10 text-purple-500' },
@@ -1491,7 +1248,7 @@ export default function MessagesPage() {
                               onClick={() => handleTestChannel(channel.name)}
                               disabled={testingChannel === channel.name}
                             >
-                              <TestTube className="h-3 w-3 mr-1" />
+                              <TestTube className="h-4 w-4 mr-1" />
                               {testingChannel === channel.name ? 'Testing...' : 'Test'}
                             </Button>
                           )}
@@ -1502,7 +1259,7 @@ export default function MessagesPage() {
                             <>
                               <span>·</span>
                               <span className="flex items-center gap-1">
-                                <Mail className="h-3 w-3" />
+                                <Mail className="h-4 w-4" />
                                 {channel.recipients.length} {t('messages.channels.recipients', 'recipients')}
                               </span>
                             </>
@@ -1628,14 +1385,8 @@ export default function MessagesPage() {
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         onCreate={async (req) => {
-          // Use the messages API to create a new message
-          const response = await fetch(getApiUrl('/messages'), {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
+          try {
+            await api.createMessage({
               category: req.category || 'alert',
               severity: req.severity || 'info',
               title: req.title,
@@ -1646,12 +1397,10 @@ export default function MessagesPage() {
               message_type: req.message_type,
               source_id: req.source_id,
               payload: req.payload,
-            }),
-          })
-          if (response.ok) {
+            })
             await fetchMessages()
             toast({ title: t('messages.createSuccess', 'Message created') })
-          } else {
+          } catch {
             toast({ title: t('messages.createError', 'Failed to create'), variant: 'destructive' })
           }
         }}
@@ -1723,12 +1472,12 @@ export default function MessagesPage() {
               >
                 {selectedMessage.message_type === 'data_push' ? (
                   <>
-                    <Send className="h-3 w-3 mr-1" />
+                    <Send className="h-4 w-4 mr-1" />
                     {t('messages.type.data_push', 'Data Push')}
                   </>
                 ) : (
                   <>
-                    <Bell className="h-3 w-3 mr-1" />
+                    <Bell className="h-4 w-4 mr-1" />
                     {t('messages.type.notification', 'Notification')}
                   </>
                 )}
@@ -2014,7 +1763,7 @@ export default function MessagesPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0 ml-2"
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive shrink-0 ml-2"
                       onClick={() => handleRemoveRecipient(email)}
                     >
                       <X className="h-4 w-4" />
