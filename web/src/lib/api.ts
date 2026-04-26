@@ -964,7 +964,7 @@ export const api = {
 
   // Sessions
   // Note: Backend returns paginated response with data as array (auto-unwrapped by fetchAPI)
-  listSessions: (page = 1, pageSize = 20) =>
+  listSessions: (page = 1, pageSize = 10) =>
     fetchAPI<ChatSession[]>(`/sessions?page=${page}&page_size=${pageSize}`),
   createSession: () =>
     fetchAPI<{ sessionId: string }>('/sessions', {

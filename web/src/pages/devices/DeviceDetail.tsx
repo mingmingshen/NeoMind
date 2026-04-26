@@ -30,7 +30,7 @@ import { isBase64Image } from "./utils"
 import { cn } from "@/lib/utils"
 
 // Pagination constants
-const PAGE_SIZE = 50
+const PAGE_SIZE = 10
 
 interface DeviceDetailProps {
   device: Device | null

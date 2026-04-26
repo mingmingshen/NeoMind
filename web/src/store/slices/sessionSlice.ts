@@ -348,7 +348,7 @@ export const createSessionSlice: StateCreator<
   loadSessions: async () => {
     try {
       // Reset pagination and load first page
-      const pageSize = 50
+      const pageSize = 10
       const result = await api.listSessions(1, pageSize)
       const sessions = normalizeSessionsResponse(result)
 
@@ -378,7 +378,7 @@ export const createSessionSlice: StateCreator<
       set({ sessionsLoading: true })
 
       const nextPage = state.sessionsPage + 1
-      const pageSize = 50
+      const pageSize = 10
       const result = await api.listSessions(nextPage, pageSize)
       const newSessions = normalizeSessionsResponse(result)
 

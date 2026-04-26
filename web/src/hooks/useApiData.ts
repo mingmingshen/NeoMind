@@ -118,14 +118,14 @@ export interface UsePaginatedDataReturn<T> {
  * @example
  * const { data, page, setPage, totalPages, loading } = usePaginatedData(
  *   (page, limit) => api.listRules({ limit }),
- *   { pageSize: 20 }
+ *   { pageSize: 10 }
  * )
  */
 export function usePaginatedData<T>(
   apiCall: (page: number, limit: number) => Promise<{ data: T[]; total: number }>,
   options: UsePaginatedDataOptions = {}
 ): UsePaginatedDataReturn<T> {
-  const { pageSize = 20, immediate = true } = options
+  const { pageSize = 10, immediate = true } = options
 
   const [data, setData] = useState<T[]>([])
   const [loading, setLoading] = useState(false)
