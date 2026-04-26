@@ -303,7 +303,7 @@ export function MessageChannelsTab({
 
       {/* Channels List */}
       {isLoading ? (
-        <LoadingState />
+        <LoadingState variant="page" />
       ) : error ? (
         <EmptyState
           icon={<RefreshCw className="h-12 w-12" />}

@@ -244,7 +244,7 @@ export function MessagesTab({
 
       {/* Messages List */}
       {isLoading ? (
-        <LoadingState />
+        <LoadingState variant="page" />
       ) : messages.length === 0 ? (
         <EmptyState
           icon={<Check className="h-12 w-12" />}
