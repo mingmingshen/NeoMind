@@ -105,7 +105,7 @@ export function PageLayout({
       </div>
       {/* Fixed footer with glass morphism effect */}
       {showFooter && (
-        <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background/95 to-background/80 backdrop-blur-md border-t border-border/30">
+        <div className="fixed bottom-0 left-0 right-0 bg-background/70 backdrop-blur-xl saturate-120 border-t border-border/60">
           <div className={cn('w-full px-4 py-3 sm:px-6 sm:py-4 md:px-8', maxWidthClass[maxWidth], className)}>
             {footer}
           </div>
