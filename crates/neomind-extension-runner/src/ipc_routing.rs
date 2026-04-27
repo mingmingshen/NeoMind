@@ -4,12 +4,12 @@
 //! 1. Pending capability requests (via PENDING_REQUESTS)
 //! 2. Main event queue (via EVENT_TX)
 
-use std::collections::HashMap;
 use std::io::Read;
 use std::panic::UnwindSafe;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Mutex;
 
+use dashmap::DashMap;
 use serde_json::json;
 use tracing::{debug, error, trace, warn};
 
@@ -18,11 +18,11 @@ use neomind_extension_sdk::{IpcMessage, IpcResponse};
 type ResponseSender = Sender<IpcResponse>;
 
 /// Pending capability requests: request_id -> response sender
-static PENDING_REQUESTS: std::sync::OnceLock<Mutex<HashMap<u64, ResponseSender>>> =
+static PENDING_REQUESTS: std::sync::OnceLock<DashMap<u64, ResponseSender>> =
     std::sync::OnceLock::new();
 
 /// Channel-based event queue for main loop (replaces polling)
-static EVENT_TX: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<IpcMessage>> =
+static EVENT_TX: std::sync::OnceLock<tokio::sync::mpsc::Sender<IpcMessage>> =
     std::sync::OnceLock::new();
 
 /// Global mutex for stdout writes — prevents interleaved frames from
@@ -48,13 +48,13 @@ where
     })
 }
 
-pub(crate) fn get_pending_requests() -> &'static Mutex<HashMap<u64, ResponseSender>> {
-    PENDING_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
+pub(crate) fn get_pending_requests() -> &'static DashMap<u64, ResponseSender> {
+    PENDING_REQUESTS.get_or_init(DashMap::new)
 }
 
 /// Create the event channel and return the receiver (call once at startup)
-pub(crate) fn create_event_channel() -> tokio::sync::mpsc::UnboundedReceiver<IpcMessage> {
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+pub(crate) fn create_event_channel() -> tokio::sync::mpsc::Receiver<IpcMessage> {
+    let (tx, rx) = tokio::sync::mpsc::channel(128);
     EVENT_TX.set(tx).expect("event channel already initialized");
     rx
 }
@@ -62,27 +62,13 @@ pub(crate) fn create_event_channel() -> tokio::sync::mpsc::UnboundedReceiver<Ipc
 /// Register a pending request and return the response receiver
 pub(crate) fn register_pending_request(request_id: u64) -> Receiver<IpcResponse> {
     let (tx, rx) = channel();
-    let mut pending = get_pending_requests().lock().unwrap_or_else(|e| {
-        eprintln!(
-            "ERROR: get_pending_requests() mutex poisoned in register: {}",
-            e
-        );
-        e.into_inner()
-    });
-    pending.insert(request_id, tx);
+    get_pending_requests().insert(request_id, tx);
     rx
 }
 
 /// Complete a pending request with the response
 pub(crate) fn complete_pending_request(request_id: u64, response: IpcResponse) {
-    let mut pending = get_pending_requests().lock().unwrap_or_else(|e| {
-        eprintln!(
-            "ERROR: get_pending_requests() mutex poisoned in complete: {}",
-            e
-        );
-        e.into_inner()
-    });
-    if let Some(tx) = pending.remove(&request_id) {
+    if let Some((_, tx)) = get_pending_requests().remove(&request_id) {
         let _ = tx.send(response);
     }
 }
@@ -90,7 +76,12 @@ pub(crate) fn complete_pending_request(request_id: u64, response: IpcResponse) {
 /// Push an event to the channel for main loop processing
 pub(crate) fn push_event(message: IpcMessage) {
     if let Some(tx) = EVENT_TX.get() {
-        let _ = tx.send(message);
+        // Use try_send with backpressure handling - if channel is full, log a warning
+        if let Err(e) = tx.try_send(message) {
+            // Channel full or closed - drop the event with a warning
+            // This is safer than blocking the stdin reader thread
+            tracing::warn!("IPC event channel full or closed, dropping event: {}", e);
+        }
     }
 }
 

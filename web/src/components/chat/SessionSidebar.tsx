@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { useStore } from "@/store"
+import { shallow } from "zustand/shallow"
 import { Plus, MessageSquare, X, Eraser } from "lucide-react"
 import { SessionListItem } from "./SessionListItem"
 import { SessionListItemIcon } from "./SessionListItemIcon"
@@ -41,7 +42,16 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
     updateSessionTitle,
     createSession,
     loadSessions,
-  } = useStore()
+  } = useStore((s) => ({
+    sessions: s.sessions,
+    sessionId: s.sessionId,
+    switchSession: s.switchSession,
+    deleteSession: s.deleteSession,
+    clearAllSessions: s.clearAllSessions,
+    updateSessionTitle: s.updateSessionTitle,
+    createSession: s.createSession,
+    loadSessions: s.loadSessions,
+  }), shallow)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [clearAllDialogOpen, setClearAllDialogOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)

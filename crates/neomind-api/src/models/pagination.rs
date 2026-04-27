@@ -81,6 +81,11 @@ pub struct PaginationMeta {
     pub has_next: bool,
     /// Whether there is a previous page.
     pub has_prev: bool,
+    /// Opaque cursor for fetching the next page (cursor-based pagination only).
+    /// When present, clients should pass this as the `cursor` query parameter
+    /// instead of incrementing `page`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 impl PaginationMeta {
@@ -99,6 +104,7 @@ impl PaginationMeta {
             total_pages,
             has_next: page < total_pages,
             has_prev: page > 1,
+            next_cursor: None,
         }
     }
 }

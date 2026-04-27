@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState, useRef } from "react"
 import { Routes, Route, Navigate, useLocation } from "react-router-dom"
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary"
 import { useStore } from "@/store"
+import { shallow } from "zustand/shallow"
 import { TopNav } from "@/components/layout/TopNav"
 import { Toaster } from "@/components/ui/toaster"
 import { Confirmer } from "@/components/ui/confirmer"
@@ -193,7 +194,12 @@ function App() {
   useEffect(() => {
     extensionSyncRef.current = extensionComponents.sync
   }, [extensionComponents.sync])
-  const { isAuthenticated, checkAuthStatus, setWsConnected, updateDialogOpen } = useStore()
+  const { isAuthenticated, checkAuthStatus, setWsConnected, updateDialogOpen } = useStore((s) => ({
+    isAuthenticated: s.isAuthenticated,
+    checkAuthStatus: s.checkAuthStatus,
+    setWsConnected: s.setWsConnected,
+    updateDialogOpen: s.updateDialogOpen,
+  }), shallow)
   
   // Global auto-update check with system notification
   useUpdateCheck({

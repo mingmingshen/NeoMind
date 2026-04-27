@@ -4,7 +4,7 @@
 //! supporting dynamic backend switching, connection testing, and runtime caching.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Instant;
 
 use dashmap::DashMap;
@@ -75,7 +75,7 @@ pub struct LlmBackendInstanceManager {
     instances: Arc<DashMap<String, LlmBackendInstance>>,
 
     /// Currently active backend ID
-    active_id: Arc<Mutex<Option<String>>>,
+    active_id: Arc<RwLock<Option<String>>>,
 
     /// Runtime cache (LlmRuntime instances) - using DashMap for concurrent access
     runtime_cache: Arc<DashMap<String, Arc<dyn LlmRuntime>>>,
@@ -114,7 +114,7 @@ impl LlmBackendInstanceManager {
         Self {
             storage,
             instances: Arc::new(DashMap::from_iter(instances)),
-            active_id: Arc::new(Mutex::new(active_id)),
+            active_id: Arc::new(RwLock::new(active_id)),
             runtime_cache: Arc::new(DashMap::new()),
             health_cache: Arc::new(DashMap::new()),
         }
@@ -122,7 +122,7 @@ impl LlmBackendInstanceManager {
 
     /// Get the active backend instance
     pub fn get_active_instance(&self) -> Option<LlmBackendInstance> {
-        let active_id = self.active_id.lock().ok()?.clone();
+        let active_id = self.active_id.read().ok()?.clone();
         active_id.and_then(|id| {
             self.instances
                 .get(&id)
@@ -133,8 +133,8 @@ impl LlmBackendInstanceManager {
     /// Get the active runtime (with caching)
     pub async fn get_active_runtime(&self) -> Result<Arc<dyn LlmRuntime>, LlmError> {
         let active_id = {
-            let active_id = self.active_id.lock().map_err(|_| {
-                LlmError::InvalidInput("Failed to acquire active_id lock".to_string())
+            let active_id = self.active_id.read().map_err(|_| {
+                LlmError::InvalidInput("Failed to acquire active_id read lock".to_string())
             })?;
             active_id.clone()
         };
@@ -379,8 +379,8 @@ impl LlmBackendInstanceManager {
         // Update in-memory state
         let mut active_id = self
             .active_id
-            .lock()
-            .map_err(|_| LlmError::InvalidInput("Failed to acquire active_id lock".to_string()))?;
+            .write()
+            .map_err(|_| LlmError::InvalidInput("Failed to acquire active_id write lock".to_string()))?;
         *active_id = Some(id.to_string());
 
         Ok(())
@@ -411,8 +411,8 @@ impl LlmBackendInstanceManager {
     pub async fn remove_instance(&self, id: &str) -> Result<(), LlmError> {
         // Cannot remove active backend
         {
-            let active_id = self.active_id.lock().map_err(|_| {
-                LlmError::InvalidInput("Failed to acquire active_id lock".to_string())
+            let active_id = self.active_id.read().map_err(|_| {
+                LlmError::InvalidInput("Failed to acquire active_id read lock".to_string())
             })?;
             if active_id.as_ref().map(|a| a == id).unwrap_or(false) {
                 return Err(LlmError::InvalidInput(
@@ -520,8 +520,8 @@ impl LlmBackendInstanceManager {
         // Update active_id
         let mut self_active_id = self
             .active_id
-            .lock()
-            .map_err(|_| LlmError::InvalidInput("Failed to acquire active_id lock".to_string()))?;
+            .write()
+            .map_err(|_| LlmError::InvalidInput("Failed to acquire active_id write lock".to_string()))?;
         *self_active_id = active_id;
 
         Ok(())
@@ -868,23 +868,26 @@ pub struct BackendTypeDefinition {
 }
 
 /// Global singleton for the instance manager
-static INSTANCE_MANAGER: Mutex<Option<Arc<LlmBackendInstanceManager>>> = Mutex::new(None);
+static INSTANCE_MANAGER: OnceLock<RwLock<Option<Arc<LlmBackendInstanceManager>>>> = OnceLock::new();
 
 /// Get or create the global instance manager
 pub fn get_instance_manager() -> Result<Arc<LlmBackendInstanceManager>, LlmError> {
-    // Fast path: already initialized
+    // Ensure the RwLock is initialized (only once)
+    let rwlock = INSTANCE_MANAGER.get_or_init(|| RwLock::new(None));
+
+    // Fast path: already initialized, read lock allows concurrent access
     {
-        let guard = INSTANCE_MANAGER.lock().map_err(|_| {
-            LlmError::InvalidInput("Failed to acquire instance manager lock".to_string())
+        let guard = rwlock.read().map_err(|_| {
+            LlmError::InvalidInput("Failed to acquire instance manager read lock".to_string())
         })?;
         if let Some(ref manager) = *guard {
             return Ok(manager.clone());
         }
     }
 
-    // Slow path: initialize
-    let mut guard = INSTANCE_MANAGER.lock().map_err(|_| {
-        LlmError::InvalidInput("Failed to acquire instance manager lock".to_string())
+    // Slow path: initialize with write lock
+    let mut guard = rwlock.write().map_err(|_| {
+        LlmError::InvalidInput("Failed to acquire instance manager write lock".to_string())
     })?;
     // Check again in case another thread initialized while we waited
     if let Some(ref manager) = *guard {

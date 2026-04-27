@@ -78,6 +78,9 @@ bcrypt = "0.15"
 # Concurrent data structures
 dashmap = "6"
 
+# Caching
+moka = { version = "0.12", features = ["sync"] }
+
 # Timezone support
 chrono-tz = "0.10"
 

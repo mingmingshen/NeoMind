@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
+import { shallow } from "zustand/shallow"
 import { useParams, useNavigate } from "react-router-dom"
 import { generateId } from "@/lib/id"
 import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw, BookOpen } from "lucide-react"
@@ -168,19 +169,27 @@ export function ChatPage() {
   const hasLoadedBackends = useRef(false)
   const [sessionsLoaded, setSessionsLoaded] = useState(false)
 
-  // Chat state from store
+  // Chat state from store - use shallow to prevent re-renders on unrelated state changes
   const {
     sessionId,
     messages,
-    addMessage,
     clearMessages,
-    createSession,
-    switchSession,
     loadSessions,
     toggleMemory,
-    user,
     isLoadingSession
-  } = useStore()
+  } = useStore((s) => ({
+    sessionId: s.sessionId,
+    messages: s.messages,
+    clearMessages: s.clearMessages,
+    loadSessions: s.loadSessions,
+    toggleMemory: s.toggleMemory,
+    isLoadingSession: s.isLoadingSession,
+  }), shallow)
+
+  const addMessage = useStore((s) => s.addMessage)
+  const createSession = useStore((s) => s.createSession)
+  const switchSession = useStore((s) => s.switchSession)
+  const user = useStore((s) => s.user)
 
   // Local state
   const [input, setInput] = useState("")

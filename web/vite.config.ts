@@ -170,10 +170,44 @@ export default defineConfig({
             return 'page-auth'
           }
 
-          // Large but independent libraries - safe to split
-          if (id.includes('node_modules/recharts') || id.includes('recharts')) {
+          // React core - stable, rarely changes between deploys
+          if (
+            id.includes('node_modules/react/') ||
+            id.includes('node_modules/react-dom/') ||
+            id.includes('node_modules/react-router-dom/') ||
+            id.includes('node_modules/react-router/') ||
+            id.includes('node_modules/scheduler/') ||
+            id.includes('node_modules/@remix-run/')
+          ) {
+            return 'vendor-react'
+          }
+
+          // Radix UI primitives - used across many components
+          if (id.includes('node_modules/@radix-ui/')) {
+            return 'vendor-radix'
+          }
+
+          // Recharts - large charting library (~150KB)
+          if (
+            id.includes('node_modules/recharts') ||
+            id.includes('node_modules/d3-') ||
+            id.includes('node_modules/victory-vendor')
+          ) {
             return 'vendor-recharts'
           }
+
+          // CodeMirror - editor used in extension code editing
+          if (
+            id.includes('node_modules/@codemirror/') ||
+            id.includes('node_modules/@lezer/') ||
+            id.includes('node_modules/crelt/') ||
+            id.includes('node_modules/w3c-keyname/') ||
+            id.includes('node_modules/style-mod/')
+          ) {
+            return 'vendor-codemirror'
+          }
+
+          // Lucide icons - tree-shakeable but still sizable
           if (id.includes('node_modules/lucide-react')) {
             return 'vendor-icons'
           }

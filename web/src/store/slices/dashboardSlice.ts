@@ -172,19 +172,13 @@ function generateId(): string {
 }
 
 /**
- * Deep clone utility using structuredClone with fallback
- * Preserves more types than JSON.stringify (Date, Map, Set, etc.)
+ * Shallow clone utility for duplicating dashboard components.
+ * Uses spread operator instead of structuredClone for better performance.
+ * For DashboardComponent, only a shallow copy is needed since we immediately
+ * override top-level fields (id, position).
  */
-function deepClone<T>(obj: T): T {
-  if (typeof structuredClone !== 'undefined') {
-    try {
-      return structuredClone(obj)
-    } catch {
-      // Fallback for circular references or unsupported types
-    }
-  }
-  // Fallback to JSON method for older browsers
-  return JSON.parse(JSON.stringify(obj))
+function shallowClone<T extends Record<string, any>>(obj: T): T {
+  return { ...obj }
 }
 
 // ============================================================================
@@ -784,7 +778,7 @@ export const createDashboardSlice: StateCreator<
       if (!original) return
 
       const newComponent = {
-        ...deepClone(original),
+        ...shallowClone(original),
         id: generateId(),
         position: {
           ...original.position,

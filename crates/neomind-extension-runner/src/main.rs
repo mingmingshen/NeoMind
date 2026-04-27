@@ -1438,13 +1438,7 @@ impl SyncIpcClient {
             Err(e) => {
                 error!("SyncIpcClient: failed to serialize request: {e}");
                 // Remove pending request on error
-                get_pending_requests()
-                    .lock()
-                    .unwrap_or_else(|e| {
-                        error!("get_pending_requests() mutex poisoned: {}", e);
-                        e.into_inner()
-                    })
-                    .remove(&request_id);
+                get_pending_requests().remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to serialize request: {}", e)});
             }
         };
@@ -1462,25 +1456,13 @@ impl SyncIpcClient {
             if let Err(e) = stdout.write_all(&bytes) {
                 drop(_guard);
                 error!("SyncIpcClient: failed to write request: {e}");
-                get_pending_requests()
-                    .lock()
-                    .unwrap_or_else(|e| {
-                        error!("get_pending_requests() mutex poisoned: {}", e);
-                        e.into_inner()
-                    })
-                    .remove(&request_id);
+                get_pending_requests().remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to write request: {}", e)});
             }
             if let Err(e) = stdout.flush() {
                 drop(_guard);
                 error!("SyncIpcClient: failed to flush request: {e}");
-                get_pending_requests()
-                    .lock()
-                    .unwrap_or_else(|e| {
-                        error!("get_pending_requests() mutex poisoned: {}", e);
-                        e.into_inner()
-                    })
-                    .remove(&request_id);
+                get_pending_requests().remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to flush request: {}", e)});
             }
         }
@@ -1515,24 +1497,12 @@ impl SyncIpcClient {
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 error!("SyncIpcClient: timeout waiting for response");
-                get_pending_requests()
-                    .lock()
-                    .unwrap_or_else(|e| {
-                        error!("get_pending_requests() mutex poisoned: {}", e);
-                        e.into_inner()
-                    })
-                    .remove(&request_id);
+                get_pending_requests().remove(&request_id);
                 json!({"success": false, "error": "Timeout waiting for response"})
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 error!("SyncIpcClient: response channel disconnected");
-                get_pending_requests()
-                    .lock()
-                    .unwrap_or_else(|e| {
-                        error!("get_pending_requests() mutex poisoned: {}", e);
-                        e.into_inner()
-                    })
-                    .remove(&request_id);
+                get_pending_requests().remove(&request_id);
                 json!({"success": false, "error": "Response channel disconnected"})
             }
         }

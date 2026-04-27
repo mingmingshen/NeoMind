@@ -8,6 +8,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from '@/store'
+import { shallow } from 'zustand/shallow'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { useExtensionLifecycle } from '@/hooks/useExtensionLifecycle'
 import { logError } from '@/lib/errors'
@@ -1052,6 +1053,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const { t } = useTranslation('dashboardComponents')
   const { handleError } = useErrorHandler()
 
+  // Dashboard state (data that changes frequently)
   const {
     currentDashboard,
     currentDashboardId,
@@ -1059,25 +1061,35 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     dashboardsLoading,
     devices,
     editMode,
-    setEditMode,
-    addComponent,
-    updateComponent,
-    batchUpdatePositions,
-    removeComponent,
-    duplicateComponent,
-    createDashboard,
-    updateDashboard,
-    deleteDashboard,
-    persistDashboard,
-    setCurrentDashboard,
     componentLibraryOpen,
-    setComponentLibraryOpen,
-    fetchDashboards,
-    fetchDevices,
-    fetchDeviceTypes,
-    fetchDevicesCurrentBatch,
-    sendCommand,
-  } = useStore()
+  } = useStore((s) => ({
+    currentDashboard: s.currentDashboard,
+    currentDashboardId: s.currentDashboardId,
+    dashboards: s.dashboards,
+    dashboardsLoading: s.dashboardsLoading,
+    devices: s.devices,
+    editMode: s.editMode,
+    componentLibraryOpen: s.componentLibraryOpen,
+  }), shallow)
+
+  // Action selectors (stable function references, no shallow needed)
+  const setEditMode = useStore((s) => s.setEditMode)
+  const addComponent = useStore((s) => s.addComponent)
+  const updateComponent = useStore((s) => s.updateComponent)
+  const batchUpdatePositions = useStore((s) => s.batchUpdatePositions)
+  const removeComponent = useStore((s) => s.removeComponent)
+  const duplicateComponent = useStore((s) => s.duplicateComponent)
+  const createDashboard = useStore((s) => s.createDashboard)
+  const updateDashboard = useStore((s) => s.updateDashboard)
+  const deleteDashboard = useStore((s) => s.deleteDashboard)
+  const persistDashboard = useStore((s) => s.persistDashboard)
+  const setCurrentDashboard = useStore((s) => s.setCurrentDashboard)
+  const setComponentLibraryOpen = useStore((s) => s.setComponentLibraryOpen)
+  const fetchDashboards = useStore((s) => s.fetchDashboards)
+  const fetchDevices = useStore((s) => s.fetchDevices)
+  const fetchDeviceTypes = useStore((s) => s.fetchDeviceTypes)
+  const fetchDevicesCurrentBatch = useStore((s) => s.fetchDevicesCurrentBatch)
+  const sendCommand = useStore((s) => s.sendCommand)
 
   // Extension lifecycle management for hot updates
   const { refreshVersion } = useExtensionLifecycle({

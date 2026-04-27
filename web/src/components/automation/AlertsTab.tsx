@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
+import { shallow } from "zustand/shallow"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -31,7 +32,12 @@ import type { Alert } from "@/types"
 
 export function AlertsTab() {
   const { t } = useTranslation(['common', 'alerts'])
-  const { alerts, alertsLoading, fetchAlerts, acknowledgeAlert } = useStore()
+  const { alerts, alertsLoading, fetchAlerts, acknowledgeAlert } = useStore((s) => ({
+    alerts: s.alerts,
+    alertsLoading: s.alertsLoading,
+    fetchAlerts: s.fetchAlerts,
+    acknowledgeAlert: s.acknowledgeAlert,
+  }), shallow)
   const { toast } = useToast()
 
   // Pagination state

@@ -224,7 +224,7 @@ fn default_search_ttl() -> u64 {
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
-            enabled: false, // Disabled by default
+            enabled: true, // Enabled by default for better performance
             devices_ttl: default_devices_ttl(),
             stats_ttl: default_stats_ttl(),
             settings_ttl: default_settings_ttl(),

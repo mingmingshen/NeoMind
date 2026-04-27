@@ -15,6 +15,7 @@ import {
   Loader2
 } from "lucide-react"
 import { useStore } from "@/store"
+import { shallow } from "zustand/shallow"
 import type { ChatSession } from "@/types"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -141,7 +142,10 @@ const SessionDrawerMemo = memo(function SessionDrawer({
   currentSessionId
 }: SessionDrawerProps) {
   const { t } = useTranslation('dashboard')
-  const { sessions, deleteSession } = useStore()
+  const { sessions, deleteSession } = useStore((s) => ({
+    sessions: s.sessions,
+    deleteSession: s.deleteSession,
+  }), shallow)
   const [searchQuery, setSearchQuery] = useState("")
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)

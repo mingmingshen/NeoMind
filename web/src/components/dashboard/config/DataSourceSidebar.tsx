@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/store'
+import { shallow } from 'zustand/shallow'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import type { MetricDefinition, CommandDefinition } from '@/types'
@@ -130,7 +131,12 @@ export function DataSourceSidebar({
   className,
 }: DataSourceSidebarProps) {
   const { t } = useTranslation('dashboardComponents')
-  const { devices, deviceTypes, fetchDeviceTypes, fetchDevices } = useStore()
+  const { devices, deviceTypes, fetchDeviceTypes, fetchDevices } = useStore((s) => ({
+    devices: s.devices,
+    deviceTypes: s.deviceTypes,
+    fetchDeviceTypes: s.fetchDeviceTypes,
+    fetchDevices: s.fetchDevices,
+  }), shallow)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<CategoryType>('device-metric')
   const [selectedItems, setSelectedItems] = useState<Set<SelectedItem>>(new Set())

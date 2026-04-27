@@ -6,6 +6,7 @@
 import { useState, useRef, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useStore } from "@/store"
+import { shallow } from "zustand/shallow"
 import type { ChatSession } from "@/types"
 import { cn } from "@/lib/utils"
 import { Plus, X, ChevronLeft, ChevronRight, MoreHorizontal, MessageSquare } from "lucide-react"
@@ -42,7 +43,13 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
     createSession,
     switchSession,
     deleteSession,
-  } = useStore()
+  } = useStore((s) => ({
+    sessions: s.sessions,
+    sessionId: s.sessionId,
+    createSession: s.createSession,
+    switchSession: s.switchSession,
+    deleteSession: s.deleteSession,
+  }), shallow)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [showLeftScroll, setShowLeftScroll] = useState(false)

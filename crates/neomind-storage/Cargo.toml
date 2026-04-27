@@ -23,6 +23,9 @@ lru = { workspace = true }
 dashmap = { workspace = true }
 parking_lot = { workspace = true }
 
+# LRU cache
+moka = { workspace = true }
+
 # Async utilities for parallel operations
 futures = { workspace = true }
 

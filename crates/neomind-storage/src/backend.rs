@@ -45,6 +45,16 @@ fn make_key(table: &str, key: &str) -> String {
     format!("{}:{}", table, key)
 }
 
+/// Create a namespaced key for the unified table, reusing an existing buffer.
+/// This avoids repeated allocations when building many keys (e.g. in batch writes).
+fn make_key_reuse(table: &str, key: &str, buf: &mut String) {
+    buf.clear();
+    buf.reserve(table.len() + 1 + key.len());
+    buf.push_str(table);
+    buf.push(':');
+    buf.push_str(key);
+}
+
 /// Key-value pair for batch operations.
 #[derive(Debug, Clone)]
 pub struct KvPair {
@@ -174,9 +184,10 @@ impl InternalStorageBackend for RedbBackend {
         let txn = self.db.begin_write()?;
         {
             let mut t = txn.open_table(UNIFIED_TABLE)?;
+            let mut key_buf = String::new();
             for (key, value) in items {
-                let namespaced = make_key(table, &key);
-                t.insert(&*namespaced, &*value)?;
+                make_key_reuse(table, &key, &mut key_buf);
+                t.insert(&*key_buf, &*value)?;
             }
         }
         txn.commit()?;
@@ -317,6 +328,31 @@ impl UnifiedStorage {
             }
             None => Ok(None),
         }
+    }
+
+    /// Write multiple JSON-serializable items in a single batch.
+    /// Uses a single transaction for all items, which is significantly faster
+    /// than individual writes when persisting many items at once.
+    pub fn write_json_batch<T: Serialize>(
+        &self,
+        table: &str,
+        items: Vec<(String, &T)>,
+    ) -> Result<()> {
+        let serialized: Vec<(String, Vec<u8>)> = items
+            .into_iter()
+            .map(|(key, value)| Ok((key, serde_json::to_vec(value)?)))
+            .collect::<Result<_>>()?;
+        self.backend.write_batch(table, serialized)
+    }
+
+    /// Scan keys with a prefix in the given table.
+    pub fn scan(&self, table: &str, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
+        self.backend.scan(table, prefix)
+    }
+
+    /// Delete a key from the given table.
+    pub fn delete(&self, table: &str, key: &str) -> Result<bool> {
+        self.backend.delete(table, key)
     }
 
     /// Get the underlying backend.

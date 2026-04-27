@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use futures::future::try_join_all;
+use moka::sync::Cache;
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, Semaphore};
@@ -258,8 +259,6 @@ struct CacheEntry {
     point: DataPoint,
     /// When this entry was cached
     cached_at: Instant,
-    /// Access count
-    access_count: usize,
 }
 
 /// Performance statistics for time series operations.
@@ -380,8 +379,8 @@ pub struct TimeSeriesStore {
     db: Arc<Database>,
     /// Metrics info: (source_id:metric) -> MetricInfo - using DashMap for concurrent access
     metrics_info: DashMap<String, MetricInfo>,
-    /// Latest value cache: (source_id, metric) -> CacheEntry - using DashMap for concurrent access
-    latest_cache: DashMap<(String, String), CacheEntry>,
+    /// Latest value cache: (source_id, metric) -> CacheEntry - using moka for LRU eviction
+    latest_cache: Cache<(String, String), CacheEntry>,
     /// Retention policy
     retention_policy: RwLock<RetentionPolicy>,
     /// Performance statistics - using Arc<RwLock> for sharing across tasks
@@ -390,8 +389,6 @@ pub struct TimeSeriesStore {
     write_semaphore: Arc<Semaphore>,
     /// Cache TTL
     cache_ttl: Duration,
-    /// Maximum cache size
-    max_cache_size: usize,
     /// Storage path for singleton
     path: String,
 }
@@ -437,12 +434,13 @@ impl TimeSeriesStore {
         let store = Arc::new(TimeSeriesStore {
             db: Arc::new(db),
             metrics_info: DashMap::with_capacity(64), // Pre-allocate for typical metrics
-            latest_cache: DashMap::with_capacity(config.max_cache_size.min(500)),
+            latest_cache: Cache::builder()
+                .max_capacity(config.max_cache_size as u64)
+                .build(),
             retention_policy: RwLock::new(config.retention_policy),
             stats: Arc::new(RwLock::new(PerformanceStats::default())),
             write_semaphore: Arc::new(Semaphore::new(config.max_concurrent_writes)),
             cache_ttl: config.cache_ttl,
-            max_cache_size: config.max_cache_size,
             path: path_str,
         });
 
@@ -482,24 +480,33 @@ impl TimeSeriesStore {
 
     /// Clean stale cache entries.
     pub async fn clean_cache(&self) -> usize {
-        let before = self.latest_cache.len();
+        let before = self.latest_cache.entry_count() as usize;
         let now = Instant::now();
+        let cache_ttl = self.cache_ttl;
 
-        // DashMap retain is concurrent-safe
-        self.latest_cache
-            .retain(|_, entry| now.duration_since(entry.cached_at) < self.cache_ttl);
+        // Collect expired keys from moka cache
+        let expired_keys: Vec<(String, String)> = self
+            .latest_cache
+            .iter()
+            .filter(|(_, entry)| now.duration_since(entry.cached_at) >= cache_ttl)
+            .map(|(key, _)| (*key).clone())
+            .collect();
 
-        before - self.latest_cache.len()
+        for key in &expired_keys {
+            self.latest_cache.invalidate(key);
+        }
+
+        before - self.latest_cache.entry_count() as usize
     }
 
     /// Clear all cache entries.
     pub fn clear_cache(&self) {
-        self.latest_cache.clear();
+        self.latest_cache.invalidate_all();
     }
 
-    /// Get cache size.
+    /// Get cache size (exact count via iteration).
     pub fn cache_size(&self) -> usize {
-        self.latest_cache.len()
+        self.latest_cache.iter().count()
     }
 
     /// Write a data point.
@@ -553,37 +560,14 @@ impl TimeSeriesStore {
     async fn update_cache(&self, source_id: &str, metric: &str, point: DataPoint) {
         let key = (source_id.to_string(), metric.to_string());
 
-        // Evict if at capacity
-        if self.latest_cache.len() >= self.max_cache_size {
-            self.evict_lru_cache();
-        }
-
-        // DashMap entry API is lock-free
-        self.latest_cache
-            .entry(key)
-            .and_modify(|entry| {
-                entry.point = point.clone();
-                entry.cached_at = Instant::now();
-                entry.access_count += 1;
-            })
-            .or_insert_with(|| CacheEntry {
+        // moka handles LRU eviction automatically when capacity is reached
+        self.latest_cache.insert(
+            key,
+            CacheEntry {
                 point,
                 cached_at: Instant::now(),
-                access_count: 0,
-            });
-    }
-
-    /// Evict a cache entry.
-    /// Uses O(1) random eviction instead of O(n) LRU scan to avoid performance
-    /// degradation with large caches. Random eviction provides近似最优 performance
-    /// for typical access patterns.
-    fn evict_lru_cache(&self) {
-        // Remove the first available entry (O(1) via DashMap iterator)
-        if let Some(entry) = self.latest_cache.iter().next() {
-            let key = entry.key().clone();
-            drop(entry); // Release iterator guard before remove
-            self.latest_cache.remove(&key);
-        }
+            },
+        );
     }
 
     /// Write multiple data points in batch.
@@ -1100,11 +1084,10 @@ impl TimeSeriesStore {
         for request in requests {
             let db: Arc<Database> = Arc::clone(&self.db);
             let semaphore: Arc<Semaphore> = Arc::clone(&self.write_semaphore);
-            // DashMap implements Clone (internally uses Arc), so we can clone it for the spawned task
+            // moka Cache implements Clone (internally uses Arc), so we can clone it for the spawned task
             let cache = self.latest_cache.clone();
             // RwLock doesn't implement Clone, wrap in Arc for sharing
             let stats = Arc::clone(&self.stats);
-            let max_cache_size = self.max_cache_size;
 
             let source_id = request.source_id.clone();
             let _device_type = request.device_type.clone().unwrap_or_default();
@@ -1133,32 +1116,17 @@ impl TimeSeriesStore {
                 }
                 write_txn.commit()?;
 
-                // Update cache for latest values - DashMap is lock-free
+                // Update cache for latest values - moka handles LRU eviction automatically
                 for (metric, points) in &metrics {
                     if let Some(last) = points.last() {
                         let key = (source_id.clone(), metric.clone());
-                        if cache.len() >= max_cache_size {
-                            // Evict LRU entry
-                            let lru_key = cache
-                                .iter()
-                                .min_by_key(|item| item.value().access_count)
-                                .map(|item| item.key().clone());
-                            if let Some(lru) = lru_key {
-                                cache.remove(&lru);
-                            }
-                        }
-                        cache
-                            .entry(key)
-                            .and_modify(|entry| {
-                                entry.point = last.clone();
-                                entry.cached_at = Instant::now();
-                                entry.access_count += 1;
-                            })
-                            .or_insert_with(|| CacheEntry {
+                        cache.insert(
+                            key,
+                            CacheEntry {
                                 point: last.clone(),
                                 cached_at: Instant::now(),
-                                access_count: 0,
-                            });
+                            },
+                        );
                     }
                 }
 

@@ -75,6 +75,17 @@ const setNestedProperty = (obj: Record<string, unknown>, path: string, value: un
   return result
 }
 
+// Helper to get a nested value by dot-separated path
+const getNestedValue = (obj: Record<string, unknown>, path: string): unknown => {
+  const parts = path.split('.')
+  let current: unknown = obj
+  for (const part of parts) {
+    if (current === null || current === undefined || typeof current !== 'object') return undefined
+    current = (current as Record<string, unknown>)[part]
+  }
+  return current
+}
+
 // Module-level batch updater for device metric updates
 let metricBatchUpdater: BatchUpdater<{ deviceId: string; property: string; value: unknown }> | null = null
 
@@ -463,9 +474,15 @@ export const createDeviceSlice: StateCreator<
             if (!devUpdates) return device
 
             let currentValues = { ...(device.current_values || {}) }
+            let changed = false
             for (const [prop, val] of devUpdates) {
+              // Skip if value hasn't changed (avoid unnecessary re-renders)
+              const oldVal = prop.includes('.') ? getNestedValue(currentValues, prop) : currentValues[prop]
+              if (oldVal === val) continue
               currentValues = setNestedProperty(currentValues, prop, val)
+              changed = true
             }
+            if (!changed) return device
             return { ...device, current_values: currentValues, last_seen: new Date().toISOString(), status: 'online', online: true }
           })
 

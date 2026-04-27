@@ -332,12 +332,24 @@ impl CompiledRule {
                     false
                 }
             }
-            RuleCondition::And(conditions) => conditions.iter().all(|c| {
-                self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping)
-            }),
-            RuleCondition::Or(conditions) => conditions.iter().any(|c| {
-                self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping)
-            }),
+            RuleCondition::And(conditions) => {
+                // Short-circuit: stop evaluating on first failure
+                for c in conditions {
+                    if !self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping) {
+                        return false;
+                    }
+                }
+                true
+            }
+            RuleCondition::Or(conditions) => {
+                // Short-circuit: stop evaluating on first success
+                for c in conditions {
+                    if self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping) {
+                        return true;
+                    }
+                }
+                false
+            }
             RuleCondition::Not(condition) => {
                 !self.evaluate_condition_with_mapping(condition, value_provider, device_id_mapping)
             }

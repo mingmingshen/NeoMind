@@ -80,27 +80,35 @@ pub struct StoredChannelConfig {
     pub filter: ChannelFilter,
 }
 
+/// Combined in-memory channel state, protected by a single RwLock to avoid
+/// lock contention when multiple maps must be accessed together.
+struct ChannelState {
+    channels: HashMap<String, Arc<dyn MessageChannel>>,
+    configs: HashMap<String, serde_json::Value>,
+    enabled_states: HashMap<String, bool>,
+    recipients: HashMap<String, Vec<String>>,
+}
+
 /// Channel registry for managing notification channels.
 pub struct ChannelRegistry {
-    channels: RwLock<HashMap<String, Arc<dyn MessageChannel>>>,
-    configs: RwLock<HashMap<String, serde_json::Value>>,
-    /// Persistent storage backend (redb)
+    /// All in-memory channel data behind one lock (B12 fix).
+    state: RwLock<ChannelState>,
+    /// Persistent storage backend (redb).
+    /// Only used to clone out the `Arc<Database>` and then dropped before I/O.
     storage: RwLock<Option<Arc<redb::Database>>>,
-    /// Override enabled states (for toggling without recreating channels)
-    enabled_states: RwLock<HashMap<String, bool>>,
-    /// Recipients per channel (for email channels)
-    recipients: RwLock<HashMap<String, Vec<String>>>,
 }
 
 impl ChannelRegistry {
     /// Create a new in-memory channel registry (no persistence).
     pub fn new() -> Self {
         Self {
-            channels: RwLock::new(HashMap::new()),
-            configs: RwLock::new(HashMap::new()),
+            state: RwLock::new(ChannelState {
+                channels: HashMap::new(),
+                configs: HashMap::new(),
+                enabled_states: HashMap::new(),
+                recipients: HashMap::new(),
+            }),
             storage: RwLock::new(None),
-            enabled_states: RwLock::new(HashMap::new()),
-            recipients: RwLock::new(HashMap::new()),
         }
     }
 
@@ -131,19 +139,24 @@ impl ChannelRegistry {
             .map_err(|e| Error::Storage(format!("Failed to commit: {}", e)))?;
 
         Ok(Self {
-            channels: RwLock::new(HashMap::new()),
-            configs: RwLock::new(HashMap::new()),
+            state: RwLock::new(ChannelState {
+                channels: HashMap::new(),
+                configs: HashMap::new(),
+                enabled_states: HashMap::new(),
+                recipients: HashMap::new(),
+            }),
             storage: RwLock::new(Some(Arc::new(db))),
-            enabled_states: RwLock::new(HashMap::new()),
-            recipients: RwLock::new(HashMap::new()),
         })
     }
 
     /// Load persisted channel configurations.
     /// Returns a list of stored channel configs that need to be recreated.
     pub async fn load_persisted(&self) -> Vec<StoredChannelConfig> {
-        let storage = self.storage.read().await;
-        if let Some(db) = storage.as_ref() {
+        let db = {
+            let storage = self.storage.read().await;
+            storage.as_ref().cloned()
+        };
+        if let Some(db) = db {
             let read_txn = match db.begin_read() {
                 Ok(txn) => txn,
                 Err(e) => {
@@ -180,9 +193,10 @@ impl ChannelRegistry {
                 };
                 if let Ok(stored) = serde_json::from_str::<StoredChannelConfig>(value.value()) {
                     // Also load into memory
-                    self.configs
+                    self.state
                         .write()
                         .await
+                        .configs
                         .insert(stored.name.clone(), stored.config.clone());
                     configs.push(stored);
                 }
@@ -195,9 +209,14 @@ impl ChannelRegistry {
     }
 
     /// Save a channel configuration to persistent storage.
+    /// Clones the `Arc<Database>` and drops the read lock before performing
+    /// I/O, so the storage lock is not held across a write transaction (B13 fix).
     async fn save_channel(&self, stored: &StoredChannelConfig) -> Result<()> {
-        let storage = self.storage.read().await;
-        if let Some(db) = storage.as_ref() {
+        let db = {
+            let storage = self.storage.read().await;
+            storage.as_ref().cloned()
+        };
+        if let Some(db) = db {
             let json = serde_json::to_string(stored).map_err(|e| {
                 Error::Storage(format!("Failed to serialize channel config: {}", e))
             })?;
@@ -226,8 +245,11 @@ impl ChannelRegistry {
 
     /// Delete a channel configuration from persistent storage.
     async fn delete_channel(&self, name: &str) -> Result<()> {
-        let storage = self.storage.read().await;
-        if let Some(db) = storage.as_ref() {
+        let db = {
+            let storage = self.storage.read().await;
+            storage.as_ref().cloned()
+        };
+        if let Some(db) = db {
             let write_txn = db
                 .begin_write()
                 .map_err(|e| Error::Storage(format!("Failed to begin write: {}", e)))?;
@@ -253,7 +275,7 @@ impl ChannelRegistry {
     /// Register a channel instance.
     pub async fn register(&self, channel: Arc<dyn MessageChannel>) {
         let name = channel.name().to_string();
-        self.channels.write().await.insert(name, channel);
+        self.state.write().await.channels.insert(name, channel);
     }
 
     /// Register a channel with its configuration (persists to storage).
@@ -268,10 +290,9 @@ impl ChannelRegistry {
 
         // Save to memory
         {
-            let mut channels = self.channels.write().await;
-            let mut configs = self.configs.write().await;
-            channels.insert(name.clone(), channel);
-            configs.insert(name.clone(), config.clone());
+            let mut state = self.state.write().await;
+            state.channels.insert(name.clone(), channel);
+            state.configs.insert(name.clone(), config.clone());
         }
 
         // Persist to storage
@@ -290,9 +311,8 @@ impl ChannelRegistry {
     /// Unregister a channel by name (also removes from persistent storage).
     pub async fn unregister(&self, name: &str) -> bool {
         let removed = {
-            let mut channels = self.channels.write().await;
-            let mut configs = self.configs.write().await;
-            channels.remove(name).is_some() || configs.remove(name).is_some()
+            let mut state = self.state.write().await;
+            state.channels.remove(name).is_some() || state.configs.remove(name).is_some()
         };
 
         if removed {
@@ -307,40 +327,38 @@ impl ChannelRegistry {
 
     /// Get a channel by name.
     pub async fn get(&self, name: &str) -> Option<Arc<dyn MessageChannel>> {
-        self.channels.read().await.get(name).cloned()
+        self.state.read().await.channels.get(name).cloned()
     }
 
     /// List all channel names.
     pub async fn list_names(&self) -> Vec<String> {
-        self.channels.read().await.keys().cloned().collect()
+        self.state.read().await.channels.keys().cloned().collect()
     }
 
     /// Get the number of channels.
     pub async fn len(&self) -> usize {
-        self.channels.read().await.len()
+        self.state.read().await.channels.len()
     }
 
     /// Check if empty.
     pub async fn is_empty(&self) -> bool {
-        self.channels.read().await.is_empty()
+        self.state.read().await.channels.is_empty()
     }
 
     /// Get detailed information about a channel.
     pub async fn get_info(&self, name: &str) -> Option<ChannelInfo> {
-        let channels = self.channels.read().await;
-        let configs = self.configs.read().await;
-        let enabled_states = self.enabled_states.read().await;
-        let recipients = self.recipients.read().await;
-        channels.get(name).map(|channel| {
+        let state = self.state.read().await;
+        state.channels.get(name).map(|channel| {
             // Check if there's an override in enabled_states, otherwise use channel's internal state
-            let enabled = enabled_states
+            let enabled = state
+                .enabled_states
                 .get(name)
                 .copied()
                 .unwrap_or_else(|| channel.is_enabled());
             let channel_type = channel.channel_type().to_string();
             // Include recipients for email channels
             let channel_recipients = if channel_type == "email" {
-                recipients.get(name).cloned()
+                state.recipients.get(name).cloned()
             } else {
                 None
             };
@@ -348,7 +366,7 @@ impl ChannelRegistry {
                 name: name.to_string(),
                 channel_type,
                 enabled,
-                config: configs.get(name).cloned(),
+                config: state.configs.get(name).cloned(),
                 recipients: channel_recipients,
             }
         })
@@ -356,31 +374,30 @@ impl ChannelRegistry {
 
     /// List all channels with info.
     pub async fn list_info(&self) -> Vec<ChannelInfo> {
-        let channels = self.channels.read().await;
-        let configs = self.configs.read().await;
-        let enabled_states = self.enabled_states.read().await;
-        let recipients = self.recipients.read().await;
-        channels
+        let state = self.state.read().await;
+        state
+            .channels
             .keys()
             .map(|name| {
-                let channel = channels.get(name);
+                let channel = state.channels.get(name);
                 let channel_type = channel
                     .map(|c| c.channel_type().to_string())
                     .unwrap_or_default();
                 // Include recipients for email channels
                 let channel_recipients = if channel_type == "email" {
-                    recipients.get(name).cloned()
+                    state.recipients.get(name).cloned()
                 } else {
                     None
                 };
                 ChannelInfo {
                     name: name.clone(),
                     channel_type: channel_type.clone(),
-                    enabled: enabled_states
+                    enabled: state
+                        .enabled_states
                         .get(name)
                         .copied()
                         .unwrap_or_else(|| channel.map(|c| c.is_enabled()).unwrap_or(false)),
-                    config: configs.get(name).cloned(),
+                    config: state.configs.get(name).cloned(),
                     recipients: channel_recipients,
                 }
             })
@@ -389,16 +406,16 @@ impl ChannelRegistry {
 
     /// Get channel statistics.
     pub async fn get_stats(&self) -> ChannelStats {
-        let channels = self.channels.read().await;
-        let enabled_states = self.enabled_states.read().await;
+        let state = self.state.read().await;
         let mut by_type = HashMap::new();
         let mut enabled_count = 0;
 
-        for (name, channel) in channels.iter() {
+        for (name, channel) in state.channels.iter() {
             let ct = channel.channel_type().to_string();
             *by_type.entry(ct).or_insert(0) += 1;
             // Check override first, then channel's internal state
-            let is_enabled = enabled_states
+            let is_enabled = state
+                .enabled_states
                 .get(name)
                 .copied()
                 .unwrap_or_else(|| channel.is_enabled());
@@ -408,9 +425,9 @@ impl ChannelRegistry {
         }
 
         ChannelStats {
-            total: channels.len(),
+            total: state.channels.len(),
             enabled: enabled_count,
-            disabled: channels.len() - enabled_count,
+            disabled: state.channels.len() - enabled_count,
             by_type,
         }
     }
@@ -418,34 +435,34 @@ impl ChannelRegistry {
     /// Set the enabled state of a channel.
     /// This updates both the in-memory state and persists to storage.
     pub async fn set_enabled(&self, name: &str, enabled: bool) -> Result<()> {
-        // Check if channel exists
-        {
-            let channels = self.channels.read().await;
-            if !channels.contains_key(name) {
+        // Check if channel exists & gather data for persistence in one lock scope
+        let persist_data = {
+            let state = self.state.read().await;
+            if !state.channels.contains_key(name) {
                 return Err(Error::NotFound(format!("Channel not found: {}", name)));
             }
-        }
+            // Collect what we need for persistence, then drop the lock before I/O
+            let config = state.configs.get(name).cloned();
+            let channel = state.channels.get(name).cloned();
+            (config, channel)
+        };
 
         // Update in-memory state
         {
-            let mut enabled_states = self.enabled_states.write().await;
-            enabled_states.insert(name.to_string(), enabled);
+            let mut state = self.state.write().await;
+            state.enabled_states.insert(name.to_string(), enabled);
         }
 
-        // Update persistence
-        {
-            let configs = self.configs.read().await;
-            let channels = self.channels.read().await;
-            if let (Some(config), Some(channel)) = (configs.get(name), channels.get(name)) {
-                let stored = StoredChannelConfig {
-                    name: name.to_string(),
-                    channel_type: channel.channel_type().to_string(),
-                    config: config.clone(),
-                    enabled,
-                    filter: ChannelFilter::default(),
-                };
-                self.save_channel(&stored).await?;
-            }
+        // Update persistence (locks already released)
+        if let (Some(config), Some(channel)) = persist_data {
+            let stored = StoredChannelConfig {
+                name: name.to_string(),
+                channel_type: channel.channel_type().to_string(),
+                config,
+                enabled,
+                filter: ChannelFilter::default(),
+            };
+            self.save_channel(&stored).await?;
         }
 
         tracing::info!("Channel '{}' enabled state set to: {}", name, enabled);
@@ -454,10 +471,14 @@ impl ChannelRegistry {
 
     /// Test a channel by sending a test message.
     pub async fn test(&self, name: &str) -> Result<TestResult> {
-        let channels = self.channels.read().await;
-        let channel = channels
-            .get(name)
-            .ok_or_else(|| Error::NotFound(format!("Channel not found: {}", name)))?;
+        let channel = {
+            let state = self.state.read().await;
+            state
+                .channels
+                .get(name)
+                .cloned()
+                .ok_or_else(|| Error::NotFound(format!("Channel not found: {}", name)))?
+        };
 
         let test_message = Message::system_with_severity(
             crate::MessageSeverity::Info,
@@ -486,16 +507,17 @@ impl ChannelRegistry {
 
     /// Get recipients for a channel.
     pub async fn get_recipients(&self, channel_name: &str) -> Vec<String> {
-        let recipients = self.recipients.read().await;
-        recipients.get(channel_name).cloned().unwrap_or_default()
+        let state = self.state.read().await;
+        state.recipients.get(channel_name).cloned().unwrap_or_default()
     }
 
     /// Add a recipient to a channel.
     pub async fn add_recipient(&self, channel_name: &str, email: &str) -> Result<()> {
         // Check if channel exists and get its type
         let channel_type = {
-            let channels = self.channels.read().await;
-            let channel = channels
+            let state = self.state.read().await;
+            let channel = state
+                .channels
                 .get(channel_name)
                 .ok_or_else(|| Error::NotFound(format!("Channel not found: {}", channel_name)))?;
             channel.channel_type().to_string()
@@ -510,8 +532,8 @@ impl ChannelRegistry {
 
         // Add to memory
         {
-            let mut recipients = self.recipients.write().await;
-            let channel_recipients = recipients.entry(channel_name.to_string()).or_default();
+            let mut state = self.state.write().await;
+            let channel_recipients = state.recipients.entry(channel_name.to_string()).or_default();
             if channel_recipients.contains(&email.to_string()) {
                 return Err(Error::InvalidConfiguration(
                     "Recipient already exists".to_string(),
@@ -536,8 +558,9 @@ impl ChannelRegistry {
     pub async fn remove_recipient(&self, channel_name: &str, email: &str) -> Result<()> {
         // Check if channel exists and get its type
         let channel_type = {
-            let channels = self.channels.read().await;
-            let channel = channels
+            let state = self.state.read().await;
+            let channel = state
+                .channels
                 .get(channel_name)
                 .ok_or_else(|| Error::NotFound(format!("Channel not found: {}", channel_name)))?;
             channel.channel_type().to_string()
@@ -545,8 +568,8 @@ impl ChannelRegistry {
 
         // Remove from memory
         let removed = {
-            let mut recipients = self.recipients.write().await;
-            if let Some(channel_recipients) = recipients.get_mut(channel_name) {
+            let mut state = self.state.write().await;
+            if let Some(channel_recipients) = state.recipients.get_mut(channel_name) {
                 let initial_len = channel_recipients.len();
                 channel_recipients.retain(|r| r != email);
                 channel_recipients.len() < initial_len
@@ -577,34 +600,30 @@ impl ChannelRegistry {
 
     /// Recreate an email channel with updated recipients.
     async fn recreate_email_channel(&self, channel_name: &str) -> Result<()> {
-        let (config, enabled) = {
-            let channels = self.channels.read().await;
-            let configs = self.configs.read().await;
-            let enabled_states = self.enabled_states.read().await;
-
-            let channel = channels
+        let (config, enabled, recipients) = {
+            let state = self.state.read().await;
+            let channel = state
+                .channels
                 .get(channel_name)
                 .ok_or_else(|| Error::NotFound(format!("Channel not found: {}", channel_name)))?;
 
-            let config = configs.get(channel_name).cloned().ok_or_else(|| {
+            let config = state.configs.get(channel_name).cloned().ok_or_else(|| {
                 Error::InvalidConfiguration("Channel config not found".to_string())
             })?;
 
-            let enabled = enabled_states
+            let enabled = state
+                .enabled_states
                 .get(channel_name)
                 .copied()
                 .unwrap_or_else(|| channel.is_enabled());
 
-            (config, enabled)
-        };
-
-        // Get current recipients
-        let recipients = {
-            let recipients_map = self.recipients.read().await;
-            recipients_map
+            let recipients = state
+                .recipients
                 .get(channel_name)
                 .cloned()
-                .unwrap_or_default()
+                .unwrap_or_default();
+
+            (config, enabled, recipients)
         };
 
         // Build new config with recipients
@@ -622,8 +641,8 @@ impl ChannelRegistry {
             let new_channel = factory.create(&new_config)?;
 
             // Replace the old channel
-            let mut channels = self.channels.write().await;
-            channels.insert(channel_name.to_string(), new_channel);
+            let mut state = self.state.write().await;
+            state.channels.insert(channel_name.to_string(), new_channel);
         }
 
         tracing::debug!(
@@ -636,11 +655,20 @@ impl ChannelRegistry {
 
     /// Save recipients for a channel to persistent storage.
     async fn save_recipients(&self, channel_name: &str) -> Result<()> {
-        let storage = self.storage.read().await;
-        if let Some(db) = storage.as_ref() {
-            let recipients = self.recipients.read().await;
-            let channel_recipients = recipients.get(channel_name).cloned().unwrap_or_default();
+        // Clone out the data we need, then drop all locks before I/O (B13 fix).
+        let (db, channel_recipients) = {
+            let db = {
+                let storage = self.storage.read().await;
+                storage.as_ref().cloned()
+            };
+            let channel_recipients = {
+                let state = self.state.read().await;
+                state.recipients.get(channel_name).cloned().unwrap_or_default()
+            };
+            (db, channel_recipients)
+        };
 
+        if let Some(db) = db {
             let json = serde_json::to_string(&channel_recipients)
                 .map_err(|e| Error::Storage(format!("Failed to serialize recipients: {}", e)))?;
 
@@ -668,8 +696,11 @@ impl ChannelRegistry {
 
     /// Load recipients for a channel from persistent storage.
     pub async fn load_recipients(&self, channel_name: &str) {
-        let storage = self.storage.read().await;
-        if let Some(db) = storage.as_ref() {
+        let db = {
+            let storage = self.storage.read().await;
+            storage.as_ref().cloned()
+        };
+        if let Some(db) = db {
             let read_txn = match db.begin_read() {
                 Ok(txn) => txn,
                 Err(e) => {
@@ -689,8 +720,8 @@ impl ChannelRegistry {
 
             if let Ok(Some(value)) = table.get(channel_name) {
                 if let Ok(loaded) = serde_json::from_str::<Vec<String>>(value.value()) {
-                    let mut recipients = self.recipients.write().await;
-                    recipients.insert(channel_name.to_string(), loaded);
+                    let mut state = self.state.write().await;
+                    state.recipients.insert(channel_name.to_string(), loaded);
                     tracing::debug!("Loaded recipients for channel '{}'", channel_name);
                 }
             }
@@ -699,8 +730,11 @@ impl ChannelRegistry {
 
     /// Load all recipients from storage.
     pub async fn load_all_recipients(&self) {
-        let storage = self.storage.read().await;
-        if let Some(db) = storage.as_ref() {
+        let db = {
+            let storage = self.storage.read().await;
+            storage.as_ref().cloned()
+        };
+        if let Some(db) = db {
             let read_txn = match db.begin_read() {
                 Ok(txn) => txn,
                 Err(e) => {
@@ -727,10 +761,10 @@ impl ChannelRegistry {
             };
 
             let mut count = 0;
+            let mut state = self.state.write().await;
             for (key, value) in iter.flatten() {
                 if let Ok(loaded) = serde_json::from_str::<Vec<String>>(value.value()) {
-                    let mut recipients = self.recipients.write().await;
-                    recipients.insert(key.value().to_string(), loaded);
+                    state.recipients.insert(key.value().to_string(), loaded);
                     count += 1;
                 }
             }
@@ -743,8 +777,11 @@ impl ChannelRegistry {
 
     /// Get the filter for a channel (returns default filter if not found).
     pub async fn get_filter(&self, channel_name: &str) -> ChannelFilter {
-        let storage = self.storage.read().await;
-        if let Some(db) = storage.as_ref() {
+        let db = {
+            let storage = self.storage.read().await;
+            storage.as_ref().cloned()
+        };
+        if let Some(db) = db {
             let read_txn = match db.begin_read() {
                 Ok(txn) => txn,
                 Err(e) => {
@@ -773,8 +810,11 @@ impl ChannelRegistry {
 
     /// Set the filter for a channel.
     pub async fn set_filter(&self, channel_name: &str, filter: ChannelFilter) -> Result<()> {
-        let storage = self.storage.read().await;
-        if let Some(db) = storage.as_ref() {
+        let db = {
+            let storage = self.storage.read().await;
+            storage.as_ref().cloned()
+        };
+        if let Some(db) = db {
             // Read existing config
             let read_txn = db
                 .begin_read()

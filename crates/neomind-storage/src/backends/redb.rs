@@ -96,6 +96,16 @@ fn make_key(table: &str, key: &str) -> String {
     result
 }
 
+/// Create a namespaced key for the unified table, reusing an existing buffer.
+/// This avoids repeated allocations when building many keys (e.g. in batch writes).
+fn make_key_reuse(table: &str, key: &str, buf: &mut String) {
+    buf.clear();
+    buf.reserve(table.len() + 1 + key.len());
+    buf.push_str(table);
+    buf.push(':');
+    buf.push_str(key);
+}
+
 /// redb-based persistent storage backend with optional LRU cache.
 pub struct RedbBackend {
     /// redb database instance.
@@ -354,14 +364,26 @@ impl StorageBackend for RedbBackend {
             let mut t = txn
                 .open_table(UNIFIED_TABLE)
                 .map_err(|e| StorageError::Backend(e.to_string()))?;
-            for (key, value) in items {
-                let namespaced = make_key(table, &key);
-                t.insert(&*namespaced, &*value)
+            let mut key_buf = String::new();
+            for (key, value) in &items {
+                make_key_reuse(table, key, &mut key_buf);
+                t.insert(&*key_buf, value.as_slice())
                     .map_err(|e| StorageError::Backend(e.to_string()))?;
             }
         }
         txn.commit()
             .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        // Update cache for all items written in this batch
+        {
+            let mut cache = self.cache.write();
+            let mut key_buf = String::new();
+            for (key, value) in &items {
+                make_key_reuse(table, key, &mut key_buf);
+                cache.put(key_buf.clone(), value.clone());
+            }
+        }
+
         Ok(())
     }
 

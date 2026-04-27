@@ -27,7 +27,7 @@ use crate::llm::LlmInterface;
 // Type aliases to reduce complexity
 pub type SharedLlm = Arc<RwLock<LlmInterface>>;
 pub type ToolResultStream = Pin<Box<dyn Stream<Item = (String, String)> + Send>>;
-pub type EventChannel = tokio::sync::mpsc::UnboundedSender<AgentEvent>;
+pub type EventChannel = tokio::sync::mpsc::Sender<AgentEvent>;
 
 // Re-export compaction types for use in other modules
 pub use neomind_core::llm::compaction::{
@@ -1968,7 +1968,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
 /// Emit plan events from an ExecutionPlan through the event channel.
 pub fn emit_plan_events(
     plan: &ExecutionPlan,
-    tx: &tokio::sync::mpsc::UnboundedSender<super::types::AgentEvent>,
+    tx: &tokio::sync::mpsc::Sender<super::types::AgentEvent>,
 ) {
     let _ = tx.send(super::types::AgentEvent::ExecutionPlanCreated {
         plan: plan.clone(),
