@@ -891,9 +891,8 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                   disabled={streamState.isStreaming}
                   className={cn(
                     "w-full px-3 sm:px-4 py-3 rounded-2xl resize-none text-base",
-                    "bg-[var(--input-focus-bg)] border border-[var(--glass-border)]",
-                    "text-foreground placeholder:text-[var(--muted-foreground)]",
-                    "focus:outline-none focus:ring-2 focus:ring-[var(--ring)]/30",
+                    "border border-input bg-background text-foreground placeholder:text-muted-foreground",
+                    "focus-visible:outline-none",
                     "transition-all duration-200",
                     "max-h-32 scroll-mb-32",
                     streamState.isStreaming && "opacity-60 cursor-wait"
