@@ -17,6 +17,7 @@ import type {
 import { api } from '@/lib/api'
 import { logError } from '@/lib/errors'
 import { BatchUpdater } from '@/lib/throttle'
+import { fetchCache } from '@/lib/utils/async'
 
 export interface DeviceSlice extends DeviceState, TelemetryState {
   // Actions
@@ -124,6 +125,8 @@ export const createDeviceSlice: StateCreator<
 
   // Device CRUD
   fetchDevices: async () => {
+    if (!fetchCache.shouldFetch('devices')) return
+    fetchCache.markFetching('devices')
     set({ devicesLoading: true })
     try {
       const data = await api.getDevices()
@@ -137,18 +140,22 @@ export const createDeviceSlice: StateCreator<
         return new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime()
       })
       set({ devices: sortedDevices })
+      fetchCache.markFetched('devices')
     } catch (error) {
       if ((error as Error).message === 'UNAUTHORIZED') {
         // Will be handled by auth slice
       }
       logError(error, { operation: 'Fetch devices' })
       set({ devices: [] })
+      fetchCache.invalidate('devices')
     } finally {
       set({ devicesLoading: false })
     }
   },
 
   fetchDeviceTypes: async () => {
+    if (!fetchCache.shouldFetch('deviceTypes')) return
+    fetchCache.markFetching('deviceTypes')
     set({ deviceTypesLoading: true })
     try {
       const data = await api.getDeviceTypes()
@@ -159,11 +166,13 @@ export const createDeviceSlice: StateCreator<
         return bTime - aTime
       })
       set({ deviceTypes: sortedTypes })
+      fetchCache.markFetched('deviceTypes')
     } catch (error) {
       if ((error as Error).message === 'UNAUTHORIZED') {
         // Will be handled by auth slice
       }
       logError(error, { operation: 'Fetch device types' })
+      fetchCache.invalidate('deviceTypes')
     } finally {
       set({ deviceTypesLoading: false })
     }
@@ -174,6 +183,7 @@ export const createDeviceSlice: StateCreator<
       const result = await api.addDevice(request)
       // Backend returns { device_id, added: true } after unwrap
       if (result.added || result.device_id) {
+        fetchCache.invalidate('devices')
         await get().fetchDevices()
         return true
       }
@@ -192,6 +202,7 @@ export const createDeviceSlice: StateCreator<
       const result = await api.updateDevice(id, request)
       // Backend returns { device_id, updated: true } after unwrap
       if (result.updated) {
+        fetchCache.invalidate('devices')
         await get().fetchDevices()
         return true
       }
@@ -209,6 +220,7 @@ export const createDeviceSlice: StateCreator<
     const result = await api.deleteDevice(id)
     // Backend returns { device_id, deleted: true } after unwrap
     if (result.deleted) {
+      fetchCache.invalidate('devices')
       await get().fetchDevices()
       return true
     }
@@ -220,6 +232,7 @@ export const createDeviceSlice: StateCreator<
       const result = await api.sendCommand(deviceId, command, params)
       // Backend returns { device_id, command, sent: true } after unwrap
       if (result.sent) {
+        fetchCache.invalidate('devices')
         await get().fetchDevices()
         return true
       }
@@ -233,12 +246,14 @@ export const createDeviceSlice: StateCreator<
   // Device Type CRUD
   addDeviceType: async (definition) => {
     await api.addDeviceType(definition)
+    fetchCache.invalidate('deviceTypes')
     await get().fetchDeviceTypes()
     return true
   },
 
   deleteDeviceType: async (id) => {
     await api.deleteDeviceType(id)
+    fetchCache.invalidate('deviceTypes')
     await get().fetchDeviceTypes()
     return true
   },

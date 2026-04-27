@@ -133,3 +133,55 @@ export async function poll(
 
   return false
 }
+
+/**
+ * TTL-based fetch deduplication cache.
+ *
+ * Prevents redundant API calls when the same data was fetched recently.
+ * Shared across all store slices — use a unique `key` per fetch action.
+ *
+ * @example
+ * // Inside a Zustand slice:
+ * fetchDevices: async () => {
+ *   if (!fetchCache.shouldFetch('devices')) return
+ *   fetchCache.markFetching('devices')
+ *   try {
+ *     const data = await api.getDevices()
+ *     set({ devices: data.devices })
+ *     fetchCache.markFetched('devices')
+ *   } catch { fetchCache.invalidate('devices') }
+ * }
+ */
+class FetchCache {
+  private cache = new Map<string, { timestamp: number; fetching: boolean }>()
+
+  /** Returns true if the key should be fetched (stale or never fetched). */
+  shouldFetch(key: string, ttlMs: number = 10_000): boolean {
+    const entry = this.cache.get(key)
+    if (!entry) return true
+    if (entry.fetching) return false // already in-flight
+    return Date.now() - entry.timestamp > ttlMs
+  }
+
+  /** Mark a key as currently being fetched (prevents concurrent duplicate calls). */
+  markFetching(key: string): void {
+    this.cache.set(key, { timestamp: 0, fetching: true })
+  }
+
+  /** Mark a key as successfully fetched with the given TTL. */
+  markFetched(key: string): void {
+    this.cache.set(key, { timestamp: Date.now(), fetching: false })
+  }
+
+  /** Invalidate a specific key (force next fetch to go through). */
+  invalidate(key: string): void {
+    this.cache.delete(key)
+  }
+
+  /** Invalidate all keys. */
+  invalidateAll(): void {
+    this.cache.clear()
+  }
+}
+
+export const fetchCache = new FetchCache()

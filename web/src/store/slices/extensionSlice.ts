@@ -25,6 +25,7 @@ import type {
 import { api } from '@/lib/api'
 import { logError } from '@/lib/errors'
 import { dynamicRegistry } from '@/components/dashboard/registry/DynamicRegistry'
+import { fetchCache } from '@/lib/utils/async'
 
 export interface ExtensionState {
   // Unified Extension State
@@ -98,6 +99,8 @@ export const createExtensionSlice: StateCreator<
   // Fetch all extensions with their commands
   // Backend: GET /api/extensions -> Extension[]
   fetchExtensions: async (params) => {
+    if (!fetchCache.shouldFetch('extensions')) return
+    fetchCache.markFetching('extensions')
     set({ extensionsLoading: true })
     try {
       const extensions = await api.listExtensions(params)
@@ -108,9 +111,11 @@ export const createExtensionSlice: StateCreator<
         commandsMap[ext.id] = ext.commands
       })
       set({ commands: commandsMap })
+      fetchCache.markFetched('extensions')
     } catch (error) {
       logError(error, { operation: 'Fetch extensions' })
       set({ extensions: [], commands: {} })
+      fetchCache.invalidate('extensions')
     } finally {
       set({ extensionsLoading: false })
     }
@@ -200,6 +205,7 @@ export const createExtensionSlice: StateCreator<
     try {
       await api.reloadExtension(id)
       // Refresh extension data after reload
+      fetchCache.invalidate('extensions')
       await get().fetchExtensions()
       return true
     } catch (error) {
@@ -238,12 +244,16 @@ export const createExtensionSlice: StateCreator<
   // Fetch extension types
   // Backend: GET /api/extensions/types -> ExtensionTypeDto[]
   fetchExtensionTypes: async () => {
+    if (!fetchCache.shouldFetch('extensionTypes')) return
+    fetchCache.markFetching('extensionTypes')
     try {
       const types = await api.listExtensionTypes()
       set({ extensionTypes: types || [] })
+      fetchCache.markFetched('extensionTypes')
     } catch (error) {
       logError(error, { operation: 'Fetch extension types' })
       set({ extensionTypes: [] })
+      fetchCache.invalidate('extensionTypes')
     }
   },
 

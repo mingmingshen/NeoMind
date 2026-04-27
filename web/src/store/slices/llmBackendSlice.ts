@@ -15,6 +15,7 @@ import type {
 } from '@/types'
 import { api } from '@/lib/api'
 import { logError } from '@/lib/errors'
+import { fetchCache } from '@/lib/utils/async'
 
 export interface LlmBackendState {
   // State
@@ -65,6 +66,8 @@ export const createLlmBackendSlice: StateCreator<
 
   // Load all backends
   loadBackends: async () => {
+    if (!fetchCache.shouldFetch('llmBackends')) return
+    fetchCache.markFetching('llmBackends')
     set({ llmBackendLoading: true, error: null })
     try {
       const data = await api.listLlmBackends()
@@ -73,20 +76,25 @@ export const createLlmBackendSlice: StateCreator<
         activeBackendId: data.active_id,
         llmBackendLoading: false,
       })
+      fetchCache.markFetched('llmBackends')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       set({ error: message, llmBackendLoading: false })
+      fetchCache.invalidate('llmBackends')
     }
   },
 
   // Load available backend type definitions
   loadBackendTypes: async () => {
+    if (!fetchCache.shouldFetch('llmBackendTypes')) return
+    fetchCache.markFetching('llmBackendTypes')
     try {
       const data = await api.listLlmBackendTypes()
       set({ backendTypes: data.types || [] })
+      fetchCache.markFetched('llmBackendTypes')
     } catch (err) {
       logError(err, { operation: 'Load backend types' })
-      // Don't set error state for this - it's not critical
+      fetchCache.invalidate('llmBackendTypes')
     }
   },
 
@@ -96,6 +104,7 @@ export const createLlmBackendSlice: StateCreator<
     try {
       const result = await api.createLlmBackend(backend)
       // Reload backends to get the full list
+      fetchCache.invalidate('llmBackends')
       await get().loadBackends()
       set({ llmBackendLoading: false })
       return result.id

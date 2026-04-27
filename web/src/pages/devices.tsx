@@ -8,6 +8,7 @@ import { useAbortController } from "@/hooks/useAbortController"
 import { useVisiblePolling } from "@/hooks/useVisiblePolling"
 import { useIsMobile } from "@/hooks/useMobile"
 import { confirm } from "@/hooks/use-confirm"
+import { fetchCache } from "@/lib/utils/async"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination } from "@/components/shared"
@@ -94,6 +95,7 @@ export function DevicesPage() {
   const fetchTelemetryData = useStore((s) => s.fetchTelemetryData)
   const fetchTelemetrySummary = useStore((s) => s.fetchTelemetrySummary)
   const fetchDeviceCurrentState = useStore((s) => s.fetchDeviceCurrentState)
+  const updateDeviceStatus = useStore((s) => s.updateDeviceStatus)
 
   // Pagination state
   const [devicePage, setDevicePage] = useState(1)
@@ -253,19 +255,14 @@ export function DevicesPage() {
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null)
 
   // Fetch devices when component mounts
-  const hasFetchedDevices = useRef(false)
+  // Store-level TTL cache prevents redundant API calls on remount
   useEffect(() => {
-    if (!hasFetchedDevices.current) {
-      hasFetchedDevices.current = true
-      fetchDevices()
-    }
+    fetchDevices()
   }, [fetchDevices])
 
-  // Fetch device types lazily when types tab is first accessed
-  const hasFetchedTypes = useRef(false)
+  // Fetch device types when types tab is accessed
   useEffect(() => {
-    if (!hasFetchedTypes.current && activeTab === 'types') {
-      hasFetchedTypes.current = true
+    if (activeTab === 'types') {
       fetchDeviceTypes()
     }
   }, [activeTab, fetchDeviceTypes])
@@ -326,6 +323,7 @@ export function DevicesPage() {
       clearTimeout(refreshDevicesRef.current)
     }
     refreshDevicesRef.current = setTimeout(() => {
+      fetchCache.invalidate('devices')
       fetchDevices()
     }, 500) // 500ms debounce
   }, [fetchDevices])
@@ -335,6 +333,7 @@ export function DevicesPage() {
       clearTimeout(refreshDeviceTypesRef.current)
     }
     refreshDeviceTypesRef.current = setTimeout(() => {
+      fetchCache.invalidate('deviceTypes')
       fetchDeviceTypes()
     }, 300) // 300ms debounce for device types
   }, [fetchDeviceTypes])
@@ -349,32 +348,36 @@ export function DevicesPage() {
 
   // WebSocket event handler for device status changes
   const handleDeviceEvent = useCallback((event: { type: string; data: unknown }) => {
+    const data = event.data as { device_id?: string; id?: string }
+    const deviceId = data?.device_id || data?.id
     switch (event.type) {
       case 'DeviceOnline':
+        // Optimistic update for instant UI feedback
+        if (deviceId) updateDeviceStatus(deviceId, 'online')
+        break
       case 'DeviceOffline':
-        // Status change - refresh devices immediately
-        fetchDevices()
+        // Optimistic update for instant UI feedback
+        if (deviceId) updateDeviceStatus(deviceId, 'offline')
         break
       case 'DeviceRegistered':
       case 'DeviceUnregistered':
-        // Device list changed - refresh devices
+        // Device list changed - force refresh (bypass TTL cache)
         debouncedFetchDevices()
         break
       case 'DeviceTypeRegistered':
       case 'DeviceTypeUnregistered':
-        // Device type list changed - refresh device types
+        // Device type list changed - force refresh
         debouncedFetchDeviceTypes()
         break
       case 'DeviceMetric':
         // Don't refresh on every metric - too frequent
-        // Status is handled by DeviceOnline/Offline events
         break
       case 'DeviceCommandResult':
-        // Command completed - refresh devices to see updated state
+        // Command completed - force refresh to see updated state
         debouncedFetchDevices()
         break
     }
-  }, [fetchDevices, debouncedFetchDevices, debouncedFetchDeviceTypes])
+  }, [updateDeviceStatus, debouncedFetchDevices, debouncedFetchDeviceTypes])
 
   // Subscribe to device events for real-time updates
   const { isConnected: deviceEventsConnected } = useEvents({
