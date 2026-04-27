@@ -122,7 +122,7 @@ const AgentListItem = memo<AgentListItemProps>(({
       onClick={handleSelect}
       className={cn(
         "group relative px-3 py-2.5 cursor-pointer transition-colors",
-        isSelected ? "bg-accent" : "hover:bg-muted/30"
+        isSelected ? "bg-accent" : "hover:bg-[var(--muted-30)]"
       )}
     >
       {/* Selection indicator bar */}
@@ -177,7 +177,7 @@ const AgentListItem = memo<AgentListItemProps>(({
             <DropdownMenuTrigger asChild>
               <button
                 onClick={handleMenuClick}
-                className="h-8 w-8 flex items-center justify-center rounded hover:bg-muted/80 transition-colors"
+                className="h-8 w-8 flex items-center justify-center rounded hover:bg-muted transition-colors"
                 aria-label="More options"
               >
                 <MoreVertical className="h-4 w-4 text-muted-foreground" />
@@ -255,7 +255,7 @@ export function AgentListPanel({
   if (agents.length === 0) {
     return (
       <div className="text-center py-12 px-4">
-        <Bot className="h-10 w-10 mx-auto mb-3 text-muted-foreground/30" />
+        <Bot className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
         <p className="text-sm text-muted-foreground mb-4">{t('agents:noAgents')}</p>
         <Button onClick={onCreate} variant="outline" size="sm">
           创建第一个智能体

@@ -1137,7 +1137,7 @@ export function CustomLayer({
     <div className={cn(dashboardCardBase, 'flex flex-col overflow-hidden', className)}>
       {/* Header with controls */}
       {showControls && (
-        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20 shrink-0">
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-[var(--muted-20)] shrink-0">
           <div className="flex items-center gap-2">
             <Layers className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Custom Layer</span>

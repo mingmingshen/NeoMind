@@ -31,7 +31,7 @@ export function ConfigSection({
     <div
       className={cn(
         'flex items-center justify-between cursor-pointer',
-        collapsible && 'hover:bg-muted/50 -mx-2 px-2 py-1 rounded transition-colors'
+        collapsible && 'hover:bg-[var(--muted-50)] -mx-2 px-2 py-1 rounded transition-colors'
       )}
       onClick={() => collapsible && setCollapsed(!collapsed)}
     >

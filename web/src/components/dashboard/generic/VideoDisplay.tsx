@@ -675,14 +675,14 @@ export function VideoDisplay({
     return (
       <div className={cn(
         dashboardCardBase,
-        'flex flex-col items-center justify-center gap-3 bg-muted/30',
+        'flex flex-col items-center justify-center gap-3 bg-[var(--muted-30)]',
         sizeConfig.padding,
         className
       )}>
-        <AlertCircle className="h-10 w-10 text-muted-foreground/40" />
+        <AlertCircle className="h-10 w-10 text-muted-foreground" />
         <div className="text-center">
           <p className="text-muted-foreground text-sm font-medium">Video Load Error</p>
-          <p className="text-muted-foreground/50 text-xs mt-1">
+          <p className="text-muted-foreground text-xs mt-1">
             {errorMessage || 'Could not load video source'}
           </p>
         </div>

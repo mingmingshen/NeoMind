@@ -242,7 +242,7 @@ function MetricHistoryDialog({
                         return (
                           <div
                             key={i}
-                            className="flex-1 bg-primary/60 hover:bg-primary transition-colors rounded-t min-w-[2px]"
+                            className="flex-1 bg-muted hover:bg-muted transition-colors rounded-t min-w-[2px]"
                             style={{ height: `${Math.max(height, 5)}%` }}
                             title={`${new Date(data[data.length - 1 - i].timestamp * 1000).toLocaleString()}: ${val.toFixed(2)}`}
                           />
@@ -347,7 +347,7 @@ function ExtensionCapabilitiesDialog({
                   {extension.commands.map((command) => (
                     <div
                       key={command.id}
-                      className="p-3 rounded-lg border bg-muted/30 space-y-2"
+                      className="p-3 rounded-lg border bg-[var(--muted-30)] space-y-2"
                     >
                       <div className="flex items-center gap-2">
                         <Zap className="h-4 w-4 text-yellow-500" />
@@ -374,7 +374,7 @@ function ExtensionCapabilitiesDialog({
                   {extension.metrics.map((metric) => (
                     <div
                       key={metric.name}
-                      className="p-3 rounded-lg border bg-muted/20 group"
+                      className="p-3 rounded-lg border bg-[var(--muted-20)] group"
                     >
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium text-sm">{metric.display_name}</span>
@@ -446,14 +446,14 @@ export function ExtensionCard({
 
   return (
     <>
-      <Card className="group border-border/50 hover:border-primary/50 transition-all duration-200 overflow-hidden bg-card/50 backdrop-blur-sm">
+      <Card className="group border-border hover:border-border transition-all duration-200 overflow-hidden bg-card backdrop-blur-sm">
         <CardContent className="p-4">
           {/* Header */}
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-3">
               <div className={cn(
                 "relative p-2 rounded-lg transition-all",
-                isActive ? "bg-primary text-primary-foreground" : "bg-muted/80",
+                isActive ? "bg-primary text-primary-foreground" : "bg-muted",
               )}>
                 <Code2 className="h-4 w-4" />
                 {/* Status indicator dot */}
@@ -476,7 +476,7 @@ export function ExtensionCard({
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-[11px] text-muted-foreground font-mono truncate max-w-[100px]">{extension.id}</span>
                   {extension.version && (
-                    <span className="text-[10px] text-muted-foreground/70">v{extension.version}</span>
+                    <span className="text-[10px] text-muted-foreground">v{extension.version}</span>
                   )}
                 </div>
               </div>
@@ -539,7 +539,7 @@ export function ExtensionCard({
           )}
 
           {/* Action Bar */}
-          <div className="flex items-center justify-between pt-2 border-t border-border/50">
+          <div className="flex items-center justify-between pt-2 border-t border-border">
             <span className="text-[10px] text-muted-foreground">
               {isActive ? t('card.active', { defaultValue: 'Active' }) : extension.state}
             </span>

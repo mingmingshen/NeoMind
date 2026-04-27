@@ -18,7 +18,7 @@ export function AnalystInputBar({ onSend, disabled }: AnalystInputBarProps) {
   }, [text, disabled, onSend])
 
   return (
-    <div className="shrink-0 p-3 border-t border-border/50 bg-muted/20">
+    <div className="shrink-0 p-3 border-t border-border bg-[var(--muted-20)]">
       <div className="flex gap-2">
         <Textarea
           placeholder="Send a follow-up message..."

@@ -392,7 +392,7 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted/30">
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-[var(--muted-30)]">
             <FooterContent />
           </div>
         </div>

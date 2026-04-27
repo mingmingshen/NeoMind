@@ -264,7 +264,7 @@ export function RulesList({
             return (
               <div className="flex items-center gap-2">
                 <div className="flex flex-col gap-1 min-w-0 flex-1">
-                  <div className="text-xs font-mono bg-muted/60 px-2.5 py-1.5 rounded-md border border-border/50 truncate" title={condition.full}>
+                  <div className="text-xs font-mono bg-muted px-2.5 py-1.5 rounded-md border border-border truncate" title={condition.full}>
                     <span className={condition.text === '-' ? 'text-muted-foreground' : 'text-foreground'}>
                       {condition.text}
                     </span>

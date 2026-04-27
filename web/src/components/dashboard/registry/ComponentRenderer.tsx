@@ -128,7 +128,7 @@ function UnknownComponent({ type, className }: UnknownComponentProps) {
       <div className="flex items-center justify-center h-full min-h-[120px] p-4 text-center">
         <div className="text-muted-foreground">
           <p className="font-medium">Unknown Component</p>
-          <p className="text-sm text-muted-foreground/60 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Type: <code className="text-xs bg-muted px-1 py-0.5 rounded">{type}</code>
           </p>
         </div>
@@ -391,7 +391,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
   // Show error state for dynamic component load failures (only after all retries exhausted)
   if (isDynamic && loadError && attemptCount >= MAX_LOAD_RETRIES) {
     return (
-      <Card className={cn('border-destructive/50', className)}>
+      <Card className={cn('border-destructive', className)}>
         <div className="flex items-center justify-center h-full min-h-[120px] p-4 text-center">
           <div className="text-destructive">
             <p className="font-medium">Component Load Failed</p>
@@ -403,7 +403,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
                 setLoadError(null)
                 setAttemptCount(0)
               }}
-              className="mt-2 px-3 py-1 text-xs bg-destructive/10 rounded hover:bg-destructive/20 transition-colors"
+              className="mt-2 px-3 py-1 text-xs hover:bg-muted rounded hover:bg-muted transition-colors"
             >
               Retry
             </button>

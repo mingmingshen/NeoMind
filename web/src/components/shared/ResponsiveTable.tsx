@@ -88,7 +88,7 @@ export function ResponsiveTable({
         <div className="hidden md:block rounded-lg border bg-card overflow-hidden">
           <table className={cn("w-full caption-bottom text-sm", className)}>
             <thead className="[&_tr]:border-b">
-              <tr className="bg-muted/30 rounded-t-lg">
+              <tr className="bg-[var(--muted-30)] rounded-t-lg">
                 {columns.map((column) => (
                   <th
                     key={column.key}
@@ -130,7 +130,7 @@ export function ResponsiveTable({
         <div className="md:hidden space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="rounded-lg border bg-card overflow-hidden">
-              <div className="bg-muted/30 px-4 py-3 border-b">
+              <div className="bg-[var(--muted-30)] px-4 py-3 border-b">
                 <Skeleton className="h-4 w-1/3" />
               </div>
               <div className="p-4 space-y-3">
@@ -157,7 +157,7 @@ export function ResponsiveTable({
             "[&_tr]:border-b",
             stickyHeader && "sticky top-0 z-10 bg-card"
           )}>
-            <tr className="bg-muted/30 rounded-t-xl">
+            <tr className="bg-[var(--muted-30)] rounded-t-xl">
               {columns.map((column) => (
                 <th
                   key={column.key}
@@ -184,8 +184,8 @@ export function ResponsiveTable({
                   <div className="flex flex-col items-center justify-center text-center">
                     {emptyState || (
                       <>
-                        <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
-                          <div className="w-5 h-5 rounded-full border-2 border-muted-foreground/30" />
+                        <div className="w-12 h-12 rounded-full bg-[var(--muted-50)] flex items-center justify-center mb-3">
+                          <div className="w-5 h-5 rounded-full border-2 border-muted-foreground" />
                         </div>
                         <p className="text-sm text-muted-foreground">No data available</p>
                       </>
@@ -202,7 +202,7 @@ export function ResponsiveTable({
                   <tr
                     key={rowKey(rowData)}
                     className={cn(
-                      "border-b transition-colors hover:bg-muted/50",
+                      "border-b transition-colors hover:bg-[var(--muted-50)]",
                       onRowClick && 'cursor-pointer',
                       rowClass
                     )}
@@ -268,12 +268,12 @@ export function ResponsiveTable({
       {/* Mobile Card List */}
       <div className="md:hidden space-y-3">
         {data.length === 0 ? (
-          <Card className="overflow-hidden border-border/60">
+          <Card className="overflow-hidden border-border">
             <div className="p-8">
               {emptyState || (
                 <div className="flex flex-col items-center justify-center text-center">
-                  <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
-                    <div className="w-5 h-5 rounded-full border-2 border-muted-foreground/30" />
+                  <div className="w-12 h-12 rounded-full bg-[var(--muted-50)] flex items-center justify-center mb-3">
+                    <div className="w-5 h-5 rounded-full border-2 border-muted-foreground" />
                   </div>
                   <p className="text-sm text-muted-foreground">No data available</p>
                 </div>
@@ -289,14 +289,14 @@ export function ResponsiveTable({
               <Card
                 key={rowKey(rowData)}
                 className={cn(
-                  'overflow-hidden border-border/60 shadow-sm',
+                  'overflow-hidden border-border shadow-sm',
                   onRowClick && 'cursor-pointer active:scale-[0.99] transition-all',
                   rowClass
                 )}
                 onClick={() => onRowClick?.(rowData)}
               >
                 {/* Card Header - First column as title */}
-                <div className="bg-muted/30 px-4 py-3 border-b border-border/60 rounded-t-xl">
+                <div className="bg-[var(--muted-30)] px-4 py-3 border-b border-border rounded-t-xl">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       {renderCell(columns[0].key, rowData)}
@@ -382,9 +382,9 @@ export interface MobileCardProps {
 
 export function MobileCard({ title, subtitle, icon, actions, children, className, onClick }: MobileCardProps) {
   return (
-    <Card className={cn('overflow-hidden border-border/60 rounded-lg shadow-sm', onClick && 'cursor-pointer active:scale-[0.99] transition-all', className)}>
+    <Card className={cn('overflow-hidden border-border rounded-lg shadow-sm', onClick && 'cursor-pointer active:scale-[0.99] transition-all', className)}>
       {/* Card Header */}
-      <div className="bg-muted/30 px-4 py-3 border-b border-border/60 rounded-t-xl">
+      <div className="bg-[var(--muted-30)] px-4 py-3 border-b border-border rounded-t-xl">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             {icon && <div className="shrink-0">{icon}</div>}

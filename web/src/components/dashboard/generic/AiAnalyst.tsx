@@ -301,7 +301,7 @@ export function AiAnalyst({
         )}
       >
         <div className="text-center p-6">
-          <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mx-auto mb-3">
+          <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center mx-auto mb-3">
             <ScanEye className="h-6 w-6 text-primary" />
           </div>
           <p className="text-sm text-muted-foreground">
@@ -358,13 +358,13 @@ export function AiAnalyst({
       )}
     >
       {/* Header */}
-      <div className="shrink-0 px-4 py-3 border-b border-border/50">
+      <div className="shrink-0 px-4 py-3 border-b border-border">
         <div className="flex items-start gap-3">
           {/* Avatar */}
           <div
             className={cn(
               'w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
-              isStreaming ? 'bg-blue-500/20' : 'bg-primary/10',
+              isStreaming ? 'bg-blue-500/20' : 'bg-muted',
             )}
           >
             {isStreaming ? (

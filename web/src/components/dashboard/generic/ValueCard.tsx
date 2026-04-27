@@ -149,7 +149,7 @@ function ValueIcon({ icon, title, iconType = 'entity', size, className, iconColo
     <div
       className={cn(
         'flex items-center justify-center rounded-lg shrink-0',
-        'bg-primary/10 text-primary',
+        'bg-muted text-primary',
         config.iconContainer,
         className
       )}
@@ -425,7 +425,7 @@ export function ValueCard({
         {loading ? (
           <Skeleton className={cn('h-7 w-16 rounded')} />
         ) : (
-          <span className={cn(indicatorFontWeight.value, 'text-foreground/90 tracking-tight tabular-nums text-center', sizeConfig.valueText)} style={{ color: finalValueColor }}>
+          <span className={cn(indicatorFontWeight.value, 'text-foreground tracking-tight tabular-nums text-center', sizeConfig.valueText)} style={{ color: finalValueColor }}>
             {formattedValue}
           </span>
         )}

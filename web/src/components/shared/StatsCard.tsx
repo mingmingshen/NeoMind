@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 
 const statsCardVariants = cva(
-  'flex items-center gap-3 p-4 rounded-lg border bg-card/50 backdrop-blur-sm transition-all duration-200',
+  'flex items-center gap-3 p-4 rounded-lg border bg-card backdrop-blur-sm transition-all duration-200',
   {
     variants: {
       variant: {
@@ -96,7 +96,7 @@ export function StatsCard({
         </div>
         <div className="text-xs text-muted-foreground mt-1">{label}</div>
         {subtitle && (
-          <div className="text-xs text-muted-foreground/60 truncate">{subtitle}</div>
+          <div className="text-xs text-muted-foreground truncate">{subtitle}</div>
         )}
       </div>
     </div>
@@ -115,7 +115,7 @@ export interface StatsCardCompactProps {
 
 export function StatsCardCompact({ label, value, change, className }: StatsCardCompactProps) {
   return (
-    <div className={cn('flex items-center justify-between p-3 rounded-lg border bg-card/50', className)}>
+    <div className={cn('flex items-center justify-between p-3 rounded-lg border bg-card', className)}>
       <span className="text-sm text-muted-foreground">{label}</span>
       <div className="flex items-center gap-2">
         <span className="font-semibold">{value}</span>

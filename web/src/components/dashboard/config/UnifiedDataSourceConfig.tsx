@@ -839,7 +839,7 @@ export function UnifiedDataSourceConfig({
     return (
       <div className="flex flex-col h-full">
         {/* Search input inside device list */}
-        <div className="p-2 border-b bg-muted/20">
+        <div className="p-2 border-b bg-[var(--muted-20)]">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -852,9 +852,9 @@ export function UnifiedDataSourceConfig({
         </div>
 
         {/* Device list header with count */}
-        <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-muted/30 flex items-center justify-between">
+        <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)] flex items-center justify-between">
           <span>{t('dataSource.deviceList')}</span>
-          <span className="text-[10px] text-muted-foreground/60 bg-muted/50 px-1.5 py-0.5 rounded">
+          <span className="text-[10px] text-muted-foreground bg-[var(--muted-50)] px-1.5 py-0.5 rounded">
             {filteredDevices.length} {t('dataSource.count')}
           </span>
         </div>
@@ -893,21 +893,21 @@ export function UnifiedDataSourceConfig({
                   className={cn(
                     'w-full flex items-center gap-2 px-3 py-2 text-left border-b transition-all duration-150',
                     isSelected
-                      ? 'bg-primary/10 border-l-2 border-l-primary'
-                      : 'bg-transparent border-l-2 border-l-transparent hover:bg-muted/40'
+                      ? 'bg-muted border-l-2 border-l-primary'
+                      : 'bg-transparent border-l-2 border-l-transparent hover:bg-muted'
                   )}
                 >
                   <div className="flex-1 min-w-0">
                     <div className={cn(
                       'text-sm truncate',
-                      isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground/80'
+                      isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                     )}>{device.name || device.id}</div>
                     <div className="text-[10px] text-muted-foreground truncate flex items-center gap-1.5">
                       <span>{device.device_type}</span>
                       {availableCount > 0 && (
                         <>
-                          <span className="text-muted-foreground/30">•</span>
-                          <span className="text-muted-foreground/70">
+                          <span className="text-muted-foreground">•</span>
+                          <span className="text-muted-foreground">
                             {selectedCategory === 'device-metric' ? `${availableCount} ${t('dataSource.metricsCount')}` : `${availableCount} ${t('dataSource.commandsCount')}`}
                           </span>
                         </>
@@ -1088,8 +1088,8 @@ export function UnifiedDataSourceConfig({
         }
         if (hasData === false) {
           return (
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/30 border border-muted/30" title={t('dataSource.noHistoricalData')}>
-              <Circle className="h-1.5 w-1.5 fill-muted-foreground/40 text-muted-foreground/40" />
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--muted-30)] border border-muted" title={t('dataSource.noHistoricalData')}>
+              <Circle className="h-1.5 w-1.5 fill-muted-foreground text-muted-foreground" />
               <span className="text-[10px] text-muted-foreground">{t('dataSource.noData')}</span>
             </div>
           )
@@ -1099,12 +1099,12 @@ export function UnifiedDataSourceConfig({
 
       return (
         <div className="flex flex-col h-full">
-          <div className="px-3 py-2.5 border-b text-xs font-medium text-muted-foreground bg-muted/30 flex items-center justify-between">
+          <div className="px-3 py-2.5 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)] flex items-center justify-between">
             <span className="flex items-center gap-1.5">
               <Database className="h-4 w-4" />
               {t('dataSource.metricsOf', { device: selectedDevice.name || selectedDevice.id })}
             </span>
-            <span className="text-[10px] text-muted-foreground/60 bg-muted/50 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] text-muted-foreground bg-[var(--muted-50)] px-1.5 py-0.5 rounded">
               {items.length} {t('dataSource.count')}
             </span>
           </div>
@@ -1118,8 +1118,8 @@ export function UnifiedDataSourceConfig({
                   'w-full text-left transition-colors duration-150',
                   'group relative rounded-md border',
                   item.isSelected
-                    ? 'bg-primary/10 border-primary/50'
-                    : 'bg-card border-border hover:bg-accent/40 hover:border-primary/20'
+                    ? 'bg-muted border-border'
+                    : 'bg-card border-border hover:bg-accent hover:border-border'
                 )}
               >
                 <div className="flex items-center gap-2 p-2">
@@ -1143,30 +1143,30 @@ export function UnifiedDataSourceConfig({
                       <ItemBadge itemType={item.itemType} />
                       <span className={cn(
                         'text-sm truncate',
-                        item.isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground/80'
+                        item.isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                       )}>{item.propertyDisplayName}</span>
                       <div className="flex-1" />
                       {item.hasData !== null && (
                         <DataIndicator hasData={item.hasData} count={item.dataPointCount} />
                       )}
                       {item.hasData === null && checkingData && (
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/50" />
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                       )}
                     </div>
 
                     {/* Subtitle row */}
                     <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                      <code className="px-1 py-0.5 bg-muted/40 rounded text-[9px] font-mono">
+                      <code className="px-1 py-0.5 bg-muted rounded text-[9px] font-mono">
                         {item.propertyName}
                       </code>
                       {item.currentValue !== undefined && item.currentValue !== null && (
                         <>
-                          <span className="text-muted-foreground/20">·</span>
-                          <span className="text-foreground/60 truncate max-w-[120px] inline-block align-bottom overflow-hidden" title={formatValue(item.currentValue)}>{t('dataSource.current')}: {formatValue(item.currentValue)}</span>
+                          <span className="text-muted-foreground">·</span>
+                          <span className="text-foreground truncate max-w-[120px] inline-block align-bottom overflow-hidden" title={formatValue(item.currentValue)}>{t('dataSource.current')}: {formatValue(item.currentValue)}</span>
                           {item.unit && item.unit !== '-' && (
                             <>
-                              <span className="text-muted-foreground/20">·</span>
-                              <span className="text-muted-foreground/40">{item.unit}</span>
+                              <span className="text-muted-foreground">·</span>
+                              <span className="text-muted-foreground">{item.unit}</span>
                             </>
                           )}
                         </>
@@ -1206,7 +1206,7 @@ export function UnifiedDataSourceConfig({
 
       return (
         <div className="flex flex-col h-full">
-          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-muted/30">
+          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)]">
             {t('dataSource.commandsOf', { device: selectedDevice.name || selectedDevice.id })}
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -1217,9 +1217,9 @@ export function UnifiedDataSourceConfig({
                 onClick={() => handleSelectItem(item.key)}
                 className={cn(
                   'w-full flex items-center justify-between p-3 rounded-lg border text-left transition-colors',
-                  'hover:bg-accent/50',
+                  'hover:bg-accent',
                   item.isSelected
-                    ? 'border-primary bg-primary/10'
+                    ? 'border-primary bg-muted'
                     : 'border-muted'
                 )}
               >
@@ -1244,7 +1244,7 @@ export function UnifiedDataSourceConfig({
     return (
       <div className="flex flex-col h-full">
         {/* Search input inside extension list */}
-        <div className="p-2 border-b bg-muted/20">
+        <div className="p-2 border-b bg-[var(--muted-20)]">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -1257,9 +1257,9 @@ export function UnifiedDataSourceConfig({
         </div>
 
         {/* Extension list header with count */}
-        <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-muted/30 flex items-center justify-between">
+        <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)] flex items-center justify-between">
           <span>{t('extensions:extensionList') || 'Extensions'}</span>
-          <span className="text-[10px] text-muted-foreground/60 bg-muted/50 px-1.5 py-0.5 rounded">
+          <span className="text-[10px] text-muted-foreground bg-[var(--muted-50)] px-1.5 py-0.5 rounded">
             {filteredExtensions.length} {t('dataSource.count')}
           </span>
         </div>
@@ -1286,8 +1286,8 @@ export function UnifiedDataSourceConfig({
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 border-b text-left transition-colors',
                     isSelected
-                      ? 'bg-primary/10 border-primary/30'
-                      : 'hover:bg-muted/30 border-transparent'
+                      ? 'bg-muted border-border'
+                      : 'hover:bg-[var(--muted-30)] border-transparent'
                   )}
                 >
                   <Puzzle className={cn(
@@ -1297,7 +1297,7 @@ export function UnifiedDataSourceConfig({
                   <div className="flex-1 min-w-0">
                     <div className={cn(
                       'text-sm truncate',
-                      isSelected ? 'font-medium text-foreground' : 'text-foreground/80'
+                      isSelected ? 'font-medium text-foreground' : 'text-foreground'
                     )}>
                       {ext.name}
                     </div>
@@ -1342,7 +1342,7 @@ export function UnifiedDataSourceConfig({
 
       return (
         <div className="flex flex-col h-full">
-          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-muted/30">
+          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)]">
             {selectedExtension.name} · {t('dataSource.metrics') || 'Metrics'}
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -1357,9 +1357,9 @@ export function UnifiedDataSourceConfig({
                   onClick={() => handleSelectItem(itemKey)}
                   className={cn(
                     'w-full flex items-center justify-between p-3 rounded-lg border text-left transition-colors',
-                    'hover:bg-accent/50',
+                    'hover:bg-accent',
                     isSelected
-                      ? 'border-primary bg-primary/10'
+                      ? 'border-primary bg-muted'
                       : 'border-muted'
                   )}
                 >
@@ -1392,7 +1392,7 @@ export function UnifiedDataSourceConfig({
 
       return (
         <div className="flex flex-col h-full">
-          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-muted/30">
+          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)]">
             {selectedExtension.name} · {t('dataSource.commands') || 'Commands'}
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -1407,9 +1407,9 @@ export function UnifiedDataSourceConfig({
                   onClick={() => handleSelectItem(itemKey)}
                   className={cn(
                     'w-full flex items-center justify-between p-3 rounded-lg border text-left transition-colors',
-                    'hover:bg-accent/50',
+                    'hover:bg-accent',
                     isSelected
-                      ? 'border-primary bg-primary/10'
+                      ? 'border-primary bg-muted'
                       : 'border-muted'
                   )}
                 >
@@ -1461,8 +1461,8 @@ export function UnifiedDataSourceConfig({
                     className={cn(
                       'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all duration-150',
                       isSelected
-                        ? 'bg-primary/10 border-primary/50'
-                        : 'bg-card border-border hover:bg-accent/40 hover:border-primary/20'
+                        ? 'bg-muted border-border'
+                        : 'bg-card border-border hover:bg-accent hover:border-border'
                     )}
                   >
                     {/* Check icon */}
@@ -1482,7 +1482,7 @@ export function UnifiedDataSourceConfig({
                     <div className="flex-1 min-w-0">
                       <div className={cn(
                         'text-sm truncate',
-                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground/80'
+                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                       )}>
                         {device.name || device.id}
                       </div>
@@ -1519,8 +1519,8 @@ export function UnifiedDataSourceConfig({
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all duration-150',
                     isSelected
-                      ? 'bg-primary/10 border-primary/50'
-                      : 'bg-card border-border hover:bg-accent/40 hover:border-primary/20'
+                      ? 'bg-muted border-border'
+                      : 'bg-card border-border hover:bg-accent hover:border-border'
                   )}
                 >
                   {/* Check icon */}
@@ -1540,7 +1540,7 @@ export function UnifiedDataSourceConfig({
                   <div className="flex-1 min-w-0">
                     <div className={cn(
                       'text-sm truncate',
-                      isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground/80'
+                      isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                     )}>
                       {metric.name}
                     </div>
@@ -1582,8 +1582,8 @@ export function UnifiedDataSourceConfig({
                     className={cn(
                       'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all duration-150',
                       isSelected
-                        ? 'bg-primary/10 border-primary/50'
-                        : 'bg-card border-border hover:bg-accent/40 hover:border-primary/20'
+                        ? 'bg-muted border-border'
+                        : 'bg-card border-border hover:bg-accent hover:border-border'
                     )}
                   >
                     <div className={cn(
@@ -1600,24 +1600,24 @@ export function UnifiedDataSourceConfig({
                     <div className="flex-1 min-w-0">
                       <div className={cn(
                         'text-sm truncate',
-                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground/80'
+                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                       )}>
                         {source.source_display_name} · {source.field_display_name}
                       </div>
                       <div className="text-[10px] text-muted-foreground truncate flex items-center gap-1.5">
-                        <code className="px-1 py-0.5 bg-muted/40 rounded text-[9px] font-mono">
+                        <code className="px-1 py-0.5 bg-muted rounded text-[9px] font-mono">
                           {source.source_name}:{source.field}
                         </code>
                         {source.unit && source.unit !== '-' && (
                           <>
-                            <span className="text-muted-foreground/20">·</span>
-                            <span className="text-muted-foreground/40">{source.unit}</span>
+                            <span className="text-muted-foreground">·</span>
+                            <span className="text-muted-foreground">{source.unit}</span>
                           </>
                         )}
                         {source.current_value !== undefined && source.current_value !== null && (
                           <>
-                            <span className="text-muted-foreground/20">·</span>
-                            <span className="text-foreground/60">{String(source.current_value)}</span>
+                            <span className="text-muted-foreground">·</span>
+                            <span className="text-foreground">{String(source.current_value)}</span>
                           </>
                         )}
                       </div>
@@ -1655,8 +1655,8 @@ export function UnifiedDataSourceConfig({
                     className={cn(
                       'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all duration-150',
                       isSelected
-                        ? 'bg-primary/10 border-primary/50'
-                        : 'bg-card border-border hover:bg-accent/40 hover:border-primary/20'
+                        ? 'bg-muted border-border'
+                        : 'bg-card border-border hover:bg-accent hover:border-border'
                     )}
                   >
                     <div className={cn(
@@ -1673,24 +1673,24 @@ export function UnifiedDataSourceConfig({
                     <div className="flex-1 min-w-0">
                       <div className={cn(
                         'text-sm truncate',
-                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground/80'
+                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                       )}>
                         {source.source_display_name} · {source.field_display_name}
                       </div>
                       <div className="text-[10px] text-muted-foreground truncate flex items-center gap-1.5">
-                        <code className="px-1 py-0.5 bg-muted/40 rounded text-[9px] font-mono">
+                        <code className="px-1 py-0.5 bg-muted rounded text-[9px] font-mono">
                           {source.source_name}:{source.field}
                         </code>
                         {source.unit && source.unit !== '-' && (
                           <>
-                            <span className="text-muted-foreground/20">·</span>
-                            <span className="text-muted-foreground/40">{source.unit}</span>
+                            <span className="text-muted-foreground">·</span>
+                            <span className="text-muted-foreground">{source.unit}</span>
                           </>
                         )}
                         {source.current_value !== undefined && source.current_value !== null && (
                           <>
-                            <span className="text-muted-foreground/20">·</span>
-                            <span className="text-foreground/60">{String(source.current_value)}</span>
+                            <span className="text-muted-foreground">·</span>
+                            <span className="text-foreground">{String(source.current_value)}</span>
                           </>
                         )}
                       </div>
@@ -1715,7 +1715,7 @@ export function UnifiedDataSourceConfig({
       <div className={cn('flex flex-col h-full', className)}>
         {/* Selected items bar - compact single row */}
       {selectedItems.size > 0 && (
-        <div className="px-3 py-2 border-b bg-gradient-to-r from-primary/5 via-primary/5 to-muted/20 flex flex-wrap gap-2 items-center">
+        <div className="px-3 py-2 border-b bg-gradient-to-r from-primary/5 via-primary/5 to-muted flex flex-wrap gap-2 items-center">
           <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
             <Check className="h-4 w-4" />
             {t('dataSource.selectedItems', { count: selectedItems.size })}
@@ -1770,17 +1770,17 @@ export function UnifiedDataSourceConfig({
               return (
                 <div
                   key={itemKey}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-background border border-border/50 text-xs group hover:border-primary/40 transition-all max-w-[140px]"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-background border border-border text-xs group hover:border-border transition-all max-w-[140px]"
                 >
                   <TypeIcon className={cn('h-4 w-4 shrink-0', iconColor)} />
-                  <span className="max-w-[80px] truncate text-foreground/70" title={entityName}>{entityName}</span>
-                  {showSeparator && <span className="text-muted-foreground/40">·</span>}
+                  <span className="max-w-[80px] truncate text-foreground" title={entityName}>{entityName}</span>
+                  {showSeparator && <span className="text-muted-foreground">·</span>}
                   {displayLabel && <span className="truncate text-foreground" title={displayLabel}>{displayLabel}</span>}
                 </div>
               )
             })}
             {selectedItemsArray.length > 3 && (
-              <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted/50 text-xs text-muted-foreground">
+              <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-[var(--muted-50)] text-xs text-muted-foreground">
                 +{selectedItemsArray.length - 3} {t('dataSource.more')}
               </div>
             )}
@@ -1789,7 +1789,7 @@ export function UnifiedDataSourceConfig({
             variant="ghost"
             size="sm"
             onClick={handleClearSelection}
-            className="h-7 px-2 text-xs hover:bg-destructive/10 hover:text-destructive shrink-0"
+            className="h-7 px-2 text-xs hover:bg-muted hover:text-destructive shrink-0"
             title={t('dataSource.clearAllSelections')}
           >
             <X className="h-4 w-4" />
@@ -1815,7 +1815,7 @@ export function UnifiedDataSourceConfig({
                 'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors shrink-0',
                 isActive
                   ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-[var(--muted-50)]'
               )}
             >
               <Icon className="h-4 w-4" />
@@ -2200,8 +2200,8 @@ function MobileMetricsList({
             'w-full text-left transition-colors duration-150',
             'group relative rounded-lg border p-4',
             item.isSelected
-              ? 'bg-primary/10 border-primary/50'
-              : 'bg-card border-border active:bg-accent/40'
+              ? 'bg-muted border-border'
+              : 'bg-card border-border active:bg-accent'
           )}
         >
           <div className="flex items-start gap-3">
@@ -2225,7 +2225,7 @@ function MobileMetricsList({
                 <ItemBadge itemType={item.itemType} />
                 <span className={cn(
                   'text-base font-medium',
-                  item.isSelected ? 'text-foreground' : 'text-foreground/90'
+                  item.isSelected ? 'text-foreground' : 'text-foreground'
                 )}>
                   {item.propertyDisplayName}
                 </span>
@@ -2233,13 +2233,13 @@ function MobileMetricsList({
 
               {/* Subtitle */}
               <div className="space-y-1">
-                <code className="text-xs text-muted-foreground px-2 py-1 bg-muted/40 rounded-md block">
+                <code className="text-xs text-muted-foreground px-2 py-1 bg-muted rounded-md block">
                   {item.propertyName}
                 </code>
                 {item.currentValue !== undefined && item.currentValue !== null && (
                   <div className="text-sm text-muted-foreground break-all">
                     {t('dataSource.current')}: <span className="text-foreground font-medium" title={formatValue(item.currentValue)}>{formatValue(item.currentValue)}</span>
-                    {item.unit && item.unit !== '-' && <span className="ml-1 text-muted-foreground/60">{item.unit}</span>}
+                    {item.unit && item.unit !== '-' && <span className="ml-1 text-muted-foreground">{item.unit}</span>}
                   </div>
                 )}
               </div>
@@ -2253,7 +2253,7 @@ function MobileMetricsList({
                     {item.dataPointCount ?? 0}
                   </div>
                 ) : (
-                  <div className="px-2 py-1 rounded-lg bg-muted/30 border border-muted/30 text-xs text-muted-foreground">
+                  <div className="px-2 py-1 rounded-lg bg-[var(--muted-30)] border border-muted text-xs text-muted-foreground">
                     {t('dataSource.noData')}
                   </div>
                 )}
@@ -2307,8 +2307,8 @@ function MobileCommandsList({
               'w-full text-left transition-colors duration-150',
               'group relative rounded-lg border p-4',
               isSelected
-                ? 'bg-primary/10 border-primary/50'
-                : 'bg-card border-border active:bg-accent/40'
+                ? 'bg-muted border-border'
+                : 'bg-card border-border active:bg-accent'
             )}
           >
             <div className="flex items-center gap-3">
@@ -2326,7 +2326,7 @@ function MobileCommandsList({
               <div className="flex-1 min-w-0">
                 <div className={cn(
                   'text-base font-medium truncate',
-                  isSelected ? 'text-foreground' : 'text-foreground/90'
+                  isSelected ? 'text-foreground' : 'text-foreground'
                 )}>
                   {cmd.display_name || cmd.name}
                 </div>
@@ -2336,7 +2336,7 @@ function MobileCommandsList({
               </div>
               <Zap className={cn(
                 'h-5 w-5 shrink-0',
-                isSelected ? 'text-amber-500' : 'text-muted-foreground/40'
+                isSelected ? 'text-amber-500' : 'text-muted-foreground'
               )} />
             </div>
           </button>
@@ -2387,8 +2387,8 @@ function MobileExtensionMetricsList({
               'w-full text-left transition-colors duration-150',
               'group relative rounded-lg border p-4',
               isSelected
-                ? 'bg-primary/10 border-primary/50'
-                : 'bg-card border-border active:bg-accent/40'
+                ? 'bg-muted border-border'
+                : 'bg-card border-border active:bg-accent'
             )}
           >
             <div className="flex items-center gap-3">
@@ -2406,7 +2406,7 @@ function MobileExtensionMetricsList({
               <div className="flex-1 min-w-0">
                 <div className={cn(
                   'text-base font-medium truncate',
-                  isSelected ? 'text-foreground' : 'text-foreground/90'
+                  isSelected ? 'text-foreground' : 'text-foreground'
                 )}>
                   {metric.display_name || metric.name}
                 </div>
@@ -2462,8 +2462,8 @@ function MobileExtensionCommandsList({
               'w-full text-left transition-colors duration-150',
               'group relative rounded-lg border p-4',
               isSelected
-                ? 'bg-primary/10 border-primary/50'
-                : 'bg-card border-border active:bg-accent/40'
+                ? 'bg-muted border-border'
+                : 'bg-card border-border active:bg-accent'
             )}
           >
             <div className="flex items-center gap-3">
@@ -2481,7 +2481,7 @@ function MobileExtensionCommandsList({
               <div className="flex-1 min-w-0">
                 <div className={cn(
                   'text-base font-medium truncate',
-                  isSelected ? 'text-foreground' : 'text-foreground/90'
+                  isSelected ? 'text-foreground' : 'text-foreground'
                 )}>
                   {cmd.display_name || cmd.id}
                 </div>
@@ -2491,7 +2491,7 @@ function MobileExtensionCommandsList({
               </div>
               <Zap className={cn(
                 'h-5 w-5 shrink-0',
-                isSelected ? 'text-amber-500' : 'text-muted-foreground/40'
+                isSelected ? 'text-amber-500' : 'text-muted-foreground'
               )} />
             </div>
           </button>

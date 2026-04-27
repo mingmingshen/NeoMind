@@ -564,7 +564,7 @@ function SimpleSvgMap({
   return (
     <div
       ref={mapRef}
-      className="relative w-full h-full overflow-hidden bg-muted/20"
+      className="relative w-full h-full overflow-hidden bg-[var(--muted-20)]"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -638,7 +638,7 @@ function SimpleSvgMap({
       )}
 
       {/* Center point indicator */}
-      <div className="absolute top-1/2 left-1/2 w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary/30 bg-primary/10 pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-border bg-muted pointer-events-none" />
     </div>
   )
 }
@@ -1053,7 +1053,7 @@ export function MapDisplay({
       <div className={cn(dashboardCardBase, 'relative overflow-hidden flex flex-col', className)}>
         {/* Header */}
         {showControls && (
-          <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20">
+          <div className="flex items-center justify-between px-3 py-2 border-b bg-[var(--muted-20)]">
             <div className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium">Map</span>

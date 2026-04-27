@@ -348,11 +348,11 @@ export function ProgressBar({
       {/* Progress bar with gradient fill */}
       <div className="flex-1 min-h-0 flex items-center">
         {loading ? (
-          <div className={cn('w-full rounded-full bg-muted/30 overflow-hidden', barHeight)}>
+          <div className={cn('w-full rounded-full bg-[var(--muted-30)] overflow-hidden', barHeight)}>
             <Skeleton className={cn('h-full w-full rounded-full', barHeight)} />
           </div>
         ) : (
-          <div className={cn('w-full rounded-full bg-muted/30 overflow-hidden relative', barHeight)}>
+          <div className={cn('w-full rounded-full bg-[var(--muted-30)] overflow-hidden relative', barHeight)}>
             <div
               className={cn(
                 'h-full rounded-full transition-all duration-500 ease-out',

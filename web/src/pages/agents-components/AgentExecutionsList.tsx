@@ -74,7 +74,7 @@ export function AgentExecutionsList({
             />
           ) : (
             executions.map((execution, index) => (
-              <TableRow key={execution.id} className={onViewDetail ? "cursor-pointer hover:bg-muted/50" : ""}>
+              <TableRow key={execution.id} className={onViewDetail ? "cursor-pointer hover:bg-[var(--muted-50)]" : ""}>
                 <TableCell className="text-muted-foreground">{index + 1}</TableCell>
                 <TableCell className="text-sm">
                   <div className="flex items-center gap-2">

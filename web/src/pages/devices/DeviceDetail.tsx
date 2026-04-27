@@ -52,7 +52,7 @@ function renderMetricValue(
   truncate = true,
   maxLength = 50
 ): React.ReactNode {
-  if (value === null || value === undefined) return <span className="text-muted-foreground/60">-</span>
+  if (value === null || value === undefined) return <span className="text-muted-foreground">-</span>
   // Note: This is a helper function that will receive t through props when needed in i18n context
   // For now, we'll use the component's i18n context by moving this inside the component
   if (typeof value === "boolean") return <span className={value ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>{value ? "Yes" : "No"}</span>
@@ -79,7 +79,7 @@ function renderMetricValue(
   if (typeof value === "object" && value !== null) {
     if (Array.isArray(value)) {
       // Show array elements with better formatting
-      if (value.length === 0) return <span className="text-muted-foreground/60 text-xs">[]</span>
+      if (value.length === 0) return <span className="text-muted-foreground text-xs">[]</span>
       // For arrays of objects or complex types, show count and preview
       const hasObjects = value.some(v => typeof v === 'object' && v !== null)
       if (hasObjects || value.length > 5) {
@@ -87,7 +87,7 @@ function renderMetricValue(
           <span className="text-xs font-mono" title={JSON.stringify(value, null, 2)}>
             <span className="text-muted-foreground">Array[{value.length}]</span>
             {value.length > 0 && (
-              <span className="ml-1 text-muted-foreground/60">
+              <span className="ml-1 text-muted-foreground">
                 {typeof value[0] === 'object' ? '{...}' : String(value[0])}
                 {value.length > 1 && ', ...'}
               </span>
@@ -122,12 +122,12 @@ function renderMetricValue(
     const str = JSON.stringify(value, null, 2)
     if (truncate && str.length > maxLength) {
       return (
-        <span className="text-xs font-mono text-muted-foreground/60" title={str}>
+        <span className="text-xs font-mono text-muted-foreground" title={str}>
           {str.slice(0, maxLength)}...
         </span>
       )
     }
-    return <span className="text-xs font-mono text-muted-foreground/60">{str}</span>
+    return <span className="text-xs font-mono text-muted-foreground">{str}</span>
   }
   return String(value)
 }
@@ -276,7 +276,7 @@ export function DeviceDetail({
 
   return (
     <>
-      <div className="flex flex-col h-full bg-gradient-to-b from-background to-muted/20">
+      <div className="flex flex-col h-full bg-gradient-to-b from-background to-muted">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5">
           <div className="flex items-center gap-3">
@@ -288,7 +288,7 @@ export function DeviceDetail({
                 "w-12 h-12 rounded-xl flex items-center justify-center",
                 device.status === 'online'
                   ? "bg-gradient-to-br from-green-500/20 to-emerald-500/10"
-                  : "bg-gradient-to-br from-muted to-muted/50"
+                  : "bg-gradient-to-br from-muted to-muted"
               )}>
                 <Zap className={cn(
                   "h-6 w-6",
@@ -327,7 +327,7 @@ export function DeviceDetail({
           <div className="max-w-6xl mx-auto space-y-5">
 
             {/* Device Info Card */}
-            <div className="bg-gradient-to-br from-card to-muted/30 rounded-lg p-6 shadow-sm">
+            <div className="bg-gradient-to-br from-card to-muted rounded-lg p-6 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <Info className="h-5 w-5 text-muted-foreground" />
                 <h2 className="font-semibold">{t('devices:detailPage.deviceInfo')}</h2>
@@ -360,20 +360,20 @@ export function DeviceDetail({
 
             {/* Raw Data Section - for Simple Mode devices */}
             {deviceType?.mode === 'simple' && (
-              <div className="bg-gradient-to-br from-card to-muted/30 rounded-lg p-6 shadow-sm">
+              <div className="bg-gradient-to-br from-card to-muted rounded-lg p-6 shadow-sm">
                 <div className="flex items-center gap-2 mb-4">
                   <Database className="h-5 w-5 text-muted-foreground" />
                   <h2 className="font-semibold">{t('devices:detailPage.rawDataTitle')}</h2>
                   <Badge variant="outline" className="text-xs">Raw Mode</Badge>
                 </div>
-                <div className="bg-muted/50 rounded-lg p-4 overflow-x-auto">
+                <div className="bg-[var(--muted-50)] rounded-lg p-4 overflow-x-auto">
                   <pre className="text-xs font-mono text-muted-foreground break-all whitespace-pre-wrap">
                     {device?.current_values?._raw ? (
                       typeof device.current_values._raw === 'string'
                         ? device.current_values._raw
                         : JSON.stringify(device.current_values._raw, null, 2)
                     ) : (
-                      <span className="text-muted-foreground/60">{t('devices:detailPage.noData')}</span>
+                      <span className="text-muted-foreground">{t('devices:detailPage.noData')}</span>
                     )}
                   </pre>
                 </div>
@@ -420,7 +420,7 @@ export function DeviceDetail({
                           "group rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border",
                           isVirtual
                             ? "bg-gradient-to-br from-purple-500/10 to-blue-500/5 border-purple-500/20 hover:border-purple-500/40"
-                            : "bg-gradient-to-br from-primary/5 to-primary/0 border-primary/10 hover:border-primary/30"
+                            : "bg-gradient-to-br from-muted to-muted border-border hover:border-border"
                         )}
                       >
                         <div className="flex items-start justify-between">
@@ -445,9 +445,9 @@ export function DeviceDetail({
                           {isVirtual ? (
                             <Zap className="h-5 w-5 text-purple-500/60 group-hover:text-purple-500 transition-colors shrink-0 ml-2" />
                           ) : hasImage ? (
-                            <ImageIcon className="h-5 w-5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors shrink-0 ml-2" />
+                            <ImageIcon className="h-5 w-5 text-muted-foreground group-hover:text-muted-foreground transition-colors shrink-0 ml-2" />
                           ) : (
-                            <ChevronRight className="h-5 w-5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors shrink-0 ml-2" />
+                            <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-muted-foreground transition-colors shrink-0 ml-2" />
                           )}
                         </div>
                       </button>
@@ -470,14 +470,14 @@ export function DeviceDetail({
                     <button
                       key={cmd.name}
                       onClick={() => handleCommandClick(cmd)}
-                      className="group bg-gradient-to-br from-card to-muted/30 rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border border-border/50 hover:border-primary/30"
+                      className="group bg-gradient-to-br from-card to-muted rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border border-border hover:border-border"
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1 min-w-0">
                           <p className="font-medium truncate">{cmd.display_name || cmd.name}</p>
                           <p className="text-xs text-muted-foreground font-mono mt-1 truncate">{cmd.name}</p>
                         </div>
-                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                        <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center group-hover:bg-[var(--muted-50)] transition-colors">
                           <Send className="h-5 w-5 text-primary" />
                         </div>
                       </div>
@@ -524,7 +524,7 @@ export function DeviceDetail({
               {currentMetricData.length > 0 ? (
                 <Table>
                   <TableHeader>
-                    <TableRow className="hover:bg-transparent border-border/50">
+                    <TableRow className="hover:bg-transparent border-border">
                       <TableHead className="text-muted-foreground w-[180px]">{t('devices:detailPage.timeLabel')}</TableHead>
                       <TableHead className="text-muted-foreground">{t('devices:detailPage.valueLabel')}</TableHead>
                     </TableRow>
@@ -534,7 +534,7 @@ export function DeviceDetail({
                       const isComplexValue = typeof point.value === 'object' && point.value !== null
                       const isLongString = typeof point.value === 'string' && point.value.length > 100
                       return (
-                        <TableRow key={i} className="hover:bg-muted/30 border-border/50">
+                        <TableRow key={i} className="hover:bg-[var(--muted-30)] border-border">
                           <TableCell className="text-sm text-muted-foreground align-top">
                             {formatTimestamp(point.timestamp)}
                           </TableCell>
@@ -569,7 +569,7 @@ export function DeviceDetail({
                                   <span>{t('devices:detailPage.clickToViewFull')}</span>
                                   <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
                                 </summary>
-                                <div className="mt-2 p-3 bg-muted/50 rounded-lg max-h-[300px] overflow-auto">
+                                <div className="mt-2 p-3 bg-[var(--muted-50)] rounded-lg max-h-[300px] overflow-auto">
                                   <pre className="text-xs font-mono whitespace-pre-wrap break-all">
                                     {typeof point.value === 'string'
                                       ? point.value
@@ -593,7 +593,7 @@ export function DeviceDetail({
           </DialogContentBody>
           {/* Pagination Footer */}
           {totalCount > 0 && (
-            <div className="flex items-center justify-between px-6 py-3 border-t border-border/50">
+            <div className="flex items-center justify-between px-6 py-3 border-t border-border">
               <div className="text-sm text-muted-foreground">
                 {t('devices:detailPage.paginationInfo', { 
                   start: (currentPage - 1) * PAGE_SIZE + 1, 

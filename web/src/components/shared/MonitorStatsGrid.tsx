@@ -43,7 +43,7 @@ export function MonitorStatsGrid({ stats, className }: MonitorStatsGridProps) {
               </p>
             </div>
             {stat.icon && (
-              <div className="ml-2 flex-shrink-0 text-muted-foreground/70">
+              <div className="ml-2 flex-shrink-0 text-muted-foreground">
                 {stat.icon}
               </div>
             )}

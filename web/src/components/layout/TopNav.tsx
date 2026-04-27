@@ -182,8 +182,8 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                       className={cn(
                         "w-11 h-11 rounded-lg transition-all",
                         isActive
-                          ? "bg-primary/10 text-primary hover:bg-primary/15"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                          ? "bg-muted text-primary hover:bg-[var(--muted-50)]"
+                          : "text-muted-foreground hover:text-foreground hover:bg-[var(--muted-50)]"
                       )}
                     >
                       <Icon className="h-5 w-5" />
@@ -236,8 +236,8 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                           className={cn(
                             "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all active:scale-95 active:bg-muted",
                             isActive
-                              ? "bg-primary/10 text-primary"
-                              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                              ? "bg-muted text-primary"
+                              : "text-muted-foreground hover:text-foreground hover:bg-[var(--muted-50)]"
                           )}
                         >
                           <Icon className="h-5 w-5" />
@@ -268,7 +268,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                         handleLogout()
                         setMobileMenuOpen(false)
                       }}
-                      className="w-full mt-3 justify-start gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      className="w-full mt-3 justify-start gap-2 text-destructive hover:text-destructive hover:bg-muted"
                     >
                       <LogOut className="h-4 w-4" />
                       {t('logout')}
@@ -307,7 +307,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                   "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors",
                   isConnected
                     ? "bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20"
-                    : "text-destructive bg-destructive/10"
+                    : "text-destructive bg-muted"
                 )}
               >
                 {isConnected ? (
@@ -395,8 +395,8 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                       <div
                         key={alert.id}
                         className={cn(
-                          "px-3 py-1.5 border-b last:border-b-0 hover:bg-muted/50 transition-colors",
-                          isUnread && "bg-muted/30"
+                          "px-3 py-1.5 border-b last:border-b-0 hover:bg-[var(--muted-50)] transition-colors",
+                          isUnread && "bg-[var(--muted-30)]"
                         )}
                       >
                         <div className="flex items-center gap-2">

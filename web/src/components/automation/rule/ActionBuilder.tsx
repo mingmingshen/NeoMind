@@ -126,7 +126,7 @@ export function ActionBuilder({
 
         {/* Action Icon & Type */}
         <div className="flex items-center gap-2 pt-1">
-          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-primary/10 text-primary">
+          <div className="flex items-center justify-center w-8 h-8 rounded-md bg-muted text-primary">
             {getActionIcon()}
           </div>
           <Badge variant="outline">{getActionTypeLabel()}</Badge>

@@ -48,19 +48,19 @@ export function EmptyState({
   return (
     <div className={cn(
       dashboardCardBase,
-      'flex flex-col items-center justify-center gap-3 bg-muted/30 min-h-full',
+      'flex flex-col items-center justify-center gap-3 bg-[var(--muted-30)] min-h-full',
       sizeConfig.padding,
       className
     )}>
       {icon && (
-        <div className={cn('flex items-center justify-center text-muted-foreground/60', ICON_SIZE[size])}>
+        <div className={cn('flex items-center justify-center text-muted-foreground', ICON_SIZE[size])}>
           {icon}
         </div>
       )}
       <div className="text-center">
         <p className="text-muted-foreground text-sm font-medium">{message}</p>
         {subMessage && (
-          <p className="text-muted-foreground/50 text-xs mt-1">{subMessage}</p>
+          <p className="text-muted-foreground text-xs mt-1">{subMessage}</p>
         )}
         {action && <div className="mt-3">{action}</div>}
       </div>
@@ -92,14 +92,14 @@ export function ErrorState({
   return (
     <div className={cn(
       dashboardCardBase,
-      'flex flex-col items-center justify-center gap-2 bg-muted/30 min-h-full',
+      'flex flex-col items-center justify-center gap-2 bg-[var(--muted-30)] min-h-full',
       sizeConfig.padding,
       className
     )}>
       <div className="text-center">
-        <p className="text-destructive/80 text-sm font-medium">{message}</p>
+        <p className="text-destructive text-sm font-medium">{message}</p>
         {subMessage && (
-          <p className="text-muted-foreground/50 text-xs mt-1">{subMessage}</p>
+          <p className="text-muted-foreground text-xs mt-1">{subMessage}</p>
         )}
         {onRetry && (
           <Button

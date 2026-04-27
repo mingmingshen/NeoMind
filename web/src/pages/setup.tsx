@@ -380,7 +380,7 @@ export function SetupPage() {
       <div className="min-h-screen flex flex-col bg-background overflow-hidden">
         {/* Background Effects - Same as login page */}
         <div className="fixed inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
+          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
           <div className="absolute inset-0" style={{
             backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
             backgroundSize: '32px 32px'
@@ -395,7 +395,7 @@ export function SetupPage() {
             </defs>
             <rect width="100%" height="100%" fill="url(#network-grid)" />
           </svg>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 dark:bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
           <div className="absolute top-[15%] left-[10%] w-32 h-32 bg-blue-500/5 dark:bg-blue-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '0s' }} />
           <div className="absolute bottom-[20%] right-[15%] w-40 h-40 bg-purple-500/5 dark:bg-purple-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '7s', animationDelay: '1s' }} />
           <div className="absolute top-[30%] right-[20%] w-24 h-24 bg-cyan-500/5 dark:bg-cyan-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '5s', animationDelay: '2s' }} />
@@ -437,7 +437,7 @@ export function SetupPage() {
             <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-4 sm:p-8">
               {/* Welcome Icon */}
               <div className="flex justify-center mb-4 sm:mb-6">
-                <div className="flex size-12 sm:size-16 items-center justify-center rounded-full bg-primary/10 text-primary dark:bg-primary/20">
+                <div className="flex size-12 sm:size-16 items-center justify-center rounded-full bg-muted text-primary">
                   <Bot className="size-6 sm:size-8" />
                 </div>
               </div>
@@ -455,7 +455,7 @@ export function SetupPage() {
                   { icon: Shield, text: t('setup:featureSecure') },
                 ].map((feature, index) => (
                   <div key={index} className="flex items-center gap-3 text-sm">
-                    <div className="flex size-8 items-center justify-center rounded-full bg-primary/5 text-primary">
+                    <div className="flex size-8 items-center justify-center rounded-full bg-muted text-primary">
                       <feature.icon className="size-4" />
                     </div>
                     <span>{feature.text}</span>
@@ -485,12 +485,12 @@ export function SetupPage() {
       <div className="min-h-screen flex flex-col bg-background overflow-hidden">
         {/* Background - same as login */}
         <div className="fixed inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
+          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
           <div className="absolute inset-0" style={{
             backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
             backgroundSize: '32px 32px'
           }} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 dark:bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
         </div>
 
         {/* Header */}
@@ -570,7 +570,7 @@ export function SetupPage() {
                       autoComplete="username"
                       required
                       minLength={3}
-                      className="pl-9 h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30"
+                      className="pl-9 h-10 bg-[var(--bg-70)] border-border"
                     />
                   </div>
                 </div>
@@ -585,7 +585,7 @@ export function SetupPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder={t('setup:emailPlaceholder')}
                     autoComplete="email"
-                    className="h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30 mt-1.5"
+                    className="h-10 bg-[var(--bg-70)] border-border mt-1.5"
                   />
                   
                   {/* Newsletter Subscription Checkbox */}
@@ -596,7 +596,7 @@ export function SetupPage() {
                         id="subscribe"
                         checked={subscribeToNewsletter}
                         onChange={(e) => setSubscribeToNewsletter(e.target.checked)}
-                        className="h-4 w-4 rounded border-border/50 flex-shrink-0"
+                        className="h-4 w-4 rounded border-border flex-shrink-0"
                       />
                       <label htmlFor="subscribe" className="text-xs text-muted-foreground cursor-pointer leading-tight">
                         {t('setup:subscribeNewsletter')}
@@ -619,7 +619,7 @@ export function SetupPage() {
                       autoComplete="new-password"
                       required
                       minLength={8}
-                      className="pl-9 h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30"
+                      className="pl-9 h-10 bg-[var(--bg-70)] border-border"
                     />
                   </div>
                 </div>
@@ -637,7 +637,7 @@ export function SetupPage() {
                       placeholder={t('setup:confirmPasswordPlaceholder')}
                       autoComplete="new-password"
                       required
-                      className="pl-9 h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30"
+                      className="pl-9 h-10 bg-[var(--bg-70)] border-border"
                     />
                   </div>
                 </div>
@@ -678,7 +678,7 @@ export function SetupPage() {
 
                 {/* Error Message */}
                 {error && (
-                  <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 rounded-md p-3">
+                  <div className="flex items-start gap-2 text-sm text-destructive bg-muted rounded-md p-3">
                     <Shield className="h-4 w-4 mt-0.5 flex-shrink-0" />
                     <span>{error}</span>
                   </div>
@@ -729,12 +729,12 @@ export function SetupPage() {
       <div className="min-h-screen flex flex-col bg-background overflow-hidden">
         {/* Background */}
         <div className="fixed inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
+          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
           <div className="absolute inset-0" style={{
             backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
             backgroundSize: '32px 32px'
           }} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 dark:bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
         </div>
 
         {/* Header */}
@@ -811,8 +811,8 @@ export function SetupPage() {
                         className={`
                           flex flex-col items-start gap-1 p-2 rounded-lg border text-left transition-colors
                           ${selectedTimezone === tz.id
-                            ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                            : 'border-border hover:bg-muted/50'
+                            ? 'border-primary bg-muted'
+                            : 'border-border hover:bg-[var(--muted-50)]'
                           }
                         `}
                       >
@@ -826,7 +826,7 @@ export function SetupPage() {
                 </div>
 
                 {/* Current Time Preview */}
-                <div className="p-4 bg-muted/30 dark:bg-muted/10 rounded-lg">
+                <div className="p-4 bg-[var(--muted-30)] dark:bg-muted rounded-lg">
                   <div className="text-center">
                     <div className="text-xs text-muted-foreground mb-1">{t('setup:currentTimeInTimezone')}</div>
                     <div className="text-2xl font-mono font-medium">
@@ -859,12 +859,12 @@ export function SetupPage() {
       <div className="min-h-screen flex flex-col bg-background overflow-hidden">
         {/* Background */}
         <div className="fixed inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
+          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
           <div className="absolute inset-0" style={{
             backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
             backgroundSize: '32px 32px'
           }} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 dark:bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
         </div>
 
         {/* Header */}
@@ -941,8 +941,8 @@ export function SetupPage() {
                         className={`
                           flex flex-col items-start gap-1 p-3 rounded-lg border text-left transition-colors
                           ${selectedProvider === provider.id
-                            ? 'border-primary bg-primary/5 dark:bg-primary/10'
-                            : 'border-border hover:bg-muted/50'
+                            ? 'border-primary bg-muted'
+                            : 'border-border hover:bg-[var(--muted-50)]'
                           }
                         `}
                       >
@@ -963,7 +963,7 @@ export function SetupPage() {
                     onChange={(e) => setLlmModel(e.target.value)}
                     placeholder={t('setup:modelPlaceholder')}
                     required={selectedProvider !== 'llamacpp'}
-                    className="h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30 mt-1.5"
+                    className="h-10 bg-[var(--bg-70)] border-border mt-1.5"
                   />
                 </div>
 
@@ -977,7 +977,7 @@ export function SetupPage() {
                       value={llmEndpoint}
                       onChange={(e) => setLlmEndpoint(e.target.value)}
                       placeholder={selectedProvider === 'llamacpp' ? 'http://localhost:8080' : 'http://localhost:11434'}
-                      className="h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30 mt-1.5"
+                      className="h-10 bg-[var(--bg-70)] border-border mt-1.5"
                     />
                   </div>
                 )}
@@ -992,7 +992,7 @@ export function SetupPage() {
                       value={llmApiKey}
                       onChange={(e) => setLlmApiKey(e.target.value)}
                       placeholder={t('setup:apiKeyPlaceholder')}
-                      className="h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30 mt-1.5"
+                      className="h-10 bg-[var(--bg-70)] border-border mt-1.5"
                     />
                     <p className="text-xs text-muted-foreground mt-1">{t('setup:apiKeyHint')}</p>
                   </div>
@@ -1000,7 +1000,7 @@ export function SetupPage() {
 
                 {/* Error Message */}
                 {error && (
-                  <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 rounded-md p-3">
+                  <div className="flex items-start gap-2 text-sm text-destructive bg-muted rounded-md p-3">
                     <Shield className="h-4 w-4 mt-0.5 flex-shrink-0" />
                     <span>{error}</span>
                   </div>
@@ -1047,7 +1047,7 @@ export function SetupPage() {
       <div className="min-h-screen flex flex-col bg-background overflow-hidden">
         {/* Background with celebration */}
         <div className="fixed inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
+          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
           <div className="absolute inset-0" style={{
             backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
             backgroundSize: '32px 32px'
@@ -1071,7 +1071,7 @@ export function SetupPage() {
               <p className="text-muted-foreground mb-8">{t('setup:completeMessage')}</p>
 
               {/* Created Account Info */}
-              <div className="bg-muted/30 dark:bg-muted/10 rounded-lg p-4 mb-6 text-left">
+              <div className="bg-[var(--muted-30)] dark:bg-muted rounded-lg p-4 mb-6 text-left">
                 <div className="text-sm font-medium mb-2">{t('setup:accountCreated')}:</div>
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-muted-foreground" />

@@ -208,7 +208,7 @@ export function ExtensionTransformConfig({
   if (error) {
     return (
       <div className={cn("text-center py-8", className)}>
-        <Info className="h-8 w-8 mx-auto mb-2 text-destructive/50" />
+        <Info className="h-8 w-8 mx-auto mb-2 text-destructive" />
         <p className="text-sm text-destructive">{t('errorLoadingCapabilities', { error })}</p>
       </div>
     )
@@ -296,7 +296,7 @@ export function ExtensionTransformConfig({
           </div>
 
           {schema && (
-            <div className="text-xs text-muted-foreground mb-2 p-2 bg-muted/50 rounded">
+            <div className="text-xs text-muted-foreground mb-2 p-2 bg-[var(--muted-50)] rounded">
               <Info className="h-3 w-3 inline mr-1" />
               {t('parameterSchemaHint')}
             </div>

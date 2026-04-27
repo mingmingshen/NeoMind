@@ -207,23 +207,23 @@ export function WebDisplay({
     return (
       <div className={cn(dashboardCardBase, 'flex flex-col overflow-hidden', !borderless && 'border', className)}>
         {showHeader && (
-          <div className={cn('flex items-center gap-2 px-3 py-2 bg-muted/30 border-b', size === 'sm' ? 'py-1.5' : '')}>
+          <div className={cn('flex items-center gap-2 px-3 py-2 bg-[var(--muted-30)] border-b', size === 'sm' ? 'py-1.5' : '')}>
             <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
             {title && <span className="font-medium text-sm truncate flex-1">{title}</span>}
-            {sandbox && <Lock className="h-4 w-4 text-muted-foreground/60 shrink-0" />}
+            {sandbox && <Lock className="h-4 w-4 text-muted-foreground shrink-0" />}
             <div className="flex-1" />
             <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={handleRefresh}>
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
         )}
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-4 bg-muted/10">
-          <Globe className="h-12 w-12 text-muted-foreground/50" />
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-4 bg-muted">
+          <Globe className="h-12 w-12 text-muted-foreground" />
           <div className="text-center">
             <p className="text-sm text-muted-foreground mb-1">
               {title || src.replace(/^https?:\/\//, '').split('/')[0]}
             </p>
-            <p className="text-xs text-muted-foreground/70 mb-4">
+            <p className="text-xs text-muted-foreground mb-4">
               {t('webDisplay.openInWindowHint', 'Click to open in a separate window')}
             </p>
           </div>
@@ -238,10 +238,10 @@ export function WebDisplay({
 
   // Browser: Use iframe
   const headerContent = (
-    <div className={cn('flex items-center gap-2 px-3 py-2 bg-muted/30 border-b', size === 'sm' ? 'py-1.5' : '')}>
+    <div className={cn('flex items-center gap-2 px-3 py-2 bg-[var(--muted-30)] border-b', size === 'sm' ? 'py-1.5' : '')}>
       <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
       {title && <span className="font-medium text-sm truncate flex-1">{title}</span>}
-      {sandbox && <Lock className="h-4 w-4 text-muted-foreground/60 shrink-0" />}
+      {sandbox && <Lock className="h-4 w-4 text-muted-foreground shrink-0" />}
       <div className="flex-1" />
       <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={handleRefresh}>
         <RefreshCw className={cn('h-4 w-4', iframeLoading && 'animate-spin')} />
@@ -268,7 +268,7 @@ export function WebDisplay({
       {urlBarContent}
       <div className="flex-1 relative min-h-0">
         {iframeLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-muted/10 z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
             <Skeleton className="w-full h-full" />
           </div>
         )}

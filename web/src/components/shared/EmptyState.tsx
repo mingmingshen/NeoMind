@@ -75,7 +75,7 @@ export function EmptyState({ icon, title, description, action, className }: Empt
   return (
     <div className={cn('flex flex-col items-center justify-center py-12 px-4 text-center', className)}>
       {iconContent && (
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted/50 text-muted-foreground">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--muted-50)] text-muted-foreground">
           {iconContent}
         </div>
       )}
@@ -112,13 +112,13 @@ export function EmptyStateCompact({
   return (
     <div className="flex flex-col items-center justify-center py-6 text-center">
       {icon && (
-        <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-muted/50 text-muted-foreground">
+        <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--muted-50)] text-muted-foreground">
           {icon}
         </div>
       )}
       <p className="font-medium text-muted-foreground">{title}</p>
       {description && (
-        <p className="mt-1 text-sm text-muted-foreground/70">{description}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
       )}
     </div>
   )
@@ -140,7 +140,7 @@ export function EmptyStateInline({
     <tr>
       <td colSpan={colSpan} className={cn('py-8', className)}>
         <div className="flex flex-col items-center justify-center text-center">
-          <Inbox className="h-10 w-10 text-muted-foreground/50 mb-2" />
+          <Inbox className="h-10 w-10 text-muted-foreground mb-2" />
           <p className="text-sm text-muted-foreground">{title}</p>
         </div>
       </td>

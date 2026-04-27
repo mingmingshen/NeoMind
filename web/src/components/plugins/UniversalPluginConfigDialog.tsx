@@ -502,7 +502,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
       {/* Edit Mode: Show instance info */}
       {isEditing && (
-        <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+        <div className="flex items-center justify-between p-3 bg-[var(--muted-30)] rounded-lg">
           <div>
             <h3 className="font-medium">{editingInstance.name}</h3>
             <div className="flex items-center gap-2 mt-1">
@@ -573,7 +573,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
       {/* No models message for Ollama */}
       {isOllamaBackend && ollamaModels.length === 0 && !loadingModels && (
-        <div className="p-3 bg-muted/30 rounded-lg text-sm text-muted-foreground">
+        <div className="p-3 bg-[var(--muted-30)] rounded-lg text-sm text-muted-foreground">
           {t("plugins:llm.noModelsFound", { defaultValue: "No models found. Click refresh to fetch from Ollama." })}
         </div>
       )}
@@ -615,7 +615,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
               const modelName = liveModel || savedModel
 
               if (!modelName) return (
-                <div className="p-2 bg-muted/30 rounded-md text-xs text-muted-foreground">
+                <div className="p-2 bg-[var(--muted-30)] rounded-md text-xs text-muted-foreground">
                   {t("plugins:llm.clickToDetectModel", { defaultValue: "Click the check button to detect the loaded model from the server." })}
                 </div>
               )
@@ -638,7 +638,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
             {/* Server info display (live details) */}
             {llamacppServerInfo && llamacppServerInfo.status === "ok" && (
-              <div className="p-3 bg-muted/30 rounded-lg space-y-2 text-sm">
+              <div className="p-3 bg-[var(--muted-30)] rounded-lg space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <Server className="h-4 w-4 text-green-500" />
                   <span className="font-medium text-green-600">
@@ -677,7 +677,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
             {/* Error state */}
             {llamacppServerInfo && llamacppServerInfo.status !== "ok" && (
-              <div className="p-3 bg-destructive/10 rounded-lg text-sm text-destructive">
+              <div className="p-3 bg-muted rounded-lg text-sm text-destructive">
                 {t("plugins:llm.serverUnreachable", { defaultValue: "Server unreachable" })}: {llamacppServerInfo.health.status}
               </div>
             )}

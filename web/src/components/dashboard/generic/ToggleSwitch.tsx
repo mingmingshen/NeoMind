@@ -316,7 +316,7 @@ export function ToggleSwitch({
           'transition-all duration-200',
           'relative overflow-hidden group',
           !disabled && !sending && hasCommand && !editMode && 'hover:scale-[1.02] active:scale-[0.98]',
-          !disabled && !sending && hasCommand && !editMode && 'hover:shadow-md hover:bg-accent/50',
+          !disabled && !sending && hasCommand && !editMode && 'hover:shadow-md hover:bg-accent',
           (disabled || sending || !hasCommand || editMode) && 'opacity-50 cursor-not-allowed',
           editMode && 'pointer-events-none',
           className
@@ -426,7 +426,7 @@ export function ToggleSwitch({
 
               {/* No parameters */}
               {!loadingParams && parameterDefinitions.length === 0 && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--muted-50)]">
                   <Info className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">
                     {t('commandButton.noParameters')}

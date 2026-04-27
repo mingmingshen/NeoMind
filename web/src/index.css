@@ -243,6 +243,12 @@ a {
     --bg-80: oklch(1 0 0 / 80%);
     --bg-90: oklch(1 0 0 / 90%);
     --bg-95: oklch(1 0 0 / 95%);
+    --muted-20: oklch(0.96 0.003 270 / 20%);
+    --muted-30: oklch(0.96 0.003 270 / 30%);
+    --muted-50: oklch(0.96 0.003 270 / 50%);
+    --primary-hover: oklch(0.18 0.02 270 / 90%);
+    --secondary-hover: oklch(0.96 0.003 270 / 80%);
+    --destructive-hover: oklch(0.577 0.245 27 / 90%);
 
     /* Chat-specific colors - light mode */
     --msg-user-bg: oklch(0.45 0.18 260);
@@ -319,6 +325,12 @@ a {
     --bg-80: oklch(0.13 0.008 270 / 80%);
     --bg-90: oklch(0.13 0.008 270 / 90%);
     --bg-95: oklch(0.13 0.008 270 / 95%);
+    --muted-20: oklch(0.20 0.008 270 / 20%);
+    --muted-30: oklch(0.20 0.008 270 / 30%);
+    --muted-50: oklch(0.20 0.008 270 / 50%);
+    --primary-hover: oklch(0.95 0.005 270 / 90%);
+    --secondary-hover: oklch(0.20 0.008 270 / 80%);
+    --destructive-hover: oklch(0.577 0.245 27 / 90%);
 
     --chart-1: oklch(0.65 0.18 300);
     --chart-2: oklch(0.65 0.17 155);

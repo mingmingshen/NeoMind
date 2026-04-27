@@ -226,7 +226,7 @@ export const ChatInput = memo(function ChatInput({
   const canSend = (input.trim() || attachedImages.length > 0) && !isStreaming
 
   return (
-    <div className="bg-background sm:static fixed bottom-0 left-0 right-0 z-40 px-2.5 sm:px-4 py-3 sm:py-3 pb-8 sm:pb-4 safe-bottom border-t border-border/30 sm:border-0"
+    <div className="bg-background sm:static fixed bottom-0 left-0 right-0 z-40 px-2.5 sm:px-4 py-3 sm:py-3 pb-8 sm:pb-4 safe-bottom border-t border-border sm:border-0"
       style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
       <div className="max-w-3xl mx-auto">
         {/* Connection status - show on mobile when not connected */}
@@ -320,7 +320,7 @@ export const ChatInput = memo(function ChatInput({
               onClick={handleCancel}
               className={cn(
                 "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                "bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                "bg-destructive hover:bg-[var(--destructive-hover)] text-destructive-foreground"
               )}
               title="Cancel request"
             >
@@ -333,7 +333,7 @@ export const ChatInput = memo(function ChatInput({
               disabled={!canSend}
               className={cn(
                 "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                "bg-foreground hover:bg-foreground/90 text-background"
+                "bg-foreground hover:bg-foreground text-background"
               )}
             >
               <Send className="h-4 w-4 sm:h-5 sm:w-5" />

@@ -353,9 +353,9 @@ export function MarketplaceDialog({
               <Card
                 key={ext.id}
                 className={cn(
-                  "p-4 hover:bg-accent/50 transition-colors overflow-hidden",
+                  "p-4 hover:bg-accent transition-colors overflow-hidden",
                   !installed && "cursor-pointer",
-                  installed && "border-primary/50"
+                  installed && "border-border"
                 )}
                 onClick={() => !installed && loadExtensionDetails(ext.id)}
               >
@@ -707,7 +707,7 @@ function ExtensionDetailView({
 
         {/* Requirements */}
         {(extension.requirements.network || extension.requirements.api_keys.length > 0) && (
-          <div className="bg-muted/50 rounded-lg p-4">
+          <div className="bg-[var(--muted-50)] rounded-lg p-4">
             <h3 className="font-semibold mb-2 flex items-center gap-2">
               <AlertCircle className="h-4 w-4" />
               {t("extensions:market.requirements", "Requirements")}

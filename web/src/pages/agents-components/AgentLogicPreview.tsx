@@ -224,7 +224,7 @@ function DataInputCard({ resources }: { resources: SelectedResource[] }) {
 
   if (resources.length === 0) {
     return (
-      <div className="bg-muted/50 rounded-lg p-4 border border-dashed border-muted-foreground/30">
+      <div className="bg-[var(--muted-50)] rounded-lg p-4 border border-dashed border-border">
         <div className="flex items-center justify-center gap-2 text-muted-foreground">
           <Target className="h-4 w-4" />
           <span className="text-sm">{t('preview.noResources')}</span>
@@ -263,7 +263,7 @@ function DataInputCard({ resources }: { resources: SelectedResource[] }) {
               {t('preview.dataInput.devices')} ({deviceResources.length})
             </div>
             {deviceResources.map(r => (
-              <div key={r.id} className="bg-muted/50 rounded-lg p-2">
+              <div key={r.id} className="bg-[var(--muted-50)] rounded-lg p-2">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-medium">{r.name}</span>
                   <Badge variant="outline" className="text-xs h-5 px-1">
@@ -291,7 +291,7 @@ function DataInputCard({ resources }: { resources: SelectedResource[] }) {
               {t('preview.dataInput.extensions')} ({extResources.length})
             </div>
             {extResources.map(r => (
-              <div key={r.id} className="bg-muted/50 rounded-lg p-2">
+              <div key={r.id} className="bg-[var(--muted-50)] rounded-lg p-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium">{r.name}</span>
                   <Badge variant="outline" className="text-xs h-5 px-1">
@@ -352,7 +352,7 @@ function ProcessingCard({ intent, prompt }: { intent: ParsedIntent; prompt: stri
 
         {/* User prompt preview */}
         {prompt && (
-          <div className="mt-2 p-2 bg-muted/50 rounded-lg">
+          <div className="mt-2 p-2 bg-[var(--muted-50)] rounded-lg">
             <p className="text-xs text-muted-foreground line-clamp-3 italic">
               "{prompt.length > 100 ? prompt.slice(0, 100) + '...' : prompt}"
             </p>
@@ -411,7 +411,7 @@ function ActionsCard({ resources }: { resources: SelectedResource[] }) {
       ) : (
         <div className="space-y-1.5">
           {allCommands.slice(0, 5).map((cmd, i) => (
-            <div key={i} className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+            <div key={i} className="flex items-center gap-2 bg-[var(--muted-50)] rounded px-2 py-1">
               {cmd.type === 'device' ? (
                 <Target className="h-4 w-4 text-orange-500" />
               ) : (
@@ -519,7 +519,7 @@ export function AgentLogicPreview({ props }: { props: AgentLogicPreviewProps }) 
   const intent = useMemo(() => parseIntent(props.userPrompt), [props.userPrompt])
 
   return (
-    <div className="h-full flex flex-col bg-muted/30 rounded-lg p-4">
+    <div className="h-full flex flex-col bg-[var(--muted-30)] rounded-lg p-4">
       {/* Header */}
       <div className="flex items-center gap-2 mb-4 pb-3 border-b">
         <Sparkles className="h-5 w-5 text-primary" />

@@ -49,7 +49,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
               <span className="text-[10px] text-muted-foreground">{formatTime(message.timestamp)}</span>
             </div>
             <div
-              className="mt-1 rounded-lg overflow-hidden border border-border/50 bg-muted/30 cursor-pointer max-w-[240px]"
+              className="mt-1 rounded-lg overflow-hidden border border-border bg-[var(--muted-30)] cursor-pointer max-w-[240px]"
               onClick={() => setFullscreenImage(message.content)}
             >
               <img
@@ -98,7 +98,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
                   {message.images!.map((img, i) => (
                     <div
                       key={i}
-                      className="rounded overflow-hidden border border-border/30 cursor-pointer max-w-[120px]"
+                      className="rounded overflow-hidden border border-border cursor-pointer max-w-[120px]"
                       onClick={() => setFullscreenImage(img)}
                     >
                       <img
@@ -112,11 +112,11 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
               )}
               {/* Text data lines */}
               {lines.map((line, i) => (
-                <p key={i} className="text-xs text-foreground/80 font-mono leading-relaxed break-all">
+                <p key={i} className="text-xs text-foreground font-mono leading-relaxed break-all">
                   {line.includes(':')
                     ? <>
-                        <span className="text-foreground/50">{line.split(':').slice(0, -1).join(':')}:</span>
-                        <span className="text-foreground/90">{line.split(':').slice(-1)[0]}</span>
+                        <span className="text-foreground">{line.split(':').slice(0, -1).join(':')}:</span>
+                        <span className="text-foreground">{line.split(':').slice(-1)[0]}</span>
                       </>
                     : line
                   }
@@ -172,7 +172,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
                 <span className="text-xs text-muted-foreground">Waiting for response...</span>
               </div>
             ) : (
-              <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
+              <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
                 {displayContent}
               </p>
             )}
@@ -195,7 +195,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
             </span>
           </div>
           <div className="mt-1 rounded-lg px-3 py-2 bg-purple-500/10 border border-purple-500/20 max-w-[260px]">
-            <p className="text-xs text-foreground/90 leading-relaxed">{message.content}</p>
+            <p className="text-xs text-foreground leading-relaxed">{message.content}</p>
           </div>
         </div>
       </div>

@@ -30,7 +30,7 @@ export function ExecutionPlanPanel({ plan, stepStates }: ExecutionPlanPanelProps
   return (
     <div className="my-2 border border-border rounded-lg overflow-hidden">
       <button
-        className="w-full flex items-center justify-between px-3 py-2 bg-muted/50 text-sm hover:bg-muted/70 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 bg-[var(--muted-50)] text-sm hover:bg-muted transition-colors"
         onClick={() => setCollapsed(!collapsed)}
       >
         <span className="font-medium">

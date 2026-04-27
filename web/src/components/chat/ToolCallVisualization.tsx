@@ -108,11 +108,11 @@ export function ToolProcessBlock({
   const allComplete = completedCount === toolCalls.length && !isStreaming
 
   return (
-    <div className="mb-4 rounded-lg bg-muted/30 overflow-hidden">
+    <div className="mb-4 rounded-lg bg-[var(--muted-30)] overflow-hidden">
       {/* Summary header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-muted/30 transition-colors"
+        className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-[var(--muted-30)] transition-colors"
       >
         <div className={cn(
           "h-4 w-4 rounded flex items-center justify-center shrink-0",
@@ -128,7 +128,7 @@ export function ToolProcessBlock({
             <Wrench className="h-2.5 w-2.5" />
           )}
         </div>
-        <span className="text-[13px] font-medium text-foreground/80">
+        <span className="text-[13px] font-medium text-foreground">
           {isStreaming
             ? `${completedCount}/${toolCalls.length} ${t("toolCall.status.running")}`
             : `${toolCalls.length} ${t("toolCall.title")} · ${steps.length} ${t("toolCall.rounds")}`
@@ -143,7 +143,7 @@ export function ToolProcessBlock({
 
       {/* Steps */}
       {isExpanded && (
-        <div className="border-t border-border/15">
+        <div className="border-t border-border">
           {steps.map((step, idx) => {
             const calls = toolGroups.get(step) ?? []
             const isLastStep = idx === steps.length - 1
@@ -152,7 +152,7 @@ export function ToolProcessBlock({
 
             return (
               <div key={step} className={cn(
-                idx > 0 && "border-t border-border/15"
+                idx > 0 && "border-t border-border"
               )}>
                 {/* Round content (intermediate results) */}
                 {roundContent && (
@@ -182,10 +182,10 @@ function RoundContent({ content }: { content: string }) {
   if (!content || content.trim().length === 0) return null
 
   return (
-    <div className="border-b border-border/15">
+    <div className="border-b border-border">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/30 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--muted-30)] transition-colors"
       >
         <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
         {!isExpanded && (
@@ -204,7 +204,7 @@ function RoundContent({ content }: { content: string }) {
       </button>
       {isExpanded && (
         <div className="px-3 pb-2">
-          <div className="text-[13px] font-mono text-muted-foreground whitespace-pre-wrap break-words bg-muted/30 rounded p-2 leading-relaxed">
+          <div className="text-[13px] font-mono text-muted-foreground whitespace-pre-wrap break-words bg-[var(--muted-30)] rounded p-2 leading-relaxed">
             {content}
           </div>
         </div>
@@ -240,7 +240,7 @@ function ToolCallItem({
   }
 
   return (
-    <div className="border-t border-border/15 first:border-t-0">
+    <div className="border-t border-border first:border-t-0">
       <div className="flex items-center gap-2.5 px-3 py-1.5">
         <div className={cn(
           "h-4 w-4 rounded flex items-center justify-center shrink-0",
@@ -267,7 +267,7 @@ function ToolCallItem({
         </span>
         <div className="flex-1" />
         {hasDetails && (
-          <button onClick={() => setIsExpanded(!isExpanded)} className="p-0.5 rounded hover:bg-muted/50 text-muted-foreground">
+          <button onClick={() => setIsExpanded(!isExpanded)} className="p-0.5 rounded hover:bg-[var(--muted-50)] text-muted-foreground">
             <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
           </button>
         )}
@@ -275,7 +275,7 @@ function ToolCallItem({
       {isExpanded && hasDetails && (
         <div className="px-3 pb-2 space-y-1.5">
           {hasArguments && (
-            <div className="rounded-lg bg-muted/50 p-1.5">
+            <div className="rounded-lg bg-[var(--muted-50)] p-1.5">
               <div className="text-[11px] text-muted-foreground mb-0.5 flex items-center gap-1">
                 <Code className="h-4 w-4" />{t("toolCall.arguments")}
               </div>
@@ -285,7 +285,7 @@ function ToolCallItem({
             </div>
           )}
           {hasResult && (
-            <div className="rounded-lg bg-muted/50 p-1.5">
+            <div className="rounded-lg bg-[var(--muted-50)] p-1.5">
               <div className="text-[11px] text-muted-foreground mb-0.5 flex items-center gap-1">
                 <CheckCircle2 className="h-4 w-4" />{t("toolCall.result")}
               </div>

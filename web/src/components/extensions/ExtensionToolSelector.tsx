@@ -183,7 +183,7 @@ export function ExtensionToolSelector({
   if (error) {
     return (
       <div className={cn("text-center py-8", className)}>
-        <Info className="h-8 w-8 mx-auto mb-2 text-destructive/50" />
+        <Info className="h-8 w-8 mx-auto mb-2 text-destructive" />
         <p className="text-sm text-destructive">{t('errorLoadingCapabilities', { error })}</p>
         <Button
           variant="outline"
@@ -203,7 +203,7 @@ export function ExtensionToolSelector({
   if (extensionIds.length === 0) {
     return (
       <div className={cn("text-center py-8 border-2 border-dashed rounded-lg", className)}>
-        <Puzzle className="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
+        <Puzzle className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">
           {searchQuery ? t('noToolsFound') : t('noExtensionTools')}
         </p>
@@ -257,7 +257,7 @@ export function ExtensionToolSelector({
               <button
                 type="button"
                 onClick={() => toggleExpanded(extensionId)}
-                className="w-full px-3 py-2.5 bg-muted/30 flex items-center justify-between hover:bg-muted/50 transition-colors"
+                className="w-full px-3 py-2.5 bg-[var(--muted-30)] flex items-center justify-between hover:bg-[var(--muted-50)] transition-colors"
               >
                 <div className="flex items-center gap-2">
                   <div className={cn(

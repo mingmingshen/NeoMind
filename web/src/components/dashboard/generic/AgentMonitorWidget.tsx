@@ -384,7 +384,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                         {images.map((img, idx) => (
                           <div
                             key={idx}
-                            className="relative group rounded-lg overflow-hidden border border-border/50 bg-muted/30 cursor-pointer aspect-video"
+                            className="relative group rounded-lg overflow-hidden border border-border bg-[var(--muted-30)] cursor-pointer aspect-video"
                             onClick={() => setFullscreenImage(img.image)}
                           >
                             <img
@@ -426,7 +426,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                           <Target className="h-4 w-4" />
                           Analysis
                         </div>
-                        <p className="text-sm bg-muted/50 p-3 rounded-lg">{decisionProcess.situation_analysis}</p>
+                        <p className="text-sm bg-[var(--muted-50)] p-3 rounded-lg">{decisionProcess.situation_analysis}</p>
                       </div>
                     )}
 
@@ -545,12 +545,12 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
       className={cn(
         "w-full text-left group relative rounded-lg border transition-all duration-200",
         "hover:shadow-md hover:border-border",
-        isLatest ? "border-primary/30 bg-primary/5" : "border-border/50 bg-[var(--bg-50)]",
+        isLatest ? "border-border bg-muted" : "border-border bg-[var(--bg-50)]",
         isRunning && "border-blue-500/50 bg-blue-500/5"
       )}
     >
       {/* Header row */}
-      <div className="px-3 py-2 border-b border-border/30">
+      <div className="px-3 py-2 border-b border-border">
         <div className="flex flex-wrap items-center gap-1.5">
           {execution.status === 'Running' ? (
             <Loader2 className="h-4 w-4 text-blue-500 shrink-0 animate-spin" />
@@ -593,11 +593,11 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
                   key={idx}
                   src={img.image}
                   alt={img.source}
-                  className="h-10 w-10 object-cover rounded border border-border/50"
+                  className="h-10 w-10 object-cover rounded border border-border"
                 />
               ))}
               {images.length > 4 && (
-                <div className="h-10 w-10 rounded border border-border/50 bg-muted/50 flex items-center justify-center">
+                <div className="h-10 w-10 rounded border border-border bg-[var(--muted-50)] flex items-center justify-center">
                   <span className="text-[9px] text-muted-foreground">+{images.length - 4}</span>
                 </div>
               )}
@@ -625,7 +625,7 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
       {/* Conclusion preview */}
       {dp?.conclusion && (
         <div className="px-3 py-2">
-          <p className="text-[11px] text-foreground/80 line-clamp-2">{dp.conclusion}</p>
+          <p className="text-[11px] text-foreground line-clamp-2">{dp.conclusion}</p>
         </div>
       )}
 
@@ -900,12 +900,12 @@ export function AgentMonitorWidget({
         className
       )}>
         {/* Header: Agent Info */}
-        <div className="shrink-0 px-4 py-3 border-b border-border/50">
+        <div className="shrink-0 px-4 py-3 border-b border-border">
           <div className="flex items-start gap-3">
             {/* Avatar */}
             <div className={cn(
               "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-              currentlyExecuting ? "bg-blue-500/20" : "bg-primary/10"
+              currentlyExecuting ? "bg-blue-500/20" : "bg-muted"
             )}>
               {currentlyExecuting ? (
                 <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
@@ -963,12 +963,12 @@ export function AgentMonitorWidget({
 
           {/* User Prompt */}
           {promptText && (
-            <div className="mt-3 p-2.5 rounded-lg bg-muted/30 border border-border/50">
+            <div className="mt-3 p-2.5 rounded-lg bg-[var(--muted-30)] border border-border">
               <div className="flex items-center gap-1.5 mb-1">
                 <Target className="h-4 w-4 text-primary" />
                 <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Task Prompt</span>
               </div>
-              <p className="text-xs text-foreground/80 line-clamp-2">{promptText}</p>
+              <p className="text-xs text-foreground line-clamp-2">{promptText}</p>
             </div>
           )}
         </div>
@@ -1097,7 +1097,7 @@ export function AgentMonitorWidget({
         </div>
 
         {/* Footer: User Input */}
-        <div className="shrink-0 p-3 border-t border-border/50 bg-muted/20">
+        <div className="shrink-0 p-3 border-t border-border bg-[var(--muted-20)]">
           <div className="flex gap-2">
             <Textarea
               placeholder="Add task hints or context..."

@@ -102,13 +102,13 @@ function ComponentItem({ meta, onAdd, t }: ComponentItemProps) {
       onTouchStart={() => {}}
       className={cn(
         'w-full flex items-center gap-3 p-3 rounded-lg',
-        'bg-card/50 hover:bg-accent/50',
-        'border border-transparent hover:border-border/50',
+        'bg-card hover:bg-accent',
+        'border border-transparent hover:border-border',
         'transition-all duration-200',
         'text-left'
       )}
     >
-      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+      <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
         <Icon className="w-5 h-5 text-primary" />
       </div>
 
@@ -212,7 +212,7 @@ export function ComponentLibrary({ onAddComponent, onClose, className }: Compone
           {groupedComponents.length === 0 && (
             <div className="text-center py-8">
               <p className="text-sm text-muted-foreground">{t('componentLibrary.noResults')}</p>
-              <p className="text-xs text-muted-foreground/60 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {t('componentLibrary.noResultsHint')}
               </p>
             </div>

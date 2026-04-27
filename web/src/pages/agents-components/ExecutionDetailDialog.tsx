@@ -286,7 +286,7 @@ export function ExecutionDetailDialog({
     return (
       <div className="space-y-3">
         {/* Status Bar */}
-        <div className="flex items-center justify-between py-2 px-3 bg-muted/30 rounded-lg">
+        <div className="flex items-center justify-between py-2 px-3 bg-[var(--muted-30)] rounded-lg">
           <div className="flex items-center gap-2">
             {getStatusIcon(execution.status)}
             <span className="text-xs font-medium">{t(`agents:executionStatus.${execution.status.toLowerCase()}`)}</span>
@@ -301,7 +301,7 @@ export function ExecutionDetailDialog({
         </div>
 
         {execution.error && (
-          <Card className="p-2 border-destructive/50 bg-destructive/5">
+          <Card className="p-2 border-destructive bg-muted">
             <div className="flex items-start gap-1.5 text-destructive">
               <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
               <div className="text-xs break-words">{execution.error}</div>
@@ -399,7 +399,7 @@ export function ExecutionDetailDialog({
                   {execution.decision_process.reasoning_steps.map((step, idx, arr) => (
                     <div key={idx} className="flex gap-2">
                       <div className="flex flex-col items-center">
-                        <div className="w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] flex items-center justify-center shrink-0">
+                        <div className="w-5 h-5 rounded-full bg-muted text-primary text-[10px] flex items-center justify-center shrink-0">
                           {step.step_number}
                         </div>
                         {idx < arr.length - 1 && (
@@ -443,7 +443,7 @@ export function ExecutionDetailDialog({
             )}
 
             {/* Conclusion */}
-            <Card className="p-3 bg-primary/5 border-primary/20">
+            <Card className="p-3 bg-muted border-border">
               <div className="text-xs font-semibold text-primary mb-2">{t('agents:execution.conclusionLabel', { defaultValue: 'Conclusion' })}</div>
               <MarkdownMessage content={execution.decision_process.conclusion} />
             </Card>
@@ -464,7 +464,7 @@ export function ExecutionDetailDialog({
                   title={t('agents:memory.llmResponse', 'LLM Response')}
                   collapsible
                 >
-                  <pre className="text-xs whitespace-pre-wrap font-mono bg-muted/50 p-3 rounded-lg border max-h-60 overflow-auto break-words leading-relaxed">
+                  <pre className="text-xs whitespace-pre-wrap font-mono bg-[var(--muted-50)] p-3 rounded-lg border max-h-60 overflow-auto break-words leading-relaxed">
                     {summary}
                   </pre>
                 </FormSection>
@@ -595,7 +595,7 @@ export function ExecutionDetailDialog({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted/30">
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-[var(--muted-30)]">
             <Button size="sm" onClick={handleClose}>
               {t('common:close')}
             </Button>

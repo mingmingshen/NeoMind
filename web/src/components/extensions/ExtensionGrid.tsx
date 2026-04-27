@@ -197,7 +197,7 @@ export function ExtensionGrid({
                   "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
                   isSelected
                     ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-muted/50 hover:bg-muted text-muted-foreground"
+                    : "bg-[var(--muted-50)] hover:bg-muted text-muted-foreground"
                 )}
               >
                 {option.icon}

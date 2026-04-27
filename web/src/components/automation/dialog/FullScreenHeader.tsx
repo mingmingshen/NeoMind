@@ -30,7 +30,7 @@ export function FullScreenHeader({
   title,
   subtitle,
   icon,
-  iconBg = 'bg-primary/10',
+  iconBg = 'bg-muted',
   onClose,
   onSave,
   onTest,

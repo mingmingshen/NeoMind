@@ -267,7 +267,7 @@ export function LEDIndicator({
       <div className={cn(
         'flex items-center justify-center shrink-0 rounded-full',
         dashboardComponentSize[size].iconContainer,
-        !containerBgColor && (isActive ? stateCfg.color.bg : 'bg-muted/30'),
+        !containerBgColor && (isActive ? stateCfg.color.bg : 'bg-[var(--muted-30)]'),
         animationClassName
       )}
       style={{

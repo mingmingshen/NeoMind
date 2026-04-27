@@ -810,8 +810,8 @@ function DataDefinitionStep({
               className={cn(
                 "flex-1 max-w-xs p-4 rounded-lg border-2 transition-all text-left",
                 !isRawMode
-                  ? "border-primary bg-primary/5"
-                  : "border-muted hover:border-muted-foreground/30"
+                  ? "border-primary bg-muted"
+                  : "border-muted hover:border-border"
               )}
             >
               <div className="flex items-center gap-3">
@@ -835,8 +835,8 @@ function DataDefinitionStep({
               className={cn(
                 "flex-1 max-w-xs p-4 rounded-lg border-2 transition-all text-left",
                 isRawMode
-                  ? "border-primary bg-primary/5"
-                  : "border-muted hover:border-muted-foreground/30"
+                  ? "border-primary bg-muted"
+                  : "border-muted hover:border-border"
               )}
             >
               <div className="flex items-center gap-3">
@@ -906,7 +906,7 @@ function DataDefinitionStep({
             </div>
 
             {(!data.metrics || data.metrics.length === 0) ? (
-              <div className="flex items-center justify-center border-2 border-dashed rounded-lg bg-muted/20 py-12">
+              <div className="flex items-center justify-center border-2 border-dashed rounded-lg bg-[var(--muted-20)] py-12">
                 <div className="text-center">
                   <FileText className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">No metrics defined</p>
@@ -935,7 +935,7 @@ function DataDefinitionStep({
       {/* Raw Data Mode */}
       {isRawMode && (
         <div className="max-w-2xl mx-auto space-y-4">
-          <div className="rounded-lg border bg-muted/30 p-6 text-center">
+          <div className="rounded-lg border bg-[var(--muted-30)] p-6 text-center">
             <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
               <Database className="h-6 w-6 text-muted-foreground" />
             </div>
@@ -974,7 +974,7 @@ function DataDefinitionStep({
                 {importError}
               </p>
             )}
-            <div className="p-3 bg-muted/50 rounded text-xs">
+            <div className="p-3 bg-[var(--muted-50)] rounded text-xs">
               <p className="font-medium mb-1">{t('devices:metricEditor.exampleJson')}</p>
               <pre className="text-muted-foreground">{`{
   "sensor": {
@@ -1191,8 +1191,8 @@ function CommandsStep({
             </div>
 
             {(!data.commands || data.commands.length === 0) ? (
-              <div className="text-center py-12 border-2 border-dashed rounded-lg bg-muted/20">
-                <FileText className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+              <div className="text-center py-12 border-2 border-dashed rounded-lg bg-[var(--muted-20)]">
+                <FileText className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
                 <p className="text-sm text-muted-foreground">No commands defined</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   {t('devices:commandsStep.orImportFromJson', 'Add commands manually or import from JSON')}
@@ -1322,7 +1322,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
             ) : (
               <div className="space-y-3">
                 {data.metrics.map((metric, i) => (
-                  <div key={i} className="p-3 bg-muted/50 rounded-lg">
+                  <div key={i} className="p-3 bg-[var(--muted-50)] rounded-lg">
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="font-mono text-sm">{metric.name}</span>
@@ -1353,7 +1353,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
             ) : (
               <div className="space-y-2">
                 {data.commands.map((cmd, i) => (
-                  <div key={i} className="text-sm p-2 bg-muted/50 rounded flex items-center justify-between">
+                  <div key={i} className="text-sm p-2 bg-[var(--muted-50)] rounded flex items-center justify-between">
                     <div>
                       <span className="font-mono">{cmd.name}</span>
                       <span className="text-muted-foreground mx-2">•</span>
@@ -1384,7 +1384,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
             {validationResult && (
               <div className={cn(
                 "p-3 rounded-lg text-sm",
-                validationResult.valid ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400" : "bg-destructive/10 text-destructive"
+                validationResult.valid ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400" : "bg-muted text-destructive"
               )}>
                 <div className="flex items-center gap-2 font-medium">
                   {validationResult.valid ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
@@ -1825,7 +1825,7 @@ function CommandEditorCompact({
             </div>
 
             {previewMode === 'visual' ? (
-              <div className="p-3 bg-muted/30 rounded-lg border">
+              <div className="p-3 bg-[var(--muted-30)] rounded-lg border">
                 <div className="font-mono text-xs">
                   {'{'}
                   {[
@@ -1907,7 +1907,7 @@ function CommandEditorCompact({
             </div>
 
             {(!command.parameters || command.parameters.length === 0) ? (
-              <div className="text-xs text-muted-foreground italic p-3 bg-muted/30 rounded text-center">
+              <div className="text-xs text-muted-foreground italic p-3 bg-[var(--muted-30)] rounded text-center">
                 {t('devices:commandEditor.noParams')}
               </div>
             ) : (
@@ -2031,7 +2031,7 @@ function CommandEditorCompact({
             </Button>
 
             {showAdvanced && (
-              <div className="p-3 bg-muted/30 rounded-lg space-y-2">
+              <div className="p-3 bg-[var(--muted-30)] rounded-lg space-y-2">
                 <p className="text-xs text-muted-foreground">
                   {t('devices:commandEditor.fixedValuesDesc')}
                 </p>
@@ -2367,7 +2367,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
               ) : (
                 <div className="space-y-2">
                   {deviceType.metrics.map((metric, i) => (
-                    <div key={i} className="p-3 bg-muted/50 rounded-lg">
+                    <div key={i} className="p-3 bg-[var(--muted-50)] rounded-lg">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm">{metric.name}</span>
@@ -2443,7 +2443,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
               ) : (
                 <div className="space-y-2">
                   {deviceType.commands.map((cmd, i) => (
-                    <div key={i} className="p-3 bg-muted/50 rounded-lg">
+                    <div key={i} className="p-3 bg-[var(--muted-50)] rounded-lg">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm">{cmd.name}</span>
@@ -2718,7 +2718,7 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
                     className={cn(
                       "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
                       selectedIds.has(dt.device_type)
-                        ? "bg-primary/10 border-primary"
+                        ? "bg-muted border-primary"
                         : "hover:bg-accent"
                     )}
                     onClick={() => toggleSelection(dt.device_type)}

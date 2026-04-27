@@ -230,9 +230,9 @@ export const dashboardCardBase = [
   // Layout
   'flex flex-col h-full w-full overflow-hidden',
   // Background & border
-  'bg-card/50 backdrop-blur',
+  'bg-card backdrop-blur',
   // Border & shadow
-  'border border-border/50 shadow-sm hover:shadow-md transition-shadow',
+  'border border-border shadow-sm hover:shadow-md transition-shadow',
   // Radius
   'rounded-lg',
 ].join(' ')
@@ -245,9 +245,9 @@ export const dashboardCardHorizontal = [
   // Layout - horizontal instead of vertical
   'flex flex-row h-full w-full overflow-hidden',
   // Background & border
-  'bg-card/50 backdrop-blur',
+  'bg-card backdrop-blur',
   // Border & shadow
-  'border border-border/50 shadow-sm hover:shadow-md transition-shadow',
+  'border border-border shadow-sm hover:shadow-md transition-shadow',
   // Radius
   'rounded-lg',
 ].join(' ')

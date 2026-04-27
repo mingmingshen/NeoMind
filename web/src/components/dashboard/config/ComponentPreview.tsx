@@ -213,12 +213,12 @@ export const ComponentPreview = memo(function ComponentPreview({
     <div className={cn('flex flex-col overflow-hidden', className)}>
       {/* Header */}
       {showHeader && (
-        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30 shrink-0">
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-[var(--muted-30)] shrink-0">
           <div className="flex items-center gap-2">
             <Eye className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">{t('componentPreview.title')}</span>
             {(loading || isTransitioning) && (
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/50" />
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             )}
           </div>
         </div>
@@ -228,7 +228,7 @@ export const ComponentPreview = memo(function ComponentPreview({
       <div
         ref={containerRef}
         className={cn(
-          'min-h-0 p-2 bg-muted/10 overflow-hidden relative',
+          'min-h-0 p-2 bg-muted overflow-hidden relative',
           'transition-opacity duration-200',
           isTransitioning && 'opacity-60'
         )}
@@ -240,9 +240,9 @@ export const ComponentPreview = memo(function ComponentPreview({
           </div>
         ) : hasError ? (
           <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
-            <AlertCircle className="h-8 w-8 text-destructive/60 mb-2" />
+            <AlertCircle className="h-8 w-8 text-destructive mb-2" />
             <p className="text-sm">{t('componentPreview.loadingFailed')}</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">{t('componentPreview.usingStaticData')}</p>
+            <p className="text-xs text-muted-foreground mt-1">{t('componentPreview.usingStaticData')}</p>
           </div>
         ) : (
           <div className="w-full h-full flex items-center justify-center overflow-hidden">
@@ -268,16 +268,16 @@ export const ComponentPreview = memo(function ComponentPreview({
       </div>
 
       {/* Footer with component info */}
-      <div className="px-3 py-1.5 border-t bg-muted/20 shrink-0">
+      <div className="px-3 py-1.5 border-t bg-[var(--muted-20)] shrink-0">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{meta?.name || componentType}</span>
           <div className="flex items-center gap-2">
             {scale < 0.95 && (
-              <span className="text-muted-foreground/50 tabular-nums">
+              <span className="text-muted-foreground tabular-nums">
                 {Math.round(scale * 100)}%
               </span>
             )}
-            <span className="text-muted-foreground/60">
+            <span className="text-muted-foreground">
               {defaultW}×{defaultH}
             </span>
           </div>

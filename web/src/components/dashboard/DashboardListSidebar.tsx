@@ -147,8 +147,8 @@ export function DashboardListSidebar({
               className={cn(
                 'group rounded-lg border transition-all active:scale-95',
                 isActive
-                  ? 'bg-primary/10 border-primary/20'
-                  : 'bg-background border-border hover:bg-muted/50'
+                  ? 'bg-muted border-border'
+                  : 'bg-background border-border hover:bg-[var(--muted-50)]'
               )}
             >
               {isEditing ? (
@@ -193,7 +193,7 @@ export function DashboardListSidebar({
                       handleSwitch(dashboard.id)
                     }
                   }}
-                  className="w-full text-left p-2.5 cursor-pointer hover:bg-muted/50 rounded-md"
+                  className="w-full text-left p-2.5 cursor-pointer hover:bg-[var(--muted-50)] rounded-md"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -219,7 +219,7 @@ export function DashboardListSidebar({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          className="h-6 w-6 text-destructive hover:text-destructive hover:hover:bg-muted"
                           onClick={() => handleDelete(dashboard.id)}
                           title="Delete"
                         >
@@ -236,7 +236,7 @@ export function DashboardListSidebar({
 
         {/* Create New Dashboard */}
         {showCreateInput ? (
-          <div className="rounded-lg border border-dashed border-border bg-muted/30 p-2">
+          <div className="rounded-lg border border-dashed border-border bg-[var(--muted-30)] p-2">
             <Input
               value={newDashboardName}
               onChange={(e) => setNewDashboardName(e.target.value)}

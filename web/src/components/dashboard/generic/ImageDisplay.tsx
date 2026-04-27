@@ -575,17 +575,17 @@ export function ImageDisplay({
     return (
       <div className={cn(
         dashboardCardBase,
-        'flex flex-col items-center justify-center gap-3 bg-muted/30',
+        'flex flex-col items-center justify-center gap-3 bg-[var(--muted-30)]',
         sizeConfig.padding,
         className
       )}>
         <ImageOff className={cn(
-          'text-muted-foreground/60',
+          'text-muted-foreground',
           size === 'sm' ? 'h-8 w-8' : size === 'md' ? 'h-12 w-12' : 'h-16 w-16'
         )} />
         <div className="text-center">
           <p className="text-muted-foreground text-sm font-medium">{t('imageDisplay.noImageSource')}</p>
-          <p className="text-muted-foreground/50 text-xs mt-1">{t('imageDisplay.configureSource')}</p>
+          <p className="text-muted-foreground text-xs mt-1">{t('imageDisplay.configureSource')}</p>
         </div>
       </div>
     )
@@ -596,13 +596,13 @@ export function ImageDisplay({
     return (
       <div className={cn(
         dashboardCardBase,
-        'flex flex-col items-center justify-center gap-3 bg-muted/30',
+        'flex flex-col items-center justify-center gap-3 bg-[var(--muted-30)]',
         sizeConfig.padding,
         className
       )}>
         <div className="relative">
           <ImageOff className={cn(
-            'text-muted-foreground/40',
+            'text-muted-foreground',
             size === 'sm' ? 'h-10 w-10' : size === 'md' ? 'h-14 w-14' : 'h-18 w-18'
           )} />
           <AlertTriangle className={cn(
@@ -612,10 +612,10 @@ export function ImageDisplay({
         </div>
         <div className="text-center">
           <p className="text-muted-foreground text-sm font-medium">{t('imageDisplay.failedToLoad')}</p>
-          <p className="text-muted-foreground/50 text-xs mt-1">{t('imageDisplay.couldNotLoad')}</p>
+          <p className="text-muted-foreground text-xs mt-1">{t('imageDisplay.couldNotLoad')}</p>
         </div>
         {formatInfo && (
-          <p className="text-xs text-muted-foreground/60">
+          <p className="text-xs text-muted-foreground">
             {t('imageDisplay.format')}: {formatInfo.format} ({formatInfo.type})
           </p>
         )}
@@ -641,7 +641,7 @@ export function ImageDisplay({
     <>
       <div className={cn(dashboardCardBase, 'relative overflow-hidden flex flex-col', className)}>
         {/* Image container */}
-        <div className="relative w-full h-full flex items-center justify-center bg-muted/10 flex-1 min-h-0">
+        <div className="relative w-full h-full flex items-center justify-center bg-muted flex-1 min-h-0">
           <img
             ref={imageRef}
             key={displaySrc}

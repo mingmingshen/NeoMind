@@ -93,7 +93,7 @@ export const FormSection = forwardRef<HTMLDivElement, FormSectionProps>(({
             {title}
           </h3>
           {description && (
-            <p className="text-xs text-muted-foreground/70 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {description}
             </p>
           )}

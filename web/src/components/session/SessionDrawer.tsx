@@ -96,7 +96,7 @@ function SessionItem({
             </h4>
             <span className={cn(
               "flex items-center gap-1 text-xs flex-shrink-0",
-              isActive ? "text-foreground/70" : "text-muted-foreground"
+              isActive ? "text-muted-foreground" : "text-muted-foreground"
             )}>
               <Clock className="h-4 w-4" />
               {session.updatedAt ? formatTimestamp(session.updatedAt / 1000, false) : '-'}
@@ -121,7 +121,7 @@ function SessionItem({
         className={cn(
           "absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100",
           "p-1.5 rounded-md transition-all",
-          "hover:bg-destructive/10 hover:text-destructive",
+          "hover:bg-muted hover:text-destructive",
           "text-muted-foreground"
         )}
         title={t('deleteSession')}
@@ -286,7 +286,7 @@ const SessionDrawerMemo = memo(function SessionDrawer({
         <div className="flex-1 overflow-y-auto px-4 pb-4">
           {totalSessions === 0 ? (
             <div className="text-center py-12">
-              <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
+              <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
               <p className="text-sm text-muted-foreground">
                 {searchQuery ? t('noMatchingSessions') : t('noSessionsYet')}
               </p>

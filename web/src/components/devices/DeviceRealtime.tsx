@@ -390,7 +390,7 @@ export function DeviceRealtime({
               <Card
                 key={id}
                 className={`cursor-pointer transition-all ${
-                  selectedDevice === id ? "ring-2 ring-primary" : "hover:border-primary/50"
+                  selectedDevice === id ? "ring-2 ring-primary" : "hover:border-border"
                 }`}
                 onClick={() => setSelectedDevice(selectedDevice === id ? null : id)}
               >
@@ -453,7 +453,7 @@ export function DeviceRealtime({
                   .map((metric, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between p-2 rounded-md border hover:bg-muted/50 transition-colors"
+                      className="flex items-center justify-between p-2 rounded-md border hover:bg-[var(--muted-50)] transition-colors"
                     >
                       <div className="flex items-center gap-2 flex-1 min-w-0">
                         <Badge variant="outline" className="text-xs shrink-0">
@@ -501,7 +501,7 @@ export function DeviceRealtime({
                       .map((event, idx) => (
                         <div
                           key={`${event.id}-${idx}`}
-                          className="flex items-start gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors text-sm"
+                          className="flex items-start gap-2 p-2 rounded-md hover:bg-[var(--muted-50)] transition-colors text-sm"
                         >
                           <div className="shrink-0 mt-0.5">{getEventIcon(event.type)}</div>
                           <div className="flex-1 min-w-0">
@@ -588,7 +588,7 @@ export function DeviceMetricCard({
 
   return (
     <Card
-      className={`cursor-pointer transition-all hover:border-primary/50 ${onClick ? "" : "pointer-events-none"}`}
+      className={`cursor-pointer transition-all hover:border-border ${onClick ? "" : "pointer-events-none"}`}
       onClick={onClick}
     >
       <CardContent className="p-4">

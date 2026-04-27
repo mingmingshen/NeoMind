@@ -303,7 +303,7 @@ export function SessionSidebar({
     <>
       {/* Header */}
       {showHeader && (
-        <div className="flex items-center justify-between p-3 border-b border-border/50">
+        <div className="flex items-center justify-between p-3 border-b border-border">
           {!collapsed && <h2 className="text-sm font-semibold">{t('session.sessions')}</h2>}
           {isDesktop ? (
             <Button
@@ -391,7 +391,7 @@ export function SessionSidebar({
                 placeholder={t('session.search')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 h-8 text-sm rounded-lg bg-muted/50 border-0"
+                className="pl-8 h-8 text-sm rounded-lg bg-[var(--muted-50)] border-0"
               />
             </div>
           </div>
@@ -414,7 +414,7 @@ export function SessionSidebar({
             <div className="px-2 pb-2 space-y-0.5">
               {sortedSessions.length === 0 ? (
                 <div className="py-8 text-center">
-                  <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
+                  <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                   <p className="text-xs text-muted-foreground">
                     {searchQuery ? t('session.noMatch') : t('session.noSessions')}
                   </p>
@@ -434,7 +434,7 @@ export function SessionSidebar({
                           "group relative p-2 rounded-lg cursor-pointer transition-all",
                           isActive
                             ? "bg-muted"
-                            : "hover:bg-muted/50",
+                            : "hover:bg-[var(--muted-50)]",
                           isEditing && "bg-muted"
                         )}
                       >
@@ -480,7 +480,7 @@ export function SessionSidebar({
                               <div className="flex-1 min-w-0">
                                 <h4 className={cn(
                                   "text-sm truncate",
-                                  isActive ? "text-foreground font-medium" : "text-foreground/80"
+                                  isActive ? "text-foreground font-medium" : "text-muted-foreground"
                                 )}>
                                   {getSessionTitle(session)}
                                 </h4>
@@ -508,7 +508,7 @@ export function SessionSidebar({
                                 className={cn(
                                   "p-1 rounded transition-all",
                                   "flex items-center justify-center",
-                                  "text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  "text-muted-foreground hover:text-destructive hover:bg-muted"
                                 )}
                               >
                                 <Pencil className="h-4 w-4" />
@@ -520,7 +520,7 @@ export function SessionSidebar({
                                 className={cn(
                                   "p-1 rounded transition-all",
                                   "flex items-center justify-center",
-                                  "text-muted-foreground hover:text-destructive hover:bg-destructive/10",
+                                  "text-muted-foreground hover:text-destructive hover:bg-muted",
                                   isDeleting && "opacity-50"
                                 )}
                               >
@@ -546,7 +546,7 @@ export function SessionSidebar({
           </ScrollArea>
 
           {/* Footer */}
-          <div className="p-2 border-t border-border/50">
+          <div className="p-2 border-t border-border">
             <p className="text-[10px] text-muted-foreground text-center">
               {t('session.totalSessions', { count: sessions.length })}
             </p>
@@ -562,7 +562,7 @@ export function SessionSidebar({
       <>
         <div
           className={cn(
-            "h-full bg-[var(--bg-50)] border-r border-border/50 flex flex-col transition-[width] duration-200",
+            "h-full bg-[var(--bg-50)] border-r border-border flex flex-col transition-[width] duration-200",
             collapsed ? "w-12" : "w-64"
           )}
         >
@@ -584,7 +584,7 @@ export function SessionSidebar({
               </AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleConfirmDelete}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                className="bg-destructive text-destructive-foreground hover:bg-[var(--destructive-hover)]"
               >
                 {t('delete')}
               </AlertDialogAction>
@@ -633,7 +633,7 @@ export function SessionSidebar({
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-[var(--destructive-hover)]"
             >
               {t('delete')}
             </AlertDialogAction>

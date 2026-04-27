@@ -61,7 +61,7 @@ export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSou
           {/* Data Source */}
           <div>
             <label className="text-xs text-muted-foreground">Data Source</label>
-            <div className="mt-1 px-3 py-2 rounded-lg bg-muted/30 border border-border/50 text-sm">
+            <div className="mt-1 px-3 py-2 rounded-lg bg-[var(--muted-30)] border border-border text-sm">
               {dataSource || 'Not configured (use component settings)'}
             </div>
           </div>
@@ -80,7 +80,7 @@ export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSou
               <select
                 value={modelId}
                 onChange={(e) => setModelId(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border/50 bg-background px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
               >
                 <option value="">Select a model</option>
                 {models.map((m) => (

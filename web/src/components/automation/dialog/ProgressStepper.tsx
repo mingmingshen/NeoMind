@@ -56,7 +56,7 @@ function StepDot({
         status === 'pending' && 'bg-black/5 dark:bg-white/10 text-muted-foreground',
         status === 'active' && [
           'bg-primary text-primary-foreground',
-          'ring-4 ring-primary/20',
+          'ring-4 ring-primary',
         ],
         status === 'completed' && 'bg-green-500 text-white'
       )}
@@ -218,7 +218,7 @@ export function HorizontalStepper({
                 >
                   {isMobile && step.shortLabel ? step.shortLabel : step.label}
                   {step.optional && (
-                    <span className="text-muted-foreground/60 ml-1">
+                    <span className="text-muted-foreground ml-1">
                       ({t('common:optional')})
                     </span>
                   )}

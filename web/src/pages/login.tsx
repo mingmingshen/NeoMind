@@ -249,7 +249,7 @@ export function LoginPage() {
       {/* Background Effects - AI Network Theme */}
       <div className="fixed inset-0">
         {/* Base gradient */}
-        <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
+        <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
 
         {/* Dot grid pattern - representing distributed nodes/edge devices */}
         <div className="absolute inset-0" style={{
@@ -270,7 +270,7 @@ export function LoginPage() {
         </svg>
 
         {/* Central AI glow - representing intelligence hub */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 dark:bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
 
         {/* Edge node glows - representing distributed edge computing */}
         <div className="absolute top-[15%] left-[10%] w-32 h-32 bg-blue-500/5 dark:bg-blue-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '0s' }} />
@@ -346,7 +346,7 @@ export function LoginPage() {
                   placeholder={t('auth:username')}
                   autoComplete="username"
                   required
-                  className="pl-9 h-11 bg-[var(--bg-70)] border-border/50 dark:border-border/30 focus:bg-background dark:focus:bg-[var(--bg-50)] focus:border-primary/50 transition-colors text-base scroll-mb-32"
+                  className="pl-9 h-11 bg-[var(--bg-70)] border-border focus:bg-background dark:focus:bg-[var(--bg-50)] focus:border-primary transition-colors text-base scroll-mb-32"
                 />
               </div>
 
@@ -361,7 +361,7 @@ export function LoginPage() {
                   placeholder={t('auth:password')}
                   autoComplete="current-password"
                   required
-                  className="pl-9 h-11 bg-[var(--bg-70)] border-border/50 dark:border-border/30 focus:bg-background dark:focus:bg-[var(--bg-50)] focus:border-primary/50 transition-colors text-base scroll-mb-32"
+                  className="pl-9 h-11 bg-[var(--bg-70)] border-border focus:bg-background dark:focus:bg-[var(--bg-50)] focus:border-primary transition-colors text-base scroll-mb-32"
                 />
               </div>
 
@@ -373,7 +373,7 @@ export function LoginPage() {
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="peer appearance-none h-4 w-4 rounded border border-border bg-[var(--bg-70)] transition-all cursor-pointer checked:bg-primary checked:border-primary dark:checked:bg-foreground/90 dark:checked:border-foreground/90"
+                    className="peer appearance-none h-4 w-4 rounded border border-border bg-[var(--bg-70)] transition-all cursor-pointer checked:bg-primary checked:border-primary dark:checked:bg-foreground dark:checked:border-foreground"
                   />
                   <svg className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-white dark:text-background pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -386,7 +386,7 @@ export function LoginPage() {
 
               {/* Error Message */}
               {error && (
-                <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 rounded-md p-3">
+                <div className="flex items-start gap-2 text-sm text-destructive bg-muted rounded-md p-3">
                   <Shield className="h-4 w-4 mt-0.5 flex-shrink-0" />
                   <span>{error}</span>
                 </div>
@@ -407,7 +407,7 @@ export function LoginPage() {
 
         {/* Footer - Copyright - hidden on mobile, shown at bottom on desktop */}
         <footer className="hidden sm:block absolute left-0 right-0 z-10 text-center bottom-6">
-          <p className="text-xs text-muted-foreground/50 dark:text-muted-foreground/40">
+          <p className="text-xs text-muted-foreground">
             © CamThink {new Date().getFullYear()}
           </p>
         </footer>

@@ -77,7 +77,7 @@ const ActionButton = memo(function ActionButton({
         'cursor-pointer',
         'touch-action-manipulation',
         variant === 'destructive'
-          ? 'bg-destructive/15 text-destructive active:bg-destructive/25'
+          ? 'bg-muted text-destructive active:bg-muted'
           : 'bg-secondary/50 text-secondary-foreground active:bg-secondary/80',
         className
       )}
@@ -122,7 +122,7 @@ const CompactButton = memo(function CompactButton({
         'cursor-pointer',
         'touch-action-manipulation',
         variant === 'destructive'
-          ? 'bg-destructive/15 text-destructive active:bg-destructive/25'
+          ? 'bg-muted text-destructive active:bg-muted'
           : 'bg-secondary/50 text-secondary-foreground active:bg-secondary/80'
       )}
       aria-label={label}
@@ -194,7 +194,7 @@ export const MobileEditBar = memo(function MobileEditBar({
           'fixed left-4 right-4 bottom-4 z-50',
           'bg-[var(--bg-95)] backdrop-blur-md',
           'rounded-2xl shadow-2xl shadow-black/20',
-          'border border-border/50',
+          'border border-border',
           'transition-all duration-300 ease-out',
           // Safe area padding
           'pb-[calc(1rem+env(safe-area-inset-bottom,0px))]',
@@ -208,7 +208,7 @@ export const MobileEditBar = memo(function MobileEditBar({
         }}
       >
         {/* Header with component name and close button */}
-        <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-border/50">
+        <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-border">
           <div className="flex items-center gap-2">
             <Move className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground">
@@ -293,7 +293,7 @@ export const CompactMobileEditBar = memo(function CompactMobileEditBar({
           'flex items-center gap-2',
           'bg-[var(--bg-95)] backdrop-blur-md',
           'rounded-2xl shadow-2xl shadow-black/20',
-          'border border-border/50',
+          'border border-border',
           'p-2',
           'transition-all duration-300 ease-out',
           'pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]',

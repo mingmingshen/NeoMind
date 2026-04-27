@@ -149,7 +149,7 @@ export function IntentIndicator({
       <div className="flex items-center gap-2 flex-wrap">
         <div
           title={config.description}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted border border-border/50 cursor-help"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted border border-border cursor-help"
         >
           <Icon className={cn("h-4 w-4", config.color)} />
           <span className="text-sm font-medium">{config.label}</span>
@@ -241,7 +241,7 @@ export function CompactIntentBadge({
       title={config.description}
       className={cn(
         "inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium",
-        "bg-muted hover:bg-muted/70 transition-colors cursor-help"
+        "bg-muted hover:bg-muted transition-colors cursor-help"
       )}
     >
       <span className={config.color}>●</span>

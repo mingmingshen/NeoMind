@@ -244,8 +244,8 @@ export function ExtensionUploadDialog({
         className={cn(
           "border-2 border-dashed rounded-lg p-6 text-center transition-colors",
           progress?.status === 'error'
-            ? 'border-destructive/50 bg-destructive/5 cursor-pointer hover:border-destructive/70'
-            : 'cursor-pointer hover:border-primary/50'
+            ? 'border-destructive bg-muted cursor-pointer hover:border-destructive'
+            : 'cursor-pointer hover:border-border'
         )}
         onClick={() => {
           // Allow clicking to retry when there's an error
@@ -275,7 +275,7 @@ export function ExtensionUploadDialog({
                   <span className="text-sm font-medium">{t('extensions:installFailed')}</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{progress.filename}</p>
-                <div className="text-destructive/80 text-xs bg-destructive/10 rounded p-2">
+                <div className="text-destructive text-xs bg-muted rounded p-2">
                   {progress.message || t('extensions:installFailed')}
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -430,7 +430,7 @@ export function ExtensionUploadDialog({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted/30">
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-[var(--muted-30)]">
             <Button variant="outline" size="sm" onClick={handleClose} disabled={uploading}>
               {t('common:cancel')}
             </Button>

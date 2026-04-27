@@ -621,7 +621,7 @@ export function PendingDevicesList({
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                   {t('devices:pending.deviceInfo')}
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm bg-muted/30 rounded-lg p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm bg-[var(--muted-30)] rounded-lg p-4">
                   <div>
                     <span className="text-muted-foreground">{t('devices:pending.headers.deviceId')}: </span>
                     <span className="font-mono font-medium">{selectedDraftForApproval.device_id}</span>
@@ -768,7 +768,7 @@ export function PendingDevicesList({
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                     {t('devices:pending.originalData')}
                   </h3>
-                  <div className="bg-muted/30 rounded-lg p-3">
+                  <div className="bg-[var(--muted-30)] rounded-lg p-3">
                     <div className="flex gap-1 mb-3">
                       {selectedDraftForApproval.samples.slice(0, 5).map((_, index) => (
                         <button
@@ -885,8 +885,8 @@ export function PendingDevicesList({
                               }}
                               className={`p-3 cursor-pointer transition-colors border-b last:border-b-0 ${
                                 selectedDeviceType === type.device_type
-                                  ? 'bg-primary/10 border-primary'
-                                  : 'hover:bg-muted/50 border-transparent'
+                                  ? 'bg-muted border-primary'
+                                  : 'hover:bg-[var(--muted-50)] border-transparent'
                               }`}
                               style={{ touchAction: 'manipulation' }}
                             >
@@ -901,14 +901,14 @@ export function PendingDevicesList({
                                     )}
                                   </div>
                                   <p className="text-xs text-muted-foreground truncate">{type.description}</p>
-                                  <p className="text-xs text-muted-foreground/70 mt-0.5">
+                                  <p className="text-xs text-muted-foreground mt-0.5">
                                     {type.device_type} · {type.metric_count} {t('devices:pending.metrics')}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0 ml-3">
                                   <Badge
                                     variant={type.match_score >= 80 ? "default" : "outline"}
-                                    className={type.match_score >= 80 ? "" : "border-muted-foreground/30"}
+                                    className={type.match_score >= 80 ? "" : "border-border"}
                                   >
                                     {type.match_score}%
                                   </Badge>

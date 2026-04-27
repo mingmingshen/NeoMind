@@ -83,7 +83,7 @@ export const indicatorColors = {
   neutral: {
     base: statusColors.neutral,           // oklch(0.551 0.0 264.38)
     text: 'text-muted-foreground',
-    bg: 'bg-muted/50',
+    bg: 'bg-[var(--muted-50)]',
     border: 'border-border',
     ring: 'transparent',
     shadow: undefined,
@@ -93,8 +93,8 @@ export const indicatorColors = {
   primary: {
     base: chartColors[1],                 // oklch(0.646 0.222 264.38)
     text: 'text-primary',
-    bg: 'bg-primary/10',
-    border: 'border-primary/20',
+    bg: 'bg-muted',
+    border: 'border-border',
     ring: 'ring-primary/20',
     shadow: 'shadow-primary/20',
   },

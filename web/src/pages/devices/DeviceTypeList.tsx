@@ -131,7 +131,7 @@ export function DeviceTypeList({
             case 'description':
               return (
                 <div className="text-sm text-muted-foreground line-clamp-2 leading-relaxed" title={type.description || undefined}>
-                  {type.description || <span className="text-muted-foreground/50">-</span>}
+                  {type.description || <span className="text-muted-foreground">-</span>}
                 </div>
               )
 

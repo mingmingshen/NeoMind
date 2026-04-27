@@ -1060,7 +1060,7 @@ function RulePreviewPanel({
       if (cond.type === 'and' || cond.type === 'or' || cond.type === 'not') {
         return (
           <div key={cond.id} className="mb-2">
-            <div className="flex items-center gap-2 py-1 px-2 rounded bg-muted/30" style={{ marginLeft: `${indent}px` }}>
+            <div className="flex items-center gap-2 py-1 px-2 rounded bg-[var(--muted-30)]" style={{ marginLeft: `${indent}px` }}>
               <Badge variant="outline" className={cn(
                 "text-xs",
                 cond.type === 'and' ? "bg-green-500/20 text-green-500 border-green-500/30" :
@@ -1084,7 +1084,7 @@ function RulePreviewPanel({
         : (devices.find(d => d.id === cond.device_id)?.name || cond.device_id || '')
 
       return (
-        <div key={cond.id} className="flex items-center gap-2 py-1.5 px-2 rounded bg-muted/30 mb-1" style={{ marginLeft: `${indent}px` }}>
+        <div key={cond.id} className="flex items-center gap-2 py-1.5 px-2 rounded bg-[var(--muted-30)] mb-1" style={{ marginLeft: `${indent}px` }}>
           <div className={cn(
             "w-6 h-6 rounded flex items-center justify-center text-xs",
             isExtension ? "bg-purple-500/20 text-purple-500" : "bg-blue-500/20 text-blue-500"
@@ -1106,7 +1106,7 @@ function RulePreviewPanel({
       <div className="p-3 space-y-1">
         {renderConditionNode(condition)}
         {forDuration > 0 && (
-          <div className="mt-3 pt-3 border-t border-border/50">
+          <div className="mt-3 pt-3 border-t border-border">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Clock className="h-4 w-4" />
               <span>{tBuilder('forDuration') || '持续'}: {forDuration} {forUnit}</span>
@@ -1157,7 +1157,7 @@ function RulePreviewPanel({
     return (
       <div className="p-3 space-y-2">
         {actions.map((action, index) => (
-          <div key={index} className="flex items-start gap-2 p-2 rounded bg-muted/30">
+          <div key={index} className="flex items-start gap-2 p-2 rounded bg-[var(--muted-30)]">
             <div className={cn("w-6 h-6 rounded flex items-center justify-center shrink-0", getActionColor(action.type))}>
               {getActionIcon(action.type)}
             </div>
@@ -1184,7 +1184,7 @@ function RulePreviewPanel({
   const renderDSLPreview = () => {
     return (
       <div className="p-3">
-        <pre className="text-[10px] font-mono bg-muted/50 p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
+        <pre className="text-[10px] font-mono bg-[var(--muted-50)] p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
           {previewDSL || '// No DSL generated'}
         </pre>
       </div>
@@ -1196,7 +1196,7 @@ function RulePreviewPanel({
     if (cond.type === 'and' || cond.type === 'or' || cond.type === 'not') {
       return (
         <div className="space-y-1">
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted/50">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--muted-50)]">
             <span className="font-medium">{cond.type.toUpperCase()}</span>
             <span className="text-muted-foreground">({cond.conditions?.length || 0})</span>
           </span>
@@ -1210,7 +1210,7 @@ function RulePreviewPanel({
       : (devices.find(d => d.id === cond.device_id)?.name || cond.device_id || '')
 
     return (
-      <div className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+      <div className="flex items-center gap-2 bg-[var(--muted-50)] rounded px-2 py-1">
         {isExtension ? <Puzzle className="h-4 w-4 text-purple-500" /> : <Lightbulb className="h-4 w-4 text-blue-500" />}
         <span className="truncate">{resourceName}</span>
         <span className="font-mono text-[10px]">{cond.operator}</span>
@@ -1220,7 +1220,7 @@ function RulePreviewPanel({
   }
 
   return (
-    <div className="h-full flex flex-col bg-muted/30 rounded-lg p-4">
+    <div className="h-full flex flex-col bg-[var(--muted-30)] rounded-lg p-4">
       {/* Header with toggle */}
       <div className="flex items-center justify-between mb-4 pb-3 border-b">
         <div className="flex items-center gap-2">
@@ -1233,7 +1233,7 @@ function RulePreviewPanel({
             "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors",
             showDSL
               ? "bg-primary text-primary-foreground"
-              : "bg-muted hover:bg-muted/70"
+              : "bg-muted hover:bg-muted"
           )}
         >
           <Code className="h-4 w-4" />
@@ -1352,7 +1352,7 @@ function RulePreviewPanel({
                   }
                 }
                 return (
-                  <div key={index} className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+                  <div key={index} className="flex items-center gap-2 bg-[var(--muted-50)] rounded px-2 py-1">
                     <div className="text-green-500">{getActionIcon(action.type)}</div>
                     <span className="text-xs font-medium truncate">{action.type}</span>
                   </div>
@@ -2004,7 +2004,7 @@ function BasicInfoStep({
               <button
                 type="button"
                 onClick={() => removeTag(tag)}
-                className="rounded-full p-0 hover:bg-destructive/20"
+                className="rounded-full p-0 hover:bg-muted"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -2275,7 +2275,7 @@ function ConditionStep({
                 </div>
 
                 {errors.condition && errors.condition.length > 0 && (
-                  <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+                  <div className="p-3 bg-muted border border-destructive rounded-lg">
                     {errors.condition.map((err, i) => (
                       <p key={i} className="text-sm text-destructive">• {err}</p>
                     ))}
@@ -2426,7 +2426,7 @@ function ConditionTypeButton({ label, icon, onClick }: { label: string; icon: Re
   return (
     <button
       onClick={onClick}
-      className="p-4 rounded-lg border-2 border-muted hover:border-primary/50 hover:bg-primary/5 transition-all text-left"
+      className="p-4 rounded-lg border-2 border-muted hover:border-border hover:bg-muted transition-all text-left"
     >
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-lg bg-muted">{icon}</div>
@@ -2571,8 +2571,8 @@ function ActionStep({ actions, onActionsChange, devices, deviceTypes, extensions
           />
         ))}
         {actions.length === 0 && (
-          <div className="text-center py-12 border-2 border-dashed rounded-lg bg-muted/20">
-            <Zap className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+          <div className="text-center py-12 border-2 border-dashed rounded-lg bg-[var(--muted-20)]">
+            <Zap className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
             <p className="text-sm text-muted-foreground">{tBuilder('noActionsHint')}</p>
           </div>
         )}
@@ -2659,7 +2659,7 @@ function ReviewStep({ name, description, enabled, condition, actions, forDuratio
           <Code className="h-4 w-4" />
           {tBuilder('review.ruleDSL')}
         </h4>
-        <pre className="text-sm font-mono bg-muted/30 p-3 rounded overflow-x-auto whitespace-pre-wrap">
+        <pre className="text-sm font-mono bg-[var(--muted-30)] p-3 rounded overflow-x-auto whitespace-pre-wrap">
           {previewDSL || '// No DSL generated'}
         </pre>
       </div>
@@ -2981,7 +2981,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
 
     return (
       <div className="space-y-3">
-        <div className="flex items-center gap-2 p-2.5 bg-muted/40 rounded-t-lg border">
+        <div className="flex items-center gap-2 p-2.5 bg-muted rounded-t-lg border">
           <Badge variant="outline" className={cn('text-xs px-2.5 py-1', badgeClass)}>{label}</Badge>
           <span className="text-xs text-muted-foreground flex-1">
             {condition.type === 'and' ? tBuilder('allConditionsMustMeet') : condition.type === 'or' ? tBuilder('anyConditionMustMeet') : tBuilder('conditionNotMet')}
@@ -3005,7 +3005,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
                 </div>
               )}
               <div className="relative pr-8">
-                <div className="rounded-lg bg-muted/30">
+                <div className="rounded-lg bg-[var(--muted-30)]">
                   <ConditionEditor
                     condition={subCond}
                     onChange={(c) => updateNestedCondition(i, c)}
@@ -3031,7 +3031,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
             </div>
           ))}
 
-          <div className="pt-2 border-t border-border/50">
+          <div className="pt-2 border-t border-border">
             <Button
               variant="outline"
               size="sm"
@@ -3491,7 +3491,7 @@ function ActionEditorCompact({ action, devices, deviceTypes, extensions, message
                 </Button>
               </div>
               {Object.keys(headers).length === 0 ? (
-                <div className="text-xs text-muted-foreground/50 py-1 italic">
+                <div className="text-xs text-muted-foreground py-1 italic">
                   {t('automation:noHeaders') || 'No headers'}
                 </div>
               ) : (

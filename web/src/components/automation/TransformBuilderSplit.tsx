@@ -449,7 +449,7 @@ return ${resultParam}`
     )}>
       {/* Header */}
       <div className={cn(
-        "border-b bg-muted/30 flex items-center gap-2",
+        "border-b bg-[var(--muted-30)] flex items-center gap-2",
         isMobile ? "px-4 py-3" : "px-3 py-2"
       )}>
         <Database className={cn("text-blue-500", isMobile ? "h-5 w-5" : "h-4 w-4")} />
@@ -491,7 +491,7 @@ return ${resultParam}`
                 <div
                   key={idx}
                   className={cn(
-                    "flex items-center justify-between bg-background border rounded hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer group",
+                    "flex items-center justify-between bg-background border rounded hover:bg-muted hover:border-border transition-all cursor-pointer group",
                     isMobile ? "px-4 py-3" : "px-2 py-1.5"
                   )}
                   onClick={() => {
@@ -636,7 +636,7 @@ return ${resultParam}`
                             <div
                               key={idx}
                               className={cn(
-                                "flex items-center justify-between bg-background border rounded hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer group",
+                                "flex items-center justify-between bg-background border rounded hover:bg-muted hover:border-border transition-all cursor-pointer group",
                                 isMobile ? "px-4 py-3" : "px-2 py-1.5"
                               )}
                               onClick={() => onInsertVariable?.(`input.extensions?.${extId}?.${field.field}`)}
@@ -842,7 +842,7 @@ function TransformPreviewPanel({
                   <span>{deviceMetricCount} {tBuilder('deviceMetrics') || '设备指标'}</span>
                 </div>
                 {deviceTypeMetrics?.slice(0, 3).map((metric, idx) => (
-                  <div key={idx} className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+                  <div key={idx} className="flex items-center gap-2 bg-[var(--muted-50)] rounded px-2 py-1">
                     <span className="text-xs truncate">{metric.display_name || metric.name}</span>
                     {metric.unit && <span className="text-[10px] text-muted-foreground">({metric.unit})</span>}
                   </div>
@@ -861,7 +861,7 @@ function TransformPreviewPanel({
                   <span>{extensionSourceCount} {tBuilder('extensionDataSources') || '扩展数据源'}</span>
                 </div>
                 {extensionSources?.slice(0, 2).map((source, idx) => (
-                  <div key={idx} className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+                  <div key={idx} className="flex items-center gap-2 bg-[var(--muted-50)] rounded px-2 py-1">
                     <Puzzle className="h-4 w-4 text-purple-500" />
                     <span className="text-xs truncate">{source.extension_name}</span>
                     <span className="text-[10px] text-muted-foreground">·</span>
@@ -899,7 +899,7 @@ function TransformPreviewPanel({
           </Badge>
         </div>
         <div className="text-xs text-purple-700 dark:text-purple-300 space-y-2">
-          <div className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+          <div className="flex items-center gap-2 bg-[var(--muted-50)] rounded px-2 py-1">
             <Globe className="h-4 w-4" />
             <span className="font-medium">{tBuilder('scopeLabel') || '作用范围'}:</span>
             <span>
@@ -908,7 +908,7 @@ function TransformPreviewPanel({
                scopeValue}
             </span>
           </div>
-          <div className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+          <div className="flex items-center gap-2 bg-[var(--muted-50)] rounded px-2 py-1">
             <FileCode className="h-4 w-4" />
             <span className="font-mono">{outputPrefix || 'transform'}</span>
             <span className="text-[10px] text-muted-foreground">.key</span>
@@ -934,7 +934,7 @@ function TransformPreviewPanel({
         {outputMetrics.length > 0 ? (
           <div className="space-y-1.5">
             {outputMetrics.slice(0, 4).map((metric, idx) => (
-              <div key={idx} className="flex items-center gap-2 bg-muted/50 rounded px-2 py-1">
+              <div key={idx} className="flex items-center gap-2 bg-[var(--muted-50)] rounded px-2 py-1">
                 <Zap className="h-4 w-4 text-green-500" />
                 <span className="text-xs font-mono">{outputPrefix}.{metric}</span>
               </div>
@@ -955,7 +955,7 @@ function TransformPreviewPanel({
   }
 
   return (
-    <div className="h-full flex flex-col bg-muted/30 rounded-lg p-4">
+    <div className="h-full flex flex-col bg-[var(--muted-30)] rounded-lg p-4">
       {/* Header with toggle */}
       <div className="flex items-center justify-between mb-4 pb-3 border-b">
         <div className="flex items-center gap-2">
@@ -968,7 +968,7 @@ function TransformPreviewPanel({
             "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors",
             showDSL
               ? "bg-primary text-primary-foreground"
-              : "bg-muted hover:bg-muted/70"
+              : "bg-muted hover:bg-muted"
           )}
         >
           <Code className="h-4 w-4" />
@@ -980,7 +980,7 @@ function TransformPreviewPanel({
       <div className="flex-1 overflow-y-auto">
         {showDSL ? (
           <div className="p-3 bg-background rounded-lg border max-h-full overflow-y-auto">
-            <pre className="text-[10px] font-mono bg-muted/50 p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
+            <pre className="text-[10px] font-mono bg-[var(--muted-50)] p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
               {jsCode || '// No code'}
             </pre>
           </div>
@@ -1891,7 +1891,7 @@ function TestStep({
           <Code className="h-4 w-4" />
           {tBuilder('test.transformCode')}
         </h4>
-        <pre className="text-xs font-mono bg-muted/30 p-3 rounded overflow-x-auto whitespace-pre-wrap max-h-48">
+        <pre className="text-xs font-mono bg-[var(--muted-30)] p-3 rounded overflow-x-auto whitespace-pre-wrap max-h-48">
           {jsCode || tBuilder('noCode')}
         </pre>
       </div>
@@ -1910,7 +1910,7 @@ function TestStep({
               value={testInput}
               onChange={e => onTestInputChange(e.target.value)}
               placeholder='{"temperature": 25}'
-              className="font-mono text-xs resize-none bg-muted/30 h-24"
+              className="font-mono text-xs resize-none bg-[var(--muted-30)] h-24"
             />
           </div>
 
@@ -1946,9 +1946,9 @@ function TestStep({
           {(testOutput || testError) && (
             <div>
               <Label className="text-xs text-muted-foreground mb-2 block">{tBuilder('outputData')}</Label>
-              <div className="rounded-md bg-muted/30 p-2 max-h-40 overflow-auto">
+              <div className="rounded-md bg-[var(--muted-30)] p-2 max-h-40 overflow-auto">
                 {testError && (
-                  <div className="p-1.5 bg-destructive/10 border border-destructive/20 rounded text-xs text-destructive font-mono">
+                  <div className="p-1.5 bg-muted border border-destructive rounded text-xs text-destructive font-mono">
                     {testError}
                   </div>
                 )}

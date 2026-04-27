@@ -51,7 +51,7 @@ export function ActionBar({
       {/* Left side: title, description, left content */}
       <div className="flex items-center gap-3 flex-1 min-w-0">
         {titleIcon && (
-          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-muted/50">
+          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-[var(--muted-50)]">
             {titleIcon}
           </div>
         )}

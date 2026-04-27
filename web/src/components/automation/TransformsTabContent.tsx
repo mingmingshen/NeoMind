@@ -250,7 +250,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                 <tbody className="[&_tr:last-child]:border-0">
                   {transforms.map((transform) => (
                     <>
-                      <tr key={transform.id} className="border-b transition-colors hover:bg-muted/50">
+                      <tr key={transform.id} className="border-b transition-colors hover:bg-[var(--muted-50)]">
                         <td className="p-4 align-middle">
                           <Button
                             variant="ghost"
@@ -341,7 +341,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                       {/* Expanded Details */}
                       {expandedRows.has(transform.id) && (
                         <tr>
-                          <td colSpan={7} className="bg-muted/50">
+                          <td colSpan={7} className="bg-[var(--muted-50)]">
                             <div className="space-y-4 py-4">
                               {/* Intent or Operations */}
                               <div>
@@ -417,7 +417,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                 return (
                   <Card key={transform.id} className="overflow-hidden">
                     {/* Card Header */}
-                    <div className="bg-muted/30 px-4 py-3 border-b">
+                    <div className="bg-[var(--muted-30)] px-4 py-3 border-b">
                       <div className="flex items-center gap-3">
                         <Button
                           variant="ghost"

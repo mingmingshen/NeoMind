@@ -168,12 +168,12 @@ export function LEDStateRulesConfig({
                 <div
                   className={cn(
                     "flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors",
-                    !isCollapsed && "bg-muted/30"
+                    !isCollapsed && "bg-[var(--muted-30)]"
                   )}
                   onClick={() => toggleCollapse(String(index))}
                 >
                   {/* Drag handle */}
-                  <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+                  <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
 
                   {/* Condition type badge */}
                   <span className={cn(

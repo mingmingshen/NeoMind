@@ -166,7 +166,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 animate-fade-in-up delay-100">
             <Link
               to="/devices"
-              className="p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-left group"
+              className="p-4 rounded-lg bg-[var(--muted-50)] hover:bg-muted transition-colors text-left group"
             >
               <div className="flex items-center justify-between mb-2">
                 <Cpu className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
@@ -186,7 +186,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
 
             <Link
               to="/automation"
-              className="p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-left group"
+              className="p-4 rounded-lg bg-[var(--muted-50)] hover:bg-muted transition-colors text-left group"
             >
               <div className="flex items-center justify-between mb-2">
                 <Workflow className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
@@ -200,7 +200,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
 
             <Link
               to="/settings"
-              className="p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-left group"
+              className="p-4 rounded-lg bg-[var(--muted-50)] hover:bg-muted transition-colors text-left group"
             >
               <div className="flex items-center justify-between mb-2">
                 <Bell className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
@@ -218,7 +218,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
         {isLoadingStats && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="p-4 rounded-lg bg-muted/30 animate-pulse">
+              <div key={i} className="p-4 rounded-lg bg-[var(--muted-30)] animate-pulse">
                 <div className="h-5 w-5 rounded bg-muted mb-2" />
                 <div className="h-8 w-12 rounded bg-muted mb-1" />
                 <div className="h-3 w-16 rounded bg-muted" />
@@ -242,8 +242,8 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
                   className={cn(
                     "w-full p-3 rounded-lg text-left transition-colors flex items-center justify-between group",
                     suggestion.priority === "high"
-                      ? "bg-muted/70 hover:bg-muted"
-                      : "bg-muted/30 hover:bg-muted/50"
+                      ? "bg-muted hover:bg-muted"
+                      : "bg-[var(--muted-30)] hover:bg-[var(--muted-50)]"
                   )}
                 >
                   <span className="text-sm text-foreground">{suggestion.text}</span>
@@ -264,7 +264,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
               <button
                 key={prompt}
                 onClick={() => onQuickAction?.(prompt)}
-                className="px-4 py-2 rounded-md bg-muted/30 hover:bg-muted text-sm text-foreground transition-colors"
+                className="px-4 py-2 rounded-md bg-[var(--muted-30)] hover:bg-muted text-sm text-foreground transition-colors"
               >
                 {prompt}
               </button>

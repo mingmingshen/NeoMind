@@ -230,7 +230,7 @@ export function AgentDetailPanel({
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as DetailTab)} className="flex-1 flex flex-col">
         <div className="px-4 pt-3">
-          <TabsList className="w-full justify-start bg-muted/50 h-9">
+          <TabsList className="w-full justify-start bg-[var(--muted-50)] h-9">
             <TabsTrigger value="overview" className="h-7 text-sm">
               <Eye className="h-4 w-4 mr-1.5" />
               {t('agents:detail.overview')}
@@ -288,11 +288,11 @@ export function AgentDetailPanel({
 
                 {/* User Intent */}
                 <DetailSection title={t('agents:userPrompt')} icon={FileText}>
-                  <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/80">
+                  <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
                     {agent.user_prompt || t('agents:card.noDescription')}
                   </div>
                   {agent.parsed_intent && (
-                    <div className="mt-3 pt-3 border-t border-border/50">
+                    <div className="mt-3 pt-3 border-t border-border">
                       <div className="text-xs text-muted-foreground mb-1.5">{t('agents:creator.basicInfo.requirement')}</div>
                       <div className="text-sm">
                         <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
@@ -438,7 +438,7 @@ interface DetailSectionProps {
 
 function DetailSection({ title, icon: Icon, children }: DetailSectionProps) {
   return (
-    <div className="bg-muted/20 rounded-lg p-3">
+    <div className="bg-[var(--muted-20)] rounded-lg p-3">
       {title && Icon && (
         <h3 className="text-sm font-medium flex items-center gap-2 mb-3 text-muted-foreground">
           <Icon className="h-4 w-4" />
@@ -619,7 +619,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
                 </div>
               )}
               {memory.working.current_conclusion && (
-                <div className="flex items-start gap-2 pt-2 border-t border-border/50">
+                <div className="flex items-start gap-2 pt-2 border-t border-border">
                   <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
                   <div>
                     <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">{t('agents:memory.conclusion')}</div>
@@ -639,14 +639,14 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
           >
             <div className="space-y-2">
               {memory.short_term?.summaries?.map((summary: any, idx: number) => (
-                <div key={idx} className="group relative overflow-hidden rounded-lg bg-background border border-border/50 hover:border-blue-500/30 transition-colors">
+                <div key={idx} className="group relative overflow-hidden rounded-lg bg-background border border-border hover:border-blue-500/30 transition-colors">
                   {/* Success indicator strip */}
                   <div className={`absolute left-0 top-0 bottom-0 w-1 ${summary.success ? 'bg-green-500' : 'bg-red-500'}`} />
 
                   <div className="pl-4 pr-3 py-3">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                        <span className="text-xs font-mono text-muted-foreground bg-[var(--muted-50)] px-1.5 py-0.5 rounded">
                           {summary.execution_id?.slice(0, 6)}...
                         </span>
                         <span className="text-xs text-muted-foreground">
@@ -802,7 +802,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
 
         {/* Updated At footer */}
         {memory.updated_at && (
-          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground py-3 border-t border-border/50">
+          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground py-3 border-t border-border">
             <Clock className="h-4 w-4" />
             <span>{t('agents:memory.updatedAt')}: {
               typeof memory.updated_at === 'number'

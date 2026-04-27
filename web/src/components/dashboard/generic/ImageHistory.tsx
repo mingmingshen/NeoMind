@@ -537,7 +537,7 @@ export function ImageHistory({
     return (
       <div className={cn(dashboardCardBase, className)}>
         <div className={cn(
-          'w-full flex items-center justify-center bg-muted/10',
+          'w-full flex items-center justify-center bg-muted',
           size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]'
         )}>
           <RefreshCw className="h-6 w-6 text-muted-foreground animate-spin" />
@@ -551,17 +551,17 @@ export function ImageHistory({
     return (
       <div className={cn(
         dashboardCardBase,
-        'flex flex-col items-center justify-center gap-3 bg-muted/30',
+        'flex flex-col items-center justify-center gap-3 bg-[var(--muted-30)]',
         sizeConfig.padding,
         className
       )}>
         <ImageOff className={cn(
-          'text-muted-foreground/60',
+          'text-muted-foreground',
           size === 'sm' ? 'h-8 w-8' : size === 'md' ? 'h-12 w-12' : 'h-16 w-16'
         )} />
         <div className="text-center">
           <p className="text-muted-foreground text-sm font-medium">No Images</p>
-          <p className="text-muted-foreground/50 text-xs mt-1">Configure an image data source</p>
+          <p className="text-muted-foreground text-xs mt-1">Configure an image data source</p>
         </div>
       </div>
     )

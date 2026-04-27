@@ -396,7 +396,7 @@ function SuggestionItem({ suggestion, index, selectedIndex, onSelect, onMouseEnt
           {suggestion.context && !isSelected && (
             <>
               <span className="text-border">•</span>
-              <span className="text-xs text-muted-foreground/70 truncate">{suggestion.context}</span>
+              <span className="text-xs text-muted-foreground truncate">{suggestion.context}</span>
             </>
           )}
         </div>

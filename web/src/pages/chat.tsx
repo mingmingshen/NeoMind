@@ -897,7 +897,7 @@ export function ChatPage() {
       {!isDesktop && (sessions.length > 0 || !isWelcomeMode) && (
         <button
           onClick={() => setSidebarOpen(true)}
-          className="fixed left-4 z-30 h-12 w-12 rounded-full bg-foreground/90 backdrop-blur-sm text-background shadow-lg hover:bg-foreground transition-all active:scale-95 flex items-center justify-center"
+          className="fixed left-4 z-30 h-12 w-12 rounded-full bg-foreground backdrop-blur-sm text-background shadow-lg hover:bg-foreground transition-all active:scale-95 flex items-center justify-center"
           style={{top: 'calc(4rem + env(safe-area-inset-top, 0px) + 0.5rem)'}}
         >
           <MessageSquare className="h-5 w-5" />
@@ -935,21 +935,21 @@ export function ChatPage() {
               {/* Skeleton message - user */}
               <div className="flex gap-2 sm:gap-3 justify-end animate-pulse">
                 <div className="max-w-[85%] sm:max-w-[80%]">
-                  <div className="rounded-2xl px-3 py-2 sm:px-4 sm:py-3 bg-foreground/20">
-                    <div className="h-4 w-48 bg-foreground/10 rounded" />
+                  <div className="rounded-2xl px-3 py-2 sm:px-4 sm:py-3 bg-muted">
+                    <div className="h-4 w-48 bg-muted rounded" />
                   </div>
                 </div>
                 <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-muted" />
               </div>
               {/* Skeleton message - assistant */}
               <div className="flex gap-2 sm:gap-3 justify-start animate-pulse">
-                <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-foreground/20" />
+                <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-muted" />
                 <div className="max-w-[85%] sm:max-w-[80%]">
                   <div className="rounded-2xl px-3 py-2 sm:px-4 sm:py-3 bg-muted">
                     <div className="space-y-2">
-                      <div className="h-4 w-full bg-muted-foreground/10 rounded" />
-                      <div className="h-4 w-3/4 bg-muted-foreground/10 rounded" />
-                      <div className="h-4 w-1/2 bg-muted-foreground/10 rounded" />
+                      <div className="h-4 w-full bg-muted rounded" />
+                      <div className="h-4 w-3/4 bg-muted rounded" />
+                      <div className="h-4 w-1/2 bg-muted rounded" />
                     </div>
                   </div>
                 </div>
@@ -957,8 +957,8 @@ export function ChatPage() {
               {/* Another skeleton message - user */}
               <div className="flex gap-2 sm:gap-3 justify-end animate-pulse">
                 <div className="max-w-[85%] sm:max-w-[80%]">
-                  <div className="rounded-2xl px-3 py-2 sm:px-4 sm:py-3 bg-foreground/20">
-                    <div className="h-4 w-32 bg-foreground/10 rounded" />
+                  <div className="rounded-2xl px-3 py-2 sm:px-4 sm:py-3 bg-muted">
+                    <div className="h-4 w-32 bg-muted rounded" />
                   </div>
                 </div>
                 <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-muted" />
@@ -1191,7 +1191,7 @@ export function ChatPage() {
           "bg-background px-2.5 sm:px-4 pt-3 pb-5 sm:pt-3 sm:pb-6 safe-bottom",
           isDesktop
             ? "border-0"
-            : "fixed bottom-0 left-0 right-0 z-40 border-t border-border/30"
+            : "fixed bottom-0 left-0 right-0 z-40 border-t border-border"
         )} style={isDesktop ? undefined : { paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
           <div className="max-w-3xl mx-auto">
             {/* Connection status - show on mobile when not connected */}
@@ -1392,7 +1392,7 @@ export function ChatPage() {
                 return (
                   <span className={cn(
                     "text-[11px] shrink-0 transition-colors",
-                    ratio > 0.9 ? "text-red-500" : ratio > 0.7 ? "text-yellow-500" : "text-muted-foreground/60"
+                    ratio > 0.9 ? "text-red-500" : ratio > 0.7 ? "text-yellow-500" : "text-muted-foreground"
                   )}>
                     Context {(displayTokens / 1000).toFixed(1)}K / {(maxContext / 1000).toFixed(0)}K
                   </span>
@@ -1445,8 +1445,8 @@ export function ChatPage() {
                 rows={2}
                 className={cn(
                   "flex-1 px-4 py-3 rounded-2xl resize-none text-sm leading-5 scroll-mb-32",
-                  "bg-muted/50 text-foreground placeholder:text-muted-foreground",
-                  "focus:outline-none focus:ring-2 focus:ring-foreground/20",
+                  "bg-muted text-foreground placeholder:text-muted-foreground",
+                  "focus:outline-none focus:ring-2 focus:ring-ring",
                   "transition-all max-h-40"
                 )}
                 style={{ minHeight: "64px" }}
@@ -1464,7 +1464,7 @@ export function ChatPage() {
                   onClick={handleCancelRequest}
                   className={cn(
                     "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                    "bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                    "bg-destructive hover:bg-[var(--destructive-hover)] text-destructive-foreground"
                   )}
                   title="Cancel request"
                 >
@@ -1477,7 +1477,7 @@ export function ChatPage() {
                   disabled={!input.trim() && attachedImages.length === 0}
                   className={cn(
                     "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                    "bg-foreground hover:bg-foreground/90 text-background"
+                    "bg-foreground hover:bg-foreground text-background"
                   )}
                 >
                   <Send className="h-4 w-4 sm:h-5 sm:w-5" />

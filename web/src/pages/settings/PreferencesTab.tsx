@@ -126,7 +126,7 @@ export function PreferencesTab() {
     <div className="space-y-6">
       {/* Actions */}
       {hasChanges && (
-        <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+        <div className="flex items-center justify-between p-4 bg-[var(--muted-50)] rounded-lg">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Info className="h-4 w-4" />
             <span>{t("settings:unsavedChanges")}</span>
@@ -268,7 +268,7 @@ export function PreferencesTab() {
 
           {/* Current Time Preview */}
           <div className="pt-4 border-t">
-            <div className="text-center p-4 bg-muted/50 rounded-lg">
+            <div className="text-center p-4 bg-[var(--muted-50)] rounded-lg">
               <div className="text-xs text-muted-foreground mb-1">
                 {t("settings:currentTime")}
               </div>

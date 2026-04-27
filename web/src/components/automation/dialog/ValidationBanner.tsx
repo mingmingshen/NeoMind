@@ -24,7 +24,7 @@ export interface ValidationBannerProps {
 }
 
 const bannerStyles = {
-  error: 'bg-destructive/10 border-destructive/20 text-destructive',
+  error: 'bg-muted border-destructive text-destructive',
   warning: 'bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400',
   info: 'bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-400',
 }

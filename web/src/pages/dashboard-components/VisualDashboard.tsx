@@ -913,7 +913,7 @@ function renderDashboardComponent(
   } catch (error) {
     logError(error, { operation: 'Render dashboard component' })
     return (
-      <div className="p-4 text-center text-destructive h-full flex flex-col items-center justify-center bg-destructive/10 rounded-lg">
+      <div className="p-4 text-center text-destructive h-full flex flex-col items-center justify-center hover:bg-muted rounded-lg">
         <p className="text-sm font-medium">{(component as any).type}</p>
         <p className="text-xs mt-1">Error loading component</p>
       </div>
@@ -1033,7 +1033,7 @@ const ComponentWrapper = memo(function ComponentWrapper({
         <button
           onClick={handleEditButtonMouseEvent}
           onTouchEnd={handleEditButtonTouchEvent}
-          className="absolute top-2 right-2 z-50 flex items-center justify-center min-w-[44px] min-h-[44px] rounded-xl bg-[var(--bg-90)] backdrop-blur text-muted-foreground border border-border/50 shadow-sm transition-all duration-200 active:scale-95 cursor-pointer select-none"
+          className="absolute top-2 right-2 z-50 flex items-center justify-center min-w-[44px] min-h-[44px] rounded-xl bg-[var(--bg-90)] backdrop-blur text-muted-foreground border border-border shadow-sm transition-all duration-200 active:scale-95 cursor-pointer select-none"
           style={{ touchAction: 'manipulation' }}
         >
           <Settings2 className="w-5 h-5" />
@@ -1870,7 +1870,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
         {isBase64Image && (
           <div className="flex items-center gap-2">
-            <div className="w-12 h-12 rounded border overflow-hidden bg-muted/30">
+            <div className="w-12 h-12 rounded border overflow-hidden bg-[var(--muted-30)]">
               <img
                 src={value}
                 alt="Preview"
@@ -4423,7 +4423,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                                 return (
                                   <div
                                     key={binding.id}
-                                    className={`flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors cursor-pointer`}
+                                    className={`flex items-center gap-3 p-3 hover:bg-[var(--muted-50)] transition-colors cursor-pointer`}
                                     onClick={() => {
                                       // Different interactions based on type
                                       if (type === 'device' && deviceId) {
@@ -4838,7 +4838,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                                 return (
                                   <div
                                     key={binding.id}
-                                    className="flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors"
+                                    className="flex items-center gap-3 p-3 hover:bg-[var(--muted-50)] transition-colors"
                                   >
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center ${typeConfig.color}/20 ${typeConfig.textColor}`}>
                                       <Icon className="h-4 w-4" />

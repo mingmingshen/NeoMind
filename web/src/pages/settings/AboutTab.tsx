@@ -172,7 +172,7 @@ export function AboutTab() {
           ) : systemInfo ? (
             <div className="space-y-4">
               {/* Platform & Architecture */}
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-[var(--muted-50)] rounded-lg">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Server className="h-4 w-4" />
                   {t("settings:platform")}
@@ -183,7 +183,7 @@ export function AboutTab() {
               </div>
 
               {/* Uptime */}
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-[var(--muted-50)] rounded-lg">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4" />
                   {t("settings:uptime")}
@@ -194,7 +194,7 @@ export function AboutTab() {
               </div>
 
               {/* CPU */}
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-[var(--muted-50)] rounded-lg">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Cpu className="h-4 w-4" />
                   {t("settings:cpuCores")}
@@ -206,7 +206,7 @@ export function AboutTab() {
 
               {/* GPU */}
               {systemInfo.gpus.length > 0 ? (
-                <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+                <div className="p-3 bg-[var(--muted-50)] rounded-lg space-y-2">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Monitor className="h-4 w-4" />
                     {t("settings:gpu")}
@@ -230,7 +230,7 @@ export function AboutTab() {
               ) : null}
 
               {/* Memory with progress bar */}
-              <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+              <div className="p-3 bg-[var(--muted-50)] rounded-lg space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <HardDrive className="h-4 w-4" />
@@ -257,14 +257,14 @@ export function AboutTab() {
 
               {/* Memory breakdown */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-muted/30 rounded-lg text-center">
+                <div className="p-3 bg-[var(--muted-30)] rounded-lg text-center">
                   <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground mb-1">
                     <Database className="h-4 w-4" />
                     {t("settings:usedMemory")}
                   </div>
                   <div className="text-sm font-medium">{formatBytes(systemInfo.used_memory)}</div>
                 </div>
-                <div className="p-3 bg-muted/30 rounded-lg text-center">
+                <div className="p-3 bg-[var(--muted-30)] rounded-lg text-center">
                   <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground mb-1">
                     <Layers className="h-4 w-4" />
                     {t("settings:availableMemory")}

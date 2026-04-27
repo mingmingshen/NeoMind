@@ -817,7 +817,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                           "w-4 h-4 rounded border flex items-center justify-center shrink-0",
                           selectedSkills.includes(skill.id)
                             ? "bg-primary border-primary text-primary-foreground"
-                            : "border-muted-foreground/40"
+                            : "border-muted-foreground"
                         )}>
                           {selectedSkills.includes(skill.id) && (
                             <svg viewBox="0 0 12 12" fill="none" className="h-2.5 w-2.5">
@@ -860,7 +860,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                     <button
                       key={skillId}
                       onClick={() => toggleSkill(skillId)}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-muted text-primary hover:bg-[var(--muted-50)] transition-colors"
                     >
                       <BookOpen className="h-4 w-4" />
                       <span>{skill?.name || skillId}</span>

@@ -163,7 +163,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
         disabled={isCreating}
         className={cn(
           "h-8 gap-1.5 flex-shrink-0 rounded-lg",
-          "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+          "text-muted-foreground hover:text-foreground hover:bg-[var(--muted-50)]",
           "transition-all"
         )}
       >
@@ -207,7 +207,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
                 "transition-all duration-150",
                 isActive
                   ? "bg-muted text-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  : "text-muted-foreground hover:text-foreground hover:bg-[var(--muted-50)]"
               )}
             >
               <MessageSquare className="h-4 w-4 flex-shrink-0 opacity-60" />
@@ -220,7 +220,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
                 onClick={(e) => handleDeleteSession(e, session.sessionId)}
                 className={cn(
                   "p-0.5 rounded-md transition-all ml-0.5",
-                  "hover:bg-foreground/10",
+                  "hover:bg-muted",
                   isActive 
                     ? "opacity-50 hover:opacity-100" 
                     : "opacity-0 group-hover:opacity-50 hover:!opacity-100"

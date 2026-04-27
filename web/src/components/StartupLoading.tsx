@@ -106,12 +106,12 @@ export function StartupLoading({ onReady }: { onReady: () => void }) {
     <div className="min-h-screen flex flex-col items-center justify-center bg-background overflow-hidden">
       {/* Animated background */}
       <div className="fixed inset-0">
-        <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
+        <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
         <div className="absolute inset-0" style={{
           backgroundImage: 'radial-gradient(circle, #80808015 1px, transparent 1px)',
           backgroundSize: '32px 32px'
         }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 dark:bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
       </div>
 
       {/* Main content */}
@@ -135,7 +135,7 @@ export function StartupLoading({ onReady }: { onReady: () => void }) {
 
         {/* Version info */}
         {version && (
-          <p className="text-xs text-muted-foreground/50 mt-4">v{version}</p>
+          <p className="text-xs text-muted-foreground mt-4">v{version}</p>
         )}
       </div>
     </div>
