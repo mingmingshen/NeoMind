@@ -1,4 +1,5 @@
 use super::*;
+use base64::Engine;
 
 /// Result of situation analysis, branching by execution path.
 ///
@@ -608,10 +609,27 @@ impl AgentExecutor {
                         .get("image_mime_type")
                         .and_then(|v| v.as_str())
                         .unwrap_or("image/jpeg");
+                    // Clean base64: strip whitespace/newlines that can cause "illegal base64 data" errors
+                    let cleaned_base64: String = base64
+                        .chars()
+                        .filter(|c| !c.is_whitespace())
+                        .collect();
+                    // Skip if base64 is invalid after cleaning
+                    let is_valid = base64::engine::general_purpose::STANDARD
+                        .decode(&cleaned_base64)
+                        .is_ok();
+                    if !is_valid {
+                        tracing::warn!(
+                            source = %d.source,
+                            len = cleaned_base64.len(),
+                            "Skipping invalid base64 image data"
+                        );
+                        continue;
+                    }
                     image_parts.push((
                         d.source.clone(),
                         d.data_type.clone(),
-                        ImageContent::Base64(base64.to_string(), mime.to_string()),
+                        ImageContent::Base64(cleaned_base64, mime.to_string()),
                     ));
                 }
             }
@@ -1093,6 +1111,7 @@ impl AgentExecutor {
             params: GenerationParams {
                 temperature: Some(0.7),
                 max_tokens: Some(5000), // Balanced for speed and completeness
+                thinking_enabled: Some(false), // Disable thinking — analyzer needs strict JSON output
                 ..Default::default()
             },
             model: None,
