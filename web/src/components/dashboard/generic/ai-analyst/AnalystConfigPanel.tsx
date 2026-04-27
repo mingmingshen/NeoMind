@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { useAnalystModels } from './useAnalystModels'
 import type { AiAnalystConfig } from './types'
+import { DEFAULT_SYSTEM_PROMPT } from './types'
 
 interface AnalystConfigPanelProps {
   open: boolean
@@ -35,8 +36,10 @@ export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSou
 
   const handleSave = () => {
     const selectedModel = models.find((m) => m.id === modelId)
+    // Use default prompt if user left it empty
+    const effectivePrompt = systemPrompt.trim() || DEFAULT_SYSTEM_PROMPT
     onSave({
-      systemPrompt,
+      systemPrompt: effectivePrompt,
       modelId: modelId || undefined,
       modelName: selectedModel?.name,
       contextWindowSize,

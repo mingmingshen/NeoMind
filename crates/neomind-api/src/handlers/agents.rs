@@ -860,7 +860,7 @@ pub async fn create_agent(
     validate_required_string(&request.name, "name")?;
     validate_string_length(&request.name, "name", 1, 100)?;
     validate_required_string(&request.user_prompt, "user_prompt")?;
-    validate_string_length(&request.user_prompt, "user_prompt", 10, 10000)?;
+    validate_string_length(&request.user_prompt, "user_prompt", 1, 10000)?;
 
     // Validate description if provided
     if let Some(ref desc) = request.description {
@@ -1094,7 +1094,7 @@ pub async fn update_agent(
     }
     if let Some(ref prompt) = request.user_prompt {
         validate_required_string(prompt, "user_prompt")?;
-        validate_string_length(prompt, "user_prompt", 10, 10000)?;
+        validate_string_length(prompt, "user_prompt", 1, 10000)?;
     }
 
     let store = &state.agents.agent_store;
