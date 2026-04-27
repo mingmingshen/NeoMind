@@ -532,7 +532,7 @@ impl AgentExecutor {
         let mut data = Vec::new();
 
         // Get device info
-        if let Some(device) = device_service.get_device(device_id).await {
+        if let Some(device) = device_service.get_device(device_id) {
             let device_values = serde_json::json!({
                 "device_id": device.device_id,
                 "device_type": device.device_type,

@@ -79,7 +79,7 @@ pub async fn webhook_handler(
         .cloned()
         .unwrap_or_else(|| "webhook".to_string());
     // Check if device exists
-    let device_opt = state.devices.service.get_device(&device_id).await;
+    let device_opt = state.devices.service.get_device(&device_id);
 
     let device = match device_opt {
         Some(d) => d,
@@ -409,7 +409,7 @@ pub async fn webhook_generic_handler(
         .unwrap_or_else(|| "webhook".to_string());
 
     // Check if device exists
-    let device_opt = state.devices.service.get_device(&device_id).await;
+    let device_opt = state.devices.service.get_device(&device_id);
 
     let device = match device_opt {
         Some(d) => d,
@@ -534,7 +534,7 @@ pub async fn get_webhook_url_handler(
     Path(device_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     // Verify device exists
-    let device_opt = state.devices.service.get_device(&device_id).await;
+    let device_opt = state.devices.service.get_device(&device_id);
 
     if device_opt.is_none() {
         return Err(ErrorResponse::not_found(format!(

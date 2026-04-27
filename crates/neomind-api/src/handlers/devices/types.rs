@@ -33,7 +33,7 @@ use crate::models::ErrorResponse;
 pub async fn list_device_types_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let templates = state.devices.service.list_templates().await;
+    let templates = state.devices.service.list_templates();
     let dtos: Vec<DeviceTypeDto> = templates
         .into_iter()
         .map(|t| {
@@ -109,7 +109,6 @@ pub async fn get_device_type_handler(
         .devices
         .service
         .get_template(&device_type)
-        .await
         .ok_or_else(|| ErrorResponse::not_found("DeviceType"))?;
 
     let mode_str = match template.mode {
@@ -886,7 +885,6 @@ pub async fn import_cloud_device_types_handler(
             .devices
             .service
             .get_template(&template.device_type)
-            .await
             .is_some();
 
         if exists {

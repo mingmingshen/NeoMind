@@ -283,7 +283,6 @@ impl WebhookAdapter {
         let device_type = self
             .device_registry
             .get_device(&device_id)
-            .await
             .map(|d| d.device_type)
             .unwrap_or_else(|| "webhook".to_string());
 

@@ -151,7 +151,6 @@ pub async fn write_virtual_metric_handler(
         .devices
         .registry
         .get_device(&device_id)
-        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Device {} not found", device_id)))?;
 
     let timestamp = chrono::Utc::now().timestamp();
@@ -239,7 +238,6 @@ pub async fn aggregate_metrics_handler(
         .devices
         .registry
         .get_device(&device_id)
-        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Device {} not found", device_id)))?;
 
     let now = chrono::Utc::now();

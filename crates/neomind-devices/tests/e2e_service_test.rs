@@ -175,7 +175,7 @@ async fn test_e2e_device_registration_and_command() {
     service.register_template(template.clone()).await.unwrap();
 
     // 3. Verify template was registered
-    let retrieved = service.get_template("test_sensor").await;
+    let retrieved = service.get_template("test_sensor");
     assert!(retrieved.is_some());
     let retrieved = retrieved.unwrap();
     assert_eq!(retrieved.device_type, "test_sensor");
@@ -201,7 +201,7 @@ async fn test_e2e_device_registration_and_command() {
         .unwrap();
 
     // 5. Verify device was registered
-    let devices = service.list_devices().await;
+    let devices = service.list_devices();
     assert_eq!(devices.len(), 1);
     assert_eq!(devices[0].device_id, "sensor_001");
 
@@ -259,10 +259,10 @@ async fn test_e2e_device_registration_and_command() {
     );
 
     // 11. Clean up
-    service.unregister_device("sensor_001").await.unwrap();
+    service.unregister_device("sensor_001").unwrap();
     service.unregister_template("test_sensor").await.unwrap();
-    assert_eq!(service.list_devices().await.len(), 0);
-    assert!(service.get_template("test_sensor").await.is_none());
+    assert_eq!(service.list_devices().len(), 0);
+    assert!(service.get_template("test_sensor").is_none());
 }
 
 #[test]

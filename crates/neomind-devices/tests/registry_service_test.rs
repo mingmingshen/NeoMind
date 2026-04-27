@@ -31,7 +31,7 @@ async fn test_registry_template_crud() {
     registry.register_template(template.clone()).await.unwrap();
 
     // Get template
-    let retrieved = registry.get_template("test_sensor").await;
+    let retrieved = registry.get_template("test_sensor");
     assert!(retrieved.is_some());
     let retrieved = retrieved.unwrap();
     assert_eq!(retrieved.device_type, "test_sensor");
@@ -40,12 +40,12 @@ async fn test_registry_template_crud() {
     assert_eq!(retrieved.metrics[0].name, "temperature");
 
     // List templates
-    let templates = registry.list_templates().await;
+    let templates = registry.list_templates();
     assert!(templates.iter().any(|t| t.device_type == "test_sensor"));
 
     // Unregister template
     registry.unregister_template("test_sensor").await.unwrap();
-    assert!(registry.get_template("test_sensor").await.is_none());
+    assert!(registry.get_template("test_sensor").is_none());
 }
 
 #[test]
@@ -86,30 +86,30 @@ async fn test_registry_device_crud() {
         .unwrap();
 
     // Get device
-    let retrieved = registry.get_device("device1").await;
+    let retrieved = registry.get_device("device1");
     assert!(retrieved.is_some());
     let retrieved = retrieved.unwrap();
     assert_eq!(retrieved.device_id, "device1");
     assert_eq!(retrieved.device_type, "test_sensor");
 
     // List devices
-    let devices = registry.list_devices().await;
+    let devices = registry.list_devices();
     assert!(devices.iter().any(|d| d.device_id == "device1"));
 
     // List by type
-    let devices_by_type = registry.list_devices_by_type("test_sensor").await;
+    let devices_by_type = registry.list_devices_by_type("test_sensor");
     assert_eq!(devices_by_type.len(), 1);
 
     // Update device
     let mut updated = device_config.clone();
     updated.name = "Updated Device 1".to_string();
     registry.update_device("device1", updated).await.unwrap();
-    let retrieved = registry.get_device("device1").await.unwrap();
+    let retrieved = registry.get_device("device1").unwrap();
     assert_eq!(retrieved.name, "Updated Device 1");
 
     // Unregister device
-    registry.unregister_device("device1").await.unwrap();
-    assert!(registry.get_device("device1").await.is_none());
+    registry.unregister_device("device1").unwrap();
+    assert!(registry.get_device("device1").is_none());
 }
 
 #[test]
@@ -148,14 +148,14 @@ async fn test_service_template_operations() {
     service.register_template(template).await.unwrap();
 
     // Get template via service
-    let retrieved = service.get_template("test_actuator").await;
+    let retrieved = service.get_template("test_actuator");
     assert!(retrieved.is_some());
     let retrieved = retrieved.unwrap();
     assert_eq!(retrieved.commands.len(), 1);
     assert_eq!(retrieved.commands[0].name, "set_speed");
 
     // List templates
-    let templates = service.list_templates().await;
+    let templates = service.list_templates();
     assert!(templates.iter().any(|t| t.device_type == "test_actuator"));
 }
 
@@ -203,11 +203,11 @@ async fn test_service_device_operations() {
     assert_eq!(template.metrics.len(), 1);
 
     // List devices
-    let devices = service.list_devices().await;
+    let devices = service.list_devices();
     assert_eq!(devices.len(), 1);
 
     // List by type
-    let devices_by_type = service.list_devices_by_type("test_device").await;
+    let devices_by_type = service.list_devices_by_type("test_device");
     assert_eq!(devices_by_type.len(), 1);
 }
 

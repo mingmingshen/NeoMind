@@ -650,7 +650,7 @@ impl DeviceAdapter for HttpAdapter {
 
     async fn subscribe_device(&self, device_id: &str) -> AdapterResult<()> {
         // Get device config from registry
-        let device_opt = self.device_registry.get_device(device_id).await;
+        let device_opt = self.device_registry.get_device(device_id);
         if let Some(device) = device_opt {
             // Extract HTTP-specific config from connection_config.extra
             let cc = &device.connection_config;

@@ -382,7 +382,7 @@ impl MqttAdapter {
         // Restore topic_to_device and device_types mappings from device registry
         // This is critical for server restart - devices must be able to receive data and metrics must be stored
         let registry = self.device_registry.read().await;
-        let devices = registry.list_devices().await;
+        let devices = registry.list_devices();
         let mut topic_mapping = self.topic_to_device.write().await;
         let mut type_mapping = self.device_types.write().await;
         let mut restored_topic_count = 0;
@@ -610,7 +610,7 @@ impl MqttAdapter {
 
         // Restore topic_to_device and device_types mappings from device registry
         let registry = self.device_registry.read().await;
-        let devices = registry.list_devices().await;
+        let devices = registry.list_devices();
         let mut topic_mapping = self.topic_to_device.write().await;
         let mut type_mapping = self.device_types.write().await;
         let mut restored_topic_count = 0;
@@ -1500,8 +1500,7 @@ impl DeviceAdapter for MqttAdapter {
             .device_registry
             .read()
             .await
-            .get_device(device_id)
-            .await;
+            .get_device(device_id);
         info!(
             "Device lookup result for {}: {:?}",
             device_id,
@@ -1582,8 +1581,7 @@ impl DeviceAdapter for MqttAdapter {
             .device_registry
             .read()
             .await
-            .get_device(device_id)
-            .await;
+            .get_device(device_id);
         if let Some(device) = device_opt {
             // Unsubscribe from the device's telemetry topic if configured
             if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {

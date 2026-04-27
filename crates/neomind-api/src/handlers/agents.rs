@@ -2143,7 +2143,7 @@ pub async fn get_available_resources(
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
     // Collect available devices
-    let devices = state.devices.service.list_devices().await;
+    let devices = state.devices.service.list_devices();
     let device_statuses = state.devices.service.get_all_device_statuses().await;
 
     let mut device_resources = Vec::new();

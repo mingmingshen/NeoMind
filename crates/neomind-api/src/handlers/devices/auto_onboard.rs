@@ -615,7 +615,7 @@ pub async fn suggest_device_types(
         .await;
 
     // Get all device types to find partial matches
-    let all_types = device_service.list_templates().await;
+    let all_types = device_service.list_templates();
 
     // Build suggestions list - include all types with their match scores
     let mut suggestions: Vec<SuggestedType> = Vec::new();

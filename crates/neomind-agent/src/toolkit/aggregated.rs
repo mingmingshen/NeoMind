@@ -215,12 +215,12 @@ impl DeviceTool {
     /// Resolve device_id with fuzzy matching support using the generic EntityResolver.
     async fn resolve_device_id(&self, device_id: &str) -> Result<String> {
         // Fast path: exact ID match without listing all devices
-        if self.device_service.get_device(device_id).await.is_some() {
+        if self.device_service.get_device(device_id).is_some() {
             return Ok(device_id.to_string());
         }
 
         // Slow path: fuzzy match via resolver
-        let devices = self.device_service.list_devices().await;
+        let devices = self.device_service.list_devices();
         let candidates: Vec<(String, String)> = devices
             .iter()
             .map(|d| (d.device_id.clone(), d.name.clone()))
@@ -231,7 +231,7 @@ impl DeviceTool {
     }
 
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
-        let devices = self.device_service.list_devices().await;
+        let devices = self.device_service.list_devices();
         let device_type_filter = args["device_type"].as_str();
         let detailed = Self::is_detailed(args);
 
@@ -263,7 +263,7 @@ impl DeviceTool {
                 "type": d.device_type,
             });
 
-            if let Some(template) = self.device_service.get_template(&d.device_type).await {
+            if let Some(template) = self.device_service.get_template(&d.device_type) {
                 if !template.metrics.is_empty() {
                     let metric_names: Vec<&str> =
                         template.metrics.iter().map(|m| m.name.as_str()).collect();
@@ -348,7 +348,6 @@ impl DeviceTool {
         let device = self
             .device_service
             .get_device(&device_id)
-            .await
             .ok_or_else(|| ToolError::Execution(format!("Device not found: {}", device_id)))?;
 
         let detailed = Self::is_detailed(args);
@@ -370,7 +369,7 @@ impl DeviceTool {
         };
 
         // Enrich with metrics and commands from device type template
-        if let Some(template) = self.device_service.get_template(&device.device_type).await {
+        if let Some(template) = self.device_service.get_template(&device.device_type) {
             if !template.metrics.is_empty() {
                 let storage = self.storage.as_ref();
                 let mut metrics_info: Vec<Value> = Vec::new();
@@ -559,9 +558,9 @@ impl DeviceTool {
             // If no data found, try to resolve metric name from device template
             // This handles cases where user passes "battery" but storage key is "values.battery"
             if data.is_empty() {
-                if let Some(device) = self.device_service.get_device(&device_id).await {
+                if let Some(device) = self.device_service.get_device(&device_id) {
                     if let Some(template) =
-                        self.device_service.get_template(&device.device_type).await
+                        self.device_service.get_template(&device.device_type)
                     {
                         // Try to find a metric whose name ends with the user input
                         // e.g., "battery" matches "values.battery"
@@ -600,9 +599,9 @@ impl DeviceTool {
             // If no data found after all attempts, the metric key is likely incorrect.
             // Return available metrics from the device template so the LLM can retry.
             if data.is_empty() {
-                if let Some(device) = self.device_service.get_device(&device_id).await {
+                if let Some(device) = self.device_service.get_device(&device_id) {
                     if let Some(template) =
-                        self.device_service.get_template(&device.device_type).await
+                        self.device_service.get_template(&device.device_type)
                     {
                         let available: Vec<Value> = template
                             .metrics
@@ -729,8 +728,8 @@ impl DeviceTool {
             .ok_or_else(|| ToolError::InvalidArguments("command is required".into()))?;
 
         // Validate command against device type template
-        if let Some(device) = self.device_service.get_device(&device_id).await {
-            if let Some(template) = self.device_service.get_template(&device.device_type).await {
+        if let Some(device) = self.device_service.get_device(&device_id) {
+            if let Some(template) = self.device_service.get_template(&device.device_type) {
                 if let Some(cmd_def) = template.commands.iter().find(|c| c.name == command) {
                     let params_obj = args.get("params").and_then(|p| p.as_object());
                     let mut missing: Vec<String> = Vec::new();

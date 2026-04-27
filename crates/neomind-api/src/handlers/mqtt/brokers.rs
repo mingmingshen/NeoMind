@@ -193,7 +193,7 @@ pub async fn create_and_connect_broker(
             // Set shared device registry so the adapter can access devices registered via DeviceService
             // This is critical for external brokers to properly route messages to registered devices
             if let Some(mqtt) = adapter.as_any().downcast_ref::<MqttAdapter>() {
-                mqtt.set_shared_device_registry(context.device_service.get_registry().await)
+                mqtt.set_shared_device_registry(context.device_service.get_registry())
                     .await;
 
                 // Use add_broker_with_tls for proper TLS support

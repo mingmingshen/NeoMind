@@ -143,7 +143,7 @@ pub async fn get_system_stats_handler(
         .timestamp();
 
     // Get device stats using DeviceService
-    let configs = state.devices.service.list_devices().await;
+    let configs = state.devices.service.list_devices();
     // Get current metrics to count devices with metrics
     let mut devices_with_metrics = 0;
     for config in &configs {
@@ -443,7 +443,7 @@ pub fn detect_gpus() -> Vec<GpuInfo> {
 pub async fn get_device_stats_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let configs = state.devices.service.list_devices().await;
+    let configs = state.devices.service.list_devices();
 
     let mut devices_with_stats = Vec::new();
     for config in configs {

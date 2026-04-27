@@ -55,7 +55,7 @@ impl DeviceCapabilityProvider {
                 ExtensionCapability::DeviceMetricsRead,
             ))?;
 
-        let device = device_service.get_device(device_id).await.ok_or_else(|| {
+        let device = device_service.get_device(device_id).ok_or_else(|| {
             CapabilityError::InvalidParameters(format!("Device '{}' not found", device_id))
         })?;
 
@@ -63,7 +63,7 @@ impl DeviceCapabilityProvider {
         let device_health = health.get(device_id);
 
         let mut metrics = serde_json::Map::new();
-        if let Some(template) = device_service.get_template(&device.device_type).await {
+        if let Some(template) = device_service.get_template(&device.device_type) {
             for metric_def in &template.metrics {
                 if let Ok(Some(latest)) =
                     telemetry_storage.latest(device_id, &metric_def.name).await
@@ -894,7 +894,7 @@ impl StorageCapabilityProvider {
                             ExtensionCapability::StorageQuery,
                         ))?;
 
-                    let device = device_service.get_device(device_id).await.ok_or_else(|| {
+                    let device = device_service.get_device(device_id).ok_or_else(|| {
                         CapabilityError::InvalidParameters(format!(
                             "Device '{}' not found",
                             device_id
@@ -902,7 +902,7 @@ impl StorageCapabilityProvider {
                     })?;
 
                     let mut metrics = serde_json::Map::new();
-                    if let Some(template) = device_service.get_template(&device.device_type).await {
+                    if let Some(template) = device_service.get_template(&device.device_type) {
                         for metric_def in &template.metrics {
                             if let Ok(Some(latest)) =
                                 telemetry_storage.latest(device_id, &metric_def.name).await

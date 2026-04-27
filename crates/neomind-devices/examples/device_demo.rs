@@ -125,7 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // === Example 4: List All Devices ===
     println!("--- Example 4: List All Devices ---");
 
-    let devices = device_service.list_devices().await;
+    let devices = device_service.list_devices();
     for device in &devices {
         println!("  - {} ({})", device.device_id, device.device_type);
         println!("    Name: {}", device.name);
@@ -136,7 +136,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // === Example 5: Get Device Details ===
     println!("--- Example 5: Get Device Details ---");
 
-    if let Some(device) = device_service.get_device("greenhouse_temp_1").await {
+    if let Some(device) = device_service.get_device("greenhouse_temp_1") {
         println!("Device ID: {}", device.device_id);
         println!("Name: {}", device.name);
         println!("Type: {}", device.device_type);
@@ -152,7 +152,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // === Example 6: List Templates ===
     println!("\n--- Example 7: Available Device Types ---");
 
-    let templates = device_service.list_templates().await;
+    let templates = device_service.list_templates();
     for template in &templates {
         println!("  - {} ({})", template.device_type, template.name);
         println!(

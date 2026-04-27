@@ -142,7 +142,7 @@ mod tests {
         let state = crate::common::create_test_server_state().await;
 
         // Just verify the state can be created
-        let _ = state.devices.service.list_devices().await.len(); // usize is always >= 0
+        let _ = state.devices.service.list_devices().len(); // usize is always >= 0
     }
 
     #[tokio::test]
@@ -153,8 +153,7 @@ mod tests {
         let result = state
             .devices
             .service
-            .get_device("non-existent-device")
-            .await;
+            .get_device("non-existent-device");
         assert!(result.is_none());
     }
 

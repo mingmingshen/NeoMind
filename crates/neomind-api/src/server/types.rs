@@ -1029,7 +1029,7 @@ impl ServerState {
                     .as_any()
                     .downcast_ref::<neomind_devices::adapters::mqtt::MqttAdapter>()
                 {
-                    mqtt.set_shared_device_registry(self.devices.service.get_registry().await)
+                    mqtt.set_shared_device_registry(self.devices.service.get_registry())
                         .await;
                 }
 
@@ -1637,7 +1637,7 @@ impl ServerState {
                                     .unwrap_or(false);
 
                                 // Check if device is already registered - skip auto-onboarding if it is
-                                if device_service_clone.get_device(device_id).await.is_some() {
+                                if device_service_clone.get_device(device_id).is_some() {
                                     tracing::debug!(
                                         "Device {} already registered, skipping auto-onboarding",
                                         device_id

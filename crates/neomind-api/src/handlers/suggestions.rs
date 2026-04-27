@@ -139,8 +139,8 @@ fn get_time_context() -> String {
 
 /// Get device count from the system
 async fn get_device_count(state: &ServerState) -> usize {
-    let registry = state.devices.service.get_registry().await;
-    registry.list_devices().await.len()
+    let registry = state.devices.service.get_registry();
+    registry.list_devices().len()
 }
 
 /// Generate time-based context-aware suggestions
@@ -222,8 +222,8 @@ async fn generate_time_based_suggestions(
 async fn generate_device_based_suggestions(state: &ServerState) -> Vec<SuggestionItem> {
     let mut suggestions = Vec::new();
 
-    let registry = state.devices.service.get_registry().await;
-    let devices = registry.list_devices().await;
+    let registry = state.devices.service.get_registry();
+    let devices = registry.list_devices();
 
     if devices.is_empty() {
         // No devices: suggest adding one

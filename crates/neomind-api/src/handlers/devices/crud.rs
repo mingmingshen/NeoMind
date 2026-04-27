@@ -80,9 +80,9 @@ pub async fn list_devices_handler(
     let offset = (page - 1) * limit;
 
     // Batch-fetch all data with minimal lock acquisitions
-    let configs = state.devices.service.list_devices().await;
+    let configs = state.devices.service.list_devices();
     let all_statuses = state.devices.service.get_all_device_statuses().await;
-    let all_templates = state.devices.service.list_templates().await;
+    let all_templates = state.devices.service.list_templates();
     let template_map: std::collections::HashMap<&str, _> = all_templates
         .iter()
         .map(|t| (t.device_type.as_str(), t))
@@ -524,7 +524,7 @@ pub async fn get_devices_current_batch_handler(
         // If cache is empty, try time_series_storage for recent data
         let current_values_json = if current_values_json.is_empty() {
             // Try to get the device template to know which metrics to fetch
-            let template = state.devices.service.get_template(&device_id).await;
+            let template = state.devices.service.get_template(&device_id);
 
             if let Some(template) = template {
                 let mut values = std::collections::HashMap::new();
@@ -577,7 +577,6 @@ pub async fn delete_device_handler(
         .devices
         .service
         .unregister_device(&device_id)
-        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete device: {}", e)))?;
     ok(json!({
         "device_id": device_id,
@@ -646,7 +645,6 @@ pub async fn update_device_handler(
         .devices
         .service
         .get_device(&device_id)
-        .await
         .ok_or_else(|| ErrorResponse::not_found("Device"))?;
 
     // Parse connection_config if provided
@@ -694,7 +692,6 @@ pub async fn get_device_state_handler(
         .devices
         .service
         .get_device(&device_id)
-        .await
         .ok_or_else(|| ErrorResponse::not_found("Device"))?;
 
     // Get device status
@@ -726,7 +723,6 @@ pub async fn get_device_health_handler(
         .devices
         .service
         .get_device(&device_id)
-        .await
         .ok_or_else(|| ErrorResponse::not_found("Device"))?;
 
     let device_status = state.devices.service.get_device_status(&device_id).await;
@@ -776,7 +772,6 @@ pub async fn refresh_device_handler(
         .devices
         .service
         .get_device(&device_id)
-        .await
         .ok_or_else(|| ErrorResponse::not_found("Device"))?;
 
     // Try to get adapter and trigger refresh

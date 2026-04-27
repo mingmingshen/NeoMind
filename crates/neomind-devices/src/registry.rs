@@ -17,11 +17,12 @@
 //! let registry = DeviceRegistry::new();
 //! ```
 
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::sync::atomic::AtomicBool;
 
 use super::mdl::DeviceError;
 use super::mdl::MetricDataType;
@@ -374,26 +375,26 @@ fn convert_connection_config_to_storage(
 /// Stores both templates and device configurations with optional persistence
 pub struct DeviceRegistry {
     /// Device type templates indexed by device_type
-    templates: Arc<RwLock<HashMap<String, DeviceTypeTemplate>>>,
+    templates: DashMap<String, DeviceTypeTemplate>,
     /// Device instance configurations indexed by device_id
-    devices: Arc<RwLock<HashMap<String, DeviceConfig>>>,
+    devices: DashMap<String, DeviceConfig>,
     /// Index: device_type -> set of device_ids
-    type_index: Arc<RwLock<HashMap<String, Vec<String>>>>,
+    type_index: DashMap<String, Vec<String>>,
     /// Optional persistent storage backend
     storage: Option<Arc<DeviceRegistryStore>>,
     /// Whether to auto-save after modifications
-    auto_save: Arc<RwLock<bool>>,
+    auto_save: AtomicBool,
 }
 
 impl DeviceRegistry {
     /// Create a new in-memory device registry (no persistence)
     pub fn new() -> Self {
         Self {
-            templates: Arc::new(RwLock::new(HashMap::new())),
-            devices: Arc::new(RwLock::new(HashMap::new())),
-            type_index: Arc::new(RwLock::new(HashMap::new())),
+            templates: DashMap::new(),
+            devices: DashMap::new(),
+            type_index: DashMap::new(),
             storage: None,
-            auto_save: Arc::new(RwLock::new(false)),
+            auto_save: AtomicBool::new(false),
         }
     }
 
@@ -406,11 +407,11 @@ impl DeviceRegistry {
             .map_err(|e| DeviceError::Storage(format!("Failed to open storage: {}", e)))?;
 
         let registry = Self {
-            templates: Arc::new(RwLock::new(HashMap::new())),
-            devices: Arc::new(RwLock::new(HashMap::new())),
-            type_index: Arc::new(RwLock::new(HashMap::new())),
-            storage: Some(store), // Already an Arc
-            auto_save: Arc::new(RwLock::new(true)),
+            templates: DashMap::new(),
+            devices: DashMap::new(),
+            type_index: DashMap::new(),
+            storage: Some(store),
+            auto_save: AtomicBool::new(true),
         };
 
         // Load existing data from storage
@@ -507,8 +508,7 @@ impl DeviceRegistry {
                     .collect(),
             };
 
-            let mut templates = self.templates.write().await;
-            templates.insert(template.device_type.clone(), template);
+            self.templates.insert(template.device_type.clone(), template);
         }
 
         // Load devices
@@ -529,26 +529,18 @@ impl DeviceRegistry {
             let device_id = config.device_id.clone();
             let device_type = config.device_type.clone();
 
-            // Store device
-            {
-                let mut devices = self.devices.write().await;
-                devices.insert(device_id.clone(), config);
-            }
+            self.devices.insert(device_id.clone(), config);
 
-            // Update type index
-            {
-                let mut type_index = self.type_index.write().await;
-                type_index
-                    .entry(device_type)
-                    .or_insert_with(Vec::new)
-                    .push(device_id);
-            }
+            self.type_index
+                .entry(device_type)
+                .or_insert_with(Vec::new)
+                .push(device_id);
         }
 
         tracing::info!(
             "Loaded {} templates and {} devices from storage",
-            self.templates.read().await.len(),
-            self.devices.read().await.len()
+            self.templates.len(),
+            self.devices.len()
         );
 
         Ok(())
@@ -561,8 +553,9 @@ impl DeviceRegistry {
         };
 
         // Convert and save templates
-        let templates = self.templates.read().await;
-        for template in templates.values() {
+        for entry in self.templates.iter() {
+            let template = entry.value();
+
             // Convert local mode to storage mode
             let mode = match template.mode {
                 DeviceTypeMode::Simple => neomind_storage::device_registry::DeviceTypeMode::Simple,
@@ -641,11 +634,11 @@ impl DeviceRegistry {
                 .save_template(&storage_template)
                 .map_err(|e| DeviceError::Storage(format!("Failed to save template: {}", e)))?;
         }
-        drop(templates);
 
         // Convert and save devices
-        let devices = self.devices.read().await;
-        for device in devices.values() {
+        for entry in self.devices.iter() {
+            let device = entry.value();
+
             let storage_config = StorageConfig {
                 device_id: device.device_id.clone(),
                 name: device.name.clone(),
@@ -663,22 +656,26 @@ impl DeviceRegistry {
 
         tracing::debug!(
             "Saved {} templates and {} devices to storage",
-            self.templates.read().await.len(),
-            self.devices.read().await.len()
+            self.templates.len(),
+            self.devices.len()
         );
 
         Ok(())
     }
 
     /// Enable or disable auto-save
-    pub async fn set_auto_save(&self, enabled: bool) {
-        let mut auto_save = self.auto_save.write().await;
-        *auto_save = enabled;
+    pub fn set_auto_save(&self, enabled: bool) {
+        self.auto_save.store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Check if storage is enabled
     pub fn has_storage(&self) -> bool {
         self.storage.is_some()
+    }
+
+    /// Helper: check if auto-save is enabled
+    fn is_auto_save(&self) -> bool {
+        self.auto_save.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     // ========== Template Management ==========
@@ -765,12 +762,10 @@ impl DeviceRegistry {
                 .collect(),
         };
 
-        let mut templates = self.templates.write().await;
-        templates.insert(device_type.clone(), template);
+        self.templates.insert(device_type, template);
 
         // Save to storage if enabled
-        drop(templates);
-        if self.storage.is_some() && *self.auto_save.read().await {
+        if self.is_auto_save() {
             if let Some(store) = &self.storage {
                 if let Err(e) = store.save_template(&storage_template) {
                     tracing::warn!("Failed to save template to storage: {}", e);
@@ -782,38 +777,32 @@ impl DeviceRegistry {
     }
 
     /// Get a device type template
-    pub async fn get_template(&self, device_type: &str) -> Option<DeviceTypeTemplate> {
-        let templates = self.templates.read().await;
-        templates.get(device_type).cloned()
+    pub fn get_template(&self, device_type: &str) -> Option<DeviceTypeTemplate> {
+        self.templates.get(device_type).map(|v| v.value().clone())
     }
 
     /// List all device type templates
-    pub async fn list_templates(&self) -> Vec<DeviceTypeTemplate> {
-        let templates = self.templates.read().await;
-        templates.values().cloned().collect()
+    pub fn list_templates(&self) -> Vec<DeviceTypeTemplate> {
+        self.templates.iter().map(|e| e.value().clone()).collect()
     }
 
     /// Unregister a device type template
     pub async fn unregister_template(&self, device_type: &str) -> Result<(), DeviceError> {
         // Check if any devices are using this template
-        let type_index = self.type_index.read().await;
-        if let Some(device_ids) = type_index.get(device_type) {
-            if !device_ids.is_empty() {
+        if let Some(type_entry) = self.type_index.get(device_type) {
+            if !type_entry.is_empty() {
                 return Err(DeviceError::InvalidParameter(format!(
                     "Cannot unregister template '{}': {} devices still use it",
                     device_type,
-                    device_ids.len()
+                    type_entry.len()
                 )));
             }
         }
-        drop(type_index);
 
-        let mut templates = self.templates.write().await;
-        templates.remove(device_type);
-        drop(templates);
+        self.templates.remove(device_type);
 
         // Delete from storage if enabled
-        if self.storage.is_some() && *self.auto_save.read().await {
+        if self.is_auto_save() {
             if let Some(store) = &self.storage {
                 if let Err(e) = store.delete_template(device_type) {
                     tracing::warn!("Failed to delete template from storage: {}", e);
@@ -871,7 +860,6 @@ impl DeviceRegistry {
         // Validate that the template exists
         let _template = self
             .get_template(&config.device_type)
-            .await
             .ok_or_else(|| {
                 DeviceError::NotFoundStr(format!(
                     "Device type template '{}' not found",
@@ -890,15 +878,12 @@ impl DeviceRegistry {
         let device_type = config.device_type.clone();
 
         // Check if device already exists
-        {
-            let devices = self.devices.read().await;
-            if devices.contains_key(&device_id) {
-                return Err(DeviceError::AlreadyExists(device_id));
-            }
+        if self.devices.contains_key(&device_id) {
+            return Err(DeviceError::AlreadyExists(device_id));
         }
 
         // Prepare storage config (cloned before moving config)
-        let storage_config = if self.storage.is_some() && *self.auto_save.read().await {
+        let storage_config = if self.is_auto_save() {
             Some(StorageConfig {
                 device_id: config.device_id.clone(),
                 name: config.name.clone(),
@@ -924,46 +909,37 @@ impl DeviceRegistry {
         }
 
         // Store device configuration in memory
-        {
-            let mut devices = self.devices.write().await;
-            devices.insert(device_id.clone(), config);
-        }
+        self.devices.insert(device_id.clone(), config);
 
         // Update type index
-        {
-            let mut type_index = self.type_index.write().await;
-            type_index
-                .entry(device_type)
-                .or_insert_with(Vec::new)
-                .push(device_id);
-        }
+        self.type_index
+            .entry(device_type)
+            .or_insert_with(Vec::new)
+            .push(device_id);
 
         Ok(())
     }
 
     /// Get a device configuration
-    pub async fn get_device(&self, device_id: &str) -> Option<DeviceConfig> {
-        let devices = self.devices.read().await;
-        devices.get(device_id).cloned()
+    pub fn get_device(&self, device_id: &str) -> Option<DeviceConfig> {
+        self.devices.get(device_id).map(|v| v.value().clone())
     }
 
     /// List all device configurations
-    pub async fn list_devices(&self) -> Vec<DeviceConfig> {
-        let devices = self.devices.read().await;
-        devices.values().cloned().collect()
+    pub fn list_devices(&self) -> Vec<DeviceConfig> {
+        self.devices.iter().map(|e| e.value().clone()).collect()
     }
 
     /// Find a device by its telemetry topic
     /// This is used by MQTT adapters to route messages from custom topics
-    pub async fn find_device_by_telemetry_topic(
+    pub fn find_device_by_telemetry_topic(
         &self,
         topic: &str,
     ) -> Option<(String, DeviceConfig)> {
-        let devices = self.devices.read().await;
-        for (device_id, config) in devices.iter() {
-            if let Some(ref telemetry_topic) = config.connection_config.telemetry_topic {
+        for entry in self.devices.iter() {
+            if let Some(ref telemetry_topic) = entry.value().connection_config.telemetry_topic {
                 if telemetry_topic == topic {
-                    return Some((device_id.clone(), config.clone()));
+                    return Some((entry.key().clone(), entry.value().clone()));
                 }
             }
         }
@@ -971,51 +947,42 @@ impl DeviceRegistry {
     }
 
     /// List devices by type
-    pub async fn list_devices_by_type(&self, device_type: &str) -> Vec<DeviceConfig> {
-        let type_index = self.type_index.read().await;
-        let device_ids = type_index.get(device_type).cloned().unwrap_or_default();
-        drop(type_index);
+    pub fn list_devices_by_type(&self, device_type: &str) -> Vec<DeviceConfig> {
+        let device_ids = self
+            .type_index
+            .get(device_type)
+            .map(|e| e.value().clone())
+            .unwrap_or_default();
 
-        let devices = self.devices.read().await;
         device_ids
             .iter()
-            .filter_map(|id| devices.get(id).cloned())
+            .filter_map(|id| self.devices.get(id).map(|e| e.value().clone()))
             .collect()
     }
 
     /// Unregister a device configuration
-    pub async fn unregister_device(&self, device_id: &str) -> Result<(), DeviceError> {
+    pub fn unregister_device(&self, device_id: &str) -> Result<(), DeviceError> {
         // Get device to find its type
-        let device_type = {
-            let devices = self.devices.read().await;
-            devices.get(device_id).map(|d| d.device_type.clone())
-        };
-
-        if device_type.is_none() {
-            return Err(DeviceError::NotFoundStr(device_id.to_string()));
-        }
-
-        let device_type = device_type.expect("device_type checked for None above");
+        let device_type = self
+            .devices
+            .get(device_id)
+            .map(|d| d.device_type.clone())
+            .ok_or_else(|| DeviceError::NotFoundStr(device_id.to_string()))?;
 
         // Remove device
-        {
-            let mut devices = self.devices.write().await;
-            devices.remove(device_id);
-        }
+        self.devices.remove(device_id);
 
         // Update type index
-        {
-            let mut type_index = self.type_index.write().await;
-            if let Some(device_ids) = type_index.get_mut(&device_type) {
-                device_ids.retain(|id| id != device_id);
-                if device_ids.is_empty() {
-                    type_index.remove(&device_type);
-                }
-            }
+        if let Some(mut type_entry) = self.type_index.get_mut(&device_type) {
+            type_entry.retain(|id| id != device_id);
+        }
+        // Clean up empty type index entries
+        if self.type_index.get(&device_type).map_or(false, |e| e.is_empty()) {
+            self.type_index.remove(&device_type);
         }
 
         // Delete from storage if enabled
-        if self.storage.is_some() && *self.auto_save.read().await {
+        if self.is_auto_save() {
             if let Some(store) = &self.storage {
                 if let Err(e) = store.delete_device(device_id) {
                     tracing::warn!("Failed to delete device from storage: {}", e);
@@ -1043,7 +1010,7 @@ impl DeviceRegistry {
         let new_device_type = config.device_type.clone();
 
         // Prepare storage config (cloned before moving config)
-        let storage_config = if self.storage.is_some() && *self.auto_save.read().await {
+        let storage_config = if self.is_auto_save() {
             Some(StorageConfig {
                 device_id: config.device_id.clone(),
                 name: config.name.clone(),
@@ -1059,46 +1026,38 @@ impl DeviceRegistry {
         };
 
         // Validate template exists
-        self.get_template(&new_device_type).await.ok_or_else(|| {
+        self.get_template(&new_device_type).ok_or_else(|| {
             DeviceError::NotFoundStr(format!(
                 "Device type template '{}' not found",
                 new_device_type
             ))
         })?;
 
-        // Update device (type change handling if needed)
-        let old_device_type = {
-            let devices = self.devices.read().await;
-            devices.get(device_id).map(|d| d.device_type.clone())
-        };
+        // Get old device type for index update
+        let old_device_type = self
+            .devices
+            .get(device_id)
+            .map(|d| d.device_type.clone());
 
-        {
-            let mut devices = self.devices.write().await;
-            devices.insert(device_id.to_string(), config);
-        }
+        // Update device
+        self.devices.insert(device_id.to_string(), config);
 
         // Update type index if type changed
         if let Some(old_type) = old_device_type {
             if old_type != new_device_type {
                 // Remove from old type index
-                {
-                    let mut type_index = self.type_index.write().await;
-                    if let Some(device_ids) = type_index.get_mut(&old_type) {
-                        device_ids.retain(|id| id != device_id);
-                        if device_ids.is_empty() {
-                            type_index.remove(&old_type);
-                        }
-                    }
+                if let Some(mut type_entry) = self.type_index.get_mut(&old_type) {
+                    type_entry.retain(|id| id != device_id);
+                }
+                if self.type_index.get(&old_type).map_or(false, |e| e.is_empty()) {
+                    self.type_index.remove(&old_type);
                 }
 
                 // Add to new type index
-                {
-                    let mut type_index = self.type_index.write().await;
-                    type_index
-                        .entry(new_device_type)
-                        .or_insert_with(Vec::new)
-                        .push(device_id.to_string());
-                }
+                self.type_index
+                    .entry(new_device_type)
+                    .or_insert_with(Vec::new)
+                    .push(device_id.to_string());
             }
         }
 
@@ -1115,15 +1074,13 @@ impl DeviceRegistry {
     }
 
     /// Get device count
-    pub async fn device_count(&self) -> usize {
-        let devices = self.devices.read().await;
-        devices.len()
+    pub fn device_count(&self) -> usize {
+        self.devices.len()
     }
 
     /// Get template count
-    pub async fn template_count(&self) -> usize {
-        let templates = self.templates.read().await;
-        templates.len()
+    pub fn template_count(&self) -> usize {
+        self.templates.len()
     }
 
     /// Get reference to storage backend (for command history, etc.)
@@ -1160,7 +1117,7 @@ mod tests {
 
         registry.register_template(template).await.unwrap();
 
-        let retrieved = registry.get_template("test_sensor").await;
+        let retrieved = registry.get_template("test_sensor");
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().name, "Test Sensor");
     }
@@ -1185,7 +1142,7 @@ mod tests {
 
         registry.register_device(config).await.unwrap();
 
-        let retrieved = registry.get_device("sensor1").await;
+        let retrieved = registry.get_device("sensor1");
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().name, "Sensor 1");
     }
@@ -1228,7 +1185,7 @@ mod tests {
             registry.register_device(config).await.unwrap();
         }
 
-        let devices = registry.list_devices_by_type("test_sensor").await;
+        let devices = registry.list_devices_by_type("test_sensor");
         assert_eq!(devices.len(), 3);
     }
 

@@ -200,7 +200,7 @@ pub async fn export_config_handler(
     }
 
     // Export devices using DeviceService
-    let configs = state.devices.service.list_devices().await;
+    let configs = state.devices.service.list_devices();
     if !configs.is_empty() {
         export.devices = Some(DevicesExport {
             devices: configs

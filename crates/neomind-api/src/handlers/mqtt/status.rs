@@ -89,7 +89,7 @@ pub async fn get_mqtt_status_handler(
     let server_ip = get_server_ip();
 
     // Count devices using DeviceService
-    let configs = state.devices.service.list_devices().await;
+    let configs = state.devices.service.list_devices();
     let devices_count = configs.len();
     let subscriptions_count = devices_count;
 

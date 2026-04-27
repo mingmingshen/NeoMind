@@ -958,7 +958,7 @@ pub async fn get_resources_handler(
     let mut devices = Vec::new();
 
     // Get all devices with their templates
-    let all_devices = state.devices.service.list_devices().await;
+    let all_devices = state.devices.service.list_devices();
 
     // ✅ 优化：收集唯一的 device_type，批量获取并预转换模板
     // 这样可以避免在循环中重复调用 get_template() 和重复转换
@@ -971,7 +971,7 @@ pub async fn get_resources_handler(
         HashMap::new();
 
     for device_type in unique_types {
-        if let Some(tpl) = state.devices.service.get_template(device_type).await {
+        if let Some(tpl) = state.devices.service.get_template(device_type) {
             // 预转换 metrics
             let metrics: Vec<MetricInfo> = tpl
                 .metrics
@@ -1172,7 +1172,7 @@ pub async fn validate_rule_handler(
     // Add devices
     use neomind_rules::{DeviceInfo, MetricDataType, MetricInfo};
 
-    let all_devices = state.devices.service.list_devices().await;
+    let all_devices = state.devices.service.list_devices();
     for device in all_devices {
         let mut metrics = Vec::new();
         match device.device_type.as_str() {

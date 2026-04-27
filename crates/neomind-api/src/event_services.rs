@@ -201,7 +201,6 @@ impl TransformEventService {
                         // Get device type from registry (cached for the debounce task)
                         let device_type: Option<String> = device_registry
                             .get_device(&device_id)
-                            .await
                             .map(|d| d.device_type.clone());
 
                         // Cancel existing timer for this device if any

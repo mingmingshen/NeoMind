@@ -148,7 +148,7 @@ impl UnifiedExtractor {
         }
 
         // Step 2: Try template-driven extraction
-        let template = self.device_registry.get_template(device_type).await;
+        let template = self.device_registry.get_template(device_type);
 
         let mode = if let Some(template) = template {
             // Check if template has defined metrics

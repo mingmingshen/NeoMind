@@ -491,7 +491,7 @@ impl DeviceService {
                 // but haven't sent any metrics yet are also monitored for stale status.
                 {
                     // First, get all registered device IDs from the registry
-                    let registered_devices = registry.list_devices().await;
+                    let registered_devices = registry.list_devices();
 
                     // Then check status for each device
                     let mut status_map = device_status.write().await;
@@ -781,13 +781,13 @@ impl DeviceService {
     }
 
     /// Get a device type template
-    pub async fn get_template(&self, device_type: &str) -> Option<DeviceTypeTemplate> {
-        self.registry.get_template(device_type).await
+    pub fn get_template(&self, device_type: &str) -> Option<DeviceTypeTemplate> {
+        self.registry.get_template(device_type)
     }
 
     /// List all device type templates
-    pub async fn list_templates(&self) -> Vec<DeviceTypeTemplate> {
-        self.registry.list_templates().await
+    pub fn list_templates(&self) -> Vec<DeviceTypeTemplate> {
+        self.registry.list_templates()
     }
 
     /// Unregister a device type template
@@ -911,13 +911,11 @@ impl DeviceService {
         let config = self
             .registry
             .get_device(device_id)
-            .await
             .ok_or_else(|| DeviceError::NotFoundStr(device_id.to_string()))?;
 
         let template = self
             .registry
             .get_template(&config.device_type)
-            .await
             .ok_or_else(|| {
                 DeviceError::NotFoundStr(format!(
                     "Template '{}' not found for device '{}'",
@@ -929,14 +927,14 @@ impl DeviceService {
     }
 
     /// Get a device configuration
-    pub async fn get_device(&self, device_id: &str) -> Option<DeviceConfig> {
-        self.registry.get_device(device_id).await
+    pub fn get_device(&self, device_id: &str) -> Option<DeviceConfig> {
+        self.registry.get_device(device_id)
     }
 
     /// Find a device by its name (not ID)
     /// Returns the device config if found, None otherwise
     pub async fn get_device_by_name(&self, name: &str) -> Option<DeviceConfig> {
-        let devices = self.list_devices().await;
+        let devices = self.list_devices();
         for device in devices {
             if device.name == name {
                 return Some(device);
@@ -946,40 +944,32 @@ impl DeviceService {
     }
 
     /// List all device configurations
-    pub async fn list_devices(&self) -> Vec<DeviceConfig> {
-        self.registry.list_devices().await
+    pub fn list_devices(&self) -> Vec<DeviceConfig> {
+        self.registry.list_devices()
     }
 
     /// Find a device by its telemetry topic
     /// This is used by MQTT adapters to route messages from custom topics
-    pub async fn find_device_by_telemetry_topic(
+    pub fn find_device_by_telemetry_topic(
         &self,
         topic: &str,
     ) -> Option<(String, DeviceConfig)> {
-        let devices = self.list_devices().await;
-        for device in devices {
-            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
-                if telemetry_topic == topic {
-                    return Some((device.device_id.clone(), device));
-                }
-            }
-        }
-        None
+        self.registry.find_device_by_telemetry_topic(topic)
     }
 
     /// Get the device registry (for sharing with adapters)
-    pub async fn get_registry(&self) -> Arc<DeviceRegistry> {
+    pub fn get_registry(&self) -> Arc<DeviceRegistry> {
         self.registry.clone()
     }
 
     /// List devices by type
-    pub async fn list_devices_by_type(&self, device_type: &str) -> Vec<DeviceConfig> {
-        self.registry.list_devices_by_type(device_type).await
+    pub fn list_devices_by_type(&self, device_type: &str) -> Vec<DeviceConfig> {
+        self.registry.list_devices_by_type(device_type)
     }
 
     /// Unregister a device configuration
-    pub async fn unregister_device(&self, device_id: &str) -> Result<(), DeviceError> {
-        self.registry.unregister_device(device_id).await?;
+    pub fn unregister_device(&self, device_id: &str) -> Result<(), DeviceError> {
+        self.registry.unregister_device(device_id)?;
 
         // Publish event for UI refresh
         tokio::spawn({
@@ -1417,7 +1407,7 @@ impl DeviceService {
         device_type: &str,
         metric_name: &str,
     ) -> Option<super::mdl_format::MetricDefinition> {
-        let template = self.registry.get_template(device_type).await?;
+        let template = self.registry.get_template(device_type)?;
         template.metrics.into_iter().find(|m| m.name == metric_name)
     }
 
@@ -1665,7 +1655,7 @@ mod tests {
         let template = DeviceTypeTemplate::new("test_sensor", "Test Sensor");
         service.register_template(template).await.unwrap();
 
-        let retrieved = service.get_template("test_sensor").await;
+        let retrieved = service.get_template("test_sensor");
         assert!(retrieved.is_some());
     }
 
@@ -1691,7 +1681,7 @@ mod tests {
 
         service.register_device(config).await.unwrap();
 
-        let retrieved = service.get_device("sensor1").await;
+        let retrieved = service.get_device("sensor1");
         assert!(retrieved.is_some());
     }
 

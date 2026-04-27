@@ -222,7 +222,7 @@ async fn populate_latest_values(state: &ServerState, sources: &mut Vec<UnifiedDa
 /// Collect data sources from all registered devices.
 /// Includes both template-defined metrics and virtual metrics from telemetry storage.
 async fn collect_device_sources(state: &ServerState, sources: &mut Vec<UnifiedDataSourceInfo>) {
-    let devices = state.devices.service.list_devices().await;
+    let devices = state.devices.service.list_devices();
 
     // Single batch query for all telemetry metrics instead of N per-device queries
     let all_telemetry_metrics = state
@@ -239,8 +239,7 @@ async fn collect_device_sources(state: &ServerState, sources: &mut Vec<UnifiedDa
         let template = state
             .devices
             .registry
-            .get_template(&device.device_type)
-            .await;
+            .get_template(&device.device_type);
 
         if let Some(template) = template {
             for metric in &template.metrics {
