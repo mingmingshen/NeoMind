@@ -23,7 +23,6 @@ const ValueCard = lazy(() => import('../generic/ValueCard').then(m => ({ default
 const LEDIndicator = lazy(() => import('../generic/LEDIndicator').then(m => ({ default: m.LEDIndicator })))
 const Sparkline = lazy(() => import('../generic/Sparkline').then(m => ({ default: m.Sparkline })))
 const ProgressBar = lazy(() => import('../generic/ProgressBar').then(m => ({ default: m.ProgressBar })))
-const AgentStatusCard = lazy(() => import('../generic/AgentStatusCard').then(m => ({ default: m.AgentStatusCard })))
 
 // Charts
 const LineChart = lazy(() => import('../generic/LineChart').then(m => ({ default: m.LineChart })))
@@ -55,7 +54,6 @@ const componentMap: Record<GenericComponentType, React.ComponentType<any>> = {
   'led-indicator': LEDIndicator,
   'sparkline': Sparkline,
   'progress-bar': ProgressBar,
-  'agent-status-card': AgentStatusCard,
 
   // Charts
   'line-chart': LineChart,

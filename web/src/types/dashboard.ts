@@ -204,7 +204,6 @@ export type GenericComponentType =
   | 'led-indicator'
   | 'sparkline'
   | 'progress-bar'
-  | 'agent-status-card'
   // Charts
   | 'line-chart'
   | 'area-chart'
@@ -349,7 +348,6 @@ export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType
   'led-indicator': { minW: 1, minH: 1, defaultW: 2, defaultH: 1, maxW: 3, maxH: 2, preserveAspect: true },
   'sparkline': { minW: 2, minH: 1, defaultW: 4, defaultH: 2, maxW: 8, maxH: 3 },
   'progress-bar': { minW: 2, minH: 1, defaultW: 4, defaultH: 1, maxW: 12, maxH: 3 },
-  'agent-status-card': { minW: 3, minH: 2, defaultW: 4, defaultH: 3, maxW: 6, maxH: 5 },
 
   // Charts - need enough space for axes and legend
   'line-chart': { minW: 4, minH: 3, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
@@ -405,7 +403,7 @@ export type DashboardComponent = GenericComponent | BusinessComponent
 // Type guards
 export function isGenericComponent(component: DashboardComponent): component is GenericComponent {
   const genericTypes: GenericComponentType[] = [
-    'value-card', 'led-indicator', 'sparkline', 'progress-bar', 'agent-status-card',
+    'value-card', 'led-indicator', 'sparkline', 'progress-bar',
     'line-chart', 'area-chart', 'bar-chart', 'pie-chart',
     'toggle-switch',
     'image-display', 'image-history', 'web-display', 'markdown-display',

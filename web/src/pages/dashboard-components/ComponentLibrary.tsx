@@ -32,7 +32,6 @@ const COMPONENT_TRANSLATION_KEYS: Record<string, { name: string; description: st
   'map-display': { name: 'componentLibrary.mapDisplay', description: 'componentLibrary.mapDisplayDesc' },
   'video-display': { name: 'componentLibrary.videoDisplay', description: 'componentLibrary.videoDisplayDesc' },
   'custom-layer': { name: 'componentLibrary.customLayer', description: 'componentLibrary.customLayerDesc' },
-  'agent-status-card': { name: 'componentLibrary.agentStatus', description: 'componentLibrary.agentStatusDesc' },
   'agent-monitor-widget': { name: 'componentLibrary.agentMonitor', description: 'componentLibrary.agentMonitorDesc' },
   'decision-list': { name: 'componentLibrary.decisionList', description: 'componentLibrary.decisionListDesc' },
   'device-control': { name: 'componentLibrary.deviceControl', description: 'componentLibrary.deviceControlDesc' },

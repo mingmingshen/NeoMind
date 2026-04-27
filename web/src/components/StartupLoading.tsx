@@ -77,11 +77,14 @@ export function StartupLoading({ onReady }: { onReady: () => void }) {
           }
         }
 
-        // If still not ready after polling, wait for event with timeout
+        // If still not ready after polling, wait for the backend-ready event
+        // with a generous timeout. In Tauri mode, the Rust side emits
+        // "backend-ready" once port 9375 is accepting connections, so the
+        // actual wait is only as long as the backend needs to start.
         timeoutId = setTimeout(() => {
                     setStatus("timeout")
           onReady()
-        }, 5000)
+        }, 30_000)
       } catch (error) {
         console.error("Error in startup check:", error)
         // Proceed anyway on error

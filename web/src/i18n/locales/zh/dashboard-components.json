@@ -345,23 +345,6 @@
     "sending": "发送中...",
     "loadingParameters": "加载命令参数中..."
   },
-  "agentStatusCard": {
-    "agent": "智能体",
-    "realTime": "实时",
-    "live": "实时",
-    "execute": "执行",
-    "success": "成功",
-    "failure": "失败",
-    "lastExecution": "上次执行",
-    "executing": "执行中",
-    "step": "步骤",
-    "steps": "步骤",
-    "executions": "执行记录",
-    "viewDetails": "查看详情",
-    "justNow": "刚刚",
-    "minutesAgo": "{{count}}分钟前",
-    "hoursAgo": "{{count}}小时前"
-  },
   "agentMonitorWidget": {
     "title": "智能体监控",
     "selectAgent": "选择智能体",
@@ -887,8 +870,6 @@
     "customLayerDesc": "用于自定义组件放置的自由图层",
     "toggleSwitch": "切换开关",
     "toggleSwitchDesc": "用于发送开/关命令的开关",
-    "agentStatus": "智能体状态",
-    "agentStatusDesc": "显示智能体执行状态和历史记录",
     "agentMonitor": "智能体监控组件",
     "agentMonitorDesc": "综合智能体监控，支持选择、实时状态和执行历史",
     "decisionList": "决策列表",

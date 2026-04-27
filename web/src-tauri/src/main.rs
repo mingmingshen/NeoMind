@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tauri::tray::TrayIconEvent;
-use tauri::{image::Image, AppHandle, Listener, Manager};
+use tauri::{image::Image, AppHandle, Emitter, Listener, Manager};
 use tokio::runtime::Runtime;
 use tracing::info;
 
@@ -334,6 +334,33 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     if let Err(e) = start_axum_server(state) {
         eprintln!("Failed to start server: {}", e);
     }
+
+    // Poll until the backend server is accepting connections, then emit "backend-ready"
+    let handle_for_ready = app_handle.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("health check runtime");
+        rt.block_on(async {
+            for _ in 0..50 {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                if tokio::net::TcpStream::connect("127.0.0.1:9375").await.is_ok() {
+                    let _ = handle_for_ready.emit("backend-ready", serde_json::json!({
+                        "status": "ready",
+                        "port": 9375
+                    }));
+                    return;
+                }
+            }
+            // Timeout — emit anyway so the frontend doesn't hang
+            let _ = handle_for_ready.emit("backend-ready", serde_json::json!({
+                "status": "timeout",
+                "port": 9375
+            }));
+        });
+    });
 
     Ok(())
 }

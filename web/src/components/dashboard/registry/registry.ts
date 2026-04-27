@@ -472,29 +472,6 @@ export const componentRegistry: ComponentRegistry = {
   // Business Components (placeholders for backward compatibility)
   // ============================================================================
 
-  'agent-status-card': {
-    type: 'agent-status-card',
-    name: 'Agent Status Card',
-    description: 'AI agent status and activity monitor with real-time execution tracking',
-    category: 'indicators',
-    icon: Bot,
-    sizeConstraints: getSizeConstraints('agent-status-card'),
-    hasDataSource: true,
-    hasDisplayConfig: true,
-    hasActions: true,
-    acceptsProp: (prop) => [
-      'agentId', 'agentName', 'title', 'description',
-      'showExecutions', 'showSparkline', 'sparklineData', 'compact',
-      'onExecute', 'onViewDetails', 'dataSource', 'className'
-    ].includes(prop),
-    defaultProps: {
-      showExecutions: true,
-      showSparkline: false,
-      compact: false,
-    },
-    variants: ['default', 'compact'],
-  },
-
   // ============================================================================
   // Business Components
   // ============================================================================

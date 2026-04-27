@@ -381,23 +381,6 @@
     "sending": "Sending...",
     "loadingParameters": "Loading command parameters..."
   },
-  "agentStatusCard": {
-    "agent": "Agent",
-    "realTime": "Real-time",
-    "live": "Live",
-    "execute": "Execute",
-    "success": "Success",
-    "failure": "Failure",
-    "lastExecution": "Last Execution",
-    "executing": "Executing",
-    "step": "Step",
-    "steps": "Steps",
-    "executions": "Executions",
-    "viewDetails": "View Details",
-    "justNow": "Just now",
-    "minutesAgo": "{{count}} minutes ago",
-    "hoursAgo": "{{count}} hours ago"
-  },
   "agentMonitorWidget": {
     "title": "Agent Monitor",
     "selectAgent": "Select an agent",
@@ -939,8 +922,6 @@
     "videoDisplayDesc": "Video player supporting multiple formats",
     "customLayer": "Custom Layer",
     "customLayerDesc": "Free-form layer for custom component placement",
-    "agentStatus": "Agent Status Card",
-    "agentStatusDesc": "Display agent execution status and history",
     "agentMonitor": "Agent Monitor Widget",
     "agentMonitorDesc": "Comprehensive agent monitoring with selector, real-time status, and execution history",
     "decisionList": "Decision List",

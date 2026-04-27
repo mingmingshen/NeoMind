@@ -140,22 +140,34 @@ pub struct AggregatedData {
 /// compatibility with the MetricValue enum used by the devices crate.
 /// All MetricValue types (Integer, Float, String, Boolean, Binary, Null) are stored.
 pub struct TimeSeriesStorage {
-    store: Arc<StorageTimeSeriesStore>,
+    store: std::sync::RwLock<Arc<StorageTimeSeriesStore>>,
 }
 
 impl TimeSeriesStorage {
+    /// Get a clone of the inner store Arc.
+    /// The lock is held only for the Arc::clone (atomic increment), never across .await.
+    #[inline]
+    fn store(&self) -> Arc<StorageTimeSeriesStore> {
+        self.store.read().unwrap().clone()
+    }
+
     /// Create a new time series storage at the given path
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, DeviceError> {
         let store = StorageTimeSeriesStore::open(path)
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
-        Ok(Self { store })
+        Ok(Self { store: std::sync::RwLock::new(store) })
     }
 
     /// Create an in-memory time series storage
     pub fn memory() -> Result<Self, DeviceError> {
         let store = StorageTimeSeriesStore::memory()
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
-        Ok(Self { store })
+        Ok(Self { store: std::sync::RwLock::new(store) })
+    }
+
+    /// Swap the underlying store (used for deferred persistent storage loading).
+    pub fn swap_store(&self, new_store: Arc<StorageTimeSeriesStore>) {
+        *self.store.write().unwrap() = new_store;
     }
 
     /// Write a data point (all value types are stored)
@@ -166,7 +178,7 @@ impl TimeSeriesStorage {
         point: DataPoint,
     ) -> Result<(), DeviceError> {
         let storage_point = point.to_storage();
-        self.store
+        self.store()
             .write(source_id, metric, storage_point)
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
@@ -183,7 +195,7 @@ impl TimeSeriesStorage {
     ) -> Result<(), DeviceError> {
         let storage_points: Vec<StorageDataPoint> = points.iter().map(|p| p.to_storage()).collect();
 
-        self.store
+        self.store()
             .write_batch(source_id, metric, storage_points)
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
@@ -208,8 +220,7 @@ impl TimeSeriesStorage {
             end_timestamp
         );
 
-        let result = self
-            .store
+        let result = self.store()
             .query_range(source_id, metric, start_timestamp, end_timestamp, None)
             .await
             .map_err(|e| {
@@ -266,8 +277,7 @@ impl TimeSeriesStorage {
             limit
         );
 
-        let result = self
-            .store
+        let result = self.store()
             .query_range(source_id, metric, start_timestamp, end_timestamp, limit)
             .await
             .map_err(|e| {
@@ -299,8 +309,7 @@ impl TimeSeriesStorage {
         source_id: &str,
         metric: &str,
     ) -> Result<Option<DataPoint>, DeviceError> {
-        let result = self
-            .store
+        let result = self.store()
             .query_latest(source_id, metric)
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
@@ -317,8 +326,7 @@ impl TimeSeriesStorage {
         end_timestamp: i64,
     ) -> Result<AggregatedData, DeviceError> {
         // Use the storage layer's streaming aggregation to avoid materializing all points
-        let storage_result = self
-            .store
+        let storage_result = self.store()
             .aggregate_range(source_id, metric, start_timestamp, end_timestamp)
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
@@ -365,10 +373,10 @@ impl TimeSeriesStorage {
 
     /// Delete old data (for cleanup/retention)
     pub async fn delete_before(&self, before_timestamp: i64) -> Result<(), DeviceError> {
+        let store = self.store();
         // Get all metrics for this device and delete old data
         // This is a simplified implementation - for production you'd want to track all devices
-        let metrics = self
-            .store
+        let metrics = store
             .list_metrics("")
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
@@ -376,8 +384,7 @@ impl TimeSeriesStorage {
         for metric in metrics {
             let source_id: Vec<&str> = metric.split(':').collect();
             if source_id.len() == 2 {
-                let _ = self
-                    .store
+                let _ = store
                     .delete_range(source_id[0], source_id[1], i64::MIN, before_timestamp)
                     .await;
             }
@@ -389,8 +396,7 @@ impl TimeSeriesStorage {
     /// List all sources with data
     pub async fn list_sources(&self) -> Result<Vec<String>, DeviceError> {
         // Get all metrics and extract unique source IDs
-        let metrics = self
-            .store
+        let metrics = self.store()
             .list_metrics("")
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
@@ -412,8 +418,7 @@ impl TimeSeriesStorage {
 
     /// List all metrics for a device
     pub async fn list_metrics(&self, source_id: &str) -> Result<Vec<String>, DeviceError> {
-        let metrics = self
-            .store
+        let metrics = self.store()
             .list_metrics(source_id)
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
@@ -428,7 +433,7 @@ impl TimeSeriesStorage {
         &self,
     ) -> Result<std::collections::HashMap<String, std::collections::HashSet<String>>, DeviceError>
     {
-        self.store
+        self.store()
             .list_all_metrics_grouped()
             .await
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))
@@ -439,7 +444,7 @@ impl TimeSeriesStorage {
     /// This allows sharing the same storage instance between components.
     /// For example, AI Agents can use the same time series database as devices.
     pub fn inner_store(&self) -> Arc<StorageTimeSeriesStore> {
-        self.store.clone()
+        self.store()
     }
 }
 

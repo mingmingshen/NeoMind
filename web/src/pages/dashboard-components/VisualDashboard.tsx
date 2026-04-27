@@ -153,7 +153,6 @@ import {
   LEDIndicator,
   Sparkline,
   ProgressBar,
-  AgentStatusCard,
   // Charts
   LineChart,
   AreaChart,
@@ -436,7 +435,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
   const noStandardSize = [
     'led-indicator', 'toggle-switch',
     'heading', 'alert-banner',
-    'agent-status-card', 'agent-monitor-widget',
+    'agent-monitor-widget',
     'ai-analyst',
   ]
 
@@ -445,7 +444,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
     'value-card', 'led-indicator', 'sparkline', 'progress-bar',
     'toggle-switch',
     'heading', 'alert-banner',
-    'agent-status-card', 'agent-monitor-widget',
+    'agent-monitor-widget',
     'ai-analyst',
     'tabs',
   ]
@@ -456,7 +455,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
     'toggle-switch',
     'heading', 'alert-banner',
     'tabs',
-    'agent-status-card', 'agent-monitor-widget',
+    'agent-monitor-widget',
   ]
 
   const result: Record<string, unknown> = {}
@@ -888,12 +887,15 @@ function renderDashboardComponent(
         />
       )
     }
-    default:
+    default: {
+      // TS narrows to `never` when all union members are covered above,
+      // but runtime may encounter unrecognised types from persisted dashboards.
+      const fallback = component as DashboardComponent
       // Check if this is an extension component
-      if (dynamicRegistry.isDynamic(component.type)) {
+      if (dynamicRegistry.isDynamic(fallback.type)) {
         return (
           <ComponentRenderer
-            component={component}
+            component={fallback}
             className="w-full h-full"
             onDataSourceChange={onDataSourceChange}
             onConfigChange={onConfigChange}
@@ -902,10 +904,11 @@ function renderDashboardComponent(
       }
       return (
         <div className="p-4 text-center text-muted-foreground h-full flex flex-col items-center justify-center">
-          <p className="text-sm font-medium">{(component as any).type}</p>
+          <p className="text-sm font-medium">{fallback.type}</p>
           <p className="text-xs mt-1">Component not implemented</p>
         </div>
       )
+    }
   }
   } catch (error) {
     logError(error, { operation: 'Render dashboard component' })

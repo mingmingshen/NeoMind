@@ -2666,6 +2666,17 @@ export function useDataSource<T = unknown>(
         setData(transformedData)
         setLastUpdate(Date.now())
         initialTelemetryFetchDoneRef.current = true
+
+        // If all telemetry results are empty, schedule a fast retry.
+        // This handles lazy telemetry loading: the backend starts with an
+        // in-memory placeholder and swaps in the persistent database in the
+        // background. Data becomes available once the swap completes.
+        const isEmptyResult = Array.isArray(transformedData)
+          ? transformedData.length === 0
+          : (transformedData == null)
+        if (isEmptyResult) {
+          setTimeout(() => fetchTelemetryData(), 3000)
+        }
       } catch (err) {
         logError(err, { operation: 'Fetch telemetry data' })
         const errorMessage = err instanceof Error ? err.message : 'Failed to fetch telemetry'

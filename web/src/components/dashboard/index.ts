@@ -26,7 +26,6 @@ export { Sparkline } from './generic/Sparkline'
 export { ProgressBar } from './generic/ProgressBar'
 
 // Agent-related components
-export { AgentStatusCard } from './generic/AgentStatusCard'
 export { AgentMonitorWidget } from './generic/AgentMonitorWidget'
 
 // Generic components - Charts

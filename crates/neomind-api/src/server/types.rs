@@ -314,22 +314,45 @@ impl ServerState {
             }
         };
 
-        // Create time series storage
+        // Create time series storage — start with an in-memory placeholder and
+        // load the persistent database in the background so that a large
+        // telemetry.redb does not block server startup.
+        let time_series_storage = Arc::new(
+            TimeSeriesStorage::memory()
+                .expect("in-memory telemetry storage"),
+        );
+        let telemetry_for_bg = time_series_storage.clone();
         let telemetry_path = std::path::Path::new("data").join("telemetry.redb");
-        let time_series_storage = Arc::new(match TimeSeriesStorage::open(&telemetry_path) {
-            Ok(storage) => {
-                tracing::info!("Time series storage initialized at {:?}", telemetry_path);
-                storage
-            }
-            Err(e) => {
-                tracing::warn!(category = "storage", error = %e, "Failed to open telemetry storage at {:?}, using in-memory", telemetry_path);
-                match TimeSeriesStorage::memory() {
-                    Ok(storage) => storage,
+        tokio::spawn(async move {
+            let t = tokio::task::spawn_blocking(move || {
+                let start = std::time::Instant::now();
+                match TimeSeriesStorage::open(&telemetry_path) {
+                    Ok(s) => {
+                        tracing::info!(
+                            "Time series storage initialized at {:?} in {:.1}s",
+                            telemetry_path,
+                            start.elapsed().as_secs_f64()
+                        );
+                        Some(s)
+                    }
                     Err(e) => {
-                        tracing::error!(category = "storage", error = %e, "Failed to create in-memory time series storage");
-                        std::process::exit(1);
+                        tracing::warn!(
+                            category = "storage",
+                            error = %e,
+                            "Failed to open telemetry storage at {:?}, keeping in-memory",
+                            telemetry_path
+                        );
+                        None
                     }
                 }
+            })
+            .await
+            .expect("telemetry open task panicked");
+
+            if let Some(persistent) = t {
+                let inner = persistent.inner_store();
+                telemetry_for_bg.swap_store(inner);
+                tracing::info!("Persistent telemetry storage swapped in");
             }
         });
 

@@ -74,7 +74,6 @@ export const defaultComponentSizes = {
   'alert-banner': { w: 4, h: 1, minW: 1, minH: 1 },
 
   // Business Components
-  'agent-status-card': { w: 4, h: 4, minW: 2, minH: 2 },
   'decision-list': { w: 4, h: 5, minW: 2, minH: 2 },
   'device-control': { w: 4, h: 3, minW: 2, minH: 2 },
   'rule-status-grid': { w: 6, h: 4, minW: 2, minH: 2 },
