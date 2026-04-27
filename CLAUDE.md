@@ -59,11 +59,12 @@ NeoMind/
   - Spinner (`Loader2`) only for inline/button/dialog-level loading, never for page content
 - **Pagination**: Default page size is **10** across all pages (devices, agents, messages, data explorer, etc.)
 - **Page Layout**: Use `PageLayout` with `PageTabsBar`/`PageTabsContent` pattern. Content grows naturally; `PageLayout`'s scroll container handles scrolling via `overflow-auto`
+- **Fetch Deduplication**: Store-level `fetchCache` (TTL 10s) prevents redundant API calls. Pattern: `shouldFetch` → `markFetching` → API call → `markFetched`. Invalidate on mutations. WebSocket events use optimistic updates (`updateDeviceStatus`) instead of full refetch.
 
 ## Documentation
 
 For detailed information, see:
-- **API**: `/api/docs` (Swagger) or `docs/guides/en/14-api.md`
+- **API**: `docs/guides/en/14-api.md`
 - **LLM**: `docs/guides/en/02-llm.md`
 - **Agents**: `docs/guides/en/03-agent.md`
 - **Devices**: `docs/guides/en/04-devices.md`

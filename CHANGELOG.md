@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v0.7.0] - 2026-04-26
+## [v0.7.0] - 2026-04-27
 
 ### Added
 
@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Form Validation** — Agent, device, and rule editors validate input with inline error messages
 - **Error Boundaries** — React Error Boundaries for graceful page failure handling
 - **User-Friendly Error Messages** — Toast notifications show clear messages instead of raw errors
+- **AI Analyst Display Title** — Agent name in dashboard widget linked to Display Title from agent config
+- **JWT-Based Rate Limiting** — Per-user rate limiting with JWT client identification
+- **Backend-Ready Event** — Tauri desktop startup uses event-based ready detection instead of polling
 
 ### Changed
 
@@ -27,12 +30,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Loading States** — All page-level loading uses skeleton screens instead of spinners
 - **Notifications** — Replaced `alert()` with toast notifications throughout the UI
 - **Event Trigger Cooldown** — Default changed from 5s to 60s (configurable)
+- **Frontend Visual Unification** — Unified visual style and component consistency across 109 frontend files
+- **Centralized API Layer** — Standardized all frontend API calls through centralized `api.ts`, eliminating scattered `fetch()` calls
+- **DashMap for Device Registry** — Replaced `RwLock<HashMap>` with `DashMap` for lock-free concurrent device operations
+- **Lazy Telemetry Loading** — Telemetry data fetched on demand (detail view) instead of eagerly on page load
+- **Rate Limit** — Raised to 5000/min for edge device workloads; frontend retries on 429
+
+### Performance
+
+- **API Polling Storms** — Eliminated continuous polling from data explorer (debounced events), telemetry hooks (retry limit + throttle), and extension components (conditional polling)
+- **N+1 Telemetry Queries** — Replaced N+1 pattern with single table scan in data sources API
+- **Message Manager Lock Contention** — Write locks released before disk I/O, reducing p99 latency from 700ms
+- **Session RwLock Contention** — Session resolution clones data and drops lock before async operations
+- **Agent Execution Query** — Direct lookup by ID instead of fetching 100 records + linear search
+- **Device Registry Concurrency** — `DashMap` eliminates lock contention for concurrent device reads/writes
+- **Agent Editor Responsiveness** — Dialog opens immediately; resources loaded in background; validation on submit only
+- **Blocking Call Chain Elimination** — Removed 25 blocking patterns across 28 files (frontend and backend)
+- **Batch API Requests** — Frontend batches telemetry and data source requests to reduce HTTP overhead
+- **Extension Polling** — YOLO device inference extension only polls when device binding is active
+- **Fetch Deduplication** — TTL-based cache (10s) in Zustand store prevents redundant API calls on page remount; WebSocket device status events use optimistic updates instead of full refetch
 
 ### Fixed
 
 - **Rule Engine** — Catch-all error recovery prevents scheduler crashes
 - **Console Cleanup** — Removed 130+ non-essential console statements from frontend
 - **Extension Runner** — Improved crash loop detection and panic handling
+- **Session Flicker & Tab Jumping** — Fixed race conditions in chat session switching and tab state sync
+- **Focus Management** — Proper auto-focus on dialog open, search input sync, CLS (Layout Shift) prevention
+- **Delete Confirmation** — Consistent border-radius and confirmation dialogs for destructive actions
+- **JWT Expiration** — Client-side token expiration check prevents 401 error storms from expired tokens
+- **Base64 Image Handling** — Robust cleaning with re-encoding for Ollama compatibility
+- **Thinking Model Compatibility** — Disabled thinking mode in agent analyzer; made `importance` field optional in memory compression response
+- **Agent Editor Input Lag** — Validation runs on submit instead of every keystroke
+- **Automation Page Duplicate Loading** — Prevented duplicate resource loading on automation page navigation
+- **Recharts Console Warnings** — Suppressed width/height -1 warnings from responsive charts
+- **Startup Health Check** — Uses HEAD method instead of GET; increased timeout for reliability
+- **Telemetry Time Range** — Frontend time range aligned with backend 30-day limit
+- **User Prompt Length** — Lowered minimum from 10 to 1 character for short messages
+
+### Removed
+
+- **Swagger/OpenAPI (utoipa)** — Removed unused utoipa dependencies and auto-generated spec code
 
 ### Testing
 

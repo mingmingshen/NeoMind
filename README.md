@@ -10,7 +10,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 
 [![Build Status](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg)](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.6.12](https://img.shields.io/badge/v-0.6.12-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
+[![Version: 0.7.0](https://img.shields.io/badge/v-0.7.0-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.85+-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](https://github.com/camthink-ai/NeoMind/releases)
 
@@ -52,6 +52,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 ### 🧠 LLM as System Brain
 - **Interactive Chat**: Natural language interface for querying and controlling devices
 - **AI Agents**: Autonomous agents with tool calling capabilities for automation
+- **AI Analyst**: Dashboard widget for real-time data analysis with bound data sources and configurable triggers
 - **Focused & Free Mode**: Two execution modes — Focused Mode for scoped, single-pass monitoring tasks; Free Mode for multi-round open-ended reasoning
 - **AI Metrics**: Agents can create and query custom time-series metrics (anomaly scores, predictions, derived indicators) via the `ai_metric` tool
 - **Shell Tool**: Agents can execute system commands with login shell environment support
@@ -89,12 +90,21 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 - **Device-Standard**: Extensions use same type system as devices
 - **Process Isolation**: Secure execution with automatic recovery on crashes
 
+### 🛡️ Reliability & Performance
+- **Lock-Free Concurrency**: `DashMap`-based device registry with zero-contention reads/writes
+- **Smart Resource Loading**: Lazy telemetry loading, debounced event refresh, conditional extension polling
+- **Robust Error Handling**: All `unwrap()` calls replaced with safe error propagation across 8 crates
+- **Input Validation**: API-level parameter validation on all POST/PUT endpoints
+- **Error Boundaries**: React Error Boundaries for graceful page failure handling
+- **Rate Limiting**: Per-user JWT-based rate limiting (5000/min) with frontend 429 retry
+- **Comprehensive Tests**: 480+ unit tests across storage, agent, rules, messages, extension-runner, and API layers
+
 ### 🖥️ Desktop Application
 - **Cross-Platform**: macOS, Windows, Linux native apps
-- **Modern UI**: React 18 + TypeScript + Tailwind CSS
+- **Modern UI**: React 18 + TypeScript + Tailwind CSS with unified visual design
 - **System Tray**: Background operation with quick access
 - **Auto-Update**: Built-in update notifications
-  
+
 
 ## 📸 More Screenshots
 
@@ -179,7 +189,7 @@ After installation, access `http://your-server:9375` in your browser.
 **Install specific version:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.6.12 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.7.0 sh
 ```
 
 **Custom installation:**
@@ -211,7 +221,7 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 ```bash
 # 1. Download server binary and frontend (replace VERSION and PLATFORM)
 # PLATFORM: linux-amd64, linux-arm64, darwin-arm64
-VERSION=0.6.12
+VERSION=0.7.0
 
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-server-linux-amd64.tar.gz
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-web-${VERSION}.tar.gz
@@ -260,7 +270,6 @@ server {
 **Access the application:**
 - Web UI: http://your-server (port 80 via nginx)
 - API: http://localhost:9375/api
-- API Docs: http://localhost:9375/api/docs
 
 ### 💻 Development Mode
 
@@ -480,13 +489,13 @@ neomind/
 | **Tools** | `/api/tools`, `/api/tools/:name/execute` |
 | **Messages** | `/api/messages`, `/api/messages/:id`, `/api/messages/channels` |
 | **Extensions** | `/api/extensions` (dynamic extensions) |
+| **Data Sources** | `/api/data/sources` (unified query across devices, extensions, transforms, AI metrics) |
+| **Telemetry** | `/api/telemetry`, `/api/devices/:id/telemetry` (time-series queries) |
 | **Capabilities** | `/api/capabilities`, `/api/capabilities/:name` |
 | **Events** | `/api/events/stream` (SSE), `/api/events/ws` (WebSocket) |
 | **Stats** | `/api/stats/system`, `/api/stats/devices`, `/api/stats/rules` |
 | **Dashboards** | `/api/dashboards`, `/api/dashboards/:id`, `/api/dashboards/templates` |
 | **Search** | `/api/search` |
-
-Full API documentation available at `/api/docs` when server is running.
 
 ---
 
