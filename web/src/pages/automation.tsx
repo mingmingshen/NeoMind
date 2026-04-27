@@ -222,12 +222,12 @@ export function AutomationPage() {
   const handleCreate = async () => {
     if (activeTab === 'rules') {
       setEditingRule(undefined)
-      await loadResources()
       setShowRuleDialog(true)
+      loadResources()
     } else if (activeTab === 'transforms') {
       setEditingTransform(undefined)
-      await loadResources()
       setShowTransformDialog(true)
+      loadResources()
     }
   }
 
@@ -236,8 +236,8 @@ export function AutomationPage() {
     try {
       const detail = await api.getRule(rule.id)
       setEditingRule(detail.rule)
-      await loadResources()
       setShowRuleDialog(true)
+      loadResources()
     } catch (error) {
       handleError(error, { operation: 'Load rule details', showToast: false })
       showErrorToast(toast, error, tCommon('failed'))
@@ -304,8 +304,8 @@ export function AutomationPage() {
   // Transform handlers
   const handleEditTransform = async (transform: TransformAutomation) => {
     setEditingTransform(transform)
-    await loadResources()
     setShowTransformDialog(true)
+    loadResources()
   }
 
   const handleDeleteTransform = async (transform: TransformAutomation) => {
