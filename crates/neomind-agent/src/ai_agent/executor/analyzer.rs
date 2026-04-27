@@ -609,28 +609,57 @@ impl AgentExecutor {
                         .get("image_mime_type")
                         .and_then(|v| v.as_str())
                         .unwrap_or("image/jpeg");
-                    // Clean base64: strip whitespace/newlines that can cause "illegal base64 data" errors
+                    // Clean base64: strip whitespace/newlines, remove non-base64 characters
                     let cleaned_base64: String = base64
                         .chars()
-                        .filter(|c| !c.is_whitespace())
+                        .filter(|c| c.is_ascii_alphanumeric() || *c == '+' || *c == '/' || *c == '=')
                         .collect();
-                    // Skip if base64 is invalid after cleaning
-                    let is_valid = base64::engine::general_purpose::STANDARD
-                        .decode(&cleaned_base64)
-                        .is_ok();
-                    if !is_valid {
-                        tracing::warn!(
-                            source = %d.source,
-                            len = cleaned_base64.len(),
-                            "Skipping invalid base64 image data"
-                        );
-                        continue;
+                    // Fix padding
+                    let padded_len = (cleaned_base64.len() + 3) & !3;
+                    let padded_base64 = if cleaned_base64.len() < padded_len {
+                        let mut s = cleaned_base64;
+                        for _ in 0..(padded_len - s.len()) {
+                            s.push('=');
+                        }
+                        s
+                    } else {
+                        cleaned_base64
+                    };
+                    // Try standard decoding first, then URL-safe
+                    let decoded = base64::engine::general_purpose::STANDARD
+                        .decode(&padded_base64)
+                        .or_else(|_| {
+                            // Try URL-safe base64 (uses - and _ instead of + and /)
+                            let url_safe_fixed: String = padded_base64
+                                .replace('-', "+")
+                                .replace('_', "/");
+                            base64::engine::general_purpose::STANDARD.decode(&url_safe_fixed)
+                        });
+                    match decoded {
+                        Ok(bytes) => {
+                            tracing::debug!(
+                                source = %d.source,
+                                size_kb = bytes.len() / 1024,
+                                "Validated base64 image data"
+                            );
+                            // Re-encode as clean standard base64 for Ollama
+                            let clean = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                            image_parts.push((
+                                d.source.clone(),
+                                d.data_type.clone(),
+                                ImageContent::Base64(clean, mime.to_string()),
+                            ));
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                source = %d.source,
+                                len = base64.len(),
+                                error = %e,
+                                "Skipping invalid base64 image data"
+                            );
+                            continue;
+                        }
                     }
-                    image_parts.push((
-                        d.source.clone(),
-                        d.data_type.clone(),
-                        ImageContent::Base64(cleaned_base64, mime.to_string()),
-                    ));
                 }
             }
         }
