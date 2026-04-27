@@ -23,7 +23,7 @@ export const MessageItem = React.memo<MessageItemProps>(
         className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
       >
         {message.role === "assistant" && (
-          <img src="/logo-square.png" alt="NeoMind" className="flex-shrink-0 w-8 h-8 rounded-lg" />
+          <img src="/logo-square.png" alt="NeoMind" width={32} height={32} className="flex-shrink-0 w-8 h-8 rounded-lg" />
         )}
 
         <div className={`max-w-[80%] ${message.role === "user" ? "order-1" : ""}`}>

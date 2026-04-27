@@ -108,7 +108,7 @@ export function MergedMessageList({
           {/* Streaming message - always visible */}
           {isStreaming && (
             <div className="flex gap-3 justify-start">
-              <img src="/logo-square.png" alt="NeoMind" className="flex-shrink-0 w-8 h-8 rounded-lg animate-pulse" />
+              <img src="/logo-square.png" alt="NeoMind" width={32} height={32} className="flex-shrink-0 w-8 h-8 rounded-lg animate-pulse" />
               <div className="max-w-[80%]">
                 <div className="rounded-2xl px-4 py-3 bg-[var(--msg-ai-bg)] text-[var(--msg-ai-text)]">
                   {/* Execution plan */}

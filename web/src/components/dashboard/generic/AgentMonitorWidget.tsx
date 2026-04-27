@@ -121,20 +121,37 @@ function extractImagesFromData(data: DataCollected[]): Array<{ source: string; i
       // Object with image field
       if (typeof value === 'object') {
         const obj = value as Record<string, unknown>
-        for (const key of ['image', 'image_base64', 'src', 'url', 'data', 'value', 'base64', 'image_data']) {
+
+        // Check image_url first — it's a direct URL, no base64 detection needed
+        for (const key of ['image_url', 'url', 'src']) {
           const v = obj[key]
-          if (typeof v === 'string' && isBase64Image(v)) {
-            let imgSrc = v
-            if (key === 'image_base64' && !v.startsWith('data:')) {
-              const mime = (obj.image_mime_type || obj.mime_type) as string | undefined
-              imgSrc = mime ? `data:${mime};base64,${v}` : `data:image/png;base64,${v}`
-            }
+          if (typeof v === 'string' && (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('/'))) {
             images.push({
               source: `${item.source}.${key}`,
-              image: normalizeToDataUrl(imgSrc),
+              image: v,
               timestamp: item.timestamp
             })
             break
+          }
+        }
+
+        // Check base64 image fields
+        if (images.length === 0) {
+          for (const key of ['image', 'image_base64', 'src', 'url', 'data', 'value', 'base64', 'image_data']) {
+            const v = obj[key]
+            if (typeof v === 'string' && isBase64Image(v)) {
+              let imgSrc = v
+              if (key === 'image_base64' && !v.startsWith('data:')) {
+                const mime = (obj.image_mime_type || obj.mime_type) as string | undefined
+                imgSrc = mime ? `data:${mime};base64,${v}` : `data:image/png;base64,${v}`
+              }
+              images.push({
+                source: `${item.source}.${key}`,
+                image: normalizeToDataUrl(imgSrc),
+                timestamp: item.timestamp
+              })
+              break
+            }
           }
         }
       }
@@ -735,14 +752,23 @@ export function AgentMonitorWidget({
     loadUserMessages()
   }, [agentId])
 
-  // Load execution details for flow nodes
+  // Load execution details for flow nodes (all visible executions)
+  // The list API returns lightweight DTOs without decision_process,
+  // so we need the detail API to extract images from data_collected.
+  const executionDetailsRef = useRef(executionDetails)
+  executionDetailsRef.current = executionDetails
+
   useEffect(() => {
-    executions.slice(0, 5).forEach(exec => {
-      if (!executionDetails[exec.id] && agentId) {
-        api.getAgentExecution(agentId, exec.id)
-          .then(data => setExecutionDetails(prev => ({ ...prev, [exec.id]: data })))
-          .catch(() => {})
-      }
+    if (!agentId) return
+    const loaded = executionDetailsRef.current
+    const toLoad = executions.filter(exec => !loaded[exec.id])
+    if (toLoad.length === 0) return
+
+    // Load all missing details (max 50 executions from list API)
+    toLoad.forEach(exec => {
+      api.getAgentExecution(agentId, exec.id)
+        .then(data => setExecutionDetails(prev => ({ ...prev, [exec.id]: data })))
+        .catch(() => {})
     })
   }, [executions, agentId])
 

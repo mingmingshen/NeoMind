@@ -109,9 +109,10 @@ export function SessionSidebar({
   // Focus search when opened (mobile only)
   useEffect(() => {
     if (open && !isDesktop) {
-      setTimeout(() => {
+      const raf = requestAnimationFrame(() => {
         searchInputRef.current?.focus()
-      }, 200)
+      })
+      return () => cancelAnimationFrame(raf)
     }
   }, [open, isDesktop])
 
@@ -248,11 +249,11 @@ export function SessionSidebar({
     e.stopPropagation()
     setEditingId(session.sessionId)
     setEditingTitle(session.title || "")
-    // Focus input after a short delay to ensure it's rendered
-    setTimeout(() => {
+    // Focus input after ensuring it's rendered
+    requestAnimationFrame(() => {
       editInputRef.current?.focus()
       editInputRef.current?.select()
-    }, 50)
+    })
   }
 
   // Handle edit cancel

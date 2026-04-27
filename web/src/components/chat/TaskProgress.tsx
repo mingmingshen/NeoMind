@@ -264,7 +264,7 @@ export function TaskWizard({ task, className }: TaskProgressProps) {
 
       {/* Current Step */}
       {task.status === "in_progress" && currentStepData && (
-        <div className="p-4 rounded-md border bg-card">
+        <div className="p-4 rounded-lg border bg-card">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs text-muted-foreground">
               {t("taskProgress.stepLabel", { step: task.current_step + 1 })}

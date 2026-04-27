@@ -240,6 +240,9 @@ export function DataExplorerPage() {
     }
   }
 
+  // Whether search is pending (user typed but debounce hasn't fired yet)
+  const isSearchPending = search !== debouncedSearch
+
   const dataTable = (
     <ResponsiveTable
       columns={columns}
@@ -249,6 +252,7 @@ export function DataExplorerPage() {
       onRowClick={(row) => setSelectedSource(row as unknown as UnifiedDataSourceInfo)}
       loading={loading}
       flexHeight
+      className={isSearchPending ? 'opacity-60 transition-opacity duration-200' : undefined}
       emptyState={
         <EmptyState
           icon={<Database className="h-12 w-12" />}
@@ -303,7 +307,11 @@ export function DataExplorerPage() {
               <div className="flex items-center gap-2">
                 {sourceFilter}
                 <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  {isSearchPending ? (
+                    <Loader2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
+                  ) : (
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  )}
                   <Input
                     placeholder={t('data:search', 'Search data sources...')}
                     value={search}

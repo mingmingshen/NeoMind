@@ -510,7 +510,7 @@ export function DeviceDetail({
         setMetricHistoryOpen(open)
         if (!open) onMetricBack()
       }}>
-        <DialogContent className="sm:max-w-3xl rounded-2xl flex flex-col">
+        <DialogContent className="sm:max-w-3xl flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <Clock className="h-5 w-5" />
@@ -633,7 +633,7 @@ export function DeviceDetail({
 
       {/* Image Preview Dialog */}
       <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
-        <DialogContent className="sm:max-w-4xl rounded-2xl p-2">
+        <DialogContent className="sm:max-w-4xl p-2">
           <DialogHeader className="sr-only">
             <DialogTitle>{t('devices:detailPage.preview')}</DialogTitle>
             <DialogDescription>{t('devices:detailPage.imagePreview')}</DialogDescription>
@@ -666,7 +666,7 @@ export function DeviceDetail({
       {/* Command Dialog */}
       {selectedCommandDef && (
         <Dialog open={commandDialogOpen} onOpenChange={setCommandDialogOpen}>
-          <DialogContent className="sm:max-w-md rounded-2xl flex flex-col">
+          <DialogContent className="sm:max-w-md flex flex-col">
             <DialogHeader>
               <DialogTitle className="text-xl">{selectedCommandDef.display_name || selectedCommandDef.name}</DialogTitle>
               <DialogDescription className="font-mono text-xs text-muted-foreground">

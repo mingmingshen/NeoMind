@@ -154,10 +154,10 @@ const SessionDrawerMemo = memo(function SessionDrawer({
   // Focus search input when drawer opens
   useEffect(() => {
     if (open) {
-      const timer = setTimeout(() => {
+      const raf = requestAnimationFrame(() => {
         searchInputRef.current?.focus()
-      }, 100)
-      return () => clearTimeout(timer)
+      })
+      return () => cancelAnimationFrame(raf)
     }
   }, [open])
 

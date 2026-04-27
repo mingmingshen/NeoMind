@@ -635,9 +635,9 @@ export function ChatPage() {
 
     ws.sendMessage(trimmedInput, attachedImages.length > 0 ? attachedImages : undefined, selectedSkills.length > 0 ? selectedSkills : undefined)
 
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       inputRef.current?.focus()
-    }, 100)
+    })
   }
 
   // Toggle skill selection

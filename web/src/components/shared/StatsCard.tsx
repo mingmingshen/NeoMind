@@ -115,7 +115,7 @@ export interface StatsCardCompactProps {
 
 export function StatsCardCompact({ label, value, change, className }: StatsCardCompactProps) {
   return (
-    <div className={cn('flex items-center justify-between p-3 rounded-md border bg-card/50', className)}>
+    <div className={cn('flex items-center justify-between p-3 rounded-lg border bg-card/50', className)}>
       <span className="text-sm text-muted-foreground">{label}</span>
       <div className="flex items-center gap-2">
         <span className="font-semibold">{value}</span>

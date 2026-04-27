@@ -540,9 +540,9 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     ws.sendMessage(trimmedInput, undefined, selectedSkills.length > 0 ? selectedSkills : undefined)
 
     // Focus input after sending
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       inputRef.current?.focus()
-    }, 100)
+    })
   }
 
   // Toggle skill selection
@@ -614,7 +614,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
 
           {/* Logo and title */}
           <div className="flex items-center gap-2">
-            <img src="/logo-square.png" alt="NeoMind" className="w-8 h-8 rounded-lg" />
+            <img src="/logo-square.png" alt="NeoMind" width={32} height={32} className="w-8 h-8 rounded-lg" />
             <div>
               <h1 className="text-lg font-semibold text-[var(--foreground)]"><BrandName /></h1>
               <p className="text-xs text-muted-foreground">{t("title")}</p>
@@ -645,7 +645,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           {/* Welcome message if no messages */}
           {filteredMessages.length === 0 && !streamState.isStreaming && (
             <div className="text-center py-16">
-              <img src="/logo-square.png" alt="NeoMind" className="w-16 h-16 rounded-2xl mx-auto mb-6" />
+              <img src="/logo-square.png" alt="NeoMind" width={64} height={64} className="w-16 h-16 rounded-2xl mx-auto mb-6" />
               <h2 className="text-2xl font-semibold mb-2 text-[var(--foreground)]">
                 {t("welcome.greeting")}
               </h2>

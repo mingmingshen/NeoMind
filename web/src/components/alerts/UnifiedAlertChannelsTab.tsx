@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils"
 import { LoadingState } from "@/components/shared/LoadingState"
 import { api } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { confirm } from "@/hooks/use-confirm"
 import { UniversalPluginConfigDialog, type PluginInstance, type UnifiedPluginType } from "@/components/plugins/UniversalPluginConfigDialog"
 import {
   Dialog,
@@ -630,16 +631,21 @@ export function UnifiedAlertChannelsTab({
                           className="h-8 w-8 p-0 text-destructive hover:text-destructive"
                           disabled={deletingId === instance.id}
                           onClick={async () => {
-                            if (confirm(t('common:messages.channels.confirmDelete', 'Are you sure you want to delete this channel?', { name: instance.name }))) {
-                              setDeletingId(instance.id)
-                              try {
-                                await handleDelete(instance.id)
-                                await loadData()
-                              } catch (err) {
-                                handleError(err, { operation: 'Delete channel' })
-                              } finally {
-                                setDeletingId(null)
-                              }
+                            const confirmed = await confirm({
+                              title: t('common:delete', 'Delete'),
+                              description: t('common:messages.channels.confirmDelete', 'Are you sure you want to delete the channel "{{name}}"?', { name: instance.name }),
+                              confirmText: t('common:delete', 'Delete'),
+                              variant: 'destructive',
+                            })
+                            if (!confirmed) return
+                            setDeletingId(instance.id)
+                            try {
+                              await handleDelete(instance.id)
+                              await loadData()
+                            } catch (err) {
+                              handleError(err, { operation: 'Delete channel' })
+                            } finally {
+                              setDeletingId(null)
                             }
                           }}
                           title={t('plugins:delete')}

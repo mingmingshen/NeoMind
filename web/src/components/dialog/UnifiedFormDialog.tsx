@@ -137,6 +137,50 @@ export function UnifiedFormDialog({
     onOpenChange(false)
   }, [isSubmitting, preventCloseOnSubmit, onOpenChange])
 
+  // Focus trap for mobile full-screen dialog
+  useEffect(() => {
+    if (!open || !isMobile || !fullScreenOnMobile) return
+
+    const container = contentRef.current?.parentElement?.parentElement
+    if (!container) return
+
+    const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+
+    // Focus the first focusable element when opened
+    const raf = requestAnimationFrame(() => {
+      const firstFocusable = container.querySelector(focusableSelector) as HTMLElement
+      firstFocusable?.focus()
+    })
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+
+      const focusableElements = container.querySelectorAll(focusableSelector)
+      if (focusableElements.length === 0) return
+
+      const first = focusableElements[0] as HTMLElement
+      const last = focusableElements[focusableElements.length - 1] as HTMLElement
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+
+    container.addEventListener('keydown', handleKeyDown)
+    return () => {
+      cancelAnimationFrame(raf)
+      container.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open, isMobile, fullScreenOnMobile])
+
   // Scroll to top when dialog opens
   useEffect(() => {
     if (open && contentRef.current) {
