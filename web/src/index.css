@@ -230,6 +230,7 @@ a {
     /* Glass-specific tokens (light) */
     --glass: oklch(1 0 0 / 65%);
     --glass-heavy: oklch(1 0 0 / 82%);
+    --surface-glass: oklch(1 0 0 / 70%);
     --glass-border: oklch(0 0 0 / 7%);
     --glass-border-hover: oklch(0 0 0 / 14%);
     --shadow-glass: 0 1px 3px 0 oklch(0 0 0 / 5%);
@@ -273,7 +274,7 @@ a {
     --secondary: oklch(0.20 0.008 270);
     --secondary-foreground: oklch(0.95 0.005 270);
     --muted: oklch(0.20 0.008 270);
-    --muted-foreground: oklch(0.58 0.012 270);
+    --muted-foreground: oklch(0.63 0.012 270);
     --accent: oklch(0.20 0.008 270);
     --accent-foreground: oklch(0.95 0.005 270);
     --destructive: oklch(0.577 0.245 27);
@@ -298,6 +299,7 @@ a {
 
     --glass: oklch(0.20 0.008 270 / 60%);
     --glass-heavy: oklch(0.18 0.008 270 / 80%);
+    --surface-glass: oklch(0.14 0.008 270 / 70%);
     --glass-border: oklch(1 0 0 / 10%);
     --glass-border-hover: oklch(1 0 0 / 18%);
     --shadow-glass: 0 2px 8px 0 oklch(0 0 0 / 20%);
@@ -342,6 +344,10 @@ a {
     z-index: 0;
     pointer-events: none;
     transition: background 300ms ease;
+    background:
+      radial-gradient(ellipse 600px 400px at 10% 5%, oklch(0.637 0.237 41 / 4%) 0%, transparent 70%),
+      radial-gradient(ellipse 500px 500px at 90% 95%, oklch(0.55 0.12 280 / 3%) 0%, transparent 70%),
+      radial-gradient(ellipse 800px 300px at 50% 40%, oklch(0.95 0.02 80 / 20%) 0%, transparent 70%);
   }
 
   .dark .aurora-bg {
@@ -349,13 +355,6 @@ a {
       radial-gradient(ellipse 600px 400px at 15% 10%, oklch(0.637 0.237 41 / 8%) 0%, transparent 70%),
       radial-gradient(ellipse 500px 500px at 85% 90%, oklch(0.62 0.20 300 / 5%) 0%, transparent 70%),
       radial-gradient(ellipse 800px 300px at 50% 50%, oklch(0.55 0.10 250 / 3%) 0%, transparent 70%);
-  }
-
-  .aurora-bg:not(.dark *) {
-    background:
-      radial-gradient(ellipse 600px 400px at 10% 5%, oklch(0.637 0.237 41 / 4%) 0%, transparent 70%),
-      radial-gradient(ellipse 500px 500px at 90% 95%, oklch(0.55 0.12 280 / 3%) 0%, transparent 70%),
-      radial-gradient(ellipse 800px 300px at 50% 40%, oklch(0.95 0.02 80 / 20%) 0%, transparent 70%);
   }
 }
 

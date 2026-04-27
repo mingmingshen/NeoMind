@@ -157,7 +157,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
 
   return (
     <TooltipProvider delayDuration={500}>
-      <nav ref={innerRef} className="fixed top-0 left-0 right-0 min-h-16 bg-background/70 backdrop-blur-xl saturate-120 border-b border-border/60 flex items-center px-4 sm:px-6 z-50" style={{paddingTop: 'env(safe-area-inset-top, 0px)'}}>
+      <nav ref={innerRef} className="fixed top-0 left-0 right-0 min-h-16 bg-[var(--surface-glass)] backdrop-blur-xl border-b border-[var(--glass-border)] flex items-center px-4 sm:px-6 z-50" style={{paddingTop: 'env(safe-area-inset-top, 0px)'}}>
         {/* Logo - vertically centered in nav */}
         <Link to="/chat" className="flex shrink-0 items-center justify-center mr-4 md:mr-6">
           <BrandLogoWithName />
