@@ -37,6 +37,8 @@ interface AiAnalystProps {
   agentId?: string
   sessionId?: string
   dataSource?: any
+  /** Display title from dashboard component config */
+  title?: string
   modelId?: string
   systemPrompt?: string
   contextWindowSize?: number
@@ -90,6 +92,7 @@ function normalizeToDataUrl(str: string): string {
 export function AiAnalyst({
   className,
   editMode = false,
+  title,
   agentId,
   sessionId: sessionIdProp,
   dataSource: dataSourceProp,
@@ -373,7 +376,7 @@ export function AiAnalyst({
           {/* Info */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-semibold text-sm truncate">AI Analyst</h3>
+              <h3 className="font-semibold text-sm truncate">{title || 'AI Analyst'}</h3>
               {isStreaming ? (
                 <Badge
                   variant="default"

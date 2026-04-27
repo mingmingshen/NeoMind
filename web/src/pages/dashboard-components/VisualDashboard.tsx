@@ -457,7 +457,6 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
     'heading', 'alert-banner',
     'tabs',
     'agent-status-card', 'agent-monitor-widget',
-    'ai-analyst',
   ]
 
   const result: Record<string, unknown> = {}
