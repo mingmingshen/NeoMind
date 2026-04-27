@@ -157,7 +157,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
 
   return (
     <TooltipProvider delayDuration={500}>
-      <nav ref={innerRef} className="fixed top-0 left-0 right-0 min-h-16 bg-background/95 backdrop-blur flex items-center px-4 sm:px-6 shadow-sm z-50" style={{paddingTop: 'env(safe-area-inset-top, 0px)'}}>
+      <nav ref={innerRef} className="fixed top-0 left-0 right-0 min-h-16 bg-background/70 backdrop-blur-xl saturate-120 border-b border-border/60 flex items-center px-4 sm:px-6 z-50" style={{paddingTop: 'env(safe-area-inset-top, 0px)'}}>
         {/* Logo - vertically centered in nav */}
         <Link to="/chat" className="flex shrink-0 items-center justify-center mr-4 md:mr-6">
           <BrandLogoWithName />
@@ -182,7 +182,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                       className={cn(
                         "w-11 h-11 rounded-lg transition-all",
                         isActive
-                          ? "bg-foreground text-background hover:bg-foreground hover:text-background"
+                          ? "bg-primary/10 text-primary hover:bg-primary/15"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                       )}
                     >
@@ -236,7 +236,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                           className={cn(
                             "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all active:scale-95 active:bg-muted",
                             isActive
-                              ? "bg-foreground text-background"
+                              ? "bg-primary/10 text-primary"
                               : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                           )}
                         >
