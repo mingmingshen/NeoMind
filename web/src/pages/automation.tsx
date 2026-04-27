@@ -111,6 +111,7 @@ export function AutomationPage() {
   const [extensionDataSources, setExtensionDataSources] = useState<ExtensionDataSourceInfo[]>([])
   const [messageChannels, setMessageChannels] = useState<Array<{ name: string; type: string; enabled: boolean }>>([])
   const [resourcesLoaded, setResourcesLoaded] = useState(false)
+  const [resourcesLoading, setResourcesLoading] = useState(false)
 
   // Load tab-specific list only (fast, minimal API calls)
   const loadTabData = useCallback(async () => {
@@ -140,7 +141,8 @@ export function AutomationPage() {
 
   // Lazy-load dialog resources only when needed (first dialog open)
   const loadResources = useCallback(async () => {
-    if (resourcesLoaded) return
+    if (resourcesLoaded || resourcesLoading) return
+    setResourcesLoading(true)
     try {
       const [devicesData, typesResult, resourcesResult, extResult, channelsResult] = await Promise.all([
         api.getDevices().catch((): any => ({ devices: [] })),
@@ -169,8 +171,10 @@ export function AutomationPage() {
       setResourcesLoaded(true)
     } catch (error) {
       handleError(error, { operation: 'Load resources', showToast: false })
+    } finally {
+      setResourcesLoading(false)
     }
-  }, [resourcesLoaded, handleError])
+  }, [resourcesLoaded, resourcesLoading, handleError])
 
   // Load tab data when tab changes
   useEffect(() => {
