@@ -194,6 +194,13 @@ pub fn extract_client_id(
         return format!("apikey:_{:x}", hash_string(api_key));
     }
 
+    // Try JWT Bearer token (frontend uses Authorization: Bearer <token>)
+    if let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
+        if let Some(token) = auth.strip_prefix("Bearer ") {
+            return format!("jwt:{:x}", hash_string(token));
+        }
+    }
+
     // Try to get session ID from headers (for WebSocket/chat sessions)
     if let Some(session_id) = headers.get("x-session-id").and_then(|v| v.to_str().ok()) {
         return format!("session:{}", hash_string(session_id));
@@ -272,7 +279,7 @@ mod tests {
     fn test_different_clients() {
         // Test that different clients have independent limits
         let config = RateLimitConfig::default();
-        assert_eq!(config.max_requests, 100);
+        assert_eq!(config.max_requests, 5000);
         assert_eq!(config.per_duration, Duration::from_secs(60));
     }
 
