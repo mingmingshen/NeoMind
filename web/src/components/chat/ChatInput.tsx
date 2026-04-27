@@ -300,8 +300,8 @@ export const ChatInput = memo(function ChatInput({
             rows={1}
             className={cn(
               "flex-1 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl resize-none text-base scroll-mb-32",
-              "bg-muted/50 text-foreground placeholder:text-muted-foreground placeholder:text-sm",
-              "focus:outline-none focus:ring-2 focus:ring-foreground/20",
+              "bg-[var(--input-focus-bg)] border border-[var(--glass-border)] text-foreground placeholder:text-[var(--muted-foreground)] placeholder:text-sm",
+              "focus:outline-none focus:ring-2 focus:ring-[var(--ring)]/30",
               "transition-all max-h-32"
             )}
             style={{ minHeight: "40px", height: "40px" }}
