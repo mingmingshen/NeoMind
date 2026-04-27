@@ -537,10 +537,15 @@ struct MemoryEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CompressionSummary {
     content: String,
+    #[serde(default = "default_importance")]
     importance: u8,
     /// Source entry dates preserved for merged entries
     #[serde(default)]
     source_dates: Vec<String>,
+}
+
+fn default_importance() -> u8 {
+    50
 }
 
 /// Parsed compression response
