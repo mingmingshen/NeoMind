@@ -19,11 +19,11 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogContentBody,
+  DialogFooter,
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, Database, RefreshCw, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye } from 'lucide-react'
+import { Search, Database, RefreshCw, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { UnifiedDataSourceInfo } from '@/types'
 import { useIsMobile } from '@/hooks/useMobile'
@@ -349,16 +349,15 @@ export function DataExplorerPage() {
       <Dialog open={!!selectedSource} onOpenChange={(open) => !open && setSelectedSource(null)}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {selectedSource && <SourceTypeBadge type={selectedSource.source_type} />}
-              {selectedSource?.source_display_name}
+            <DialogTitle>
+              {selectedSource && <span className="flex items-center gap-2">
+                <SourceTypeBadge type={selectedSource.source_type} />
+                {selectedSource.source_display_name}
+              </span>}
             </DialogTitle>
-            <DialogDescription>
-              {selectedSource?.id}
-            </DialogDescription>
           </DialogHeader>
           {selectedSource && (
-            <DialogContentBody className="space-y-4 py-4">
+            <DialogContentBody className="space-y-4">
               {/* Current Value */}
               {selectedSource.current_value !== undefined && selectedSource.current_value !== null && (
                 <div className="bg-muted/30 rounded-lg p-3">
@@ -455,6 +454,11 @@ export function DataExplorerPage() {
               </div>
             </DialogContentBody>
           )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedSource(null)}>
+              {t('common:close', 'Close')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

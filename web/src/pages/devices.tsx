@@ -440,7 +440,9 @@ export function DevicesPage() {
       // Use unified endpoint for refresh
       await fetchDeviceCurrentState(deviceDetailView)
       if (selectedMetric) {
-        await fetchTelemetryData(deviceDetailView, selectedMetric, undefined, undefined, 1000)
+        const end = Math.floor(Date.now() / 1000)
+        const start = end - 30 * 24 * 60 * 60
+        await fetchTelemetryData(deviceDetailView, selectedMetric, start, end, 1000)
       }
     }
   }
@@ -450,9 +452,8 @@ export function DevicesPage() {
     setSelectedMetric(metricName)
     // Use current timestamp as end to ensure we get the latest data
     const end = Math.floor(Date.now() / 1000)
-    // Use a large time range (365 days) for paginated history queries
-    // This ensures users can browse all historical data through pagination
-    const start = end - 365 * 24 * 60 * 60 // 365 days ago
+    // Max 30 days to match backend limit (MAX_TIME_RANGE_SECS = 30 * 86400)
+    const start = end - 30 * 24 * 60 * 60
     // Fetch with pagination support
     await fetchTelemetryData(deviceDetailView, metricName, start, end, limit ?? 50, offset ?? 0)
   }

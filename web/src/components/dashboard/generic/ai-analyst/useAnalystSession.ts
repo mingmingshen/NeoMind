@@ -252,18 +252,24 @@ async function loadHistoryMessages(
     // Executions come newest-first; reverse to chronological order
     const sorted = [...resp.executions].reverse()
 
-    // Fetch all execution details in parallel
-    const details = await Promise.all(
-      sorted.map(async (exec) => {
-        if (exec.status === 'Running') return null
-        try {
-          const detail = await api.getExecution(agentId, exec.id)
-          return { exec, detail }
-        } catch {
-          return null
-        }
-      })
-    )
+    // Fetch execution details in small batches to avoid flooding the API
+    const details: Array<{ exec: typeof sorted[number]; detail: Awaited<ReturnType<typeof api.getExecution>> } | null> = []
+    const BATCH_SIZE = 3
+    for (let i = 0; i < sorted.length; i += BATCH_SIZE) {
+      const batch = sorted.slice(i, i + BATCH_SIZE)
+      const batchResults = await Promise.all(
+        batch.map(async (exec) => {
+          if (exec.status === 'Running') return null
+          try {
+            const detail = await api.getExecution(agentId, exec.id)
+            return { exec, detail }
+          } catch {
+            return null
+          }
+        })
+      )
+      details.push(...batchResults)
+    }
 
     const messages: AnalystMessage[] = []
     for (const entry of details) {

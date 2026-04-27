@@ -764,12 +764,21 @@ export function AgentMonitorWidget({
     const toLoad = executions.filter(exec => !loaded[exec.id])
     if (toLoad.length === 0) return
 
-    // Load all missing details (max 50 executions from list API)
-    toLoad.forEach(exec => {
-      api.getAgentExecution(agentId, exec.id)
-        .then(data => setExecutionDetails(prev => ({ ...prev, [exec.id]: data })))
-        .catch(() => {})
-    })
+    // Load details in small batches (3 concurrent) to avoid flooding the API
+    const BATCH_SIZE = 3
+    let index = 0
+    const loadBatch = () => {
+      const batch = toLoad.slice(index, index + BATCH_SIZE)
+      if (batch.length === 0) return
+      index += BATCH_SIZE
+      Promise.allSettled(
+        batch.map(exec =>
+          api.getAgentExecution(agentId, exec.id)
+            .then(data => setExecutionDetails(prev => ({ ...prev, [exec.id]: data })))
+        )
+      ).then(loadBatch)
+    }
+    loadBatch()
   }, [executions, agentId])
 
   // WebSocket for real-time updates
