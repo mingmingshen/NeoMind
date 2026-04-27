@@ -334,6 +334,29 @@ a {
     --session-item-hover: oklch(0.18 0.008 270);
     --session-item-active: oklch(0.22 0.008 270);
   }
+
+  /* Aurora background - fixed gradient layer */
+  .aurora-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    transition: background 300ms ease;
+  }
+
+  .dark .aurora-bg {
+    background:
+      radial-gradient(ellipse 600px 400px at 15% 10%, oklch(0.637 0.237 41 / 8%) 0%, transparent 70%),
+      radial-gradient(ellipse 500px 500px at 85% 90%, oklch(0.62 0.20 300 / 5%) 0%, transparent 70%),
+      radial-gradient(ellipse 800px 300px at 50% 50%, oklch(0.55 0.10 250 / 3%) 0%, transparent 70%);
+  }
+
+  .aurora-bg:not(.dark *) {
+    background:
+      radial-gradient(ellipse 600px 400px at 10% 5%, oklch(0.637 0.237 41 / 4%) 0%, transparent 70%),
+      radial-gradient(ellipse 500px 500px at 90% 95%, oklch(0.55 0.12 280 / 3%) 0%, transparent 70%),
+      radial-gradient(ellipse 800px 300px at 50% 40%, oklch(0.95 0.02 80 / 20%) 0%, transparent 70%);
+  }
 }
 
 @layer base {
@@ -476,6 +499,23 @@ a {
   }
   .scrollbar-none::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Glass morphism utilities */
+  .glass {
+    background: var(--glass);
+    backdrop-filter: blur(20px) saturate(120%);
+    -webkit-backdrop-filter: blur(20px) saturate(120%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-glass);
+  }
+
+  .glass-heavy {
+    background: var(--glass-heavy);
+    backdrop-filter: blur(24px) saturate(130%);
+    -webkit-backdrop-filter: blur(24px) saturate(130%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-glass-lg);
   }
 }
 
