@@ -545,7 +545,7 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
       className={cn(
         "w-full text-left group relative rounded-lg border transition-all duration-200",
         "hover:shadow-md hover:border-border",
-        isLatest ? "border-primary/30 bg-primary/5" : "border-border/50 bg-background/50",
+        isLatest ? "border-primary/30 bg-primary/5" : "border-border/50 bg-[var(--bg-50)]",
         isRunning && "border-blue-500/50 bg-blue-500/5"
       )}
     >

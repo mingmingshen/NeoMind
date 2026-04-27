@@ -1004,7 +1004,7 @@ const ComponentWrapper = memo(function ComponentWrapper({
           <Button
             variant="secondary"
             size="icon"
-            className="h-9 w-9 bg-background/90 backdrop-blur"
+            className="h-9 w-9 bg-[var(--bg-90)] backdrop-blur"
             onClick={handleConfigClick}
           >
             <Settings2 className="h-4 w-4" />
@@ -1012,7 +1012,7 @@ const ComponentWrapper = memo(function ComponentWrapper({
           <Button
             variant="secondary"
             size="icon"
-            className="h-9 w-9 bg-background/90 backdrop-blur"
+            className="h-9 w-9 bg-[var(--bg-90)] backdrop-blur"
             onClick={handleDuplicateClick}
           >
             <Copy className="h-4 w-4" />
@@ -1020,7 +1020,7 @@ const ComponentWrapper = memo(function ComponentWrapper({
           <Button
             variant="secondary"
             size="icon"
-            className="h-9 w-9 bg-background/90 backdrop-blur hover:bg-destructive hover:text-destructive-foreground transition-colors"
+            className="h-9 w-9 bg-[var(--bg-90)] backdrop-blur hover:bg-destructive hover:text-destructive-foreground transition-colors"
             onClick={handleRemoveClick}
           >
             <Trash2 className="h-4 w-4" />
@@ -1033,7 +1033,7 @@ const ComponentWrapper = memo(function ComponentWrapper({
         <button
           onClick={handleEditButtonMouseEvent}
           onTouchEnd={handleEditButtonTouchEvent}
-          className="absolute top-2 right-2 z-50 flex items-center justify-center min-w-[44px] min-h-[44px] rounded-xl bg-background/90 backdrop-blur text-muted-foreground border border-border/50 shadow-sm transition-all duration-200 active:scale-95 cursor-pointer select-none"
+          className="absolute top-2 right-2 z-50 flex items-center justify-center min-w-[44px] min-h-[44px] rounded-xl bg-[var(--bg-90)] backdrop-blur text-muted-foreground border border-border/50 shadow-sm transition-all duration-200 active:scale-95 cursor-pointer select-none"
           style={{ touchAction: 'manipulation' }}
         >
           <Settings2 className="w-5 h-5" />
@@ -5330,7 +5330,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               variant="outline"
               size="icon"
               onClick={toggleFullscreen}
-              className="absolute top-4 right-4 z-50 shadow-lg bg-background/90 backdrop-blur"
+              className="absolute top-4 right-4 z-50 shadow-lg bg-[var(--bg-90)] backdrop-blur"
               title={t('visualDashboard.exitFullscreen')}
             >
               <Minimize className="h-4 w-4" />

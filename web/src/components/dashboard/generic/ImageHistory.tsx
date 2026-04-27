@@ -628,14 +628,14 @@ export function ImageHistory({
 
       {/* Loading indicator */}
       {imageLoadState === 'loading' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-20">
+        <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg-50)] z-20">
           <RefreshCw className="h-6 w-6 text-muted-foreground animate-spin" />
         </div>
       )}
 
       {/* Error indicator */}
       {imageLoadState === 'error' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 z-20">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--bg-80)] z-20">
           <AlertTriangle className="h-8 w-8 text-destructive mb-2" />
           <span className="text-sm text-muted-foreground">Failed to load</span>
         </div>

@@ -283,7 +283,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
       {/* Enhanced tooltip - always visible when selected, or on hover */}
       <div
         className={cn(
-          "absolute bottom-full left-0 mb-2 px-3 py-2 bg-background/95 backdrop-blur rounded-lg shadow-lg border min-w-[140px] transition-opacity text-left",
+          "absolute bottom-full left-0 mb-2 px-3 py-2 bg-[var(--bg-95)] backdrop-blur rounded-lg shadow-lg border min-w-[140px] transition-opacity text-left",
           isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
           isSelected ? "pointer-events-auto" : "pointer-events-none"
         )}
@@ -621,7 +621,7 @@ function SimpleSvgMap({
           <Button
             variant="secondary"
             size="icon"
-            className="h-6 w-6 bg-background/80 backdrop-blur"
+            className="h-6 w-6 bg-[var(--bg-80)] backdrop-blur"
             onClick={onZoomIn}
           >
             <ZoomIn className="h-4 w-4" />
@@ -629,7 +629,7 @@ function SimpleSvgMap({
           <Button
             variant="secondary"
             size="icon"
-            className="h-6 w-6 bg-background/80 backdrop-blur"
+            className="h-6 w-6 bg-[var(--bg-80)] backdrop-blur"
             onClick={onZoomOut}
           >
             <ZoomOut className="h-4 w-4" />
@@ -1104,7 +1104,7 @@ export function MapDisplay({
       {isFullscreen && (
         <div className="fixed inset-0 z-[9999] flex flex-col bg-background">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b bg-background/95">
+          <div className="flex items-center justify-between px-4 py-3 border-b bg-[var(--bg-95)]">
             <div className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium">Map</span>
@@ -1153,7 +1153,7 @@ export function MapDisplay({
   const fullscreenOverlay = isFullscreen ? createPortal(
     <div className="fixed inset-0 z-[9999] flex flex-col bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b bg-background/95">
+      <div className="flex items-center justify-between px-4 py-3 border-b bg-[var(--bg-95)]">
         <div className="flex items-center gap-2">
           <MapPin className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">Map</span>

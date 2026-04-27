@@ -172,7 +172,7 @@ export function PageTabsBottomNav({ tabs, activeTab, onTabChange }: PageTabsBott
   if (!isMobile) return null
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-border">
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--bg-95)] backdrop-blur-sm border-t border-border">
       <div className="flex items-center justify-around px-2 py-1">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.value

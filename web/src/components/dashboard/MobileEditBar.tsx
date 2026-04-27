@@ -192,7 +192,7 @@ export const MobileEditBar = memo(function MobileEditBar({
       <div
         className={cn(
           'fixed left-4 right-4 bottom-4 z-50',
-          'bg-background/95 backdrop-blur-md',
+          'bg-[var(--bg-95)] backdrop-blur-md',
           'rounded-2xl shadow-2xl shadow-black/20',
           'border border-border/50',
           'transition-all duration-300 ease-out',
@@ -291,7 +291,7 @@ export const CompactMobileEditBar = memo(function CompactMobileEditBar({
         className={cn(
           'fixed left-1/2 -translate-x-1/2 bottom-4 z-50',
           'flex items-center gap-2',
-          'bg-background/95 backdrop-blur-md',
+          'bg-[var(--bg-95)] backdrop-blur-md',
           'rounded-2xl shadow-2xl shadow-black/20',
           'border border-border/50',
           'p-2',

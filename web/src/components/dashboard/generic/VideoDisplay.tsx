@@ -727,7 +727,7 @@ export function VideoDisplay({
           <Button
             variant="secondary"
             size="icon"
-            className="absolute top-2 right-2 h-6 w-6 bg-background/80 backdrop-blur"
+            className="absolute top-2 right-2 h-6 w-6 bg-[var(--bg-80)] backdrop-blur"
             onClick={() => setIsFullscreen(true)}
           >
             <Maximize2 className="h-4 w-4" />
@@ -736,7 +736,7 @@ export function VideoDisplay({
 
         {/* Type indicator */}
         {rawSrc && (
-          <div className="absolute top-2 left-2 px-2 py-0.5 bg-background/80 backdrop-blur rounded text-xs text-muted-foreground">
+          <div className="absolute top-2 left-2 px-2 py-0.5 bg-[var(--bg-80)] backdrop-blur rounded text-xs text-muted-foreground">
             {detectedType === 'hls' && 'HLS'}
             {detectedType === 'device-camera' && 'Camera'}
             {detectedType === 'file' && 'Video'}
@@ -750,7 +750,7 @@ export function VideoDisplay({
   const fullscreenOverlay = isFullscreen && createPortal(
     <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
       {/* Header with close button */}
-      <div className="flex items-center justify-between px-4 py-3 bg-background/95 border-b">
+      <div className="flex items-center justify-between px-4 py-3 bg-[var(--bg-95)] border-b">
         <div className="flex items-center gap-2">
           <Webcam className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">Video</span>

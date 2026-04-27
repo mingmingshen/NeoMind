@@ -428,7 +428,7 @@ function App() {
             path="/*"
             element={
               <ProtectedRoute>
-                <div className="flex flex-col bg-background" style={{height: 'var(--app-height, 100vh)'}}>
+                <div className="flex flex-col" style={{height: 'var(--app-height, 100vh)'}}>
                   <div className="aurora-bg" />
                   <TopNav />
                   <main className="relative z-10 flex flex-1 min-h-0 overflow-hidden" style={{paddingTop: 'var(--topnav-height, 4rem)'}}>

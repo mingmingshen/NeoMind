@@ -434,7 +434,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-lg">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-lg p-4 sm:p-8">
+            <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-4 sm:p-8">
               {/* Welcome Icon */}
               <div className="flex justify-center mb-4 sm:mb-6">
                 <div className="flex size-12 sm:size-16 items-center justify-center rounded-full bg-primary/10 text-primary dark:bg-primary/20">
@@ -534,7 +534,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-lg p-6 sm:p-8">
+            <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -570,7 +570,7 @@ export function SetupPage() {
                       autoComplete="username"
                       required
                       minLength={3}
-                      className="pl-9 h-10 bg-background/70 dark:bg-background/30 border-border/50 dark:border-border/30"
+                      className="pl-9 h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30"
                     />
                   </div>
                 </div>
@@ -585,7 +585,7 @@ export function SetupPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder={t('setup:emailPlaceholder')}
                     autoComplete="email"
-                    className="h-10 bg-background/70 dark:bg-background/30 border-border/50 dark:border-border/30 mt-1.5"
+                    className="h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30 mt-1.5"
                   />
                   
                   {/* Newsletter Subscription Checkbox */}
@@ -619,7 +619,7 @@ export function SetupPage() {
                       autoComplete="new-password"
                       required
                       minLength={8}
-                      className="pl-9 h-10 bg-background/70 dark:bg-background/30 border-border/50 dark:border-border/30"
+                      className="pl-9 h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30"
                     />
                   </div>
                 </div>
@@ -637,7 +637,7 @@ export function SetupPage() {
                       placeholder={t('setup:confirmPasswordPlaceholder')}
                       autoComplete="new-password"
                       required
-                      className="pl-9 h-10 bg-background/70 dark:bg-background/30 border-border/50 dark:border-border/30"
+                      className="pl-9 h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30"
                     />
                   </div>
                 </div>
@@ -778,7 +778,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-lg p-6 sm:p-8">
+            <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -908,7 +908,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-lg p-6 sm:p-8">
+            <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -963,7 +963,7 @@ export function SetupPage() {
                     onChange={(e) => setLlmModel(e.target.value)}
                     placeholder={t('setup:modelPlaceholder')}
                     required={selectedProvider !== 'llamacpp'}
-                    className="h-10 bg-background/70 dark:bg-background/30 border-border/50 dark:border-border/30 mt-1.5"
+                    className="h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30 mt-1.5"
                   />
                 </div>
 
@@ -977,7 +977,7 @@ export function SetupPage() {
                       value={llmEndpoint}
                       onChange={(e) => setLlmEndpoint(e.target.value)}
                       placeholder={selectedProvider === 'llamacpp' ? 'http://localhost:8080' : 'http://localhost:11434'}
-                      className="h-10 bg-background/70 dark:bg-background/30 border-border/50 dark:border-border/30 mt-1.5"
+                      className="h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30 mt-1.5"
                     />
                   </div>
                 )}
@@ -992,7 +992,7 @@ export function SetupPage() {
                       value={llmApiKey}
                       onChange={(e) => setLlmApiKey(e.target.value)}
                       placeholder={t('setup:apiKeyPlaceholder')}
-                      className="h-10 bg-background/70 dark:bg-background/30 border-border/50 dark:border-border/30 mt-1.5"
+                      className="h-10 bg-[var(--bg-70)] border-border/50 dark:border-border/30 mt-1.5"
                     />
                     <p className="text-xs text-muted-foreground mt-1">{t('setup:apiKeyHint')}</p>
                   </div>
@@ -1058,7 +1058,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md text-center">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-lg p-6 sm:p-8">
+            <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Success Icon */}
               <div className="flex justify-center mb-6">
                 <div className="flex size-16 items-center justify-center rounded-full bg-green-500/10 text-green-500 dark:bg-green-500/20">

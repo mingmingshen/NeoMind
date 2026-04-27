@@ -465,7 +465,7 @@ function LayerItemComponent({
             <Button
               variant="secondary"
               size="icon"
-              className="h-5 w-5 bg-background/90"
+              className="h-5 w-5 bg-[var(--bg-90)]"
               onClick={(e) => { e.stopPropagation(); onToggleVisibility(item.id); }}
               title={(item.visible as boolean | undefined) === false ? t('customLayer.show') : t('customLayer.hide')}
             >
@@ -474,7 +474,7 @@ function LayerItemComponent({
             <Button
               variant="secondary"
               size="icon"
-              className="h-5 w-5 bg-background/90"
+              className="h-5 w-5 bg-[var(--bg-90)]"
               onClick={(e) => { e.stopPropagation(); onToggleLock(item.id); }}
             >
               {item.locked ? <Lock className="h-2.5 w-2.5" /> : <Unlock className="h-2.5 w-2.5" />}
@@ -488,7 +488,7 @@ function LayerItemComponent({
         <div
           className={cn(
             'absolute z-50 min-w-[200px] max-w-[280px] rounded-lg shadow-xl border',
-            'bg-background/95 backdrop-blur',
+            'bg-[var(--bg-95)] backdrop-blur',
             'p-3 animate-in fade-in zoom-in-95 duration-150'
           )}
           style={{
@@ -1271,7 +1271,7 @@ export function CustomLayer({
   const fullscreenOverlay = isFullscreen ? createPortal(
     <div className="fixed inset-0 z-[9999] flex flex-col bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b bg-background/95">
+      <div className="flex items-center justify-between px-4 py-3 border-b bg-[var(--bg-95)]">
         <div className="flex items-center gap-2">
           <Layers className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">Custom Layer</span>

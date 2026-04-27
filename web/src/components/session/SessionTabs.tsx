@@ -152,7 +152,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
   return (
     <div className={cn(
       "h-11 flex items-center px-2 sm:px-3 gap-1",
-      "bg-background/50 backdrop-blur-sm",
+      "bg-[var(--bg-50)] backdrop-blur-sm",
       className
     )}>
       {/* New session button */}

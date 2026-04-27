@@ -2589,7 +2589,7 @@ function ResourceSelectionDialog({
           <div className="flex-1 flex gap-4 min-h-0 p-4 overflow-hidden">
             {/* Available Resources */}
             <div className="flex-1 flex flex-col bg-muted/30 rounded-lg overflow-hidden">
-              <div className="p-3 border-b bg-background/50">
+              <div className="p-3 border-b bg-[var(--bg-50)]">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">{tAgent('creator.resources.dialog.available')}</span>
                   <Badge variant="secondary">{availableResources.length}</Badge>

@@ -337,7 +337,7 @@ export function ExecutionDetailDialog({
                     return (
                       <div key={idx} className="border rounded-lg overflow-hidden">
                         <div
-                          className="flex items-center justify-between p-2 bg-background/50 cursor-pointer hover:bg-background/80 transition-colors"
+                          className="flex items-center justify-between p-2 bg-[var(--bg-50)] cursor-pointer hover:bg-[var(--bg-80)] transition-colors"
                           onClick={() => toggleDataExpanded(idx)}
                         >
                           <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -365,7 +365,7 @@ export function ExecutionDetailDialog({
                         )}
 
                         {isExpanded && dataPairs.length > 0 && (
-                          <div className="p-2 border-t bg-background/30">
+                          <div className="p-2 border-t bg-background">
                             <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
                               {dataPairs.slice(0, 10).map((pair, pairIdx) => (
                                 <div key={pairIdx} className="flex items-baseline gap-1 min-w-0">

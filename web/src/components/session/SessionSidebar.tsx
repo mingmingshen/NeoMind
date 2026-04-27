@@ -562,7 +562,7 @@ export function SessionSidebar({
       <>
         <div
           className={cn(
-            "h-full bg-background/50 border-r border-border/50 flex flex-col transition-[width] duration-200",
+            "h-full bg-[var(--bg-50)] border-r border-border/50 flex flex-col transition-[width] duration-200",
             collapsed ? "w-12" : "w-64"
           )}
         >

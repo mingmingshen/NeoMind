@@ -49,7 +49,7 @@ function FullscreenImage({ src, alt, onClose }: FullscreenImageProps) {
   if (!src) return null
   return (
     <div
-      className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center"
+      className="fixed inset-0 z-50 bg-[var(--bg-95)] backdrop-blur-sm flex items-center justify-center"
       onClick={onClose}
     >
       <Button
