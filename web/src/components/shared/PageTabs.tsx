@@ -193,16 +193,13 @@ export function PageTabsBottomNav({ tabs, activeTab, onTabChange }: PageTabsBott
             >
               {Icon && (
                 <span className={cn(
-                  'shrink-0 transition-all',
-                  isActive ? 'h-5 w-5' : 'h-4.5 w-4.5 opacity-70'
+                  'shrink-0 h-5 w-5 transition-opacity',
+                  isActive ? 'opacity-100' : 'opacity-60'
                 )}>
                   {Icon}
                 </span>
               )}
-              <span className={cn(
-                'text-[10px] font-medium leading-tight truncate w-full text-center',
-                isActive ? 'text-[11px]' : 'text-[10px] opacity-80'
-              )}>
+              <span className="text-[11px] font-medium leading-tight truncate w-full text-center">
                 {tab.label}
               </span>
             </button>

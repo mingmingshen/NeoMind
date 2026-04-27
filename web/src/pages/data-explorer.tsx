@@ -147,6 +147,7 @@ export function DataExplorerPage() {
   useEffect(() => {
     if (!selectedSource) {
       setHistoryData([])
+      setHistoryLoading(false)
       return
     }
     const rangeSeconds: Record<string, number> = {
@@ -160,22 +161,23 @@ export function DataExplorerPage() {
     const source = `${parts[0]}:${parts[1]}`
     const metric = parts.slice(2).join(':')
 
-    let cancelled = false
+    let stale = false
     setHistoryLoading(true)
     api.queryTelemetry(source, metric, start, now, 500).then(res => {
-      if (cancelled) return
+      if (stale) return
       setHistoryData((res?.data || []).map(p => ({
         timestamp: p.timestamp,
         value: p.value,
         quality: p.quality,
       })))
     }).catch(err => {
+      if (stale) return
       console.error('[DataExplorer] Failed to fetch history:', err)
-      if (!cancelled) setHistoryData([])
+      setHistoryData([])
     }).finally(() => {
-      if (!cancelled) setHistoryLoading(false)
+      if (!stale) setHistoryLoading(false)
     })
-    return () => { cancelled = true }
+    return () => { stale = true }
   }, [selectedSource, historyRange])
 
   const tabs = useMemo(() => [

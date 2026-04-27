@@ -5,11 +5,10 @@ import { MarkdownMessage } from "./MarkdownMessage"
 import { MessageItem } from "./MessageItem"
 import { ExecutionPlanPanel } from "./ExecutionPlanPanel"
 import { useStore } from "@/store"
-import { useMemo, useEffect, useState, useRef, useCallback } from "react"
+import { useMemo, useEffect, useRef, useCallback } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { mergeMessagesForDisplay } from "@/lib/messageUtils"
 import { Loader2 } from "lucide-react"
-import { selectSessionId } from "@/store/selectors"
 
 interface MergedMessageListProps {
   messages: Message[]
@@ -33,10 +32,6 @@ export function MergedMessageList({
   roundContents = {},
 }: MergedMessageListProps) {
   const user = useStore((s) => s.user)
-  const sessionId = useStore(selectSessionId)
-
-  // Track if we're in a valid session with data
-  const [hasValidData, setHasValidData] = useState(false)
 
   // Ref for the scroll container
   const listRef = useRef<HTMLDivElement>(null)
@@ -57,19 +52,6 @@ export function MergedMessageList({
     return username.slice(0, 2).toUpperCase()
   }, [])
 
-  // Handle session change with proper loading state
-  useEffect(() => {
-    // Reset loading state when session changes
-    setHasValidData(false)
-
-    // Then mark that we have valid data after a short delay
-    const timer = setTimeout(() => {
-      setHasValidData(true)
-    }, 150)
-
-    return () => clearTimeout(timer)
-  }, [sessionId])
-
   // Auto-scroll to bottom when new messages arrive during streaming
   useEffect(() => {
     if (isStreaming && listRef.current) {
@@ -77,16 +59,15 @@ export function MergedMessageList({
     }
   }, [isStreaming, displayMessages.length])
 
-  // Don't show content until we have valid data
-  const shouldShowContent = hasValidData && displayMessages.length > 0
+  // Show content when we have messages, or when streaming (even if messages are empty)
+  const hasContent = displayMessages.length > 0 || isStreaming
 
   return (
     <>
-      {!shouldShowContent ? (
-        // Loading state - show when session changes or no data
+      {!hasContent ? (
+        // Empty state - no messages yet
         <div className="flex items-center justify-center py-16">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          <span className="text-sm text-muted-foreground ml-2">加载中...</span>
+          <span className="text-sm text-muted-foreground">暂无消息</span>
         </div>
       ) : (
         // Actual messages with virtual scrolling

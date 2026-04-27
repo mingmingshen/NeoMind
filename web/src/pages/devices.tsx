@@ -270,45 +270,48 @@ export function DevicesPage() {
 
   // Load device from URL parameter
   useEffect(() => {
-    // Use functional state update to get latest value
-    setDeviceDetailView((currentDetailView) => {
-      // If URL has deviceId and it's different from current, load the device
-      if (urlDeviceId && urlDeviceId !== currentDetailView) {
-        // Find the device in the list
-        let device = devices.find(d => d.id === urlDeviceId)
-
-        // If not found in list, try to fetch directly from API
-        const loadDevice = async () => {
-          if (!device && !devicesLoading) {
-            device = await withErrorHandling(
-              () => api.getDevice(urlDeviceId),
-              { operation: 'Load device from URL', showToast: false }
-            ) ?? device
-            if (!device) return urlDeviceId // Still set the view even if API fails (will show error)
-          }
-
-          if (device) {
-            setSelectedMetric(null)
-            await fetchDeviceDetails(urlDeviceId)
-            await fetchDeviceTypeDetails(device.device_type)
-            // Use unified endpoint: device + metrics in one call
-            await fetchDeviceCurrentState(urlDeviceId)
-          }
-        }
-
-        loadDevice()
-        return urlDeviceId
-      }
-
-      // If URL doesn't have deviceId but state does, clear it
-      if (!urlDeviceId && currentDetailView) {
-        setSelectedMetric(null)
+    if (!urlDeviceId) {
+      // Clear detail view when URL has no deviceId
+      setDeviceDetailView((prev) => {
+        if (prev) setSelectedMetric(null)
         return null
+      })
+      return
+    }
+
+    let cancelled = false
+
+    const loadDevice = async () => {
+      // Find device in list first (synchronous)
+      let device = devices.find(d => d.id === urlDeviceId)
+
+      // Fetch from API if not in list
+      if (!device && !devicesLoading) {
+        device = await withErrorHandling(
+          () => api.getDevice(urlDeviceId),
+          { operation: 'Load device from URL', showToast: false }
+        ) ?? undefined
       }
 
-      return currentDetailView
-    })
-    // Only depend on urlDeviceId - other values accessed inside are stable or OK to be stale
+      if (cancelled) return
+
+      if (device) {
+        setSelectedMetric(null)
+        setDeviceDetailView(urlDeviceId)
+        await Promise.all([
+          fetchDeviceDetails(urlDeviceId),
+          fetchDeviceTypeDetails(device.device_type),
+          fetchDeviceCurrentState(urlDeviceId),
+        ])
+      } else {
+        // Device not found but still set view to show error state
+        setDeviceDetailView(urlDeviceId)
+      }
+    }
+
+    loadDevice()
+
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlDeviceId])
 
