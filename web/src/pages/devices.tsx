@@ -420,10 +420,12 @@ export function DevicesPage() {
     navigate(`/devices/${device.id}`)
     setDeviceDetailView(device.id)
     setSelectedMetric(null)
-    await fetchDeviceDetails(device.id)
-    await fetchDeviceTypeDetails(device.device_type)
-    // Use unified endpoint: device + metrics in one call
-    await fetchDeviceCurrentState(device.id)
+    // All three fetches are independent — run in parallel
+    await Promise.all([
+      fetchDeviceDetails(device.id),
+      fetchDeviceTypeDetails(device.device_type),
+      fetchDeviceCurrentState(device.id),
+    ])
   }
 
   const handleCloseDeviceDetail = () => {
@@ -435,13 +437,19 @@ export function DevicesPage() {
 
   const handleRefreshDeviceDetail = async () => {
     if (deviceDetailView) {
-      await fetchDeviceDetails(deviceDetailView)
-      // Use unified endpoint for refresh
-      await fetchDeviceCurrentState(deviceDetailView)
       if (selectedMetric) {
         const end = Math.floor(Date.now() / 1000)
         const start = end - 30 * 24 * 60 * 60
-        await fetchTelemetryData(deviceDetailView, selectedMetric, start, end, 1000)
+        await Promise.all([
+          fetchDeviceDetails(deviceDetailView),
+          fetchDeviceCurrentState(deviceDetailView),
+          fetchTelemetryData(deviceDetailView, selectedMetric, start, end, 1000),
+        ])
+      } else {
+        await Promise.all([
+          fetchDeviceDetails(deviceDetailView),
+          fetchDeviceCurrentState(deviceDetailView),
+        ])
       }
     }
   }

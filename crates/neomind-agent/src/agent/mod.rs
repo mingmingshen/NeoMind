@@ -937,7 +937,7 @@ impl Agent {
                         caps.max_context.unwrap_or(128000),
                     );
                 } else {
-                    tracing::warn!(
+                    tracing::debug!(
                         "No capabilities provided for OllamaRuntime, using default detection"
                     );
                 }

@@ -89,18 +89,18 @@ pub async fn list_all_data_sources_handler(
     let need_transform = filter_type.is_none() || filter_type == Some("transform");
     let need_ai = filter_type.is_none() || filter_type == Some("ai");
 
-    if need_device {
-        collect_device_sources(&state, &mut sources).await;
-    }
-    if need_extension {
-        collect_extension_sources(&state, &mut sources).await;
-    }
-    if need_transform {
-        collect_transform_sources(&state, &mut sources).await;
-    }
-    if need_ai {
-        collect_ai_sources(&state, &mut sources).await;
-    }
+    // Collect sources from all needed types in parallel
+    let (mut device_sources, mut extension_sources, mut transform_sources, mut ai_sources) =
+        tokio::join!(
+            async { if need_device { collect_device_sources_parallel(&state).await } else { vec![] } },
+            async { if need_extension { collect_extension_sources_parallel(&state).await } else { vec![] } },
+            async { if need_transform { collect_transform_sources_parallel(&state).await } else { vec![] } },
+            async { if need_ai { collect_ai_sources_parallel(&state).await } else { vec![] } },
+        );
+    sources.append(&mut device_sources);
+    sources.append(&mut extension_sources);
+    sources.append(&mut transform_sources);
+    sources.append(&mut ai_sources);
 
     // Sort by id for consistent ordering
     sources.sort_by(|a, b| a.id.cmp(&b.id));
@@ -175,20 +175,31 @@ fn build_source_options(
     options
 }
 
-/// Fetch latest telemetry values for all collected data sources.
+/// Fetch latest telemetry values for all collected data sources concurrently.
 async fn populate_latest_values(state: &ServerState, sources: &mut Vec<UnifiedDataSourceInfo>) {
     let telemetry = &state.devices.telemetry;
 
-    for source in sources.iter_mut() {
-        let ds_id = match DataSourceId::parse(&source.id) {
-            Some(id) => id,
-            None => continue,
-        };
+    // Build indexed futures for parallel execution
+    let futures: Vec<(usize, _)> = sources
+        .iter()
+        .enumerate()
+        .filter_map(|(i, source)| {
+            let ds_id = DataSourceId::parse(&source.id)?;
+            let source_part = ds_id.source_part().to_string();
+            let metric_part = ds_id.metric_part().to_string();
+            Some((i, async move {
+                telemetry.latest(&source_part, &metric_part).await
+            }))
+        })
+        .collect();
 
-        let source_part = ds_id.source_part();
-        let metric_part = ds_id.metric_part();
+    // Execute all queries concurrently
+    let results = futures::future::join_all(futures.into_iter().map(|(i, f)| async move { (i, f.await) })).await;
 
-        if let Ok(Some(data_point)) = telemetry.latest(&source_part, metric_part).await {
+    // Apply results back to sources by index
+    for (idx, result) in results {
+        if let Ok(Some(data_point)) = result {
+            let source = &mut sources[idx];
             source.last_update = Some(data_point.timestamp);
             source.quality = data_point.quality;
 
@@ -203,7 +214,6 @@ async fn populate_latest_values(state: &ServerState, sources: &mut Vec<UnifiedDa
             };
             source.current_value = Some(value);
 
-            // Infer data_type from actual value if still unknown
             if source.data_type == "unknown" {
                 source.data_type = match &data_point.value {
                     neomind_devices::mdl::MetricValue::Float(_) => "float".to_string(),
@@ -217,6 +227,34 @@ async fn populate_latest_values(state: &ServerState, sources: &mut Vec<UnifiedDa
             }
         }
     }
+}
+
+/// Collect data sources from all registered devices (returns new Vec for parallel use).
+async fn collect_device_sources_parallel(state: &ServerState) -> Vec<UnifiedDataSourceInfo> {
+    let mut sources = Vec::new();
+    collect_device_sources(state, &mut sources).await;
+    sources
+}
+
+/// Collect data sources from all registered extensions (returns new Vec for parallel use).
+async fn collect_extension_sources_parallel(state: &ServerState) -> Vec<UnifiedDataSourceInfo> {
+    let mut sources = Vec::new();
+    collect_extension_sources(state, &mut sources).await;
+    sources
+}
+
+/// Collect data sources from all registered transforms (returns new Vec for parallel use).
+async fn collect_transform_sources_parallel(state: &ServerState) -> Vec<UnifiedDataSourceInfo> {
+    let mut sources = Vec::new();
+    collect_transform_sources(state, &mut sources).await;
+    sources
+}
+
+/// Collect data sources from AI agent metrics (returns new Vec for parallel use).
+async fn collect_ai_sources_parallel(state: &ServerState) -> Vec<UnifiedDataSourceInfo> {
+    let mut sources = Vec::new();
+    collect_ai_sources(state, &mut sources).await;
+    sources
 }
 
 /// Collect data sources from all registered devices.

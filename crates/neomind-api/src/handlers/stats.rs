@@ -9,6 +9,9 @@ use axum::extract::State;
 use axum::Json;
 use serde_json::json;
 
+#[allow(unused_imports)]
+use futures::future::join_all;
+
 // Re-export ConnectionStatus from mdl_format for DeviceInstance
 
 /// System statistics summary.
@@ -142,67 +145,51 @@ pub async fn get_system_stats_handler(
         .and_utc()
         .timestamp();
 
-    // Get device stats using DeviceService
-    let configs = state.devices.service.list_devices();
-    // Get current metrics to count devices with metrics
-    let mut devices_with_metrics = 0;
-    for config in &configs {
-        if let Ok(metrics) = state
-            .devices
-            .service
-            .get_current_metrics(&config.device_id)
-            .await
-        {
-            if !metrics.is_empty() {
-                devices_with_metrics += 1;
+    // Fetch all independent data sources in parallel
+    let (device_stats_result, rule_stats_result, all_messages) = tokio::join!(
+        async {
+            // Device stats
+            let configs = state.devices.service.list_devices();
+            let metrics_futures: Vec<_> = configs.iter()
+                .map(|c| state.devices.service.get_current_metrics(&c.device_id))
+                .collect();
+            let metrics_results = futures::future::join_all(metrics_futures).await;
+            let devices_with_metrics = metrics_results.iter()
+                .filter(|r| r.as_ref().is_ok_and(|m| !m.is_empty()))
+                .count();
+
+            use neomind_devices::adapter::ConnectionStatus;
+            let online = state.devices.service.get_devices_by_status(ConnectionStatus::Connected).await.len();
+            let offline = state.devices.service.get_devices_by_status(ConnectionStatus::Disconnected).await.len();
+
+            DeviceStats {
+                total_devices: configs.len(),
+                online_devices: online,
+                offline_devices: offline,
+                devices_with_metrics,
             }
-        }
-    }
+        },
+        async {
+            // Rule stats
+            let rules = state.automation.rule_engine.list_rules().await;
+            let triggered_today = if let Some(store) = &state.automation.rule_history_store {
+                store.count_since(start_of_today).unwrap_or(0) as usize
+            } else {
+                0
+            };
+            RuleStats {
+                total_rules: rules.len(),
+                enabled_rules: rules.iter().filter(|r| matches!(r.status, neomind_rules::RuleStatus::Active)).count(),
+                disabled_rules: rules.iter().filter(|r| matches!(r.status, neomind_rules::RuleStatus::Disabled)).count(),
+                triggered_today,
+            }
+        },
+        // Messages
+        state.core.message_manager.list_messages(),
+    );
 
-    // Get online/offline device counts from connection status tracking
-    use neomind_devices::adapter::ConnectionStatus;
-    let online_devices = state
-        .devices
-        .service
-        .get_devices_by_status(ConnectionStatus::Connected)
-        .await
-        .len();
-    let offline_devices = state
-        .devices
-        .service
-        .get_devices_by_status(ConnectionStatus::Disconnected)
-        .await
-        .len();
-
-    let device_stats = DeviceStats {
-        total_devices: configs.len(),
-        online_devices,
-        offline_devices,
-        devices_with_metrics,
-    };
-
-    // Get rule stats
-    let rules = state.automation.rule_engine.list_rules().await;
-    let triggered_today = if let Some(store) = &state.automation.rule_history_store {
-        store.count_since(start_of_today).unwrap_or(0) as usize
-    } else {
-        0
-    };
-    let rule_stats = RuleStats {
-        total_rules: rules.len(),
-        enabled_rules: rules
-            .iter()
-            .filter(|r| matches!(r.status, neomind_rules::RuleStatus::Active))
-            .count(),
-        disabled_rules: rules
-            .iter()
-            .filter(|r| matches!(r.status, neomind_rules::RuleStatus::Disabled))
-            .count(),
-        triggered_today,
-    };
-
-    // Get alert stats (using message manager)
-    let all_messages = state.core.message_manager.list_messages().await;
+    let device_stats = device_stats_result;
+    let rule_stats = rule_stats_result;
     let active_messages: Vec<_> = all_messages
         .into_iter()
         .filter(|m| matches!(m.status, neomind_messages::MessageStatus::Active))

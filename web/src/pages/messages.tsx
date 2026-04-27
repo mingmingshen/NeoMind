@@ -139,9 +139,10 @@ export default function MessagesPage() {
 
   // Messages state
   const [messages, setMessages] = useState<NotificationMessage[]>([])
+  const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(false)
 
-  // Pagination
+  // Pagination - server-side
   const [messagePage, setMessagePage] = useState(1)
   const messagesPerPage = 10
 
@@ -407,24 +408,8 @@ export default function MessagesPage() {
     }
   }
 
-  // Calculate paginated messages
-  // On mobile: show cumulative data (all pages up to current)
-  // On desktop: show only current page
-  const paginatedMessages = useMemo(() => {
-    if (isMobile) {
-      // Mobile: show all data from page 1 to current page (cumulative)
-      return messages.slice(0, messagePage * messagesPerPage)
-    } else {
-      // Desktop: show only current page
-      return messages.slice(
-        (messagePage - 1) * messagesPerPage,
-        messagePage * messagesPerPage
-      )
-    }
-  }, [messages, messagePage, messagesPerPage, isMobile])
-
-  // Filtered count for display
-  const filteredCount = messages.length
+  // Server-side paginated — messages is already the current page
+  const filteredCount = totalCount
 
   // Channels state
   const [channels, setChannels] = useState<MessageChannel[]>([])
@@ -455,7 +440,12 @@ export default function MessagesPage() {
     setLoading(true)
     try {
       // Build query params for server-side filtering and pagination
-      const params: Record<string, string> = { limit: '200', offset: '0' }
+      // Server-side pagination — only fetch current page
+      const offset = (messagePage - 1) * messagesPerPage
+      const params: Record<string, string> = {
+        limit: String(messagesPerPage),
+        offset: String(offset),
+      }
       if (selectedSeverities.size === 1) {
         params.severity = [...selectedSeverities][0]
       }
@@ -469,23 +459,21 @@ export default function MessagesPage() {
         params.message_type = [...selectedMessageTypes][0]
       }
 
-      // Fetch both notifications and delivery logs in parallel
+      // Fetch messages and delivery logs in parallel
       const [messagesResponse, deliveryLogsResponse] = await Promise.all([
         api.getMessages(params),
-        api.getDeliveryLogs({ hours: 24 }).catch(() => null) // Gracefully handle if delivery logs endpoint is not available
+        api.getDeliveryLogs({ hours: 24 }).catch(() => null),
       ])
 
-      // Extract messages array from response
       let messagesArray: NotificationMessage[] = messagesResponse.messages || []
+      const serverTotal = messagesResponse.count ?? 0
 
-      // Fetch and process delivery logs
-      let allDeliveryLogs: DeliveryLog[] = []
+      // Process delivery logs
       if (deliveryLogsResponse) {
-        allDeliveryLogs = deliveryLogsResponse.logs || []
-        setDeliveryLogs(allDeliveryLogs)
+        const logs = deliveryLogsResponse.logs || []
+        setDeliveryLogs(logs)
 
-        // Convert delivery logs to message format for display
-        const deliveryLogMessages: NotificationMessage[] = allDeliveryLogs.map((log: DeliveryLog) => ({
+        const logMessages: NotificationMessage[] = logs.map((log: DeliveryLog) => ({
           id: log.id,
           category: 'data_push',
           severity: log.status === 'success' ? 'info' : log.status === 'failed' ? 'critical' : 'warning',
@@ -499,52 +487,48 @@ export default function MessagesPage() {
           metadata: { delivery_log: true, retry_count: log.retry_count },
           message_type: 'data_push' as MessageType,
         }))
-
-        // Merge messages with delivery logs
-        messagesArray = [...messagesArray, ...deliveryLogMessages]
+        messagesArray = [...messagesArray, ...logMessages]
       }
 
-      // Extract unique categories from the data
+      // Extract categories
       const categories = [...new Set(messagesArray.map(m => m.category))].sort()
       setAvailableCategories(categories)
 
-      // Apply filters using Sets
-      let filtered = messagesArray
-      if (selectedSeverities.size > 0) {
-        filtered = filtered.filter((m: NotificationMessage) => selectedSeverities.has(m.severity as MessageSeverity))
+      // Multi-value filters (server only supports single value)
+      if (selectedSeverities.size > 1) {
+        messagesArray = messagesArray.filter((m: NotificationMessage) =>
+          selectedSeverities.has(m.severity as MessageSeverity))
       }
-      if (selectedStatuses.size > 0) {
-        filtered = filtered.filter((m: NotificationMessage) => selectedStatuses.has(m.status as MessageStatus))
+      if (selectedStatuses.size > 1) {
+        messagesArray = messagesArray.filter((m: NotificationMessage) =>
+          selectedStatuses.has(m.status as MessageStatus))
       }
-      if (selectedCategories.size > 0) {
-        filtered = filtered.filter((m: NotificationMessage) => selectedCategories.has(m.category))
+      if (selectedCategories.size > 1) {
+        messagesArray = messagesArray.filter((m: NotificationMessage) =>
+          selectedCategories.has(m.category))
       }
-      // Filter by message type
-      if (selectedMessageTypes.size > 0) {
-        filtered = filtered.filter((m: NotificationMessage) => {
-          const msgType = m.message_type || 'notification'
-          return selectedMessageTypes.has(msgType)
-        })
+      if (selectedMessageTypes.size > 1) {
+        messagesArray = messagesArray.filter((m: NotificationMessage) =>
+          selectedMessageTypes.has(m.message_type || 'notification'))
       }
 
-      // Sort by timestamp descending (handle invalid timestamps)
-      filtered.sort((a: NotificationMessage, b: NotificationMessage) => {
+      // Sort by timestamp descending
+      messagesArray.sort((a: NotificationMessage, b: NotificationMessage) => {
         const aTime = new Date(a.timestamp).getTime()
         const bTime = new Date(b.timestamp).getTime()
-        // If either timestamp is invalid, treat it as oldest
         if (isNaN(aTime)) return 1
         if (isNaN(bTime)) return -1
         return bTime - aTime
       })
 
-      setMessages(filtered)
-      setMessagePage(1) // Reset to first page when data changes
+      setMessages(messagesArray)
+      setTotalCount(serverTotal + (deliveryLogsResponse?.logs?.length ?? 0))
     } catch (error) {
       handleError(error, { operation: 'Fetch messages', showToast: false })
     } finally {
       setLoading(false)
     }
-  }, [selectedSeverities, selectedStatuses, selectedCategories, selectedMessageTypes])
+  }, [messagePage, selectedSeverities, selectedStatuses, selectedCategories, selectedMessageTypes, messagesPerPage])
 
   // Fetch channels
   const fetchChannels = useCallback(async () => {
@@ -559,14 +543,19 @@ export default function MessagesPage() {
     }
   }, [])
 
-  // Initial load
+  // Reset page when filters change (page change is handled by fetchMessages dependency)
+  useEffect(() => {
+    setMessagePage(1)
+  }, [selectedSeverities, selectedStatuses, selectedCategories, selectedMessageTypes])
+
+  // Fetch on mount and when page/filters change
   useEffect(() => {
     if (activeTab === 'messages') {
       fetchMessages()
     } else {
       fetchChannels()
     }
-  }, [activeTab, fetchMessages, fetchChannels, selectedSeverities, selectedStatuses, selectedCategories])
+  }, [activeTab, fetchMessages, fetchChannels])
 
   // Message actions - using messages API endpoints
   const handleAcknowledge = async (id: string) => {
@@ -914,9 +903,9 @@ export default function MessagesPage() {
           />
         }
         footer={
-          activeTab === 'messages' && messages.length > messagesPerPage ? (
+          activeTab === 'messages' && totalCount > messagesPerPage ? (
             <Pagination
-              total={messages.length}
+              total={totalCount}
               pageSize={messagesPerPage}
               currentPage={messagePage}
               onPageChange={setMessagePage}
@@ -1048,7 +1037,7 @@ export default function MessagesPage() {
                   width: 'w-[130px]',
                 },
               ]}
-              data={paginatedMessages as unknown as Record<string, unknown>[]}
+              data={messages as unknown as Record<string, unknown>[]}
               rowKey={(msg) => (msg as unknown as NotificationMessage).id}
               renderCell={(columnKey, rowData) => {
                 const message = rowData as unknown as NotificationMessage

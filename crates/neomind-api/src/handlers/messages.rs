@@ -45,9 +45,54 @@ pub async fn list_messages_handler(
     let limit = params.limit.unwrap_or(50).min(200);
     let offset = params.offset.unwrap_or(0);
 
-    let messages = state.core.message_manager.list_messages().await;
+    // Use targeted queries when only a single filter is specified
+    // to avoid loading all messages into memory
+    let messages = if params.severity.is_none() && params.message_type.is_none() {
+        match (&params.status, &params.category) {
+            // Single status filter → use indexed query
+            (Some(st), None) => {
+                let status = match st.to_lowercase().as_str() {
+                    "active" => Some(neomind_messages::MessageStatus::Active),
+                    "acknowledged" => Some(neomind_messages::MessageStatus::Acknowledged),
+                    "resolved" => Some(neomind_messages::MessageStatus::Resolved),
+                    "archived" => Some(neomind_messages::MessageStatus::Archived),
+                    _ => None,
+                };
+                if let Some(s) = status {
+                    state.core.message_manager.list_messages_by_status(s).await
+                } else {
+                    state.core.message_manager.list_messages().await
+                }
+            }
+            // Single category filter → use indexed query
+            (None, Some(cat)) => {
+                state.core.message_manager.list_messages_by_category(cat).await
+            }
+            // Both status + category → use status query, then filter category
+            (Some(st), Some(_cat)) => {
+                let status = match st.to_lowercase().as_str() {
+                    "active" => Some(neomind_messages::MessageStatus::Active),
+                    "acknowledged" => Some(neomind_messages::MessageStatus::Acknowledged),
+                    "resolved" => Some(neomind_messages::MessageStatus::Resolved),
+                    "archived" => Some(neomind_messages::MessageStatus::Archived),
+                    _ => None,
+                };
+                if let Some(s) = status {
+                    state.core.message_manager.list_messages_by_status(s).await
+                } else {
+                    state.core.message_manager.list_messages().await
+                }
+            }
+            // No filters → list all
+            (None, None) => {
+                state.core.message_manager.list_messages().await
+            }
+        }
+    } else {
+        state.core.message_manager.list_messages().await
+    };
 
-    // Apply filters
+    // Apply remaining filters that couldn't be pushed down
     let filtered: Vec<&Message> = messages
         .iter()
         .filter(|m| {

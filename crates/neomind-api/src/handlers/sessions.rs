@@ -998,55 +998,50 @@ async fn handle_ws_socket(
 
                                     // Session resolution helper - minimizes lock time
                                     let session_id = {
+                                        // Clone current ID and drop read lock immediately
                                         let current_guard = current_session_id.read().await;
                                         let empty = String::new();
-                                        let current = current_guard.as_ref().unwrap_or(&empty);
+                                        let current_id = current_guard.as_ref().unwrap_or(&empty).clone();
+                                        let has_valid_session = !current_id.is_empty();
+                                        drop(current_guard);
 
-                                        // Check if we need to switch sessions
-                                        let needs_switch = if let Some(req_id) = &requested_session_id {
-                                            req_id != current && state.agents.session_manager.get_session(req_id).await.is_ok()
+                                        // Check if we need to switch sessions (async ops outside lock)
+                                        let needs_switch = if let Some(ref req_id) = requested_session_id {
+                                            req_id != &current_id && state.agents.session_manager.get_session(req_id).await.is_ok()
                                         } else {
                                             false
                                         };
 
-                                        let has_valid_session = current_guard.as_ref()
-                                            .map(|s| !s.is_empty())
-                                            .unwrap_or(false);
-
                                         if needs_switch {
                                             // Switch to requested session
-                                            if let Some(req_id) = &requested_session_id {
-                                                drop(current_guard);
+                                            let req_id = requested_session_id.as_ref().unwrap();
+                                            {
                                                 let mut write_guard = current_session_id.write().await;
-                                                *write_guard = Some(req_id.to_string());
-                                                let id = req_id.to_string();
-                                                drop(write_guard);
-
-                                                // Notify client of session switch (outside lock)
-                                                let msg = json!({
-                                                    "type": "session_switched",
-                                                    "sessionId": id,
-                                                }).to_string();
-                                                if socket.send(AxumMessage::Text(msg)).await.is_err() {
-                                                    return;
-                                                }
-
-                                                // Send session history after switching
-                                                let _ = send_session_history(&mut socket, &id, &state).await;
-
-                                                id
-                                            } else {
-                                                unreachable!()
+                                                *write_guard = Some(req_id.clone());
                                             }
+
+                                            // Notify client of session switch (outside lock)
+                                            let msg = json!({
+                                                "type": "session_switched",
+                                                "sessionId": req_id,
+                                            }).to_string();
+                                            if socket.send(AxumMessage::Text(msg)).await.is_err() {
+                                                return;
+                                            }
+
+                                            // Send session history after switching
+                                            let _ = send_session_history(&mut socket, req_id, &state).await;
+
+                                            req_id.clone()
                                         } else if !has_valid_session {
-                                            // Create new session - drop read lock before write
-                                            drop(current_guard);
+                                            // Create new session
                                             let new_id = state.agents.session_manager.create_session().await
                                                 .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
 
-                                            let mut write_guard = current_session_id.write().await;
-                                            *write_guard = Some(new_id.clone());
-                                            drop(write_guard);
+                                            {
+                                                let mut write_guard = current_session_id.write().await;
+                                                *write_guard = Some(new_id.clone());
+                                            }
 
                                             // Notify client of the new session (outside lock)
                                             let msg = json!({
@@ -1059,9 +1054,7 @@ async fn handle_ws_socket(
                                             new_id
                                         } else {
                                             // Use current session - no need to resend history
-                                            // History is already sent on initial connection and session switches
-                                            
-                                            current.to_string()
+                                            current_id
                                         }
                                     };
 

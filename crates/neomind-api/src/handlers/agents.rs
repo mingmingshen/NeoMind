@@ -1596,19 +1596,15 @@ pub async fn get_agent_executions(
 /// Get a specific execution record.
 pub async fn get_execution(
     State(state): State<ServerState>,
-    Path((id, execution_id)): Path<(String, String)>,
+    Path((_id, execution_id)): Path<(String, String)>,
 ) -> HandlerResult<Value> {
     let store = &state.agents.agent_store;
 
-    // Get execution
-    let executions = store
-        .get_agent_executions(&id, 100)
+    // Direct lookup by execution ID — avoids fetching 100 records
+    let execution = store
+        .get_execution(&execution_id)
         .await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to get executions: {}", e)))?;
-
-    let execution = executions
-        .into_iter()
-        .find(|e| e.id == execution_id)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get execution: {}", e)))?
         .ok_or_else(|| {
             ErrorResponse::not_found(format!("Execution not found: {}", execution_id))
         })?;
