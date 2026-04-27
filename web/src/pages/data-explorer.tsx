@@ -146,12 +146,14 @@ export function DataExplorerPage() {
     updateSearch(search)
   }, [search, updateSearch])
 
-  // Refresh on device events
+  // Refresh on device events (debounced to avoid burst refetches)
+  const eventFetchRef = useRef<ReturnType<typeof setTimeout>>()
   useEvents({
     enabled: true,
     category: 'device',
     onEvent: () => {
-      fetchDataSources()
+      clearTimeout(eventFetchRef.current)
+      eventFetchRef.current = setTimeout(fetchDataSources, 1000)
     },
   })
 
@@ -466,11 +468,6 @@ export function DataExplorerPage() {
               </div>
             </DialogContentBody>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedSource(null)}>
-              {t('common:close', 'Close')}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

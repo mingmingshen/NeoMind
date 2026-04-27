@@ -21,10 +21,42 @@ const USER_KEY_SESSION = 'neomind_user_session'
 
 class TokenManagerClass {
   /**
+   * Decode JWT payload without a library.
+   */
+  private parseJwtPayload(token: string): { exp?: number; [k: string]: unknown } | null {
+    try {
+      const part = token.split('.')[1]
+      if (!part) return null
+      const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'))
+      return JSON.parse(json)
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Check if a JWT token is expired.
+   * Returns true if the token has no exp claim or is past its expiration.
+   */
+  private isTokenExpired(token: string): boolean {
+    const payload = this.parseJwtPayload(token)
+    if (!payload?.exp) return false // no exp claim — trust the server to reject
+    // 30s buffer to account for clock skew
+    return Date.now() >= (payload.exp - 30) * 1000
+  }
+
+  /**
    * Get the current authentication token from storage.
+   * Returns null if the token is expired (auto-clears stale tokens).
    */
   getToken(): string | null {
-    return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY_SESSION)
+    const token = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY_SESSION)
+    if (!token) return null
+    if (this.isTokenExpired(token)) {
+      this.clearToken()
+      return null
+    }
+    return token
   }
 
   /**

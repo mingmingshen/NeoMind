@@ -982,6 +982,9 @@ export function useDataSource<T = unknown>(
   // This prevents showing loading state on refreshes/updates
   const initialTelemetryFetchDoneRef = useRef(false)
 
+  // Ref to track empty-result retry count to prevent infinite retry loops
+  const emptyRetryCountRef = useRef(0)
+
   // Ref to track previous telemetry key to detect config changes
   const prevTelemetryKeyRef = useRef<string>('')
 
@@ -1824,9 +1827,9 @@ export function useDataSource<T = unknown>(
             setLastUpdate(Date.now())
           }
 
-          // Schedule cache refresh after short delay to allow multiple rapid events to coalesce
-          // This prevents excessive API calls while ensuring data freshness
-          const refreshDelay = 2000 // 2 seconds delay
+          // Schedule cache refresh after delay to allow multiple rapid events to coalesce
+          // Throttle: don't trigger more than once per 10 seconds to prevent fetch storms
+          const refreshDelay = 10000 // 10 seconds minimum between cache refreshes
           matchingTelemetrySources.forEach((ds) => {
             const cacheKey = `${getSourceId(ds)}|${ds.metricId}|${ds.timeRange ?? 1}|${ds.limit ?? 50}|${ds.aggregate ?? ds.aggregateExt ?? 'raw'}`
             const cached = telemetryCache.get(cacheKey)
@@ -1838,7 +1841,6 @@ export function useDataSource<T = unknown>(
           })
 
           // Use a single timeout to batch refreshes
-          // Clear existing timer if any
           if (telemetryRefreshTimerRef.current) {
             clearTimeout(telemetryRefreshTimerRef.current)
           }
@@ -2675,7 +2677,12 @@ export function useDataSource<T = unknown>(
           ? transformedData.length === 0
           : (transformedData == null)
         if (isEmptyResult) {
-          setTimeout(() => fetchTelemetryData(), 3000)
+          emptyRetryCountRef.current += 1
+          if (emptyRetryCountRef.current <= 3) {
+            setTimeout(() => fetchTelemetryData(), 3000)
+          }
+        } else {
+          emptyRetryCountRef.current = 0
         }
       } catch (err) {
         logError(err, { operation: 'Fetch telemetry data' })

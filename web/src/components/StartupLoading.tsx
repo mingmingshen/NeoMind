@@ -41,7 +41,9 @@ export function StartupLoading({ onReady }: { onReady: () => void }) {
       const checkHealth = async (): Promise<boolean> => {
         try {
           const response = await fetch('http://localhost:9375/api/health', {
-            signal: AbortSignal.timeout(2000),
+            signal: AbortSignal.timeout(3000),
+            // Use HEAD to minimize response body on failure
+            method: 'HEAD',
           })
           return response.ok
         } catch {

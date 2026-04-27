@@ -542,96 +542,98 @@ impl MessageManager {
 
     /// Acknowledge a message.
     pub async fn acknowledge(&self, id: &MessageId) -> Result<()> {
-        let mut messages = self.messages.write().await;
-        if let Some(message) = messages.get_mut(id) {
+        // Mutate in-memory, then drop write lock before I/O
+        let stored_msg = {
+            let mut messages = self.messages.write().await;
+            let message = messages
+                .get_mut(id)
+                .ok_or_else(|| Error::NotFound(format!("Message not found: {}", id)))?;
             message.acknowledge();
+            Self::message_to_stored(message)
+        };
 
-            // Persist update
-            if let Some(store) = self.storage.read().await.as_ref() {
-                let stored = Self::message_to_stored(message);
-                store
-                    .update(&stored)
-                    .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
-            }
-
-            // Publish event
-            if let Some(event_bus) = self.event_bus.read().await.as_ref() {
-                use neomind_core::NeoMindEvent;
-                let _ = event_bus
-                    .publish(NeoMindEvent::MessageAcknowledged {
-                        message_id: id.to_string(),
-                        acknowledged_by: "api".to_string(),
-                        timestamp: chrono::Utc::now().timestamp(),
-                    })
-                    .await;
-            }
-
-            Ok(())
-        } else {
-            Err(Error::NotFound(format!("Message not found: {}", id)))
+        // Persist outside lock
+        if let Some(store) = self.storage.read().await.as_ref() {
+            store
+                .update(&stored_msg)
+                .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
         }
+
+        // Publish event outside lock
+        if let Some(event_bus) = self.event_bus.read().await.as_ref() {
+            use neomind_core::NeoMindEvent;
+            let _ = event_bus
+                .publish(NeoMindEvent::MessageAcknowledged {
+                    message_id: id.to_string(),
+                    acknowledged_by: "api".to_string(),
+                    timestamp: chrono::Utc::now().timestamp(),
+                })
+                .await;
+        }
+
+        Ok(())
     }
 
     /// Resolve a message.
     pub async fn resolve(&self, id: &MessageId) -> Result<()> {
-        let mut messages = self.messages.write().await;
-        if let Some(message) = messages.get_mut(id) {
+        let stored_msg = {
+            let mut messages = self.messages.write().await;
+            let message = messages
+                .get_mut(id)
+                .ok_or_else(|| Error::NotFound(format!("Message not found: {}", id)))?;
             message.resolve();
+            Self::message_to_stored(message)
+        };
 
-            // Persist update
-            if let Some(store) = self.storage.read().await.as_ref() {
-                let stored = Self::message_to_stored(message);
-                store
-                    .update(&stored)
-                    .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
-            }
-
-            // Publish event
-            if let Some(event_bus) = self.event_bus.read().await.as_ref() {
-                use neomind_core::NeoMindEvent;
-                let _ = event_bus
-                    .publish(NeoMindEvent::MessageResolved {
-                        message_id: id.to_string(),
-                        timestamp: chrono::Utc::now().timestamp(),
-                    })
-                    .await;
-            }
-
-            Ok(())
-        } else {
-            Err(Error::NotFound(format!("Message not found: {}", id)))
+        if let Some(store) = self.storage.read().await.as_ref() {
+            store
+                .update(&stored_msg)
+                .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
         }
+
+        if let Some(event_bus) = self.event_bus.read().await.as_ref() {
+            use neomind_core::NeoMindEvent;
+            let _ = event_bus
+                .publish(NeoMindEvent::MessageResolved {
+                    message_id: id.to_string(),
+                    timestamp: chrono::Utc::now().timestamp(),
+                })
+                .await;
+        }
+
+        Ok(())
     }
 
     /// Archive a message.
     pub async fn archive(&self, id: &MessageId) -> Result<()> {
-        let mut messages = self.messages.write().await;
-        if let Some(message) = messages.get_mut(id) {
+        let stored_msg = {
+            let mut messages = self.messages.write().await;
+            let message = messages
+                .get_mut(id)
+                .ok_or_else(|| Error::NotFound(format!("Message not found: {}", id)))?;
             message.archive();
+            Self::message_to_stored(message)
+        };
 
-            // Persist update
-            if let Some(store) = self.storage.read().await.as_ref() {
-                let stored = Self::message_to_stored(message);
-                store
-                    .update(&stored)
-                    .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
-            }
-
-            Ok(())
-        } else {
-            Err(Error::NotFound(format!("Message not found: {}", id)))
+        if let Some(store) = self.storage.read().await.as_ref() {
+            store
+                .update(&stored_msg)
+                .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
         }
+
+        Ok(())
     }
 
     /// Delete a message.
     pub async fn delete(&self, id: &MessageId) -> Result<()> {
+        // Remove from in-memory map first, drop lock, then persist
         self.messages
             .write()
             .await
             .remove(id)
             .ok_or_else(|| Error::NotFound(format!("Message not found: {}", id)))?;
 
-        // Delete from storage
+        // Delete from storage outside write lock
         if let Some(store) = self.storage.read().await.as_ref() {
             store
                 .delete(&id.to_string())
@@ -643,19 +645,23 @@ impl MessageManager {
 
     /// Delete multiple messages.
     pub async fn delete_multiple(&self, ids: &[MessageId]) -> Result<usize> {
-        let mut messages = self.messages.write().await;
-        let mut count = 0;
+        // Remove from in-memory, drop lock, then persist
+        let (count, id_strings): (usize, Vec<String>) = {
+            let mut messages = self.messages.write().await;
+            let mut count = 0;
+            let id_strings: Vec<String> = ids.iter().map(|id| {
+                if messages.remove(id).is_some() {
+                    count += 1;
+                }
+                id.to_string()
+            }).collect();
+            (count, id_strings)
+        };
 
-        for id in ids {
-            if messages.remove(id).is_some() {
-                count += 1;
-            }
-        }
-
-        // Delete from storage
+        // Delete from storage outside lock
         if let Some(store) = self.storage.read().await.as_ref() {
-            for id in ids {
-                let _ = store.delete(&id.to_string());
+            for id in &id_strings {
+                let _ = store.delete(id);
             }
         }
 
@@ -664,23 +670,25 @@ impl MessageManager {
 
     /// Acknowledge multiple messages.
     pub async fn acknowledge_multiple(&self, ids: &[MessageId]) -> Result<usize> {
-        let mut messages = self.messages.write().await;
-        let mut count = 0;
+        let (count, to_persist): (usize, Vec<neomind_storage::StoredMessage>) = {
+            let mut messages = self.messages.write().await;
+            let mut count = 0;
+            let mut to_persist = Vec::new();
 
-        for id in ids {
-            if let Some(message) = messages.get_mut(id) {
-                message.acknowledge();
-                count += 1;
-            }
-        }
-
-        // Persist updates
-        if let Some(store) = self.storage.read().await.as_ref() {
             for id in ids {
-                if let Some(message) = messages.get(id) {
-                    let stored = Self::message_to_stored(message);
-                    let _ = store.update(&stored);
+                if let Some(message) = messages.get_mut(id) {
+                    message.acknowledge();
+                    count += 1;
+                    to_persist.push(Self::message_to_stored(message));
                 }
+            }
+            (count, to_persist)
+        };
+
+        // Persist outside lock
+        if let Some(store) = self.storage.read().await.as_ref() {
+            for stored in &to_persist {
+                let _ = store.update(stored);
             }
         }
 
@@ -689,23 +697,25 @@ impl MessageManager {
 
     /// Resolve multiple messages.
     pub async fn resolve_multiple(&self, ids: &[MessageId]) -> Result<usize> {
-        let mut messages = self.messages.write().await;
-        let mut count = 0;
+        let (count, to_persist): (usize, Vec<neomind_storage::StoredMessage>) = {
+            let mut messages = self.messages.write().await;
+            let mut count = 0;
+            let mut to_persist = Vec::new();
 
-        for id in ids {
-            if let Some(message) = messages.get_mut(id) {
-                message.resolve();
-                count += 1;
-            }
-        }
-
-        // Persist updates
-        if let Some(store) = self.storage.read().await.as_ref() {
             for id in ids {
-                if let Some(message) = messages.get(id) {
-                    let stored = Self::message_to_stored(message);
-                    let _ = store.update(&stored);
+                if let Some(message) = messages.get_mut(id) {
+                    message.resolve();
+                    count += 1;
+                    to_persist.push(Self::message_to_stored(message));
                 }
+            }
+            (count, to_persist)
+        };
+
+        // Persist outside lock
+        if let Some(store) = self.storage.read().await.as_ref() {
+            for stored in &to_persist {
+                let _ = store.update(stored);
             }
         }
 

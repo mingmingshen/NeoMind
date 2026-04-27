@@ -32,7 +32,9 @@ const ExtensionsPage = lazy(() => import('@/pages/extensions').then(m => ({ defa
 // Suppress only the specific Radix UI Portal cleanup error during fast page transitions
 // Known issue: React 18 + Radix UI race condition where removeChild fails on unmounted portals
 const originalError = console.error
+const originalWarn = console.warn
 const SUPPRESSED_ERROR = "NotFoundError: Failed to execute 'removeChild' on 'Node'"
+const SUPPRESSED_RECHARTS = "The width(-1) and height(-1) of chart should be greater than 0"
 console.error = (...args) => {
   const message = args[0]
   // Only suppress the exact Radix UI removeChild error — nothing else
@@ -40,6 +42,14 @@ console.error = (...args) => {
     return
   }
   originalError.apply(console, args)
+}
+// Suppress recharts width/height -1 warning when charts render in hidden containers
+console.warn = (...args) => {
+  const message = args[0]
+  if (typeof message === 'string' && message.includes(SUPPRESSED_RECHARTS)) {
+    return
+  }
+  originalWarn.apply(console, args)
 }
 
 // Suppress only the exact global error from the same Radix UI race condition
