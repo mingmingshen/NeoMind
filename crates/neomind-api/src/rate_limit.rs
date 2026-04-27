@@ -26,7 +26,7 @@ pub struct RateLimitConfig {
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
-            max_requests: 100,                     // 100 requests
+            max_requests: 300,                     // 300 requests
             per_duration: Duration::from_secs(60), // per 60 seconds
             warn_interval: Duration::from_secs(5), // Log warning at most once per 5 seconds per client
         }

@@ -243,25 +243,28 @@ export async function fetchAPI<T>(
   // Ensure headers is not undefined for headers as Record<string, string>
   const finalHeaders = headers as Record<string, string>
 
-  // Auto-retry gateway errors only (502/503/504) — not 500 (application bugs)
-  // This avoids duplicate operations on non-idempotent POST/PUT endpoints
+  // Auto-retry gateway errors (502/503/504) and rate limiting (429)
+  // Not 500 (application bugs) — avoids duplicate operations on POST/PUT
   const MAX_RETRIES = 3
-  const RETRY_DELAYS = [1000, 2000, 3000] // 1s, 2s, 3s
+  const RETRY_DELAYS = [500, 1500, 3000] // Progressive backoff
+  const RETRYABLE_STATUS = [429, 502, 503, 504]
   let response = await fetch(`${API_BASE}${path}`, {
     ...fetchOptions,
     headers: finalHeaders,
     signal,
   })
 
-  if ([502, 503, 504].includes(response.status) && !signal?.aborted) {
+  if (RETRYABLE_STATUS.includes(response.status) && !signal?.aborted) {
     for (let i = 0; i < MAX_RETRIES; i++) {
-      await new Promise(r => setTimeout(r, RETRY_DELAYS[i]))
+      // For 429, wait longer before retrying
+      const delay = response.status === 429 ? RETRY_DELAYS[i] * 2 : RETRY_DELAYS[i]
+      await new Promise(r => setTimeout(r, delay))
       response = await fetch(`${API_BASE}${path}`, {
         ...fetchOptions,
         headers: finalHeaders,
         signal,
       })
-      if (response.ok || response.status < 500 || response.status === 500) break
+      if (response.ok || !RETRYABLE_STATUS.includes(response.status)) break
     }
   }
 
