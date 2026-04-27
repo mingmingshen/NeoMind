@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { api } from '@/lib/api'
 import { useEvents } from '@/hooks/useEvents'
+import { useVisiblePolling } from '@/hooks/useVisiblePolling'
 import type { ResourceRequest } from '@/types'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import { getSourceId, normalizeDataSource } from '@/types/dashboard'
@@ -10,6 +11,8 @@ interface UseAnalystSessionParams {
   componentId: string
   config: AiAnalystConfig
   dataSource?: DataSourceOrList
+  /** Display title from dashboard component — used as agent name */
+  title?: string
   onConfigUpdate: (updates: Partial<AiAnalystConfig>) => void
 }
 
@@ -252,23 +255,25 @@ async function loadHistoryMessages(
     // Executions come newest-first; reverse to chronological order
     const sorted = [...resp.executions].reverse()
 
-    // Fetch execution details in small batches to avoid flooding the API
+    // Batch-fetch execution details to avoid N+1 API calls
+    const nonRunning = sorted.filter(exec => exec.status !== 'Running')
+    const ids = nonRunning.map(exec => exec.id)
+    let batchDetails: Record<string, Awaited<ReturnType<typeof api.getExecution>>> = {}
+    if (ids.length > 0) {
+      try {
+        const batchRes = await api.batchGetExecutions(agentId, ids)
+        batchDetails = batchRes?.details || {}
+      } catch {
+        // Fall back to empty details
+      }
+    }
+
     const details: Array<{ exec: typeof sorted[number]; detail: Awaited<ReturnType<typeof api.getExecution>> } | null> = []
-    const BATCH_SIZE = 3
-    for (let i = 0; i < sorted.length; i += BATCH_SIZE) {
-      const batch = sorted.slice(i, i + BATCH_SIZE)
-      const batchResults = await Promise.all(
-        batch.map(async (exec) => {
-          if (exec.status === 'Running') return null
-          try {
-            const detail = await api.getExecution(agentId, exec.id)
-            return { exec, detail }
-          } catch {
-            return null
-          }
-        })
-      )
-      details.push(...batchResults)
+    for (const exec of nonRunning) {
+      const detail = batchDetails[exec.id]
+      if (detail) {
+        details.push({ exec, detail })
+      }
     }
 
     const messages: AnalystMessage[] = []
@@ -384,6 +389,7 @@ export function useAnalystSession({
   componentId,
   config,
   dataSource,
+  title,
   onConfigUpdate,
 }: UseAnalystSessionParams): UseAnalystSessionReturn {
   const [messages, setMessages] = useState<AnalystMessage[]>([])
@@ -423,6 +429,8 @@ export function useAnalystSession({
   configRef.current = config
   const dataSourceRef = useRef(dataSource)
   dataSourceRef.current = dataSource
+  const titleRef = useRef(title)
+  titleRef.current = title
   const onConfigUpdateRef = useRef(onConfigUpdate)
   onConfigUpdateRef.current = onConfigUpdate
 
@@ -630,21 +638,18 @@ export function useAnalystSession({
       const dsList = normalizeDataSource(ds)
       const resources = buildResources(dsList)
       const eventFilter = buildEventFilter(dsList)
-      const agentName = `AI Analyst - ${componentId}`
+      const agentName = titleRef.current || 'AI Analyst'
 
       // Search for existing agent by name to avoid duplicates.
-      // componentId may be a timestamp that changes on remount, so match by prefix
-      // "AI Analyst - " to find any previously created analyst agent for this dashboard.
       let agentId: string
       try {
         const list = await api.listAgents()
-        const prefix = 'AI Analyst - '
         const existing = list.agents?.find(a => a.name === agentName)
-          || list.agents?.find(a => a.name.startsWith(prefix))
         if (existing) {
           // Reuse existing agent — update config to match current settings
           agentId = existing.id
           await api.updateAgent(agentId, {
+            name: agentName,
             user_prompt: cfg.systemPrompt,
             llm_backend_id: cfg.modelId,
             schedule: { schedule_type: 'event', event_filter: eventFilter },
@@ -747,6 +752,16 @@ export function useAnalystSession({
       // Non-critical: agent will use whatever configuration it has
     })
   }, [config.modelId, config.systemPrompt, isConnected])
+
+  // Sync agent name when title changes after agent creation
+  const prevTitleRef = useRef(title)
+  useEffect(() => {
+    const agentId = agentIdRef.current
+    if (!agentId || !isConnected) return
+    if (!title || title === prevTitleRef.current) return
+    prevTitleRef.current = title
+    api.updateAgent(agentId, { name: title }).catch(() => {})
+  }, [title, isConnected])
 
   // Sync event_filter and resources when dataSource changes after agent creation
   // This handles component editing (changing data source) without creating a new agent

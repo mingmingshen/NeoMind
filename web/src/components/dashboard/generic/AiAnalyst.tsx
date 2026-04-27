@@ -172,6 +172,7 @@ export function AiAnalyst({
     componentId,
     config,
     dataSource: dataSourceProp,
+    title,
     onConfigUpdate: handleConfigUpdate,
   })
 
