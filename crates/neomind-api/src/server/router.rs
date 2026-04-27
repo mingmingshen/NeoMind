@@ -639,6 +639,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/agents/:id/executions/:execution_id",
             get(agents::get_execution),
         )
+        .route(
+            "/api/agents/:id/executions/details",
+            post(agents::batch_get_executions),
+        )
         .route("/api/agents/:id/memory", get(agents::get_agent_memory))
         .route("/api/agents/:id/memory", delete(agents::clear_agent_memory))
         .route("/api/agents/:id/stats", get(agents::get_agent_stats))

@@ -112,6 +112,9 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
   const [events, setEvents] = useState<NeoMindEvent[]>([])
   const connectionRef = useRef<ReturnType<typeof import('@/lib/events').getEventsConnection> | null>(null)
   const maxEvents = DEFAULT_MAX_EVENTS
+  // Deduplication: track seen event IDs to prevent duplicate processing
+  const seenEventIds = useRef<Set<string>>(new Set())
+  const MAX_SEEN_IDS = 1000
 
   // Use refs to store latest callbacks without causing re-renders
   const onEventRef = useRef(onEvent)
@@ -195,6 +198,22 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
           const currentEventTypes = eventTypesRef.current
           if (currentEventTypes && !currentEventTypes.includes(event.type as any)) {
             return
+          }
+          // Deduplicate by event ID
+          if (event.id && seenEventIds.current.has(event.id)) {
+            return
+          }
+          if (event.id) {
+            seenEventIds.current.add(event.id)
+            // Evict oldest entries when set grows too large
+            if (seenEventIds.current.size > MAX_SEEN_IDS) {
+              const entries = seenEventIds.current.values()
+              for (let i = 0; i < MAX_SEEN_IDS / 2; i++) {
+                const r = entries.next()
+                if (r.done) break
+                seenEventIds.current.delete(r.value)
+              }
+            }
           }
           setEvents(prev => {
             const next = [...prev, event]

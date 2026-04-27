@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 use neomind_agent::llm_backends::get_instance_manager;
 use neomind_storage::{
@@ -1615,6 +1616,75 @@ pub async fn get_execution(
     let dto = AgentExecutionDetailDto::from(execution);
 
     ok(json!(dto))
+}
+
+/// Request body for batch execution details.
+#[derive(Debug, serde::Deserialize)]
+pub struct BatchExecutionIds {
+    pub ids: Vec<String>,
+}
+
+/// Batch get execution details — eliminates N+1 API calls from the frontend.
+///
+/// POST /api/agents/{id}/executions/details
+/// Body: { "ids": ["exec-id-1", "exec-id-2", ...] }
+///
+/// Returns a map of execution_id -> execution detail.
+pub async fn batch_get_executions(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+    Json(body): Json<BatchExecutionIds>,
+) -> HandlerResult<Value> {
+    // Cap batch size to prevent abuse
+    const MAX_BATCH_SIZE: usize = 50;
+    if body.ids.len() > MAX_BATCH_SIZE {
+        return Err(ErrorResponse::bad_request(format!(
+            "Too many execution IDs: {} (max {})",
+            body.ids.len(),
+            MAX_BATCH_SIZE
+        )));
+    }
+
+    let store = state.agents.agent_store.clone();
+
+    // Fetch all executions in parallel with concurrency limit
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(5));
+    let futures: Vec<_> = body
+        .ids
+        .into_iter()
+        .map(|exec_id| {
+            let store = store.clone();
+            let sem = semaphore.clone();
+            async move {
+                let _permit = sem.acquire().await;
+                let result = store.get_execution(&exec_id).await;
+                (exec_id, result)
+            }
+        })
+        .collect();
+
+    let results = futures::future::join_all(futures).await;
+
+    let mut details = serde_json::Map::new();
+    for (exec_id, result) in results {
+        match result {
+            Ok(Some(record)) => {
+                let dto = AgentExecutionDetailDto::from(record);
+                details.insert(exec_id, json!(dto));
+            }
+            Ok(None) => {
+                // Execution not found — skip
+            }
+            Err(e) => {
+                tracing::warn!("batch_get_executions: failed to get {}: {}", exec_id, e);
+            }
+        }
+    }
+
+    ok(json!({
+        "agent_id": id,
+        "details": details,
+    }))
 }
 
 /// Update agent status.

@@ -374,6 +374,22 @@ impl BatchWriteRequest {
     }
 }
 
+/// Streaming aggregation result — avoids materializing all data points.
+pub struct AggregateResult {
+    /// Number of data points in range
+    pub count: u64,
+    /// Sum of numeric values (None if no numeric values found)
+    pub sum: Option<f64>,
+    /// Minimum numeric value
+    pub min: Option<f64>,
+    /// Maximum numeric value
+    pub max: Option<f64>,
+    /// First value in time order
+    pub first_value: Option<serde_json::Value>,
+    /// Last value in time order
+    pub last_value: Option<serde_json::Value>,
+}
+
 /// Time series storage using redb.
 pub struct TimeSeriesStore {
     db: Arc<Database>,
@@ -699,6 +715,79 @@ impl TimeSeriesStore {
             metric: metric.to_string(),
             points,
             total_count: limit.map(|_| total_count as usize),
+        })
+    }
+
+    /// Aggregate data over a time range using streaming fold (no Vec materialization).
+    ///
+    /// Accumulates count, sum, min, max in a single pass over the redb range scan,
+    /// keeping only O(1) intermediate state instead of O(n).
+    pub async fn aggregate_range(
+        &self,
+        source_id: &str,
+        metric: &str,
+        start: i64,
+        end: i64,
+    ) -> Result<AggregateResult, Error> {
+        let read_txn = self.db.begin_read()?;
+
+        let table = match read_txn.open_table(TIMESERIES_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => {
+                return Ok(AggregateResult {
+                    count: 0,
+                    sum: None,
+                    min: None,
+                    max: None,
+                    first_value: None,
+                    last_value: None,
+                });
+            }
+            Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
+        };
+
+        let start_key = (source_id, metric, start);
+        let end_key = (source_id, metric, end);
+
+        let mut count: u64 = 0;
+        let mut sum: f64 = 0.0;
+        let mut min_val: f64 = f64::INFINITY;
+        let mut max_val: f64 = f64::NEG_INFINITY;
+        let mut has_numeric = false;
+        let mut first_value: Option<serde_json::Value> = None;
+        let mut last_value: Option<serde_json::Value> = None;
+
+        for result in table.range(start_key..=end_key)? {
+            let (_key, value) = result?;
+            let point: DataPoint = match serde_json::from_slice(value.value()) {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!("aggregate_range: failed to deserialize data point: {}", e);
+                    continue;
+                }
+            };
+
+            count += 1;
+            if first_value.is_none() {
+                first_value = Some(point.value.clone());
+            }
+            last_value = Some(point.value.clone());
+
+            if let Some(n) = point.value.as_f64() {
+                sum += n;
+                min_val = min_val.min(n);
+                max_val = max_val.max(n);
+                has_numeric = true;
+            }
+        }
+
+        Ok(AggregateResult {
+            count,
+            sum: if has_numeric { Some(sum) } else { None },
+            min: if has_numeric { Some(min_val) } else { None },
+            max: if has_numeric { Some(max_val) } else { None },
+            first_value,
+            last_value,
         })
     }
 

@@ -4,6 +4,8 @@ import { useStore } from "@/store"
 import { shallow } from "zustand/shallow"
 import { useToast } from "@/hooks/use-toast"
 import { useEvents } from "@/hooks/useEvents"
+import { useAbortController } from "@/hooks/useAbortController"
+import { useVisiblePolling } from "@/hooks/useVisiblePolling"
 import { useIsMobile } from "@/hooks/useMobile"
 import { confirm } from "@/hooks/use-confirm"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
@@ -382,15 +384,12 @@ export function DevicesPage() {
   })
 
   // Fallback polling when WebSocket is not connected (only when not in detail view)
-  useEffect(() => {
-    if (deviceDetailView || deviceEventsConnected) return
-
-    const interval = setInterval(() => {
-      fetchDevices()
-    }, 30000)
-
-    return () => clearInterval(interval)
-  }, [deviceDetailView, deviceEventsConnected, fetchDevices])
+  // Pauses when tab is hidden, resumes with immediate refresh when visible
+  useVisiblePolling(
+    fetchDevices,
+    30000,
+    !deviceDetailView && !deviceEventsConnected,
+  )
 
   // Handlers
   const handleAddDevice = async (request: import('@/types').AddDeviceRequest) => {

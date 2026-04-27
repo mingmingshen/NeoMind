@@ -92,6 +92,13 @@ pub async fn get_device_telemetry_handler(
     validate_numeric_range(limit, "limit", 1.0, 1000.0)?;
     let limit = limit as usize;
 
+    // Cursor-based pagination: cursor = timestamp of the last point from previous page.
+    // When provided, we scan from cursor timestamp (exclusive) to end, giving O(1) seek
+    // instead of O(n) offset skip. Falls back to offset pagination when no cursor.
+    let cursor = params
+        .get("cursor")
+        .and_then(|s| s.parse::<i64>().ok());
+
     let offset = params
         .get("offset")
         .and_then(|s| s.parse::<f64>().ok())
@@ -197,9 +204,10 @@ pub async fn get_device_telemetry_handler(
     //
     // For pagination: we query all data, sort by timestamp (newest first), then apply offset/limit.
     // This ensures consistent pagination even when data is inserted during pagination.
-    let (telemetry_data, total_counts): (
+    let (telemetry_data, total_counts, next_cursor): (
         HashMap<String, serde_json::Value>,
         HashMap<String, usize>,
+        Option<i64>,
     ) = if aggregate.is_some() {
         // Aggregate queries - run concurrently
         let aggregate_futures: Vec<_> = target_metrics
@@ -248,7 +256,7 @@ pub async fn get_device_telemetry_handler(
             .map(|(k, v, _)| (k.clone(), v.clone()))
             .collect();
         let counts: HashMap<String, usize> = results.into_iter().map(|(k, _, c)| (k, c)).collect();
-        (data, counts)
+        (data, counts, None)
     } else {
         // Raw queries - run concurrently with pagination support
         let query_futures: Vec<_> = target_metrics
@@ -259,6 +267,7 @@ pub async fn get_device_telemetry_handler(
                 let device_id = device_id.clone();
                 let metric_name = metric_name.clone();
                 let semaphore = state.telemetry_query_semaphore.clone();
+                let cursor_ts = cursor;
                 async move {
                     let _permit = match semaphore.acquire().await {
                         Ok(p) => p,
@@ -268,11 +277,19 @@ pub async fn get_device_telemetry_handler(
                                 metric_name,
                                 e
                             );
-                            return (metric_name, json!([]), 0);
+                            return (metric_name, json!([]), 0, None::<i64>);
                         }
                     };
+
+                    // Cursor-based pagination: use cursor as the scan start for O(1) seek
+                    let (effective_start, effective_offset) = if let Some(ct) = cursor_ts {
+                        (ct, 0) // Start from cursor, no offset skip needed
+                    } else {
+                        (start, offset) // Traditional offset pagination
+                    };
+
                     let (points, total) = match device_service
-                        .query_telemetry(&device_id, &metric_name, Some(start), Some(end))
+                        .query_telemetry(&device_id, &metric_name, Some(effective_start), Some(end))
                         .await
                     {
                         Ok(all_points) => {
@@ -282,7 +299,7 @@ pub async fn get_device_telemetry_handler(
                             let paginated: Vec<_> = all_points
                                 .into_iter()
                                 .rev() // newest first without sorting
-                                .skip(offset)
+                                .skip(effective_offset)
                                 .take(limit)
                                 .map(|(timestamp, value)| {
                                     json!({
@@ -295,11 +312,9 @@ pub async fn get_device_telemetry_handler(
                         }
                         Err(_) => {
                             // Fallback to direct telemetry query with limit
-                            // When offset > 0 we still need all points for correct pagination,
-                            // but when offset == 0 we can push the limit to the DB layer.
-                            let db_limit = if offset == 0 { Some(limit) } else { None };
+                            let db_limit = if effective_offset == 0 { Some(limit) } else { None };
                             match telemetry
-                                .query_with_limit(&device_id, &metric_name, start, end, db_limit)
+                                .query_with_limit(&device_id, &metric_name, effective_start, end, db_limit)
                                 .await
                             {
                                 Ok((all_points, total_from_db)) => {
@@ -309,7 +324,7 @@ pub async fn get_device_telemetry_handler(
                                     let paginated: Vec<_> = all_points
                                         .into_iter()
                                         .rev()
-                                        .skip(offset)
+                                        .skip(effective_offset)
                                         .take(limit)
                                         .map(|p| {
                                             json!({
@@ -324,7 +339,10 @@ pub async fn get_device_telemetry_handler(
                             }
                         }
                     };
-                    (metric_name, json!(points), total)
+
+                    // Extract next_cursor from the oldest point in the page (smallest timestamp)
+                    let next_cursor = points.last().as_ref().and_then(|p| p.get("timestamp").and_then(|t| t.as_i64()));
+                    (metric_name, json!(points), total, next_cursor)
                 }
             })
             .collect();
@@ -332,10 +350,12 @@ pub async fn get_device_telemetry_handler(
         let results = futures::future::join_all(query_futures).await;
         let data: HashMap<String, serde_json::Value> = results
             .iter()
-            .map(|(k, v, _)| (k.clone(), v.clone()))
+            .map(|(k, v, _, _)| (k.clone(), v.clone()))
             .collect();
-        let counts: HashMap<String, usize> = results.into_iter().map(|(k, _, c)| (k, c)).collect();
-        (data, counts)
+        let counts: HashMap<String, usize> = results.iter().map(|(k, _, c, _)| (k.clone(), *c)).collect();
+        // next_cursor from the first metric's oldest point
+        let next_cursor: Option<i64> = results.first().and_then(|(_, _, _, nc)| *nc);
+        (data, counts, next_cursor)
     };
 
     // Calculate total count for the queried metric (or first metric if all)
@@ -358,6 +378,7 @@ pub async fn get_device_telemetry_handler(
             "offset": offset,
             "limit": limit,
             "total": total_count,
+            "next_cursor": next_cursor,
         }
     }))
 }

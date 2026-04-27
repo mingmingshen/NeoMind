@@ -3357,7 +3357,7 @@ impl Runner {
     }
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     // Set up panic hook FIRST to capture any panics during loading
     // This ensures we can report errors to the parent process before dying

@@ -308,7 +308,7 @@ impl TimeSeriesStorage {
         Ok(result.and_then(DataPoint::from_storage))
     }
 
-    /// Aggregate data over a time range
+    /// Aggregate data over a time range using streaming fold (no Vec materialization).
     pub async fn aggregate(
         &self,
         source_id: &str,
@@ -316,11 +316,15 @@ impl TimeSeriesStorage {
         start_timestamp: i64,
         end_timestamp: i64,
     ) -> Result<AggregatedData, DeviceError> {
-        let points = self
-            .query(source_id, metric, start_timestamp, end_timestamp)
-            .await?;
+        // Use the storage layer's streaming aggregation to avoid materializing all points
+        let storage_result = self
+            .store
+            .aggregate_range(source_id, metric, start_timestamp, end_timestamp)
+            .await
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
 
-        if points.is_empty() {
+        let count = storage_result.count;
+        if count == 0 {
             return Ok(AggregatedData {
                 start_timestamp,
                 end_timestamp,
@@ -334,33 +338,26 @@ impl TimeSeriesStorage {
             });
         }
 
-        let first = points.first().map(|p| p.value.clone());
-        let last = points.last().map(|p| p.value.clone());
+        // Convert storage first/last values
+        let first = storage_result
+            .first_value
+            .as_ref()
+            .and_then(DataPoint::json_to_metric_value);
+        let last = storage_result
+            .last_value
+            .as_ref()
+            .and_then(DataPoint::json_to_metric_value);
 
-        // Calculate aggregates for numeric values
-        let (avg, min, max, sum) = if points.first().and_then(|p| p.value.as_f64()).is_some() {
-            let numeric_values: Vec<f64> = points.iter().filter_map(|p| p.value.as_f64()).collect();
-
-            let sum_val: f64 = numeric_values.iter().sum();
-            let avg_val = sum_val / numeric_values.len() as f64;
-            let min_val = numeric_values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-            let max_val = numeric_values
-                .iter()
-                .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-
-            (Some(avg_val), Some(min_val), Some(max_val), Some(sum_val))
-        } else {
-            (None, None, None, None)
-        };
+        let avg = storage_result.sum.map(|s| s / count as f64);
 
         Ok(AggregatedData {
             start_timestamp,
             end_timestamp,
-            count: points.len() as u64,
+            count,
             avg,
-            min,
-            max,
-            sum,
+            min: storage_result.min,
+            max: storage_result.max,
+            sum: storage_result.sum,
             first,
             last,
         })

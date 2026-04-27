@@ -28,6 +28,7 @@ import { api } from '@/lib/api'
 import type { UnifiedDataSourceInfo } from '@/types'
 import { useIsMobile } from '@/hooks/useMobile'
 import { useEvents } from '@/hooks/useEvents'
+import { useAbortController } from '@/hooks/useAbortController'
 
 type SourceType = 'all' | string
 
@@ -97,8 +98,16 @@ export function DataExplorerPage() {
   const [historyData, setHistoryData] = useState<Array<{ timestamp: number; value: unknown; quality: number | null }>>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
+  // Abort controller for cancelling in-flight requests on unmount
+  const abortRef = useRef<AbortController | null>(null)
+
   // Fetch page from server
   const fetchDataSources = useCallback(async () => {
+    // Abort previous in-flight request
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
     try {
       const params: Record<string, string | number> = {
@@ -110,19 +119,22 @@ export function DataExplorerPage() {
       if (debouncedSearch.trim()) params.search = debouncedSearch.trim()
 
       const res = await api.listUnifiedDataSources(params)
+      if (controller.signal.aborted) return
       setPageData(res?.data || [])
       setTotalCount(res?.total || 0)
       setSourceOptions(res?.source_options || [])
     } catch (err) {
+      if (controller.signal.aborted) return
       console.error('[DataExplorer] Failed to fetch data sources:', err)
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }, [page, activeType, selectedSourceName, debouncedSearch, pageSize])
 
   // Fetch on mount and when filters/page change
   useEffect(() => {
     fetchDataSources()
+    return () => { abortRef.current?.abort() }
   }, [fetchDataSources])
 
   // Reset page when filters change

@@ -753,8 +753,7 @@ export function AgentMonitorWidget({
   }, [agentId])
 
   // Load execution details for flow nodes (all visible executions)
-  // The list API returns lightweight DTOs without decision_process,
-  // so we need the detail API to extract images from data_collected.
+  // Uses batch API to avoid N+1 calls
   const executionDetailsRef = useRef(executionDetails)
   executionDetailsRef.current = executionDetails
 
@@ -764,21 +763,16 @@ export function AgentMonitorWidget({
     const toLoad = executions.filter(exec => !loaded[exec.id])
     if (toLoad.length === 0) return
 
-    // Load details in small batches (3 concurrent) to avoid flooding the API
-    const BATCH_SIZE = 3
-    let index = 0
-    const loadBatch = () => {
-      const batch = toLoad.slice(index, index + BATCH_SIZE)
-      if (batch.length === 0) return
-      index += BATCH_SIZE
-      Promise.allSettled(
-        batch.map(exec =>
-          api.getAgentExecution(agentId, exec.id)
-            .then(data => setExecutionDetails(prev => ({ ...prev, [exec.id]: data })))
-        )
-      ).then(loadBatch)
-    }
-    loadBatch()
+    const ids = toLoad.map(exec => exec.id)
+    api.batchGetExecutions(agentId, ids)
+      .then(res => {
+        if (res?.details) {
+          setExecutionDetails(prev => ({ ...prev, ...res.details }))
+        }
+      })
+      .catch(err => {
+        console.warn('[AgentMonitor] batch get executions failed:', err)
+      })
   }, [executions, agentId])
 
   // WebSocket for real-time updates

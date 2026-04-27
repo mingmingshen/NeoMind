@@ -408,6 +408,9 @@ export function useAnalystSession({
   // Polling interval: while streaming, check execution status every 10 seconds.
   // This recovers from lost AgentExecutionCompleted events (WebSocket drops, race conditions, etc.)
   const streamingPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const isStreamingRef = useRef(false)
+  const recoverFnRef = useRef<() => void>(() => {})
+
   useEffect(() => {
     return () => {
       mountedRef.current = false
@@ -417,6 +420,27 @@ export function useAnalystSession({
         streamingPollRef.current = null
       }
     }
+  }, [])
+
+  // Pause/resume streaming poll based on tab visibility
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        // Pause polling while tab is hidden
+        if (streamingPollRef.current) {
+          clearInterval(streamingPollRef.current)
+          streamingPollRef.current = null
+        }
+      } else if (isStreamingRef.current) {
+        // Tab visible and still streaming — trigger immediate check and restart poll
+        recoverFnRef.current()
+        if (!streamingPollRef.current) {
+          streamingPollRef.current = setInterval(() => recoverFnRef.current(), 5_000)
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [])
   // Track whether history has been loaded for the current agent
   const historyLoadedRef = useRef(false)
@@ -455,6 +479,7 @@ export function useAnalystSession({
         }
 
         setIsStreaming(false)
+        isStreamingRef.current = false
         setStreamingContent('')
         const placeholderId = streamingMsgIdRef.current
         setStreamingMsgId(null)
@@ -510,11 +535,13 @@ export function useAnalystSession({
           streamingPollRef.current = null
         }
         setIsStreaming(false)
+        isStreamingRef.current = false
         setStreamingContent('')
         setStreamingMsgId(null)
         streamingMsgIdRef.current = null
       })
   }, [])
+  recoverFnRef.current = recoverFromStuckStreaming
 
   // ---- Agent event listeners ----
   // Use useEvents directly (same pattern as AgentMonitorWidget) to avoid
@@ -537,6 +564,7 @@ export function useAnalystSession({
       switch (event.type) {
         case 'AgentExecutionStarted': {
           setIsStreaming(true)
+          isStreamingRef.current = true
           const id = `stream-${Date.now()}`
           setStreamingMsgId(id)
           streamingMsgIdRef.current = id
@@ -565,6 +593,7 @@ export function useAnalystSession({
           }
 
           setIsStreaming(false)
+          isStreamingRef.current = false
           setStreamingContent('')
           const placeholderId = streamingMsgIdRef.current
           setStreamingMsgId(null)

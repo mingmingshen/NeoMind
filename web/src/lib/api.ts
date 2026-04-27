@@ -1796,6 +1796,16 @@ export const api = {
     fetchAPI<AgentExecutionDetail>(`/agents/${id}/executions/${executionId}`),
 
   /**
+   * Batch get execution details — eliminates N+1 API calls
+   * POST /api/agents/:id/executions/details
+   */
+  batchGetExecutions: (agentId: string, ids: string[]) =>
+    fetchAPI<{ agent_id: string; details: Record<string, AgentExecutionDetail> }>(`/agents/${agentId}/executions/details`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+
+  /**
    * Get agent memory
    * GET /api/agents/:id/memory
    */

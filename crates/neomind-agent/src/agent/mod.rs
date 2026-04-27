@@ -36,6 +36,7 @@ pub mod types;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 
 use futures::Stream;
 use tokio::sync::RwLock;
@@ -766,6 +767,8 @@ pub struct Agent {
     tool_result_cache: Arc<tokio::sync::RwLock<ToolResultCache>>,
     /// Frozen memory snapshot for this session (loaded once when memory is enabled)
     memory_snapshot: Arc<tokio::sync::RwLock<Option<crate::memory::MemorySnapshot>>>,
+    /// Semaphore limiting parallel tool executions within a single agent step
+    tool_concurrency_limit: Arc<Semaphore>,
 }
 
 impl Agent {
@@ -823,6 +826,7 @@ impl Agent {
             last_injected_context_hash: Arc::new(tokio::sync::RwLock::new(0)),
             tool_result_cache: Arc::new(tokio::sync::RwLock::new(ToolResultCache::new())),
             memory_snapshot: Arc::new(tokio::sync::RwLock::new(None)),
+            tool_concurrency_limit: Arc::new(Semaphore::new(5)),
         }
     }
 
@@ -2397,17 +2401,23 @@ impl Agent {
 
             // Clone tool_calls for parallel execution within this batch
             let batch_clone: Vec<_> = batch.to_vec();
+            let semaphore = self.tool_concurrency_limit.clone();
 
-            // Use futures for parallel execution within batch
+            // Use futures for parallel execution within batch (limited by semaphore)
             let futures: Vec<_> = batch_clone
                 .into_iter()
                 .map(|tool_call| {
                     let name = tool_call.name.clone();
                     let arguments = tool_call.arguments.clone();
                     let id = tool_call.id.clone();
+                    let sem = semaphore.clone();
 
-                    // Spawn each tool execution as a separate task
                     async move {
+                        let _permit = sem.acquire().await.unwrap_or_else(|e| {
+                            tracing::warn!("tool concurrency semaphore closed: {}", e);
+                            // Use a fake permit that drops immediately
+                            panic!("tool concurrency semaphore closed")
+                        });
                         let result = self.execute_tool(&name, &arguments).await;
                         (name, id, arguments, result)
                     }
