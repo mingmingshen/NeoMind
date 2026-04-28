@@ -34,9 +34,9 @@ type SourceType = 'all' | string
 
 function SourceTypeBadge({ type }: { type: string }) {
   const colorMap: Record<string, string> = {
-    device: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+    device: 'bg-info-light text-info border-info',
     extension: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
-    transform: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+    transform: 'bg-warning-light text-warning border-warning',
     ai: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
   }
   const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {

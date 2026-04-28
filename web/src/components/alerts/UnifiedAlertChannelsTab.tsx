@@ -667,7 +667,7 @@ export function UnifiedAlertChannelsTab({
                           "text-xs p-2 rounded",
                           testResult.success
                             ? "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300"
-                            : "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300"
+                            : "bg-error-light text-error"
                         )}>
                           {testResult.message}
                         </div>

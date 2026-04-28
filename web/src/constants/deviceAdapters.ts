@@ -36,7 +36,7 @@ export const ADAPTER_TYPES: AdapterType[] = [
     name: 'Webhook',
     description: 'Devices push data via HTTP POST to your server',
     icon: 'Webhook',
-    icon_bg: 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400',
+    icon_bg: 'bg-success-light text-success dark:bg-success-light dark:text-success',
     mode: 'push',
     can_add_multiple: false,
     builtin: true,

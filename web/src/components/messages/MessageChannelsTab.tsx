@@ -351,7 +351,7 @@ export function MessageChannelsTab({
                   {testResult && (
                     <div
                       className={`flex items-center gap-2 text-sm p-2 rounded ${
-                        testResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                        testResult.success ? 'bg-green-50 text-green-700' : 'bg-error-light text-error'
                       }`}
                     >
                       {testResult.success ? (

@@ -71,7 +71,7 @@ export function StreamProgress({
 
   const stageConfig = getStageConfig(stage, t)
   const isNearTimeout = progress > 80
-  const barColor = isNearTimeout ? 'bg-yellow-500' : 'bg-blue-500'
+  const barColor = isNearTimeout ? 'bg-warning' : 'bg-info'
 
   return (
     <div className={cn(
@@ -97,7 +97,7 @@ export function StreamProgress({
         </div>
       </div>
       {warning && (
-        <span className="text-yellow-600 text-xs flex items-center gap-1 shrink-0">
+        <span className="text-warning text-xs flex items-center gap-1 shrink-0">
           <AlertTriangle className="h-4 w-4" />
           {warning}
         </span>

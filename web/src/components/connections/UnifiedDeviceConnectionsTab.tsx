@@ -502,7 +502,7 @@ export function UnifiedDeviceConnectionsTab() {
                 key={type.id}
                 className={cn(
                   "cursor-pointer transition-all duration-200 hover:shadow-md",
-                  isActive && "border-green-500 border-2"
+                  isActive && "border-success border-2"
                 )}
                 onClick={() => handleTypeSelect(type.id)}
               >
@@ -518,7 +518,7 @@ export function UnifiedDeviceConnectionsTab() {
                 <CardContent className="text-sm">
                   <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">{t('plugins:llm.status')}:</span>
-                    <span className={isActive ? "text-green-600 dark:text-green-400 font-medium" : "text-muted-foreground font-medium"}>
+                    <span className={isActive ? "text-success dark:text-success font-medium" : "text-muted-foreground font-medium"}>
                       {isActive ? t('plugins:llm.running') : t('plugins:llm.notConfigured')}
                     </span>
                   </div>
@@ -767,7 +767,7 @@ export function UnifiedDeviceConnectionsTab() {
                   key={instance.id}
                   className={cn(
                     "transition-all duration-200 hover:shadow-md",
-                    instance.running && "border-green-500"
+                    instance.running && "border-success"
                   )}
                 >
                   <CardHeader className="pb-3">
@@ -859,7 +859,7 @@ export function UnifiedDeviceConnectionsTab() {
                         <div className={cn(
                           "text-xs p-2 rounded",
                           testResult.success
-                            ? "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300"
+                            ? "bg-success-light text-success dark:bg-success-light dark:text-success"
                             : "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300"
                         )}>
                           {testResult.message}

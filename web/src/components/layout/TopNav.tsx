@@ -306,7 +306,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                 className={cn(
                   "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors",
                   isConnected
-                    ? "bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20"
+                    ? "bg-success-light text-success border border-success-light"
                     : "text-destructive bg-muted"
                 )}
               >

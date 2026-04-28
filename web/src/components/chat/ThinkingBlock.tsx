@@ -208,9 +208,9 @@ function PerRoundThinking({
 /** Get round badge color - cycles through a subtle palette */
 function getRoundColor(round: number): string {
   const colors = [
-    "bg-blue-500/10 text-blue-600",
+    "bg-info-light text-info",
     "bg-emerald-500/10 text-emerald-600",
-    "bg-amber-500/10 text-amber-600",
+    "bg-warning-light text-warning",
     "bg-purple-500/10 text-purple-600",
     "bg-rose-500/10 text-rose-600",
   ]

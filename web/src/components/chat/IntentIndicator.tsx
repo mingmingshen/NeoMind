@@ -77,7 +77,7 @@ function getIntentConfig(intent: IntentCategory, t: (key: string) => string) {
     send_message: { key: "intent.sendMessage", icon: Send, color: "text-cyan-500" },
     summarize_info: { key: "intent.summarize", icon: FileText, color: "text-indigo-500" },
     clarify: { key: "intent.clarify", icon: HelpCircle, color: "text-orange-500" },
-    out_of_scope: { key: "intent.outOfScope", icon: AlertTriangle, color: "text-red-500" }
+    out_of_scope: { key: "intent.outOfScope", icon: AlertTriangle, color: "text-error" }
   }
   const config = configs[intent]
   return {
@@ -111,7 +111,7 @@ function getEntityConfig(entityType: EntityType, t: (key: string) => string) {
     location: { key: "intent.entity.location", icon: "📍", color: "bg-green-100 text-green-700" },
     value: { key: "intent.entity.value", icon: "🔢", color: "bg-purple-100 text-purple-700" },
     time_range: { key: "intent.entity.time", icon: "⏰", color: "bg-orange-100 text-orange-700" },
-    action: { key: "intent.entity.action", icon: "▶️", color: "bg-red-100 text-red-700" },
+    action: { key: "intent.entity.action", icon: "▶️", color: "bg-error-light text-error" },
     unknown: { key: "intent.entity.unknown", icon: "❓", color: "bg-muted text-muted-foreground" }
   }
   const config = configs[entityType]
@@ -140,7 +140,7 @@ export function IntentIndicator({
     if (confidence >= 0.8) return "bg-green-500"
     if (confidence >= 0.6) return "bg-blue-500"
     if (confidence >= 0.4) return "bg-yellow-500"
-    return "bg-red-500"
+    return "bg-error"
   }
 
   return (
@@ -191,9 +191,9 @@ export function IntentIndicator({
 
       {/* Capability Statement */}
       {classification.intent === "out_of_scope" && classification.capability_statement && (
-        <div className="flex items-start gap-2 p-2 rounded-md bg-red-50 border border-red-200">
-          <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-red-800">{classification.capability_statement}</p>
+        <div className="flex items-start gap-2 p-2 rounded-md bg-error-light border border-error">
+          <AlertTriangle className="h-4 w-4 text-error mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-error">{classification.capability_statement}</p>
         </div>
       )}
 
@@ -271,7 +271,7 @@ export function IntentFlow({ steps, currentStep = 0 }: IntentFlowProps) {
         const isCurrent = index === currentStep
 
         const getStatusColor = () => {
-          if (step.status === "error") return "text-red-500"
+          if (step.status === "error") return "text-error"
           if (step.status === "completed") return "text-green-500"
           if (isCurrent) return "text-blue-500"
           if (isCompleted) return "text-green-500"
@@ -336,7 +336,7 @@ export function IntentConfidenceBar({
     if (confidence >= 0.8) return "bg-green-500"
     if (confidence >= 0.6) return "bg-blue-500"
     if (confidence >= 0.4) return "bg-yellow-500"
-    return "bg-red-500"
+    return "bg-error"
   }
 
   return (
@@ -358,7 +358,7 @@ export function IntentConfidenceBar({
           percent >= 80 ? "text-green-600" :
           percent >= 60 ? "text-blue-600" :
           percent >= 40 ? "text-yellow-600" :
-          "text-red-600"
+          "text-error"
         )}>
           {percent}%
         </span>

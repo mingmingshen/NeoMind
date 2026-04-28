@@ -44,7 +44,7 @@ const LLM_PROVIDER_CONFIG: Record<string, {
 }> = {
   ollama: {
     icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400',
+    iconBg: 'bg-success-light text-success dark:bg-success-light dark:text-success',
   },
   openai: {
     icon: <Server className="h-6 w-6" />,
@@ -56,7 +56,7 @@ const LLM_PROVIDER_CONFIG: Record<string, {
   },
   google: {
     icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
+    iconBg: 'bg-info-light text-info',
   },
   xai: {
     icon: <Server className="h-6 w-6" />,
@@ -345,7 +345,7 @@ export function UnifiedLLMBackendsTab({
                 key={type.id}
                 className={cn(
                   "cursor-pointer transition-all duration-200 hover:shadow-md",
-                  hasActive && "border-green-500 border-2"
+                  hasActive && "border-success border-2"
                 )}
                 onClick={() => {
                   setSelectedType(toUnifiedPluginType(type, t))
@@ -364,7 +364,7 @@ export function UnifiedLLMBackendsTab({
                 <CardContent className="text-sm">
                   <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">{t('plugins:llm.status')}:</span>
-                    <span className={hasActive ? "text-green-600 dark:text-green-400 font-medium" : "text-muted-foreground font-medium"}>
+                    <span className={hasActive ? "text-success dark:text-success font-medium" : "text-muted-foreground font-medium"}>
                       {hasActive ? t('plugins:llm.running') : t('plugins:llm.notConfigured')}
                     </span>
                   </div>
@@ -455,7 +455,7 @@ export function UnifiedLLMBackendsTab({
                   key={instance.id}
                   className={cn(
                     "transition-all duration-200",
-                    isActive && "border-green-500"
+                    isActive && "border-success"
                   )}
                 >
                   <CardHeader className="pb-3">
@@ -513,7 +513,7 @@ export function UnifiedLLMBackendsTab({
                         <div className={cn(
                           "text-xs p-2 rounded",
                           testResult.success
-                            ? "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300"
+                            ? "bg-success-light text-success dark:bg-success-light dark:text-success"
                             : "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300"
                         )}>
                           {testResult.message}

@@ -96,8 +96,8 @@ const getTabFromPath = (pathname: string): TabValue => {
 
 // Severity config
 const SEVERITY_CONFIG: Record<string, { icon: typeof Info; color: string; bgColor: string }> = {
-  info: { icon: Info, color: 'text-blue-500', bgColor: 'bg-blue-500/10 border-blue-500/20' },
-  warning: { icon: AlertTriangle, color: 'text-yellow-500', bgColor: 'bg-yellow-500/10 border-yellow-500/20' },
+  info: { icon: Info, color: 'text-info', bgColor: 'bg-info-light border-info' },
+  warning: { icon: AlertTriangle, color: 'text-warning', bgColor: 'bg-warning-light border-warning' },
   critical: { icon: AlertCircle, color: 'text-orange-500', bgColor: 'bg-orange-500/10 border-orange-500/20' },
   emergency: { icon: ShieldAlert, color: 'text-red-500', bgColor: 'bg-red-500/10 border-red-500/20' },
 }
@@ -693,7 +693,7 @@ export default function MessagesPage() {
                   )}
                 >
                   {type === 'notification' ? (
-                    <Bell className={cn("h-4 w-4", selectedMessageTypes.has(type) ? "text-primary" : "text-blue-500")} />
+                    <Bell className={cn("h-4 w-4", selectedMessageTypes.has(type) ? "text-primary" : "text-info")} />
                   ) : (
                     <Send className={cn("h-4 w-4", selectedMessageTypes.has(type) ? "text-primary" : "text-purple-500")} />
                   )}
@@ -717,14 +717,14 @@ export default function MessagesPage() {
                 const icons = {
                   emergency: <ShieldAlert className="h-4 w-4 text-red-500" />,
                   critical: <AlertCircle className="h-4 w-4 text-orange-500" />,
-                  warning: <AlertTriangle className="h-4 w-4 text-yellow-500" />,
-                  info: <Info className="h-4 w-4 text-blue-500" />,
+                  warning: <AlertTriangle className="h-4 w-4 text-warning" />,
+                  info: <Info className="h-4 w-4 text-info" />,
                 }
                 const bgColors = {
                   emergency: "bg-red-500/10 border-red-500/30",
                   critical: "bg-orange-500/10 border-orange-500/30",
-                  warning: "bg-yellow-500/10 border-yellow-500/30",
-                  info: "bg-blue-500/10 border-blue-500/30",
+                  warning: "bg-warning-light border-warning",
+                  info: "bg-info-light border-info",
                 }
                 return (
                   <button
@@ -761,8 +761,8 @@ export default function MessagesPage() {
             <div className="grid grid-cols-2 gap-2">
               {(['active', 'acknowledged', 'resolved', 'archived'] as MessageStatus[]).map((stat) => {
                 const statusConfig = {
-                  active: { color: "text-blue-500", bg: "bg-blue-500/10 border-blue-500/30" },
-                  acknowledged: { color: "text-yellow-500", bg: "bg-yellow-500/10 border-yellow-500/30" },
+                  active: { color: "text-info", bg: "bg-info-light border-info" },
+                  acknowledged: { color: "text-warning", bg: "bg-warning-light border-warning" },
                   resolved: { color: "text-green-500", bg: "bg-green-500/10 border-green-500/30" },
                   archived: { color: "text-muted-foreground", bg: "bg-muted border-border" },
                 }
@@ -942,8 +942,8 @@ export default function MessagesPage() {
                   className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
                   onClick={() => toggleSeverity(sev)}
                 >
-                  {sev === 'info' && <Info className="h-4 w-4 text-blue-500" />}
-                  {sev === 'warning' && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
+                  {sev === 'info' && <Info className="h-4 w-4 text-info" />}
+                  {sev === 'warning' && <AlertTriangle className="h-4 w-4 text-warning" />}
                   {sev === 'critical' && <AlertCircle className="h-4 w-4 text-orange-500" />}
                   {sev === 'emergency' && <ShieldAlert className="h-4 w-4 text-red-500" />}
                   {t(`messages.severity.${sev}`)}
@@ -1097,7 +1097,7 @@ export default function MessagesPage() {
                           "text-xs",
                           isDataPush
                             ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
-                            : "bg-blue-500/10 text-blue-600 border-blue-500/20"
+                            : "bg-info-light text-info border-info"
                         )}
                       >
                         {isDataPush ? (
@@ -1211,7 +1211,7 @@ export default function MessagesPage() {
               const channel = rowData as unknown as MessageChannel
               const config: Record<string, { icon: typeof Bell; color: string }> = {
                 console: { icon: Bell, color: 'bg-muted text-muted-foreground' },
-                memory: { icon: RefreshCw, color: 'bg-blue-500/10 text-blue-500' },
+                memory: { icon: RefreshCw, color: 'bg-info-light text-info' },
                 webhook: { icon: Megaphone, color: 'bg-green-500/10 text-green-500' },
                 email: { icon: Bell, color: 'bg-purple-500/10 text-purple-500' },
               }
@@ -1403,7 +1403,7 @@ export default function MessagesPage() {
         icon={selectedMessage?.message_type === 'data_push' ? (
           <Send className="h-5 w-5 text-purple-500" />
         ) : (
-          <Bell className="h-5 w-5 text-blue-500" />
+          <Bell className="h-5 w-5 text-info" />
         )}
         width="xl"
         showCancelButton={false}
@@ -1456,7 +1456,7 @@ export default function MessagesPage() {
                 className={
                   selectedMessage.message_type === 'data_push'
                     ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
-                    : "bg-blue-500/10 text-blue-600 border-blue-500/20"
+                    : "bg-info-light text-info border-info"
                 }
               >
                 {selectedMessage.message_type === 'data_push' ? (
@@ -1473,8 +1473,8 @@ export default function MessagesPage() {
               </Badge>
               <Badge variant="outline" className={
                 selectedMessage.severity === 'critical' ? 'bg-red-500/10 text-red-600' :
-                selectedMessage.severity === 'warning' ? 'bg-yellow-500/10 text-yellow-600' :
-                'bg-blue-500/10 text-blue-600'
+                selectedMessage.severity === 'warning' ? 'bg-warning-light text-warning' :
+                'bg-info-light text-info'
               }>
                 {t(`messages.severity.${selectedMessage.severity}`, selectedMessage.severity)}
               </Badge>

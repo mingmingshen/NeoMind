@@ -44,7 +44,7 @@ export function ConnectionStatus({ state, className, onManualReconnect }: Connec
             </svg>
           ),
           text: connectionState.errorMessage || t('connection.error'),
-          bgClass: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800'
+          bgClass: 'bg-error-light text-error border-error'
         }
       case 'disconnected':
         return {

@@ -385,12 +385,12 @@ export function PendingDevicesList({
   // Get status badge
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, { color: string; label: string; icon: React.ReactNode }> = {
-      collecting: { color: "bg-blue-500/20 text-blue-700", label: t('devices:pending.status.collecting'), icon: <Loader2 className="h-4 w-4" /> },
+      collecting: { color: "bg-info-light text-info", label: t('devices:pending.status.collecting'), icon: <Loader2 className="h-4 w-4" /> },
       analyzing: { color: "bg-purple-500/20 text-purple-700", label: t('devices:pending.status.analyzing'), icon: <SearchIcon className="h-4 w-4" /> },
-      waiting_processing: { color: "bg-yellow-500/20 text-yellow-700", label: t('devices:pending.status.waitingProcessing'), icon: <Hourglass className="h-4 w-4" /> },
+      waiting_processing: { color: "bg-warning-light text-warning", label: t('devices:pending.status.waitingProcessing'), icon: <Hourglass className="h-4 w-4" /> },
       registered: { color: "bg-green-500/20 text-green-700", label: t('devices:pending.status.registered'), icon: <CheckCircle2 className="h-4 w-4" /> },
-      rejected: { color: "bg-red-500/20 text-red-700", label: t('devices:pending.status.rejected'), icon: <XCircle className="h-4 w-4" /> },
-      failed: { color: "bg-red-500/20 text-red-700", label: t('devices:pending.status.failed'), icon: <AlertTriangle className="h-4 w-4" /> },
+      rejected: { color: "bg-error-light text-error", label: t('devices:pending.status.rejected'), icon: <XCircle className="h-4 w-4" /> },
+      failed: { color: "bg-error-light text-error", label: t('devices:pending.status.failed'), icon: <AlertTriangle className="h-4 w-4" /> },
     }
 
     const key = normalizeStatus(status)
@@ -500,7 +500,7 @@ export function PendingDevicesList({
                   <div className={cn(
                     "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
                     draft.status === 'waiting_processing'
-                      ? "bg-amber-500/10 text-amber-600"
+                      ? "bg-warning-light text-warning"
                       : draft.status === 'analyzing'
                         ? "bg-purple-500/10 text-purple-600"
                         : "bg-muted text-muted-foreground"
@@ -541,7 +541,7 @@ export function PendingDevicesList({
                           "text-xs",
                           confidence >= 80
                             ? "bg-green-500/20 text-green-700 border-green-200"
-                            : "bg-amber-500/20 text-amber-700 border-amber-200"
+                            : "bg-warning-light text-warning border-warning"
                         )}
                       >
                         {confidence}%
@@ -564,7 +564,7 @@ export function PendingDevicesList({
             case 'metrics':
               return hasGeneratedType ? (
                 <div className="flex justify-center">
-                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800">
+                  <Badge variant="outline" className="text-xs bg-info-light text-info border-info">
                     {draft.generated_type?.metrics?.length || 0}
                   </Badge>
                 </div>
@@ -807,7 +807,7 @@ export function PendingDevicesList({
                 {/* Device Name Field */}
                 <div>
                   <Label className="text-xs text-muted-foreground">
-                    {t('devices:pending.deviceName')} <span className="text-red-500">*</span>
+                    {t('devices:pending.deviceName')} <span className="text-error">*</span>
                   </Label>
                   <Input
                     value={newTypeFields.name}
@@ -822,7 +822,7 @@ export function PendingDevicesList({
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                   {t('devices:pending.deviceTypeSelection')}
-                  <span className="text-red-500 ml-1">*</span>
+                  <span className="text-error ml-1">*</span>
                 </h3>
 
                 {/* Unified Type Input with Dropdown */}
@@ -933,7 +933,7 @@ export function PendingDevicesList({
                 {selectedDeviceType && (
                   <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${
                     isNewType
-                      ? 'bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400'
+                      ? 'bg-warning-light border-warning text-warning'
                       : 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
                   }`}>
                     {isNewType ? (
@@ -956,7 +956,7 @@ export function PendingDevicesList({
                 {selectedDeviceType && isNewType && (
                   <div>
                     <Label className="text-xs text-muted-foreground">
-                      {t('devices:pending.deviceTypeName')} <span className="text-red-500">*</span>
+                      {t('devices:pending.deviceTypeName')} <span className="text-error">*</span>
                     </Label>
                     <Input
                       value={newTypeFields.type_name}
@@ -991,7 +991,7 @@ export function PendingDevicesList({
             <DialogFooter className="gap-2 pt-4 border-t">
               <Button
                 variant="ghost"
-                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                className="text-destructive hover:text-destructive hover:bg-error-light"
                 onClick={() => {
                   setShowApproveDialog(false)
                   if (selectedDraftForApproval) handleReject(selectedDraftForApproval)
