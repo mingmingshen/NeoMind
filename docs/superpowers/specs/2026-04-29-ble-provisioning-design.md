@@ -28,7 +28,8 @@ Characteristic 1: Device Info
     "model": "NE101",
     "sn": "NE101A2F003",
     "fw": "1.0.0",
-    "netmod": ""             // current network mode: "wifi"/"cat1"/"halow"/""
+    "netmod": "",                    // current network mode: "wifi"/"cat1"/"halow"/""
+    "supported_netmods": ["wifi"]    // hardware-available network modules, detected by firmware
   }
 
 Characteristic 2: WiFi Scan
@@ -68,9 +69,15 @@ Characteristic 6: Apply
   Triggers device to save all config to NVS, stop BLE, and connect to network.
 ```
 
-### Network Mode Selection (WiFi / CAT.1 / HaLow — pick one)
+### Network Mode Selection (device-driven)
 
-NE101 supports three network modules. The user selects one in the BLE provisioning UI:
+NE101 hardware determines which network modules are physically present. The firmware's `netModule_check()` detects available modules at boot and reports them via `supported_netmods` in Device Info.
+
+- If `supported_netmods` has only one entry → auto-select, no user choice needed
+- If multiple → frontend shows radio buttons for user to pick one
+- If empty → error state, device has no network module
+
+The frontend never shows network types the device doesn't support.
 
 | Network | NVS keys written | When to use |
 |---------|-----------------|-------------|
@@ -256,10 +263,15 @@ Integration points with existing code:
 - `main.c` `mode_selector()`: Add BLE provisioning mode for first boot (no network config in NVS)
 
 BLE provisioning triggered when:
-- First boot (no WiFi credentials in NVS)
+- First boot (no network config in NVS)
 - User button press (via deep sleep wakeup path)
 
 Uses ESP-IDF BLE GATT API (ESP32-S3 native support). WiFi scan uses `esp_wifi_scan_start()` while in BLE+STA coex mode.
+
+Device Info `supported_netmods` detection:
+- `netModule_check()` runs at BLE init, probes hardware for CAT.1 module (UART), HaLow module (SPI/SDIO), WiFi (built-in)
+- Returns detected modules as array, e.g. `["wifi"]` or `["wifi", "cat1"]`
+- `netmod` field reflects previously configured mode (empty on first boot)
 
 #### 2. NeoMind Backend API
 
@@ -335,7 +347,7 @@ Replaces the current `AddDeviceDialog`. Integrates all device-adding methods in 
 │  │ NE101-B1C042  ██████░░░░  -62dBm      │  │
 │  └───────────────────────────────────────┘  │
 │  MQTT Broker: [NeoMind 内置 ▾]                │
-│  网络类型: (○ WiFi  ○ CAT.1  ○ HaLow)         │
+│  网络类型: WiFi (设备自动识别)                  │  ← auto if only one
 │  WiFi: [扫描结果下拉选择 ▾]                    │
 │  密码: [____________]                        │
 │  设备名称: [NE101-A2F003 ▾]                   │
