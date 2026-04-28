@@ -368,7 +368,7 @@ export function AiAnalyst({
             )}
           >
             {isStreaming ? (
-              <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
+              <Loader2 className="h-5 w-5 text-info animate-spin" />
             ) : (
               <ScanEye className="h-5 w-5 text-primary" />
             )}

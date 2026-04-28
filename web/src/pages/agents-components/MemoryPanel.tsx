@@ -109,7 +109,7 @@ const categoryConfig = [
     defaultLabel: "Domain Knowledge",
     icon: BookOpen,
     description: "Devices, protocols and system knowledge",
-    color: "bg-green-500/10 text-green-600 border-green-500/20",
+    color: "bg-success-light text-success border-success-light",
   },
   {
     id: "task_patterns",
@@ -721,7 +721,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 {/* Compression Settings */}
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <Archive className="h-4 w-4 text-blue-500" />
+                    <Archive className="h-4 w-4 text-info" />
                     {t("systemMemory.config.compression", "Compression Settings")}
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
@@ -770,7 +770,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 {/* LLM Backend Settings */}
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <Cpu className="h-4 w-4 text-green-500" />
+                    <Cpu className="h-4 w-4 text-success" />
                     {t("systemMemory.config.llmBackends", "LLM Backends")}
                   </h3>
                   <div className="grid grid-cols-2 gap-4">

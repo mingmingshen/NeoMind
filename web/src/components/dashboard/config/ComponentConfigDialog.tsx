@@ -472,7 +472,7 @@ export function ComponentConfigDialog({
                         </button>
                       )}
                     </div>
-                    {hasConfiguredDataSource && <CheckCircle2 className="h-4 w-4 text-green-500 ml-auto" />}
+                    {hasConfiguredDataSource && <CheckCircle2 className="h-4 w-4 text-success ml-auto" />}
                   </div>
 
                   <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
@@ -613,7 +613,7 @@ function MobileConfigCard({
         </div>
         <div className="flex items-center gap-2">
           {status === 'configured' && (
-            <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
+            <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
           )}
           <div className="h-8 w-8 rounded-full bg-background flex items-center justify-center shrink-0">
             {isExpanded ? (

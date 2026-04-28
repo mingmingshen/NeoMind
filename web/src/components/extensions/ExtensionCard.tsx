@@ -50,7 +50,7 @@ interface ExtensionCardProps {
 
 // Data type colors
 const DATA_TYPE_COLORS: Record<string, string> = {
-  integer: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  integer: "bg-info-light text-info",
   number: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
   string: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
   boolean: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
@@ -212,13 +212,13 @@ function MetricHistoryDialog({
                   </div>
                   <div className="text-center">
                     <div className="text-xs text-muted-foreground">{t('min', { defaultValue: 'Min' })}</div>
-                    <div className="text-lg font-semibold text-blue-600">
+                    <div className="text-lg font-semibold text-info">
                       {minValue !== null ? minValue.toFixed(2) : '-'}
                     </div>
                   </div>
                   <div className="text-center">
                     <div className="text-xs text-muted-foreground">{t('avg', { defaultValue: 'Avg' })}</div>
-                    <div className="text-lg font-semibold text-amber-600">
+                    <div className="text-lg font-semibold text-warning">
                       {avgValue !== null ? avgValue.toFixed(2) : '-'}
                     </div>
                   </div>
@@ -350,7 +350,7 @@ function ExtensionCapabilitiesDialog({
                       className="p-3 rounded-lg border bg-muted-30 space-y-2"
                     >
                       <div className="flex items-center gap-2">
-                        <Zap className="h-4 w-4 text-yellow-500" />
+                        <Zap className="h-4 w-4 text-warning" />
                         <span className="font-medium text-sm">{command.display_name}</span>
                         <Badge variant="outline" className="text-xs">
                           {command.id}

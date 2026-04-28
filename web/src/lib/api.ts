@@ -726,9 +726,9 @@ export const api = {
       body: JSON.stringify(request),
     }),
 
-  // Messages (replaces Alerts) - response format: { messages: NotificationMessage[], count: number }
+  // Messages (replaces Alerts) - response format: { messages: NotificationMessage[], total: number }
   getMessages: (params?: Record<string, string>) =>
-    fetchAPI<{ messages: NotificationMessage[]; count: number }>(
+    fetchAPI<{ messages: NotificationMessage[]; total: number }>(
       `/messages${params ? `?${new URLSearchParams(params)}` : ''}`
     ),
   getMessage: (id: string) => fetchAPI<NotificationMessage>(`/messages/${id}`),

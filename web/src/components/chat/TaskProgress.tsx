@@ -68,7 +68,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
       case "completed":
         return <CheckCircle2 className="h-4 w-4 text-success" />
       case "active":
-        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+        return <Loader2 className="h-4 w-4 text-info animate-spin" />
       case "pending":
         return <Circle className="h-4 w-4 text-muted-foreground" />
     }
@@ -150,7 +150,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
 
                 {status === "active" && step.prompt && (
                   <div className="mt-2 p-2 rounded bg-background border border-blue-200">
-                    <p className="text-xs text-blue-700">{step.prompt}</p>
+                    <p className="text-xs text-info">{step.prompt}</p>
                   </div>
                 )}
               </div>

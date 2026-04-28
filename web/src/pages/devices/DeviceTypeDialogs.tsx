@@ -1254,7 +1254,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
               <div className="text-xs text-muted-foreground">Metrics</div>
             </div>
             <div className="rounded-lg border bg-card p-4 text-center">
-              <div className="text-2xl font-bold text-blue-500">{data.commands?.length || 0}</div>
+              <div className="text-2xl font-bold text-info">{data.commands?.length || 0}</div>
               <div className="text-xs text-muted-foreground">Commands</div>
             </div>
             <div className="rounded-lg border bg-card p-4 text-center">
@@ -1341,7 +1341,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
           <div className="rounded-lg border bg-card p-4">
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-medium flex items-center gap-2">
-                <FileText className="h-4 w-4 text-blue-500" />
+                <FileText className="h-4 w-4 text-info" />
                 Commands ({data.commands?.length || 0})
               </h4>
               <Button variant="ghost" size="sm" onClick={() => onEdit('commands')}>
@@ -1842,7 +1842,7 @@ function CommandEditorCompact({
                     }))
                   ].map((item, idx, arr) => (
                     <div key={item.key} className="ml-2">
-                      <span className="text-blue-600">"{item.key}"</span>
+                      <span className="text-info">"{item.key}"</span>
                       <span className="text-muted-foreground">: </span>
                       {item.type === 'fixed' ? (
                         <span className="text-green-600">
@@ -2431,7 +2431,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
             <Card className="p-4">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="font-medium flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-blue-500" />
+                  <FileText className="h-4 w-4 text-info" />
                   Commands ({deviceType.commands?.length || 0})
                 </h4>
               </div>

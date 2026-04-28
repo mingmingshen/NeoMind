@@ -48,7 +48,7 @@ const categoryConfig: Record<
 > = {
   device: { label: "Device", icon: Zap, color: "bg-info-light text-info border-info" },
   rule: { label: "Rule", icon: Target, color: "bg-purple-500/10 text-purple-600 border-purple-500/20" },
-  agent: { label: "Agent", icon: Wrench, color: "bg-green-500/10 text-green-600 border-green-500/20" },
+  agent: { label: "Agent", icon: Wrench, color: "bg-success-light text-success border-success-light" },
   message: { label: "Message", icon: BookOpen, color: "bg-orange-500/10 text-orange-600 border-orange-500/20" },
   extension: { label: "Extension", icon: Wrench, color: "bg-teal-500/10 text-teal-600 border-teal-500/20" },
   general: { label: "General", icon: BookOpen, color: "bg-muted text-muted-foreground border-border" },
@@ -419,9 +419,9 @@ anti_triggers:
           iconBg={
             dialogSkill
               ? categoryConfig[dialogSkill.category]?.color || "bg-muted"
-              : "bg-green-500/10 dark:bg-green-500/20"
+              : "bg-success-light dark:bg-success-light"
           }
-          iconColor={dialogMode === "create" ? "text-green-500" : undefined}
+          iconColor={dialogMode === "create" ? "text-success" : undefined}
           title={dialogTitle}
           onClose={closeDialog}
         />

@@ -170,7 +170,7 @@ export function DashboardListSidebar({
                     className="h-6 w-6"
                     onClick={handleSaveEdit}
                   >
-                    <Check className="h-4 w-4 text-green-500" />
+                    <Check className="h-4 w-4 text-success" />
                   </Button>
                   <Button
                     variant="ghost"
@@ -258,7 +258,7 @@ export function DashboardListSidebar({
                 className="h-7 px-2 text-xs flex-1"
                 onClick={handleCreate}
               >
-                <Check className="h-4 w-4 mr-1 text-green-500" />
+                <Check className="h-4 w-4 mr-1 text-success" />
                 Create
               </Button>
               <Button

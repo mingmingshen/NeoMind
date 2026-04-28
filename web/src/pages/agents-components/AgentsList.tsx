@@ -44,7 +44,7 @@ interface AgentsListProps {
 
 // Status configuration
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof CheckCircle2; color: string }> = {
-  Active: { label: 'agents:status.active', icon: CheckCircle2, color: 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800' },
+  Active: { label: 'agents:status.active', icon: CheckCircle2, color: 'text-success bg-success-light border-success-light dark:text-success dark:bg-success-light dark:border-success-light' },
   Paused: { label: 'agents:status.paused', icon: XCircle, color: 'text-muted-foreground bg-muted border-border dark:text-muted-foreground dark:bg-muted dark:border-border' },
   Error: { label: 'agents:status.error', icon: XCircle, color: 'text-error bg-error-light border-error' },
   Executing: { label: 'agents:status.executing', icon: Loader2, color: 'text-info bg-info-light border-info' },
@@ -176,8 +176,8 @@ export function AgentsList({
                           <span className="font-medium">{agent.execution_count}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
-                          <span className="font-medium text-green-600">{agent.success_count}</span>
+                          <CheckCircle2 className="h-4 w-4 text-success" />
+                          <span className="font-medium text-success">{agent.success_count}</span>
                         </div>
                         {agent.error_count > 0 && (
                           <div className="flex items-center gap-1.5">

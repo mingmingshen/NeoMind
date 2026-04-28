@@ -35,7 +35,7 @@ interface ValueMapEditorProps {
 // State options factory (uses translations)
 function getStateOptions(t: (key: string) => string) {
   return [
-    { value: 'on' as LEDState, label: t('valueMap.state.on'), color: 'text-green-600' },
+    { value: 'on' as LEDState, label: t('valueMap.state.on'), color: 'text-success' },
     { value: 'off' as LEDState, label: t('valueMap.state.off'), color: 'text-muted-foreground' },
     { value: 'error' as LEDState, label: t('valueMap.state.error'), color: 'text-error' },
     { value: 'warning' as LEDState, label: t('valueMap.state.warning'), color: 'text-warning' },

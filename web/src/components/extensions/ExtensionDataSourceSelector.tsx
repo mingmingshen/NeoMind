@@ -290,7 +290,7 @@ export function ExtensionDataSourceSelector({
                       <SelectItem key={identifier} value={identifier}>
                         <div className="flex items-center gap-2">
                           <BarChart3 className="h-4 w-4" />
-                          <Zap className="h-3 w-3 text-yellow-500" />
+                          <Zap className="h-3 w-3 text-warning" />
                           <div className="flex-1">
                             <div className="font-medium">{metric.display_name}</div>
                             {metric.description && (
@@ -534,8 +534,8 @@ export function ExtensionDataSourceBrowser({
                           className="p-2.5 rounded-lg text-left transition-all text-sm hover:bg-yellow-50 dark:hover:bg-yellow-950/30 border border-transparent hover:border-yellow-200 dark:hover:border-yellow-800"
                         >
                           <div className="flex items-center gap-2">
-                            <BarChart3 className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-                            <Zap className="h-3 w-3 text-yellow-500" />
+                            <BarChart3 className="h-4 w-4 text-warning" />
+                            <Zap className="h-3 w-3 text-warning" />
                             <div className="flex-1 min-w-0">
                               <div className="font-medium truncate">{metric.display_name}</div>
                               {metric.description && (

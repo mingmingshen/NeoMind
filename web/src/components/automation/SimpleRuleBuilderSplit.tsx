@@ -264,7 +264,7 @@ function getTriggerInfo(type: TriggerType) {
     case 'device_state':
       return { label: '设备触发', icon: <Lightbulb className="h-4 w-4" />, color: 'text-purple-500' }
     case 'schedule':
-      return { label: '定时触发', icon: <Clock className="h-4 w-4" />, color: 'text-blue-500' }
+      return { label: '定时触发', icon: <Clock className="h-4 w-4" />, color: 'text-info' }
     case 'manual':
       return { label: '手动触发', icon: <Play className="h-4 w-4" />, color: 'text-success' }
   }
@@ -2312,7 +2312,7 @@ function ConditionStep({
                       className={cn(
                         "flex flex-col items-center gap-1 p-2 rounded-md border text-xs transition-all",
                         selectedCronTemplate === template.id
-                          ? "border-info bg-info-light text-blue-500"
+                          ? "border-info bg-info-light text-info"
                           : "border-border hover:border-info"
                       )}
                     >
@@ -2344,7 +2344,7 @@ function ConditionStep({
                         onSelectedCronTemplateChange('custom')
                       }
                     }}
-                    className="text-xs text-blue-500 hover:text-blue-400"
+                    className="text-xs text-info hover:text-info"
                   >
                     {showCustomCron ? (tBuilder('useTemplate') || '使用模板') : (tBuilder('customCron') || '自定义')}
                   </button>
@@ -2362,7 +2362,7 @@ function ConditionStep({
                   />
                 ) : (
                   <div className="p-3 bg-background rounded-lg border">
-                    <code className="text-sm font-mono text-blue-500">{cronExpression}</code>
+                    <code className="text-sm font-mono text-info">{cronExpression}</code>
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground mt-1">

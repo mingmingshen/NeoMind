@@ -367,7 +367,7 @@ export function AgentExecutionTimeline({
                                 {/* ④ Notifications */}
                                 {detail.result?.notifications_sent && detail.result.notifications_sent.length > 0 && (
                                   <TimelineSection
-                                    icon={<Bell className="h-4 w-4 text-blue-500" />}
+                                    icon={<Bell className="h-4 w-4 text-info" />}
                                     title={t('agents:memory.notificationsSent')}
                                   >
                                     <div className="space-y-2">
@@ -609,7 +609,7 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
         <div className={cn("flex-1 min-w-0 pb-4 pl-1")}>
         {/* Description with icon */}
         <div className="flex items-start gap-1.5">
-          {isThought && <span className="text-blue-500 text-xs mt-0.5 shrink-0">&#x1F4AD;</span>}
+          {isThought && <span className="text-info text-xs mt-0.5 shrink-0">&#x1F4AD;</span>}
           {isError && <span className="text-error text-xs mt-0.5 shrink-0">&#x26A0;</span>}
           <div className={cn(
             "text-sm break-words",
@@ -650,7 +650,7 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
         <Badge variant="outline" className={cn(
           "text-xs h-5 mt-1.5",
           isError && "border-error text-error",
-          isThought && "border-blue-300 text-blue-600"
+          isThought && "border-info text-info"
         )}>
           {step.step_type}
         </Badge>

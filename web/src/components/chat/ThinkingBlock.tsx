@@ -54,7 +54,7 @@ export function ThinkingBlock({
         >
           <BrainCircuit className={cn(
             "h-4 w-4",
-            isStreaming ? "text-blue-500 animate-pulse" : "text-muted-foreground"
+            isStreaming ? "text-info animate-pulse" : "text-muted-foreground"
           )} />
           <span className="text-[13px] font-medium">{t("thinking.title")}</span>
           {isStreaming && (
@@ -91,7 +91,7 @@ export function ThinkingBlock({
       >
         <BrainCircuit className={cn(
           "h-4 w-4",
-          isStreaming ? "text-blue-500 animate-pulse" : "text-muted-foreground"
+          isStreaming ? "text-info animate-pulse" : "text-muted-foreground"
         )} />
 
         <span className="text-sm font-medium">{t("thinking.title")}</span>

@@ -1067,7 +1067,7 @@ export function UnifiedDataSourceConfig({
         const config = {
           template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
           virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
-          info: { label: t('dataSource.badgeInfo'), className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
+          info: { label: t('dataSource.badgeInfo'), className: 'bg-warning-light text-warning border-warning' },
         }[itemType]
         return (
           <span className={cn('px-1.5 py-0.5 text-[10px] font-medium rounded-[3px] border shrink-0', config.className)}>
@@ -1744,7 +1744,7 @@ export function UnifiedDataSourceConfig({
 
               if (type === 'device-metric') {
                 TypeIcon = Server
-                iconColor = 'text-blue-500'
+                iconColor = 'text-info'
               } else if (type === 'device-command') {
                 TypeIcon = Zap
                 iconColor = 'text-warning'
@@ -2180,7 +2180,7 @@ function MobileMetricsList({
     const config = {
       template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
       virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
-      info: { label: t('dataSource.badgeInfo'), className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
+      info: { label: t('dataSource.badgeInfo'), className: 'bg-warning-light text-warning border-warning' },
     }[itemType]
     return (
       <span className={`px-2 py-0.5 text-xs font-medium rounded-md border shrink-0 ${config.className}`}>

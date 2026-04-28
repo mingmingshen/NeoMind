@@ -1471,7 +1471,7 @@ export function AgentEditorFullScreen({
                   {llmValidating ? (
                     <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                   ) : llmValid === true ? (
-                    <Check className="h-4 w-4 mr-1 text-green-500" />
+                    <Check className="h-4 w-4 mr-1 text-success" />
                   ) : llmValid === false ? (
                     <span className="text-destructive">!</span>
                   ) : null}

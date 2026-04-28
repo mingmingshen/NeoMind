@@ -156,7 +156,7 @@ function parseIntent(prompt: string): ParsedIntent {
 // Intent icon component
 function IntentIcon({ type, size = 20 }: { type: IntentType; size?: number }) {
   const icons = {
-    monitor: <Eye className="text-blue-500" size={size} />,
+    monitor: <Eye className="text-info" size={size} />,
     control: <Zap className="text-orange-500" size={size} />,
     analysis: <BarChart3 className="text-purple-500" size={size} />,
     unknown: <Sparkles className="text-muted-foreground" size={size} />,

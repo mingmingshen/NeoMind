@@ -150,7 +150,7 @@ export function AboutTab() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-blue-500" />
+              <Activity className="h-5 w-5 text-info" />
               {t("settings:systemInfo")}
             </CardTitle>
             <Button
@@ -308,7 +308,7 @@ export function AboutTab() {
               href="https://github.com/camthink-ai/NeoMind"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-500 hover:underline flex items-center gap-1"
+              className="text-info hover:underline flex items-center gap-1"
             >
               <Github className="h-4 w-4" />
               github.com/camthink-ai/NeoMind

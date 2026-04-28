@@ -49,10 +49,10 @@ interface AgentListPanelProps {
 
 // Status configuration
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof CheckCircle2; color: string }> = {
-  Active: { label: '运行中', icon: CheckCircle2, color: 'text-green-500' },
+  Active: { label: '运行中', icon: CheckCircle2, color: 'text-success' },
   Paused: { label: '已暂停', icon: XCircle, color: 'text-muted-foreground' },
   Error: { label: '错误', icon: XCircle, color: 'text-error' },
-  Executing: { label: '执行中', icon: Loader2, color: 'text-blue-500' },
+  Executing: { label: '执行中', icon: Loader2, color: 'text-info' },
 }
 
 interface AgentListItemProps {

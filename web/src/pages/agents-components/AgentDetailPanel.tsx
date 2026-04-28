@@ -54,7 +54,7 @@ type DetailTab = 'overview' | 'history' | 'memory' | 'messages'
 
 // Role configuration - labels use i18n
 const ROLE_CONFIG: Record<string, { icon: typeof Activity; color: string }> = {
-  Monitor: { icon: Activity, color: 'text-blue-600' },
+  Monitor: { icon: Activity, color: 'text-info' },
   Executor: { icon: Zap, color: 'text-orange-600' },
   Analyst: { icon: BarChart3, color: 'text-purple-600' },
 }
@@ -263,7 +263,7 @@ export function AgentDetailPanel({
                       icon={<Activity className="h-4 w-4" />}
                       label={t('agents:detail.executions')}
                       value={formatCount(agent.stats?.total_executions ?? agent.execution_count)}
-                      color="text-blue-500"
+                      color="text-info"
                     />
                     <StatItem
                       icon={<CheckCircle2 className="h-4 w-4" />}

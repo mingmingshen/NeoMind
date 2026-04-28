@@ -62,7 +62,7 @@ interface AgentCardProps {
 
 // Status icons configuration (labels use i18n)
 const STATUS_CONFIG: Record<string, { icon: typeof Activity; color: string; bg: string }> = {
-  Active: { icon: Activity, color: 'text-green-500', bg: 'bg-green-500/10' },
+  Active: { icon: Activity, color: 'text-success', bg: 'bg-success-light' },
   Paused: { icon: Pause, color: 'text-muted-foreground', bg: 'bg-muted-50' },
   Error: { icon: AlertTriangle, color: 'text-error', bg: 'bg-error-light' },
   Executing: { icon: Loader2, color: 'text-info', bg: 'bg-info-light' },
@@ -123,7 +123,7 @@ export function AgentCard({
         {/* Icon with status glow */}
         <div className={cn(
           "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors",
-          agent.status === 'Active' && "bg-green-500/10 ring-2 ring-green-500/30",
+          agent.status === 'Active' && "bg-success-light ring-2 ring-success-light",
           agent.status === 'Executing' && "bg-info-light ring-2 ring-info",
           agent.status === 'Error' && "bg-error-light ring-2 ring-error/30",
           agent.status === 'Paused' && "bg-muted-50"
@@ -131,7 +131,7 @@ export function AgentCard({
           <Bot className={cn(
             "h-6 w-6",
             agent.status === 'Active' && "text-green-500",
-            agent.status === 'Executing' && "text-blue-500",
+            agent.status === 'Executing' && "text-info",
             agent.status === 'Error' && "text-error",
             agent.status === 'Paused' && "text-muted-foreground"
           )} />

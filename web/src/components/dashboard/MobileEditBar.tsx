@@ -245,7 +245,7 @@ export const MobileEditBar = memo(function MobileEditBar({
             label={showConfirm ? t('mobileEditBar.confirm') : t('mobileEditBar.delete')}
             onPress={handleDeletePress}
             variant={showConfirm ? 'default' : 'destructive'}
-            className={showConfirm ? 'bg-green-500/15 text-green-600 active:bg-green-500/25' : ''}
+            className={showConfirm ? 'bg-success-light text-success active:bg-success-light' : ''}
           />
         </div>
       </div>

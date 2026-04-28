@@ -62,7 +62,7 @@ const CHANNEL_TYPE_INFO: Record<string, {
   webhook: {
     name: 'Webhook',
     icon: <Webhook className="h-6 w-6" />,
-    iconBg: 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400',
+    iconBg: 'bg-success-light text-success dark:bg-success-light dark:text-success',
   },
   email: {
     name: 'Email',

@@ -112,11 +112,11 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {currentExecution.status === 'running' ? (
-            <Loader2 className="h-4 w-4 animate-spin text-blue-500 shrink-0" />
+            <Loader2 className="h-4 w-4 animate-spin text-info shrink-0" />
           ) : (
             <CheckCircle2 className={cn(
               "h-4 w-4 shrink-0",
-              currentExecution.status === 'completed' ? "text-green-500" : "text-error"
+              currentExecution.status === 'completed' ? "text-success" : "text-error"
             )} />
           )}
           <span className="text-sm font-medium shrink-0">
@@ -198,7 +198,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
                 {decisions.length > 0 && (
                   <div>
                     <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                      <Play className="h-4 w-4 text-green-500" />
+                      <Play className="h-4 w-4 text-success" />
                       {t('agents:thinking.decisions')}
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -218,7 +218,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
                   return (
                     <div>
                       <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                        <FileText className="h-4 w-4 text-green-500" />
+                        <FileText className="h-4 w-4 text-success" />
                         {t('agents:memory.conclusion')}
                       </h4>
                       <div className="space-y-2">
@@ -272,7 +272,7 @@ function ThinkingStep({ step }: ThinkingStepProps) {
         return 'text-purple-500 bg-purple-500/10 border-purple-500/20'
       case 'execution':
       case 'execute':
-        return 'text-green-500 bg-green-500/10 border-green-500/20'
+        return 'text-success bg-success-light border-success-light'
       default:
         return 'text-muted-foreground bg-muted-50'
     }
@@ -339,7 +339,7 @@ function Decision({ decision }: DecisionProps) {
       )}
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-1.5">
-          <Zap className="h-4 w-4 text-green-500" />
+          <Zap className="h-4 w-4 text-success" />
           <Badge variant="secondary" className="h-5">
             {decision.action}
           </Badge>

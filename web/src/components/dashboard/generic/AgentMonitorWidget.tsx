@@ -553,7 +553,7 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
       <div className="px-3 py-2 border-b border-border">
         <div className="flex flex-wrap items-center gap-1.5">
           {execution.status === 'Running' ? (
-            <Loader2 className="h-4 w-4 text-blue-500 shrink-0 animate-spin" />
+            <Loader2 className="h-4 w-4 text-info shrink-0 animate-spin" />
           ) : execution.status === 'Completed' ? (
             <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
           ) : (
