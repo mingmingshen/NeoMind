@@ -60,8 +60,26 @@ Characteristic 4: MQTT Config
 
 Characteristic 5: Status
   UUID: 9e5d1e4c-... | Properties: Read + Notify
-  Returns: { "step": "idle" | "net_connecting" | "mqtt_connecting" | "done" | "failed",
-             "error": "" }
+  All connection state changes are pushed by device via Notify.
+  Platform does not poll — it subscribes once and receives all updates.
+  Returns: {
+    "step": "idle" | "net_connecting" | "net_connected" |
+            "mqtt_connecting" | "done" | "failed",
+    "error": "",             // error details when step="failed"
+    "ip": "",                // device IP after net_connected (optional)
+    "net_type": "wifi"       // which network type was used
+  }
+
+  Notify sequence on success:
+    net_connecting → net_connected (with IP) → mqtt_connecting → done
+
+  Notify on failure:
+    net_connecting → failed { error: "wifi_timeout" }
+    net_connecting → failed { error: "cat1_no_sim" }
+    mqtt_connecting → failed { error: "mqtt_refused" }
+
+  Platform reads current state on demand via Read property.
+  Device sends Notify on every state transition.
 
 Characteristic 6: Apply
   UUID: 9e5d1e4d-... | Properties: Write
@@ -108,7 +126,11 @@ Platform (Web Bluetooth)           NE101 (BLE GATT Server)
   ├── 5. Write Network Config ──────►│  { type:"wifi", ssid, password }
   ├── 6. Write MQTT Config ─────────►│  { host, port, topic_prefix }
   ├── 7. Write Apply ───────────────►│  { action: "apply" }
-  ├── 8. Subscribe Status Notify ◄──┤  net_connecting → mqtt_connecting → done
+  │   (platform waits, device drives all status)       │
+  ├── 8. Status Notify ◄────────────┤  { step:"net_connecting", net_type:"wifi" }
+  ├──    Status Notify ◄────────────┤  { step:"net_connected", ip:"192.168.1.42" }
+  ├──    Status Notify ◄────────────┤  { step:"mqtt_connecting" }
+  ├──    Status Notify ◄────────────┤  { step:"done" }
   ├── 9. Disconnect BLE ────────────►│  Device disables BLE, enters normal mode
 ```
 
@@ -121,7 +143,8 @@ Platform (Web Bluetooth)           NE101 (BLE GATT Server)
   ├── 4. Write Network Config ──────►│  { type:"cat1", apn, user, password, pin }
   ├── 5. Write MQTT Config ─────────►│  { host, port, topic_prefix }
   ├── 6. Write Apply ───────────────►│  { action: "apply" }
-  ├── 7. Status: net_connecting       │  (CAT.1 dial-up)
+  ├── 7. Status Notify ◄────────────┤  { step:"net_connecting", net_type:"cat1" }
+  │        → net_connected            │  (CAT.1 dial-up)
   │        → mqtt_connecting          │
   │        → done                     │
 ```
@@ -207,7 +230,12 @@ Frontend BLE UI                  NeoMind Backend                 NE101 Device
   │     password, topic_prefix }      │                              │
   ├── BLE Write Apply ──────────────────────────────────────────────►│
   │                                  │                              │
-  ├── BLE Status: done ◄────────────────────────────────────────────┤
+  │  (device drives all status via BLE Notify — platform just waits)  │
+  ├── BLE Notify: net_connecting ◄────────────────────────────────────┤
+  ├── BLE Notify: net_connected ◄─────────────────────────────────────┤  { ip }
+  ├── BLE Notify: mqtt_connecting ◄───────────────────────────────────┤
+  ├── BLE Notify: done ◄──────────────────────────────────────────────┤
+  │   (provisioning success — confirmed by device)                    │
   │                                  │                              │
   │                                  │◄── MQTT telemetry ──────────┤
   │                                  │   topic matches pre-registered
