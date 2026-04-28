@@ -71,7 +71,7 @@ export function PageLayout({
   return (
     <div className="flex flex-col h-full">
       {title && (
-        <div className="shrink-0 bg-surface-glass backdrop-blur-sm">
+        <div className="shrink-0">
           <div className={cn('w-full px-4 pt-4 pb-2 sm:px-6 sm:pt-5 sm:pb-3 md:px-8 md:pt-6 md:pb-3', maxWidthClass[maxWidth], className)}>
             <PageHeader
               title={title}
@@ -84,7 +84,7 @@ export function PageLayout({
       )}
       {/* Fixed header content (e.g., tabs) - outside scroll container */}
       {headerContent && (
-        <div className="shrink-0 bg-surface-glass backdrop-blur-sm">
+        <div className="shrink-0">
           {headerContent}
         </div>
       )}

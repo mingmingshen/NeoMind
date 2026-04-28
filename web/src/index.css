@@ -156,9 +156,9 @@ a {
 
 @layer base {
   :root {
-    --background: oklch(1 0 0);
+    --background: oklch(1 0 0 / 97%);
     --foreground: oklch(0.18 0.02 270);
-    --card: oklch(1 0 0);
+    --card: oklch(1 0 0 / 85%);
     --card-foreground: oklch(0.18 0.02 270);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.18 0.02 270);
@@ -172,12 +172,10 @@ a {
     --accent-foreground: oklch(0.18 0.02 270);
     --destructive: oklch(0.577 0.245 27);
     --destructive-foreground: oklch(1 0 0);
-    --border: oklch(0 0 0 / 10%);
+    --border: oklch(0 0 0 / 8%);
     --input: oklch(0 0 0 / 10%);
     --ring: oklch(0.18 0.02 270);
     --radius: 0.625rem;
-
-    /* Spacing system */
     --space-1: 0.25rem;
     --space-2: 0.5rem;
     --space-3: 0.75rem;
@@ -240,14 +238,14 @@ a {
     --shadow-xl: 0 8px 20px -4px oklch(0 0 0 / 10%);
 
     /* Glass-specific tokens (light) */
-    --glass: oklch(1 0 0 / 65%);
+    --glass: oklch(1 0 0 / 55%);
     --glass-heavy: oklch(1 0 0 / 82%);
-    --surface-glass: oklch(1 0 0 / 70%);
-    --glass-border: oklch(0 0 0 / 7%);
+    --surface-glass: oklch(1 0 0 / 55%);
+    --glass-border: oklch(0 0 0 / 6%);
     --glass-border-hover: oklch(0 0 0 / 14%);
     --shadow-glass: 0 1px 3px 0 oklch(0 0 0 / 5%);
     --shadow-glass-lg: 0 2px 8px 0 oklch(0 0 0 / 8%);
-    --shadow-brand: 0 2px 12px 0 oklch(0.637 0.237 41 / 12%);
+    --shadow-brand: 0 2px 12px 0 oklch(0.647 0.289 71 / 15%);
 
     /* Semi-transparent background tokens (Tailwind v3 workaround) */
     --bg-50: oklch(1 0 0 / 50%);
@@ -288,9 +286,9 @@ a {
   }
 
   .dark {
-    --background: oklch(0.13 0.008 270);
+    --background: oklch(0.13 0.008 270 / 97%);
     --foreground: oklch(0.95 0.005 270);
-    --card: oklch(0.16 0.008 270);
+    --card: oklch(0.16 0.008 270 / 80%);
     --card-foreground: oklch(0.95 0.005 270);
     --popover: oklch(0.16 0.008 270);
     --popover-foreground: oklch(0.95 0.005 270);
@@ -304,7 +302,7 @@ a {
     --accent-foreground: oklch(0.95 0.005 270);
     --destructive: oklch(0.577 0.245 27);
     --destructive-foreground: oklch(0.95 0.005 270);
-    --border: oklch(1 0 0 / 10%);
+    --border: oklch(1 0 0 / 8%);
     --input: oklch(1 0 0 / 10%);
     --ring: oklch(0.70 0.01 270);
 
@@ -334,14 +332,14 @@ a {
     --shadow-lg: 0 4px 16px -3px oklch(0 0 0 / 25%);
     --shadow-xl: 0 8px 24px -5px oklch(0 0 0 / 30%);
 
-    --glass: oklch(0.20 0.008 270 / 60%);
+    --glass: oklch(0.20 0.008 270 / 50%);
     --glass-heavy: oklch(0.18 0.008 270 / 80%);
-    --surface-glass: oklch(0.14 0.008 270 / 70%);
-    --glass-border: oklch(1 0 0 / 10%);
+    --surface-glass: oklch(0.14 0.008 270 / 50%);
+    --glass-border: oklch(1 0 0 / 8%);
     --glass-border-hover: oklch(1 0 0 / 18%);
     --shadow-glass: 0 2px 8px 0 oklch(0 0 0 / 20%);
     --shadow-glass-lg: 0 4px 16px 0 oklch(0 0 0 / 25%);
-    --shadow-brand: 0 2px 12px 0 oklch(0.637 0.237 41 / 15%);
+    --shadow-brand: 0 2px 12px 0 oklch(0.647 0.289 71 / 15%);
 
     /* Semi-transparent background tokens (dark) */
     --bg-50: oklch(0.13 0.008 270 / 50%);
@@ -387,24 +385,32 @@ a {
     --session-item-active: oklch(0.22 0.008 270);
   }
 
-  /* Aurora background - fixed gradient layer */
+  /* Aurora background - animated flowing gradient layer */
   .aurora-bg {
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    transition: background 300ms ease;
     background:
-      radial-gradient(ellipse 600px 400px at 10% 5%, oklch(0.637 0.237 41 / 4%) 0%, transparent 70%),
-      radial-gradient(ellipse 500px 500px at 90% 95%, oklch(0.55 0.12 280 / 3%) 0%, transparent 70%),
-      radial-gradient(ellipse 800px 300px at 50% 40%, oklch(0.95 0.02 80 / 20%) 0%, transparent 70%);
+      radial-gradient(ellipse 800px 500px at 10% 5%, oklch(0.647 0.289 71 / 6%) 0%, transparent 70%),
+      radial-gradient(ellipse 600px 600px at 85% 90%, oklch(0.55 0.15 280 / 4%) 0%, transparent 70%),
+      radial-gradient(ellipse 1000px 400px at 50% 40%, oklch(0.60 0.08 250 / 3%) 0%, transparent 70%);
+    background-size: 150% 150%;
+    animation: aurora-shift 25s ease-in-out infinite alternate;
   }
 
   .dark .aurora-bg {
     background:
-      radial-gradient(ellipse 600px 400px at 15% 10%, oklch(0.637 0.237 41 / 8%) 0%, transparent 70%),
-      radial-gradient(ellipse 500px 500px at 85% 90%, oklch(0.62 0.20 300 / 5%) 0%, transparent 70%),
-      radial-gradient(ellipse 800px 300px at 50% 50%, oklch(0.55 0.10 250 / 3%) 0%, transparent 70%);
+      radial-gradient(ellipse 800px 500px at 15% 10%, oklch(0.647 0.289 71 / 10%) 0%, transparent 70%),
+      radial-gradient(ellipse 600px 600px at 85% 90%, oklch(0.62 0.20 300 / 6%) 0%, transparent 70%),
+      radial-gradient(ellipse 1000px 400px at 50% 50%, oklch(0.55 0.10 250 / 4%) 0%, transparent 70%);
+    background-size: 150% 150%;
+  }
+
+  @keyframes aurora-shift {
+    0%   { background-position: 0% 0%; }
+    50%  { background-position: 50% 50%; }
+    100% { background-position: 100% 100%; }
   }
 }
 
