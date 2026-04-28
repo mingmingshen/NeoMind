@@ -1088,6 +1088,17 @@ impl TimeSeriesStore {
         }
 
         write_txn.commit()?;
+
+        // Invalidate caches for this metric
+        let cache_key = (source_id.to_string(), metric.to_string());
+        self.latest_cache.invalidate(&cache_key);
+
+        // If full metric deleted (full range), remove from metrics_info too
+        if start == i64::MIN && end == i64::MAX {
+            let metric_key = format!("{}:{}", source_id, metric);
+            self.metrics_info.remove(&metric_key);
+        }
+
         Ok(count)
     }
 
@@ -1099,6 +1110,23 @@ impl TimeSeriesStore {
 
     /// Get all metrics for a device.
     pub async fn list_metrics(&self, source_id: &str) -> Result<Vec<String>, Error> {
+        // Fast path: extract from metrics_info DashMap (populated on every write).
+        // This avoids a range scan over all data points for the device.
+        if !self.metrics_info.is_empty() {
+            let mut metrics = Vec::new();
+            let prefix = format!("{}:", source_id);
+            for entry in self.metrics_info.iter() {
+                if let Some(metric) = entry.key().strip_prefix(&prefix) {
+                    metrics.push(metric.to_string());
+                }
+            }
+            if !metrics.is_empty() {
+                metrics.sort();
+                return Ok(metrics);
+            }
+        }
+
+        // Cold-start fallback: range scan from database
         let read_txn = self.db.begin_read()?;
 
         // Handle case where table doesn't exist yet (no data has been written)
@@ -1134,6 +1162,32 @@ impl TimeSeriesStore {
         &self,
     ) -> Result<std::collections::HashMap<String, std::collections::HashSet<String>>, Error>
     {
+        // Fast path: use metrics_info DashMap (populated on every write) instead of
+        // full table scan. This turns an O(N) operation (N = total data points) into
+        // O(M) where M = distinct (source_id, metric) pairs — typically 100-1000x fewer.
+        if !self.metrics_info.is_empty() {
+            let mut grouped: std::collections::HashMap<String, std::collections::HashSet<String>> =
+                std::collections::HashMap::new();
+
+            for entry in self.metrics_info.iter() {
+                let key = entry.key();
+                if let Some(colon_pos) = key.find(':') {
+                    let source_id = &key[..colon_pos];
+                    let metric = &key[colon_pos + 1..];
+                    grouped
+                        .entry(source_id.to_string())
+                        .or_default()
+                        .insert(metric.to_string());
+                }
+            }
+
+            return Ok(grouped);
+        }
+
+        // Cold-start fallback: metrics_info is empty (first call after process start).
+        // Rebuild from database, then populate metrics_info for future fast-path calls.
+        tracing::info!("list_all_metrics_grouped: cold start, rebuilding metrics index from database");
+
         let read_txn = self.db.begin_read()?;
 
         let table = match read_txn.open_table(TIMESERIES_TABLE) {
@@ -1144,15 +1198,39 @@ impl TimeSeriesStore {
 
         let mut grouped: std::collections::HashMap<String, std::collections::HashSet<String>> =
             std::collections::HashMap::new();
+        let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for result in table.iter()? {
             let (key, _value) = result?;
-            let (source_id, metric, _) = key.value();
+            let (source_id, metric, ts) = key.value();
             grouped
                 .entry(source_id.to_string())
                 .or_default()
                 .insert(metric.to_string());
+
+            // Populate metrics_info for future fast-path (only once per source:metric)
+            let metric_key = format!("{}:{}", source_id, metric);
+            if seen_keys.insert(metric_key.clone()) {
+                self.metrics_info.entry(metric_key).or_insert_with(|| MetricInfo {
+                    last_update: ts,
+                    point_count: 0, // We don't know exact count without counting; 0 is fine
+                });
+            } else {
+                // Update last_update to the latest timestamp for this metric
+                self.metrics_info
+                    .entry(format!("{}:{}", source_id, metric))
+                    .and_modify(|info| {
+                        if ts > info.last_update {
+                            info.last_update = ts;
+                        }
+                    });
+            }
         }
+
+        tracing::info!(
+            "list_all_metrics_grouped: rebuilt index with {} source groups",
+            grouped.len()
+        );
 
         Ok(grouped)
     }
