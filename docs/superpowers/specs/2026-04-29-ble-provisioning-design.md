@@ -37,7 +37,8 @@ Characteristic 3: WiFi Config
 
 Characteristic 4: MQTT Config
   UUID: 9e5d1e4b-... | Properties: Write (requires encrypted link)
-  Write: { "host": "...", "port": 1883, "topic_prefix": "device/ne101/ne101a2f003" }
+  Write: { "host": "...", "port": 1883, "username": "", "password": "",
+           "topic_prefix": "device/ne101_camera/ne101a2f003" }
 
 Characteristic 5: Status
   UUID: 9e5d1e4c-... | Properties: Read + Notify
@@ -131,9 +132,13 @@ Frontend BLE UI                  NeoMind Backend                 NE101 Device
   │                                  │                              │
   │   Match: "NE101" → "ne101_camera" │                              │
   │                                  │                              │
+  ├── GET /api/mqtt/status ─────────►│ (fetch embedded broker)       │
+  ├── GET /api/brokers ─────────────►│ (fetch external brokers)      │
+  │   (user selects broker)          │                              │
+  │                                  │                              │
   ├── POST /api/devices/ble-provision ►│                            │
   │   { model, sn, device_type,      │                              │
-  │     device_name }                │                              │
+  │     device_name, broker_id }     │                              │
   │◄── { device_id, mqtt_config } ──┤                              │
   │                                  │                              │
   │   (Device pre-registered,        │                              │
@@ -143,7 +148,8 @@ Frontend BLE UI                  NeoMind Backend                 NE101 Device
   │   User selects WiFi from scanned list                           │
   ├── BLE Write WiFi Config ────────────────────────────────────────►│
   ├── BLE Write MQTT Config ────────────────────────────────────────►│
-  │   { host, port, topic_prefix }   │                              │
+  │   { host, port, username,        │                              │
+  │     password, topic_prefix }      │                              │
   ├── BLE Write Apply ──────────────────────────────────────────────►│
   │                                  │                              │
   ├── BLE Status: done ◄────────────────────────────────────────────┤
@@ -212,25 +218,36 @@ POST /api/devices/ble-provision
     "model": "NE101",
     "sn": "NE101-A2F003",
     "device_type": "ne101_camera",
-    "device_name": "门口摄像头"
+    "device_name": "门口摄像头",
+    "broker_id": "embedded"              // "embedded" for built-in, or external broker ID
   }
   Response: {
     "device_id": "ne101_a2f003",
     "mqtt_config": {
-      "host": "192.168.1.100",    // from EmbeddedBroker config
+      "host": "192.168.1.100",
       "port": 1883,
+      "username": "",                    // from broker config (empty for embedded)
+      "password": "",                    // from broker config (empty for embedded)
       "topic_prefix": "device/ne101_camera/ne101_a2f003"
     }
   }
 ```
 
+Broker selection:
+- Frontend fetches available brokers via `GET /api/mqtt/settings` (embedded broker) and `GET /api/brokers` (external brokers)
+- User selects a broker in the provisioning dialog (dropdown)
+- `broker_id: "embedded"` → reads EmbeddedBrokerConfig (host/port from server_ip:1883, no auth)
+- `broker_id: "<uuid>"` → reads ExternalBroker (host/port/username/password/tls from settings store)
+- Topic auto-generated: `device/{device_type}/{device_id}/uplink` and `downlink`
+
 Logic:
 1. Validate `device_type` exists in `DeviceRegistry::get_template()`. Return 400 with available types if not found.
 2. Generate `device_id` = `sn.to_lowercase().replace("-", "_")`
 3. Check device_id not already registered. Return 409 if exists.
-4. Build `DeviceConfig` with MQTT connection config using EmbeddedBroker settings. Set `extra.ble_provisioned = true`.
-5. Call `DeviceService::register_device()` to pre-register.
-6. Return MQTT config for BLE write.
+4. Resolve broker config from `broker_id`: load embedded or external broker settings.
+5. Build `DeviceConfig` with MQTT connection config from resolved broker. Set `extra.ble_provisioned = true`.
+6. Call `DeviceService::register_device()` to pre-register.
+7. Return MQTT config for BLE write (host, port, username, password, topic_prefix).
 
 Cleanup endpoint: `DELETE /api/devices/{device_id}` — existing endpoint, usable for failed provisioning cleanup.
 
@@ -264,6 +281,7 @@ Replaces the current `AddDeviceDialog`. Integrates all device-adding methods in 
 │  │ NE101-A2F003  ████████░░  -45dBm      │  │
 │  │ NE101-B1C042  ██████░░░░  -62dBm      │  │
 │  └───────────────────────────────────────┘  │
+│  MQTT Broker: [NeoMind 内置 ▾]                │
 │  WiFi: [扫描结果下拉选择 ▾]                    │
 │  密码: [____________]                        │
 │  设备名称: [NE101-A2F003 ▾]                   │
@@ -282,6 +300,12 @@ Tabs:
 This replaces the current entry point. The "添加设备" button on the devices page opens `AddDeviceGlobalDialog` instead of `AddDeviceDialog`.
 
 BLE state managed with React hooks (no Zustand slice needed — BLE is session-scoped, not persistent).
+
+Broker selector fetches from:
+- `GET /api/mqtt/status` → embedded broker (server_ip + listen_port)
+- `GET /api/brokers` → external brokers list
+- Dropdown shows: "NeoMind 内置 (192.168.1.100:1883)" + any external brokers with name/host/port
+- Selected broker_id sent to `POST /api/devices/ble-provision`
 
 ### Device Model Mapping
 
