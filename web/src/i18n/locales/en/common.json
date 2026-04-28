@@ -335,7 +335,8 @@
     "stats": {
       "devicesOnline": "{{online}}/{{total}} Devices Online",
       "activeRules": "{{count}} Active Rules",
-      "pendingAlerts": "{{count}} Pending Alerts"
+      "pendingAlerts": "{{count}} Pending Alerts",
+      "pendingAlertsShort": "Alerts"
     },
     "aiSuggestion": "AI Suggestions",
     "suggestions": {

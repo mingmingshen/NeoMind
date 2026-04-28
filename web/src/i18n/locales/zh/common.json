@@ -331,7 +331,8 @@
     "stats": {
       "devicesOnline": "{{online}}/{{total}} 设备在线",
       "activeRules": "{{count}} 活跃规则",
-      "pendingAlerts": "{{count}} 待处理告警"
+      "pendingAlerts": "{{count}} 待处理告警",
+      "pendingAlertsShort": "告警"
     },
     "aiSuggestion": "AI 建议",
     "suggestions": {
