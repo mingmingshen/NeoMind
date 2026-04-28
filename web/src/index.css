@@ -221,6 +221,18 @@ a {
     --color-info: oklch(0.52 0.15 250);
     --color-info-bg: oklch(0.52 0.15 250 / 8%);
 
+    /* Accent category colors (light) - harmonious OKLCH palette */
+    --accent-purple: oklch(0.52 0.18 300);
+    --accent-purple-bg: oklch(0.52 0.18 300 / 8%);
+    --accent-orange: oklch(0.62 0.18 55);
+    --accent-orange-bg: oklch(0.62 0.18 55 / 8%);
+    --accent-cyan: oklch(0.58 0.12 200);
+    --accent-cyan-bg: oklch(0.58 0.12 200 / 8%);
+    --accent-emerald: oklch(0.55 0.14 165);
+    --accent-emerald-bg: oklch(0.55 0.14 165 / 8%);
+    --accent-indigo: oklch(0.48 0.18 280);
+    --accent-indigo-bg: oklch(0.48 0.18 280 / 8%);
+
     /* Shadow system */
     --shadow-sm: 0 1px 2px 0 oklch(0 0 0 / 5%);
     --shadow-md: 0 2px 4px -1px oklch(0 0 0 / 8%);
@@ -304,6 +316,18 @@ a {
     --color-error-bg: oklch(0.577 0.245 27 / 10%);
     --color-info: oklch(0.65 0.15 250);
     --color-info-bg: oklch(0.65 0.15 250 / 10%);
+
+    /* Accent category colors (dark) - brighter for dark bg */
+    --accent-purple: oklch(0.72 0.16 300);
+    --accent-purple-bg: oklch(0.72 0.16 300 / 12%);
+    --accent-orange: oklch(0.72 0.16 55);
+    --accent-orange-bg: oklch(0.72 0.16 55 / 12%);
+    --accent-cyan: oklch(0.70 0.12 200);
+    --accent-cyan-bg: oklch(0.70 0.12 200 / 12%);
+    --accent-emerald: oklch(0.72 0.16 165);
+    --accent-emerald-bg: oklch(0.72 0.16 165 / 12%);
+    --accent-indigo: oklch(0.68 0.16 280);
+    --accent-indigo-bg: oklch(0.68 0.16 280 / 12%);
 
     --shadow-sm: 0 1px 2px 0 oklch(0 0 0 / 20%);
     --shadow-md: 0 2px 6px -1px oklch(0 0 0 / 25%);

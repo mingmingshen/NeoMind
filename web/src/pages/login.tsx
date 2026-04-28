@@ -274,16 +274,16 @@ export function LoginPage() {
 
         {/* Edge node glows - representing distributed edge computing */}
         <div className="absolute top-[15%] left-[10%] w-32 h-32 bg-info-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '0s' }} />
-        <div className="absolute bottom-[20%] right-[15%] w-40 h-40 bg-purple-500/5 dark:bg-purple-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '7s', animationDelay: '1s' }} />
-        <div className="absolute top-[30%] right-[20%] w-24 h-24 bg-cyan-500/5 dark:bg-cyan-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '5s', animationDelay: '2s' }} />
-        <div className="absolute bottom-[30%] left-[20%] w-28 h-28 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '3s' }} />
+        <div className="absolute bottom-[20%] right-[15%] w-40 h-40 bg-accent-purple-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '7s', animationDelay: '1s' }} />
+        <div className="absolute top-[30%] right-[20%] w-24 h-24 bg-accent-cyan-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '5s', animationDelay: '2s' }} />
+        <div className="absolute bottom-[30%] left-[20%] w-28 h-28 bg-accent-indigo-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '3s' }} />
 
         {/* Diagonal accent lines - tech aesthetic */}
         <div className="absolute inset-0 opacity-[0.02]">
           <div className="absolute top-0 left-1/4 w-px h-full bg-gradient-to-b from-transparent via-primary to-transparent" />
           <div className="absolute top-0 right-1/4 w-px h-full bg-gradient-to-b from-transparent via-blue-500 to-transparent" />
-          <div className="absolute top-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-purple-500 to-transparent" />
-          <div className="absolute bottom-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-cyan-500 to-transparent" />
+          <div className="absolute top-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-accent-purple to-transparent" />
+          <div className="absolute bottom-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-accent-cyan to-transparent" />
         </div>
       </div>
 

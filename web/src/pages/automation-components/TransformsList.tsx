@@ -25,9 +25,9 @@ interface TransformsListProps {
 
 // Scope configuration
 const SCOPE_CONFIG: Record<string, { label: string; icon: typeof Globe; color: string }> = {
-  global: { label: 'automation:transformBuilder.scopes.global', icon: Globe, color: 'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-950/30 dark:border-purple-800' },
+  global: { label: 'automation:transformBuilder.scopes.global', icon: Globe, color: 'text-accent-purple bg-accent-purple-light border-accent-purple-light' },
   device_type: { label: 'automation:transformBuilder.scopes.deviceType', icon: Cpu, color: 'text-info bg-info-light border-info' },
-  device: { label: 'automation:transformBuilder.scopes.device', icon: HardDrive, color: 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800' },
+  device: { label: 'automation:transformBuilder.scopes.device', icon: HardDrive, color: 'text-success bg-success-light border-success-light dark:text-success dark:bg-success-light dark:border-success-light' },
 }
 
 export const ITEMS_PER_PAGE = 10
@@ -165,7 +165,7 @@ export function TransformsList({
               <div className="flex items-center gap-3">
                 <div className={cn(
                   "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
-                  transform.enabled ? "bg-cyan-500/10 text-cyan-600" : "bg-muted text-muted-foreground"
+                  transform.enabled ? "bg-accent-cyan-light text-accent-cyan" : "bg-muted text-muted-foreground"
                 )}>
                   <Code className="h-4 w-4" />
                 </div>

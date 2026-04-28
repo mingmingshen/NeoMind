@@ -12,7 +12,7 @@ export interface PageHeaderProps {
 
 const variantStyles = {
   default: '',
-  gradient: 'bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-lg p-4 -m-4 mb-2 md:p-6 md:-m-6',
+  gradient: 'bg-gradient-to-br from-blue-500/10 to-accent-purple-light rounded-lg p-4 -m-4 mb-2 md:p-6 md:-m-6',
   bordered: 'border-b pb-6 -mt-4 -mx-4 px-4 md:-mx-6 md:px-6',
 }
 
@@ -42,7 +42,7 @@ export function PageHeader({
       {/* Title section with actions on same row for desktop */}
       <div className="flex items-start gap-3 sm:gap-4">
         {icon && (
-          <div className="shrink-0 rounded-xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 p-2">
+          <div className="shrink-0 rounded-xl bg-gradient-to-br from-blue-500/10 to-accent-purple-light p-2">
             {icon}
           </div>
         )}

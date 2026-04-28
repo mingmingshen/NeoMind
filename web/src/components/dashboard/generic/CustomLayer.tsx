@@ -159,14 +159,14 @@ const TYPE_CONFIG = {
   metric: {
     icon: Activity,
     color: 'text-white',
-    bgColor: 'bg-purple-500',
-    borderColor: 'border-purple-600',
+    bgColor: 'bg-accent-purple',
+    borderColor: 'border-accent-purple',
   },
   command: {
     icon: Zap,
     color: 'text-white',
     bgColor: 'bg-info',
-    borderColor: 'border-blue-600',
+    borderColor: 'border-info',
   },
   text: {
     icon: Type,
@@ -177,14 +177,14 @@ const TYPE_CONFIG = {
   icon: {
     icon: Sparkles,
     color: 'text-white',
-    bgColor: 'bg-orange-500',
-    borderColor: 'border-orange-600',
+    bgColor: 'bg-accent-orange',
+    borderColor: 'border-accent-orange',
   },
   component: {
     icon: Layers,
     color: 'text-white',
-    bgColor: 'bg-cyan-500',
-    borderColor: 'border-cyan-600',
+    bgColor: 'bg-accent-cyan',
+    borderColor: 'border-accent-cyan',
   },
 } as const
 
@@ -578,7 +578,7 @@ function LayerItemComponent({
                 </div>
                 <Button
                   size="sm"
-                  className="w-full mt-2 bg-blue-500 hover:bg-blue-600 text-white"
+                  className="w-full mt-2 bg-info hover:bg-info/90 text-white"
                   onClick={async (e) => {
                     e.stopPropagation()
                     if (onExecuteCommand && item.deviceId && item.command) {

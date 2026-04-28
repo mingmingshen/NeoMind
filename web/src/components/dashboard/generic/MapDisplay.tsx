@@ -130,20 +130,20 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
         }
       case 'metric':
         return {
-          bgColor: 'bg-purple-500',
-          pingColor: 'bg-purple-400',
+          bgColor: 'bg-accent-purple',
+          pingColor: 'bg-accent-purple',
           icon: Activity,
         }
       case 'command':
         return {
           bgColor: 'bg-info',
-          pingColor: 'bg-blue-400',
+          pingColor: 'bg-info',
           icon: Zap,
         }
       case 'marker':
         return {
-          bgColor: 'bg-orange-500',
-          pingColor: 'bg-orange-400',
+          bgColor: 'bg-accent-orange',
+          pingColor: 'bg-accent-orange',
           icon: Monitor,
         }
       default:
@@ -215,14 +215,14 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
           <>
             {baseInfo}
             {marker.commandName && (
-              <div className="text-orange-500 text-sm">{t('mapDisplay.command')}: {marker.commandName}</div>
+              <div className="text-accent-orange text-sm">{t('mapDisplay.command')}: {marker.commandName}</div>
             )}
             {marker.deviceName && (
               <div className="text-xs text-muted-foreground mb-2">{t('mapDisplay.device')}: {marker.deviceName}</div>
             )}
             <Button
               size="sm"
-              className="h-7 text-xs bg-info hover:bg-blue-600 text-white"
+              className="h-7 text-xs bg-info hover:bg-info/90 text-white"
               onClick={async (e) => {
                 e.stopPropagation()
                 const markerSourceId = marker.sourceId ?? marker.deviceId

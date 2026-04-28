@@ -354,7 +354,7 @@ export function ToggleSwitch({
 
         {/* Warning: no command configured */}
         {!hasCommand && (
-          <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-orange-500" title={t('commandButton.noCommandConfig')} />
+          <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-accent-orange" title={t('commandButton.noCommandConfig')} />
         )}
       </button>
 

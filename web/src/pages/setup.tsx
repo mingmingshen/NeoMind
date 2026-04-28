@@ -397,9 +397,9 @@ export function SetupPage() {
           </svg>
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
           <div className="absolute top-[15%] left-[10%] w-32 h-32 bg-info-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '0s' }} />
-          <div className="absolute bottom-[20%] right-[15%] w-40 h-40 bg-purple-500/5 dark:bg-purple-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '7s', animationDelay: '1s' }} />
-          <div className="absolute top-[30%] right-[20%] w-24 h-24 bg-cyan-500/5 dark:bg-cyan-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '5s', animationDelay: '2s' }} />
-          <div className="absolute bottom-[30%] left-[20%] w-28 h-28 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '3s' }} />
+          <div className="absolute bottom-[20%] right-[15%] w-40 h-40 bg-accent-purple-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '7s', animationDelay: '1s' }} />
+          <div className="absolute top-[30%] right-[20%] w-24 h-24 bg-accent-cyan-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '5s', animationDelay: '2s' }} />
+          <div className="absolute bottom-[30%] left-[20%] w-28 h-28 bg-accent-indigo-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '3s' }} />
         </div>
 
         {/* Top Header */}
@@ -649,14 +649,14 @@ export function SetupPage() {
                     <div className="flex gap-1">
                       {passwordErrors.length === 0 ? (
                         <>
-                          <div className="h-1 flex-1 rounded-full bg-green-500" />
-                          <div className="h-1 flex-1 rounded-full bg-green-500" />
-                          <div className="h-1 flex-1 rounded-full bg-green-500" />
-                          <div className="h-1 flex-1 rounded-full bg-green-500" />
+                          <div className="h-1 flex-1 rounded-full bg-success" />
+                          <div className="h-1 flex-1 rounded-full bg-success" />
+                          <div className="h-1 flex-1 rounded-full bg-success" />
+                          <div className="h-1 flex-1 rounded-full bg-success" />
                         </>
                       ) : password.length >= 8 ? (
                         <>
-                          <div className="h-1 flex-1 rounded-full bg-green-500" />
+                          <div className="h-1 flex-1 rounded-full bg-success" />
                           <div className="h-1 flex-1 rounded-full bg-warning" />
                           <div className="h-1 flex-1 rounded-full bg-border" />
                           <div className="h-1 flex-1 rounded-full bg-border" />
@@ -1052,7 +1052,7 @@ export function SetupPage() {
             backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
             backgroundSize: '32px 32px'
           }} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-green-500/10 dark:bg-green-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '3s' }} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-success/10 dark:bg-success/20 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '3s' }} />
         </div>
 
         {/* Main Content */}
@@ -1061,7 +1061,7 @@ export function SetupPage() {
             <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Success Icon */}
               <div className="flex justify-center mb-6">
-                <div className="flex size-16 items-center justify-center rounded-full bg-green-500/10 text-green-500 dark:bg-green-500/20">
+                <div className="flex size-16 items-center justify-center rounded-full bg-success/10 text-success dark:bg-success/20">
                   <Check className="size-8" />
                 </div>
               </div>

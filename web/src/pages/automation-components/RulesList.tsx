@@ -29,10 +29,10 @@ const ACTION_CONFIG: Record<string, { icon: typeof Zap; label: string; color: st
   Execute: { icon: Zap, label: 'automation:ruleBuilder.actionType.execute', color: 'text-warning bg-warning-light border-warning' },
   Notify: { icon: Bell, label: 'automation:ruleBuilder.actionType.notify', color: 'text-info bg-info-light border-info' },
   Log: { icon: FileText, label: 'automation:ruleBuilder.actionType.log', color: 'text-foreground bg-muted border-border' },
-  Set: { icon: FlaskConical, label: 'automation:ruleBuilder.actionType.set', color: 'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-950/30 dark:border-purple-800' },
-  Delay: { icon: Timer, label: 'automation:ruleBuilder.actionType.delay', color: 'text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-950/30 dark:border-orange-800' },
+  Set: { icon: FlaskConical, label: 'automation:ruleBuilder.actionType.set', color: 'text-accent-purple bg-accent-purple-light border-accent-purple-light' },
+  Delay: { icon: Timer, label: 'automation:ruleBuilder.actionType.delay', color: 'text-accent-orange bg-accent-orange-light border-accent-orange-light' },
   CreateAlert: { icon: AlertTriangle, label: 'automation:ruleBuilder.actionType.createAlert', color: 'text-error bg-error-light border-error dark:text-error dark:bg-error-light dark:border-error' },
-  HttpRequest: { icon: FlaskConical, label: 'HTTP', color: 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800' },
+  HttpRequest: { icon: FlaskConical, label: 'HTTP', color: 'text-success bg-success-light border-success-light dark:text-success dark:bg-success-light dark:border-success-light' },
 }
 
 export const ITEMS_PER_PAGE = 10

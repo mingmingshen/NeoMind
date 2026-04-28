@@ -1290,8 +1290,8 @@ export function AgentEditorFullScreen({
       {/* Header */}
       <FullScreenDialogHeader
         icon={<Sparkles className="h-5 w-5" />}
-        iconBg="bg-purple-500/10 dark:bg-purple-500/20"
-        iconColor="text-purple-500"
+        iconBg="bg-accent-purple-light"
+        iconColor="text-accent-purple"
         title={agent ? tAgent('editAgent') : tAgent('createAgent')}
         onClose={() => onOpenChange(false)}
       />
@@ -2898,7 +2898,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
           <div className={cn(
             "rounded",
             isMobile ? "p-2" : "p-1",
-            resource.type === 'extension' ? "bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300" : "bg-info-light text-info"
+            resource.type === 'extension' ? "bg-accent-purple-light text-accent-purple" : "bg-info-light text-info"
           )}>
             {resource.type === 'extension' ? <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} /> : <Target className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} />}
           </div>

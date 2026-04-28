@@ -116,7 +116,7 @@ export function ToolProcessBlock({
       >
         <div className={cn(
           "h-4 w-4 rounded flex items-center justify-center shrink-0",
-          allComplete && "bg-emerald-500/10 text-emerald-600",
+          allComplete && "bg-accent-emerald-light text-accent-emerald",
           isStreaming && "bg-warning-light text-warning",
           !allComplete && !isStreaming && "bg-muted text-muted-foreground"
         )}>
@@ -244,7 +244,7 @@ function ToolCallItem({
       <div className="flex items-center gap-2.5 px-3 py-1.5">
         <div className={cn(
           "h-4 w-4 rounded flex items-center justify-center shrink-0",
-          status === "completed" && "text-emerald-600",
+          status === "completed" && "text-accent-emerald",
           status === "running" && "text-warning",
           status === "pending" && "text-muted-foreground"
         )}>
@@ -259,7 +259,7 @@ function ToolCallItem({
         <span className="font-mono text-[13px] truncate">{getToolDisplayName(toolCall.name, toolCall.arguments)}</span>
         <span className={cn(
           "text-[11px] px-1.5 py-0.5 rounded shrink-0",
-          status === "completed" && "bg-emerald-500/10 text-emerald-600",
+          status === "completed" && "bg-accent-emerald-light text-accent-emerald",
           status === "running" && "bg-warning-light text-warning",
           status === "pending" && "bg-muted text-muted-foreground"
         )}>

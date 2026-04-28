@@ -64,8 +64,8 @@ function getTypeConfig(t: (key: string) => string) {
     metric: {
       label: t('mapDisplay.metric'),
       icon: Activity,
-      color: 'text-purple-500',
-      bgColor: 'bg-purple-500',
+      color: 'text-accent-purple',
+      bgColor: 'bg-accent-purple',
     },
     command: {
       label: t('mapDisplay.command'),
@@ -76,8 +76,8 @@ function getTypeConfig(t: (key: string) => string) {
     marker: {
       label: t('mapDisplay.marker'),
       icon: Monitor,
-      color: 'text-orange-500',
-      bgColor: 'bg-orange-500',
+      color: 'text-accent-orange',
+      bgColor: 'bg-accent-orange',
     },
   } as const
 }
@@ -268,8 +268,8 @@ export function MapEditorDialog({
           'w-8 h-8 rounded-full flex items-center justify-center',
           config.bgColor === 'bg-info' && 'bg-info text-white',
           config.bgColor === 'bg-success' && 'bg-success text-white',
-          config.bgColor === 'bg-orange-500' && 'bg-orange-500 text-white',
-          config.bgColor === 'bg-purple-500' && 'bg-purple-500 text-white',
+          config.bgColor === 'bg-accent-orange' && 'bg-accent-orange text-white',
+          config.bgColor === 'bg-accent-purple' && 'bg-accent-purple text-white',
         )}>
           <Icon className="h-4 w-4 text-white" />
         </div>

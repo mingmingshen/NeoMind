@@ -110,7 +110,7 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
   const getTypeColor = (type: SearchResult["type"]) => {
     const colors = {
       device: "bg-info-light text-info border-info",
-      rule: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+      rule: "bg-accent-purple-light text-accent-purple border-accent-purple-light",
       alert: "bg-error-light text-error border-error",
     }
     return colors[type] || "bg-muted text-muted-foreground border-border"

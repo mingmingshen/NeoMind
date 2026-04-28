@@ -138,7 +138,7 @@ export function DeviceList({
                   <div className={cn(
                     "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
                     device.status === 'online'
-                      ? "bg-green-500/10 text-green-600"
+                      ? "bg-success-light text-success"
                       : "bg-muted text-muted-foreground"
                   )}>
                     <Cpu className="h-4 w-4" />

@@ -66,6 +66,27 @@ export default {
           DEFAULT: "var(--color-info)",
           light: "var(--color-info-bg)",
         },
+        // Accent category colors (OKLCH-harmonized)
+        "accent-purple": {
+          DEFAULT: "var(--accent-purple)",
+          light: "var(--accent-purple-bg)",
+        },
+        "accent-orange": {
+          DEFAULT: "var(--accent-orange)",
+          light: "var(--accent-orange-bg)",
+        },
+        "accent-cyan": {
+          DEFAULT: "var(--accent-cyan)",
+          light: "var(--accent-cyan-bg)",
+        },
+        "accent-emerald": {
+          DEFAULT: "var(--accent-emerald)",
+          light: "var(--accent-emerald-bg)",
+        },
+        "accent-indigo": {
+          DEFAULT: "var(--accent-indigo)",
+          light: "var(--accent-indigo-bg)",
+        },
         // Glass tokens
         glass: "var(--glass)",
         "glass-heavy": "var(--glass-heavy)",

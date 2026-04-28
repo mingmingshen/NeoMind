@@ -157,8 +157,8 @@ function parseIntent(prompt: string): ParsedIntent {
 function IntentIcon({ type, size = 20 }: { type: IntentType; size?: number }) {
   const icons = {
     monitor: <Eye className="text-info" size={size} />,
-    control: <Zap className="text-orange-500" size={size} />,
-    analysis: <BarChart3 className="text-purple-500" size={size} />,
+    control: <Zap className="text-accent-orange" size={size} />,
+    analysis: <BarChart3 className="text-accent-purple" size={size} />,
     unknown: <Sparkles className="text-muted-foreground" size={size} />,
   }
   return icons[type] || icons.unknown
@@ -200,7 +200,7 @@ function TriggerCard({ props }: { props: AgentLogicPreviewProps }) {
   }
 
   return (
-    <div className="bg-gradient-to-br from-info-light to-indigo-50 dark:from-info-light dark:to-indigo-950/30 rounded-lg p-4 border border-info">
+    <div className="bg-gradient-to-br from-info-light to-accent-indigo-light rounded-lg p-4 border border-info">
       <div className="flex items-center gap-2 mb-2">
         <Clock className="h-4 w-4 text-info" />
         <span className="text-sm font-medium text-info">
@@ -234,10 +234,10 @@ function DataInputCard({ resources }: { resources: SelectedResource[] }) {
   }
 
   return (
-    <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-4 border border-green-200 dark:border-green-800">
+    <div className="bg-gradient-to-br from-success-light to-accent-emerald-light rounded-lg p-4 border border-success-light dark:border-success-light">
       <div className="flex items-center gap-2 mb-3">
-        <Activity className="h-4 w-4 text-green-600 dark:text-green-400" />
-        <span className="text-sm font-medium text-green-900 dark:text-green-100">
+        <Activity className="h-4 w-4 text-success dark:text-success" />
+        <span className="text-sm font-medium text-success dark:text-success">
           {t('preview.dataInput.title')}
         </span>
         <div className="ml-auto flex gap-1">
@@ -258,7 +258,7 @@ function DataInputCard({ resources }: { resources: SelectedResource[] }) {
         {/* Devices */}
         {deviceResources.length > 0 && (
           <div className="space-y-1.5">
-            <div className="text-xs text-green-700 dark:text-green-300 font-medium flex items-center gap-1">
+            <div className="text-xs text-success dark:text-success font-medium flex items-center gap-1">
               <Target className="h-4 w-4" />
               {t('preview.dataInput.devices')} ({deviceResources.length})
             </div>
@@ -286,7 +286,7 @@ function DataInputCard({ resources }: { resources: SelectedResource[] }) {
         {/* Extensions */}
         {extResources.length > 0 && (
           <div className="space-y-1.5">
-            <div className="text-xs text-green-700 dark:text-green-300 font-medium flex items-center gap-1">
+            <div className="text-xs text-success dark:text-success font-medium flex items-center gap-1">
               <Puzzle className="h-4 w-4" />
               {t('preview.dataInput.extensions')} ({extResources.length})
             </div>
@@ -325,10 +325,10 @@ function ProcessingCard({ intent, prompt }: { intent: ParsedIntent; prompt: stri
   }
 
   return (
-    <div className="bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
+    <div className="bg-gradient-to-br from-accent-purple-light to-violet-50 dark:to-violet-950/30 rounded-lg p-4 border border-accent-purple-light">
       <div className="flex items-center gap-2 mb-3">
-        <Split className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-        <span className="text-sm font-medium text-purple-900 dark:text-purple-100">
+        <Split className="h-4 w-4 text-accent-purple" />
+        <span className="text-sm font-medium text-accent-purple">
           {t('preview.processing.title')}
         </span>
         <IntentIcon type={intent.type} size={16} />
@@ -340,13 +340,13 @@ function ProcessingCard({ intent, prompt }: { intent: ParsedIntent; prompt: stri
             {getIntentLabel(intent.type, t)}
           </Badge>
           {intent.confidence > 0 && (
-            <span className="text-xs text-purple-600 dark:text-purple-400">
+            <span className="text-xs text-accent-purple">
               {Math.round(intent.confidence * 100)}% {t('preview.confidence')}
             </span>
           )}
         </div>
 
-        <p className="text-xs text-purple-700 dark:text-purple-300 line-clamp-2">
+        <p className="text-xs text-accent-purple line-clamp-2">
           {getProcessingText()}
         </p>
 
@@ -391,10 +391,10 @@ function ActionsCard({ resources }: { resources: SelectedResource[] }) {
   const allCommands = [...deviceCommands, ...extCommands]
 
   return (
-    <div className="bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+    <div className="bg-gradient-to-br from-accent-orange-light to-amber-50 dark:to-amber-950/30 rounded-lg p-4 border border-accent-orange-light">
       <div className="flex items-center gap-2 mb-3">
-        <Wrench className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-        <span className="text-sm font-medium text-orange-900 dark:text-orange-100">
+        <Wrench className="h-4 w-4 text-accent-orange" />
+        <span className="text-sm font-medium text-accent-orange">
           {t('preview.actions.title')}
         </span>
         {allCommands.length > 0 && (
@@ -413,9 +413,9 @@ function ActionsCard({ resources }: { resources: SelectedResource[] }) {
           {allCommands.slice(0, 5).map((cmd, i) => (
             <div key={i} className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
               {cmd.type === 'device' ? (
-                <Target className="h-4 w-4 text-orange-500" />
+                <Target className="h-4 w-4 text-accent-orange" />
               ) : (
-                <Puzzle className="h-4 w-4 text-purple-500" />
+                <Puzzle className="h-4 w-4 text-accent-purple" />
               )}
               <span className="text-xs font-medium truncate">{cmd.resource}</span>
               <ArrowRight className="h-4 w-4 text-muted-foreground" />
@@ -432,8 +432,8 @@ function ActionsCard({ resources }: { resources: SelectedResource[] }) {
 
       {/* Alert capability */}
       {resources.some(r => r.type === 'device') && (
-        <div className="mt-3 pt-3 border-t border-orange-200 dark:border-orange-800">
-          <div className="flex items-center gap-2 text-xs text-orange-700 dark:text-orange-300">
+        <div className="mt-3 pt-3 border-t border-accent-orange-light">
+          <div className="flex items-center gap-2 text-xs text-accent-orange">
             <Bell className="h-4 w-4" />
             <span>{t('preview.actions.canAlert')}</span>
           </div>
@@ -485,7 +485,7 @@ function IssueDetection({ props, intent }: { props: AgentLogicPreviewProps; inte
 
   if (issues.length === 0) {
     return (
-      <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+      <div className="flex items-center gap-2 text-sm text-success dark:text-success">
         <CheckCircle2 className="h-4 w-4" />
         <span>{t('preview.issues.none')}</span>
       </div>
@@ -498,7 +498,7 @@ function IssueDetection({ props, intent }: { props: AgentLogicPreviewProps; inte
         <div key={i} className={cn(
           "flex items-start gap-2 text-xs",
           issue.type === 'error' && "text-error",
-          issue.type === 'warning' && "text-orange-600 dark:text-orange-400",
+          issue.type === 'warning' && "text-accent-orange",
           issue.type === 'info' && "text-info"
         )}>
           {issue.type === 'error' && <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />}

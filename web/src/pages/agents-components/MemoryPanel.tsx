@@ -117,7 +117,7 @@ const categoryConfig = [
     defaultLabel: "Task Patterns",
     icon: Repeat2,
     description: "Common tasks and operation patterns",
-    color: "bg-purple-500/10 text-purple-600 border-purple-500/20",
+    color: "bg-accent-purple-light text-accent-purple border-accent-purple-light",
   },
   {
     id: "system_evolution",
@@ -125,7 +125,7 @@ const categoryConfig = [
     defaultLabel: "System Evolution",
     icon: Cpu,
     description: "System changes and optimization records",
-    color: "bg-orange-500/10 text-orange-600 border-orange-500/20",
+    color: "bg-accent-orange-light text-accent-orange border-accent-orange-light",
   },
 ]
 
@@ -612,8 +612,8 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
       <FullScreenDialog open={configOpen} onOpenChange={setConfigOpen}>
         <FullScreenDialogHeader
           icon={<Settings className="h-5 w-5" />}
-          iconBg="bg-purple-500/10 dark:bg-purple-500/20"
-          iconColor="text-purple-500"
+          iconBg="bg-accent-purple-light"
+          iconColor="text-accent-purple"
           title={t("systemMemory.config.title", "Memory Configuration")}
           subtitle={t("systemMemory.config.description", "Configure memory extraction, compression, and LLM settings")}
           onClose={() => setConfigOpen(false)}
@@ -630,7 +630,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 {/* Extraction Settings */}
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-purple-500" />
+                    <Sparkles className="h-4 w-4 text-accent-purple" />
                     {t("systemMemory.config.extraction", "Extraction Settings")}
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
@@ -888,7 +888,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 {/* Schedule Settings */}
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-orange-500" />
+                    <Clock className="h-4 w-4 text-accent-orange" />
                     {t("systemMemory.config.schedule", "Schedule")}
                   </h3>
                   <div className="grid grid-cols-2 gap-4">

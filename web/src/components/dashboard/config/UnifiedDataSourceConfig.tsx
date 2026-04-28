@@ -1066,7 +1066,7 @@ export function UnifiedDataSourceConfig({
       const ItemBadge = ({ itemType }: { itemType: 'template' | 'virtual' | 'info' }) => {
         const config = {
           template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
-          virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
+          virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-accent-purple-light text-accent-purple border-accent-purple-light' },
           info: { label: t('dataSource.badgeInfo'), className: 'bg-warning-light text-warning border-warning' },
         }[itemType]
         return (
@@ -1695,7 +1695,7 @@ export function UnifiedDataSourceConfig({
                         )}
                       </div>
                     </div>
-                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-accent-emerald-light text-accent-emerald border border-accent-emerald-light">
                       AI
                     </span>
                   </button>
@@ -1738,7 +1738,7 @@ export function UnifiedDataSourceConfig({
 
               // Icon and color based on type
               let TypeIcon = Info
-              let iconColor = 'text-emerald-500'
+              let iconColor = 'text-accent-emerald'
               let displayLabel = label
               let showSeparator = true
 
@@ -1750,21 +1750,21 @@ export function UnifiedDataSourceConfig({
                 iconColor = 'text-warning'
               } else if (type === 'device') {
                 TypeIcon = MapPin
-                iconColor = 'text-purple-500'
+                iconColor = 'text-accent-purple'
                 displayLabel = ''  // No label for device type, just device name
                 showSeparator = false
               } else if (type === 'extension') {
                 TypeIcon = Puzzle
-                iconColor = 'text-cyan-500'
+                iconColor = 'text-accent-cyan'
               } else if (type === 'extension-command') {
                 TypeIcon = Zap
-                iconColor = 'text-orange-500'
+                iconColor = 'text-accent-orange'
               } else if (type === 'transform') {
                 TypeIcon = Workflow
                 iconColor = 'text-violet-500'
               } else if (type === 'ai-metric') {
                 TypeIcon = Brain
-                iconColor = 'text-emerald-500'
+                iconColor = 'text-accent-emerald'
               }
 
               return (
@@ -2179,7 +2179,7 @@ function MobileMetricsList({
   const ItemBadge = ({ itemType }: { itemType: 'template' | 'virtual' | 'info' }) => {
     const config = {
       template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
-      virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
+      virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-accent-purple-light text-accent-purple border-accent-purple-light' },
       info: { label: t('dataSource.badgeInfo'), className: 'bg-warning-light text-warning border-warning' },
     }[itemType]
     return (

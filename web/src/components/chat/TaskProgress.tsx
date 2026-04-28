@@ -149,7 +149,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
                 )}
 
                 {status === "active" && step.prompt && (
-                  <div className="mt-2 p-2 rounded bg-background border border-blue-200">
+                  <div className="mt-2 p-2 rounded bg-background border border-info-light">
                     <p className="text-xs text-info">{step.prompt}</p>
                   </div>
                 )}

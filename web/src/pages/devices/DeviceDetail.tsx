@@ -287,7 +287,7 @@ export function DeviceDetail({
               <div className={cn(
                 "w-12 h-12 rounded-xl flex items-center justify-center",
                 device.status === 'online'
-                  ? "bg-gradient-to-br from-green-500/20 to-emerald-500/10"
+                  ? "bg-gradient-to-br from-success-light to-accent-emerald-light"
                   : "bg-gradient-to-br from-muted to-muted"
               )}>
                 <Zap className={cn(
@@ -307,7 +307,7 @@ export function DeviceDetail({
             <div className={cn(
               "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm",
               device.status === 'online'
-                ? "bg-green-500/10 text-success"
+                ? "bg-success-light text-success"
                 : "bg-muted text-muted-foreground"
             )}>
               <span className={cn(
@@ -419,7 +419,7 @@ export function DeviceDetail({
                         className={cn(
                           "group rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border",
                           isVirtual
-                            ? "bg-gradient-to-br from-purple-500/10 to-blue-500/5 border-purple-500/20 hover:border-purple-500/40"
+                            ? "bg-gradient-to-br from-accent-purple-light to-blue-500/5 border-accent-purple-light hover:border-accent-purple"
                             : "bg-gradient-to-br from-muted to-muted border-border hover:border-border"
                         )}
                       >
@@ -443,7 +443,7 @@ export function DeviceDetail({
                             </div>
                           </div>
                           {isVirtual ? (
-                            <Zap className="h-5 w-5 text-purple-500/60 group-hover:text-purple-500 transition-colors shrink-0 ml-2" />
+                            <Zap className="h-5 w-5 text-accent-purple/60 group-hover:text-accent-purple transition-colors shrink-0 ml-2" />
                           ) : hasImage ? (
                             <ImageIcon className="h-5 w-5 text-muted-foreground group-hover:text-muted-foreground transition-colors shrink-0 ml-2" />
                           ) : (

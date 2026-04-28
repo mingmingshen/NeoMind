@@ -70,13 +70,13 @@ function getIntentConfig(intent: IntentCategory, t: (key: string) => string) {
     icon: typeof Target
     color: string
   }> = {
-    query_data: { key: "intent.queryData", icon: Target, color: "text-blue-500" },
-    analyze_data: { key: "intent.analyzeData", icon: Brain, color: "text-purple-500" },
+    query_data: { key: "intent.queryData", icon: Target, color: "text-info" },
+    analyze_data: { key: "intent.analyzeData", icon: Brain, color: "text-accent-purple" },
     control_device: { key: "intent.controlDevice", icon: Settings, color: "text-success" },
-    create_automation: { key: "intent.createAutomation", icon: Zap, color: "text-amber-500" },
-    send_message: { key: "intent.sendMessage", icon: Send, color: "text-cyan-500" },
-    summarize_info: { key: "intent.summarize", icon: FileText, color: "text-indigo-500" },
-    clarify: { key: "intent.clarify", icon: HelpCircle, color: "text-orange-500" },
+    create_automation: { key: "intent.createAutomation", icon: Zap, color: "text-accent-orange" },
+    send_message: { key: "intent.sendMessage", icon: Send, color: "text-accent-cyan" },
+    summarize_info: { key: "intent.summarize", icon: FileText, color: "text-accent-indigo" },
+    clarify: { key: "intent.clarify", icon: HelpCircle, color: "text-accent-orange" },
     out_of_scope: { key: "intent.outOfScope", icon: AlertTriangle, color: "text-error" }
   }
   const config = configs[intent]
@@ -92,9 +92,9 @@ function getIntentConfig(intent: IntentCategory, t: (key: string) => string) {
 function getStrategyConfig(strategy: ProcessingStrategy, t: (key: string) => string) {
   const configs: Record<ProcessingStrategy, { key: string; color: string }> = {
     fast_path: { key: "intent.path.fast", color: "text-success bg-success-light" },
-    standard: { key: "intent.path.standard", color: "text-blue-600 bg-blue-50" },
-    quality: { key: "intent.path.quality", color: "text-purple-600 bg-purple-50" },
-    multi_turn: { key: "intent.path.multiTurn", color: "text-amber-600 bg-amber-50" },
+    standard: { key: "intent.path.standard", color: "text-info bg-info-light" },
+    quality: { key: "intent.path.quality", color: "text-accent-purple bg-accent-purple-light" },
+    multi_turn: { key: "intent.path.multiTurn", color: "text-accent-orange bg-accent-orange-light" },
     fallback: { key: "intent.path.fallback", color: "text-muted-foreground bg-muted" }
   }
   const config = configs[strategy]
@@ -107,10 +107,10 @@ function getStrategyConfig(strategy: ProcessingStrategy, t: (key: string) => str
 // Helper function to get entity config
 function getEntityConfig(entityType: EntityType, t: (key: string) => string) {
   const configs: Record<EntityType, { key: string; icon: string; color: string }> = {
-    device: { key: "intent.entity.device", icon: "🔌", color: "bg-blue-100 text-blue-700" },
+    device: { key: "intent.entity.device", icon: "🔌", color: "bg-info-light text-info" },
     location: { key: "intent.entity.location", icon: "📍", color: "bg-success-light text-success" },
-    value: { key: "intent.entity.value", icon: "🔢", color: "bg-purple-100 text-purple-700" },
-    time_range: { key: "intent.entity.time", icon: "⏰", color: "bg-orange-100 text-orange-700" },
+    value: { key: "intent.entity.value", icon: "🔢", color: "bg-accent-purple-light text-accent-purple" },
+    time_range: { key: "intent.entity.time", icon: "⏰", color: "bg-accent-orange-light text-accent-orange" },
     action: { key: "intent.entity.action", icon: "▶️", color: "bg-error-light text-error" },
     unknown: { key: "intent.entity.unknown", icon: "❓", color: "bg-muted text-muted-foreground" }
   }
@@ -138,8 +138,8 @@ export function IntentIndicator({
   // Confidence color based on level
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 0.8) return "bg-success"
-    if (confidence >= 0.6) return "bg-blue-500"
-    if (confidence >= 0.4) return "bg-yellow-500"
+    if (confidence >= 0.6) return "bg-info"
+    if (confidence >= 0.4) return "bg-warning"
     return "bg-error"
   }
 
@@ -155,8 +155,8 @@ export function IntentIndicator({
           <span className="text-sm font-medium">{config.label}</span>
           {isStreaming && (
             <span className="flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-blue-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-info opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-info"></span>
             </span>
           )}
         </div>
@@ -183,9 +183,9 @@ export function IntentIndicator({
 
       {/* Follow-up Prompt */}
       {classification.needs_followup && classification.followup_prompt && (
-        <div className="flex items-start gap-2 p-2 rounded-md bg-orange-50 border border-orange-200">
-          <HelpCircle className="h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-orange-800">{classification.followup_prompt}</p>
+        <div className="flex items-start gap-2 p-2 rounded-md bg-accent-orange-light border border-accent-orange-light">
+          <HelpCircle className="h-4 w-4 text-accent-orange mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-accent-orange">{classification.followup_prompt}</p>
         </div>
       )}
 
@@ -273,7 +273,7 @@ export function IntentFlow({ steps, currentStep = 0 }: IntentFlowProps) {
         const getStatusColor = () => {
           if (step.status === "error") return "text-error"
           if (step.status === "completed") return "text-success"
-          if (isCurrent) return "text-blue-500"
+          if (isCurrent) return "text-info"
           if (isCompleted) return "text-success"
           return "text-muted-foreground"
         }
@@ -285,7 +285,7 @@ export function IntentFlow({ steps, currentStep = 0 }: IntentFlowProps) {
               className={cn(
                 "flex items-center justify-center w-6 h-6 rounded-full text-xs transition-colors cursor-help",
                 getStatusColor(),
-                isCurrent && "bg-blue-50 ring-2 ring-blue-200"
+                isCurrent && "bg-info-light ring-2 ring-info"
               )}
             >
               {step.status === "completed" || isCompleted ? (
@@ -334,8 +334,8 @@ export function IntentConfidenceBar({
 
   const getColor = () => {
     if (confidence >= 0.8) return "bg-success"
-    if (confidence >= 0.6) return "bg-blue-500"
-    if (confidence >= 0.4) return "bg-yellow-500"
+    if (confidence >= 0.6) return "bg-info"
+    if (confidence >= 0.4) return "bg-warning"
     return "bg-error"
   }
 
@@ -356,8 +356,8 @@ export function IntentConfidenceBar({
         <span className={cn(
           "text-xs font-medium tabular-nums w-10 text-right",
           percent >= 80 ? "text-success" :
-          percent >= 60 ? "text-blue-600" :
-          percent >= 40 ? "text-yellow-600" :
+          percent >= 60 ? "text-info" :
+          percent >= 40 ? "text-warning" :
           "text-error"
         )}>
           {percent}%

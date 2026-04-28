@@ -158,7 +158,7 @@ export function AgentsList({
                         <div className={cn(
                           "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
                           agent.status === 'Active' || agent.status === 'Executing'
-                            ? "bg-purple-500/10 text-purple-600"
+                            ? "bg-accent-purple-light text-accent-purple"
                             : "bg-muted text-muted-foreground"
                         )}>
                           <Bot className="h-4 w-4" />

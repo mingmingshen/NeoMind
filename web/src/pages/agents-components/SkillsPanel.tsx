@@ -47,9 +47,9 @@ const categoryConfig: Record<
   }
 > = {
   device: { label: "Device", icon: Zap, color: "bg-info-light text-info border-info" },
-  rule: { label: "Rule", icon: Target, color: "bg-purple-500/10 text-purple-600 border-purple-500/20" },
+  rule: { label: "Rule", icon: Target, color: "bg-accent-purple-light text-accent-purple border-accent-purple-light" },
   agent: { label: "Agent", icon: Wrench, color: "bg-success-light text-success border-success-light" },
-  message: { label: "Message", icon: BookOpen, color: "bg-orange-500/10 text-orange-600 border-orange-500/20" },
+  message: { label: "Message", icon: BookOpen, color: "bg-accent-orange-light text-accent-orange border-accent-orange-light" },
   extension: { label: "Extension", icon: Wrench, color: "bg-teal-500/10 text-teal-600 border-teal-500/20" },
   general: { label: "General", icon: BookOpen, color: "bg-muted text-muted-foreground border-border" },
 }

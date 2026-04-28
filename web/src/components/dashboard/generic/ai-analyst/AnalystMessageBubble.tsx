@@ -144,17 +144,17 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
   if (message.type === 'ai') {
     return (
       <div className="flex items-start gap-2">
-        <div className="w-6 h-6 rounded-md bg-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
-          <Bot className="h-4 w-4 text-purple-500" />
+        <div className="w-6 h-6 rounded-md bg-accent-purple-light flex items-center justify-center shrink-0 mt-0.5">
+          <Bot className="h-4 w-4 text-accent-purple" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] text-purple-500 flex items-center gap-1">
+            <span className="text-[10px] text-accent-purple flex items-center gap-1">
               <Cpu className="h-2.5 w-2.5" />
               {message.modelName || 'AI'}
             </span>
             {isStreaming ? (
-              <span className="text-[10px] text-purple-500 flex items-center gap-1">
+              <span className="text-[10px] text-accent-purple flex items-center gap-1">
                 <Loader2 className="h-2.5 w-2.5 animate-spin" />
                 Analyzing...
               </span>
@@ -165,10 +165,10 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
               </span>
             )}
           </div>
-          <div className="mt-1 rounded-lg px-3 py-2 bg-purple-500/6 border border-purple-500/15 max-w-[320px]">
+          <div className="mt-1 rounded-lg px-3 py-2 bg-accent-purple-light border border-accent-purple-light max-w-[320px]">
             {isStreaming ? (
               <div className="flex items-center gap-1.5">
-                <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
+                <Loader2 className="h-4 w-4 animate-spin text-accent-purple" />
                 <span className="text-xs text-muted-foreground">Waiting for response...</span>
               </div>
             ) : (
@@ -189,12 +189,12 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
         <div className="flex-1 min-w-0 flex flex-col items-end">
           <div className="flex justify-between items-center w-full">
             <span className="text-[10px] text-muted-foreground">{formatTime(message.timestamp)}</span>
-            <span className="text-[10px] text-purple-500/70 flex items-center gap-1">
+            <span className="text-[10px] text-accent-purple/70 flex items-center gap-1">
               <User className="h-2.5 w-2.5" />
               User
             </span>
           </div>
-          <div className="mt-1 rounded-lg px-3 py-2 bg-purple-500/10 border border-purple-500/20 max-w-[260px]">
+          <div className="mt-1 rounded-lg px-3 py-2 bg-accent-purple-light border border-accent-purple-light max-w-[260px]">
             <p className="text-xs text-foreground leading-relaxed">{message.content}</p>
           </div>
         </div>

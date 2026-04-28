@@ -130,7 +130,7 @@ export function AgentCard({
         )}>
           <Bot className={cn(
             "h-6 w-6",
-            agent.status === 'Active' && "text-green-500",
+            agent.status === 'Active' && "text-success",
             agent.status === 'Executing' && "text-info",
             agent.status === 'Error' && "text-error",
             agent.status === 'Paused' && "text-muted-foreground"
@@ -201,7 +201,7 @@ export function AgentCard({
         <div className="text-center p-2 rounded-lg bg-muted-30">
           <div className={cn(
             "text-lg font-semibold",
-            successRate >= 80 ? "text-green-500" : successRate >= 50 ? "text-warning" : "text-error"
+            successRate >= 80 ? "text-success" : successRate >= 50 ? "text-warning" : "text-error"
           )}>
             {successRate}%
           </div>

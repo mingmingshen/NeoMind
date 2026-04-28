@@ -136,7 +136,7 @@ const AgentListItem = memo<AgentListItemProps>(({
           <div className={cn(
             "w-6 h-6 rounded flex items-center justify-center",
             isSelected || agent.status === 'Active' || agent.status === 'Executing'
-              ? "bg-purple-500/20 text-purple-500"
+              ? "bg-accent-purple-light text-accent-purple"
               : "bg-muted text-muted-foreground"
           )}>
             <Bot className="h-4 w-4" />

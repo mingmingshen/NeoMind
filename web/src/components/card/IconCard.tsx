@@ -13,7 +13,7 @@ export interface IconCardProps {
 const iconColorClass = {
   yellow: 'text-warning',
   blue: 'text-info',
-  purple: 'text-purple-500',
+  purple: 'text-accent-purple',
   green: 'text-success',
   red: 'text-error',
 }

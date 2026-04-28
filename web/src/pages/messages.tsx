@@ -695,7 +695,7 @@ export default function MessagesPage() {
                   {type === 'notification' ? (
                     <Bell className={cn("h-4 w-4", selectedMessageTypes.has(type) ? "text-primary" : "text-info")} />
                   ) : (
-                    <Send className={cn("h-4 w-4", selectedMessageTypes.has(type) ? "text-primary" : "text-purple-500")} />
+                    <Send className={cn("h-4 w-4", selectedMessageTypes.has(type) ? "text-primary" : "text-accent-purple")} />
                   )}
                   <span className="text-sm font-medium">{t(`messages.type.${type}`)}</span>
                 </button>
@@ -1096,7 +1096,7 @@ export default function MessagesPage() {
                         className={cn(
                           "text-xs",
                           isDataPush
-                            ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
+                            ? "bg-accent-purple-light text-accent-purple border-accent-purple-light"
                             : "bg-info-light text-info border-info"
                         )}
                       >
@@ -1213,7 +1213,7 @@ export default function MessagesPage() {
                 console: { icon: Bell, color: 'bg-muted text-muted-foreground' },
                 memory: { icon: RefreshCw, color: 'bg-info-light text-info' },
                 webhook: { icon: Megaphone, color: 'bg-success-light text-success' },
-                email: { icon: Bell, color: 'bg-purple-500/10 text-purple-500' },
+                email: { icon: Bell, color: 'bg-accent-purple-light text-accent-purple' },
               }
               const channelConfig = config[channel.channel_type] || config.console
               const ChannelIcon = channelConfig.icon
@@ -1401,7 +1401,7 @@ export default function MessagesPage() {
         onOpenChange={(open) => !open && setSelectedMessage(null)}
         title={selectedMessage?.title || t('messages.messageDetails', 'Message Details')}
         icon={selectedMessage?.message_type === 'data_push' ? (
-          <Send className="h-5 w-5 text-purple-500" />
+          <Send className="h-5 w-5 text-accent-purple" />
         ) : (
           <Bell className="h-5 w-5 text-info" />
         )}
@@ -1455,7 +1455,7 @@ export default function MessagesPage() {
                 variant="outline"
                 className={
                   selectedMessage.message_type === 'data_push'
-                    ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
+                    ? "bg-accent-purple-light text-accent-purple border-accent-purple-light"
                     : "bg-info-light text-info border-info"
                 }
               >

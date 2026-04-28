@@ -272,7 +272,7 @@ export function DeviceTransformsDialog({
           {getScopeLabel(transform.scope)}
         </Badge>
         {transform.js_code ? (
-          <Badge variant="outline" className="text-xs bg-purple-100 dark:bg-purple-900">
+          <Badge variant="outline" className="text-xs bg-accent-purple-light text-accent-purple">
             {t('automation:jsCode', { defaultValue: 'JavaScript' })}
           </Badge>
         ) : (
@@ -367,7 +367,7 @@ export function DeviceTransformsDialog({
                 style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <Database className="h-5 w-5 text-purple-500 shrink-0" />
+                  <Database className="h-5 w-5 text-accent-purple shrink-0" />
                   <div className="min-w-0 flex-1">
                     <h1 className="text-base font-semibold truncate">{title}</h1>
                     <p className="text-xs text-muted-foreground truncate">{description}</p>
@@ -382,7 +382,7 @@ export function DeviceTransformsDialog({
               <div className="flex-1 overflow-y-auto overflow-x-hidden">
                 <div className="p-4 space-y-4">
                   {/* Create Button */}
-                  <Button onClick={handleCreateNew} className="w-full bg-purple-600 hover:bg-purple-700">
+                  <Button onClick={handleCreateNew} className="w-full bg-accent-purple hover:bg-accent-purple/80">
                     <Sparkles className="mr-2 h-4 w-4" />
                     {t('automation:createTransform', { defaultValue: 'Create Transform' })}
                   </Button>
@@ -484,7 +484,7 @@ export function DeviceTransformsDialog({
           <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
             <div className="flex flex-col gap-1.5 flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <Database className="h-5 w-5 text-purple-500" />
+                <Database className="h-5 w-5 text-accent-purple" />
                 <h2 className="text-lg font-semibold leading-none truncate">{title}</h2>
               </div>
               <p className="text-sm text-muted-foreground">{description}</p>
@@ -504,7 +504,7 @@ export function DeviceTransformsDialog({
               <div className="text-sm text-muted-foreground">
                 {transforms.length} {t('automation:transforms', { defaultValue: 'transforms' })}
               </div>
-              <Button onClick={handleCreateNew} size="sm" className="bg-purple-600 hover:bg-purple-700">
+              <Button onClick={handleCreateNew} size="sm" className="bg-accent-purple hover:bg-accent-purple/80">
                 <Sparkles className="mr-2 h-4 w-4" />
                 {t('automation:createTransform', { defaultValue: 'Create Transform' })}
               </Button>
@@ -552,7 +552,7 @@ export function DeviceTransformsDialog({
                         </TableCell>
                         <TableCell>
                           {transform.js_code ? (
-                            <Badge variant="outline" className="text-xs bg-purple-100 dark:bg-purple-900">
+                            <Badge variant="outline" className="text-xs bg-accent-purple-light text-accent-purple">
                               {t('automation:jsCode', { defaultValue: 'JavaScript' })}
                             </Badge>
                           ) : (

@@ -67,7 +67,7 @@ const CHANNEL_TYPE_INFO: Record<string, {
   email: {
     name: 'Email',
     icon: <Mail className="h-6 w-6" />,
-    iconBg: 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400',
+    iconBg: 'bg-accent-orange-light text-accent-orange',
   },
   console: {
     name: 'Console',
@@ -77,12 +77,12 @@ const CHANNEL_TYPE_INFO: Record<string, {
   memory: {
     name: 'Memory',
     icon: <Database className="h-6 w-6" />,
-    iconBg: 'bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400',
+    iconBg: 'bg-accent-purple-light text-accent-purple',
   },
   extension: {
     name: 'Extension',
     icon: <Puzzle className="h-6 w-6" />,
-    iconBg: 'bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400',
+    iconBg: 'bg-accent-purple-light text-accent-purple',
   },
 }
 

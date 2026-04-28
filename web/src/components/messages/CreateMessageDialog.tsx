@@ -193,9 +193,9 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
 
             {/* Data Push Info */}
             {messageType === 'data_push' && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                <Info className="h-4 w-4 text-purple-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-purple-700 dark:text-purple-300">
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-accent-purple-light border border-accent-purple-light">
+                <Info className="h-4 w-4 text-accent-purple shrink-0 mt-0.5" />
+                <p className="text-xs text-accent-purple">
                   {t('messages.type.dataPushInfo', 'Data Push messages are designed for system integration. The payload will be delivered to configured webhook channels. Make sure to include structured data in the Payload section.')}
                 </p>
               </div>

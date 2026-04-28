@@ -562,8 +562,8 @@ export function AgentsPage() {
       <FullScreenDialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
         <FullScreenDialogHeader
           icon={<Bot className="h-5 w-5" />}
-          iconBg="bg-purple-500/10 dark:bg-purple-500/20"
-          iconColor="text-purple-500"
+          iconBg="bg-accent-purple-light"
+          iconColor="text-accent-purple"
           title={selectedAgent?.name || tAgent('detailTitle')}
           subtitle={selectedAgent?.description}
           onClose={() => setDetailDialogOpen(false)}

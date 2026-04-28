@@ -535,7 +535,7 @@ export function ValueCard({
         {showTrend && hasValidTrend && trendDirection && (
           <div className={cn(
             'flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium shrink-0',
-            trendDirection === 'up' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+            trendDirection === 'up' && 'bg-accent-emerald-light text-accent-emerald',
             trendDirection === 'down' && 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
             trendDirection === 'neutral' && 'bg-muted text-muted-foreground'
           )}>

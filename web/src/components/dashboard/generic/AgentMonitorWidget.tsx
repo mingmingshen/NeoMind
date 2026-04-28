@@ -1057,14 +1057,14 @@ export function AgentMonitorWidget({
                     const msg = item.data
                     return (
                       <div key={`msg-${msg.id}`} className="flex items-start gap-2">
-                        <div className="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                          <MessageSquare className="h-4 w-4 text-purple-500" />
+                        <div className="w-6 h-6 rounded-full bg-accent-purple-light flex items-center justify-center shrink-0 mt-0.5">
+                          <MessageSquare className="h-4 w-4 text-accent-purple" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-[10px] text-muted-foreground mb-0.5">
                             User hint • {new Date(msg.timestamp * 1000).toLocaleString()}
                           </div>
-                          <p className="text-xs bg-purple-500/10 rounded-lg px-2.5 py-1.5 border border-purple-500/20">
+                          <p className="text-xs bg-accent-purple-light rounded-lg px-2.5 py-1.5 border border-accent-purple-light">
                             {msg.content}
                           </p>
                         </div>

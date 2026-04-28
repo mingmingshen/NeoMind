@@ -625,7 +625,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
         {/* User avatar */}
         {user && (
           <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-blue-600 text-white text-xs font-medium">
+            <AvatarFallback className="bg-info text-white text-xs font-medium">
               {getUserInitials(user.username)}
             </AvatarFallback>
           </Avatar>
@@ -915,7 +915,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                 disabled={!input.trim() || streamState.isStreaming}
                 className={cn(
                   "h-12 w-12 rounded-full flex-shrink-0",
-                  "bg-blue-600 hover:bg-blue-700 text-white",
+                  "bg-info hover:bg-info/90 text-white",
                   "transition-all duration-200",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                   streamState.isStreaming && "relative overflow-hidden"
@@ -923,7 +923,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
               >
                 {streamState.isStreaming ? (
                   <>
-                    <span className="absolute inset-0 bg-blue-600/20 animate-ping" />
+                    <span className="absolute inset-0 bg-info/20 animate-ping" />
                     <Send className="h-5 w-5 relative" />
                   </>
                 ) : (

@@ -209,9 +209,9 @@ function PerRoundThinking({
 function getRoundColor(round: number): string {
   const colors = [
     "bg-info-light text-info",
-    "bg-emerald-500/10 text-emerald-600",
+    "bg-accent-emerald-light text-accent-emerald",
     "bg-warning-light text-warning",
-    "bg-purple-500/10 text-purple-600",
+    "bg-accent-purple-light text-accent-purple",
     "bg-rose-500/10 text-rose-600",
   ]
   return colors[(round - 1) % colors.length]

@@ -262,7 +262,7 @@ const CRON_TEMPLATES: CronTemplate[] = [
 function getTriggerInfo(type: TriggerType) {
   switch (type) {
     case 'device_state':
-      return { label: '设备触发', icon: <Lightbulb className="h-4 w-4" />, color: 'text-purple-500' }
+      return { label: '设备触发', icon: <Lightbulb className="h-4 w-4" />, color: 'text-accent-purple' }
     case 'schedule':
       return { label: '定时触发', icon: <Clock className="h-4 w-4" />, color: 'text-info' }
     case 'manual':
@@ -1087,7 +1087,7 @@ function RulePreviewPanel({
         <div key={cond.id} className="flex items-center gap-2 py-1.5 px-2 rounded bg-muted-30 mb-1" style={{ marginLeft: `${indent}px` }}>
           <div className={cn(
             "w-6 h-6 rounded flex items-center justify-center text-xs",
-            isExtension ? "bg-purple-500/20 text-purple-500" : "bg-info-light text-info"
+            isExtension ? "bg-accent-purple-light text-accent-purple" : "bg-info-light text-info"
           )}>
             {isExtension ? <Puzzle className="h-4 w-4" /> : <Lightbulb className="h-4 w-4" />}
           </div>
@@ -1143,10 +1143,10 @@ function RulePreviewPanel({
 
     const getActionColor = (type: string) => {
       switch (type) {
-        case 'Execute': return 'bg-purple-500/20 text-purple-500'
+        case 'Execute': return 'bg-accent-purple-light text-accent-purple'
         case 'Notify': return 'bg-info-light text-info'
         case 'Log': return 'bg-muted text-muted-foreground'
-        case 'Set': return 'bg-orange-500/20 text-orange-500'
+        case 'Set': return 'bg-accent-orange-light text-accent-orange'
         case 'Delay': return 'bg-warning-light text-warning'
         case 'CreateAlert': return 'bg-error-light text-error'
         case 'HttpRequest': return 'bg-success-light text-success'
@@ -1211,7 +1211,7 @@ function RulePreviewPanel({
 
     return (
       <div className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-        {isExtension ? <Puzzle className="h-4 w-4 text-purple-500" /> : <Lightbulb className="h-4 w-4 text-info" />}
+        {isExtension ? <Puzzle className="h-4 w-4 text-accent-purple" /> : <Lightbulb className="h-4 w-4 text-info" />}
         <span className="truncate">{resourceName}</span>
         <span className="font-mono text-[10px]">{cond.operator}</span>
         <span>{cond.type === 'range' ? `[${cond.range_min}~${cond.range_max}]` : cond.threshold}</span>
@@ -1252,19 +1252,19 @@ function RulePreviewPanel({
         {/* Trigger Card */}
         <div className={cn(
           "rounded-lg p-4 border",
-          triggerType === 'device_state' && "bg-gradient-to-br from-info-light to-indigo-50 dark:from-info-light dark:to-indigo-950/30 border-info",
-          triggerType === 'schedule' && "bg-gradient-to-br from-success-light to-emerald-50 dark:from-success-light dark:to-emerald-950/30 border-success-light dark:border-success-light",
-          triggerType === 'manual' && "bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 border-orange-200 dark:border-orange-800"
+          triggerType === 'device_state' && "bg-gradient-to-br from-info-light to-accent-indigo-light border-info",
+          triggerType === 'schedule' && "bg-gradient-to-br from-success-light to-accent-emerald-light border-success-light dark:border-success-light",
+          triggerType === 'manual' && "bg-gradient-to-br from-accent-orange-light to-amber-50 dark:to-amber-950/30 border-accent-orange-light"
         )}>
           <div className="flex items-center gap-2 mb-2">
             {triggerType === 'device_state' ? <Lightbulb className="h-4 w-4 text-info" /> :
              triggerType === 'schedule' ? <Clock className="h-4 w-4 text-success dark:text-success" /> :
-             <Play className="h-4 w-4 text-orange-600 dark:text-orange-400" />}
+             <Play className="h-4 w-4 text-accent-orange" />}
             <span className={cn(
               "text-sm font-medium",
-              triggerType === 'device_state' && "text-blue-900 dark:text-blue-100",
+              triggerType === 'device_state' && "text-info",
               triggerType === 'schedule' && "text-success dark:text-success",
-              triggerType === 'manual' && "text-orange-900 dark:text-orange-100"
+              triggerType === 'manual' && "text-accent-orange"
             )}>
               {tBuilder('triggerType') || '触发类型'}
             </span>
@@ -1273,7 +1273,7 @@ function RulePreviewPanel({
             "text-sm",
             triggerType === 'device_state' && "text-info",
             triggerType === 'schedule' && "text-success dark:text-success",
-            triggerType === 'manual' && "text-orange-700 dark:text-orange-300"
+            triggerType === 'manual' && "text-accent-orange"
           )}>
             {triggerType === 'device_state' ? (tBuilder('triggerDevice') || '设备状态触发') :
              triggerType === 'schedule' ? (tBuilder('triggerSchedule') || '定时触发') :
@@ -1293,10 +1293,10 @@ function RulePreviewPanel({
         </div>
 
         {/* Condition Card */}
-        <div className="bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
+        <div className="bg-gradient-to-br from-accent-purple-light to-violet-50 dark:to-violet-950/30 rounded-lg p-4 border border-accent-purple-light">
           <div className="flex items-center gap-2 mb-3">
-            <FileText className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-            <span className="text-sm font-medium text-purple-900 dark:text-purple-100">
+            <FileText className="h-4 w-4 text-accent-purple" />
+            <span className="text-sm font-medium text-accent-purple">
               {tBuilder('conditions') || '条件'}
             </span>
             <Badge variant="secondary" className="ml-auto text-xs">
@@ -1304,17 +1304,17 @@ function RulePreviewPanel({
             </Badge>
           </div>
           {condition ? (
-            <div className="text-xs text-purple-700 dark:text-purple-300 space-y-1">
+            <div className="text-xs text-accent-purple space-y-1">
               {renderCompactCondition(condition)}
               {forDuration > 0 && (
-                <div className="flex items-center gap-2 text-[10px] mt-2 pt-2 border-t border-purple-200 dark:border-purple-800">
+                <div className="flex items-center gap-2 text-[10px] mt-2 pt-2 border-t border-accent-purple-light">
                   <Clock className="h-4 w-4" />
                   <span>{tBuilder('forDuration') || '持续'}: {forDuration} {forUnit}</span>
                 </div>
               )}
             </div>
           ) : (
-            <p className="text-xs text-purple-700 dark:text-purple-300">
+            <p className="text-xs text-accent-purple">
               {tBuilder('noCondition') || '暂无触发条件'}
             </p>
           )}
@@ -1326,7 +1326,7 @@ function RulePreviewPanel({
         </div>
 
         {/* Actions Card */}
-        <div className="bg-gradient-to-br from-success-light to-emerald-50 dark:from-success-light dark:to-emerald-950/30 rounded-lg p-4 border border-success-light dark:border-success-light">
+        <div className="bg-gradient-to-br from-success-light to-accent-emerald-light rounded-lg p-4 border border-success-light dark:border-success-light">
           <div className="flex items-center gap-2 mb-3">
             <Zap className="h-4 w-4 text-success dark:text-success" />
             <span className="text-sm font-medium text-success dark:text-success">
@@ -1750,8 +1750,8 @@ export function SimpleRuleBuilderSplit({
       {/* Header */}
       <FullScreenDialogHeader
         icon={<Zap className="h-5 w-5" />}
-        iconBg="bg-purple-500/10 dark:bg-purple-500/20"
-        iconColor="text-purple-500"
+        iconBg="bg-accent-purple-light"
+        iconColor="text-accent-purple"
         title={isEditMode ? t('automation:edit') : t('automation:createRule')}
         onClose={() => onOpenChange(false)}
       />
@@ -2136,11 +2136,11 @@ function ConditionStep({
             className={cn(
               "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
               triggerType === 'device_state'
-                ? "border-purple-500 bg-purple-500/10"
-                : "border-muted hover:border-purple-500/50"
+                ? "border-accent-purple bg-accent-purple-light"
+                : "border-muted hover:border-accent-purple/50"
             )}
           >
-            <Lightbulb className={cn("h-6 w-6", triggerType === 'device_state' ? "text-purple-500" : "text-muted-foreground")} />
+            <Lightbulb className={cn("h-6 w-6", triggerType === 'device_state' ? "text-accent-purple" : "text-muted-foreground")} />
             <span className="text-sm font-medium">{tBuilder('triggerDevice') || '设备触发'}</span>
           </button>
           <button
@@ -2176,13 +2176,13 @@ function ConditionStep({
       <div className="max-w-3xl mx-auto">
         {/* Device State Trigger Configuration */}
         {triggerType === 'device_state' && (
-          <div className="p-6 rounded-lg border bg-purple-500/5 border-purple-500/20">
-            <div className="flex items-center gap-2 pb-4 border-b border-purple-500/20 mb-4">
-              <div className="p-2 rounded-full bg-purple-500/10">
-                <Lightbulb className="h-5 w-5 text-purple-500" />
+          <div className="p-6 rounded-lg border bg-accent-purple-light border-accent-purple-light">
+            <div className="flex items-center gap-2 pb-4 border-b border-accent-purple-light mb-4">
+              <div className="p-2 rounded-full bg-accent-purple-light">
+                <Lightbulb className="h-5 w-5 text-accent-purple" />
               </div>
               <div>
-                <h4 className="text-sm font-medium text-purple-500">{tBuilder('triggerDevice') || '设备触发'}</h4>
+                <h4 className="text-sm font-medium text-accent-purple">{tBuilder('triggerDevice') || '设备触发'}</h4>
                 <p className="text-xs text-muted-foreground">{tBuilder('deviceTriggerDesc') || '当设备状态满足条件时触发'}</p>
               </div>
             </div>
@@ -2618,7 +2618,7 @@ function ReviewStep({ name, description, enabled, condition, actions, forDuratio
       {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-lg border bg-card p-4 text-center">
-          <div className="text-2xl font-bold text-purple-500">{condition ? 1 : 0}</div>
+          <div className="text-2xl font-bold text-accent-purple">{condition ? 1 : 0}</div>
           <div className="text-xs text-muted-foreground">{tBuilder('review.triggerCondition')}</div>
         </div>
         <div className="rounded-lg border bg-card p-4 text-center">
@@ -2787,7 +2787,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
     }
 
     return (
-      <div className="p-3 bg-gradient-to-r from-purple-500/10 to-transparent rounded-lg border border-purple-500/20">
+      <div className="p-3 bg-gradient-to-r from-accent-purple-light to-transparent rounded-lg border border-accent-purple-light">
         <div className="flex flex-wrap items-center gap-2">
           {/* Source Type Selector */}
           <Select
@@ -3589,8 +3589,8 @@ function ActionEditorCompact({ action, devices, deviceTypes, extensions, message
       case 'Execute': return 'text-warning bg-warning-light border-warning'
       case 'Notify': return 'text-info bg-info-light border-info'
       case 'Log': return 'text-muted-foreground bg-muted border-border'
-      case 'Set': return 'text-purple-600 dark:text-purple-500 bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800'
-      case 'Delay': return 'text-orange-600 dark:text-orange-500 bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800'
+      case 'Set': return 'text-accent-purple bg-accent-purple-light border-accent-purple-light'
+      case 'Delay': return 'text-accent-orange bg-accent-orange-light border-accent-orange-light'
       case 'CreateAlert': return 'text-error bg-error-light border-error'
       case 'HttpRequest': return 'text-success dark:text-success bg-success-light dark:bg-success-light border-success-light dark:border-success-light'
       default: return 'text-muted-foreground bg-muted border-border'

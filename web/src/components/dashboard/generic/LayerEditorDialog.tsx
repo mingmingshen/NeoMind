@@ -92,7 +92,7 @@ function getTypeConfig(t: (key: string) => string) {
       label: t('customLayer.metric'),
       icon: Activity,
       color: 'text-white',
-      bgColor: 'bg-purple-500',
+      bgColor: 'bg-accent-purple',
     },
     command: {
       label: t('customLayer.command'),
@@ -110,7 +110,7 @@ function getTypeConfig(t: (key: string) => string) {
       label: t('customLayer.iconLabel'),
       icon: Sparkles,
       color: 'text-white',
-      bgColor: 'bg-orange-500',
+      bgColor: 'bg-accent-orange',
     },
   } as const
 }

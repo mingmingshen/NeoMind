@@ -273,7 +273,7 @@ export function AutomationCreatorDialog({
                                   <Badge
                                     variant="outline"
                                     className={cn(
-                                      'bg-purple-500/10 text-purple-500'
+                                      'bg-accent-purple-light text-accent-purple'
                                     )}
                                   >
                                     <Zap className="h-4 w-4 mr-1" />

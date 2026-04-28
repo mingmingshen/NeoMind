@@ -85,7 +85,7 @@ export function AgentExecutionTimeline({
       case 'Running':
         return { icon: Loader2, color: 'text-info', bg: 'bg-info-light border-info', label: t('agents:executionStatus.running') }
       case 'Completed':
-        return { icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-500/10 border-green-500/20', label: t('agents:executionStatus.completed') }
+        return { icon: CheckCircle2, color: 'text-success', bg: 'bg-success-light border-success-light', label: t('agents:executionStatus.completed') }
       case 'Failed':
         return { icon: XCircle, color: 'text-error', bg: 'bg-error-light border-error', label: t('agents:executionStatus.failed') }
       case 'Cancelled':
@@ -203,7 +203,7 @@ export function AgentExecutionTimeline({
                                 {/* ① Situation Analysis */}
                                 {detail.decision_process?.situation_analysis && (
                                   <TimelineSection
-                                    icon={<Brain className="h-4 w-4 text-purple-500" />}
+                                    icon={<Brain className="h-4 w-4 text-accent-purple" />}
                                     title={t('agents:memory.situationAnalysis')}
                                   >
                                     <CollapsibleText content={detail.decision_process.situation_analysis} maxLines={3} />
@@ -213,7 +213,7 @@ export function AgentExecutionTimeline({
                                 {/* ② Execution Process — reasoning_steps with tool_call cards */}
                                 {detail.decision_process?.reasoning_steps && detail.decision_process.reasoning_steps.length > 0 && (
                                   <TimelineSection
-                                    icon={<ChevronRight className="h-4 w-4 text-orange-500" />}
+                                    icon={<ChevronRight className="h-4 w-4 text-accent-orange" />}
                                     title={t('agents:memory.executionProcess')}
                                   >
                                     <div className="space-y-2">
@@ -266,7 +266,7 @@ export function AgentExecutionTimeline({
                                   if (!hasConclusion && !hasConfidence) return null
                                   return (
                                     <TimelineSection
-                                      icon={<CheckCircle2 className="h-4 w-4 text-green-500" />}
+                                      icon={<CheckCircle2 className="h-4 w-4 text-success" />}
                                       title={t('agents:memory.conclusion')}
                                     >
                                       <div className="space-y-2">
@@ -584,7 +584,7 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
                     isThought ? 'bg-info text-white' :
                     'bg-primary text-primary-foreground'
   const borderColor = isError ? 'border-error' :
-                      isThought ? 'border-blue-200 dark:border-blue-800' :
+                      isThought ? 'border-info-light' :
                       'border-border'
 
   return (
@@ -604,7 +604,7 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
           <div className={cn("w-6 h-6 rounded-full text-xs flex items-center justify-center", numberBg)}>
             {step.step_number}
           </div>
-          <div className={cn("w-0.5 flex-1 min-h-[24px]", isError ? "bg-error-light" : isThought ? "bg-blue-200 dark:bg-blue-800" : "bg-border")} />
+          <div className={cn("w-0.5 flex-1 min-h-[24px]", isError ? "bg-error-light" : isThought ? "bg-info-light" : "bg-border")} />
         </div>
         <div className={cn("flex-1 min-w-0 pb-4 pl-1")}>
         {/* Description with icon */}
@@ -760,7 +760,7 @@ function ToolCallStep({ step }: { step: ReasoningStep }) {
         className="w-full flex items-start gap-2 px-3 py-2 hover:bg-muted-30 text-left"
       >
         {isSuccess ? (
-          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+          <CheckCircle2 className="h-4 w-4 text-accent-emerald shrink-0 mt-0.5" />
         ) : (
           <XCircle className="h-4 w-4 text-error shrink-0 mt-0.5" />
         )}
@@ -770,7 +770,7 @@ function ToolCallStep({ step }: { step: ReasoningStep }) {
             <span className="font-mono text-sm truncate">{toolName}</span>
             <span className={cn(
               "text-[10px] px-1.5 py-0.5 rounded shrink-0",
-              isSuccess ? "bg-emerald-500/10 text-emerald-600" : "bg-error-light text-error"
+              isSuccess ? "bg-accent-emerald-light text-accent-emerald" : "bg-error-light text-error"
             )}>
               {isSuccess ? t('agents:memory.success') : t('agents:memory.failed')}
             </span>

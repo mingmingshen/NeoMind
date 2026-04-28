@@ -1258,7 +1258,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
               <div className="text-xs text-muted-foreground">Commands</div>
             </div>
             <div className="rounded-lg border bg-card p-4 text-center">
-              <div className="text-2xl font-bold text-green-500">
+              <div className="text-2xl font-bold text-success">
                 {data.mode === 'simple' ? 'Raw' : 'Full'}
               </div>
               <div className="text-xs text-muted-foreground">Mode</div>
@@ -1308,7 +1308,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
           <div className="rounded-lg border bg-card p-4">
             <div className="flex items-center justify-between mb-4">
               <h4 className="font-medium flex items-center gap-2">
-                <ArrowDown className="h-4 w-4 text-green-500" />
+                <ArrowDown className="h-4 w-4 text-success" />
                 Metrics ({data.metrics?.length || 0})
               </h4>
               <Button variant="ghost" size="sm" onClick={() => onEdit('data')}>
@@ -1384,7 +1384,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
             {validationResult && (
               <div className={cn(
                 "p-3 rounded-lg text-sm",
-                validationResult.valid ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400" : "bg-muted text-destructive"
+                validationResult.valid ? "bg-success-light text-success dark:bg-success-light dark:text-success" : "bg-muted text-destructive"
               )}>
                 <div className="flex items-center gap-2 font-medium">
                   {validationResult.valid ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
@@ -1419,8 +1419,8 @@ function FinishStep({ deviceType, onOpenChange, isEditMode = false }: FinishStep
 
   return (
     <div className="flex flex-col items-center justify-center h-full py-8">
-      <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mb-6">
-        <Check className="h-8 w-8 text-green-600 dark:text-green-400" />
+      <div className="w-16 h-16 rounded-full bg-success-light dark:bg-success-light flex items-center justify-center mb-6">
+        <Check className="h-8 w-8 text-success dark:text-success" />
       </div>
       <h3 className="text-xl font-semibold mb-2">
         {isEditMode ? 'Device Type Updated Successfully!' : 'Device Type Added Successfully!'}
@@ -1733,7 +1733,7 @@ function CommandEditorCompact({
             {t('devices:commandEditor.paramCount', { count: command.parameters?.length || 0 })}
           </Badge>
           {command.fixed_values && Object.keys(command.fixed_values).length > 0 && (
-            <Badge variant="outline" className="text-xs text-green-600">
+            <Badge variant="outline" className="text-xs text-success">
               {t('devices:commandEditor.fixedValueCount', { count: Object.keys(command.fixed_values).length })}
             </Badge>
           )}
@@ -1845,7 +1845,7 @@ function CommandEditorCompact({
                       <span className="text-info">"{item.key}"</span>
                       <span className="text-muted-foreground">: </span>
                       {item.type === 'fixed' ? (
-                        <span className="text-green-600">
+                        <span className="text-success">
                           {typeof item.value === 'string' ? `"${item.value}"` : JSON.stringify(item.value)}
                         </span>
                       ) : (
@@ -2036,7 +2036,7 @@ function CommandEditorCompact({
                   {t('devices:commandEditor.fixedValuesDesc')}
                 </p>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-green-600">
+                  <span className="text-xs font-medium text-success">
                     {t('devices:commandEditor.fixedValues', { count: Object.keys(command.fixed_values || {}).length })}
                   </span>
                   <Button
@@ -2284,8 +2284,8 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
             <div className="grid grid-cols-4 gap-4">
               <Card className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
-                    <ArrowDown className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  <div className="p-2 rounded-lg bg-success-light dark:bg-success-light">
+                    <ArrowDown className="h-5 w-5 text-success dark:text-success" />
                   </div>
                   <div>
                     <div className="text-2xl font-bold">{deviceType.metrics?.length || 0}</div>
@@ -2295,8 +2295,8 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
               </Card>
               <Card className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
-                    <Sparkles className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                  <div className="p-2 rounded-lg bg-accent-purple-light">
+                    <Sparkles className="h-5 w-5 text-accent-purple" />
                   </div>
                   <div>
                     <div className="text-2xl font-bold">{virtualMetrics.length || 0}</div>
@@ -2317,8 +2317,8 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
               </Card>
               <Card className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
-                    <Settings className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                  <div className="p-2 rounded-lg bg-accent-orange-light">
+                    <Settings className="h-5 w-5 text-accent-orange" />
                   </div>
                   <div>
                     <div className="text-lg font-bold">{isRawMode ? 'Raw' : 'Full'}</div>
@@ -2349,7 +2349,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
             <Card className="p-4">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="font-medium flex items-center gap-2">
-                  <ArrowDown className="h-4 w-4 text-green-500" />
+                  <ArrowDown className="h-4 w-4 text-success" />
                   Native Metrics ({deviceType.metrics?.length || 0})
                 </h4>
                 {isRawMode && (
@@ -2392,7 +2392,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
               <Card className="p-4">
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="font-medium flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-purple-500" />
+                    <Sparkles className="h-4 w-4 text-accent-purple" />
                     Virtual Metrics ({virtualMetrics.length})
                   </h4>
                   <Badge variant="secondary" className="text-xs">
@@ -2407,16 +2407,16 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                 ) : (
                   <div className="space-y-2">
                     {virtualMetrics.map((metric, i) => (
-                      <div key={i} className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                      <div key={i} className="p-3 bg-accent-purple-light border border-accent-purple-light rounded-lg">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <Sparkles className="h-4 w-4 text-purple-500" />
-                            <code className="text-sm text-purple-700 dark:text-purple-300">{metric.name}</code>
+                            <Sparkles className="h-4 w-4 text-accent-purple" />
+                            <code className="text-sm text-accent-purple">{metric.name}</code>
                             <span className="text-muted-foreground">•</span>
                             <span className="text-sm">{metric.display_name}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs text-purple-600 dark:text-purple-400">{formatDataType(metric.data_type)}</Badge>
+                            <Badge variant="outline" className="text-xs text-accent-purple">{formatDataType(metric.data_type)}</Badge>
                             <span className="text-xs text-muted-foreground">via {metric.transform_name}</span>
                           </div>
                         </div>
@@ -2464,7 +2464,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
             {deviceType.uplink_samples && deviceType.uplink_samples.length > 0 && (
               <Card className="p-4">
                 <h4 className="font-medium flex items-center gap-2 mb-3">
-                  <Database className="h-4 w-4 text-orange-500" />
+                  <Database className="h-4 w-4 text-accent-orange" />
                   Sample Data ({deviceType.uplink_samples.length})
                 </h4>
                 <div className="space-y-2">
@@ -2628,21 +2628,17 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
         })
       })
 
-      // Build detailed description
-      let description = `导入 ${response.imported} 个`
-      if (response.skipped > 0) {
-        description += `，跳过 ${response.skipped} 个（已存在）`
-      }
-      if (response.failed > 0) {
-        description += `，失败 ${response.failed} 个`
-      }
+      // Build result description
+      const description = response.failed > 0
+        ? t('devices:cloud.importPartialDesc', '{{count}} imported/updated, {{failed}} failed', { count: response.imported, failed: response.failed })
+        : t('devices:cloud.importSuccessDesc', '{{count}} device type(s) imported/updated', { count: response.imported })
 
       const variant = response.failed > 0 ? "destructive" : "default"
 
       toast({
         title: response.imported > 0
-          ? t('devices:cloud.importSuccess', "导入成功")
-          : t('devices:cloud.importPartial', "导入完成"),
+          ? t('devices:cloud.importSuccess')
+          : t('devices:cloud.importPartial'),
         description,
         variant,
       })

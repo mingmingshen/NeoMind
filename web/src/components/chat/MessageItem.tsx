@@ -66,7 +66,7 @@ export const MessageItem = React.memo<MessageItemProps>(
 
         {message.role === "user" && user && (
           <Avatar className="h-8 w-8 order-2">
-            <AvatarFallback className="bg-blue-600 text-white text-xs">
+            <AvatarFallback className="bg-info text-white text-xs">
               {getUserInitials(user.username)}
             </AvatarFallback>
           </Avatar>

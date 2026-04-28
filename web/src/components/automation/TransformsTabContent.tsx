@@ -277,7 +277,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                         <td className="p-4 align-middle">
                           <div className="flex flex-wrap gap-1">
                             {transform.js_code ? (
-                              <Badge variant="outline" className="text-xs bg-purple-100 dark:bg-purple-900">
+                              <Badge variant="outline" className="text-xs bg-accent-purple-light text-accent-purple">
                                 {t('automation:jsCode', { defaultValue: 'JavaScript' })}
                               </Badge>
                             ) : transform.operations && transform.operations.length > 0 ? (
@@ -458,7 +458,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                         <span className="text-xs text-muted-foreground">{t('automation:operations', { defaultValue: 'Operations' })}</span>
                         <div className="flex flex-wrap gap-1 justify-end">
                           {transform.js_code ? (
-                            <Badge variant="outline" className="text-xs bg-purple-100 dark:bg-purple-900">
+                            <Badge variant="outline" className="text-xs bg-accent-purple-light text-accent-purple">
                               {t('automation:jsCode', { defaultValue: 'JavaScript' })}
                             </Badge>
                           ) : transform.operations && transform.operations.length > 0 ? (

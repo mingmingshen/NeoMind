@@ -375,9 +375,9 @@ function VariablesPanel({
     switch (type) {
       case 'number': case 'integer': case 'float': return 'text-info'
       case 'string': return 'text-success'
-      case 'boolean': return 'text-purple-500'
-      case 'object': return 'text-orange-500'
-      case 'array': return 'text-cyan-500'
+      case 'boolean': return 'text-accent-purple'
+      case 'object': return 'text-accent-orange'
+      case 'array': return 'text-accent-cyan'
       case 'binary': return 'text-warning'
       default: return 'text-muted-foreground'
     }
@@ -576,7 +576,7 @@ return ${resultParam}`
                   {extensions.map((ext) => (
                     <div key={ext.extension_id} className="space-y-1.5">
                       <div className="font-medium text-xs flex items-center gap-2">
-                        <Puzzle className="h-4 w-4 text-purple-500" />
+                        <Puzzle className="h-4 w-4 text-accent-purple" />
                         {ext.extension_name}
                       </div>
                       {ext.commands.map((cmd) => (
@@ -621,9 +621,9 @@ return ${resultParam}`
               {Object.entries(groupedExtensions).map(([extId, commands]) => {
                 const extName = extensionSources.find(s => s.extension_id === extId)?.extension_name || extId
                 return (
-                  <div key={extId} className="border rounded bg-purple-50/50 dark:bg-purple-950/20 overflow-hidden">
+                  <div key={extId} className="border rounded bg-accent-purple-light overflow-hidden">
                     <div className={cn(
-                      "border-b font-medium text-purple-700 dark:text-purple-300",
+                      "border-b font-medium text-accent-purple",
                       isMobile ? "px-4 py-2.5 text-sm" : "px-2.5 py-1.5 text-xs"
                     )}>
                       {extName}
@@ -643,7 +643,7 @@ return ${resultParam}`
                             >
                               <div className="flex items-center gap-2 min-w-0 flex-1">
                                 <code className={cn(
-                                  "font-mono text-purple-600 dark:text-purple-400 truncate",
+                                  "font-mono text-accent-purple truncate",
                                   isMobile ? "text-sm" : "text-xs"
                                 )}>
                                   {field.field}
@@ -823,10 +823,10 @@ function TransformPreviewPanel({
     const hasSources = deviceMetricCount > 0 || extensionSourceCount > 0
 
     return (
-      <div className="bg-gradient-to-br from-info-light to-indigo-50 dark:from-info-light dark:to-indigo-950/30 rounded-lg p-4 border border-info">
+      <div className="bg-gradient-to-br from-info-light to-accent-indigo-light rounded-lg p-4 border border-info">
         <div className="flex items-center gap-2 mb-3">
           <Database className="h-4 w-4 text-info" />
-          <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+          <span className="text-sm font-medium text-info">
             {tBuilder('deviceMetrics') || '输入来源'}
           </span>
           <Badge variant="secondary" className="ml-auto text-xs">
@@ -862,7 +862,7 @@ function TransformPreviewPanel({
                 </div>
                 {extensionSources?.slice(0, 2).map((source, idx) => (
                   <div key={idx} className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-                    <Puzzle className="h-4 w-4 text-purple-500" />
+                    <Puzzle className="h-4 w-4 text-accent-purple" />
                     <span className="text-xs truncate">{source.extension_name}</span>
                     <span className="text-[10px] text-muted-foreground">·</span>
                     <span className="text-xs truncate">{source.display_name || source.field}</span>
@@ -888,17 +888,17 @@ function TransformPreviewPanel({
   // Render transform logic card
   const renderLogicCard = () => {
     return (
-      <div className="bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
+      <div className="bg-gradient-to-br from-accent-purple-light to-violet-50 dark:to-violet-950/30 rounded-lg p-4 border border-accent-purple-light">
         <div className="flex items-center gap-2 mb-3">
-          <Code className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-          <span className="text-sm font-medium text-purple-900 dark:text-purple-100">
+          <Code className="h-4 w-4 text-accent-purple" />
+          <span className="text-sm font-medium text-accent-purple">
             {tBuilder('transformCode') || '转换逻辑'}
           </span>
           <Badge variant="secondary" className="ml-auto text-xs">
             {codeLines} {tBuilder('lines') || '行'}
           </Badge>
         </div>
-        <div className="text-xs text-purple-700 dark:text-purple-300 space-y-2">
+        <div className="text-xs text-accent-purple space-y-2">
           <div className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
             <Globe className="h-4 w-4" />
             <span className="font-medium">{tBuilder('scopeLabel') || '作用范围'}:</span>
@@ -921,7 +921,7 @@ function TransformPreviewPanel({
   // Render output preview card
   const renderOutputCard = () => {
     return (
-      <div className="bg-gradient-to-br from-success-light to-emerald-50 dark:from-success-light dark:to-emerald-950/30 rounded-lg p-4 border border-success-light dark:border-success-light">
+      <div className="bg-gradient-to-br from-success-light to-accent-emerald-light rounded-lg p-4 border border-success-light dark:border-success-light">
         <div className="flex items-center gap-2 mb-3">
           <Zap className="h-4 w-4 text-success dark:text-success" />
           <span className="text-sm font-medium text-success dark:text-success">
@@ -1878,7 +1878,7 @@ function TestStep({
           <div className="text-xs text-muted-foreground">{tBuilder('test.scope')}</div>
         </div>
         <div className="rounded-lg border bg-card p-4 text-center">
-          <div className="text-xl font-bold text-purple-500">
+          <div className="text-xl font-bold text-accent-purple">
             {extensionSources?.length || 0}
           </div>
           <div className="text-xs text-muted-foreground">{tBuilder('test.extensionSources')}</div>

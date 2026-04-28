@@ -386,7 +386,7 @@ export function PendingDevicesList({
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, { color: string; label: string; icon: React.ReactNode }> = {
       collecting: { color: "bg-info-light text-info", label: t('devices:pending.status.collecting'), icon: <Loader2 className="h-4 w-4" /> },
-      analyzing: { color: "bg-purple-500/20 text-purple-700", label: t('devices:pending.status.analyzing'), icon: <SearchIcon className="h-4 w-4" /> },
+      analyzing: { color: "bg-accent-purple-light text-accent-purple", label: t('devices:pending.status.analyzing'), icon: <SearchIcon className="h-4 w-4" /> },
       waiting_processing: { color: "bg-warning-light text-warning", label: t('devices:pending.status.waitingProcessing'), icon: <Hourglass className="h-4 w-4" /> },
       registered: { color: "bg-success-light text-success", label: t('devices:pending.status.registered'), icon: <CheckCircle2 className="h-4 w-4" /> },
       rejected: { color: "bg-error-light text-error", label: t('devices:pending.status.rejected'), icon: <XCircle className="h-4 w-4" /> },
@@ -502,7 +502,7 @@ export function PendingDevicesList({
                     draft.status === 'waiting_processing'
                       ? "bg-warning-light text-warning"
                       : draft.status === 'analyzing'
-                        ? "bg-purple-500/10 text-purple-600"
+                        ? "bg-accent-purple-light text-accent-purple"
                         : "bg-muted text-muted-foreground"
                   )}>
                     <Cpu className="h-4 w-4" />
@@ -938,7 +938,7 @@ export function PendingDevicesList({
                   }`}>
                     {isNewType ? (
                       <>
-                        <span className="bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 text-xs px-2 py-0.5 rounded">
+                        <span className="bg-accent-orange-light text-accent-orange text-xs px-2 py-0.5 rounded">
                           {t('devices:pending.newType')}
                         </span>
                         <span>{t('devices:pending.willCreateNewType', { type: selectedDeviceType })}</span>

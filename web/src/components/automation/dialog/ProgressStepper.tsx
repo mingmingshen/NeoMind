@@ -230,7 +230,7 @@ export function HorizontalStepper({
                 <div
                   className={cn(
                     'h-0.5 w-8 md:w-12 mx-2 rounded-full transition-colors shrink-0',
-                    (status === 'completed' || isPast) ? 'bg-green-500' : 'bg-border'
+                    (status === 'completed' || isPast) ? 'bg-success' : 'bg-border'
                   )}
                 />
               )}

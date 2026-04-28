@@ -48,11 +48,11 @@ const LLM_PROVIDER_CONFIG: Record<string, {
   },
   openai: {
     icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400',
+    iconBg: 'bg-accent-emerald-light text-accent-emerald',
   },
   anthropic: {
     icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400',
+    iconBg: 'bg-accent-orange-light text-accent-orange',
   },
   google: {
     icon: <Server className="h-6 w-6" />,
@@ -68,7 +68,7 @@ const LLM_PROVIDER_CONFIG: Record<string, {
   },
   deepseek: {
     icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-400',
+    iconBg: 'bg-accent-cyan-light text-accent-cyan',
   },
   glm: {
     icon: <Server className="h-6 w-6" />,
@@ -76,7 +76,7 @@ const LLM_PROVIDER_CONFIG: Record<string, {
   },
   minimax: {
     icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400',
+    iconBg: 'bg-accent-indigo-light text-accent-indigo',
   },
   llamacpp: {
     icon: <Server className="h-6 w-6" />,

@@ -183,7 +183,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
                 {thinkingSteps.length > 0 && (
                   <div>
                     <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                      <Brain className="h-4 w-4 text-purple-500" />
+                      <Brain className="h-4 w-4 text-accent-purple" />
                       {t('agents:thinking.reasoningSteps')}
                     </h4>
                     <div className="space-y-2">
@@ -266,10 +266,10 @@ function ThinkingStep({ step }: ThinkingStepProps) {
         return 'text-info bg-info-light border-info'
       case 'evaluation':
       case 'evaluate':
-        return 'text-orange-500 bg-orange-500/10 border-orange-500/20'
+        return 'text-accent-orange bg-accent-orange-light border-accent-orange-light'
       case 'planning':
       case 'plan':
-        return 'text-purple-500 bg-purple-500/10 border-purple-500/20'
+        return 'text-accent-purple bg-accent-purple-light border-accent-purple-light'
       case 'execution':
       case 'execute':
         return 'text-success bg-success-light border-success-light'

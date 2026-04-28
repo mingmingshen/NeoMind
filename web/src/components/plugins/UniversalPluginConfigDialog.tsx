@@ -458,8 +458,8 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   const getModelIcon = (model: OllamaModel) => {
     const icons = []
     if (model.supports_multimodal) icons.push(<Eye key="vision" className="h-4 w-4 text-info" />)
-    if (model.supports_thinking) icons.push(<Brain key="thinking" className="h-4 w-4 text-purple-500" />)
-    if (model.supports_tools) icons.push(<Wrench key="tools" className="h-4 w-4 text-orange-500" />)
+    if (model.supports_thinking) icons.push(<Brain key="thinking" className="h-4 w-4 text-accent-purple" />)
+    if (model.supports_tools) icons.push(<Wrench key="tools" className="h-4 w-4 text-accent-orange" />)
     if (icons.length === 0) return null
     return <span className="flex items-center gap-0.5">{icons}</span>
   }

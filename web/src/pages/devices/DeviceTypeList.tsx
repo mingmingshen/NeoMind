@@ -144,7 +144,7 @@ export function DeviceTypeList({
 
             case 'commands':
               return (
-                <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 dark:border-purple-800">
+                <Badge variant="outline" className="text-xs bg-accent-purple-light text-accent-purple border-accent-purple-light">
                   {type.commands?.length ?? type.command_count ?? 0}
                 </Badge>
               )

@@ -55,8 +55,8 @@ type DetailTab = 'overview' | 'history' | 'memory' | 'messages'
 // Role configuration - labels use i18n
 const ROLE_CONFIG: Record<string, { icon: typeof Activity; color: string }> = {
   Monitor: { icon: Activity, color: 'text-info' },
-  Executor: { icon: Zap, color: 'text-orange-600' },
-  Analyst: { icon: BarChart3, color: 'text-purple-600' },
+  Executor: { icon: Zap, color: 'text-accent-orange' },
+  Analyst: { icon: BarChart3, color: 'text-accent-purple' },
 }
 
 export function AgentDetailPanel({
@@ -269,7 +269,7 @@ export function AgentDetailPanel({
                       icon={<CheckCircle2 className="h-4 w-4" />}
                       label={t('agents:detail.success')}
                       value={formatCount(agent.stats?.successful_executions ?? agent.success_count)}
-                      color="text-green-500"
+                      color="text-success"
                     />
                     <StatItem
                       icon={<XCircle className="h-4 w-4" />}
@@ -281,7 +281,7 @@ export function AgentDetailPanel({
                       icon={<Clock className="h-4 w-4" />}
                       label={t('agents:detail.avgDuration')}
                       value={formatDuration(agent.stats?.avg_duration_ms ?? agent.avg_duration_ms)}
-                      color="text-orange-500"
+                      color="text-accent-orange"
                     />
                   </div>
                 </DetailSection>
@@ -480,9 +480,9 @@ interface ResourceCountItemProps {
 function ResourceCountItem({ color, label, count }: ResourceCountItemProps) {
   const colorMap = {
     blue: 'bg-info-light text-info border-info',
-    purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
-    green: 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20',
-    orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
+    purple: 'bg-accent-purple-light text-accent-purple border-accent-purple-light',
+    green: 'bg-success-light text-success dark:text-success border-success-light',
+    orange: 'bg-accent-orange-light text-accent-orange border-accent-orange-light',
   }
   return (
     <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded border text-sm", colorMap[color])}>
@@ -588,9 +588,9 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
                 </div>
               )}
               {longTermMemoriesCount > 0 && (
-                <div className="flex flex-col items-center p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                  <Sparkles className="h-4 w-4 text-purple-500 mb-1" />
-                  <span className="text-lg font-bold text-purple-600 dark:text-purple-400">{longTermMemoriesCount}</span>
+                <div className="flex flex-col items-center p-3 rounded-lg bg-accent-purple-light border border-accent-purple-light">
+                  <Sparkles className="h-4 w-4 text-accent-purple mb-1" />
+                  <span className="text-lg font-bold text-accent-purple">{longTermMemoriesCount}</span>
                   <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{t('agents:memory.longTerm')}</span>
                 </div>
               )}
@@ -611,7 +611,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
             title={t('agents:memory.working')}
             icon={Zap}
           >
-            <div className="p-3 rounded-lg bg-gradient-to-br from-info-light to-purple-500/5 border border-info">
+            <div className="p-3 rounded-lg bg-gradient-to-br from-info-light to-accent-purple-light border border-info">
               {memory.working.current_analysis && (
                 <div className="mb-2">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">{t('agents:memory.situationAnalysis')}</div>
@@ -620,7 +620,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
               )}
               {memory.working.current_conclusion && (
                 <div className="flex items-start gap-2 pt-2 border-t border-border">
-                  <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                  <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
                   <div>
                     <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">{t('agents:memory.conclusion')}</div>
                     <p className="text-sm font-medium">{memory.working.current_conclusion}</p>
@@ -641,7 +641,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
               {memory.short_term?.summaries?.map((summary: any, idx: number) => (
                 <div key={idx} className="group relative overflow-hidden rounded-lg bg-background border border-border hover:border-info transition-colors">
                   {/* Success indicator strip */}
-                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${summary.success ? 'bg-green-500' : 'bg-error'}`} />
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${summary.success ? 'bg-success' : 'bg-error'}`} />
 
                   <div className="pl-4 pr-3 py-3">
                     <div className="flex items-center justify-between mb-2">
@@ -703,7 +703,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
           >
             <div className="space-y-2">
               {memory.long_term?.memories?.map((mem: any, idx: number) => (
-                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-purple-500/5 to-pink-500/5 border border-purple-500/10 hover:border-purple-500/20 transition-colors">
+                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-accent-purple-light to-pink-500/5 border border-accent-purple-light hover:border-accent-purple transition-colors">
                   <div className="flex items-center justify-between mb-2">
                     <Badge variant="outline" className="text-xs">
                       {mem.memory_type}
@@ -711,7 +711,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
                     <div className="flex items-center gap-1">
                       <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-purple-500 rounded-full"
+                          className="h-full bg-accent-purple rounded-full"
                           style={{ width: `${Math.round((mem.importance || 0) * 100)}%` }}
                         />
                       </div>
@@ -738,7 +738,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
           >
             <div className="space-y-2">
               {memory.long_term?.patterns?.map((pattern: any, idx: number) => (
-                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-warning-light to-orange-500/5 border border-warning">
+                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-warning-light to-accent-orange-light border border-warning">
                   <div className="flex items-center justify-between mb-2">
                     <Badge variant="outline" className="text-xs">
                       {pattern.pattern_type}
@@ -765,7 +765,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
           >
             <div className="space-y-2">
               {(memory.learned_patterns || []).map((pattern: any, idx: number) => (
-                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-warning-light to-orange-500/5 border border-warning">
+                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-warning-light to-accent-orange-light border border-warning">
                   <div className="flex items-center justify-between mb-2">
                     <Badge variant="outline" className="text-xs">
                       {pattern.pattern_type}

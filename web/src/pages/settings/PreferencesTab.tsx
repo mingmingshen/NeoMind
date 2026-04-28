@@ -185,7 +185,7 @@ export function PreferencesTab() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-green-500" />
+            <Clock className="h-5 w-5 text-success" />
             {t("settings:timeSettings")}
           </CardTitle>
         </CardHeader>

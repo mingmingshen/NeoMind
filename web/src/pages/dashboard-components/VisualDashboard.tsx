@@ -2769,7 +2769,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                         <div key={state} className="flex items-center gap-2">
                           <span className={cn(
                             "text-xs font-medium px-2 py-1 rounded shrink-0",
-                            state === 'on' && "bg-green-500/10 text-green-600",
+                            state === 'on' && "bg-success-light text-success",
                             state === 'off' && "bg-muted text-muted-foreground",
                             state === 'error' && "bg-error-light text-error",
                             state === 'warning' && "bg-warning-light text-warning",
@@ -3812,8 +3812,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
                   {/* Type-specific hints */}
                   {config.type === 'hls' && (
-                    <div className="p-2 bg-green-500/10 border border-green-500/20 rounded-md">
-                      <p className="text-xs text-green-600 dark:text-green-400">
+                    <div className="p-2 bg-success-light border border-success-light rounded-md">
+                      <p className="text-xs text-success dark:text-success">
                         <strong>HLS URL格式：</strong> http://server/path/index.m3u8
                       </p>
                     </div>
@@ -4341,19 +4341,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       const TYPE_CONFIG = {
                         device: {
                           label: t('mapDisplay.device'),
-                          color: 'bg-green-500',
-                          textColor: 'text-green-600',
-                          bgColor: 'bg-green-50 dark:bg-green-950/30',
-                          borderColor: 'border-green-200 dark:border-green-800',
+                          color: 'bg-success',
+                          textColor: 'text-success',
+                          bgColor: 'bg-success-light dark:bg-success-light',
+                          borderColor: 'border-success-light dark:border-success-light',
                           icon: MapPin,
                           description: t('mapDisplay.deviceDesc')
                         },
                         metric: {
                           label: t('mapDisplay.metric'),
-                          color: 'bg-purple-500',
-                          textColor: 'text-purple-600',
-                          bgColor: 'bg-purple-50 dark:bg-purple-950/30',
-                          borderColor: 'border-purple-200 dark:border-purple-800',
+                          color: 'bg-accent-purple',
+                          textColor: 'text-accent-purple',
+                          bgColor: 'bg-accent-purple-light',
+                          borderColor: 'border-accent-purple-light',
                           icon: Activity,
                           description: t('mapDisplay.metricDesc')
                         },
@@ -4368,10 +4368,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                         },
                         marker: {
                           label: t('mapDisplay.marker'),
-                          color: 'bg-orange-500',
-                          textColor: 'text-orange-600',
-                          bgColor: 'bg-orange-50 dark:bg-orange-950/30',
-                          borderColor: 'border-orange-200 dark:border-orange-800',
+                          color: 'bg-accent-orange',
+                          textColor: 'text-accent-orange',
+                          bgColor: 'bg-accent-orange-light',
+                          borderColor: 'border-accent-orange-light',
                           icon: Monitor,
                           description: t('mapDisplay.markerDesc')
                         },
@@ -4449,8 +4449,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                                     </div>
                                     <div className="text-xs text-muted-foreground">
                                       {type === 'device' && <span className="text-info">{t('visualDashboard.viewDetails')}</span>}
-                                      {type === 'metric' && <span className="text-green-500">{t('visualDashboard.viewValue')}</span>}
-                                      {type === 'command' && <span className="text-orange-500">{t('visualDashboard.execute')}</span>}
+                                      {type === 'metric' && <span className="text-success">{t('visualDashboard.viewValue')}</span>}
+                                      {type === 'command' && <span className="text-accent-orange">{t('visualDashboard.execute')}</span>}
                                     </div>
                                   </div>
                                 )
@@ -4469,15 +4469,15 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       <span>{t('mapDisplay.device')}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="w-4 h-4 rounded-full bg-green-500"></div>
+                      <div className="w-4 h-4 rounded-full bg-success"></div>
                       <span>{t('mapDisplay.metric')}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="w-4 h-4 rounded-full bg-orange-500"></div>
+                      <div className="w-4 h-4 rounded-full bg-accent-orange"></div>
                       <span>{t('mapDisplay.command')}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <div className="w-4 h-4 rounded-full bg-purple-500"></div>
+                      <div className="w-4 h-4 rounded-full bg-accent-purple"></div>
                       <span>{t('mapDisplay.marker')}</span>
                     </div>
                   </div>
@@ -4749,19 +4749,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       const LAYER_TYPE_CONFIG = {
                         device: {
                           label: t('layerDisplay.device'),
-                          color: 'bg-green-500',
-                          textColor: 'text-green-600',
-                          bgColor: 'bg-green-50 dark:bg-green-950/30',
-                          borderColor: 'border-green-200 dark:border-green-800',
+                          color: 'bg-success',
+                          textColor: 'text-success',
+                          bgColor: 'bg-success-light dark:bg-success-light',
+                          borderColor: 'border-success-light dark:border-success-light',
                           icon: MapPin,
                           description: t('layerDisplay.deviceDesc')
                         },
                         metric: {
                           label: t('layerDisplay.metric'),
-                          color: 'bg-purple-500',
-                          textColor: 'text-purple-600',
-                          bgColor: 'bg-purple-50 dark:bg-purple-950/30',
-                          borderColor: 'border-purple-200 dark:border-purple-800',
+                          color: 'bg-accent-purple',
+                          textColor: 'text-accent-purple',
+                          bgColor: 'bg-accent-purple-light',
+                          borderColor: 'border-accent-purple-light',
                           icon: Activity,
                           description: t('layerDisplay.metricDesc')
                         },
@@ -4785,10 +4785,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                         },
                         icon: {
                           label: t('layerDisplay.icon'),
-                          color: 'bg-orange-500',
-                          textColor: 'text-orange-600',
-                          bgColor: 'bg-orange-50 dark:bg-orange-950/30',
-                          borderColor: 'border-orange-200 dark:border-orange-800',
+                          color: 'bg-accent-orange',
+                          textColor: 'text-accent-orange',
+                          bgColor: 'bg-accent-orange-light',
+                          borderColor: 'border-accent-orange-light',
                           icon: Sparkles,
                           description: t('layerDisplay.iconDesc')
                         },

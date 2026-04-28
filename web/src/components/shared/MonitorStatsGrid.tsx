@@ -19,7 +19,7 @@ const colorClasses = {
   success: "bg-success-light text-success border-success",
   warning: "bg-warning-light text-warning border-warning",
   error: "bg-error-light text-error border-error",
-  purple: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-900",
+  purple: "bg-accent-purple-light text-accent-purple border-accent-purple-light",
 };
 
 export function MonitorStatsGrid({ stats, className }: MonitorStatsGridProps) {

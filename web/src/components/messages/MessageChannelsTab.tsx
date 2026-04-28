@@ -53,7 +53,7 @@ const CHANNEL_CONFIG: Record<string, { icon: string; color: string }> = {
   console: { icon: 'Terminal', color: 'bg-muted-foreground' },
   memory: { icon: 'Database', color: 'bg-info' },
   webhook: { icon: 'Webhook', color: 'bg-success' },
-  email: { icon: 'Mail', color: 'bg-purple-500' },
+  email: { icon: 'Mail', color: 'bg-accent-purple' },
 }
 
 export function MessageChannelsTab({

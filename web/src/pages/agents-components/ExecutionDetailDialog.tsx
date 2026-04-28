@@ -80,7 +80,7 @@ export function ExecutionDetailDialog({
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'Completed':
-        return <CheckCircle2 className="h-4 w-4 text-green-500" />
+        return <CheckCircle2 className="h-4 w-4 text-success" />
       case 'Failed':
         return <XCircle className="h-4 w-4 text-error" />
       case 'Running':
@@ -341,7 +341,7 @@ export function ExecutionDetailDialog({
                           onClick={() => toggleDataExpanded(idx)}
                         >
                           <div className="flex items-center gap-2 min-w-0 flex-1">
-                            {hasImage && <ImageIcon className="h-4 w-4 text-purple-500 shrink-0" />}
+                            {hasImage && <ImageIcon className="h-4 w-4 text-accent-purple shrink-0" />}
                             <span className="text-[10px] font-medium truncate">{data.source}</span>
                             <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0">{data.data_type}</Badge>
                           </div>
