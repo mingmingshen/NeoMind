@@ -839,7 +839,7 @@ export function UnifiedDataSourceConfig({
     return (
       <div className="flex flex-col h-full">
         {/* Search input inside device list */}
-        <div className="p-2 border-b bg-[var(--muted-20)]">
+        <div className="p-2 border-b bg-muted-20">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -852,9 +852,9 @@ export function UnifiedDataSourceConfig({
         </div>
 
         {/* Device list header with count */}
-        <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)] flex items-center justify-between">
+        <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-muted-30 flex items-center justify-between">
           <span>{t('dataSource.deviceList')}</span>
-          <span className="text-[10px] text-muted-foreground bg-[var(--muted-50)] px-1.5 py-0.5 rounded">
+          <span className="text-[10px] text-muted-foreground bg-muted-50 px-1.5 py-0.5 rounded">
             {filteredDevices.length} {t('dataSource.count')}
           </span>
         </div>
@@ -1088,7 +1088,7 @@ export function UnifiedDataSourceConfig({
         }
         if (hasData === false) {
           return (
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--muted-30)] border border-muted" title={t('dataSource.noHistoricalData')}>
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted-30 border border-muted" title={t('dataSource.noHistoricalData')}>
               <Circle className="h-1.5 w-1.5 fill-muted-foreground text-muted-foreground" />
               <span className="text-[10px] text-muted-foreground">{t('dataSource.noData')}</span>
             </div>
@@ -1099,12 +1099,12 @@ export function UnifiedDataSourceConfig({
 
       return (
         <div className="flex flex-col h-full">
-          <div className="px-3 py-2.5 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)] flex items-center justify-between">
+          <div className="px-3 py-2.5 border-b text-xs font-medium text-muted-foreground bg-muted-30 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
               <Database className="h-4 w-4" />
               {t('dataSource.metricsOf', { device: selectedDevice.name || selectedDevice.id })}
             </span>
-            <span className="text-[10px] text-muted-foreground bg-[var(--muted-50)] px-1.5 py-0.5 rounded">
+            <span className="text-[10px] text-muted-foreground bg-muted-50 px-1.5 py-0.5 rounded">
               {items.length} {t('dataSource.count')}
             </span>
           </div>
@@ -1206,7 +1206,7 @@ export function UnifiedDataSourceConfig({
 
       return (
         <div className="flex flex-col h-full">
-          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)]">
+          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-muted-30">
             {t('dataSource.commandsOf', { device: selectedDevice.name || selectedDevice.id })}
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -1244,7 +1244,7 @@ export function UnifiedDataSourceConfig({
     return (
       <div className="flex flex-col h-full">
         {/* Search input inside extension list */}
-        <div className="p-2 border-b bg-[var(--muted-20)]">
+        <div className="p-2 border-b bg-muted-20">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -1257,9 +1257,9 @@ export function UnifiedDataSourceConfig({
         </div>
 
         {/* Extension list header with count */}
-        <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)] flex items-center justify-between">
+        <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-muted-30 flex items-center justify-between">
           <span>{t('extensions:extensionList') || 'Extensions'}</span>
-          <span className="text-[10px] text-muted-foreground bg-[var(--muted-50)] px-1.5 py-0.5 rounded">
+          <span className="text-[10px] text-muted-foreground bg-muted-50 px-1.5 py-0.5 rounded">
             {filteredExtensions.length} {t('dataSource.count')}
           </span>
         </div>
@@ -1287,7 +1287,7 @@ export function UnifiedDataSourceConfig({
                     'w-full flex items-center gap-3 px-3 py-2.5 border-b text-left transition-colors',
                     isSelected
                       ? 'bg-muted border-border'
-                      : 'hover:bg-[var(--muted-30)] border-transparent'
+                      : 'hover:bg-muted-30 border-transparent'
                   )}
                 >
                   <Puzzle className={cn(
@@ -1342,7 +1342,7 @@ export function UnifiedDataSourceConfig({
 
       return (
         <div className="flex flex-col h-full">
-          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)]">
+          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-muted-30">
             {selectedExtension.name} · {t('dataSource.metrics') || 'Metrics'}
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -1392,7 +1392,7 @@ export function UnifiedDataSourceConfig({
 
       return (
         <div className="flex flex-col h-full">
-          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-[var(--muted-30)]">
+          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-muted-30">
             {selectedExtension.name} · {t('dataSource.commands') || 'Commands'}
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -1780,7 +1780,7 @@ export function UnifiedDataSourceConfig({
               )
             })}
             {selectedItemsArray.length > 3 && (
-              <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-[var(--muted-50)] text-xs text-muted-foreground">
+              <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted-50 text-xs text-muted-foreground">
                 +{selectedItemsArray.length - 3} {t('dataSource.more')}
               </div>
             )}
@@ -1815,7 +1815,7 @@ export function UnifiedDataSourceConfig({
                 'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors shrink-0',
                 isActive
                   ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-[var(--muted-50)]'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted-50'
               )}
             >
               <Icon className="h-4 w-4" />
@@ -2253,7 +2253,7 @@ function MobileMetricsList({
                     {item.dataPointCount ?? 0}
                   </div>
                 ) : (
-                  <div className="px-2 py-1 rounded-lg bg-[var(--muted-30)] border border-muted text-xs text-muted-foreground">
+                  <div className="px-2 py-1 rounded-lg bg-muted-30 border border-muted text-xs text-muted-foreground">
                     {t('dataSource.noData')}
                   </div>
                 )}

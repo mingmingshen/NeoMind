@@ -292,7 +292,7 @@ export function UnifiedFormDialog({
 
             {/* Loading overlay */}
             {loading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg-80)]">
+              <div className="absolute inset-0 flex items-center justify-center bg-bg-80">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             )}
@@ -378,7 +378,7 @@ export function UnifiedFormDialog({
           )}
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t shrink-0 bg-[var(--muted-30)]">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t shrink-0 bg-muted-30">
             {footer ? (
               footer
             ) : (

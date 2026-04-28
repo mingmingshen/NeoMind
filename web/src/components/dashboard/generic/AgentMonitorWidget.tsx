@@ -384,7 +384,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                         {images.map((img, idx) => (
                           <div
                             key={idx}
-                            className="relative group rounded-lg overflow-hidden border border-border bg-[var(--muted-30)] cursor-pointer aspect-video"
+                            className="relative group rounded-lg overflow-hidden border border-border bg-muted-30 cursor-pointer aspect-video"
                             onClick={() => setFullscreenImage(img.image)}
                           >
                             <img
@@ -426,7 +426,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                           <Target className="h-4 w-4" />
                           Analysis
                         </div>
-                        <p className="text-sm bg-[var(--muted-50)] p-3 rounded-lg">{decisionProcess.situation_analysis}</p>
+                        <p className="text-sm bg-muted-50 p-3 rounded-lg">{decisionProcess.situation_analysis}</p>
                       </div>
                     )}
 
@@ -545,7 +545,7 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
       className={cn(
         "w-full text-left group relative rounded-lg border transition-all duration-200",
         "hover:shadow-md hover:border-border",
-        isLatest ? "border-border bg-muted" : "border-border bg-[var(--bg-50)]",
+        isLatest ? "border-border bg-muted" : "border-border bg-bg-50",
         isRunning && "border-blue-500/50 bg-blue-500/5"
       )}
     >
@@ -597,7 +597,7 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
                 />
               ))}
               {images.length > 4 && (
-                <div className="h-10 w-10 rounded border border-border bg-[var(--muted-50)] flex items-center justify-center">
+                <div className="h-10 w-10 rounded border border-border bg-muted-50 flex items-center justify-center">
                   <span className="text-[9px] text-muted-foreground">+{images.length - 4}</span>
                 </div>
               )}
@@ -963,7 +963,7 @@ export function AgentMonitorWidget({
 
           {/* User Prompt */}
           {promptText && (
-            <div className="mt-3 p-2.5 rounded-lg bg-[var(--muted-30)] border border-border">
+            <div className="mt-3 p-2.5 rounded-lg bg-muted-30 border border-border">
               <div className="flex items-center gap-1.5 mb-1">
                 <Target className="h-4 w-4 text-primary" />
                 <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Task Prompt</span>
@@ -1097,7 +1097,7 @@ export function AgentMonitorWidget({
         </div>
 
         {/* Footer: User Input */}
-        <div className="shrink-0 p-3 border-t border-border bg-[var(--muted-20)]">
+        <div className="shrink-0 p-3 border-t border-border bg-muted-20">
           <div className="flex gap-2">
             <Textarea
               placeholder="Add task hints or context..."

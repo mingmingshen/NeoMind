@@ -857,7 +857,7 @@ export function UnifiedAlertChannelsTab({
               </div>
 
               {/* Preview */}
-              <div className="p-3 bg-[var(--muted-50)] rounded-md">
+              <div className="p-3 bg-muted-50 rounded-md">
                 <p className="text-sm font-medium mb-1">{t('common:messages.channels.filterPreview')}</p>
                 <p className="text-xs text-muted-foreground">
                   {filterConfig.message_types.length === 0 && filterConfig.source_types.length === 0

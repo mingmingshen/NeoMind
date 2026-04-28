@@ -230,7 +230,7 @@ export function AgentDetailPanel({
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as DetailTab)} className="flex-1 flex flex-col">
         <div className="px-4 pt-3">
-          <TabsList className="w-full justify-start bg-[var(--muted-50)] h-9">
+          <TabsList className="w-full justify-start bg-muted-50 h-9">
             <TabsTrigger value="overview" className="h-7 text-sm">
               <Eye className="h-4 w-4 mr-1.5" />
               {t('agents:detail.overview')}
@@ -438,7 +438,7 @@ interface DetailSectionProps {
 
 function DetailSection({ title, icon: Icon, children }: DetailSectionProps) {
   return (
-    <div className="bg-[var(--muted-20)] rounded-lg p-3">
+    <div className="bg-muted-20 rounded-lg p-3">
       {title && Icon && (
         <h3 className="text-sm font-medium flex items-center gap-2 mb-3 text-muted-foreground">
           <Icon className="h-4 w-4" />
@@ -646,7 +646,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
                   <div className="pl-4 pr-3 py-3">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono text-muted-foreground bg-[var(--muted-50)] px-1.5 py-0.5 rounded">
+                        <span className="text-xs font-mono text-muted-foreground bg-muted-50 px-1.5 py-0.5 rounded">
                           {summary.execution_id?.slice(0, 6)}...
                         </span>
                         <span className="text-xs text-muted-foreground">

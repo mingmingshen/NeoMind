@@ -157,7 +157,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
 
   return (
     <TooltipProvider delayDuration={500}>
-      <nav ref={innerRef} className="fixed top-0 left-0 right-0 min-h-16 bg-[var(--surface-glass)] backdrop-blur-xl border-b border-[var(--glass-border)] flex items-center px-4 sm:px-6 z-40" style={{paddingTop: 'env(safe-area-inset-top, 0px)'}}>
+      <nav ref={innerRef} className="fixed top-0 left-0 right-0 min-h-16 bg-surface-glass backdrop-blur-xl border-b border-glass-border flex items-center px-4 sm:px-6 z-40" style={{paddingTop: 'env(safe-area-inset-top, 0px)'}}>
         {/* Logo - vertically centered in nav */}
         <Link to="/chat" className="flex shrink-0 items-center justify-center mr-4 md:mr-6">
           <BrandLogoWithName />
@@ -182,8 +182,8 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                       className={cn(
                         "w-11 h-11 rounded-lg transition-all",
                         isActive
-                          ? "bg-muted text-primary hover:bg-[var(--muted-50)]"
-                          : "text-muted-foreground hover:text-foreground hover:bg-[var(--muted-50)]"
+                          ? "bg-muted text-primary hover:bg-muted-50"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted-50"
                       )}
                     >
                       <Icon className="h-5 w-5" />
@@ -237,7 +237,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                             "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all active:scale-95 active:bg-muted",
                             isActive
                               ? "bg-muted text-primary"
-                              : "text-muted-foreground hover:text-foreground hover:bg-[var(--muted-50)]"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted-50"
                           )}
                         >
                           <Icon className="h-5 w-5" />
@@ -395,8 +395,8 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                       <div
                         key={alert.id}
                         className={cn(
-                          "px-3 py-1.5 border-b last:border-b-0 hover:bg-[var(--muted-50)] transition-colors",
-                          isUnread && "bg-[var(--muted-30)]"
+                          "px-3 py-1.5 border-b last:border-b-0 hover:bg-muted-50 transition-colors",
+                          isUnread && "bg-muted-30"
                         )}
                       >
                         <div className="flex items-center gap-2">

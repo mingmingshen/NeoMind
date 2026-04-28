@@ -213,7 +213,7 @@ export const ComponentPreview = memo(function ComponentPreview({
     <div className={cn('flex flex-col overflow-hidden', className)}>
       {/* Header */}
       {showHeader && (
-        <div className="flex items-center justify-between px-3 py-2 border-b bg-[var(--muted-30)] shrink-0">
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted-30 shrink-0">
           <div className="flex items-center gap-2">
             <Eye className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">{t('componentPreview.title')}</span>
@@ -268,7 +268,7 @@ export const ComponentPreview = memo(function ComponentPreview({
       </div>
 
       {/* Footer with component info */}
-      <div className="px-3 py-1.5 border-t bg-[var(--muted-20)] shrink-0">
+      <div className="px-3 py-1.5 border-t bg-muted-20 shrink-0">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{meta?.name || componentType}</span>
           <div className="flex items-center gap-2">

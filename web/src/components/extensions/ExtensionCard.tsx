@@ -347,7 +347,7 @@ function ExtensionCapabilitiesDialog({
                   {extension.commands.map((command) => (
                     <div
                       key={command.id}
-                      className="p-3 rounded-lg border bg-[var(--muted-30)] space-y-2"
+                      className="p-3 rounded-lg border bg-muted-30 space-y-2"
                     >
                       <div className="flex items-center gap-2">
                         <Zap className="h-4 w-4 text-yellow-500" />
@@ -374,7 +374,7 @@ function ExtensionCapabilitiesDialog({
                   {extension.metrics.map((metric) => (
                     <div
                       key={metric.name}
-                      className="p-3 rounded-lg border bg-[var(--muted-20)] group"
+                      className="p-3 rounded-lg border bg-muted-20 group"
                     >
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium text-sm">{metric.display_name}</span>

@@ -95,7 +95,7 @@ export function CenterPickerDialog({
             </div>
 
             {/* Instructions */}
-            <div className="px-4 py-3 bg-[var(--muted-30)] border-b text-sm text-muted-foreground shrink-0">
+            <div className="px-4 py-3 bg-muted-30 border-b text-sm text-muted-foreground shrink-0">
               <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-primary" />
                 <span>{t('mapDisplay.clickToSelectCenter', '点击地图选择中心点位置')}</span>
@@ -103,7 +103,7 @@ export function CenterPickerDialog({
             </div>
 
             {/* Map Preview */}
-            <div className="flex-1 relative bg-[var(--muted-30)]">
+            <div className="flex-1 relative bg-muted-30">
               <div className="absolute inset-0">
                 <MapDisplay
                   center={selectedCenter}
@@ -131,7 +131,7 @@ export function CenterPickerDialog({
             </div>
 
             {/* Selected coordinates display */}
-            <div className="px-4 py-3 border-t bg-[var(--muted-20)] shrink-0">
+            <div className="px-4 py-3 border-t bg-muted-20 shrink-0">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4 text-sm">
                   <div className="flex items-center gap-1">
@@ -215,7 +215,7 @@ export function CenterPickerDialog({
           </div>
 
           {/* Instructions */}
-          <div className="px-6 py-2 bg-[var(--muted-30)] border-b text-sm text-muted-foreground shrink-0">
+          <div className="px-6 py-2 bg-muted-30 border-b text-sm text-muted-foreground shrink-0">
             <div className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-primary" />
               <span>{t('mapDisplay.clickToSelectCenter', '点击地图选择中心点位置')}</span>
@@ -223,7 +223,7 @@ export function CenterPickerDialog({
           </div>
 
           {/* Map Preview */}
-          <div className="flex-1 relative bg-[var(--muted-30)] min-h-0">
+          <div className="flex-1 relative bg-muted-30 min-h-0">
             <div className="absolute inset-0">
               <MapDisplay
                 center={selectedCenter}
@@ -253,7 +253,7 @@ export function CenterPickerDialog({
           </div>
 
           {/* Selected coordinates display */}
-          <div className="px-6 py-2 border-t bg-[var(--muted-20)] shrink-0">
+          <div className="px-6 py-2 border-t bg-muted-20 shrink-0">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
@@ -274,7 +274,7 @@ export function CenterPickerDialog({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-[var(--muted-30)]">
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted-30">
             <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
               {t('common.cancel')}
             </Button>

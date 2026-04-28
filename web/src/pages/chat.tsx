@@ -821,7 +821,7 @@ export function ChatPage() {
     <div className="fixed inset-0 flex flex-row overflow-hidden pt-[calc(4rem+env(safe-area-inset-top,0px))] lg:pt-[calc(4rem+env(safe-area-inset-top,0px))]">
       {/* Pending stream recovery dialog */}
       {pendingStream?.hasPending && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-80)] backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-80 backdrop-blur-sm">
           <div className="max-w-md w-full mx-4 bg-card border border-border rounded-lg shadow-lg p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
@@ -1464,7 +1464,7 @@ export function ChatPage() {
                   onClick={handleCancelRequest}
                   className={cn(
                     "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                    "bg-destructive hover:bg-[var(--destructive-hover)] text-destructive-foreground"
+                    "bg-destructive hover:bg-destructive-hover text-destructive-foreground"
                   )}
                   title="Cancel request"
                 >

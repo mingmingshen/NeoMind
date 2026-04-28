@@ -230,7 +230,7 @@ export function ComponentConfigDialog({
                     isExpanded={expandedSections.has('preview')}
                     onToggle={() => toggleSection('preview')}
                   >
-                    <div className="rounded-lg border bg-[var(--muted-20)] p-4">
+                    <div className="rounded-lg border bg-muted-20 p-4">
                       <ComponentPreview
                         key={previewKey}
                         componentType={componentType}
@@ -252,7 +252,7 @@ export function ComponentConfigDialog({
                       {shouldShowDataTransform ? (
                         <div className="space-y-3">
                           {/* Inner tabs */}
-                          <div className="flex gap-2 p-1 bg-[var(--muted-50)] rounded-lg">
+                          <div className="flex gap-2 p-1 bg-muted-50 rounded-lg">
                             <button
                               onClick={() => setMobileDataSourceTab('datasource')}
                               className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-all ${
@@ -410,7 +410,7 @@ export function ComponentConfigDialog({
 
                 {(hasStyleConfig || hasDisplayConfig) && (
                   <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
-                    <TabsList className="w-full justify-start bg-[var(--muted-50)] p-1 px-3 h-10 shrink-0">
+                    <TabsList className="w-full justify-start bg-muted-50 p-1 px-3 h-10 shrink-0">
                       {hasStyleConfig && (
                         <TabsTrigger value="style" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded">
                           {t('componentConfig.style')}
@@ -447,7 +447,7 @@ export function ComponentConfigDialog({
               {/* Right: Data Source + Transform Config */}
               <div className="flex-1 flex flex-col overflow-hidden bg-background min-w-0">
                 <div className="flex-1 min-h-0 flex flex-col">
-                  <div className="flex items-center gap-2 px-3 py-2 bg-[var(--muted-30)] border-b shrink-0">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-muted-30 border-b shrink-0">
                     <div className="flex gap-1">
                       <button
                         onClick={() => setRightDataSourceTab('datasource')}
@@ -526,7 +526,7 @@ export function ComponentConfigDialog({
               <div className="flex-1 flex flex-col overflow-hidden bg-background min-w-0">
                 {(hasStyleConfig || hasDisplayConfig) && (
                   <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
-                    <TabsList className="w-full justify-start bg-[var(--muted-50)] px-4 h-12 shrink-0 border-b rounded-none">
+                    <TabsList className="w-full justify-start bg-muted-50 px-4 h-12 shrink-0 border-b rounded-none">
                       {hasStyleConfig && (
                         <TabsTrigger value="style" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
                           {t('componentConfig.style')}
@@ -605,7 +605,7 @@ function MobileConfigCard({
     <div className="overflow-hidden rounded-lg border border-border bg-card">
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-4 bg-[var(--muted-30)] hover:bg-muted active:bg-[var(--muted-50)] transition-colors touch-action-manipulation"
+        className="w-full flex items-center justify-between px-4 py-4 bg-muted-30 hover:bg-muted active:bg-muted-50 transition-colors touch-action-manipulation"
       >
         <div className="flex items-center gap-3">
           {Icon && <Icon className="h-5 w-5 text-muted-foreground" />}

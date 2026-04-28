@@ -434,7 +434,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-lg">
-            <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-4 sm:p-8">
+            <div className="bg-bg-50 backdrop-blur-md rounded-lg p-4 sm:p-8">
               {/* Welcome Icon */}
               <div className="flex justify-center mb-4 sm:mb-6">
                 <div className="flex size-12 sm:size-16 items-center justify-center rounded-full bg-muted text-primary">
@@ -534,7 +534,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md">
-            <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-6 sm:p-8">
+            <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -570,7 +570,7 @@ export function SetupPage() {
                       autoComplete="username"
                       required
                       minLength={3}
-                      className="pl-9 h-10 bg-[var(--bg-70)] border-border"
+                      className="pl-9 h-10 bg-bg-70 border-border"
                     />
                   </div>
                 </div>
@@ -585,7 +585,7 @@ export function SetupPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder={t('setup:emailPlaceholder')}
                     autoComplete="email"
-                    className="h-10 bg-[var(--bg-70)] border-border mt-1.5"
+                    className="h-10 bg-bg-70 border-border mt-1.5"
                   />
                   
                   {/* Newsletter Subscription Checkbox */}
@@ -619,7 +619,7 @@ export function SetupPage() {
                       autoComplete="new-password"
                       required
                       minLength={8}
-                      className="pl-9 h-10 bg-[var(--bg-70)] border-border"
+                      className="pl-9 h-10 bg-bg-70 border-border"
                     />
                   </div>
                 </div>
@@ -637,7 +637,7 @@ export function SetupPage() {
                       placeholder={t('setup:confirmPasswordPlaceholder')}
                       autoComplete="new-password"
                       required
-                      className="pl-9 h-10 bg-[var(--bg-70)] border-border"
+                      className="pl-9 h-10 bg-bg-70 border-border"
                     />
                   </div>
                 </div>
@@ -778,7 +778,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md">
-            <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-6 sm:p-8">
+            <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -812,7 +812,7 @@ export function SetupPage() {
                           flex flex-col items-start gap-1 p-2 rounded-lg border text-left transition-colors
                           ${selectedTimezone === tz.id
                             ? 'border-primary bg-muted'
-                            : 'border-border hover:bg-[var(--muted-50)]'
+                            : 'border-border hover:bg-muted-50'
                           }
                         `}
                       >
@@ -826,7 +826,7 @@ export function SetupPage() {
                 </div>
 
                 {/* Current Time Preview */}
-                <div className="p-4 bg-[var(--muted-30)] dark:bg-muted rounded-lg">
+                <div className="p-4 bg-muted-30 dark:bg-muted rounded-lg">
                   <div className="text-center">
                     <div className="text-xs text-muted-foreground mb-1">{t('setup:currentTimeInTimezone')}</div>
                     <div className="text-2xl font-mono font-medium">
@@ -908,7 +908,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md">
-            <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-6 sm:p-8">
+            <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -942,7 +942,7 @@ export function SetupPage() {
                           flex flex-col items-start gap-1 p-3 rounded-lg border text-left transition-colors
                           ${selectedProvider === provider.id
                             ? 'border-primary bg-muted'
-                            : 'border-border hover:bg-[var(--muted-50)]'
+                            : 'border-border hover:bg-muted-50'
                           }
                         `}
                       >
@@ -963,7 +963,7 @@ export function SetupPage() {
                     onChange={(e) => setLlmModel(e.target.value)}
                     placeholder={t('setup:modelPlaceholder')}
                     required={selectedProvider !== 'llamacpp'}
-                    className="h-10 bg-[var(--bg-70)] border-border mt-1.5"
+                    className="h-10 bg-bg-70 border-border mt-1.5"
                   />
                 </div>
 
@@ -977,7 +977,7 @@ export function SetupPage() {
                       value={llmEndpoint}
                       onChange={(e) => setLlmEndpoint(e.target.value)}
                       placeholder={selectedProvider === 'llamacpp' ? 'http://localhost:8080' : 'http://localhost:11434'}
-                      className="h-10 bg-[var(--bg-70)] border-border mt-1.5"
+                      className="h-10 bg-bg-70 border-border mt-1.5"
                     />
                   </div>
                 )}
@@ -992,7 +992,7 @@ export function SetupPage() {
                       value={llmApiKey}
                       onChange={(e) => setLlmApiKey(e.target.value)}
                       placeholder={t('setup:apiKeyPlaceholder')}
-                      className="h-10 bg-[var(--bg-70)] border-border mt-1.5"
+                      className="h-10 bg-bg-70 border-border mt-1.5"
                     />
                     <p className="text-xs text-muted-foreground mt-1">{t('setup:apiKeyHint')}</p>
                   </div>
@@ -1058,7 +1058,7 @@ export function SetupPage() {
         {/* Main Content */}
         <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
           <div className="w-full max-w-md text-center">
-            <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-6 sm:p-8">
+            <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
               {/* Success Icon */}
               <div className="flex justify-center mb-6">
                 <div className="flex size-16 items-center justify-center rounded-full bg-green-500/10 text-green-500 dark:bg-green-500/20">
@@ -1071,7 +1071,7 @@ export function SetupPage() {
               <p className="text-muted-foreground mb-8">{t('setup:completeMessage')}</p>
 
               {/* Created Account Info */}
-              <div className="bg-[var(--muted-30)] dark:bg-muted rounded-lg p-4 mb-6 text-left">
+              <div className="bg-muted-30 dark:bg-muted rounded-lg p-4 mb-6 text-left">
                 <div className="text-sm font-medium mb-2">{t('setup:accountCreated')}:</div>
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-muted-foreground" />

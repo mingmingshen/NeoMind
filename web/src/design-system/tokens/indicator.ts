@@ -83,7 +83,7 @@ export const indicatorColors = {
   neutral: {
     base: statusColors.neutral,           // oklch(0.551 0.0 264.38)
     text: 'text-muted-foreground',
-    bg: 'bg-[var(--muted-50)]',
+    bg: 'bg-muted-50',
     border: 'border-border',
     ring: 'transparent',
     shadow: undefined,

@@ -244,7 +244,7 @@ export function ExtensionsPage() {
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmUninstall}
-              className="bg-destructive text-destructive-foreground hover:bg-[var(--destructive-hover)]"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive-hover"
             >
               {t("extensions:uninstall", { defaultValue: "Uninstall" })}
             </AlertDialogAction>

@@ -621,7 +621,7 @@ export function PendingDevicesList({
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                   {t('devices:pending.deviceInfo')}
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm bg-[var(--muted-30)] rounded-lg p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm bg-muted-30 rounded-lg p-4">
                   <div>
                     <span className="text-muted-foreground">{t('devices:pending.headers.deviceId')}: </span>
                     <span className="font-mono font-medium">{selectedDraftForApproval.device_id}</span>
@@ -768,7 +768,7 @@ export function PendingDevicesList({
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                     {t('devices:pending.originalData')}
                   </h3>
-                  <div className="bg-[var(--muted-30)] rounded-lg p-3">
+                  <div className="bg-muted-30 rounded-lg p-3">
                     <div className="flex gap-1 mb-3">
                       {selectedDraftForApproval.samples.slice(0, 5).map((_, index) => (
                         <button
@@ -886,7 +886,7 @@ export function PendingDevicesList({
                               className={`p-3 cursor-pointer transition-colors border-b last:border-b-0 ${
                                 selectedDeviceType === type.device_type
                                   ? 'bg-muted border-primary'
-                                  : 'hover:bg-[var(--muted-50)] border-transparent'
+                                  : 'hover:bg-muted-50 border-transparent'
                               }`}
                               style={{ touchAction: 'manipulation' }}
                             >

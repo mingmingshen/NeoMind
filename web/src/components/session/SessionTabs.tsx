@@ -152,7 +152,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
   return (
     <div className={cn(
       "h-11 flex items-center px-2 sm:px-3 gap-1",
-      "bg-[var(--bg-50)] backdrop-blur-sm",
+      "bg-bg-50 backdrop-blur-sm",
       className
     )}>
       {/* New session button */}
@@ -163,7 +163,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
         disabled={isCreating}
         className={cn(
           "h-8 gap-1.5 flex-shrink-0 rounded-lg",
-          "text-muted-foreground hover:text-foreground hover:bg-[var(--muted-50)]",
+          "text-muted-foreground hover:text-foreground hover:bg-muted-50",
           "transition-all"
         )}
       >
@@ -207,7 +207,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
                 "transition-all duration-150",
                 isActive
                   ? "bg-muted text-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-[var(--muted-50)]"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted-50"
               )}
             >
               <MessageSquare className="h-4 w-4 flex-shrink-0 opacity-60" />

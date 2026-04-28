@@ -860,7 +860,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                     <button
                       key={skillId}
                       onClick={() => toggleSkill(skillId)}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-muted text-primary hover:bg-[var(--muted-50)] transition-colors"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-muted text-primary hover:bg-muted-50 transition-colors"
                     >
                       <BookOpen className="h-4 w-4" />
                       <span>{skill?.name || skillId}</span>

@@ -391,7 +391,7 @@ export function SessionSidebar({
                 placeholder={t('session.search')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 h-8 text-sm rounded-lg bg-[var(--muted-50)] border-0"
+                className="pl-8 h-8 text-sm rounded-lg bg-muted-50 border-0"
               />
             </div>
           </div>
@@ -434,7 +434,7 @@ export function SessionSidebar({
                           "group relative p-2 rounded-lg cursor-pointer transition-all",
                           isActive
                             ? "bg-muted"
-                            : "hover:bg-[var(--muted-50)]",
+                            : "hover:bg-muted-50",
                           isEditing && "bg-muted"
                         )}
                       >
@@ -562,7 +562,7 @@ export function SessionSidebar({
       <>
         <div
           className={cn(
-            "h-full bg-[var(--bg-50)] border-r border-border flex flex-col transition-[width] duration-200",
+            "h-full bg-bg-50 border-r border-border flex flex-col transition-[width] duration-200",
             collapsed ? "w-12" : "w-64"
           )}
         >
@@ -584,7 +584,7 @@ export function SessionSidebar({
               </AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleConfirmDelete}
-                className="bg-destructive text-destructive-foreground hover:bg-[var(--destructive-hover)]"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive-hover"
               >
                 {t('delete')}
               </AlertDialogAction>
@@ -633,7 +633,7 @@ export function SessionSidebar({
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-[var(--destructive-hover)]"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive-hover"
             >
               {t('delete')}
             </AlertDialogAction>

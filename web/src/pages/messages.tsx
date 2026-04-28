@@ -689,7 +689,7 @@ export default function MessagesPage() {
                     "flex items-center gap-2 p-3 rounded-lg border transition-all text-left",
                     selectedMessageTypes.has(type)
                       ? "border-primary bg-muted text-primary"
-                      : "border-border hover:border-border hover:bg-[var(--muted-50)]"
+                      : "border-border hover:border-border hover:bg-muted-50"
                   )}
                 >
                   {type === 'notification' ? (
@@ -734,7 +734,7 @@ export default function MessagesPage() {
                       "w-full flex items-center justify-between p-2.5 rounded-lg border transition-all",
                       selectedSeverities.has(sev)
                         ? `${bgColors[sev]} border-primary`
-                        : "border-border hover:bg-[var(--muted-50)]"
+                        : "border-border hover:bg-muted-50"
                     )}
                   >
                     <div className="flex items-center gap-2">
@@ -774,7 +774,7 @@ export default function MessagesPage() {
                       "flex items-center gap-2 p-2.5 rounded-lg border transition-all",
                       selectedStatuses.has(stat)
                         ? `${statusConfig[stat].bg} border-primary`
-                        : "border-border hover:bg-[var(--muted-50)]"
+                        : "border-border hover:bg-muted-50"
                     )}
                   >
                     <span className="text-sm">{t(`messages.status.${stat}`)}</span>
@@ -809,7 +809,7 @@ export default function MessagesPage() {
                           "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-all",
                           selectedCategories.has(cat)
                             ? "bg-muted border-primary text-primary"
-                            : "border-border hover:border-border hover:bg-[var(--muted-50)]"
+                            : "border-border hover:border-border hover:bg-muted-50"
                         )}
                       >
                         <Icon className="h-4 w-4" />
@@ -825,7 +825,7 @@ export default function MessagesPage() {
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t shrink-0 bg-[var(--muted-30)]">
+        <div className="p-4 border-t shrink-0 bg-muted-30">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
               {hasActiveFilters
@@ -865,7 +865,7 @@ export default function MessagesPage() {
       <div className="py-2">
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="w-full flex items-center justify-between px-4 py-2 hover:bg-[var(--muted-50)] transition-colors"
+          className="w-full flex items-center justify-between px-4 py-2 hover:bg-muted-50 transition-colors"
         >
           <div className="flex items-center gap-2">
             {icon}
@@ -1517,7 +1517,7 @@ export default function MessagesPage() {
               title={t('messages.contentSection', 'Content')}
               description={t('messages.contentSectionDesc', 'Message body')}
             >
-              <div className="bg-[var(--muted-30)] rounded-lg p-3 text-sm whitespace-pre-wrap">
+              <div className="bg-muted-30 rounded-lg p-3 text-sm whitespace-pre-wrap">
                 {selectedMessage.message}
               </div>
             </FormSection>
@@ -1542,7 +1542,7 @@ export default function MessagesPage() {
                 title={t('messages.payload.section', 'Payload Data')}
                 description={t('messages.payload.sectionDesc', 'Structured data for Data Push messages (JSON format)')}
               >
-                <pre className="bg-[var(--muted-50)] rounded-lg p-3 text-xs font-mono overflow-x-auto max-h-60 overflow-y-auto">
+                <pre className="bg-muted-50 rounded-lg p-3 text-xs font-mono overflow-x-auto max-h-60 overflow-y-auto">
                   {JSON.stringify(selectedMessage.payload, null, 2)}
                 </pre>
               </FormSection>
@@ -1556,7 +1556,7 @@ export default function MessagesPage() {
                 collapsible
                 defaultExpanded={false}
               >
-                <pre className="bg-[var(--muted-50)] rounded-lg p-3 text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
+                <pre className="bg-muted-50 rounded-lg p-3 text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
                   {JSON.stringify(selectedMessage.metadata, null, 2)}
                 </pre>
               </FormSection>
@@ -1636,7 +1636,7 @@ export default function MessagesPage() {
                 title={t('messages.channels.config', 'Configuration')}
                 description={t('messages.channels.webhookConfigDesc', 'Webhook endpoint URL')}
               >
-                <div className="bg-[var(--muted-50)] rounded-lg p-3 text-sm font-mono break-all">
+                <div className="bg-muted-50 rounded-lg p-3 text-sm font-mono break-all">
                   {(() => {
                     const cfg = viewChannel.config as Record<string, unknown>
                     return typeof cfg === 'object' && cfg !== null && 'url' in cfg
@@ -1653,7 +1653,7 @@ export default function MessagesPage() {
                 title={t('messages.channels.config', 'Configuration')}
                 description={t('messages.channels.emailConfigDesc', 'Email server settings')}
               >
-                <div className="bg-[var(--muted-50)] rounded-lg p-3 text-sm space-y-1">
+                <div className="bg-muted-50 rounded-lg p-3 text-sm space-y-1">
                   {(() => {
                     const cfg = viewChannel.config as Record<string, unknown>
                     return (
@@ -1746,7 +1746,7 @@ export default function MessagesPage() {
                 {recipients.map((email) => (
                   <div
                     key={email}
-                    className="flex items-center justify-between bg-[var(--muted-50)] rounded-lg px-3 py-2"
+                    className="flex items-center justify-between bg-muted-50 rounded-lg px-3 py-2"
                   >
                     <span className="text-sm truncate flex-1">{email}</span>
                     <Button
@@ -1914,7 +1914,7 @@ export default function MessagesPage() {
           </FormSection>
 
           {/* Filter Preview */}
-          <div className="p-3 bg-[var(--muted-50)] rounded-md">
+          <div className="p-3 bg-muted-50 rounded-md">
             <p className="text-sm font-medium mb-1">{t('messages.channels.filterPreview', 'Filter Preview')}</p>
             <p className="text-xs text-muted-foreground">
               {filterConfig.message_types.length === 0 && filterConfig.source_types.length === 0

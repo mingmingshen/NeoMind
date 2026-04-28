@@ -144,7 +144,7 @@ export function AgentExecutionTimeline({
                         className={cn(
                           "border rounded-lg overflow-hidden transition-all",
                           isExpanded && statusConfig.bg,
-                          !isExpanded && "hover:bg-[var(--muted-30)]"
+                          !isExpanded && "hover:bg-muted-30"
                         )}
                       >
                         {/* Header - Always Visible */}
@@ -276,7 +276,7 @@ export function AgentExecutionTimeline({
                                           </Card>
                                         )}
                                         {hasConfidence && (
-                                          <div className="flex items-center justify-between text-sm p-2 bg-[var(--muted-50)] rounded-lg">
+                                          <div className="flex items-center justify-between text-sm p-2 bg-muted-50 rounded-lg">
                                             <span className="text-muted-foreground">{t('agents:memory.confidence')}</span>
                                             <Badge variant={dp!.confidence! > 0.7 ? "default" : "secondary"}>
                                               {(dp!.confidence! * 100).toFixed(0)}%
@@ -514,7 +514,7 @@ function CollapsibleText({ content, maxLines = 6 }: { content: string; maxLines?
     <div>
       <div
         className={cn(
-          "text-sm bg-[var(--muted-50)] p-3 rounded-lg border whitespace-pre-wrap break-words leading-relaxed",
+          "text-sm bg-muted-50 p-3 rounded-lg border whitespace-pre-wrap break-words leading-relaxed",
           !expanded && isLong && "max-h-40 overflow-hidden relative",
         )}
       >
@@ -753,11 +753,11 @@ function ToolCallStep({ step }: { step: ReasoningStep }) {
   const inputPreview = summarizeInput(step.input || '')
 
   return (
-    <div className="rounded-lg border bg-[var(--muted-20)] overflow-hidden my-2">
+    <div className="rounded-lg border bg-muted-20 overflow-hidden my-2">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-start gap-2 px-3 py-2 hover:bg-[var(--muted-30)] text-left"
+        className="w-full flex items-start gap-2 px-3 py-2 hover:bg-muted-30 text-left"
       >
         {isSuccess ? (
           <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />

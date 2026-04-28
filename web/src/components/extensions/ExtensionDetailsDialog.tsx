@@ -283,7 +283,7 @@ export function ExtensionDetailsDialog({
 
   const TabButtons = () => (
     <div className={cn(
-      "flex gap-1 p-1 bg-[var(--muted-50)] rounded-xl",
+      "flex gap-1 p-1 bg-muted-50 rounded-xl",
       isMobile ? "overflow-x-auto" : ""
     )}>
       {[
@@ -383,7 +383,7 @@ export function ExtensionDetailsDialog({
                   {extension.commands.map((command) => (
                     <div
                       key={command.id}
-                      className="p-3 rounded-lg border bg-[var(--muted-30)] space-y-2"
+                      className="p-3 rounded-lg border bg-muted-30 space-y-2"
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="outline" className="text-xs break-all">
@@ -411,7 +411,7 @@ export function ExtensionDetailsDialog({
                   {extension.metrics.map((metric) => (
                     <div
                       key={metric.name}
-                      className="p-3 rounded-lg border bg-[var(--muted-20)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+                      className="p-3 rounded-lg border bg-muted-20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium text-sm break-words">{metric.display_name}</span>
@@ -676,7 +676,7 @@ export function ExtensionDetailsDialog({
           </div>
 
           {/* Tabs */}
-          <div className="px-6 py-3 border-b shrink-0 bg-[var(--muted-20)]">
+          <div className="px-6 py-3 border-b shrink-0 bg-muted-20">
             <TabButtons />
           </div>
 
@@ -686,7 +686,7 @@ export function ExtensionDetailsDialog({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t shrink-0 bg-[var(--muted-30)]">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t shrink-0 bg-muted-30">
             <Button variant="outline" size="sm" onClick={handleClose} disabled={isBusy}>
               {t('common:close')}
             </Button>

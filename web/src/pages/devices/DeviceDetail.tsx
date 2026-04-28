@@ -366,7 +366,7 @@ export function DeviceDetail({
                   <h2 className="font-semibold">{t('devices:detailPage.rawDataTitle')}</h2>
                   <Badge variant="outline" className="text-xs">Raw Mode</Badge>
                 </div>
-                <div className="bg-[var(--muted-50)] rounded-lg p-4 overflow-x-auto">
+                <div className="bg-muted-50 rounded-lg p-4 overflow-x-auto">
                   <pre className="text-xs font-mono text-muted-foreground break-all whitespace-pre-wrap">
                     {device?.current_values?._raw ? (
                       typeof device.current_values._raw === 'string'
@@ -477,7 +477,7 @@ export function DeviceDetail({
                           <p className="font-medium truncate">{cmd.display_name || cmd.name}</p>
                           <p className="text-xs text-muted-foreground font-mono mt-1 truncate">{cmd.name}</p>
                         </div>
-                        <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center group-hover:bg-[var(--muted-50)] transition-colors">
+                        <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center group-hover:bg-muted-50 transition-colors">
                           <Send className="h-5 w-5 text-primary" />
                         </div>
                       </div>
@@ -534,7 +534,7 @@ export function DeviceDetail({
                       const isComplexValue = typeof point.value === 'object' && point.value !== null
                       const isLongString = typeof point.value === 'string' && point.value.length > 100
                       return (
-                        <TableRow key={i} className="hover:bg-[var(--muted-30)] border-border">
+                        <TableRow key={i} className="hover:bg-muted-30 border-border">
                           <TableCell className="text-sm text-muted-foreground align-top">
                             {formatTimestamp(point.timestamp)}
                           </TableCell>
@@ -569,7 +569,7 @@ export function DeviceDetail({
                                   <span>{t('devices:detailPage.clickToViewFull')}</span>
                                   <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
                                 </summary>
-                                <div className="mt-2 p-3 bg-[var(--muted-50)] rounded-lg max-h-[300px] overflow-auto">
+                                <div className="mt-2 p-3 bg-muted-50 rounded-lg max-h-[300px] overflow-auto">
                                   <pre className="text-xs font-mono whitespace-pre-wrap break-all">
                                     {typeof point.value === 'string'
                                       ? point.value

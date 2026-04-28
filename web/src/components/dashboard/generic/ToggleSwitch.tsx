@@ -426,7 +426,7 @@ export function ToggleSwitch({
 
               {/* No parameters */}
               {!loadingParams && parameterDefinitions.length === 0 && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--muted-50)]">
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted-50">
                   <Info className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">
                     {t('commandButton.noParameters')}

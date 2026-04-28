@@ -374,7 +374,7 @@ export function DataExplorerPage() {
             <DialogContentBody className="space-y-4">
               {/* Current Value */}
               {selectedSource.current_value !== undefined && selectedSource.current_value !== null && (
-                <div className="bg-[var(--muted-30)] rounded-lg p-3">
+                <div className="bg-muted-30 rounded-lg p-3">
                   <p className="text-xs text-muted-foreground mb-1">Current Value</p>
                   <p className="text-sm font-medium font-mono break-all overflow-hidden max-h-40">
                     {typeof selectedSource.current_value === 'object'
@@ -449,7 +449,7 @@ export function DataExplorerPage() {
                       </thead>
                       <tbody>
                         {historyData.map((point, i) => (
-                          <tr key={i} className="border-b last:border-0 hover:bg-[var(--muted-50)]">
+                          <tr key={i} className="border-b last:border-0 hover:bg-muted-50">
                             <td className="px-3 py-1.5 font-mono text-xs">{formatDateTime(point.timestamp)}</td>
                             <td className="px-3 py-1.5 font-mono text-xs">{formatHistoryValue(point.value)}</td>
                             <td className="px-3 py-1.5 text-xs text-muted-foreground">

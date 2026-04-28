@@ -117,7 +117,7 @@ export function getAlertLevelColor(level: string): string {
     return 'text-info bg-info/10 border-info/20'
   }
 
-  return 'text-muted-foreground bg-[var(--muted-50)]'
+  return 'text-muted-foreground bg-muted-50'
 }
 
 /**

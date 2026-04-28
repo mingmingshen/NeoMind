@@ -49,7 +49,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
               <span className="text-[10px] text-muted-foreground">{formatTime(message.timestamp)}</span>
             </div>
             <div
-              className="mt-1 rounded-lg overflow-hidden border border-border bg-[var(--muted-30)] cursor-pointer max-w-[240px]"
+              className="mt-1 rounded-lg overflow-hidden border border-border bg-muted-30 cursor-pointer max-w-[240px]"
               onClick={() => setFullscreenImage(message.content)}
             >
               <img

@@ -71,7 +71,7 @@ export function PageLayout({
   return (
     <div className="flex flex-col h-full">
       {title && (
-        <div className="shrink-0 bg-[var(--surface-glass)] backdrop-blur-sm">
+        <div className="shrink-0 bg-surface-glass backdrop-blur-sm">
           <div className={cn('w-full px-4 pt-4 pb-2 sm:px-6 sm:pt-5 sm:pb-3 md:px-8 md:pt-6 md:pb-3', maxWidthClass[maxWidth], className)}>
             <PageHeader
               title={title}
@@ -84,7 +84,7 @@ export function PageLayout({
       )}
       {/* Fixed header content (e.g., tabs) - outside scroll container */}
       {headerContent && (
-        <div className="shrink-0 bg-[var(--surface-glass)] backdrop-blur-sm">
+        <div className="shrink-0 bg-surface-glass backdrop-blur-sm">
           {headerContent}
         </div>
       )}
@@ -105,7 +105,7 @@ export function PageLayout({
       </div>
       {/* Fixed footer with glass morphism effect */}
       {showFooter && (
-        <div className="fixed bottom-0 left-0 right-0 bg-[var(--surface-glass)] backdrop-blur-xl border-t border-[var(--glass-border)]">
+        <div className="fixed bottom-0 left-0 right-0 bg-surface-glass backdrop-blur-xl border-t border-glass-border">
           <div className={cn('w-full px-4 py-3 sm:px-6 sm:py-4 md:px-8', maxWidthClass[maxWidth], className)}>
             {footer}
           </div>

@@ -122,7 +122,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
                 "flex items-start gap-3 p-3 rounded-md border transition-colors",
                 status === "active" && "bg-blue-50 border-blue-200",
                 status === "completed" && "bg-green-50/50 border-green-200/50",
-                status === "pending" && "bg-[var(--muted-30)] border-border"
+                status === "pending" && "bg-muted-30 border-border"
               )}
             >
               {/* Step Icon */}
@@ -283,7 +283,7 @@ export function TaskWizard({ task, className }: TaskProgressProps) {
           )}
 
           {currentStepData.details && (
-            <div className="p-3 rounded-md bg-[var(--muted-50)] text-sm">
+            <div className="p-3 rounded-md bg-muted-50 text-sm">
               {currentStepData.details}
             </div>
           )}

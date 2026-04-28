@@ -322,7 +322,7 @@ export function ExtensionMetricSelector({
               <button
                 type="button"
                 onClick={() => toggleExpanded(extensionId)}
-                className="w-full px-3 py-2.5 bg-[var(--muted-30)] flex items-center justify-between hover:bg-[var(--muted-50)] transition-colors"
+                className="w-full px-3 py-2.5 bg-muted-30 flex items-center justify-between hover:bg-muted-50 transition-colors"
               >
                 <div className="flex items-center gap-2">
                   <div className={cn(

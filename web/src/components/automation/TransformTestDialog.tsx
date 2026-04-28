@@ -352,7 +352,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t shrink-0 bg-[var(--muted-30)]">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t shrink-0 bg-muted-30">
             <Button variant="outline" size="sm" onClick={handleClose} disabled={testing}>
               {t('common:close', { defaultValue: 'Close' })}
             </Button>

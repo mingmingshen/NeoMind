@@ -49,7 +49,7 @@ function FullscreenImage({ src, alt, onClose }: FullscreenImageProps) {
   if (!src) return null
   return (
     <div
-      className="fixed inset-0 z-50 bg-[var(--bg-95)] backdrop-blur-sm flex items-center justify-center"
+      className="fixed inset-0 z-50 bg-bg-95 backdrop-blur-sm flex items-center justify-center"
       onClick={onClose}
     >
       <Button
@@ -575,7 +575,7 @@ export function ImageDisplay({
     return (
       <div className={cn(
         dashboardCardBase,
-        'flex flex-col items-center justify-center gap-3 bg-[var(--muted-30)]',
+        'flex flex-col items-center justify-center gap-3 bg-muted-30',
         sizeConfig.padding,
         className
       )}>
@@ -596,7 +596,7 @@ export function ImageDisplay({
     return (
       <div className={cn(
         dashboardCardBase,
-        'flex flex-col items-center justify-center gap-3 bg-[var(--muted-30)]',
+        'flex flex-col items-center justify-center gap-3 bg-muted-30',
         sizeConfig.padding,
         className
       )}>

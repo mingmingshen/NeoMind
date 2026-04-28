@@ -50,7 +50,7 @@ export function ThinkingBlock({
       <div className="border-b border-border">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--muted-30)] transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted-30 transition-colors"
         >
           <BrainCircuit className={cn(
             "h-4 w-4",
@@ -83,11 +83,11 @@ export function ThinkingBlock({
   }
 
   return (
-    <div className="my-3 rounded-lg bg-[var(--muted-30)] overflow-hidden">
+    <div className="my-3 rounded-lg bg-muted-30 overflow-hidden">
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[var(--muted-30)] transition-colors"
+        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-muted-30 transition-colors"
       >
         <BrainCircuit className={cn(
           "h-4 w-4",

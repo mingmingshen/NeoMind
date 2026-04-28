@@ -320,7 +320,7 @@ export const ChatInput = memo(function ChatInput({
               onClick={handleCancel}
               className={cn(
                 "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                "bg-destructive hover:bg-[var(--destructive-hover)] text-destructive-foreground"
+                "bg-destructive hover:bg-destructive-hover text-destructive-foreground"
               )}
               title="Cancel request"
             >

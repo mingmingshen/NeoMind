@@ -172,7 +172,7 @@ export function PageTabsBottomNav({ tabs, activeTab, onTabChange }: PageTabsBott
   if (!isMobile) return null
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--bg-95)] backdrop-blur-sm border-t border-border">
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-bg-95 backdrop-blur-sm border-t border-border">
       <div className="flex items-center justify-around px-2 py-1">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.value
@@ -335,7 +335,7 @@ export function PageTabs({
           <div
             className={cn(
               /* mobile: full-width segmented control, horizontal scroll */
-              'flex w-full flex-nowrap overflow-x-auto rounded-lg border border-border bg-[var(--muted-30)] p-1',
+              'flex w-full flex-nowrap overflow-x-auto rounded-lg border border-border bg-muted-30 p-1',
               '[-webkit-overflow-scrolling:touch]',
               /* desktop: inline tabs with full text */
               'md:inline-flex md:w-auto md:flex-wrap md:overflow-visible md:rounded-md md:border-0 md:bg-muted md:p-0.5',
@@ -453,7 +453,7 @@ export function PageTabsGrid({
           <div
             className={cn(
               /* mobile: 2-col grid, segmented style */
-              'grid w-full shrink-0 grid-cols-2 overflow-x-auto rounded-lg border border-border bg-[var(--muted-30)] p-1',
+              'grid w-full shrink-0 grid-cols-2 overflow-x-auto rounded-lg border border-border bg-muted-30 p-1',
               '[-webkit-overflow-scrolling:touch]',
               /* desktop: compact inline grid */
               'md:w-auto md:overflow-visible md:rounded-md md:border-0 md:bg-muted',

@@ -19,18 +19,24 @@ export default {
         primary: {
           DEFAULT: "var(--primary)",
           foreground: "var(--primary-foreground)",
+          hover: "var(--primary-hover)",
         },
         secondary: {
           DEFAULT: "var(--secondary)",
           foreground: "var(--secondary-foreground)",
+          hover: "var(--secondary-hover)",
         },
         destructive: {
           DEFAULT: "var(--destructive)",
           foreground: "var(--destructive-foreground)",
+          hover: "var(--destructive-hover)",
         },
         muted: {
           DEFAULT: "var(--muted)",
           foreground: "var(--muted-foreground)",
+          20: "var(--muted-20)",
+          30: "var(--muted-30)",
+          50: "var(--muted-50)",
         },
         accent: {
           DEFAULT: "var(--accent)",
@@ -60,18 +66,33 @@ export default {
           DEFAULT: "var(--color-info)",
           light: "var(--color-info-bg)",
         },
+        // Glass tokens
+        glass: "var(--glass)",
+        "glass-heavy": "var(--glass-heavy)",
+        "surface-glass": "var(--surface-glass)",
+        "glass-border": "var(--glass-border)",
+        // Semi-transparent background
+        "bg-50": "var(--bg-50)",
+        "bg-70": "var(--bg-70)",
+        "bg-80": "var(--bg-80)",
+        "bg-90": "var(--bg-90)",
+        "bg-95": "var(--bg-95)",
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
         xl: "calc(var(--radius) * 1.5)",
+        "2xl": "var(--radius-2xl)",
       },
       boxShadow: {
         sm: "var(--shadow-sm)",
         md: "var(--shadow-md)",
         lg: "var(--shadow-lg)",
         xl: "var(--shadow-xl)",
+        glass: "var(--shadow-glass)",
+        "glass-lg": "var(--shadow-glass-lg)",
+        brand: "var(--shadow-brand)",
       },
       keyframes: {
         "slide-in": {

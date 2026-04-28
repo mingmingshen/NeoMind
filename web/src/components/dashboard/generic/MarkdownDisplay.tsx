@@ -88,7 +88,7 @@ const MarkdownContent = memo(({ content, className, maxLines }: { content: strin
       "prose-ol:my-1 prose-ol:pl-4 prose-ol:list-decimal",
       "prose-li:my-0 prose-li:text-xs",
       "prose-table:my-2 prose-table:text-xs",
-      "prose-th:px-2 prose-th:py-1 prose-th:border prose-th:border-border prose-th:bg-[var(--muted-50)]",
+      "prose-th:px-2 prose-th:py-1 prose-th:border prose-th:border-border prose-th:bg-muted-50",
       "prose-td:px-2 prose-th:py-1 prose-td:border prose-td:border-border",
       "prose-hr:my-2 prose-hr:border-border",
       maxLines && `line-clamp-${maxLines}`,

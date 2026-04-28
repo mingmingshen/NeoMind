@@ -446,7 +446,7 @@ export function DeviceTypeGeneratorDialog({
             {/* Filtering Configuration */}
             <div className="space-y-3">
               <Label className="text-sm font-medium">{tGen('step1.filterConfig')}</Label>
-              <Card className="p-4 bg-[var(--muted-30)]">
+              <Card className="p-4 bg-muted-30">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">

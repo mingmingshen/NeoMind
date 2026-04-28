@@ -332,7 +332,7 @@ export function DeviceTransformsDialog({
     <div className="overflow-hidden rounded-lg border border-border bg-card">
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-4 bg-[var(--muted-30)] hover:bg-muted active:bg-[var(--muted-50)] transition-colors touch-action-manipulation"
+        className="w-full flex items-center justify-between px-4 py-4 bg-muted-30 hover:bg-muted active:bg-muted-50 transition-colors touch-action-manipulation"
       >
         <div className="flex items-center gap-3">
           <Database className="h-5 w-5 text-muted-foreground" />
@@ -613,7 +613,7 @@ export function DeviceTransformsDialog({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t shrink-0 bg-[var(--muted-30)]">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t shrink-0 bg-muted-30">
             <Button variant="outline" size="sm" onClick={handleClose}>
               {t('common:close', { defaultValue: 'Close' })}
             </Button>

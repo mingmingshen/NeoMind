@@ -286,7 +286,7 @@ export function ExecutionDetailDialog({
     return (
       <div className="space-y-3">
         {/* Status Bar */}
-        <div className="flex items-center justify-between py-2 px-3 bg-[var(--muted-30)] rounded-lg">
+        <div className="flex items-center justify-between py-2 px-3 bg-muted-30 rounded-lg">
           <div className="flex items-center gap-2">
             {getStatusIcon(execution.status)}
             <span className="text-xs font-medium">{t(`agents:executionStatus.${execution.status.toLowerCase()}`)}</span>
@@ -337,7 +337,7 @@ export function ExecutionDetailDialog({
                     return (
                       <div key={idx} className="border rounded-lg overflow-hidden">
                         <div
-                          className="flex items-center justify-between p-2 bg-[var(--bg-50)] cursor-pointer hover:bg-[var(--bg-80)] transition-colors"
+                          className="flex items-center justify-between p-2 bg-bg-50 cursor-pointer hover:bg-bg-80 transition-colors"
                           onClick={() => toggleDataExpanded(idx)}
                         >
                           <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -464,7 +464,7 @@ export function ExecutionDetailDialog({
                   title={t('agents:memory.llmResponse', 'LLM Response')}
                   collapsible
                 >
-                  <pre className="text-xs whitespace-pre-wrap font-mono bg-[var(--muted-50)] p-3 rounded-lg border max-h-60 overflow-auto break-words leading-relaxed">
+                  <pre className="text-xs whitespace-pre-wrap font-mono bg-muted-50 p-3 rounded-lg border max-h-60 overflow-auto break-words leading-relaxed">
                     {summary}
                   </pre>
                 </FormSection>
@@ -595,7 +595,7 @@ export function ExecutionDetailDialog({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-[var(--muted-30)]">
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted-30">
             <Button size="sm" onClick={handleClose}>
               {t('common:close')}
             </Button>

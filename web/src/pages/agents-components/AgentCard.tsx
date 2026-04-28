@@ -39,9 +39,9 @@ export function CreateCard({ onClick }: CreateCardProps) {
   return (
     <button
       onClick={onClick}
-      className="group flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border hover:border-border hover:bg-[var(--muted-20)] transition-all min-h-[200px]"
+      className="group flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border hover:border-border hover:bg-muted-20 transition-all min-h-[200px]"
     >
-      <div className="w-12 h-12 rounded-full bg-[var(--muted-50)] flex items-center justify-center group-hover:bg-muted transition-colors">
+      <div className="w-12 h-12 rounded-full bg-muted-50 flex items-center justify-center group-hover:bg-muted transition-colors">
         <Plus className="h-6 w-6 text-muted-foreground group-hover:text-primary transition-colors" />
       </div>
       <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
@@ -63,7 +63,7 @@ interface AgentCardProps {
 // Status icons configuration (labels use i18n)
 const STATUS_CONFIG: Record<string, { icon: typeof Activity; color: string; bg: string }> = {
   Active: { icon: Activity, color: 'text-green-500', bg: 'bg-green-500/10' },
-  Paused: { icon: Pause, color: 'text-muted-foreground', bg: 'bg-[var(--muted-50)]' },
+  Paused: { icon: Pause, color: 'text-muted-foreground', bg: 'bg-muted-50' },
   Error: { icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10' },
   Executing: { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-500/10' },
 }
@@ -126,7 +126,7 @@ export function AgentCard({
           agent.status === 'Active' && "bg-green-500/10 ring-2 ring-green-500/30",
           agent.status === 'Executing' && "bg-blue-500/10 ring-2 ring-blue-500/30",
           agent.status === 'Error' && "bg-red-500/10 ring-2 ring-red-500/30",
-          agent.status === 'Paused' && "bg-[var(--muted-50)]"
+          agent.status === 'Paused' && "bg-muted-50"
         )}>
           <Bot className={cn(
             "h-6 w-6",
@@ -192,13 +192,13 @@ export function AgentCard({
       {/* Stats Grid - simplified without borders */}
       <div className="grid grid-cols-3 gap-3 mb-3">
         {/* Execution Count */}
-        <div className="text-center p-2 rounded-lg bg-[var(--muted-30)]">
+        <div className="text-center p-2 rounded-lg bg-muted-30">
           <div className="text-lg font-semibold">{agent.execution_count}</div>
           <div className="text-xs text-muted-foreground">{t('agents:card.executions')}</div>
         </div>
 
         {/* Success Rate */}
-        <div className="text-center p-2 rounded-lg bg-[var(--muted-30)]">
+        <div className="text-center p-2 rounded-lg bg-muted-30">
           <div className={cn(
             "text-lg font-semibold",
             successRate >= 80 ? "text-green-500" : successRate >= 50 ? "text-yellow-500" : "text-red-500"
@@ -209,7 +209,7 @@ export function AgentCard({
         </div>
 
         {/* Avg Duration */}
-        <div className="text-center p-2 rounded-lg bg-[var(--muted-30)]">
+        <div className="text-center p-2 rounded-lg bg-muted-30">
           <div className="text-lg font-semibold">
             {agent.avg_duration_ms > 0 ? `${(agent.avg_duration_ms / 1000).toFixed(1)}s` : '-'}
           </div>

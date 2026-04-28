@@ -87,7 +87,7 @@ export function AgentsList({
       <Card className="overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="hover:bg-transparent border-b bg-[var(--muted-30)]">
+            <TableRow className="hover:bg-transparent border-b bg-muted-30">
               <TableHead className="w-10 text-center">#</TableHead>
               <TableHead>
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -145,7 +145,7 @@ export function AgentsList({
                   <TableRow
                     key={agent.id}
                     className={cn(
-                      "group transition-colors hover:bg-[var(--muted-50)]",
+                      "group transition-colors hover:bg-muted-50",
                       agent.status === 'Paused' && "opacity-50"
                     )}
                   >

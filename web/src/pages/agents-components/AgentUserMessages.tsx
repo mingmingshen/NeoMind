@@ -135,7 +135,7 @@ export function AgentUserMessages({ agentId, onMessageAdded }: AgentUserMessages
       </div>
 
       {/* Input Area */}
-      <div className="border-t p-3 bg-[var(--muted-20)]">
+      <div className="border-t p-3 bg-muted-20">
         <div className="flex gap-2">
           <Textarea
             ref={textareaRef}

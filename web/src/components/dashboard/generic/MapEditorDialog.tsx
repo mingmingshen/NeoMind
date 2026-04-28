@@ -258,7 +258,7 @@ export function MapEditorDialog({
           'group flex items-center gap-2 p-2 rounded-lg border transition-all cursor-pointer',
           isSelected
             ? 'border-primary bg-muted'
-            : 'border-border hover:border-border hover:bg-[var(--muted-50)]'
+            : 'border-border hover:border-border hover:bg-muted-50'
         )}
         onClick={() => handleSelectBinding(binding.id)}
       >
@@ -328,7 +328,7 @@ export function MapEditorDialog({
             </div>
 
             {/* Map Preview */}
-            <div className="flex-1 relative bg-[var(--muted-30)]">
+            <div className="flex-1 relative bg-muted-30">
               <div className="absolute inset-0">
                 <MapDisplay
                   center={center}
@@ -346,7 +346,7 @@ export function MapEditorDialog({
 
             {/* Bindings List */}
             <div className="border-t bg-background shrink-0 max-h-[40vh] overflow-y-auto">
-              <div className="px-4 py-2 border-b bg-[var(--muted-30)] sticky top-0">
+              <div className="px-4 py-2 border-b bg-muted-30 sticky top-0">
                 <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   {t('mapDisplay.boundItems')} ({bindings.length})
                 </div>
@@ -429,8 +429,8 @@ export function MapEditorDialog({
           {/* Content */}
           <div className="flex-1 flex overflow-hidden min-h-0">
             {/* Left Panel - Bindings List */}
-            <div className="w-72 border-r bg-[var(--muted-20)] flex flex-col shrink-0">
-              <div className="px-4 py-2 border-b bg-[var(--muted-30)] shrink-0">
+            <div className="w-72 border-r bg-muted-20 flex flex-col shrink-0">
+              <div className="px-4 py-2 border-b bg-muted-30 shrink-0">
                 <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   {t('mapDisplay.boundItems')} ({bindings.length})
                 </div>
@@ -450,7 +450,7 @@ export function MapEditorDialog({
             </div>
 
             {/* Right Panel - Map Preview */}
-            <div className="flex-1 relative bg-[var(--muted-30)] min-w-0">
+            <div className="flex-1 relative bg-muted-30 min-w-0">
               <div className="absolute inset-0">
                 <MapDisplay
                   center={center}
@@ -468,7 +468,7 @@ export function MapEditorDialog({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-[var(--muted-30)]">
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted-30">
             <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
               {t('common.cancel')}
             </Button>

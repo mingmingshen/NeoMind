@@ -329,7 +329,7 @@ export function LoginPage() {
       >
         <div className="w-full max-w-md">
           {/* Login Card */}
-          <div className="bg-[var(--bg-50)] backdrop-blur-md rounded-lg p-6 sm:p-8">
+          <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
             {/* Login Title */}
             <h2 className="text-2xl sm:text-3xl font-semibold mb-4 sm:mb-6 text-center">{t('auth:login')}</h2>
 
@@ -346,7 +346,7 @@ export function LoginPage() {
                   placeholder={t('auth:username')}
                   autoComplete="username"
                   required
-                  className="pl-9 h-11 bg-[var(--bg-70)] border-border focus:bg-background dark:focus:bg-[var(--bg-50)] focus:border-primary transition-colors text-base scroll-mb-32"
+                  className="pl-9 h-11 bg-bg-70 border-border focus:bg-background dark:focus:bg-bg-50 focus:border-primary transition-colors text-base scroll-mb-32"
                 />
               </div>
 
@@ -361,7 +361,7 @@ export function LoginPage() {
                   placeholder={t('auth:password')}
                   autoComplete="current-password"
                   required
-                  className="pl-9 h-11 bg-[var(--bg-70)] border-border focus:bg-background dark:focus:bg-[var(--bg-50)] focus:border-primary transition-colors text-base scroll-mb-32"
+                  className="pl-9 h-11 bg-bg-70 border-border focus:bg-background dark:focus:bg-bg-50 focus:border-primary transition-colors text-base scroll-mb-32"
                 />
               </div>
 
@@ -373,7 +373,7 @@ export function LoginPage() {
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="peer appearance-none h-4 w-4 rounded border border-border bg-[var(--bg-70)] transition-all cursor-pointer checked:bg-primary checked:border-primary dark:checked:bg-foreground dark:checked:border-foreground"
+                    className="peer appearance-none h-4 w-4 rounded border border-border bg-bg-70 transition-all cursor-pointer checked:bg-primary checked:border-primary dark:checked:bg-foreground dark:checked:border-foreground"
                   />
                   <svg className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-white dark:text-background pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />

@@ -185,7 +185,7 @@ export function LLMBackendConfigDialog({
       )}
 
       {mode === 'edit' && (
-        <div className="text-sm text-muted-foreground p-4 border rounded-lg bg-[var(--muted-30)]">
+        <div className="text-sm text-muted-foreground p-4 border rounded-lg bg-muted-30">
           {t('settings:llm.configPlaceholder', { defaultValue: 'Configuration fields will be dynamically generated based on backend type' })}
         </div>
       )}
@@ -296,7 +296,7 @@ export function LLMBackendConfigDialog({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-[var(--muted-30)]">
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted-30">
             <Button variant="outline" size="sm" onClick={handleClose} disabled={loading}>
               {t('common:cancel')}
             </Button>

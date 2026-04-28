@@ -296,7 +296,7 @@ export function ExtensionTransformConfig({
           </div>
 
           {schema && (
-            <div className="text-xs text-muted-foreground mb-2 p-2 bg-[var(--muted-50)] rounded">
+            <div className="text-xs text-muted-foreground mb-2 p-2 bg-muted-50 rounded">
               <Info className="h-3 w-3 inline mr-1" />
               {t('parameterSchemaHint')}
             </div>

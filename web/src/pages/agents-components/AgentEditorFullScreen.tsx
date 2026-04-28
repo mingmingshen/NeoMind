@@ -1538,7 +1538,7 @@ export function AgentEditorFullScreen({
               </div>
 
               {showAdvanced && (
-                <div className="bg-[var(--muted-50)] rounded-lg p-4 border space-y-4">
+                <div className="bg-muted-50 rounded-lg p-4 border space-y-4">
                   {/* Tool Chaining — Free mode only */}
                   {!isFocusedMode && (
                   <div className="space-y-3">
@@ -1667,7 +1667,7 @@ export function AgentEditorFullScreen({
               </div>
 
               {/* Schedule Configuration */}
-              <div className={cn("border rounded-lg", isMobile ? "p-4" : "p-4 bg-[var(--muted-50)]")}>
+              <div className={cn("border rounded-lg", isMobile ? "p-4" : "p-4 bg-muted-50")}>
                 {scheduleType === 'timer' && (
                   <div className="space-y-3">
                     {/* Timer sub-type tabs */}
@@ -2003,7 +2003,7 @@ export function AgentEditorFullScreen({
                                   hasTrigger && "border-l-2 border-primary",
                                   !hasTrigger && "border-l-2 border-transparent",
                                   isViewing && hasTrigger && "bg-muted",
-                                  isViewing && !hasTrigger && "bg-[var(--muted-50)]",
+                                  isViewing && !hasTrigger && "bg-muted-50",
                                   "hover:bg-muted"
                                 )}
                               >
@@ -2229,11 +2229,11 @@ export function AgentEditorFullScreen({
 
               // Collapsed style (Reactive / Free / On-demand)
               return (
-                <div className="rounded-lg -mx-3 border bg-[var(--muted-30)] overflow-hidden">
+                <div className="rounded-lg -mx-3 border bg-muted-30 overflow-hidden">
                   <button
                     type="button"
                     onClick={() => setFreeModeResourcesExpanded(!freeModeResourcesExpanded)}
-                    className="w-full flex items-center justify-between p-3 text-left hover:bg-[var(--muted-50)] transition-colors"
+                    className="w-full flex items-center justify-between p-3 text-left hover:bg-muted-50 transition-colors"
                   >
                     <div className="flex items-center gap-2">
                       <ChevronRight className={cn("h-4 w-4 transition-transform", freeModeResourcesExpanded && "rotate-90")} />
@@ -2588,8 +2588,8 @@ function ResourceSelectionDialog({
           {/* Dual-pane layout */}
           <div className="flex-1 flex gap-4 min-h-0 p-4 overflow-hidden">
             {/* Available Resources */}
-            <div className="flex-1 flex flex-col bg-[var(--muted-30)] rounded-lg overflow-hidden">
-              <div className="p-3 border-b bg-[var(--bg-50)]">
+            <div className="flex-1 flex flex-col bg-muted-30 rounded-lg overflow-hidden">
+              <div className="p-3 border-b bg-bg-50">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">{tAgent('creator.resources.dialog.available')}</span>
                   <Badge variant="secondary">{availableResources.length}</Badge>
@@ -2731,10 +2731,10 @@ function ScheduleCard({ icon, label, description, active, onClick, isMobile = fa
         isMobile ? "gap-3 p-4" : "gap-2 p-3",
         active
           ? "border-primary bg-muted"
-          : "border-transparent hover:border-border hover:bg-[var(--muted-30)]"
+          : "border-transparent hover:border-border hover:bg-muted-30"
       )}
     >
-      <div className={cn("rounded-lg", active ? "bg-muted" : "bg-[var(--muted-50)]", isMobile ? "p-2" : "p-1.5")}>
+      <div className={cn("rounded-lg", active ? "bg-muted" : "bg-muted-50", isMobile ? "p-2" : "p-1.5")}>
         {icon}
       </div>
       <div className="text-center">
@@ -2758,7 +2758,7 @@ function RecommendationCard({ recommendation, selected, onClick }: Recommendatio
       onClick={onClick}
       className={cn(
         "flex items-center gap-2 px-3 py-2 rounded-lg border text-left whitespace-nowrap transition-colors min-w-0",
-        selected ? "border-primary bg-muted" : "border-border hover:bg-[var(--muted-50)]"
+        selected ? "border-primary bg-muted" : "border-border hover:bg-muted-50"
       )}
     >
       <div className={cn(
@@ -2962,7 +2962,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                         : "px-2 py-1 text-xs",
                       resource.selectedMetrics.has(metric.name)
                         ? "bg-muted text-primary"
-                        : "hover:bg-[var(--muted-50)]"
+                        : "hover:bg-muted-50"
                     )}
                     onClick={() => onToggleMetric(resource.id, metric.name)}
                   >
@@ -3016,7 +3016,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                         : "px-2 py-1 text-xs",
                       resource.selectedCommands.has(command.name)
                         ? "bg-muted text-primary"
-                        : "hover:bg-[var(--muted-50)]"
+                        : "hover:bg-muted-50"
                     )}
                     onClick={() => onToggleCommand(resource.id, command.name)}
                   >

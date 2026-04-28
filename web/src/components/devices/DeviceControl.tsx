@@ -706,7 +706,7 @@ export function DeviceControl({
                         <>
                           <TableRow
                             key={entry.id}
-                            className="cursor-pointer hover:bg-[var(--muted-50)]"
+                            className="cursor-pointer hover:bg-muted-50"
                             onClick={() => toggleHistoryExpansion(entry.id)}
                           >
                             <TableCell className="text-sm text-muted-foreground">
@@ -723,7 +723,7 @@ export function DeviceControl({
                           </TableRow>
                           {isExpanded && (
                             <TableRow>
-                              <TableCell colSpan={4} className="bg-[var(--muted-50)]">
+                              <TableCell colSpan={4} className="bg-muted-50">
                                 <div className="space-y-2 py-2">
                                   <div className="text-sm">
                                     <span className="font-medium">{t('devices:control.historyDetails.parameters')}</span>

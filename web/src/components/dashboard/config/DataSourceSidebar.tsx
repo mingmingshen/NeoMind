@@ -304,12 +304,12 @@ export function DataSourceSidebar({
 
   return (
     <div className={cn(
-      'flex flex-col h-full border-l bg-[var(--muted-20)] transition-all duration-300 ease-in-out',
+      'flex flex-col h-full border-l bg-muted-20 transition-all duration-300 ease-in-out',
       open ? 'flex-1 min-w-[280px]' : 'w-12',
       className
     )}>
       {/* Header */}
-      <div className="flex items-center justify-between px-2 py-2 border-b bg-[var(--muted-30)]">
+      <div className="flex items-center justify-between px-2 py-2 border-b bg-muted-30">
         {open ? (
           <div className="flex items-center gap-2">
             <Database className="h-4 w-4 text-muted-foreground" />
@@ -367,7 +367,7 @@ export function DataSourceSidebar({
                     'flex items-center gap-1 px-2 py-1.5 text-xs whitespace-nowrap transition-colors border-b-2',
                     selectedCategory === cat.id
                       ? 'border-primary text-primary bg-muted'
-                      : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-[var(--muted-50)]'
+                      : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted-50'
                   )}
                 >
                   <Icon className="h-4 w-4" />
@@ -389,7 +389,7 @@ export function DataSourceSidebar({
                     <div key={device.id} className="border rounded-md overflow-hidden">
                       <button
                         onClick={() => toggleDevice(device.id)}
-                        className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-[var(--muted-50)] transition-colors"
+                        className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-muted-50 transition-colors"
                       >
                         <span className="text-xs font-medium truncate">{device.name || device.id}</span>
                         <ChevronRight className={cn(
@@ -406,7 +406,7 @@ export function DataSourceSidebar({
                             key={metric.name}
                             onClick={() => handleSelectItem(itemKey)}
                             className={cn(
-                              'w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-[var(--muted-50)] transition-colors',
+                              'w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-muted-50 transition-colors',
                               isSelected && 'bg-muted'
                             )}
                           >
@@ -431,7 +431,7 @@ export function DataSourceSidebar({
                     <div key={device.id} className="border rounded-md overflow-hidden">
                       <button
                         onClick={() => toggleDevice(device.id)}
-                        className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-[var(--muted-50)] transition-colors"
+                        className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-muted-50 transition-colors"
                       >
                         <span className="text-xs font-medium truncate">{device.name || device.id}</span>
                         <ChevronRight className={cn(
@@ -448,7 +448,7 @@ export function DataSourceSidebar({
                             key={command.name}
                             onClick={() => handleSelectItem(itemKey)}
                             className={cn(
-                              'w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-[var(--muted-50)] transition-colors',
+                              'w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-muted-50 transition-colors',
                               isSelected && 'bg-muted'
                             )}
                           >
@@ -472,7 +472,7 @@ export function DataSourceSidebar({
                     <div key={device.id} className="border rounded-md overflow-hidden">
                       <button
                         onClick={() => toggleDevice(device.id)}
-                        className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-[var(--muted-50)] transition-colors"
+                        className="w-full flex items-center justify-between px-2 py-1.5 hover:bg-muted-50 transition-colors"
                       >
                         <span className="text-xs font-medium truncate">{device.name || device.id}</span>
                         <ChevronRight className={cn(
@@ -489,7 +489,7 @@ export function DataSourceSidebar({
                             key={prop.id}
                             onClick={() => handleSelectItem(itemKey)}
                             className={cn(
-                              'w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-[var(--muted-50)] transition-colors',
+                              'w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-muted-50 transition-colors',
                               isSelected && 'bg-muted'
                             )}
                           >

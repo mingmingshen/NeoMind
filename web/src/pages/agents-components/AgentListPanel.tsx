@@ -122,7 +122,7 @@ const AgentListItem = memo<AgentListItemProps>(({
       onClick={handleSelect}
       className={cn(
         "group relative px-3 py-2.5 cursor-pointer transition-colors",
-        isSelected ? "bg-accent" : "hover:bg-[var(--muted-30)]"
+        isSelected ? "bg-accent" : "hover:bg-muted-30"
       )}
     >
       {/* Selection indicator bar */}

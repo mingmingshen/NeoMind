@@ -207,7 +207,7 @@ export function WebDisplay({
     return (
       <div className={cn(dashboardCardBase, 'flex flex-col overflow-hidden', !borderless && 'border', className)}>
         {showHeader && (
-          <div className={cn('flex items-center gap-2 px-3 py-2 bg-[var(--muted-30)] border-b', size === 'sm' ? 'py-1.5' : '')}>
+          <div className={cn('flex items-center gap-2 px-3 py-2 bg-muted-30 border-b', size === 'sm' ? 'py-1.5' : '')}>
             <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
             {title && <span className="font-medium text-sm truncate flex-1">{title}</span>}
             {sandbox && <Lock className="h-4 w-4 text-muted-foreground shrink-0" />}
@@ -238,7 +238,7 @@ export function WebDisplay({
 
   // Browser: Use iframe
   const headerContent = (
-    <div className={cn('flex items-center gap-2 px-3 py-2 bg-[var(--muted-30)] border-b', size === 'sm' ? 'py-1.5' : '')}>
+    <div className={cn('flex items-center gap-2 px-3 py-2 bg-muted-30 border-b', size === 'sm' ? 'py-1.5' : '')}>
       <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
       {title && <span className="font-medium text-sm truncate flex-1">{title}</span>}
       {sandbox && <Lock className="h-4 w-4 text-muted-foreground shrink-0" />}

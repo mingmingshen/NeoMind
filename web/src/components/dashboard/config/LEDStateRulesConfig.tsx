@@ -168,7 +168,7 @@ export function LEDStateRulesConfig({
                 <div
                   className={cn(
                     "flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors",
-                    !isCollapsed && "bg-[var(--muted-30)]"
+                    !isCollapsed && "bg-muted-30"
                   )}
                   onClick={() => toggleCollapse(String(index))}
                 >
