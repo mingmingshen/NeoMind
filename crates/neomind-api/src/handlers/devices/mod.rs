@@ -3,6 +3,7 @@
 //! Provides REST API for device management with MDL support.
 
 pub mod auto_onboard;
+pub mod ble_provision;
 pub mod compat;
 pub mod crud;
 pub mod mdl;
@@ -14,6 +15,7 @@ pub mod webhook;
 
 // Re-export all handlers for use in routing
 pub use auto_onboard::*;
+pub use ble_provision::*;
 pub use crud::*;
 pub use mdl::*;
 pub use metrics::*;

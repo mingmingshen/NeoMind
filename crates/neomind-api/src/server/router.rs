@@ -325,6 +325,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         // Devices API
         .route("/api/devices", get(devices::list_devices_handler))
         .route("/api/devices", post(devices::add_device_handler))
+        .route(
+            "/api/devices/ble-provision",
+            post(devices::ble_provision_handler),
+        )
         .route("/api/devices/:id", get(devices::get_device_handler))
         .route("/api/devices/:id", put(devices::update_device_handler))
         .route("/api/devices/:id", delete(devices::delete_device_handler))
