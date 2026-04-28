@@ -115,7 +115,7 @@ export function VerticalStepper({
                 status === 'active' && [
                   'bg-white/60 dark:bg-white/5',
                   'shadow-sm',
-                  'border border-black/5 dark:border-white/10',
+                  'border border-border',
                 ],
                 status !== 'active' && isClickable && 'hover:bg-black/5 dark:hover:bg-white/5',
                 !isClickable && 'cursor-default opacity-60'
@@ -185,7 +185,7 @@ export function HorizontalStepper({
     <div
       className={cn(
         'shrink-0 px-5 md:px-6 py-4',
-        'border-b border-black/5 dark:border-white/5',
+        'border-b border-border',
         'bg-black/[0.02] dark:bg-white/[0.02]',
         className
       )}

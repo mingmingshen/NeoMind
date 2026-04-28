@@ -97,10 +97,10 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
           "prose-table:my-2 prose-table:text-[12px]",
           "prose-th:px-2 prose-th:py-1 prose-th:border prose-th:border-border prose-th:bg-muted-50",
           "prose-td:px-2 prose-td:py-1 prose-td:border prose-td:border-border",
-          "prose-hr:my-2 prose-hr:border-border"
+          "prose-hr:my-2 prose-hr:border-border",
+          "text-inherit"
           // Removed max height limit - messages now fully expand
         )}
-        style={{ color: 'inherit' }}
         data-variant={variant}
       >
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>

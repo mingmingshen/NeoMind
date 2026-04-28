@@ -77,8 +77,8 @@ export function FullScreenDialog({
           // Glass card effect
           "bg-bg-95",
           "backdrop-blur-xl",
-          "border border-black/5 dark:border-white/10",
-          "rounded-2xl md:rounded-3xl",
+          "border border-border",
+          "rounded-2xl",
           "shadow-2xl shadow-black/10",
           className
         )}
@@ -127,7 +127,7 @@ export function FullScreenDialogHeader({
       className={cn(
         "shrink-0 flex items-center justify-between gap-4",
         "px-5 md:px-6 py-4 md:py-5",
-        "border-b border-black/5 dark:border-white/5"
+        "border-b border-border"
       )}
     >
       {/* Left: Icon + Title */}
@@ -216,7 +216,7 @@ export function FullScreenDialogFooter({
       className={cn(
         "shrink-0 flex items-center justify-end gap-3",
         "px-5 md:px-6 py-4",
-        "border-t border-black/5 dark:border-white/5",
+        "border-t border-border",
         "bg-black/[0.02] dark:bg-white/[0.02]",
         className
       )}
@@ -250,7 +250,7 @@ export function FullScreenDialogSidebar({
   return (
     <aside className={cn(
       "shrink-0 w-[140px] md:w-[160px]",
-      "border-r border-black/5 dark:border-white/5",
+      "border-r border-border",
       "bg-black/[0.02] dark:bg-white/[0.02]",
       className
     )}>
