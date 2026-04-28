@@ -17,6 +17,16 @@ export const chartColors = {
 
 export type ChartColor = keyof typeof chartColors
 
+// Hex equivalents for SVG rendering (Recharts needs hex, not OKLCH)
+export const chartColorsHex = [
+  '#7c6cf0', // Blue/Purple (matches chartColors[1])
+  '#4aba6a', // Green (matches chartColors[2])
+  '#d4a834', // Yellow (matches chartColors[3])
+  '#d8863e', // Orange (matches chartColors[4])
+  '#c76ab0', // Pink (matches chartColors[5])
+  '#4ab4c4', // Cyan (matches chartColors[6])
+] as const
+
 // Status colors
 export const statusColors = {
   success: 'oklch(0.646 0.222 142.5)',   // Green

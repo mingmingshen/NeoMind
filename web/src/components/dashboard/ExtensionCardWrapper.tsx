@@ -8,6 +8,7 @@
 import * as React from 'react'
 import { useExtensionComponent } from '@/lib/extension-component-loader'
 import { Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 /**
  * Props for ExtensionCardWrapper
@@ -38,8 +39,8 @@ export interface ExtensionCardWrapperProps {
 /**
  * Default loading component
  */
-const DefaultLoadingComponent: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <div className={`extension-card-loading flex flex-col items-center justify-center p-8 ${className}`}>
+const DefaultLoadingComponent: React.FC<{ className?: string }> = ({ className }) => (
+  <div className={cn('extension-card-loading flex flex-col items-center justify-center p-8', className)}>
     <Loader2 className="w-8 h-8 animate-spin text-info mb-4" />
     <p className="text-sm text-muted-foreground">Loading extension component...</p>
   </div>
@@ -48,8 +49,8 @@ const DefaultLoadingComponent: React.FC<{ className?: string }> = ({ className =
 /**
  * Default error component
  */
-const DefaultErrorComponent: React.FC<{ error?: Error; className?: string }> = ({ error, className = '' }) => (
-  <div className={`extension-card-error p-4 bg-error-light border border-error rounded-lg ${className}`}>
+const DefaultErrorComponent: React.FC<{ error?: Error; className?: string }> = ({ error, className }) => (
+  <div className={cn('extension-card-error p-4 bg-error-light border border-error rounded-lg', className)}>
     <p className="text-sm font-semibold text-error">
       Failed to load extension component
     </p>
@@ -79,7 +80,7 @@ export const ExtensionCardWrapper: React.FC<ExtensionCardWrapperProps> = ({
   extensionId,
   componentName,
   title,
-  className = '',
+  className,
   componentProps = {},
   loadingComponent,
   errorComponent,
@@ -122,7 +123,7 @@ export const ExtensionCardWrapper: React.FC<ExtensionCardWrapperProps> = ({
   try {
     const Component = component
     return (
-      <div className={`extension-card-wrapper ${className}`}>
+      <div className={cn('extension-card-wrapper', className)}>
         <Component title={title} {...componentProps} />
       </div>
     )

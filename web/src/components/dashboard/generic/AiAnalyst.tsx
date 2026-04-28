@@ -22,6 +22,8 @@ import { cn } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { dashboardCardBase } from '@/design-system/tokens/size'
+import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { AnalystTimeline } from './ai-analyst/AnalystTimeline'
 import { AnalystInputBar } from './ai-analyst/AnalystInputBar'
 import { useAnalystSession } from './ai-analyst/useAnalystSession'
@@ -296,7 +298,8 @@ export function AiAnalyst({
     return (
       <div
         className={cn(
-          'bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]',
+          dashboardCardBase,
+          'overflow-hidden flex items-center justify-center min-h-[200px]',
           className,
         )}
       >
@@ -317,7 +320,8 @@ export function AiAnalyst({
     return (
       <div
         className={cn(
-          'bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]',
+          dashboardCardBase,
+          'overflow-hidden flex items-center justify-center min-h-[200px]',
           className,
         )}
       >
@@ -334,7 +338,8 @@ export function AiAnalyst({
     return (
       <div
         className={cn(
-          'bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]',
+          dashboardCardBase,
+          'overflow-hidden flex items-center justify-center min-h-[200px]',
           className,
         )}
       >
@@ -353,7 +358,8 @@ export function AiAnalyst({
   return (
     <div
       className={cn(
-        'bg-card rounded-lg border shadow-sm overflow-hidden flex flex-col w-full h-full',
+        dashboardCardBase,
+        'overflow-hidden flex flex-col w-full h-full',
         className,
       )}
     >
@@ -377,7 +383,7 @@ export function AiAnalyst({
           {/* Info */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-semibold text-sm truncate">{title || 'AI Analyst'}</h3>
+              <h3 className={cn(indicatorFontWeight.title, 'truncate')}>{title || 'AI Analyst'}</h3>
               {isStreaming ? (
                 <Badge
                   variant="default"

@@ -34,6 +34,8 @@ import { useEvents } from '@/hooks/useEvents'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { dashboardCardBase } from '@/design-system/tokens/size'
+import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import {
   Dialog,
   DialogContent,
@@ -855,7 +857,7 @@ export function AgentMonitorWidget({
   // Empty state
   if (!agentId && !loading && !editMode) {
     return (
-      <div className={cn("bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
+      <div className={cn(dashboardCardBase, "overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
         <div className="text-center p-6">
           <Bot className="h-12 w-12 opacity-20 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">
@@ -869,7 +871,7 @@ export function AgentMonitorWidget({
   // Loading state
   if (loading && !editMode) {
     return (
-      <div className={cn("bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
+      <div className={cn(dashboardCardBase, "overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">{t('common:loading')}</p>
@@ -881,7 +883,7 @@ export function AgentMonitorWidget({
   // Agent not found
   if (!agent && !editMode) {
     return (
-      <div className={cn("bg-card rounded-lg border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
+      <div className={cn(dashboardCardBase, "overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
         <div className="text-center">
           <AlertCircle className="h-12 w-12 opacity-20 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">{t('dashboardComponents:agentMonitorWidget.agentNotFound')}</p>
@@ -896,7 +898,7 @@ export function AgentMonitorWidget({
   return (
     <>
       <div className={cn(
-        "bg-card rounded-lg border shadow-sm overflow-hidden flex flex-col w-full h-full",
+        dashboardCardBase, "overflow-hidden flex flex-col w-full h-full",
         className
       )}>
         {/* Header: Agent Info */}
@@ -917,7 +919,7 @@ export function AgentMonitorWidget({
             {/* Info */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-semibold text-sm truncate">{displayAgent?.name || 'Agent'}</h3>
+                <h3 className={cn(indicatorFontWeight.title, 'truncate')}>{displayAgent?.name || 'Agent'}</h3>
                 {currentlyExecuting ? (
                   <Badge variant="default" className="text-[10px] h-5 gap-0.5 px-1.5">
                     <Loader2 className="h-2.5 w-2.5 animate-spin" />

@@ -441,9 +441,9 @@ export function ValueCard({
         {showTrend && hasValidTrend && trendDirection && (
           <div className={cn(
             'flex items-center gap-1 mt-2 px-2 py-1 rounded-full',
-            trendDirection === 'up' && indicatorColors.success.bg + ' ' + indicatorColors.success.text,
-            trendDirection === 'down' && indicatorColors.error.bg + ' ' + indicatorColors.error.text,
-            trendDirection === 'neutral' && indicatorColors.neutral.bg + ' ' + indicatorColors.neutral.text
+            trendDirection === 'up' && cn(indicatorColors.success.bg, indicatorColors.success.text),
+            trendDirection === 'down' && cn(indicatorColors.error.bg, indicatorColors.error.text),
+            trendDirection === 'neutral' && cn(indicatorColors.neutral.bg, indicatorColors.neutral.text)
           )}>
             {trendDirection === 'up' && <ArrowUpRight className="h-4 w-4" />}
             {trendDirection === 'down' && <ArrowDownRight className="h-4 w-4" />}
@@ -487,8 +487,8 @@ export function ValueCard({
         {showTrend && hasValidTrend && trendDirection && (
           <div className={cn(
             'flex items-center gap-1 px-2 py-1 rounded-full shrink-0',
-            trendDirection === 'up' && indicatorColors.success.bg + ' ' + indicatorColors.success.text,
-            trendDirection === 'down' && indicatorColors.error.bg + ' ' + indicatorColors.error.text,
+            trendDirection === 'up' && cn(indicatorColors.success.bg, indicatorColors.success.text),
+            trendDirection === 'down' && cn(indicatorColors.error.bg, indicatorColors.error.text),
           )}>
             {trendDirection === 'up' && <ArrowUpRight className="h-4 w-4" />}
             {trendDirection === 'down' && <ArrowDownRight className="h-4 w-4" />}
@@ -506,14 +506,14 @@ export function ValueCard({
   return (
     <div className={cn(dashboardCardHorizontal, sizeConfig.padding, className)}>
       {/* Content wrapper with fixed left margin */}
-      <div className="flex items-center" style={{ marginLeft: '0.625rem' /* 10px */ }}>
+      <div className="flex items-center ml-2.5">
         {/* Icon section - fixed size */}
         <div className={cn('flex items-center justify-center shrink-0', sizeConfig.iconContainer)}>
           <ValueIcon icon={icon} title={title} iconType={iconType} size={safeSize} iconColor={iconColor} />
         </div>
 
         {/* Content section - left-aligned like LEDIndicator */}
-        <div className="flex flex-col min-w-0 flex-1" style={{ marginLeft: '0.625rem' /* 10px */ }}>
+        <div className="flex flex-col min-w-0 flex-1 ml-2.5">
           {/* Title - primary text */}
           {title && (
             <span className={cn(indicatorFontWeight.title, 'text-foreground truncate', sizeConfig.titleText)}>
@@ -535,9 +535,9 @@ export function ValueCard({
         {showTrend && hasValidTrend && trendDirection && (
           <div className={cn(
             'flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium shrink-0',
-            trendDirection === 'up' && 'bg-accent-emerald-light text-accent-emerald',
-            trendDirection === 'down' && 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-            trendDirection === 'neutral' && 'bg-muted text-muted-foreground'
+            trendDirection === 'up' && cn(indicatorColors.success.bg, indicatorColors.success.text),
+            trendDirection === 'down' && cn(indicatorColors.error.bg, indicatorColors.error.text),
+            trendDirection === 'neutral' && cn(indicatorColors.neutral.bg, indicatorColors.neutral.text)
           )}>
             {trendDirection === 'up' && <ArrowUpRight className="h-4 w-4" />}
             {trendDirection === 'down' && <ArrowDownRight className="h-4 w-4" />}

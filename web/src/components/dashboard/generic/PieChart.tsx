@@ -26,7 +26,7 @@ import { DataMapper, type CategoricalMappingConfig } from '@/lib/dataMapping'
 import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { indicatorFontWeight } from '@/design-system/tokens/indicator'
-import { chartColors as designChartColors } from '@/design-system/tokens/color'
+import { chartColors as designChartColors, chartColorsHex } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import { ChartContainer, EmptyState } from '../shared'
@@ -44,14 +44,7 @@ import {
 const chartColors = designChartColors
 
 // Fallback colors as hex values for SVG
-const fallbackColors = [
-  '#8b5cf6', // Purple
-  '#22c55e', // Green
-  '#f59e0b', // Yellow
-  '#f97316', // Orange
-  '#ec4899', // Pink
-  '#06b6d4', // Cyan
-]
+const fallbackColors = chartColorsHex
 
 /**
  * Convert device/metric source to telemetry for pie chart data.
