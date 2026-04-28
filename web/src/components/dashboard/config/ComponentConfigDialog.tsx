@@ -397,7 +397,7 @@ export function ComponentConfigDialog({
             <>
               {/* Left: Preview + Style/Display Config */}
               <div className="flex-1 flex flex-col bg-background overflow-hidden border-r min-w-0">
-                <div className="shrink-0 border-b overflow-hidden">
+                <div className="shrink-0 border-b">
                   <ComponentPreview
                     key={previewKey}
                     componentType={componentType}
@@ -405,7 +405,7 @@ export function ComponentConfigDialog({
                     dataSource={livePreviewDataSource}
                     title={title}
                     showHeader={true}
-                    maxContentHeight={200}
+                    maxContentHeight={280}
                   />
                 </div>
 
@@ -518,6 +518,7 @@ export function ComponentConfigDialog({
                       dataSource={livePreviewDataSource}
                       title={title}
                       showHeader={true}
+                      maxContentHeight={280}
                     />
                   </div>
                 </div>

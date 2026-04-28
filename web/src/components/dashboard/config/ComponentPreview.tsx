@@ -246,7 +246,7 @@ export const ComponentPreview = memo(function ComponentPreview({
           </div>
         ) : (
           <div className="w-full h-full flex items-center justify-center overflow-hidden">
-            {/* Scaled component container */}
+            {/* Scaled component container with aspect-ratio wrapper */}
             <div
               className={cn(
                 'transition-transform duration-200 ease-out origin-center',

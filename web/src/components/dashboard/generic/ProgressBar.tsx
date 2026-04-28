@@ -148,9 +148,6 @@ export function ProgressBar({
 
     const glowStyle = getGlowStyle()
 
-    // Icon size relative to container - based on size prop
-    const iconSizeClass = size === 'sm' ? 'w-12 h-12' : size === 'md' ? 'w-16 h-16' : 'w-20 h-20'
-
     const content = (
       <div className="relative flex items-center justify-center w-full h-full">
         {/* Title at top-left (absolute positioned) */}
@@ -162,7 +159,7 @@ export function ProgressBar({
         <div className="flex flex-col items-center justify-center gap-2">
           {/* Icon with fill effect */}
           <div className="relative shrink-0 flex items-center justify-center">
-            <svg viewBox="0 0 24 24" className={cn(iconSizeClass)}>
+            <svg viewBox="0 0 24 24" className="w-12 h-12 sm:w-16 sm:h-16 lg:w-20 lg:h-20">
               <defs>
                 {/* Mask for fill effect - white fills from bottom based on percentage */}
                 <mask id={`fill-mask-${uniqueId}`}>
@@ -242,14 +239,11 @@ export function ProgressBar({
   // ============================================================================
 
   if (variant === 'circular') {
-    const radius = size === 'sm' ? 28 : size === 'md' ? 32 : 36
-    const strokeWidth = size === 'sm' ? 3 : size === 'md' ? 3.5 : 4
+    const radius = 32
+    const strokeWidth = 3.5
     const circumference = 2 * Math.PI * (radius - strokeWidth / 2)
     const offset = circumference - (percentage / 100) * circumference
     const gradientId = `circular-gradient-${Math.random().toString(36).substring(2, 9)}`
-
-    // SVG size relative to container - based on size prop
-    const svgSizeClass = size === 'sm' ? 'w-16 h-16' : size === 'md' ? 'w-20 w-20' : 'w-24 h-24'
 
     const content = (
       <div className="relative flex items-center justify-center w-full h-full">
@@ -260,7 +254,7 @@ export function ProgressBar({
 
         {/* Centered circular progress */}
         <div className="relative">
-          <svg className={cn('transform -rotate-90', svgSizeClass)} viewBox={`0 0 ${radius * 2} ${radius * 2}`}>
+          <svg className={cn('transform -rotate-90 w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24')} viewBox={`0 0 ${radius * 2} ${radius * 2}`}>
             <defs>
               <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
                 {getGradientStops(state, color).map((stop, i) => (
