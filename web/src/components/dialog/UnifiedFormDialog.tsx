@@ -305,12 +305,16 @@ export function UnifiedFormDialog({
   }
 
   // Desktop render
+  // Extract z-index from className for nested dialog support (e.g. above FullScreenDialog z:100)
+  const zIndexMatch = className?.match(/z-\[?(\d+)\]?/)
+  const overlayZIndex = zIndexMatch ? `z-[${zIndexMatch[1]}]` : 'z-50'
+
   return createPortal(
     <>
       {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          className={cn("fixed inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200", overlayZIndex)}
           onClick={() => !isDisabled && handleClose()}
         />
       )}

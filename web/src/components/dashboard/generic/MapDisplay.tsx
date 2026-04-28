@@ -8,7 +8,7 @@
 import { getPortalRoot } from '@/lib/portal'
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+
 import { createPortal } from 'react-dom'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -737,7 +737,6 @@ export function MapDisplay({
   onMapClick,
 }: MapDisplayProps) {
   const { t } = useTranslation('dashboardComponents')
-  const navigate = useNavigate()
   const sendCommand = useSendCommand()
 
   // Get devices from store for real-time metric updates
@@ -978,11 +977,12 @@ export function MapDisplay({
     // Different actions based on marker type
     switch (marker.markerType) {
       case 'device': {
-        // For devices: navigate to device detail page
+        // Show device info in toast instead of navigating away
         const deviceId = marker.sourceId || marker.deviceId
-        if (deviceId) {
-          navigate(`/devices/${deviceId}`)
-        }
+        toast({
+          title: marker.label || deviceId || t('mapDisplay.device'),
+          description: deviceId ? `${t('mapDisplay.device')}: ${deviceId}` : '',
+        })
         break
       }
 
@@ -1037,7 +1037,7 @@ export function MapDisplay({
     if (marker.onClick) {
       marker.onClick()
     }
-  }, [interactive, selectedMarker, navigate, sendCommand, t])
+  }, [interactive, selectedMarker, sendCommand, t])
 
   // Loading state - only show loading when we have a dataSource to load
   if (loading && dataSource) {

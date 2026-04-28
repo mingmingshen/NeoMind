@@ -329,7 +329,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-        <DialogContent ref={dialogRef} className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogContent ref={dialogRef} className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col z-[110]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               {execution.status === 'Completed' ? (
@@ -496,7 +496,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
       {/* Fullscreen Image */}
       {fullscreenImage && (
         <Dialog open={!!fullscreenImage} onOpenChange={() => setFullscreenImage(null)}>
-          <DialogContent className="max-w-4xl p-2">
+          <DialogContent className="max-w-4xl p-2 z-[110]">
             <img
               src={fullscreenImage}
               alt="Fullscreen"

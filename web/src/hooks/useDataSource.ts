@@ -985,6 +985,9 @@ export function useDataSource<T = unknown>(
   // Ref to track empty-result retry count to prevent infinite retry loops
   const emptyRetryCountRef = useRef(0)
 
+  // Ref to track whether we deferred a fetch because devices were still loading
+  const deferredByDevicesLoadingRef = useRef(false)
+
   // Ref to track previous telemetry key to detect config changes
   const prevTelemetryKeyRef = useRef<string>('')
 
@@ -1245,11 +1248,18 @@ export function useDataSource<T = unknown>(
       setLastUpdate(Date.now())
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-      setError(errorMessage)
+      // Don't set error if devices are still loading — the data will arrive later
+      const { devicesLoading } = useStore.getState()
+      if (!devicesLoading) {
+        setError(errorMessage)
+      }
       const fallbackData = optionsRef.current.fallback ?? 0
       setData(fallbackData as T)
     } finally {
-      setLoading(false)
+      const { devicesLoading } = useStore.getState()
+      if (!devicesLoading) {
+        setLoading(false)
+      }
     }
   }, [])
 
@@ -2677,9 +2687,18 @@ export function useDataSource<T = unknown>(
           ? transformedData.length === 0
           : (transformedData == null)
         if (isEmptyResult) {
-          emptyRetryCountRef.current += 1
-          if (emptyRetryCountRef.current <= 3) {
-            setTimeout(() => fetchTelemetryData(), 3000)
+          // If devices are still loading, don't treat empty as error — keep loading
+          // state and defer until devices are available (handled by devicesLoading subscribe)
+          const { devicesLoading } = useStore.getState()
+          if (devicesLoading) {
+            deferredByDevicesLoadingRef.current = true
+            initialTelemetryFetchDoneRef.current = false
+            setLoading(true)
+          } else {
+            emptyRetryCountRef.current += 1
+            if (emptyRetryCountRef.current <= 3) {
+              setTimeout(() => fetchTelemetryData(), 3000)
+            }
           }
         } else {
           emptyRetryCountRef.current = 0
@@ -2692,8 +2711,10 @@ export function useDataSource<T = unknown>(
         setData(fallbackData as T)
         initialTelemetryFetchDoneRef.current = true
       } finally {
-        // Always set loading to false, even if there's an error
-        setLoading(false)
+        // Only clear loading if we're not waiting for devices to load
+        if (!deferredByDevicesLoadingRef.current) {
+          setLoading(false)
+        }
       }
     }
 
@@ -2722,6 +2743,31 @@ export function useDataSource<T = unknown>(
       }
     }
   }, [telemetryKey, enabled, telemetryRefreshTrigger])
+
+  // Watch devicesLoading — when devices finish loading, retry deferred fetches
+  useEffect(() => {
+    // Only relevant if we have device/telemetry sources
+    if (relevantDeviceIds.size === 0 && !hasTelemetrySource) return
+
+    let prevLoading = useStore.getState().devicesLoading
+    const unsubscribe = useStore.subscribe((state: NeoMindStore) => {
+      if (state.devicesLoading === prevLoading) return
+      prevLoading = state.devicesLoading
+
+      // Devices finished loading and we had a deferred fetch
+      if (!state.devicesLoading && deferredByDevicesLoadingRef.current) {
+        deferredByDevicesLoadingRef.current = false
+        // Re-read store data now that devices are available
+        readDataFromStore()
+        // If we have telemetry sources, trigger a refetch
+        if (hasTelemetrySource) {
+          setTelemetryRefreshTrigger((n) => n + 1)
+        }
+      }
+    })
+
+    return () => unsubscribe()
+  }, [relevantDeviceIds, hasTelemetrySource, readDataFromStore])
 
   // System data fetching (single values from system stats)
   const systemKey = useMemo(() => {

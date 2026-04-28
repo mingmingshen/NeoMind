@@ -49,7 +49,7 @@ export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSou
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg z-[110]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Settings2 className="h-4 w-4" />

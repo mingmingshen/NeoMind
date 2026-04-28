@@ -567,7 +567,7 @@ export function LayerEditorDialog({
       title={t('customLayer.editorTitle')}
       icon={<Layers className="h-5 w-5 text-primary" />}
       width="3xl"
-      className="sm:h-[90vh]"
+      className="sm:h-[90vh] z-[110]"
       contentClassName="p-0 flex flex-col overflow-hidden"
       preventCloseOnSubmit={false}
       footer={

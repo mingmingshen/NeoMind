@@ -70,7 +70,7 @@ export function CenterPickerDialog({
       title={t('mapDisplay.selectCenter', '选择地图中心点')}
       icon={<Crosshair className="h-5 w-5 text-primary" />}
       width="3xl"
-      className="sm:h-[85vh]"
+      className="sm:h-[85vh] z-[110]"
       contentClassName="p-0 flex flex-col"
       preventCloseOnSubmit={false}
       footer={

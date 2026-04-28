@@ -62,7 +62,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
         </div>
         {fullscreenImage && (
           <Dialog open={!!fullscreenImage} onOpenChange={() => setFullscreenImage(null)}>
-            <DialogContent className="max-w-4xl p-2">
+            <DialogContent className="max-w-4xl p-2 z-[110]">
               <img
                 src={fullscreenImage}
                 alt="Fullscreen"
@@ -127,7 +127,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
         </div>
         {fullscreenImage && (
           <Dialog open={!!fullscreenImage} onOpenChange={() => setFullscreenImage(null)}>
-            <DialogContent className="max-w-4xl p-2">
+            <DialogContent className="max-w-4xl p-2 z-[110]">
               <img
                 src={fullscreenImage}
                 alt="Fullscreen"
