@@ -2,7 +2,7 @@
 
 ## Overview
 
-v0.7.0 is a quality-focused release with stability improvements, UI polish, and comprehensive testing. There are no breaking API changes from v0.6.12.
+v0.7.0 is a quality-focused release with stability improvements, a complete UI design system overhaul, and comprehensive testing. There are no breaking API changes from v0.6.12.
 
 ## What's New
 
@@ -14,6 +14,17 @@ v0.7.0 is a quality-focused release with stability improvements, UI polish, and 
 - **MQTT Unsubscription** — Custom MQTT topics can now be unsubscribed
 - **Rule Engine Recovery** — Catch-all error recovery prevents scheduler crashes
 
+### UI Design System
+
+- **Aurora Background & Glass Morphism** — App-wide aurora gradient background with glass-style navigation and footer
+- **OKLCH Color System** — CSS color tokens migrated from HSL to OKLCH for perceptually uniform colors
+- **Design Tokens** — All hardcoded Tailwind palette colors replaced with semantic design tokens (text-success, bg-error-light, text-accent-orange, etc.)
+- **Harmonized Accent Colors** — OKLCH-based category accents (purple, orange, teal, rose) with consistent light/dark variants
+- **Typography** — Plus Jakarta Sans (Latin) + Noto Sans SC (CJK) fonts
+- **Chart Palette** — Redesigned chart colors with better visual distinction and accessibility
+- **UnifiedFormDialog** — Centralized dialog component with consistent z-index, portal, and backdrop handling
+- **Design Specification** — Comprehensive `DESIGN_SPEC.md` documenting all UI patterns and conventions
+
 ### Frontend Polish
 
 - **Skeleton Loading** — Consistent skeleton screens replace spinners on all pages
@@ -24,6 +35,14 @@ v0.7.0 is a quality-focused release with stability improvements, UI polish, and 
 - **Error Boundaries** — React Error Boundaries catch page render failures gracefully
 - **Error Messages** — User-friendly messages for API failures instead of raw error text
 - **Empty States** — All list pages show helpful guidance when empty
+- **29 Dialog Migrations** — All form dialogs consolidated to UnifiedFormDialog
+- **Dark Mode Fixes** — Dialog borders visible, z-index stacking correct for nested dialogs
+
+### Performance
+
+- Eliminated API polling storms, N+1 queries, and blocking call chains
+- TTL-based fetch deduplication prevents redundant API calls
+- Dashboard components load without error on first page visit
 
 ### Testing
 

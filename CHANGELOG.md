@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v0.7.0] - 2026-04-27
+## [v0.7.0] - 2026-04-28
 
 ### Added
 
@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **AI Analyst Display Title** — Agent name in dashboard widget linked to Display Title from agent config
 - **JWT-Based Rate Limiting** — Per-user rate limiting with JWT client identification
 - **Backend-Ready Event** — Tauri desktop startup uses event-based ready detection instead of polling
+- **Aurora Background & Glass Morphism** — App-wide aurora gradient background layer with glass-style TopNav and PageLayout footer
+- **OKLCH Color System** — CSS color tokens migrated from HSL to OKLCH for perceptually uniform color scales
+- **Harmonized Accent Tokens** — OKLCH-based category accent colors (purple, orange, teal, rose) with consistent light/dark variants
+- **Design System Tokens** — Centralized Tailwind config tokens for borders, radius, shadows, and layout spacing
+- **Frontend Design Specification** — Comprehensive `DESIGN_SPEC.md` documenting all UI patterns, tokens, and conventions
+- **Plus Jakarta Sans & Noto Sans SC Fonts** — New typography with Latin and CJK support
+- **UnifiedFormDialog** — Centralized dialog component handling mobile/desktop, portal, escape key, backdrop click, and z-index extraction for backdrop sync
+- **Chart Color Palette Redesign** — Visually distinct, accessible chart colors with better contrast
 
 ### Changed
 
@@ -35,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **DashMap for Device Registry** — Replaced `RwLock<HashMap>` with `DashMap` for lock-free concurrent device operations
 - **Lazy Telemetry Loading** — Telemetry data fetched on demand (detail view) instead of eagerly on page load
 - **Rate Limit** — Raised to 5000/min for edge device workloads; frontend retries on 429
+- **Design Token Migration** — All hardcoded Tailwind palette colors (blue-500, green-600, etc.) replaced with semantic design tokens (text-success, bg-error-light, text-accent-orange, etc.) across entire frontend
+- **Dialog Consolidation** — 29 form dialogs migrated from raw Radix Dialog to UnifiedFormDialog with consistent behavior
+- **Chat Welcome Page** — Redesigned welcome screen with improved layout
+- **Checkbox Unification** — All checkbox components consolidated to use shared `Checkbox` from `ui/checkbox`
+- **Vertical Stepper Redesign** — Improved step indicator with better visual hierarchy
+- **Map Component** — Device icon click no longer navigates away; shows toast notification instead
+- **Shared Layout Tokens** — Extracted reusable tokens for dashboard cards, dialog headers, and section layouts
 
 ### Performance
 
@@ -67,6 +82,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Startup Health Check** — Uses HEAD method instead of GET; increased timeout for reliability
 - **Telemetry Time Range** — Frontend time range aligned with backend 30-day limit
 - **User Prompt Length** — Lowered minimum from 10 to 1 character for short messages
+- **Dashboard First-Load Race Condition** — Components no longer show "Failed to Load Data" on initial load; deferred data fetching waits for device list to be available before showing error state
+- **Nested Dialog Z-Index** — All dashboard child dialogs (Map Editor, Layer Editor, Center Picker, AI Analyst, Agent Monitor, Command Button) now render above FullScreenDialog (z:100) using z-[110]
+- **Dialog Backdrop Z-Index** — UnifiedFormDialog extracts z-index from className and applies to backdrop, fixing misaligned layering
+- **Dark Mode Dialog Border** — Added visible border to UnifiedFormDialog for clear edge distinction in dark mode
+- **Tailwind v3 Opacity Modifiers** — Fixed all broken CSS variable opacity modifiers (bg-primary/10 silently fails); replaced with pre-defined tokens (bg-muted-30, bg-success-light) and inline styles
+- **Select Text Alignment** — Fixed text alignment in Select/Combobox components
+- **Dropdown Z-Index** — Fixed dropdown menus appearing behind other UI elements
+- **Nav Z-Index Conflict** — Fixed TopNav layering conflict with content below
+- **Aurora Background Rendering** — Fixed CSS selector issues and glass surface rendering
 
 ### Removed
 
