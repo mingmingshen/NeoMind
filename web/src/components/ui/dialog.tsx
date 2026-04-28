@@ -105,7 +105,7 @@ const DialogContent = React.forwardRef<
   // Desktop: centered dialog
   return (
     <DialogPortal>
-      <DialogOverlay className="z-50" />
+      <DialogOverlay />
       <DialogPrimitive.Content
         ref={ref}
         className={cn(

@@ -954,7 +954,7 @@ function DataDefinitionStep({
 
       {/* JSON Import Dialog */}
       <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent className="sm:max-w-lg z-[150]">
+        <DialogContent className="sm:max-w-lg z-[60]">
           <DialogHeader>
             <DialogTitle>{t('devices:metricEditor.jsonDialogTitle')}</DialogTitle>
             <DialogDescription>

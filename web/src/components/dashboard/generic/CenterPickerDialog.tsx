@@ -74,7 +74,7 @@ export function CenterPickerDialog({
   if (isMobile) {
     return createPortal(
       open ? (
-        <div className="fixed inset-0 z-[110] bg-background animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[60] bg-background animate-in fade-in duration-200">
           <div className="flex h-full w-full flex-col">
             {/* Header */}
             <div
@@ -177,7 +177,7 @@ export function CenterPickerDialog({
       {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 z-[109] bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          className="fixed inset-0 z-[55] bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={() => onOpenChange(false)}
         />
       )}
@@ -186,7 +186,7 @@ export function CenterPickerDialog({
       {open && (
         <div
           className={cn(
-            'fixed left-1/2 top-1/2 z-[110]',
+            'fixed left-1/2 top-1/2 z-[60]',
             'grid w-full gap-0',
             'bg-background shadow-lg',
             'duration-200',

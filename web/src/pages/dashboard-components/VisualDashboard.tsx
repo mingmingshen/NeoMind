@@ -5207,7 +5207,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       {/* Main Content */}
       <div className={cn(
         "flex-1 flex flex-col overflow-hidden",
-        isFullscreen && "fixed inset-0 z-[100] bg-background"
+        isFullscreen && "fixed inset-0 z-50 bg-background"
       )}>
         {/* Header - fixed at top - hidden in fullscreen */}
         {!isFullscreen && (

@@ -2394,7 +2394,7 @@ function ResourceSelectionDialog({
     return createPortal(
       <div
         className={cn(
-          "fixed inset-0 z-[150] bg-background flex flex-col",
+          "fixed inset-0 z-50 bg-background flex flex-col",
           !open && "hidden"
         )}
         style={{
@@ -2557,8 +2557,8 @@ function ResourceSelectionDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Override overlay z-index */}
-      <DialogPrimitive.Overlay className="z-[100] fixed inset-0 bg-black/80" />
-      <DialogContent className="z-[100] sm:max-w-3xl sm:max-h-[80vh] flex flex-col p-0 sm:p-0 gap-0 m-0">
+      <DialogPrimitive.Overlay className="z-[60] fixed inset-0 bg-black/80" />
+      <DialogContent className="z-[60] sm:max-w-3xl sm:max-h-[80vh] flex flex-col p-0 sm:p-0 gap-0 m-0">
         <DialogHeader className="px-5 py-3 border-b">
           <DialogTitle>{tAgent('creator.resources.dialog.title')}</DialogTitle>
         </DialogHeader>
