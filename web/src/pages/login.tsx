@@ -273,7 +273,7 @@ export function LoginPage() {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
 
         {/* Edge node glows - representing distributed edge computing */}
-        <div className="absolute top-[15%] left-[10%] w-32 h-32 bg-blue-500/5 dark:bg-blue-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '0s' }} />
+        <div className="absolute top-[15%] left-[10%] w-32 h-32 bg-info-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '0s' }} />
         <div className="absolute bottom-[20%] right-[15%] w-40 h-40 bg-purple-500/5 dark:bg-purple-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '7s', animationDelay: '1s' }} />
         <div className="absolute top-[30%] right-[20%] w-24 h-24 bg-cyan-500/5 dark:bg-cyan-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '5s', animationDelay: '2s' }} />
         <div className="absolute bottom-[30%] left-[20%] w-28 h-28 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '3s' }} />

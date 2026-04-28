@@ -37,8 +37,8 @@ function getStateOptions(t: (key: string) => string) {
   return [
     { value: 'on' as LEDState, label: t('valueMap.state.on'), color: 'text-green-600' },
     { value: 'off' as LEDState, label: t('valueMap.state.off'), color: 'text-muted-foreground' },
-    { value: 'error' as LEDState, label: t('valueMap.state.error'), color: 'text-red-600' },
-    { value: 'warning' as LEDState, label: t('valueMap.state.warning'), color: 'text-yellow-600' },
+    { value: 'error' as LEDState, label: t('valueMap.state.error'), color: 'text-error' },
+    { value: 'warning' as LEDState, label: t('valueMap.state.warning'), color: 'text-warning' },
     { value: 'unknown' as LEDState, label: t('valueMap.state.unknown'), color: 'text-muted-foreground' },
   ]
 }

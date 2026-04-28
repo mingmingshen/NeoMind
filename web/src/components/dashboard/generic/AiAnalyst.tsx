@@ -364,7 +364,7 @@ export function AiAnalyst({
           <div
             className={cn(
               'w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
-              isStreaming ? 'bg-blue-500/20' : 'bg-muted',
+              isStreaming ? 'bg-info-light' : 'bg-muted',
             )}
           >
             {isStreaming ? (
@@ -389,7 +389,7 @@ export function AiAnalyst({
               ) : isConnected ? (
                 <Badge
                   variant="outline"
-                  className="text-[10px] h-5 text-green-600 border-green-200"
+                  className="text-[10px] h-5 text-success border-success-light"
                 >
                   Live
                 </Badge>

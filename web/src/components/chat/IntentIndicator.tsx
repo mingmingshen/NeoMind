@@ -72,7 +72,7 @@ function getIntentConfig(intent: IntentCategory, t: (key: string) => string) {
   }> = {
     query_data: { key: "intent.queryData", icon: Target, color: "text-blue-500" },
     analyze_data: { key: "intent.analyzeData", icon: Brain, color: "text-purple-500" },
-    control_device: { key: "intent.controlDevice", icon: Settings, color: "text-green-500" },
+    control_device: { key: "intent.controlDevice", icon: Settings, color: "text-success" },
     create_automation: { key: "intent.createAutomation", icon: Zap, color: "text-amber-500" },
     send_message: { key: "intent.sendMessage", icon: Send, color: "text-cyan-500" },
     summarize_info: { key: "intent.summarize", icon: FileText, color: "text-indigo-500" },
@@ -91,7 +91,7 @@ function getIntentConfig(intent: IntentCategory, t: (key: string) => string) {
 // Helper function to get strategy config
 function getStrategyConfig(strategy: ProcessingStrategy, t: (key: string) => string) {
   const configs: Record<ProcessingStrategy, { key: string; color: string }> = {
-    fast_path: { key: "intent.path.fast", color: "text-green-600 bg-green-50" },
+    fast_path: { key: "intent.path.fast", color: "text-success bg-success-light" },
     standard: { key: "intent.path.standard", color: "text-blue-600 bg-blue-50" },
     quality: { key: "intent.path.quality", color: "text-purple-600 bg-purple-50" },
     multi_turn: { key: "intent.path.multiTurn", color: "text-amber-600 bg-amber-50" },
@@ -108,7 +108,7 @@ function getStrategyConfig(strategy: ProcessingStrategy, t: (key: string) => str
 function getEntityConfig(entityType: EntityType, t: (key: string) => string) {
   const configs: Record<EntityType, { key: string; icon: string; color: string }> = {
     device: { key: "intent.entity.device", icon: "🔌", color: "bg-blue-100 text-blue-700" },
-    location: { key: "intent.entity.location", icon: "📍", color: "bg-green-100 text-green-700" },
+    location: { key: "intent.entity.location", icon: "📍", color: "bg-success-light text-success" },
     value: { key: "intent.entity.value", icon: "🔢", color: "bg-purple-100 text-purple-700" },
     time_range: { key: "intent.entity.time", icon: "⏰", color: "bg-orange-100 text-orange-700" },
     action: { key: "intent.entity.action", icon: "▶️", color: "bg-error-light text-error" },
@@ -137,7 +137,7 @@ export function IntentIndicator({
 
   // Confidence color based on level
   const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 0.8) return "bg-green-500"
+    if (confidence >= 0.8) return "bg-success"
     if (confidence >= 0.6) return "bg-blue-500"
     if (confidence >= 0.4) return "bg-yellow-500"
     return "bg-error"
@@ -272,9 +272,9 @@ export function IntentFlow({ steps, currentStep = 0 }: IntentFlowProps) {
 
         const getStatusColor = () => {
           if (step.status === "error") return "text-error"
-          if (step.status === "completed") return "text-green-500"
+          if (step.status === "completed") return "text-success"
           if (isCurrent) return "text-blue-500"
-          if (isCompleted) return "text-green-500"
+          if (isCompleted) return "text-success"
           return "text-muted-foreground"
         }
 
@@ -299,7 +299,7 @@ export function IntentFlow({ steps, currentStep = 0 }: IntentFlowProps) {
             {index < steps.length - 1 && (
               <div className={cn(
                 "w-8 h-0.5 mx-0.5 transition-colors",
-                index < currentStep ? "bg-green-300" : "bg-muted"
+                index < currentStep ? "bg-success-light" : "bg-muted"
               )} />
             )}
           </div>
@@ -333,7 +333,7 @@ export function IntentConfidenceBar({
   }[size]
 
   const getColor = () => {
-    if (confidence >= 0.8) return "bg-green-500"
+    if (confidence >= 0.8) return "bg-success"
     if (confidence >= 0.6) return "bg-blue-500"
     if (confidence >= 0.4) return "bg-yellow-500"
     return "bg-error"
@@ -355,7 +355,7 @@ export function IntentConfidenceBar({
         </div>
         <span className={cn(
           "text-xs font-medium tabular-nums w-10 text-right",
-          percent >= 80 ? "text-green-600" :
+          percent >= 80 ? "text-success" :
           percent >= 60 ? "text-blue-600" :
           percent >= 40 ? "text-yellow-600" :
           "text-error"

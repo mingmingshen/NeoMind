@@ -187,7 +187,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
           
         >
           <div className="flex items-center gap-2 mb-4">
-            <CheckCircle2 className="h-5 w-5 text-green-500" />
+            <CheckCircle2 className="h-5 w-5 text-success" />
             <span className="font-medium">
               {t('automation:testSuccess', { defaultValue: 'Test completed successfully' })}
             </span>
@@ -198,7 +198,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
             <div className="space-y-2">
               <h4 className="font-medium">{t('automation:generatedMetrics', { defaultValue: 'Generated Metrics' })}</h4>
               {result.metrics.map((metric, idx) => (
-                <div key={idx} className="pl-4 border-l-2 border-green-500">
+                <div key={idx} className="pl-4 border-l-2 border-success">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{metric.metric}</Badge>
                     <span className="font-mono text-sm">{metric.value}</span>
@@ -222,9 +222,9 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
 
           {result.warnings.length > 0 && (
             <div className="mt-4 space-y-1">
-              <h4 className="font-medium text-amber-600">{t('automation:warnings', { defaultValue: 'Warnings' })}</h4>
+              <h4 className="font-medium text-warning">{t('automation:warnings', { defaultValue: 'Warnings' })}</h4>
               {result.warnings.map((warning, idx) => (
-                <div key={idx} className="text-sm text-amber-600 flex items-start gap-2">
+                <div key={idx} className="text-sm text-warning flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
                   <span>{warning}</span>
                 </div>

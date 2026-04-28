@@ -123,9 +123,9 @@ export function AboutTab() {
   }
 
   const getMemoryColor = (percent: number) => {
-    if (percent >= 80) return "text-red-500"
-    if (percent >= 60) return "text-yellow-500"
-    return "text-green-500"
+    if (percent >= 80) return "text-error"
+    if (percent >= 60) return "text-warning"
+    return "text-success"
   }
 
   return (

@@ -46,8 +46,8 @@ interface AgentsListProps {
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof CheckCircle2; color: string }> = {
   Active: { label: 'agents:status.active', icon: CheckCircle2, color: 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800' },
   Paused: { label: 'agents:status.paused', icon: XCircle, color: 'text-muted-foreground bg-muted border-border dark:text-muted-foreground dark:bg-muted dark:border-border' },
-  Error: { label: 'agents:status.error', icon: XCircle, color: 'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/30 dark:border-red-800' },
-  Executing: { label: 'agents:status.executing', icon: Loader2, color: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950/30 dark:border-blue-800' },
+  Error: { label: 'agents:status.error', icon: XCircle, color: 'text-error bg-error-light border-error' },
+  Executing: { label: 'agents:status.executing', icon: Loader2, color: 'text-info bg-info-light border-info' },
 }
 
 const ITEMS_PER_PAGE = 10
@@ -181,8 +181,8 @@ export function AgentsList({
                         </div>
                         {agent.error_count > 0 && (
                           <div className="flex items-center gap-1.5">
-                            <XCircle className="h-4 w-4 text-red-500" />
-                            <span className="font-medium text-red-500">{agent.error_count}</span>
+                            <XCircle className="h-4 w-4 text-error" />
+                            <span className="font-medium text-error">{agent.error_count}</span>
                           </div>
                         )}
                       </div>

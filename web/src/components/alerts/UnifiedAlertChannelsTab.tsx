@@ -72,7 +72,7 @@ const CHANNEL_TYPE_INFO: Record<string, {
   console: {
     name: 'Console',
     icon: <Terminal className="h-6 w-6" />,
-    iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
+    iconBg: 'bg-info-light text-info',
   },
   memory: {
     name: 'Memory',
@@ -466,7 +466,7 @@ export function UnifiedAlertChannelsTab({
                 key={type.id}
                 className={cn(
                   "cursor-pointer transition-all duration-200 hover:shadow-md",
-                  hasEnabled && "border-green-500 border-2"
+                  hasEnabled && "border-success border-2"
                 )}
                 onClick={() => handleTypeSelect(type)}
               >
@@ -482,7 +482,7 @@ export function UnifiedAlertChannelsTab({
                 <CardContent className="text-sm">
                   <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">{t('plugins:llm.status')}:</span>
-                    <span className={hasEnabled ? "text-green-600 dark:text-green-400 font-medium" : "text-muted-foreground font-medium"}>
+                    <span className={hasEnabled ? "text-success font-medium" : "text-muted-foreground font-medium"}>
                       {hasEnabled ? t('alerts:enabled') : t('alerts:notConfigured')}
                     </span>
                   </div>
@@ -555,7 +555,7 @@ export function UnifiedAlertChannelsTab({
                   key={instance.id}
                   className={cn(
                     "transition-all duration-200 hover:shadow-md",
-                    instance.enabled && "border-green-500"
+                    instance.enabled && "border-success"
                   )}
                 >
                   <CardHeader className="pb-3">
@@ -666,7 +666,7 @@ export function UnifiedAlertChannelsTab({
                         <div className={cn(
                           "text-xs p-2 rounded",
                           testResult.success
-                            ? "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300"
+                            ? "bg-success-light text-success"
                             : "bg-error-light text-error"
                         )}>
                           {testResult.message}

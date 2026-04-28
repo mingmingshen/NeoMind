@@ -52,10 +52,10 @@ const SEVERITY_CONFIG: Record<
   MessageSeverity,
   { icon: typeof Info; color: string; variant: 'default' | 'destructive' | 'warning' }
 > = {
-  info: { icon: Info, color: 'text-blue-500', variant: 'default' as const },
-  warning: { icon: AlertTriangle, color: 'text-yellow-500', variant: 'warning' as const },
-  critical: { icon: AlertCircle, color: 'text-orange-500', variant: 'destructive' as const },
-  emergency: { icon: ShieldAlert, color: 'text-red-500', variant: 'destructive' as const },
+  info: { icon: Info, color: 'text-info', variant: 'default' as const },
+  warning: { icon: AlertTriangle, color: 'text-warning', variant: 'warning' as const },
+  critical: { icon: AlertCircle, color: 'text-error', variant: 'destructive' as const },
+  emergency: { icon: ShieldAlert, color: 'text-error', variant: 'destructive' as const },
 }
 
 // Status badge mapping
@@ -123,22 +123,22 @@ export function MessagesTab({
       {
         label: t('messages.stats.total'),
         value: stats.total || 0,
-        color: 'bg-blue-500',
+        color: 'bg-info',
       },
       {
         label: t('messages.stats.active'),
         value: stats.active || 0,
-        color: 'bg-red-500',
+        color: 'bg-error',
       },
       {
         label: t('messages.stats.byCategory.alert'),
         value: stats.by_category?.alert || 0,
-        color: 'bg-orange-500',
+        color: 'bg-error',
       },
       {
         label: t('messages.stats.bySeverity.critical'),
         value: stats.by_severity?.critical || 0 + (stats.by_severity?.emergency || 0),
-        color: 'bg-red-600',
+        color: 'bg-error',
       },
     ]
   }, [stats, t])

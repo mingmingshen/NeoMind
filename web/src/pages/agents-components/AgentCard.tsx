@@ -64,8 +64,8 @@ interface AgentCardProps {
 const STATUS_CONFIG: Record<string, { icon: typeof Activity; color: string; bg: string }> = {
   Active: { icon: Activity, color: 'text-green-500', bg: 'bg-green-500/10' },
   Paused: { icon: Pause, color: 'text-muted-foreground', bg: 'bg-muted-50' },
-  Error: { icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10' },
-  Executing: { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+  Error: { icon: AlertTriangle, color: 'text-error', bg: 'bg-error-light' },
+  Executing: { icon: Loader2, color: 'text-info', bg: 'bg-info-light' },
 }
 
 export function AgentCard({
@@ -124,15 +124,15 @@ export function AgentCard({
         <div className={cn(
           "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors",
           agent.status === 'Active' && "bg-green-500/10 ring-2 ring-green-500/30",
-          agent.status === 'Executing' && "bg-blue-500/10 ring-2 ring-blue-500/30",
-          agent.status === 'Error' && "bg-red-500/10 ring-2 ring-red-500/30",
+          agent.status === 'Executing' && "bg-info-light ring-2 ring-info",
+          agent.status === 'Error' && "bg-error-light ring-2 ring-error/30",
           agent.status === 'Paused' && "bg-muted-50"
         )}>
           <Bot className={cn(
             "h-6 w-6",
             agent.status === 'Active' && "text-green-500",
             agent.status === 'Executing' && "text-blue-500",
-            agent.status === 'Error' && "text-red-500",
+            agent.status === 'Error' && "text-error",
             agent.status === 'Paused' && "text-muted-foreground"
           )} />
         </div>
@@ -201,7 +201,7 @@ export function AgentCard({
         <div className="text-center p-2 rounded-lg bg-muted-30">
           <div className={cn(
             "text-lg font-semibold",
-            successRate >= 80 ? "text-green-500" : successRate >= 50 ? "text-yellow-500" : "text-red-500"
+            successRate >= 80 ? "text-green-500" : successRate >= 50 ? "text-warning" : "text-error"
           )}>
             {successRate}%
           </div>
@@ -219,9 +219,9 @@ export function AgentCard({
 
       {/* Footer: Executing status or Last Execution + Toggle */}
       {agent.status === 'Executing' ? (
-        <div className="flex items-center gap-2 pt-1.5 border-t border-blue-200/50 dark:border-blue-800/50 bg-blue-50/60 dark:bg-blue-900/20 -mx-1 px-1">
-          <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0" />
-          <span className="text-xs text-blue-700 dark:text-blue-300 truncate flex-1">
+        <div className="flex items-center gap-2 pt-1.5 border-t border-info bg-info-light -mx-1 px-1">
+          <Loader2 className="h-4 w-4 text-info animate-spin shrink-0" />
+          <span className="text-xs text-info truncate flex-1">
             {agent.currentThinking || t('agents:thinking.executing')}
           </span>
         </div>

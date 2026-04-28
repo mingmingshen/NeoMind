@@ -153,8 +153,8 @@ const TYPE_CONFIG = {
   device: {
     icon: MapPin,
     color: 'text-white',
-    bgColor: 'bg-green-500',
-    borderColor: 'border-green-600',
+    bgColor: 'bg-success',
+    borderColor: 'border-success',
   },
   metric: {
     icon: Activity,
@@ -165,7 +165,7 @@ const TYPE_CONFIG = {
   command: {
     icon: Zap,
     color: 'text-white',
-    bgColor: 'bg-blue-500',
+    bgColor: 'bg-info',
     borderColor: 'border-blue-600',
   },
   text: {
@@ -360,10 +360,10 @@ function LayerItemComponent({
   // Status indicator color
   const getStatusColor = () => {
     switch (item.status) {
-      case 'online': return 'bg-green-500'
+      case 'online': return 'bg-success'
       case 'offline': return 'bg-muted-foreground'
-      case 'error': return 'bg-red-500'
-      case 'warning': return 'bg-yellow-500'
+      case 'error': return 'bg-error'
+      case 'warning': return 'bg-warning'
       default: return null
     }
   }
@@ -412,7 +412,7 @@ function LayerItemComponent({
 
             {/* Command indicator */}
             {item.type === 'command' && (
-              <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-blue-500 rounded-full border-2 border-background animate-pulse" />
+              <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-info rounded-full border-2 border-background animate-pulse" />
             )}
           </div>
         ) : (
@@ -536,7 +536,7 @@ function LayerItemComponent({
                   <span className="text-muted-foreground">{t('customLayer.status')}:</span>
                   <span className={cn(
                     'flex items-center gap-1.5',
-                    item.status === 'online' && 'text-green-600',
+                    item.status === 'online' && 'text-success',
                     item.status === 'offline' && 'text-muted-foreground'
                   )}>
                     <span className={cn('w-2 h-2 rounded-full', getStatusColor())} />

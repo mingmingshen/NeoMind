@@ -374,11 +374,11 @@ function VariablesPanel({
   const getTypeColor = (type: string) => {
     switch (type) {
       case 'number': case 'integer': case 'float': return 'text-blue-500'
-      case 'string': return 'text-green-500'
+      case 'string': return 'text-success'
       case 'boolean': return 'text-purple-500'
       case 'object': return 'text-orange-500'
       case 'array': return 'text-cyan-500'
-      case 'binary': return 'text-yellow-500'
+      case 'binary': return 'text-warning'
       default: return 'text-muted-foreground'
     }
   }
@@ -502,7 +502,7 @@ return ${resultParam}`
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <code className={cn(
-                      "font-mono text-blue-600 dark:text-blue-400 truncate",
+                      "font-mono text-info truncate",
                       isMobile ? "text-sm" : "text-xs"
                     )}>
                       {metric.name}
@@ -679,22 +679,22 @@ return ${resultParam}`
           {extensionCommands.length > 0 && (
             <div className="mt-4 pt-4 border-t">
               <div className="flex items-center gap-2 mb-3 px-1">
-                <Zap className="h-4 w-4 text-amber-500" />
+                <Zap className="h-4 w-4 text-warning" />
                 <span className="text-sm font-medium">{tBuilder('extensionActions') || 'Actions'}</span>
               </div>
               <div className="space-y-2">
                 {extensionCommands.map((cmd, idx) => (
                   <div
                     key={idx}
-                    className="border border-amber-200 dark:border-amber-900/50 rounded-lg overflow-hidden bg-amber-50/30 dark:bg-amber-950/10 hover:bg-amber-100/30 dark:hover:bg-amber-900/20 transition-all cursor-pointer group"
+                    className="border border-warning rounded-lg overflow-hidden bg-warning-light hover:bg-warning-light transition-all cursor-pointer group"
                     onClick={() => handleInvokeCommand(cmd)}
                   >
                     {/* Header */}
-                    <div className="flex items-center justify-between px-3 py-2 bg-amber-100/50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-900/50">
+                    <div className="flex items-center justify-between px-3 py-2 bg-warning-light border-b border-warning">
                       <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <Zap className="h-4 w-4 text-amber-500 shrink-0" />
+                        <Zap className="h-4 w-4 text-warning shrink-0" />
                         <div className="min-w-0">
-                          <div className="text-sm font-medium text-amber-700 dark:text-amber-300 truncate">
+                          <div className="text-sm font-medium text-warning truncate">
                             {cmd.display_name}
                           </div>
                           <div className="text-xs text-muted-foreground truncate">
@@ -702,7 +702,7 @@ return ${resultParam}`
                           </div>
                         </div>
                       </div>
-                      <Badge variant="outline" className="text-xs h-6 px-2 text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700">
+                      <Badge variant="outline" className="text-xs h-6 px-2 text-warning border-warning">
                         {tBuilder('call') || 'Call'}
                       </Badge>
                     </div>
@@ -734,7 +734,7 @@ return ${resultParam}`
                                 {param.data_type.slice(0, 3)}
                               </span>
                               {param.required && (
-                                <span className="text-red-500">*</span>
+                                <span className="text-error">*</span>
                               )}
                             </div>
                           ))}
@@ -823,9 +823,9 @@ function TransformPreviewPanel({
     const hasSources = deviceMetricCount > 0 || extensionSourceCount > 0
 
     return (
-      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+      <div className="bg-gradient-to-br from-info-light to-indigo-50 dark:from-info-light dark:to-indigo-950/30 rounded-lg p-4 border border-info">
         <div className="flex items-center gap-2 mb-3">
-          <Database className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Database className="h-4 w-4 text-info" />
           <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
             {tBuilder('deviceMetrics') || '输入来源'}
           </span>
@@ -837,7 +837,7 @@ function TransformPreviewPanel({
           <div className="space-y-2">
             {deviceMetricCount > 0 && (
               <div className="space-y-1">
-                <div className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300">
+                <div className="flex items-center gap-2 text-xs text-info">
                   <Lightbulb className="h-4 w-4" />
                   <span>{deviceMetricCount} {tBuilder('deviceMetrics') || '设备指标'}</span>
                 </div>
@@ -848,7 +848,7 @@ function TransformPreviewPanel({
                   </div>
                 ))}
                 {deviceMetricCount > 3 && (
-                  <div className="text-xs text-blue-700 dark:text-blue-300 pl-4">
+                  <div className="text-xs text-info pl-4">
                     +{deviceMetricCount - 3} {tBuilder('more') || '更多'}
                   </div>
                 )}
@@ -856,7 +856,7 @@ function TransformPreviewPanel({
             )}
             {extensionSourceCount > 0 && (
               <div className="space-y-1">
-                <div className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300">
+                <div className="flex items-center gap-2 text-xs text-info">
                   <Puzzle className="h-4 w-4" />
                   <span>{extensionSourceCount} {tBuilder('extensionDataSources') || '扩展数据源'}</span>
                 </div>
@@ -869,7 +869,7 @@ function TransformPreviewPanel({
                   </div>
                 ))}
                 {extensionSourceCount > 2 && (
-                  <div className="text-xs text-blue-700 dark:text-blue-300 pl-4">
+                  <div className="text-xs text-info pl-4">
                     +{extensionSourceCount - 2} {tBuilder('more') || '更多'}
                   </div>
                 )}
@@ -877,7 +877,7 @@ function TransformPreviewPanel({
             )}
           </div>
         ) : (
-          <p className="text-xs text-blue-700 dark:text-blue-300">
+          <p className="text-xs text-info">
             {tBuilder('noVariablesHint') || '暂无输入变量'}
           </p>
         )}
@@ -921,10 +921,10 @@ function TransformPreviewPanel({
   // Render output preview card
   const renderOutputCard = () => {
     return (
-      <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-4 border border-green-200 dark:border-green-800">
+      <div className="bg-gradient-to-br from-success-light to-emerald-50 dark:from-success-light dark:to-emerald-950/30 rounded-lg p-4 border border-success-light dark:border-success-light">
         <div className="flex items-center gap-2 mb-3">
-          <Zap className="h-4 w-4 text-green-600 dark:text-green-400" />
-          <span className="text-sm font-medium text-green-900 dark:text-green-100">
+          <Zap className="h-4 w-4 text-success dark:text-success" />
+          <span className="text-sm font-medium text-success dark:text-success">
             {tBuilder('outputPrefix') || '输出指标'}
           </span>
           <Badge variant="secondary" className="ml-auto text-xs">
@@ -935,18 +935,18 @@ function TransformPreviewPanel({
           <div className="space-y-1.5">
             {outputMetrics.slice(0, 4).map((metric, idx) => (
               <div key={idx} className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-                <Zap className="h-4 w-4 text-green-500" />
+                <Zap className="h-4 w-4 text-success" />
                 <span className="text-xs font-mono">{outputPrefix}.{metric}</span>
               </div>
             ))}
             {outputMetrics.length > 4 && (
-              <div className="text-xs text-center text-green-700 dark:text-green-300">
+              <div className="text-xs text-center text-success dark:text-success">
                 +{outputMetrics.length - 4} {tBuilder('more') || '更多'}
               </div>
             )}
           </div>
         ) : (
-          <p className="text-xs text-green-700 dark:text-green-300">
+          <p className="text-xs text-success dark:text-success">
             {tBuilder('outputPrefixHint') || '运行测试后显示输出指标'}
           </p>
         )}
@@ -1370,8 +1370,8 @@ export function TransformBuilder({
       {/* Header */}
       <FullScreenDialogHeader
         icon={<Code className="h-5 w-5" />}
-        iconBg="bg-blue-500/10 dark:bg-blue-500/20"
-        iconColor="text-blue-500"
+        iconBg="bg-info-light"
+        iconColor="text-info"
         title={isEditMode ? tBuilder('editTitle') : tBuilder('title')}
         onClose={() => onOpenChange(false)}
       />

@@ -75,7 +75,7 @@ export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSou
             {loading ? (
               <div className="mt-1 text-xs text-muted-foreground">Loading models...</div>
             ) : models.length === 0 ? (
-              <div className="mt-1 text-xs text-yellow-600">No vision models found. Configure an LLM backend with a vision-capable model first.</div>
+              <div className="mt-1 text-xs text-warning">No vision models found. Configure an LLM backend with a vision-capable model first.</div>
             ) : (
               <select
                 value={modelId}

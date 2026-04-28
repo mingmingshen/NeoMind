@@ -58,7 +58,7 @@ function StepDot({
           'bg-primary text-primary-foreground',
           'ring-4 ring-primary',
         ],
-        status === 'completed' && 'bg-green-500 text-white'
+        status === 'completed' && 'bg-success text-white'
       )}
     >
       {status === 'completed' ? (
@@ -139,7 +139,7 @@ export function VerticalStepper({
                 <div
                   className={cn(
                     'h-full w-px transition-colors',
-                    isPast || status === 'completed' ? 'bg-green-500' : 'bg-border'
+                    isPast || status === 'completed' ? 'bg-success' : 'bg-border'
                   )}
                 />
               </div>

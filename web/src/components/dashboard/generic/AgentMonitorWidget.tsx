@@ -331,11 +331,11 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               {execution.status === 'Completed' ? (
-                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                <CheckCircle2 className="h-4 w-4 text-success" />
               ) : execution.status === 'Running' ? (
-                <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+                <Loader2 className="h-4 w-4 text-info animate-spin" />
               ) : (
-                <XCircle className="h-4 w-4 text-red-500" />
+                <XCircle className="h-4 w-4 text-error" />
               )}
               <span>#{execution.id.slice(-6)}</span>
               <Badge variant="outline" className="text-[10px]">{execution.trigger_type}</Badge>
@@ -365,7 +365,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
 
                 {/* Error */}
                 {execution.error && (
-                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-600 dark:text-red-400">
+                  <div className="p-3 rounded-lg bg-error-light border border-error text-sm text-error">
                     {execution.error}
                   </div>
                 )}
@@ -453,7 +453,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                           <CheckCircle2 className="h-4 w-4" />
                           Conclusion
                         </div>
-                        <p className="text-sm bg-green-500/10 p-3 rounded-lg border border-green-500/20">{decisionProcess.conclusion}</p>
+                        <p className="text-sm bg-success-light p-3 rounded-lg border border-success-light">{decisionProcess.conclusion}</p>
                       </div>
                     )}
                   </div>
@@ -470,13 +470,13 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                       {detail.result.actions_executed.map((action: any, idx: number) => (
                         <div key={idx} className={cn(
                           "flex items-center justify-between text-sm p-2 rounded",
-                          action.success ? "bg-green-500/10" : "bg-red-500/10"
+                          action.success ? "bg-success-light" : "bg-error-light"
                         )}>
                           <span>{action.description}</span>
                           {action.success ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            <CheckCircle2 className="h-4 w-4 text-success" />
                           ) : (
-                            <XCircle className="h-4 w-4 text-red-500" />
+                            <XCircle className="h-4 w-4 text-error" />
                           )}
                         </div>
                       ))}
@@ -546,7 +546,7 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
         "w-full text-left group relative rounded-lg border transition-all duration-200",
         "hover:shadow-md hover:border-border",
         isLatest ? "border-border bg-muted" : "border-border bg-bg-50",
-        isRunning && "border-blue-500/50 bg-blue-500/5"
+        isRunning && "border-info bg-info-light"
       )}
     >
       {/* Header row */}
@@ -555,9 +555,9 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
           {execution.status === 'Running' ? (
             <Loader2 className="h-4 w-4 text-blue-500 shrink-0 animate-spin" />
           ) : execution.status === 'Completed' ? (
-            <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+            <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
           ) : (
-            <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+            <XCircle className="h-4 w-4 text-error shrink-0" />
           )}
 
           <span className="text-[10px] font-mono text-muted-foreground">
@@ -632,7 +632,7 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
       {/* Error */}
       {execution.error && (
         <div className="px-3 py-2">
-          <p className="text-[10px] text-red-500 line-clamp-2">{execution.error}</p>
+          <p className="text-[10px] text-error line-clamp-2">{execution.error}</p>
         </div>
       )}
     </button>
@@ -905,10 +905,10 @@ export function AgentMonitorWidget({
             {/* Avatar */}
             <div className={cn(
               "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-              currentlyExecuting ? "bg-blue-500/20" : "bg-muted"
+              currentlyExecuting ? "bg-info-light" : "bg-muted"
             )}>
               {currentlyExecuting ? (
-                <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
+                <Loader2 className="h-5 w-5 text-info animate-spin" />
               ) : (
                 <Bot className="h-5 w-5 text-primary" />
               )}
@@ -924,7 +924,7 @@ export function AgentMonitorWidget({
                     Running
                   </Badge>
                 ) : displayAgent?.status === 'Active' ? (
-                  <Badge variant="outline" className="text-[10px] h-5 text-green-600 border-green-200">
+                  <Badge variant="outline" className="text-[10px] h-5 text-success border-success-light">
                     <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
                     Active
                   </Badge>
@@ -946,7 +946,7 @@ export function AgentMonitorWidget({
                 </span>
                 <span className={cn(
                   "flex items-center gap-1",
-                  successRate >= 80 ? "text-green-600" : successRate >= 50 ? "text-yellow-600" : "text-red-600"
+                  successRate >= 80 ? "text-success" : successRate >= 50 ? "text-warning" : "text-error"
                 )}>
                   <Target className="h-4 w-4" />
                   {successRate}% success
@@ -979,18 +979,18 @@ export function AgentMonitorWidget({
             <div className="p-3 space-y-2">
               {/* Real-time execution progress */}
               {currentlyExecuting && (
-                <div className="mb-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+                <div className="mb-2 p-3 rounded-lg bg-info-light border border-info">
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                    <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                    <div className="w-2 h-2 rounded-full bg-info animate-pulse" />
+                    <span className="text-xs font-medium text-info">
                       {cleanStageLabel(currentStage, stageLabel)}
                     </span>
                   </div>
 
                   {/* Progress bar */}
-                  <div className="h-1 bg-blue-500/20 rounded-full overflow-hidden mb-2">
+                  <div className="h-1 bg-info-light rounded-full overflow-hidden mb-2">
                     <div
-                      className="h-full bg-blue-500 transition-all duration-500"
+                      className="h-full bg-info transition-all duration-500"
                       style={{
                         width: currentStage === 'collecting' ? '33%' :
                                currentStage === 'analyzing' ? '66%' : '90%'
@@ -1012,8 +1012,8 @@ export function AgentMonitorWidget({
                           else desc = `Step ${step.step}`
                         }
                         return (
-                          <div key={idx} className="flex items-start gap-2 text-[11px] text-blue-600/80 dark:text-blue-400/80">
-                            <span className="font-mono text-[10px] text-blue-400">#{step.step}</span>
+                          <div key={idx} className="flex items-start gap-2 text-[11px] text-info">
+                            <span className="font-mono text-[10px] text-info">#{step.step}</span>
                             <span className="line-clamp-1">{desc}</span>
                           </div>
                         )

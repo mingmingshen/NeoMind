@@ -16,7 +16,7 @@ export const ADAPTER_TYPES: AdapterType[] = [
     name: 'MQTT',
     description: 'MQTT broker connections (built-in + external)',
     icon: 'Server',
-    icon_bg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
+    icon_bg: 'bg-info-light text-info',
     mode: 'push',
     can_add_multiple: true,
     builtin: true,

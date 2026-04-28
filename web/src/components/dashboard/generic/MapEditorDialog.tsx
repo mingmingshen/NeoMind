@@ -58,8 +58,8 @@ function getTypeConfig(t: (key: string) => string) {
     device: {
       label: t('mapDisplay.device'),
       icon: MapPin,
-      color: 'text-green-500',
-      bgColor: 'bg-green-500',
+      color: 'text-success',
+      bgColor: 'bg-success',
     },
     metric: {
       label: t('mapDisplay.metric'),
@@ -70,8 +70,8 @@ function getTypeConfig(t: (key: string) => string) {
     command: {
       label: t('mapDisplay.command'),
       icon: Zap,
-      color: 'text-blue-500',
-      bgColor: 'bg-blue-500',
+      color: 'text-info',
+      bgColor: 'bg-info',
     },
     marker: {
       label: t('mapDisplay.marker'),
@@ -266,8 +266,8 @@ export function MapEditorDialog({
 
         <div className={cn(
           'w-8 h-8 rounded-full flex items-center justify-center',
-          config.bgColor === 'bg-blue-500' && 'bg-blue-500 text-white',
-          config.bgColor === 'bg-green-500' && 'bg-green-500 text-white',
+          config.bgColor === 'bg-info' && 'bg-info text-white',
+          config.bgColor === 'bg-success' && 'bg-success text-white',
           config.bgColor === 'bg-orange-500' && 'bg-orange-500 text-white',
           config.bgColor === 'bg-purple-500' && 'bg-purple-500 text-white',
         )}>

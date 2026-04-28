@@ -302,13 +302,13 @@ export function DeviceRealtime({
   const getEventIcon = useCallback((eventType: string): React.ReactNode => {
     switch (eventType) {
       case "DeviceOnline":
-        return <CheckCircle className="h-4 w-4 text-green-500" />
+        return <CheckCircle className="h-4 w-4 text-success" />
       case "DeviceOffline":
-        return <XCircle className="h-4 w-4 text-red-500" />
+        return <XCircle className="h-4 w-4 text-error" />
       case "DeviceMetric":
         return <Activity className="h-4 w-4 text-info" />
       case "AlertCreated":
-        return <AlertTriangle className="h-4 w-4 text-yellow-500" />
+        return <AlertTriangle className="h-4 w-4 text-warning" />
       default:
         return <Zap className="h-4 w-4 text-muted-foreground" />
     }
@@ -326,7 +326,7 @@ export function DeviceRealtime({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             {isConnected ? (
-              <Wifi className="h-5 w-5 text-green-500" />
+              <Wifi className="h-5 w-5 text-success" />
             ) : (
               <WifiOff className="h-5 w-5 text-muted-foreground" />
             )}
@@ -578,9 +578,9 @@ export function DeviceMetricCard({
   const getTrendIcon = () => {
     switch (trend) {
       case "up":
-        return <span className="text-green-500">↑</span>
+        return <span className="text-success">↑</span>
       case "down":
-        return <span className="text-red-500">↓</span>
+        return <span className="text-error">↓</span>
       default:
         return <span className="text-muted-foreground">−</span>
     }
@@ -612,7 +612,7 @@ export function DeviceMetricCard({
             <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
               <div
                 className={`h-full ${
-                  quality >= 80 ? "bg-green-500" : quality >= 50 ? "bg-yellow-500" : "bg-red-500"
+                  quality >= 80 ? "bg-success" : quality >= 50 ? "bg-warning" : "bg-error"
                 }`}
                 style={{ width: `${quality}%` }}
               />

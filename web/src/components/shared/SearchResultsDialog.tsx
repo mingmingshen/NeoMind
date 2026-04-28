@@ -109,9 +109,9 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
 
   const getTypeColor = (type: SearchResult["type"]) => {
     const colors = {
-      device: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+      device: "bg-info-light text-info border-info",
       rule: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-      alert: "bg-red-500/10 text-red-500 border-red-500/20",
+      alert: "bg-error-light text-error border-error",
     }
     return colors[type] || "bg-muted text-muted-foreground border-border"
   }

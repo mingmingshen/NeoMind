@@ -189,7 +189,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
     return Array.from({ length: 5 }, (_, i) => (
       <span
         key={i}
-        className={`h-2 w-2 rounded-full ${i < complexity ? 'bg-blue-500' : 'bg-muted-foreground/30'}`}
+        className={`h-2 w-2 rounded-full ${i < complexity ? 'bg-info' : 'bg-muted-foreground/30'}`}
       />
     ))
   }
@@ -369,7 +369,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                                   <h4 className="font-medium mb-2">{t('automation:operations', { defaultValue: 'Operations (Legacy)' })}</h4>
                                   <div className="space-y-2">
                                     {transform.operations.map((op, idx) => (
-                                      <div key={idx} className="pl-4 border-l-2 border-blue-500">
+                                      <div key={idx} className="pl-4 border-l-2 border-info">
                                         <div className="text-sm font-medium">{op.op_type}</div>
                                         <pre className="text-xs text-muted-foreground mt-1 overflow-x-auto">
                                           {JSON.stringify(op, null, 2)}
@@ -544,7 +544,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                               <h4 className="font-medium mb-2 text-xs">{t('automation:operations', { defaultValue: 'Operations (Legacy)' })}</h4>
                               <div className="space-y-2">
                                 {transform.operations.map((op, idx) => (
-                                  <div key={idx} className="pl-4 border-l-2 border-blue-500">
+                                  <div key={idx} className="pl-4 border-l-2 border-info">
                                     <div className="text-sm font-medium">{op.op_type}</div>
                                     <pre className="text-xs text-muted-foreground mt-1 overflow-x-auto">
                                       {JSON.stringify(op, null, 2)}

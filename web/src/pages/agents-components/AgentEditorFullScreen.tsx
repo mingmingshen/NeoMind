@@ -2127,7 +2127,7 @@ export function AgentEditorFullScreen({
 
                     {/* Warning when no sources selected */}
                     {triggerSources.length === 0 && (
-                      <div className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400">
+                      <div className="flex items-start gap-2 text-sm text-warning">
                         <Info className="h-4 w-4 mt-0.5 shrink-0" />
                         <p>{selectedResources.length > 0
                           ? tAgent('creator.schedule.reactive.fallbackToResources')
@@ -2898,7 +2898,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
           <div className={cn(
             "rounded",
             isMobile ? "p-2" : "p-1",
-            resource.type === 'extension' ? "bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300" : "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300"
+            resource.type === 'extension' ? "bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300" : "bg-info-light text-info"
           )}>
             {resource.type === 'extension' ? <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} /> : <Target className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")} />}
           </div>

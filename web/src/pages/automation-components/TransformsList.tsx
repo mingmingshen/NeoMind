@@ -26,7 +26,7 @@ interface TransformsListProps {
 // Scope configuration
 const SCOPE_CONFIG: Record<string, { label: string; icon: typeof Globe; color: string }> = {
   global: { label: 'automation:transformBuilder.scopes.global', icon: Globe, color: 'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-950/30 dark:border-purple-800' },
-  device_type: { label: 'automation:transformBuilder.scopes.deviceType', icon: Cpu, color: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950/30 dark:border-blue-800' },
+  device_type: { label: 'automation:transformBuilder.scopes.deviceType', icon: Cpu, color: 'text-info bg-info-light border-info' },
   device: { label: 'automation:transformBuilder.scopes.device', icon: HardDrive, color: 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800' },
 }
 
@@ -214,7 +214,7 @@ export function TransformsList({
                 <Badge variant="outline" className={cn(
                   "text-xs gap-1 hidden sm:flex",
                   transform.enabled
-                    ? "text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800"
+                    ? "bg-success-light text-success border-success"
                     : "text-foreground bg-muted border-border"
                 )}>
                   <CheckCircle2 className="h-4 w-4" />

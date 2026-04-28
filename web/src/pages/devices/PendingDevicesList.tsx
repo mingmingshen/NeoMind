@@ -388,7 +388,7 @@ export function PendingDevicesList({
       collecting: { color: "bg-info-light text-info", label: t('devices:pending.status.collecting'), icon: <Loader2 className="h-4 w-4" /> },
       analyzing: { color: "bg-purple-500/20 text-purple-700", label: t('devices:pending.status.analyzing'), icon: <SearchIcon className="h-4 w-4" /> },
       waiting_processing: { color: "bg-warning-light text-warning", label: t('devices:pending.status.waitingProcessing'), icon: <Hourglass className="h-4 w-4" /> },
-      registered: { color: "bg-green-500/20 text-green-700", label: t('devices:pending.status.registered'), icon: <CheckCircle2 className="h-4 w-4" /> },
+      registered: { color: "bg-success-light text-success", label: t('devices:pending.status.registered'), icon: <CheckCircle2 className="h-4 w-4" /> },
       rejected: { color: "bg-error-light text-error", label: t('devices:pending.status.rejected'), icon: <XCircle className="h-4 w-4" /> },
       failed: { color: "bg-error-light text-error", label: t('devices:pending.status.failed'), icon: <AlertTriangle className="h-4 w-4" /> },
     }
@@ -540,7 +540,7 @@ export function PendingDevicesList({
                         className={cn(
                           "text-xs",
                           confidence >= 80
-                            ? "bg-green-500/20 text-green-700 border-green-200"
+                            ? "bg-success-light text-success border-success"
                             : "bg-warning-light text-warning border-warning"
                         )}
                       >
@@ -599,7 +599,7 @@ export function PendingDevicesList({
       {registeredCount > 0 && (
         <div className="mt-4 flex items-center justify-center gap-4 text-sm text-muted-foreground">
           <span className="flex items-center gap-1">
-            <Badge variant="outline" className="bg-green-500/10 text-green-700">
+            <Badge variant="outline" className="bg-success-light text-success">
               {registeredCount}
             </Badge>
             <span>{t('devices:pending.registeredHidden')}</span>
@@ -934,7 +934,7 @@ export function PendingDevicesList({
                   <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${
                     isNewType
                       ? 'bg-warning-light border-warning text-warning'
-                      : 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
+                      : 'bg-success-light border border-success text-success'
                   }`}>
                     {isNewType ? (
                       <>

@@ -147,7 +147,7 @@ export function PreferencesTab() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Globe className="h-5 w-5 text-blue-500" />
+            <Globe className="h-5 w-5 text-info" />
             {t("settings:languageRegion")}
           </CardTitle>
         </CardHeader>

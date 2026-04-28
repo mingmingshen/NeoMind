@@ -266,7 +266,7 @@ function getTriggerInfo(type: TriggerType) {
     case 'schedule':
       return { label: '定时触发', icon: <Clock className="h-4 w-4" />, color: 'text-blue-500' }
     case 'manual':
-      return { label: '手动触发', icon: <Play className="h-4 w-4" />, color: 'text-green-500' }
+      return { label: '手动触发', icon: <Play className="h-4 w-4" />, color: 'text-success' }
   }
 }
 
@@ -1063,9 +1063,9 @@ function RulePreviewPanel({
             <div className="flex items-center gap-2 py-1 px-2 rounded bg-muted-30" style={{ marginLeft: `${indent}px` }}>
               <Badge variant="outline" className={cn(
                 "text-xs",
-                cond.type === 'and' ? "bg-green-500/20 text-green-500 border-green-500/30" :
-                cond.type === 'or' ? "bg-amber-500/20 text-amber-500 border-amber-500/30" :
-                "bg-red-500/20 text-red-500 border-red-500/30"
+                cond.type === 'and' ? "bg-success-light text-success border-success-light" :
+                cond.type === 'or' ? "bg-warning-light text-warning border-warning" :
+                "bg-error-light text-error border-error"
               )}>
                 {cond.type.toUpperCase()}
               </Badge>
@@ -1087,7 +1087,7 @@ function RulePreviewPanel({
         <div key={cond.id} className="flex items-center gap-2 py-1.5 px-2 rounded bg-muted-30 mb-1" style={{ marginLeft: `${indent}px` }}>
           <div className={cn(
             "w-6 h-6 rounded flex items-center justify-center text-xs",
-            isExtension ? "bg-purple-500/20 text-purple-500" : "bg-blue-500/20 text-blue-500"
+            isExtension ? "bg-purple-500/20 text-purple-500" : "bg-info-light text-info"
           )}>
             {isExtension ? <Puzzle className="h-4 w-4" /> : <Lightbulb className="h-4 w-4" />}
           </div>
@@ -1144,12 +1144,12 @@ function RulePreviewPanel({
     const getActionColor = (type: string) => {
       switch (type) {
         case 'Execute': return 'bg-purple-500/20 text-purple-500'
-        case 'Notify': return 'bg-blue-500/20 text-blue-500'
+        case 'Notify': return 'bg-info-light text-info'
         case 'Log': return 'bg-muted text-muted-foreground'
         case 'Set': return 'bg-orange-500/20 text-orange-500'
-        case 'Delay': return 'bg-yellow-500/20 text-yellow-500'
-        case 'CreateAlert': return 'bg-red-500/20 text-red-500'
-        case 'HttpRequest': return 'bg-green-500/20 text-green-500'
+        case 'Delay': return 'bg-warning-light text-warning'
+        case 'CreateAlert': return 'bg-error-light text-error'
+        case 'HttpRequest': return 'bg-success-light text-success'
         default: return 'bg-muted'
       }
     }
@@ -1211,7 +1211,7 @@ function RulePreviewPanel({
 
     return (
       <div className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-        {isExtension ? <Puzzle className="h-4 w-4 text-purple-500" /> : <Lightbulb className="h-4 w-4 text-blue-500" />}
+        {isExtension ? <Puzzle className="h-4 w-4 text-purple-500" /> : <Lightbulb className="h-4 w-4 text-info" />}
         <span className="truncate">{resourceName}</span>
         <span className="font-mono text-[10px]">{cond.operator}</span>
         <span>{cond.type === 'range' ? `[${cond.range_min}~${cond.range_max}]` : cond.threshold}</span>
@@ -1252,18 +1252,18 @@ function RulePreviewPanel({
         {/* Trigger Card */}
         <div className={cn(
           "rounded-lg p-4 border",
-          triggerType === 'device_state' && "bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800",
-          triggerType === 'schedule' && "bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-green-200 dark:border-green-800",
+          triggerType === 'device_state' && "bg-gradient-to-br from-info-light to-indigo-50 dark:from-info-light dark:to-indigo-950/30 border-info",
+          triggerType === 'schedule' && "bg-gradient-to-br from-success-light to-emerald-50 dark:from-success-light dark:to-emerald-950/30 border-success-light dark:border-success-light",
           triggerType === 'manual' && "bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 border-orange-200 dark:border-orange-800"
         )}>
           <div className="flex items-center gap-2 mb-2">
-            {triggerType === 'device_state' ? <Lightbulb className="h-4 w-4 text-blue-600 dark:text-blue-400" /> :
-             triggerType === 'schedule' ? <Clock className="h-4 w-4 text-green-600 dark:text-green-400" /> :
+            {triggerType === 'device_state' ? <Lightbulb className="h-4 w-4 text-info" /> :
+             triggerType === 'schedule' ? <Clock className="h-4 w-4 text-success dark:text-success" /> :
              <Play className="h-4 w-4 text-orange-600 dark:text-orange-400" />}
             <span className={cn(
               "text-sm font-medium",
               triggerType === 'device_state' && "text-blue-900 dark:text-blue-100",
-              triggerType === 'schedule' && "text-green-900 dark:text-green-100",
+              triggerType === 'schedule' && "text-success dark:text-success",
               triggerType === 'manual' && "text-orange-900 dark:text-orange-100"
             )}>
               {tBuilder('triggerType') || '触发类型'}
@@ -1271,8 +1271,8 @@ function RulePreviewPanel({
           </div>
           <p className={cn(
             "text-sm",
-            triggerType === 'device_state' && "text-blue-700 dark:text-blue-300",
-            triggerType === 'schedule' && "text-green-700 dark:text-green-300",
+            triggerType === 'device_state' && "text-info",
+            triggerType === 'schedule' && "text-success dark:text-success",
             triggerType === 'manual' && "text-orange-700 dark:text-orange-300"
           )}>
             {triggerType === 'device_state' ? (tBuilder('triggerDevice') || '设备状态触发') :
@@ -1326,10 +1326,10 @@ function RulePreviewPanel({
         </div>
 
         {/* Actions Card */}
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 rounded-lg p-4 border border-green-200 dark:border-green-800">
+        <div className="bg-gradient-to-br from-success-light to-emerald-50 dark:from-success-light dark:to-emerald-950/30 rounded-lg p-4 border border-success-light dark:border-success-light">
           <div className="flex items-center gap-2 mb-3">
-            <Zap className="h-4 w-4 text-green-600 dark:text-green-400" />
-            <span className="text-sm font-medium text-green-900 dark:text-green-100">
+            <Zap className="h-4 w-4 text-success dark:text-success" />
+            <span className="text-sm font-medium text-success dark:text-success">
               {tBuilder('actions') || '动作'}
             </span>
             <Badge variant="secondary" className="ml-auto text-xs">
@@ -1353,19 +1353,19 @@ function RulePreviewPanel({
                 }
                 return (
                   <div key={index} className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
-                    <div className="text-green-500">{getActionIcon(action.type)}</div>
+                    <div className="text-success">{getActionIcon(action.type)}</div>
                     <span className="text-xs font-medium truncate">{action.type}</span>
                   </div>
                 )
               })}
               {actions.length > 4 && (
-                <div className="text-xs text-center text-green-700 dark:text-green-300">
+                <div className="text-xs text-center text-success dark:text-success">
                   +{actions.length - 4} {tBuilder('more') || '更多'}
                 </div>
               )}
             </div>
           ) : (
-            <p className="text-xs text-green-700 dark:text-green-300">
+            <p className="text-xs text-success dark:text-success">
               {tBuilder('noActions') || '暂无执行动作'}
             </p>
           )}
@@ -2149,11 +2149,11 @@ function ConditionStep({
             className={cn(
               "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
               triggerType === 'schedule'
-                ? "border-blue-500 bg-blue-500/10"
-                : "border-muted hover:border-blue-500/50"
+                ? "border-info bg-info-light"
+                : "border-muted hover:border-info"
             )}
           >
-            <Clock className={cn("h-6 w-6", triggerType === 'schedule' ? "text-blue-500" : "text-muted-foreground")} />
+            <Clock className={cn("h-6 w-6", triggerType === 'schedule' ? "text-info" : "text-muted-foreground")} />
             <span className="text-sm font-medium">{tBuilder('triggerSchedule') || '定时触发'}</span>
           </button>
           <button
@@ -2162,11 +2162,11 @@ function ConditionStep({
             className={cn(
               "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
               triggerType === 'manual'
-                ? "border-green-500 bg-green-500/10"
-                : "border-muted hover:border-green-500/50"
+                ? "border-success bg-success-light"
+                : "border-muted hover:border-success-light"
             )}
           >
-            <Play className={cn("h-6 w-6", triggerType === 'manual' ? "text-green-500" : "text-muted-foreground")} />
+            <Play className={cn("h-6 w-6", triggerType === 'manual' ? "text-success" : "text-muted-foreground")} />
             <span className="text-sm font-medium">{tBuilder('triggerManual') || '手动触发'}</span>
           </button>
         </div>
@@ -2288,13 +2288,13 @@ function ConditionStep({
 
         {/* Schedule Trigger Configuration */}
         {triggerType === 'schedule' && (
-          <div className="p-6 rounded-lg border bg-blue-500/5 border-blue-500/20">
-            <div className="flex items-center gap-2 pb-4 border-b border-blue-500/20 mb-4">
-              <div className="p-2 rounded-full bg-blue-500/10">
-                <Clock className="h-5 w-5 text-blue-500" />
+          <div className="p-6 rounded-lg border bg-info-light border-info">
+            <div className="flex items-center gap-2 pb-4 border-b border-info mb-4">
+              <div className="p-2 rounded-full bg-info-light">
+                <Clock className="h-5 w-5 text-info" />
               </div>
               <div>
-                <h4 className="text-sm font-medium text-blue-500">{tBuilder('triggerSchedule') || '定时触发'}</h4>
+                <h4 className="text-sm font-medium text-info">{tBuilder('triggerSchedule') || '定时触发'}</h4>
                 <p className="text-xs text-muted-foreground">{tBuilder('scheduleTriggerDesc') || '按设定的时间周期自动执行'}</p>
               </div>
             </div>
@@ -2312,8 +2312,8 @@ function ConditionStep({
                       className={cn(
                         "flex flex-col items-center gap-1 p-2 rounded-md border text-xs transition-all",
                         selectedCronTemplate === template.id
-                          ? "border-blue-500 bg-blue-500/10 text-blue-500"
-                          : "border-border hover:border-blue-500/50"
+                          ? "border-info bg-info-light text-blue-500"
+                          : "border-border hover:border-info"
                       )}
                     >
                       {template.icon}
@@ -2373,7 +2373,7 @@ function ConditionStep({
               {/* Next Execution Preview */}
               {nextExecution && (
                 <div className="flex items-center gap-2 p-3 bg-background rounded-lg border">
-                  <Calendar className="h-4 w-4 text-green-500" />
+                  <Calendar className="h-4 w-4 text-success" />
                   <span className="text-xs text-muted-foreground">
                     {tBuilder('nextExecution') || '下次执行'}: {nextExecution.toLocaleString('zh-CN', {
                       month: 'short',
@@ -2390,27 +2390,27 @@ function ConditionStep({
 
         {/* Manual Trigger Configuration */}
         {triggerType === 'manual' && (
-          <div className="p-6 rounded-lg border bg-green-500/5 border-green-500/20">
-            <div className="flex items-center gap-2 pb-4 border-b border-green-500/20 mb-4">
-              <div className="p-2 rounded-full bg-green-500/10">
-                <Play className="h-5 w-5 text-green-500" />
+          <div className="p-6 rounded-lg border bg-success-light/5 border-success-light">
+            <div className="flex items-center gap-2 pb-4 border-b border-success-light mb-4">
+              <div className="p-2 rounded-full bg-success-light">
+                <Play className="h-5 w-5 text-success" />
               </div>
               <div>
-                <h4 className="text-sm font-medium text-green-500">{tBuilder('triggerManual') || '手动触发'}</h4>
+                <h4 className="text-sm font-medium text-success">{tBuilder('triggerManual') || '手动触发'}</h4>
                 <p className="text-xs text-muted-foreground">{tBuilder('manualTriggerDesc') || '此规则需要手动触发执行'}</p>
               </div>
             </div>
 
             <div className="space-y-3">
               <div className="flex items-start gap-3 p-3 bg-background rounded-lg border">
-                <div className="p-1.5 rounded bg-green-500/10">
-                  <span className="text-xs font-medium text-green-500">1</span>
+                <div className="p-1.5 rounded bg-success-light">
+                  <span className="text-xs font-medium text-success">1</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{tBuilder('manualStep1') || '在规则列表中点击执行按钮'}</p>
               </div>
               <div className="flex items-start gap-3 p-3 bg-background rounded-lg border">
-                <div className="p-1.5 rounded bg-green-500/10">
-                  <span className="text-xs font-medium text-green-500">2</span>
+                <div className="p-1.5 rounded bg-success-light">
+                  <span className="text-xs font-medium text-success">2</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{tBuilder('manualStep2') || '或在 API 中调用执行接口'}</p>
               </div>
@@ -2622,7 +2622,7 @@ function ReviewStep({ name, description, enabled, condition, actions, forDuratio
           <div className="text-xs text-muted-foreground">{tBuilder('review.triggerCondition')}</div>
         </div>
         <div className="rounded-lg border bg-card p-4 text-center">
-          <div className="text-2xl font-bold text-green-500">{actions.length}</div>
+          <div className="text-2xl font-bold text-success">{actions.length}</div>
           <div className="text-xs text-muted-foreground">{tBuilder('review.executeAction')}</div>
         </div>
         <div className="rounded-lg border bg-card p-4 text-center">
@@ -2884,9 +2884,9 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
     const hasValidId = (cond.source_type === 'extension' && cond.extension_id) || (cond.source_type === 'device' && cond.device_id)
 
     return (
-      <div className="p-3 bg-gradient-to-r from-blue-500/10 to-transparent rounded-lg border border-blue-500/20">
+      <div className="p-3 bg-gradient-to-r from-info-light to-transparent rounded-lg border border-info">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="text-xs bg-blue-500/20 text-blue-500 border-blue-500/30">BETWEEN</Badge>
+          <Badge variant="outline" className="text-xs bg-info-light text-info border-info">BETWEEN</Badge>
 
           {/* Source Type Selector */}
           <Select
@@ -2974,10 +2974,10 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
   const renderLogicalCondition = () => {
     const label = condition.type.toUpperCase()
     const badgeClass = condition.type === 'and'
-      ? 'bg-green-500/20 text-green-500 border-green-500/30'
+      ? 'bg-success-light text-success border-success-light'
       : condition.type === 'or'
-      ? 'bg-amber-500/20 text-amber-500 border-amber-500/30'
-      : 'bg-red-500/20 text-red-500 border-red-500/30'
+      ? 'bg-warning-light text-warning border-warning'
+      : 'bg-error-light text-error border-error'
 
     return (
       <div className="space-y-3">
@@ -2998,7 +2998,7 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, extensions
                 <div className="flex items-center justify-start -mb-2 mt-1">
                   <span className={cn(
                     'text-xs font-semibold px-2.5 py-1 rounded-full',
-                    condition.type === 'and' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    condition.type === 'and' ? 'bg-success-light text-success dark:bg-success-light dark:text-success' : 'bg-warning-light text-warning'
                   )}>
                     {condition.type.toUpperCase()}
                   </span>
@@ -3586,13 +3586,13 @@ function ActionEditorCompact({ action, devices, deviceTypes, extensions, message
 
   const getActionColor = (): string => {
     switch (action.type) {
-      case 'Execute': return 'text-yellow-600 dark:text-yellow-500 bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
-      case 'Notify': return 'text-blue-600 dark:text-blue-500 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800'
+      case 'Execute': return 'text-warning bg-warning-light border-warning'
+      case 'Notify': return 'text-info bg-info-light border-info'
       case 'Log': return 'text-muted-foreground bg-muted border-border'
       case 'Set': return 'text-purple-600 dark:text-purple-500 bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800'
       case 'Delay': return 'text-orange-600 dark:text-orange-500 bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800'
-      case 'CreateAlert': return 'text-red-600 dark:text-red-500 bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800'
-      case 'HttpRequest': return 'text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800'
+      case 'CreateAlert': return 'text-error bg-error-light border-error'
+      case 'HttpRequest': return 'text-success dark:text-success bg-success-light dark:bg-success-light border-success-light dark:border-success-light'
       default: return 'text-muted-foreground bg-muted border-border'
     }
   }

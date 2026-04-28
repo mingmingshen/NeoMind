@@ -126,7 +126,7 @@ const ModelSelector = memo(function ModelSelector({
           >
             <div className={cn(
               "w-1.5 h-1.5 rounded-full shrink-0",
-              backend.healthy ? "bg-green-500" : "bg-muted-foreground"
+              backend.healthy ? "bg-success" : "bg-muted-foreground"
             )} />
             <div className="flex-1 min-w-0">
               <div className="font-medium truncate text-sm">{backend.name}</div>

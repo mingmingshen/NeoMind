@@ -292,8 +292,8 @@ export function AddDeviceTypeDialog({
       {/* Header */}
       <FullScreenDialogHeader
         icon={<Zap className="h-5 w-5" />}
-        iconBg="bg-amber-500/10 dark:bg-amber-500/20"
-        iconColor="text-amber-500"
+        iconBg="bg-warning-light"
+        iconColor="text-warning"
         title={isEditMode ? 'Edit Device Type' : t('devices:types.add.title')}
         onClose={() => onOpenChange(false)}
       />
@@ -861,11 +861,11 @@ function DataDefinitionStep({
         <div className="space-y-4">
           {/* Quick Start */}
           {(!data.metrics || data.metrics.length === 0) && (
-            <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-              <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-2">
+            <div className="p-4 bg-info-light rounded-lg border border-info">
+              <p className="text-xs font-medium text-info mb-2">
                 {t('devices:metricEditor.quickStart')}
               </p>
-              <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
+              <p className="text-xs text-info mb-3">
                 {t('devices:metricEditor.quickStartDesc')}
               </p>
               <div className="flex gap-2">
@@ -1756,8 +1756,8 @@ function CommandEditorCompact({
         <div className="space-y-4 pt-2 border-t">
           {/* Quick Templates */}
           {(!command.parameters || command.parameters.length === 0) && !command.payload_template && (
-            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-              <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-2">
+            <div className="p-3 bg-info-light rounded-lg border border-info">
+              <p className="text-xs font-medium text-info mb-2">
                 {t('devices:commandEditor.quickStart')}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1849,7 +1849,7 @@ function CommandEditorCompact({
                           {typeof item.value === 'string' ? `"${item.value}"` : JSON.stringify(item.value)}
                         </span>
                       ) : (
-                        <span className="text-amber-600 bg-amber-100 dark:bg-amber-900/30 px-1 rounded">
+                        <span className="text-warning bg-warning-light px-1 rounded">
                           {item.value}
                         </span>
                       )}
@@ -2306,8 +2306,8 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
               </Card>
               <Card className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                    <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  <div className="p-2 rounded-lg bg-info-light">
+                    <FileText className="h-5 w-5 text-info" />
                   </div>
                   <div>
                     <div className="text-2xl font-bold">{deviceType.commands?.length || 0}</div>

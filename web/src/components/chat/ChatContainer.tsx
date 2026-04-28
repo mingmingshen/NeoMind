@@ -747,7 +747,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                       >
                         <div className={cn(
                           "w-1.5 h-1.5 rounded-full shrink-0",
-                          backend.healthy ? "bg-green-500" : "bg-muted-foreground"
+                          backend.healthy ? "bg-success" : "bg-muted-foreground"
                         )} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm truncate">{backend.name || backend.model}</p>
@@ -877,7 +877,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                 {/* Streaming indicator overlay */}
                 {streamState.isStreaming && (
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1.5 pointer-events-none">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-info animate-ping" />
                     <span className="text-xs text-muted-foreground">{t("status.typing", "正在输入...")}</span>
                   </div>
                 )}

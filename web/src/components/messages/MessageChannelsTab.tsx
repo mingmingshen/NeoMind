@@ -51,8 +51,8 @@ interface MessageChannelsTabProps {
 // Channel type icons and colors
 const CHANNEL_CONFIG: Record<string, { icon: string; color: string }> = {
   console: { icon: 'Terminal', color: 'bg-muted-foreground' },
-  memory: { icon: 'Database', color: 'bg-blue-500' },
-  webhook: { icon: 'Webhook', color: 'bg-green-500' },
+  memory: { icon: 'Database', color: 'bg-info' },
+  webhook: { icon: 'Webhook', color: 'bg-success' },
   email: { icon: 'Mail', color: 'bg-purple-500' },
 }
 
@@ -253,7 +253,7 @@ export function MessageChannelsTab({
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="w-2 h-8 rounded-full bg-blue-500" />
+                <div className="w-2 h-8 rounded-full bg-info" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('messages.channels.total')}</p>
                   <p className="text-2xl font-bold">{stats.total || channels.length}</p>
@@ -264,7 +264,7 @@ export function MessageChannelsTab({
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="w-2 h-8 rounded-full bg-green-500" />
+                <div className="w-2 h-8 rounded-full bg-success" />
                 <div>
                   <p className="text-sm text-muted-foreground">{t('messages.channels.enabled')}</p>
                   <p className="text-2xl font-bold">{stats.enabled || channels.filter(c => c.enabled).length}</p>
@@ -351,7 +351,7 @@ export function MessageChannelsTab({
                   {testResult && (
                     <div
                       className={`flex items-center gap-2 text-sm p-2 rounded ${
-                        testResult.success ? 'bg-green-50 text-green-700' : 'bg-error-light text-error'
+                        testResult.success ? 'bg-success-light text-success' : 'bg-error-light text-error'
                       }`}
                     >
                       {testResult.success ? (

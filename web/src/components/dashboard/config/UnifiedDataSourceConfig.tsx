@@ -1065,7 +1065,7 @@ export function UnifiedDataSourceConfig({
       // Badge component for item type
       const ItemBadge = ({ itemType }: { itemType: 'template' | 'virtual' | 'info' }) => {
         const config = {
-          template: { label: t('dataSource.badgeTemplate'), className: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
+          template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
           virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
           info: { label: t('dataSource.badgeInfo'), className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
         }[itemType]
@@ -1080,9 +1080,9 @@ export function UnifiedDataSourceConfig({
       const DataIndicator = ({ hasData, count }: { hasData: boolean | null; count?: number }) => {
         if (hasData === true) {
           return (
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/20" title={`${t('dataSource.hasHistoricalData')} (${count ?? 0} ${t('dataSource.dataPoints')})`}>
-              <Circle className="h-1.5 w-1.5 fill-green-500 text-green-500" />
-              <span className="text-[10px] text-green-600 font-medium">{count ?? 0}</span>
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-success-light border border-success-light" title={`${t('dataSource.hasHistoricalData')} (${count ?? 0} ${t('dataSource.dataPoints')})`}>
+              <Circle className="h-1.5 w-1.5 fill-success text-success" />
+              <span className="text-[10px] text-success font-medium">{count ?? 0}</span>
             </div>
           )
         }
@@ -1419,7 +1419,7 @@ export function UnifiedDataSourceConfig({
                   </div>
                   <Zap className={cn(
                     'h-4 w-4 shrink-0 ml-2',
-                    isSelected ? 'text-amber-500' : 'text-muted-foreground'
+                    isSelected ? 'text-warning' : 'text-muted-foreground'
                   )} />
                 </button>
               )
@@ -1494,7 +1494,7 @@ export function UnifiedDataSourceConfig({
                     {/* Status indicator */}
                     <div className={cn(
                       'w-2 h-2 rounded-full',
-                      device.online ? 'bg-green-500' : 'bg-muted-foreground/30'
+                      device.online ? 'bg-success' : 'bg-muted-foreground/30'
                     )} />
                   </button>
                 )
@@ -1747,7 +1747,7 @@ export function UnifiedDataSourceConfig({
                 iconColor = 'text-blue-500'
               } else if (type === 'device-command') {
                 TypeIcon = Zap
-                iconColor = 'text-amber-500'
+                iconColor = 'text-warning'
               } else if (type === 'device') {
                 TypeIcon = MapPin
                 iconColor = 'text-purple-500'
@@ -2178,7 +2178,7 @@ function MobileMetricsList({
 
   const ItemBadge = ({ itemType }: { itemType: 'template' | 'virtual' | 'info' }) => {
     const config = {
-      template: { label: t('dataSource.badgeTemplate'), className: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
+      template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
       virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
       info: { label: t('dataSource.badgeInfo'), className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
     }[itemType]
@@ -2249,7 +2249,7 @@ function MobileMetricsList({
             {item.hasData !== null && (
               <div className="shrink-0">
                 {item.hasData ? (
-                  <div className="px-2 py-1 rounded-lg bg-green-500/10 border border-green-500/20 text-xs text-green-600 font-medium" title={`${t('dataSource.hasHistoricalData')} (${item.dataPointCount ?? 0} ${t('dataSource.dataPoints')})`}>
+                  <div className="px-2 py-1 rounded-lg bg-success-light border border-success-light text-xs text-success font-medium" title={`${t('dataSource.hasHistoricalData')} (${item.dataPointCount ?? 0} ${t('dataSource.dataPoints')})`}>
                     {item.dataPointCount ?? 0}
                   </div>
                 ) : (
@@ -2336,7 +2336,7 @@ function MobileCommandsList({
               </div>
               <Zap className={cn(
                 'h-5 w-5 shrink-0',
-                isSelected ? 'text-amber-500' : 'text-muted-foreground'
+                isSelected ? 'text-warning' : 'text-muted-foreground'
               )} />
             </div>
           </button>
@@ -2491,7 +2491,7 @@ function MobileExtensionCommandsList({
               </div>
               <Zap className={cn(
                 'h-5 w-5 shrink-0',
-                isSelected ? 'text-amber-500' : 'text-muted-foreground'
+                isSelected ? 'text-warning' : 'text-muted-foreground'
               )} />
             </div>
           </button>

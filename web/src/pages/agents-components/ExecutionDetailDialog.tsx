@@ -82,9 +82,9 @@ export function ExecutionDetailDialog({
       case 'Completed':
         return <CheckCircle2 className="h-4 w-4 text-green-500" />
       case 'Failed':
-        return <XCircle className="h-4 w-4 text-red-500" />
+        return <XCircle className="h-4 w-4 text-error" />
       case 'Running':
-        return <Clock className="h-4 w-4 text-blue-500" />
+        return <Clock className="h-4 w-4 text-info" />
       default:
         return <AlertCircle className="h-4 w-4 text-muted-foreground" />
     }

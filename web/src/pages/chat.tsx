@@ -824,8 +824,8 @@ export function ChatPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-80 backdrop-blur-sm">
           <div className="max-w-md w-full mx-4 bg-card border border-border rounded-lg shadow-lg p-6">
             <div className="flex items-center gap-3 mb-4">
-              <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                <RotateCcw className="h-5 w-5 text-blue-600 dark:text-blue-300" />
+              <div className="h-10 w-10 rounded-full bg-info-light flex items-center justify-center">
+                <RotateCcw className="h-5 w-5 text-info" />
               </div>
               <div>
                 <h3 className="font-semibold">{t('common:session.resumeResponseTitle')}</h3>
@@ -1261,7 +1261,7 @@ export function ChatPage() {
                       >
                         <div className={cn(
                           "w-1.5 h-1.5 rounded-full shrink-0",
-                          backend.healthy ? "bg-green-500" : "bg-muted-foreground"
+                          backend.healthy ? "bg-success" : "bg-muted-foreground"
                         )} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
@@ -1299,7 +1299,7 @@ export function ChatPage() {
                 className={cn(
                   "h-7 px-1.5 sm:px-2 rounded-lg text-xs gap-1",
                   sessions.find(s => s.sessionId === sessionId)?.memoryEnabled
-                    ? "text-amber-500 hover:text-amber-600"
+                    ? "text-warning hover:text-warning"
                     : "text-muted-foreground hover:text-foreground"
                 )}
                 onClick={() => {
@@ -1392,7 +1392,7 @@ export function ChatPage() {
                 return (
                   <span className={cn(
                     "text-[11px] shrink-0 transition-colors",
-                    ratio > 0.9 ? "text-red-500" : ratio > 0.7 ? "text-yellow-500" : "text-muted-foreground"
+                    ratio > 0.9 ? "text-error" : ratio > 0.7 ? "text-warning" : "text-muted-foreground"
                   )}>
                     Context {(displayTokens / 1000).toFixed(1)}K / {(maxContext / 1000).toFixed(0)}K
                   </span>

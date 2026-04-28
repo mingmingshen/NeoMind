@@ -112,8 +112,8 @@ export interface FullScreenDialogHeaderProps {
 
 export function FullScreenDialogHeader({
   icon,
-  iconBg = 'bg-blue-500/10 dark:bg-blue-500/20',
-  iconColor = 'text-blue-500',
+  iconBg = 'bg-info-light',
+  iconColor = 'text-info',
   title,
   subtitle,
   onClose,

@@ -25,8 +25,8 @@ export interface ValidationBannerProps {
 
 const bannerStyles = {
   error: 'bg-muted border-destructive text-destructive',
-  warning: 'bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400',
-  info: 'bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-400',
+  warning: 'bg-warning-light border-warning text-warning',
+  info: 'bg-info-light border-info text-info',
 }
 
 const icons = {
@@ -107,8 +107,8 @@ export function ValidationBadge({ count, type = 'error', onClick }: ValidationBa
 
   const styles = {
     error: 'bg-destructive text-destructive-foreground',
-    warning: 'bg-amber-500 text-white',
-    info: 'bg-blue-500 text-white',
+    warning: 'bg-warning text-white',
+    info: 'bg-info text-white',
   }
 
   return (

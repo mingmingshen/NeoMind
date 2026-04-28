@@ -396,7 +396,7 @@ export function SetupPage() {
             <rect width="100%" height="100%" fill="url(#network-grid)" />
           </svg>
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
-          <div className="absolute top-[15%] left-[10%] w-32 h-32 bg-blue-500/5 dark:bg-blue-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '0s' }} />
+          <div className="absolute top-[15%] left-[10%] w-32 h-32 bg-info-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '0s' }} />
           <div className="absolute bottom-[20%] right-[15%] w-40 h-40 bg-purple-500/5 dark:bg-purple-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '7s', animationDelay: '1s' }} />
           <div className="absolute top-[30%] right-[20%] w-24 h-24 bg-cyan-500/5 dark:bg-cyan-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '5s', animationDelay: '2s' }} />
           <div className="absolute bottom-[30%] left-[20%] w-28 h-28 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '3s' }} />
@@ -657,13 +657,13 @@ export function SetupPage() {
                       ) : password.length >= 8 ? (
                         <>
                           <div className="h-1 flex-1 rounded-full bg-green-500" />
-                          <div className="h-1 flex-1 rounded-full bg-yellow-500" />
+                          <div className="h-1 flex-1 rounded-full bg-warning" />
                           <div className="h-1 flex-1 rounded-full bg-border" />
                           <div className="h-1 flex-1 rounded-full bg-border" />
                         </>
                       ) : (
                         <>
-                          <div className="h-1 flex-1 rounded-full bg-red-500" />
+                          <div className="h-1 flex-1 rounded-full bg-error" />
                           <div className="h-1 flex-1 rounded-full bg-border" />
                           <div className="h-1 flex-1 rounded-full bg-border" />
                           <div className="h-1 flex-1 rounded-full bg-border" />

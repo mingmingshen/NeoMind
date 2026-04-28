@@ -275,7 +275,7 @@ export function AgentDetailPanel({
                       icon={<XCircle className="h-4 w-4" />}
                       label={t('agents:detail.failed')}
                       value={formatCount(agent.stats?.failed_executions ?? agent.error_count)}
-                      color="text-red-500"
+                      color="text-error"
                     />
                     <StatItem
                       icon={<Clock className="h-4 w-4" />}
@@ -295,7 +295,7 @@ export function AgentDetailPanel({
                     <div className="mt-3 pt-3 border-t border-border">
                       <div className="text-xs text-muted-foreground mb-1.5">{t('agents:creator.basicInfo.requirement')}</div>
                       <div className="text-sm">
-                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-info-light text-info">
                           {agent.parsed_intent.intent_type || '-'}
                         </span>
                       </div>
@@ -351,7 +351,7 @@ export function AgentDetailPanel({
                           return acc
                         }, {} as Record<string, number>)
                       ).map(([type, count]) => (
-                        <div key={type} className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-sm">
+                        <div key={type} className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-info-light text-info border border-info text-sm">
                           <span className="capitalize text-muted-foreground">{type}:</span>
                           <span className="font-semibold">{count}</span>
                         </div>
@@ -479,7 +479,7 @@ interface ResourceCountItemProps {
 
 function ResourceCountItem({ color, label, count }: ResourceCountItemProps) {
   const colorMap = {
-    blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+    blue: 'bg-info-light text-info border-info',
     purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
     green: 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20',
     orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
@@ -581,9 +581,9 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
           {(shortTermSummariesCount > 0 || longTermMemoriesCount > 0 || longTermPatternsCount > 0) && (
             <>
               {shortTermSummariesCount > 0 && (
-                <div className="flex flex-col items-center p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                  <History className="h-4 w-4 text-blue-500 mb-1" />
-                  <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{shortTermSummariesCount}</span>
+                <div className="flex flex-col items-center p-3 rounded-lg bg-info-light border border-info">
+                  <History className="h-4 w-4 text-info mb-1" />
+                  <span className="text-lg font-bold text-info">{shortTermSummariesCount}</span>
                   <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{t('agents:memory.shortTerm')}</span>
                 </div>
               )}
@@ -595,9 +595,9 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
                 </div>
               )}
               {longTermPatternsCount > 0 && (
-                <div className="flex flex-col items-center p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                  <TrendingUp className="h-4 w-4 text-amber-500 mb-1" />
-                  <span className="text-lg font-bold text-amber-600 dark:text-amber-400">{longTermPatternsCount}</span>
+                <div className="flex flex-col items-center p-3 rounded-lg bg-warning-light border border-warning">
+                  <TrendingUp className="h-4 w-4 text-warning mb-1" />
+                  <span className="text-lg font-bold text-warning">{longTermPatternsCount}</span>
                   <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{t('agents:detail.learnedPatterns')}</span>
                 </div>
               )}
@@ -611,7 +611,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
             title={t('agents:memory.working')}
             icon={Zap}
           >
-            <div className="p-3 rounded-lg bg-gradient-to-br from-blue-500/5 to-purple-500/5 border border-blue-500/10">
+            <div className="p-3 rounded-lg bg-gradient-to-br from-info-light to-purple-500/5 border border-info">
               {memory.working.current_analysis && (
                 <div className="mb-2">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">{t('agents:memory.situationAnalysis')}</div>
@@ -639,9 +639,9 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
           >
             <div className="space-y-2">
               {memory.short_term?.summaries?.map((summary: any, idx: number) => (
-                <div key={idx} className="group relative overflow-hidden rounded-lg bg-background border border-border hover:border-blue-500/30 transition-colors">
+                <div key={idx} className="group relative overflow-hidden rounded-lg bg-background border border-border hover:border-info transition-colors">
                   {/* Success indicator strip */}
-                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${summary.success ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${summary.success ? 'bg-green-500' : 'bg-error'}`} />
 
                   <div className="pl-4 pr-3 py-3">
                     <div className="flex items-center justify-between mb-2">
@@ -738,14 +738,14 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
           >
             <div className="space-y-2">
               {memory.long_term?.patterns?.map((pattern: any, idx: number) => (
-                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/10">
+                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-warning-light to-orange-500/5 border border-warning">
                   <div className="flex items-center justify-between mb-2">
                     <Badge variant="outline" className="text-xs">
                       {pattern.pattern_type}
                     </Badge>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{formatTime(pattern.learned_at)}</span>
-                      <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                      <span className="text-xs font-medium text-warning">
                         {Math.round((pattern.confidence || 0) * 100)}%
                       </span>
                     </div>
@@ -765,12 +765,12 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
           >
             <div className="space-y-2">
               {(memory.learned_patterns || []).map((pattern: any, idx: number) => (
-                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/10">
+                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-warning-light to-orange-500/5 border border-warning">
                   <div className="flex items-center justify-between mb-2">
                     <Badge variant="outline" className="text-xs">
                       {pattern.pattern_type}
                     </Badge>
-                    <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    <span className="text-xs font-medium text-warning">
                       {Math.round((pattern.confidence || 0) * 100)}%
                     </span>
                   </div>

@@ -116,7 +116,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
           ) : (
             <CheckCircle2 className={cn(
               "h-4 w-4 shrink-0",
-              currentExecution.status === 'completed' ? "text-green-500" : "text-red-500"
+              currentExecution.status === 'completed' ? "text-green-500" : "text-error"
             )} />
           )}
           <span className="text-sm font-medium shrink-0">
@@ -263,7 +263,7 @@ function ThinkingStep({ step }: ThinkingStepProps) {
     switch (stepType.toLowerCase()) {
       case 'analysis':
       case 'analyze':
-        return 'text-blue-500 bg-blue-500/10 border-blue-500/20'
+        return 'text-info bg-info-light border-info'
       case 'evaluation':
       case 'evaluate':
         return 'text-orange-500 bg-orange-500/10 border-orange-500/20'

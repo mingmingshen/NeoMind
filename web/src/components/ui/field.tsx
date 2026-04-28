@@ -140,14 +140,14 @@ const validationIcons = {
 
 const validationColors = {
   error: 'text-destructive',
-  warning: 'text-yellow-600 dark:text-yellow-500',
-  success: 'text-green-600 dark:text-green-500',
+  warning: 'text-warning',
+  success: 'text-success',
 }
 
 const validationBorderColors = {
   error: 'border-destructive focus-visible:ring-destructive',
-  warning: 'border-yellow-500 focus-visible:ring-yellow-500',
-  success: 'border-green-500 focus-visible:ring-green-500',
+  warning: 'border-warning focus-visible:ring-warning',
+  success: 'border-success focus-visible:ring-success',
 }
 
 /**

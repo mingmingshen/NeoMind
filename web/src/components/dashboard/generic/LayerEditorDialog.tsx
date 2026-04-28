@@ -86,7 +86,7 @@ function getTypeConfig(t: (key: string) => string) {
       label: t('customLayer.device'),
       icon: MapPin,
       color: 'text-white',
-      bgColor: 'bg-green-500',
+      bgColor: 'bg-success',
     },
     metric: {
       label: t('customLayer.metric'),
@@ -98,7 +98,7 @@ function getTypeConfig(t: (key: string) => string) {
       label: t('customLayer.command'),
       icon: Zap,
       color: 'text-white',
-      bgColor: 'bg-blue-500',
+      bgColor: 'bg-info',
     },
     text: {
       label: t('customLayer.text'),

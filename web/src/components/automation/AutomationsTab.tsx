@@ -138,14 +138,14 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
     t('automation:transforms')
 
   const getTypeColor = (_type: string) =>
-    'bg-green-100 text-green-700 border-green-200 dark:bg-green-900 dark:text-green-300'
+    'bg-success-light text-success border-success-light dark:bg-success-light dark:text-success'
 
   const getComplexityDots = (complexity: number) => {
     return Array.from({ length: 5 }, (_, i) => (
       <span
         key={i}
         className={`w-2 h-2 rounded-full ${
-          i < complexity ? 'bg-yellow-500' : 'bg-muted-foreground/30 dark:bg-muted-foreground/50'
+          i < complexity ? 'bg-warning' : 'bg-muted-foreground/30 dark:bg-muted-foreground/50'
         }`}
       />
     ))

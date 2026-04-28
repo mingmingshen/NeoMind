@@ -82,7 +82,7 @@ function SessionItem({
       <div className="flex items-start gap-3">
         <div className={cn(
           "mt-0.5 flex-shrink-0",
-          isActive ? "text-blue-500" : "text-muted-foreground"
+          isActive ? "text-info" : "text-muted-foreground"
         )}>
           <MessageSquare className="h-4 w-4" />
         </div>
@@ -268,7 +268,7 @@ const SessionDrawerMemo = memo(function SessionDrawer({
             className={cn(
               "w-full flex items-center justify-center gap-2",
               "px-4 py-2.5 rounded-lg",
-              "bg-blue-600 hover:bg-blue-700 text-white",
+              "bg-primary hover:bg-primary text-primary-foreground",
               "transition-colors duration-200",
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}

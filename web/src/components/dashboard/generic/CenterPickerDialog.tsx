@@ -144,7 +144,7 @@ export function CenterPickerDialog({
                   </div>
                 </div>
                 {hasSelected && (
-                  <div className="text-sm text-green-600 dark:text-green-400">
+                  <div className="text-sm text-success dark:text-success">
                     ✓ {t('mapDisplay.centerSelected', '已选择')}
                   </div>
                 )}
@@ -266,7 +266,7 @@ export function CenterPickerDialog({
                 </div>
               </div>
               {hasSelected && (
-                <div className="text-xs text-green-600 dark:text-green-400">
+                <div className="text-xs text-success dark:text-success">
                   ✓ {t('mapDisplay.centerSelected', '已选择新位置')}
                 </div>
               )}

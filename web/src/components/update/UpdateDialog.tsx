@@ -131,12 +131,12 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
       case 'done':
         return 'bg-success-light dark:bg-success-light text-success dark:text-success'
       case 'error':
-        return 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+        return 'bg-error-light text-error'
       case 'downloading':
       case 'installing':
-        return 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+        return 'bg-info-light text-info'
       default:
-        return 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+        return 'bg-info-light text-info'
     }
   }
 
@@ -201,7 +201,7 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
       {installStatus === 'done' && (
         <div className="flex items-center gap-2 p-3 rounded-md bg-success-light dark:bg-success-light border border-success-light dark:border-success-light">
           <Check className="w-5 h-5 text-success dark:text-success" />
-          <p className="text-sm text-green-800 dark:text-green-200">
+          <p className="text-sm text-success">
             {t('settings:updateCompleteMessage')}
           </p>
         </div>
@@ -209,9 +209,9 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
 
       {/* Error Message */}
       {installStatus === 'error' && (
-        <div className="flex items-start gap-2 p-3 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" />
-          <p className="text-sm text-red-800 dark:text-red-200">
+        <div className="flex items-start gap-2 p-3 rounded-md bg-error-light border border-error">
+          <AlertCircle className="w-5 h-5 text-error mt-0.5" />
+          <p className="text-sm text-error">
             {getStatusMessage()}
           </p>
         </div>

@@ -83,11 +83,11 @@ export function AgentExecutionTimeline({
   const getStatusConfig = (status: string) => {
     switch (status) {
       case 'Running':
-        return { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-500/10 border-blue-500/20', label: t('agents:executionStatus.running') }
+        return { icon: Loader2, color: 'text-info', bg: 'bg-info-light border-info', label: t('agents:executionStatus.running') }
       case 'Completed':
         return { icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-500/10 border-green-500/20', label: t('agents:executionStatus.completed') }
       case 'Failed':
-        return { icon: XCircle, color: 'text-red-500', bg: 'bg-red-500/10 border-red-500/20', label: t('agents:executionStatus.failed') }
+        return { icon: XCircle, color: 'text-error', bg: 'bg-error-light border-error', label: t('agents:executionStatus.failed') }
       case 'Cancelled':
         return { icon: XCircle, color: 'text-muted-foreground', bg: 'bg-muted border-border', label: t('agents:executionStatus.cancelled') }
       default:
@@ -318,7 +318,7 @@ export function AgentExecutionTimeline({
                                   if (realActions.length === 0) return null
                                   return (
                                     <TimelineSection
-                                      icon={<Zap className="h-4 w-4 text-yellow-500" />}
+                                      icon={<Zap className="h-4 w-4 text-warning" />}
                                       title={t('agents:memory.actionsExecuted')}
                                     >
                                       <div className="space-y-2">
@@ -580,10 +580,10 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
   const isLongDesc = step.description.length > 300
   const displayDesc = descExpanded ? step.description : (isLongDesc ? step.description.slice(0, 300) + '...' : step.description)
 
-  const numberBg = isError ? 'bg-red-500 text-white' :
-                    isThought ? 'bg-blue-500 text-white' :
+  const numberBg = isError ? 'bg-error text-white' :
+                    isThought ? 'bg-info text-white' :
                     'bg-primary text-primary-foreground'
-  const borderColor = isError ? 'border-red-200 dark:border-red-800' :
+  const borderColor = isError ? 'border-error' :
                       isThought ? 'border-blue-200 dark:border-blue-800' :
                       'border-border'
 
@@ -604,17 +604,17 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
           <div className={cn("w-6 h-6 rounded-full text-xs flex items-center justify-center", numberBg)}>
             {step.step_number}
           </div>
-          <div className={cn("w-0.5 flex-1 min-h-[24px]", isError ? "bg-red-200 dark:bg-red-800" : isThought ? "bg-blue-200 dark:bg-blue-800" : "bg-border")} />
+          <div className={cn("w-0.5 flex-1 min-h-[24px]", isError ? "bg-error-light" : isThought ? "bg-blue-200 dark:bg-blue-800" : "bg-border")} />
         </div>
         <div className={cn("flex-1 min-w-0 pb-4 pl-1")}>
         {/* Description with icon */}
         <div className="flex items-start gap-1.5">
           {isThought && <span className="text-blue-500 text-xs mt-0.5 shrink-0">&#x1F4AD;</span>}
-          {isError && <span className="text-red-500 text-xs mt-0.5 shrink-0">&#x26A0;</span>}
+          {isError && <span className="text-error text-xs mt-0.5 shrink-0">&#x26A0;</span>}
           <div className={cn(
             "text-sm break-words",
-            isThought && "italic text-blue-700 dark:text-blue-300",
-            isError && "text-red-600 dark:text-red-400"
+            isThought && "italic text-info",
+            isError && "text-error"
           )}>
             {displayDesc}
           </div>
@@ -649,7 +649,7 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
         {/* Step type badge only - no per-step confidence */}
         <Badge variant="outline" className={cn(
           "text-xs h-5 mt-1.5",
-          isError && "border-red-300 text-red-600",
+          isError && "border-error text-error",
           isThought && "border-blue-300 text-blue-600"
         )}>
           {step.step_type}
@@ -762,7 +762,7 @@ function ToolCallStep({ step }: { step: ReasoningStep }) {
         {isSuccess ? (
           <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
         ) : (
-          <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+          <XCircle className="h-4 w-4 text-error shrink-0 mt-0.5" />
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -770,7 +770,7 @@ function ToolCallStep({ step }: { step: ReasoningStep }) {
             <span className="font-mono text-sm truncate">{toolName}</span>
             <span className={cn(
               "text-[10px] px-1.5 py-0.5 rounded shrink-0",
-              isSuccess ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-500"
+              isSuccess ? "bg-emerald-500/10 text-emerald-600" : "bg-error-light text-error"
             )}>
               {isSuccess ? t('agents:memory.success') : t('agents:memory.failed')}
             </span>

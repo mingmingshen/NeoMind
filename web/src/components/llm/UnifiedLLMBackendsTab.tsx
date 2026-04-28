@@ -80,7 +80,7 @@ const LLM_PROVIDER_CONFIG: Record<string, {
   },
   llamacpp: {
     icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    iconBg: 'bg-warning-light text-warning',
   },
 }
 
@@ -514,7 +514,7 @@ export function UnifiedLLMBackendsTab({
                           "text-xs p-2 rounded",
                           testResult.success
                             ? "bg-success-light text-success dark:bg-success-light dark:text-success"
-                            : "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300"
+                            : "bg-error-light text-error"
                         )}>
                           {testResult.message}
                         </div>

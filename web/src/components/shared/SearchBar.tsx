@@ -123,9 +123,9 @@ export function SearchBar({ placeholder }: SearchBarProps) {
 
   const getTypeColor = (type: SearchResult["type"]) => {
     const colors = {
-      device: "bg-blue-500",
+      device: "bg-info",
       rule: "bg-purple-500",
-      alert: "bg-red-500",
+      alert: "bg-error",
     }
     return colors[type] || "bg-muted-foreground"
   }

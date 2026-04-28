@@ -39,9 +39,9 @@ export function AgentExecutionsList({
 
   const getStatusClass = (status: string) => {
     switch (status) {
-      case 'Running': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+      case 'Running': return 'bg-info-light text-info'
       case 'Completed': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-      case 'Failed': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+      case 'Failed': return 'bg-error-light text-error'
       case 'Cancelled': return 'bg-muted text-muted-foreground'
       default: return 'bg-muted text-muted-foreground'
     }

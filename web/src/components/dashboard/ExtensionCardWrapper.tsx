@@ -40,7 +40,7 @@ export interface ExtensionCardWrapperProps {
  */
 const DefaultLoadingComponent: React.FC<{ className?: string }> = ({ className = '' }) => (
   <div className={`extension-card-loading flex flex-col items-center justify-center p-8 ${className}`}>
-    <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" />
+    <Loader2 className="w-8 h-8 animate-spin text-info mb-4" />
     <p className="text-sm text-muted-foreground">Loading extension component...</p>
   </div>
 )
@@ -49,12 +49,12 @@ const DefaultLoadingComponent: React.FC<{ className?: string }> = ({ className =
  * Default error component
  */
 const DefaultErrorComponent: React.FC<{ error?: Error; className?: string }> = ({ error, className = '' }) => (
-  <div className={`extension-card-error p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg ${className}`}>
-    <p className="text-sm font-semibold text-red-800 dark:text-red-200">
+  <div className={`extension-card-error p-4 bg-error-light border border-error rounded-lg ${className}`}>
+    <p className="text-sm font-semibold text-error">
       Failed to load extension component
     </p>
     {error?.message && (
-      <p className="text-xs text-red-600 dark:text-red-400 mt-1">{error.message}</p>
+      <p className="text-xs text-error mt-1">{error.message}</p>
     )}
   </div>
 )

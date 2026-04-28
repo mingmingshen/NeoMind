@@ -98,8 +98,8 @@ const getTabFromPath = (pathname: string): TabValue => {
 const SEVERITY_CONFIG: Record<string, { icon: typeof Info; color: string; bgColor: string }> = {
   info: { icon: Info, color: 'text-info', bgColor: 'bg-info-light border-info' },
   warning: { icon: AlertTriangle, color: 'text-warning', bgColor: 'bg-warning-light border-warning' },
-  critical: { icon: AlertCircle, color: 'text-orange-500', bgColor: 'bg-orange-500/10 border-orange-500/20' },
-  emergency: { icon: ShieldAlert, color: 'text-red-500', bgColor: 'bg-red-500/10 border-red-500/20' },
+  critical: { icon: AlertCircle, color: 'text-error', bgColor: 'bg-error-light border-error' },
+  emergency: { icon: ShieldAlert, color: 'text-error', bgColor: 'bg-error-light border-error' },
 }
 
 // Status config
@@ -466,7 +466,7 @@ export default function MessagesPage() {
       ])
 
       let messagesArray: NotificationMessage[] = messagesResponse.messages || []
-      const serverTotal = messagesResponse.count ?? 0
+      const serverTotal = messagesResponse.total ?? 0
 
       // Process delivery logs
       if (deliveryLogsResponse) {
@@ -715,14 +715,14 @@ export default function MessagesPage() {
             <div className="space-y-1">
               {(['emergency', 'critical', 'warning', 'info'] as MessageSeverity[]).map((sev) => {
                 const icons = {
-                  emergency: <ShieldAlert className="h-4 w-4 text-red-500" />,
-                  critical: <AlertCircle className="h-4 w-4 text-orange-500" />,
+                  emergency: <ShieldAlert className="h-4 w-4 text-error" />,
+                  critical: <AlertCircle className="h-4 w-4 text-error" />,
                   warning: <AlertTriangle className="h-4 w-4 text-warning" />,
                   info: <Info className="h-4 w-4 text-info" />,
                 }
                 const bgColors = {
-                  emergency: "bg-red-500/10 border-red-500/30",
-                  critical: "bg-orange-500/10 border-orange-500/30",
+                  emergency: "bg-error-light border-error",
+                  critical: "bg-error-light border-error",
                   warning: "bg-warning-light border-warning",
                   info: "bg-info-light border-info",
                 }
@@ -763,7 +763,7 @@ export default function MessagesPage() {
                 const statusConfig = {
                   active: { color: "text-info", bg: "bg-info-light border-info" },
                   acknowledged: { color: "text-warning", bg: "bg-warning-light border-warning" },
-                  resolved: { color: "text-green-500", bg: "bg-green-500/10 border-green-500/30" },
+                  resolved: { color: "text-success", bg: "bg-success-light border-success" },
                   archived: { color: "text-muted-foreground", bg: "bg-muted border-border" },
                 }
                 return (
@@ -944,8 +944,8 @@ export default function MessagesPage() {
                 >
                   {sev === 'info' && <Info className="h-4 w-4 text-info" />}
                   {sev === 'warning' && <AlertTriangle className="h-4 w-4 text-warning" />}
-                  {sev === 'critical' && <AlertCircle className="h-4 w-4 text-orange-500" />}
-                  {sev === 'emergency' && <ShieldAlert className="h-4 w-4 text-red-500" />}
+                  {sev === 'critical' && <AlertCircle className="h-4 w-4 text-error" />}
+                  {sev === 'emergency' && <ShieldAlert className="h-4 w-4 text-error" />}
                   {t(`messages.severity.${sev}`)}
                   <X className="h-4 w-4 ml-1 text-muted-foreground" />
                 </Badge>
@@ -1212,7 +1212,7 @@ export default function MessagesPage() {
               const config: Record<string, { icon: typeof Bell; color: string }> = {
                 console: { icon: Bell, color: 'bg-muted text-muted-foreground' },
                 memory: { icon: RefreshCw, color: 'bg-info-light text-info' },
-                webhook: { icon: Megaphone, color: 'bg-green-500/10 text-green-500' },
+                webhook: { icon: Megaphone, color: 'bg-success-light text-success' },
                 email: { icon: Bell, color: 'bg-purple-500/10 text-purple-500' },
               }
               const channelConfig = config[channel.channel_type] || config.console
@@ -1255,7 +1255,7 @@ export default function MessagesPage() {
                           )}
                         </div>
                         {testResult && (
-                          <div className={`text-xs mt-1 ${testResult.success ? 'text-green-500' : 'text-red-500'}`}>
+                          <div className={`text-xs mt-1 ${testResult.success ? 'text-success' : 'text-error'}`}>
                             {testResult.success ? '✓ ' : '✗ '}
                             {testResult.message}
                           </div>
@@ -1472,7 +1472,7 @@ export default function MessagesPage() {
                 )}
               </Badge>
               <Badge variant="outline" className={
-                selectedMessage.severity === 'critical' ? 'bg-red-500/10 text-red-600' :
+                selectedMessage.severity === 'critical' ? 'bg-error-light text-error' :
                 selectedMessage.severity === 'warning' ? 'bg-warning-light text-warning' :
                 'bg-info-light text-info'
               }>

@@ -146,12 +146,12 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
     switch (severity) {
       case 'critical':
       case 'emergency':
-        return 'text-red-600 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/30 dark:border-red-800'
+        return 'text-error bg-error-light border-error'
       case 'warning':
-        return 'text-amber-600 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-950/30 dark:border-amber-800'
+        return 'text-warning bg-warning-light border-warning'
       case 'info':
       default:
-        return 'text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950/30 dark:border-blue-800'
+        return 'text-info bg-info-light border-info'
     }
   }
 
@@ -412,7 +412,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                           </Badge>
                           {/* Unread indicator */}
                           {isUnread && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                            <div className="w-1.5 h-1.5 rounded-full bg-info shrink-0" />
                           )}
                           {/* Title - single line, truncate */}
                           <p className="text-xs font-medium truncate flex-1">{alert.title}</p>

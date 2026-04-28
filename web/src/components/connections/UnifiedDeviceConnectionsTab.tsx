@@ -860,7 +860,7 @@ export function UnifiedDeviceConnectionsTab() {
                           "text-xs p-2 rounded",
                           testResult.success
                             ? "bg-success-light text-success dark:bg-success-light dark:text-success"
-                            : "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300"
+                            : "bg-error-light text-error"
                         )}>
                           {testResult.message}
                         </div>

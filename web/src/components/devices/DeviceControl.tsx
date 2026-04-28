@@ -226,11 +226,11 @@ export function DeviceControl({
       case "sent":
         return <Send className="h-4 w-4 text-info" />
       case "success":
-        return <CheckCircle className="h-4 w-4 text-green-500" />
+        return <CheckCircle className="h-4 w-4 text-success" />
       case "failed":
-        return <XCircle className="h-4 w-4 text-red-500" />
+        return <XCircle className="h-4 w-4 text-error" />
       case "timeout":
-        return <AlertTriangle className="h-4 w-4 text-orange-500" />
+        return <AlertTriangle className="h-4 w-4 text-warning" />
     }
   }, [])
 
@@ -637,7 +637,7 @@ export function DeviceControl({
                     <div className="flex items-center justify-between">
                       <Label className="text-sm">
                         {param.displayName || param.name}
-                        {(param.defaultValue === undefined) && <span className="text-red-500 ml-1">*</span>}
+                        {(param.defaultValue === undefined) && <span className="text-error ml-1">*</span>}
                       </Label>
                       {(param.minValue !== undefined || param.maxValue !== undefined) && (
                         <span className="text-xs text-muted-foreground">

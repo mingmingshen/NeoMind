@@ -11,11 +11,11 @@ export interface IconCardProps {
 }
 
 const iconColorClass = {
-  yellow: 'text-yellow-500',
-  blue: 'text-blue-500',
+  yellow: 'text-warning',
+  blue: 'text-info',
   purple: 'text-purple-500',
-  green: 'text-green-500',
-  red: 'text-red-500',
+  green: 'text-success',
+  red: 'text-error',
 }
 
 /**

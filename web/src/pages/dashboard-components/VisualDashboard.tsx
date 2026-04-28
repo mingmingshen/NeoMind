@@ -2771,8 +2771,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                             "text-xs font-medium px-2 py-1 rounded shrink-0",
                             state === 'on' && "bg-green-500/10 text-green-600",
                             state === 'off' && "bg-muted text-muted-foreground",
-                            state === 'error' && "bg-red-500/10 text-red-600",
-                            state === 'warning' && "bg-amber-500/10 text-amber-600",
+                            state === 'error' && "bg-error-light text-error",
+                            state === 'warning' && "bg-warning-light text-warning",
                             state === 'unknown' && "bg-muted text-muted-foreground"
                           )}>
                             {t(`visualDashboard.${state}`)}
@@ -3261,8 +3261,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                <div className="p-3 rounded-lg bg-info-light border border-info">
+                  <p className="text-sm text-info">
                     {t('visualDashboard.commandButtonHint')}
                   </p>
                 </div>
@@ -3282,8 +3282,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                  <div className="p-3 rounded-lg bg-info-light border border-info">
+                    <p className="text-sm text-info">
                       <strong>{t('visualDashboard.commandInterface')}</strong><br />
                       {t('visualDashboard.commandInterfaceDesc')}
                     </p>
@@ -3820,8 +3820,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   )}
 
                   {config.type === 'device-camera' && (
-                    <div className="p-2 bg-blue-500/10 border border-blue-500/20 rounded-md">
-                      <p className="text-xs text-blue-600 dark:text-blue-400">
+                    <div className="p-2 bg-info-light border border-info rounded-md">
+                      <p className="text-xs text-info">
                         <strong>设备摄像头：</strong> 将请求访问本地摄像头设备
                       </p>
                     </div>
@@ -4359,10 +4359,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                         },
                         command: {
                           label: t('mapDisplay.command'),
-                          color: 'bg-blue-500',
-                          textColor: 'text-blue-600',
-                          bgColor: 'bg-blue-50 dark:bg-blue-950/30',
-                          borderColor: 'border-blue-200 dark:border-blue-800',
+                          color: 'bg-info',
+                          textColor: 'text-info',
+                          bgColor: 'bg-info-light',
+                          borderColor: 'border-info',
                           icon: Zap,
                           description: t('mapDisplay.commandDesc')
                         },
@@ -4448,7 +4448,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                                       </div>
                                     </div>
                                     <div className="text-xs text-muted-foreground">
-                                      {type === 'device' && <span className="text-blue-500">{t('visualDashboard.viewDetails')}</span>}
+                                      {type === 'device' && <span className="text-info">{t('visualDashboard.viewDetails')}</span>}
                                       {type === 'metric' && <span className="text-green-500">{t('visualDashboard.viewValue')}</span>}
                                       {type === 'command' && <span className="text-orange-500">{t('visualDashboard.execute')}</span>}
                                     </div>
@@ -4465,7 +4465,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   {/* Legend */}
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
-                      <div className="w-4 h-4 rounded-full bg-blue-500"></div>
+                      <div className="w-4 h-4 rounded-full bg-info"></div>
                       <span>{t('mapDisplay.device')}</span>
                     </div>
                     <div className="flex items-center gap-1">
@@ -4767,10 +4767,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                         },
                         command: {
                           label: t('layerDisplay.command'),
-                          color: 'bg-blue-500',
-                          textColor: 'text-blue-600',
-                          bgColor: 'bg-blue-50 dark:bg-blue-950/30',
-                          borderColor: 'border-blue-200 dark:border-blue-800',
+                          color: 'bg-info',
+                          textColor: 'text-info',
+                          bgColor: 'bg-info-light',
+                          borderColor: 'border-info',
                           icon: Zap,
                           description: t('layerDisplay.commandDesc')
                         },

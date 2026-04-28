@@ -457,7 +457,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
   const getModelIcon = (model: OllamaModel) => {
     const icons = []
-    if (model.supports_multimodal) icons.push(<Eye key="vision" className="h-4 w-4 text-blue-500" />)
+    if (model.supports_multimodal) icons.push(<Eye key="vision" className="h-4 w-4 text-info" />)
     if (model.supports_thinking) icons.push(<Brain key="thinking" className="h-4 w-4 text-purple-500" />)
     if (model.supports_tools) icons.push(<Wrench key="tools" className="h-4 w-4 text-orange-500" />)
     if (icons.length === 0) return null
@@ -622,7 +622,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
               return (
                 <div className="flex items-center gap-2 p-2 bg-background rounded-md border">
-                  <Brain className="h-4 w-4 text-blue-500 shrink-0" />
+                  <Brain className="h-4 w-4 text-info shrink-0" />
                   <div className="min-w-0 flex-1">
                     <div className="text-xs text-muted-foreground">{t("plugins:llm.loadedModel", { defaultValue: "Loaded Model" })}</div>
                     <div className="font-medium text-sm truncate">{modelName}</div>
@@ -640,8 +640,8 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
             {llamacppServerInfo && llamacppServerInfo.status === "ok" && (
               <div className="p-3 bg-muted-30 rounded-lg space-y-2 text-sm">
                 <div className="flex items-center gap-2">
-                  <Server className="h-4 w-4 text-green-500" />
-                  <span className="font-medium text-green-600">
+                  <Server className="h-4 w-4 text-success" />
+                  <span className="font-medium text-success">
                     {t("plugins:llm.serverConnected", { defaultValue: "Server connected" })}
                   </span>
                   <span className="text-muted-foreground">

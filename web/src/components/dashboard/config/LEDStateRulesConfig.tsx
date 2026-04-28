@@ -178,9 +178,9 @@ export function LEDStateRulesConfig({
                   {/* Condition type badge */}
                   <span className={cn(
                     "text-xs font-medium px-1.5 py-0.5 rounded",
-                    conditionType === 'threshold' && "bg-blue-500/10 text-blue-600",
+                    conditionType === 'threshold' && "bg-info-light text-info",
                     conditionType === 'pattern' && "bg-purple-500/10 text-purple-600",
-                    conditionType === 'values' && "bg-amber-500/10 text-amber-600",
+                    conditionType === 'values' && "bg-warning-light text-warning",
                     conditionType === 'always' && "bg-muted text-muted-foreground"
                   )}>
                     {conditionType === 'threshold' && t('stateMapping.thresholdLabel')}

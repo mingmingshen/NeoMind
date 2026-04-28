@@ -200,14 +200,14 @@ function TriggerCard({ props }: { props: AgentLogicPreviewProps }) {
   }
 
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+    <div className="bg-gradient-to-br from-info-light to-indigo-50 dark:from-info-light dark:to-indigo-950/30 rounded-lg p-4 border border-info">
       <div className="flex items-center gap-2 mb-2">
-        <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-        <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+        <Clock className="h-4 w-4 text-info" />
+        <span className="text-sm font-medium text-info">
           {t('preview.trigger.title')}
         </span>
       </div>
-      <p className="text-sm text-blue-700 dark:text-blue-300">{getTriggerText()}</p>
+      <p className="text-sm text-info">{getTriggerText()}</p>
     </div>
   )
 }
@@ -497,9 +497,9 @@ function IssueDetection({ props, intent }: { props: AgentLogicPreviewProps; inte
       {issues.map((issue, i) => (
         <div key={i} className={cn(
           "flex items-start gap-2 text-xs",
-          issue.type === 'error' && "text-red-600 dark:text-red-400",
+          issue.type === 'error' && "text-error",
           issue.type === 'warning' && "text-orange-600 dark:text-orange-400",
-          issue.type === 'info' && "text-blue-600 dark:text-blue-400"
+          issue.type === 'info' && "text-info"
         )}>
           {issue.type === 'error' && <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />}
           {issue.type === 'warning' && <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />}

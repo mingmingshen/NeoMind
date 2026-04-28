@@ -239,9 +239,9 @@ export function DataTransformConfig({
     <div className="space-y-3">
       {/* Multi-source indicator */}
       {hasMultipleSources && (
-        <div className="flex items-center gap-2 px-2.5 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-md">
-          <Layers className="h-4 w-4 text-blue-500" />
-          <span className="text-xs text-blue-600 font-medium">
+        <div className="flex items-center gap-2 px-2.5 py-1.5 bg-info-light border border-info rounded-md">
+          <Layers className="h-4 w-4 text-info" />
+          <span className="text-xs text-info font-medium">
             {t('dataTransform.appliesToAll', { count: sources.length })}
           </span>
         </div>
@@ -252,7 +252,7 @@ export function DataTransformConfig({
         <div className="flex items-center justify-between">
           <Label>{t('dataTransform.timeRange')}</Label>
           {hasMixedSettings?.hasMixedTimeWindow && (
-            <span className="text-[10px] text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] text-warning bg-warning-light px-1.5 py-0.5 rounded">
               {t('dataTransform.mixedValues')}
             </span>
           )}
@@ -282,7 +282,7 @@ export function DataTransformConfig({
         <div className="flex items-center justify-between">
           <Label>{t('dataTransform.aggregation')}</Label>
           {hasMixedSettings?.hasMixedAggregate && (
-            <span className="text-[10px] text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] text-warning bg-warning-light px-1.5 py-0.5 rounded">
               {t('dataTransform.mixedValues')}
             </span>
           )}
@@ -307,7 +307,7 @@ export function DataTransformConfig({
           <div className="flex items-center justify-between">
             <Label>{t('dataTransform.dataPointLimit')}</Label>
             {hasMixedSettings?.hasMixedLimit && (
-              <span className="text-[10px] text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+              <span className="text-[10px] text-warning bg-warning-light px-1.5 py-0.5 rounded">
                 {t('dataTransform.mixedValues')}
               </span>
             )}

@@ -201,9 +201,9 @@ export function AlertsTab() {
                 <TableRow
                   key={alert.id}
                   className={!alert.acknowledged ? (
-                    alert.severity === 'critical' ? 'bg-red-500/5' :
-                    alert.severity === 'warning' ? 'bg-yellow-500/5' :
-                    'bg-blue-500/5'
+                    alert.severity === 'critical' ? 'bg-error-light' :
+                    alert.severity === 'warning' ? 'bg-warning-light' :
+                    'bg-info-light'
                   ) : ''}
                 >
                   <TableCell>

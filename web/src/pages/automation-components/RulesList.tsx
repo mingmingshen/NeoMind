@@ -26,12 +26,12 @@ interface RulesListProps {
 
 // Action configuration for display
 const ACTION_CONFIG: Record<string, { icon: typeof Zap; label: string; color: string }> = {
-  Execute: { icon: Zap, label: 'automation:ruleBuilder.actionType.execute', color: 'text-yellow-700 bg-yellow-50 border-yellow-200 dark:text-yellow-400 dark:bg-yellow-950/30 dark:border-yellow-800' },
-  Notify: { icon: Bell, label: 'automation:ruleBuilder.actionType.notify', color: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950/30 dark:border-blue-800' },
+  Execute: { icon: Zap, label: 'automation:ruleBuilder.actionType.execute', color: 'text-warning bg-warning-light border-warning' },
+  Notify: { icon: Bell, label: 'automation:ruleBuilder.actionType.notify', color: 'text-info bg-info-light border-info' },
   Log: { icon: FileText, label: 'automation:ruleBuilder.actionType.log', color: 'text-foreground bg-muted border-border' },
   Set: { icon: FlaskConical, label: 'automation:ruleBuilder.actionType.set', color: 'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-950/30 dark:border-purple-800' },
   Delay: { icon: Timer, label: 'automation:ruleBuilder.actionType.delay', color: 'text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-950/30 dark:border-orange-800' },
-  CreateAlert: { icon: AlertTriangle, label: 'automation:ruleBuilder.actionType.createAlert', color: 'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/30 dark:border-red-800' },
+  CreateAlert: { icon: AlertTriangle, label: 'automation:ruleBuilder.actionType.createAlert', color: 'text-error bg-error-light border-error dark:text-error dark:bg-error-light dark:border-error' },
   HttpRequest: { icon: FlaskConical, label: 'HTTP', color: 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800' },
 }
 
@@ -244,7 +244,7 @@ export function RulesList({
               <div className="flex items-center gap-3">
                 <div className={cn(
                   "w-9 h-9 rounded-lg flex items-center justify-center transition-colors shrink-0",
-                  rule.enabled ? "bg-amber-500/10 text-amber-600" : "bg-muted text-muted-foreground"
+                  rule.enabled ? "bg-warning-light text-warning" : "bg-muted text-muted-foreground"
                 )}>
                   <Sparkles className="h-4 w-4" />
                 </div>
@@ -271,7 +271,7 @@ export function RulesList({
                   </div>
                   {forClause && (
                     <div className="flex items-center gap-1.5">
-                      <Badge variant="outline" className="text-xs gap-1 px-2 py-0 text-blue-600 border-blue-200 dark:border-blue-800">
+                      <Badge variant="outline" className="text-xs gap-1 px-2 py-0 text-info border-info">
                         <Timer className="h-4 w-4" />
                         {forClause.duration}{forClause.unit}
                       </Badge>
@@ -334,7 +334,7 @@ export function RulesList({
                 ) : (
                   <div className="flex flex-col items-center gap-0.5">
                     <div className="flex items-center gap-1.5 text-xs">
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <CheckCircle2 className="h-4 w-4 text-success" />
                       <span>{formatTimestamp(rule.last_triggered)}</span>
                     </div>
                     {triggerCount > 1 && (
@@ -359,7 +359,7 @@ export function RulesList({
                 <Badge variant="outline" className={cn(
                   "text-xs gap-1 hidden sm:flex",
                   rule.enabled
-                    ? "text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800"
+                    ? "bg-success-light text-success border-success"
                     : "text-foreground bg-muted border-border"
                 )}>
                   <CheckCircle2 className="h-4 w-4" />

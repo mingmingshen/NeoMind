@@ -35,17 +35,17 @@ function getStepTypeConfig(stepType: TaskStepType, t: (key: string) => string) {
     gather_info: {
       label: t("taskProgress.steps.collecting"),
       icon: "📝",
-      color: "text-blue-500"
+      color: "text-info"
     },
     confirm: {
       label: t("taskProgress.steps.confirming"),
       icon: "✓",
-      color: "text-amber-500"
+      color: "text-warning"
     },
     execute: {
       label: t("taskProgress.steps.executing"),
       icon: "⚡",
-      color: "text-green-500"
+      color: "text-success"
     }
   }
   return configs[stepType]
@@ -66,7 +66,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
   const getStepIcon = (status: "pending" | "active" | "completed") => {
     switch (status) {
       case "completed":
-        return <CheckCircle2 className="h-4 w-4 text-green-500" />
+        return <CheckCircle2 className="h-4 w-4 text-success" />
       case "active":
         return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
       case "pending":
@@ -85,7 +85,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
           </Badge>
         </div>
         {task.status === "completed" && (
-          <Badge className="bg-green-500 hover:bg-green-600 text-xs">
+          <Badge className="bg-success hover:bg-success text-xs">
             {t("taskProgress.status.completed")}
           </Badge>
         )}
@@ -120,8 +120,8 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
               key={index}
               className={cn(
                 "flex items-start gap-3 p-3 rounded-md border transition-colors",
-                status === "active" && "bg-blue-50 border-blue-200",
-                status === "completed" && "bg-green-50/50 border-green-200/50",
+                status === "active" && "bg-info-light border-info",
+                status === "completed" && "bg-success-light/50 border-success-light/50",
                 status === "pending" && "bg-muted-30 border-border"
               )}
             >
@@ -158,8 +158,8 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
               {/* Step Number Badge */}
               <div className={cn(
                 "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
-                status === "completed" && "bg-green-500 text-white",
-                status === "active" && "bg-blue-500 text-white",
+                status === "completed" && "bg-success text-white",
+                status === "active" && "bg-info text-white",
                 status === "pending" && "bg-muted text-muted-foreground"
               )}>
                 {index + 1}
@@ -171,27 +171,27 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
 
       {/* Status Messages */}
       {task.status === "in_progress" && (
-        <div className="flex items-center gap-2 p-3 rounded-md bg-blue-50 border border-blue-200">
-          <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
-          <p className="text-sm text-blue-700">
+        <div className="flex items-center gap-2 p-3 rounded-md bg-info-light border border-info">
+          <Loader2 className="h-4 w-4 text-info animate-spin" />
+          <p className="text-sm text-info">
             {t("taskProgress.currentStep", { step: task.current_step + 1 })}
           </p>
         </div>
       )}
 
       {task.status === "completed" && (
-        <div className="flex items-center gap-2 p-3 rounded-md bg-green-50 border border-green-200">
-          <CheckCircle2 className="h-4 w-4 text-green-500" />
-          <p className="text-sm text-green-700">
+        <div className="flex items-center gap-2 p-3 rounded-md bg-success-light border border-success-light">
+          <CheckCircle2 className="h-4 w-4 text-success" />
+          <p className="text-sm text-success">
             {t("taskProgress.success")}
           </p>
         </div>
       )}
 
       {task.status === "failed" && (
-        <div className="flex items-center gap-2 p-3 rounded-md bg-red-50 border border-red-200">
-          <AlertCircle className="h-4 w-4 text-red-500" />
-          <p className="text-sm text-red-700">
+        <div className="flex items-center gap-2 p-3 rounded-md bg-error-light border border-error">
+          <AlertCircle className="h-4 w-4 text-error" />
+          <p className="text-sm text-error">
             {t("taskProgress.failed")}
           </p>
         </div>
@@ -219,8 +219,8 @@ export function CompactTaskProgress({ task, className }: TaskProgressProps) {
               key={index}
               className={cn(
                 "w-2 h-2 rounded-full transition-colors",
-                isCompleted && "bg-green-500",
-                isCurrent && "bg-blue-500 animate-pulse",
+                isCompleted && "bg-success",
+                isCurrent && "bg-info animate-pulse",
                 !isCompleted && !isCurrent && "bg-muted-foreground/30"
               )}
             />
@@ -238,9 +238,9 @@ export function CompactTaskProgress({ task, className }: TaskProgressProps) {
         <div
           className={cn(
             "h-full transition-all duration-300",
-            task.status === "completed" && "bg-green-500",
-            task.status === "failed" && "bg-red-500",
-            task.status !== "completed" && task.status !== "failed" && "bg-blue-500"
+            task.status === "completed" && "bg-success",
+            task.status === "failed" && "bg-error",
+            task.status !== "completed" && task.status !== "failed" && "bg-info"
           )}
           style={{ width: `${progressPercent}%` }}
         />
@@ -292,10 +292,10 @@ export function TaskWizard({ task, className }: TaskProgressProps) {
 
       {/* Completed state */}
       {task.status === "completed" && (
-        <div className="p-6 rounded-md border bg-green-50 text-center">
-          <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-3" />
-          <h3 className="font-medium text-green-900 mb-1">{t("taskProgress.status.completed")}</h3>
-          <p className="text-sm text-green-700">
+        <div className="p-6 rounded-md border bg-success-light text-center">
+          <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-3" />
+          <h3 className="font-medium text-success mb-1">{t("taskProgress.status.completed")}</h3>
+          <p className="text-sm text-success">
             {t("taskProgress.automationCreated")}
           </p>
         </div>

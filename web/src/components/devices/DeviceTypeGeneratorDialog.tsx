@@ -378,9 +378,9 @@ export function DeviceTypeGeneratorDialog({
   }
 
   const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 0.8) return 'text-green-500'
-    if (confidence >= 0.5) return 'text-yellow-500'
-    return 'text-red-500'
+    if (confidence >= 0.8) return 'text-success'
+    if (confidence >= 0.5) return 'text-warning'
+    return 'text-error'
   }
 
   const getConfidenceLabel = (confidence: number) => {
@@ -576,14 +576,14 @@ export function DeviceTypeGeneratorDialog({
                         <TableCell>{metric.unit || '-'}</TableCell>
                         <TableCell className="text-center hidden sm:table-cell">
                           {metric.readable ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
+                            <CheckCircle2 className="h-4 w-4 text-success mx-auto" />
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-center hidden sm:table-cell">
                           {metric.writable ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
+                            <CheckCircle2 className="h-4 w-4 text-success mx-auto" />
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )}
@@ -737,29 +737,28 @@ export function DeviceTypeGeneratorDialog({
 
             {/* Validation Results */}
             {validation && (
-              <Card className={cn('p-4', validation.is_valid ? 'border-green-500' : 'border-yellow-500')}>
+              <Card className={cn('p-4', validation.is_valid ? 'border-success' : 'border-warning')}>
                 <h4 className="font-semibold flex items-center gap-2 mb-2">
                   {validation.is_valid ? (
                     <>
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                      {tGen('step4.validationPassed')}
+                      <CheckCircle2 className="h-4 w-4 text-success" />
                     </>
                   ) : (
                     <>
-                      <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                      <AlertTriangle className="h-4 w-4 text-warning" />
                       {tGen('step4.validationWarnings')}
                     </>
                   )}
                 </h4>
                 {validation.issues.length > 0 && (
-                  <ul className="list-disc list-inside text-sm text-red-500 mb-2">
+                  <ul className="list-disc list-inside text-sm text-error mb-2">
                     {validation.issues.map((issue, i) => (
                       <li key={i}>{issue}</li>
                     ))}
                   </ul>
                 )}
                 {validation.warnings.length > 0 && (
-                  <ul className="list-disc list-inside text-sm text-yellow-600">
+                  <ul className="list-disc list-inside text-sm text-warning">
                     {validation.warnings.map((warning, i) => (
                       <li key={i}>{warning}</li>
                     ))}

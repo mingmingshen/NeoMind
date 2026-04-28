@@ -24,7 +24,7 @@ export function ConnectionStatus({ state, className, onManualReconnect }: Connec
             </svg>
           ),
           text: t('connection.connected'),
-          bgClass: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800'
+          bgClass: 'bg-success-light text-success border-success-light dark:bg-success-light dark:text-success dark:border-success-light'
         }
       case 'reconnecting':
         return {
@@ -34,7 +34,7 @@ export function ConnectionStatus({ state, className, onManualReconnect }: Connec
             </svg>
           ),
           text: t('connection.reconnecting'),
-          bgClass: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800'
+          bgClass: 'bg-warning-light text-warning border-warning'
         }
       case 'error':
         return {

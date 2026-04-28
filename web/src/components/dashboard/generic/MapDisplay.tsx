@@ -124,8 +124,8 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
     switch (type) {
       case 'device':
         return {
-          bgColor: 'bg-green-500',
-          pingColor: 'bg-green-400',
+          bgColor: 'bg-success',
+          pingColor: 'bg-success',
           icon: MapPin,
         }
       case 'metric':
@@ -136,7 +136,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
         }
       case 'command':
         return {
-          bgColor: 'bg-blue-500',
+          bgColor: 'bg-info',
           pingColor: 'bg-blue-400',
           icon: Zap,
         }
@@ -148,8 +148,8 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
         }
       default:
         return {
-          bgColor: 'bg-green-500',
-          pingColor: 'bg-green-400',
+          bgColor: 'bg-success',
+          pingColor: 'bg-success',
           icon: MapPin,
         }
     }
@@ -158,10 +158,10 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
   // Status color override (for device online/offline status)
   const getStatusColor = (status?: string) => {
     switch (status) {
-      case 'online': return 'bg-green-500'
+      case 'online': return 'bg-success'
       case 'offline': return 'bg-muted-foreground'
-      case 'error': return 'bg-red-500'
-      case 'warning': return 'bg-yellow-500'
+      case 'error': return 'bg-error'
+      case 'warning': return 'bg-warning'
       default: return null
     }
   }
@@ -184,9 +184,9 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
             {baseInfo}
             <div className="flex items-center gap-1 text-muted-foreground">
               <span className={`w-2 h-2 rounded-full ${
-                marker.status === 'online' ? 'bg-green-500' :
+                marker.status === 'online' ? 'bg-success' :
                 marker.status === 'offline' ? 'bg-muted-foreground' :
-                marker.status === 'error' ? 'bg-red-500' : 'bg-yellow-500'
+                marker.status === 'error' ? 'bg-error' : 'bg-warning'
               }`}></span>
               <span>{marker.status || 'unknown'}</span>
             </div>
@@ -200,7 +200,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
         return (
           <>
             {baseInfo}
-            <div className="text-green-500 font-semibold">{t('mapDisplay.value')}: {marker.metricValue || '-'}</div>
+            <div className="text-success font-semibold">{t('mapDisplay.value')}: {marker.metricValue || '-'}</div>
             {marker.deviceName && (
               <div className="text-xs text-muted-foreground">{t('mapDisplay.device')}: {marker.deviceName}</div>
             )}
@@ -222,7 +222,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
             )}
             <Button
               size="sm"
-              className="h-7 text-xs bg-blue-500 hover:bg-blue-600 text-white"
+              className="h-7 text-xs bg-info hover:bg-blue-600 text-white"
               onClick={async (e) => {
                 e.stopPropagation()
                 const markerSourceId = marker.sourceId ?? marker.deviceId

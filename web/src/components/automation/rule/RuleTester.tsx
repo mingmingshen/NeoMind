@@ -214,7 +214,7 @@ export function RuleTester({
                       />
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                      <span className={simValue && typeof condition.threshold === 'number' && simValue.value > condition.threshold ? 'text-green-600 font-medium' : ''}>
+                      <span className={simValue && typeof condition.threshold === 'number' && simValue.value > condition.threshold ? 'text-success font-medium' : ''}>
                         {simValue?.value ?? 0}
                       </span>
                       <span className="text-muted-foreground">{condition.operator || '>'}</span>
@@ -235,12 +235,12 @@ export function RuleTester({
 
       {/* Test Result */}
       {testResult && (
-        <Card className={`p-4 ${testResult.triggered ? 'border-green-500 bg-green-50 dark:bg-green-950/20' : 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20'}`}>
+        <Card className={`p-4 ${testResult.triggered ? 'border-success bg-success-light dark:bg-success-light' : 'border-warning bg-warning-light'}`}>
           <div className="flex items-start gap-3">
             {testResult.triggered ? (
-              <Check className="h-5 w-5 text-green-600 mt-0.5" />
+              <Check className="h-5 w-5 text-success mt-0.5" />
             ) : (
-              <X className="h-5 w-5 text-yellow-600 mt-0.5" />
+              <X className="h-5 w-5 text-warning mt-0.5" />
             )}
             <div className="flex-1">
               <h4 className="font-semibold">

@@ -51,7 +51,7 @@ interface AgentListPanelProps {
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof CheckCircle2; color: string }> = {
   Active: { label: '运行中', icon: CheckCircle2, color: 'text-green-500' },
   Paused: { label: '已暂停', icon: XCircle, color: 'text-muted-foreground' },
-  Error: { label: '错误', icon: XCircle, color: 'text-red-500' },
+  Error: { label: '错误', icon: XCircle, color: 'text-error' },
   Executing: { label: '执行中', icon: Loader2, color: 'text-blue-500' },
 }
 
@@ -142,7 +142,7 @@ const AgentListItem = memo<AgentListItemProps>(({
             <Bot className="h-4 w-4" />
           </div>
           {agent.status === 'Executing' && (
-            <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-blue-500 rounded-full border-2 border-card" />
+            <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-info rounded-full border-2 border-card" />
           )}
         </div>
 

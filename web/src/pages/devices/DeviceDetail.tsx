@@ -55,7 +55,7 @@ function renderMetricValue(
   if (value === null || value === undefined) return <span className="text-muted-foreground">-</span>
   // Note: This is a helper function that will receive t through props when needed in i18n context
   // For now, we'll use the component's i18n context by moving this inside the component
-  if (typeof value === "boolean") return <span className={value ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>{value ? "Yes" : "No"}</span>
+  if (typeof value === "boolean") return <span className={value ? "text-success" : "text-error"}>{value ? "Yes" : "No"}</span>
   if (typeof value === "number") return <span className="font-semibold tabular-nums">{parseFloat(value.toFixed(2))}</span>
   if (typeof value === "string" && isBase64Image(value)) {
     return (
@@ -98,13 +98,13 @@ function renderMetricValue(
       // For small arrays of primitives, show all elements
       const elements = value.map((v, i) => {
         if (typeof v === 'string') {
-          return <span key={i} className="text-blue-600 dark:text-blue-400">"{v}"</span>
+          return <span key={i} className="text-info">"{v}"</span>
         }
         if (typeof v === 'number') {
-          return <span key={i} className="text-amber-600 dark:text-amber-400">{v}</span>
+          return <span key={i} className="text-warning">{v}</span>
         }
         if (typeof v === 'boolean') {
-          return <span key={i} className={v ? "text-green-600" : "text-red-600"}>{String(v)}</span>
+          return <span key={i} className={v ? "text-success" : "text-error"}>{String(v)}</span>
         }
         return <span key={i} className="text-muted-foreground">{String(v)}</span>
       })
@@ -292,7 +292,7 @@ export function DeviceDetail({
               )}>
                 <Zap className={cn(
                   "h-6 w-6",
-                  device.status === 'online' ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+                  device.status === 'online' ? "text-success" : "text-muted-foreground"
                 )} />
               </div>
               <div>
@@ -307,12 +307,12 @@ export function DeviceDetail({
             <div className={cn(
               "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm",
               device.status === 'online'
-                ? "bg-green-500/10 text-green-700 dark:text-green-400"
+                ? "bg-green-500/10 text-success"
                 : "bg-muted text-muted-foreground"
             )}>
               <span className={cn(
                 "h-2 w-2 rounded-full animate-pulse",
-                device.status === 'online' ? "bg-green-500" : "bg-muted-foreground"
+                device.status === 'online' ? "bg-success" : "bg-muted-foreground"
               )} />
               {device.status === 'online' ? t('devices:status.online') : t('devices:status.offline')}
             </div>

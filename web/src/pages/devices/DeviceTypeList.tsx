@@ -118,7 +118,7 @@ export function DeviceTypeList({
             case 'name':
               return (
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-blue-500/10 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-info-light text-info">
                     <Database className="h-4 w-4" />
                   </div>
                   <div className="min-w-0">
@@ -137,7 +137,7 @@ export function DeviceTypeList({
 
             case 'metrics':
               return (
-                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800">
+                <Badge variant="outline" className="text-xs bg-info-light text-info border-info">
                   {type.metrics?.length ?? type.metric_count ?? 0}
                 </Badge>
               )

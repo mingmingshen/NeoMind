@@ -349,7 +349,7 @@ export function ToggleSwitch({
 
         {/* Sending indicator */}
         {sending && (
-          <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+          <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-warning animate-pulse" />
         )}
 
         {/* Warning: no command configured */}
@@ -395,7 +395,7 @@ export function ToggleSwitch({
                       <div className="flex items-center justify-between">
                         <Label className="text-sm">
                           {param.display_name || param.name}
-                          {param.required && <span className="text-red-500 ml-1">*</span>}
+                          {param.required && <span className="text-error ml-1">*</span>}
                         </Label>
                         {(param.min !== undefined && param.min !== null || param.max !== undefined && param.max !== null) && (
                           <span className="text-xs text-muted-foreground">
@@ -416,9 +416,9 @@ export function ToggleSwitch({
 
               {/* All parameters have fixed values */}
               {!loadingParams && parameterDefinitions.length > 0 && parameterDefinitions.filter(p => p.default_value === undefined).length === 0 && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                  <Info className="h-4 w-4 text-green-600 dark:text-green-400" />
-                  <span className="text-sm text-green-700 dark:text-green-300">
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-success-light border border-success-light">
+                  <Info className="h-4 w-4 text-success dark:text-success" />
+                  <span className="text-sm text-success dark:text-success">
                     {t('commandButton.allParametersFixed')}
                   </span>
                 </div>

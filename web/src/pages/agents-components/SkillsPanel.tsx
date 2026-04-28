@@ -46,7 +46,7 @@ const categoryConfig: Record<
     color: string
   }
 > = {
-  device: { label: "Device", icon: Zap, color: "bg-blue-500/10 text-blue-600 border-blue-500/20" },
+  device: { label: "Device", icon: Zap, color: "bg-info-light text-info border-info" },
   rule: { label: "Rule", icon: Target, color: "bg-purple-500/10 text-purple-600 border-purple-500/20" },
   agent: { label: "Agent", icon: Wrench, color: "bg-green-500/10 text-green-600 border-green-500/20" },
   message: { label: "Message", icon: BookOpen, color: "bg-orange-500/10 text-orange-600 border-orange-500/20" },

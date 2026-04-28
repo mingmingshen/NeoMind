@@ -101,7 +101,7 @@ const categoryConfig = [
     defaultLabel: "User Profile",
     icon: User,
     description: "User preferences, habits and settings",
-    color: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+    color: "bg-info-light text-info border-info",
   },
   {
     id: "domain_knowledge",
