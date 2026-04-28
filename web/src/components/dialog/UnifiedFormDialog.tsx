@@ -321,7 +321,7 @@ export function UnifiedFormDialog({
           className={cn(
             'fixed left-1/2 top-1/2 z-50',
             'grid w-full gap-0',
-            'bg-background shadow-lg',
+            'bg-background border shadow-lg',
             'duration-200',
             'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
             'rounded-lg sm:rounded-xl',
