@@ -294,7 +294,7 @@ export function EditDeviceDialog({
   }
 
   // Desktop: Traditional dialog
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -487,6 +487,7 @@ export function EditDeviceDialog({
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }

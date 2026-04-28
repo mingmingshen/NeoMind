@@ -287,7 +287,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
   }
 
   // Desktop: Traditional dialog
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -452,6 +452,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }

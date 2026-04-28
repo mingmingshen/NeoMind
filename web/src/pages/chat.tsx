@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
+import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { shallow } from "zustand/shallow"
@@ -27,6 +28,7 @@ import { api } from "@/lib/api"
 import type { Message, ServerMessage, ChatImage } from "@/types"
 import type { SkillSummary, SkillListResponse } from "@/types/skill"
 import { cn } from "@/lib/utils"
+import { getPortalRoot } from "@/lib/portal"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
@@ -820,7 +822,7 @@ export function ChatPage() {
   return (
     <div className="fixed inset-0 flex flex-row overflow-hidden pt-[calc(4rem+env(safe-area-inset-top,0px))] lg:pt-[calc(4rem+env(safe-area-inset-top,0px))]">
       {/* Pending stream recovery dialog */}
-      {pendingStream?.hasPending && (
+      {pendingStream?.hasPending && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-80 backdrop-blur-sm">
           <div className="max-w-md w-full mx-4 bg-card border border-border rounded-lg shadow-lg p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -868,7 +870,8 @@ export function ChatPage() {
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        getPortalRoot()
       )}
 
       {/* Desktop Sidebar - always show when there are sessions or in chat mode */}

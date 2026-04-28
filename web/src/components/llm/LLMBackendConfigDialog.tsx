@@ -244,7 +244,7 @@ export function LLMBackendConfigDialog({
   }
 
   // Desktop: Traditional dialog
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -357,6 +357,7 @@ export function LLMBackendConfigDialog({
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }

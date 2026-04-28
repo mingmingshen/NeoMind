@@ -45,20 +45,20 @@ function StepDot({
   size?: 'default' | 'large'
 }) {
   const sizeClasses = size === 'large'
-    ? 'w-9 h-9 text-sm'
-    : 'w-6 h-6 text-xs'
+    ? 'w-10 h-10 text-sm'
+    : 'w-8 h-8 text-xs'
 
   return (
     <div
       className={cn(
         'rounded-full flex items-center justify-center font-medium transition-all shrink-0',
         sizeClasses,
-        status === 'pending' && 'bg-black/5 dark:bg-white/10 text-muted-foreground',
+        status === 'pending' && 'bg-muted text-muted-foreground border border-border',
         status === 'active' && [
-          'bg-primary text-primary-foreground',
-          'ring-4 ring-primary',
+          'bg-primary text-primary-foreground border border-primary',
+          size === 'large' ? 'ring-4 ring-primary/20' : 'ring-2 ring-primary/20',
         ],
-        status === 'completed' && 'bg-success text-white'
+        status === 'completed' && 'bg-muted text-primary border border-border'
       )}
     >
       {status === 'completed' ? (
@@ -89,42 +89,66 @@ export function VerticalStepper({
   onStepClick,
   className,
 }: VerticalStepperProps) {
-  const isMobile = useIsMobile()
-
   const getStepStatus = (step: Step): StepStatus => {
     if (completedSteps.includes(step.id)) return 'completed'
     if (currentStep === step.id) return 'active'
     return 'pending'
   }
 
-  return (
-    <nav className={cn('p-4 space-y-1', className)}>
-      {steps.map((step, index) => {
-        const status = getStepStatus(step)
-        const isClickable = onStepClick && (completedSteps.includes(step.id) || status === 'active')
-        const isPast = index < steps.findIndex(s => s.id === currentStep)
+  const currentIndex = steps.findIndex(s => s.id === currentStep)
 
-        return (
-          <div key={step.id} className="relative">
+  // Dot center offset: btn py-3(12px) + w-8/2(16px) = 28px from button top
+  const dotCenterOffset = '1.75rem'
+
+  return (
+    <nav className={cn('p-3', className)}>
+      <div className="relative">
+        {/* Continuous color track — starts at first dot center, ends at last dot center */}
+        <div
+          className="absolute w-0.5 rounded-full"
+          style={{
+            left: 'calc(0.5rem + 16px)', // btn px-2 + w-8/2
+            top: dotCenterOffset,
+            bottom: dotCenterOffset,
+          }}
+        >
+          {/* Background track */}
+          <div className="absolute inset-0 bg-border rounded-full" />
+          {/* Filled portion (completed steps) */}
+          {currentIndex > 0 && (
+            <div
+              className="absolute top-0 left-0 right-0 bg-primary rounded-full transition-all"
+              style={{
+                height: `${(currentIndex / (steps.length - 1)) * 100}%`
+              }}
+            />
+          )}
+        </div>
+
+        {/* Step items */}
+        {steps.map((step, index) => {
+          const status = getStepStatus(step)
+          const isClickable = onStepClick && (completedSteps.includes(step.id) || status === 'active')
+
+          return (
             <button
+              key={step.id}
               onClick={() => isClickable && onStepClick?.(step.id)}
               disabled={!isClickable}
               className={cn(
-                'w-full text-left rounded-xl transition-all',
-                'flex items-center gap-3 px-3 py-3',
-                status === 'active' && [
-                  'bg-white/60 dark:bg-white/5',
-                  'shadow-sm',
-                  'border border-border',
-                ],
-                status !== 'active' && isClickable && 'hover:bg-black/5 dark:hover:bg-white/5',
-                !isClickable && 'cursor-default opacity-60'
+                'relative w-full text-left transition-all',
+                'flex items-center gap-2.5 px-2 py-3 rounded-lg',
+                // Active: muted background
+                status === 'active' && 'bg-muted-30',
+                // Completed: subtle hover
+                status === 'completed' && isClickable && 'hover:bg-muted-20',
+                !isClickable && status === 'pending' && 'cursor-default'
               )}
             >
-              <StepDot status={status} icon={step.icon} size="large" />
+              <StepDot status={status} icon={step.icon} size="default" />
               <div className="flex-1 min-w-0">
                 <div className={cn(
-                  'text-sm font-medium truncate',
+                  'text-xs font-medium truncate',
                   status === 'active' && 'text-foreground',
                   status !== 'active' && 'text-muted-foreground'
                 )}>
@@ -132,21 +156,9 @@ export function VerticalStepper({
                 </div>
               </div>
             </button>
-
-            {/* Connector line */}
-            {index < steps.length - 1 && (
-              <div className="absolute left-[calc(1.5rem+18px)] top-[52px] h-3 w-px">
-                <div
-                  className={cn(
-                    'h-full w-px transition-colors',
-                    isPast || status === 'completed' ? 'bg-success' : 'bg-border'
-                  )}
-                />
-              </div>
-            )}
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </nav>
   )
 }
@@ -230,7 +242,7 @@ export function HorizontalStepper({
                 <div
                   className={cn(
                     'h-0.5 w-8 md:w-12 mx-2 rounded-full transition-colors shrink-0',
-                    (status === 'completed' || isPast) ? 'bg-success' : 'bg-border'
+                    (status === 'completed' || isPast) ? 'bg-primary' : 'bg-border'
                   )}
                 />
               )}

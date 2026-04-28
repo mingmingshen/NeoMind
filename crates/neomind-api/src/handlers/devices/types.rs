@@ -849,7 +849,6 @@ pub async fn import_cloud_device_types_handler(
         .map_err(|e| ErrorResponse::internal(format!("Failed to build HTTP client: {}", e)))?;
 
     let mut imported = 0;
-    let mut skipped = 0;
     let mut failed = 0;
     let mut failures = Vec::new();
 
@@ -880,29 +879,31 @@ pub async fn import_cloud_device_types_handler(
             }
         };
 
-        // Check if already exists (re-check for each import to reduce race condition window)
+        // Check if already exists
         let exists = state
             .devices
             .service
             .get_template(&template.device_type)
             .is_some();
 
-        if exists {
-            skipped += 1;
-            continue;
-        }
-
         // Save device_type ID before moving template
         let device_type_id_for_log = template.device_type.clone();
 
-        // Register the device type
+        // Register the device type (register_template is upsert - will overwrite if exists)
         match state.devices.service.register_template(template).await {
             Ok(()) => {
                 imported += 1;
-                tracing::info!(
-                    "Successfully imported device type: {}",
-                    device_type_id_for_log
-                );
+                if exists {
+                    tracing::info!(
+                        "Successfully updated device type from cloud: {}",
+                        device_type_id_for_log
+                    );
+                } else {
+                    tracing::info!(
+                        "Successfully imported device type: {}",
+                        device_type_id_for_log
+                    );
+                }
             }
             Err(e) => {
                 failed += 1;
@@ -916,7 +917,7 @@ pub async fn import_cloud_device_types_handler(
 
     ok(CloudImportResponse {
         imported,
-        skipped,
+        skipped: 0, // No longer skipping - existing types are updated
         failed,
         failures,
     })

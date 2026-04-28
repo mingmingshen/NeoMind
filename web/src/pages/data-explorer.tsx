@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { debounce } from '@/lib/utils/async'
+import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 import {
   Select,
   SelectContent,
@@ -14,16 +15,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogContentBody,
-  DialogFooter,
-} from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, Database, RefreshCw, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, X } from 'lucide-react'
+import { Search, Database, RefreshCw, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { UnifiedDataSourceInfo } from '@/types'
 import { useIsMobile } from '@/hooks/useMobile'
@@ -360,116 +353,116 @@ export function DataExplorerPage() {
         onTabChange={(v) => setActiveType(v)}
       />
 
-      <Dialog open={!!selectedSource} onOpenChange={(open) => !open && setSelectedSource(null)}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedSource && <span className="flex items-center gap-2">
-                <SourceTypeBadge type={selectedSource.source_type} />
-                {selectedSource.source_display_name}
-              </span>}
-            </DialogTitle>
-          </DialogHeader>
-          {selectedSource && (
-            <DialogContentBody className="space-y-4">
-              {/* Current Value */}
-              {selectedSource.current_value !== undefined && selectedSource.current_value !== null && (
-                <div className="bg-muted-30 rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Current Value</p>
-                  <p className="text-sm font-medium font-mono break-all overflow-hidden max-h-40">
-                    {typeof selectedSource.current_value === 'object'
-                      ? JSON.stringify(selectedSource.current_value, null, 2)
-                      : String(selectedSource.current_value)}
-                    {selectedSource.unit && <span className="font-normal text-muted-foreground ml-1">{selectedSource.unit}</span>}
-                  </p>
-                </div>
-              )}
-
-              {/* Metadata Grid */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Field</p>
-                  <p className="text-sm font-medium">{selectedSource.field_display_name}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Data Type</p>
-                  <Badge variant="secondary" className="text-[10px] mt-0.5">{selectedSource.data_type}</Badge>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Unit</p>
-                  <p className="text-sm">{selectedSource.unit || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Last Update</p>
-                  <p className="text-sm">{formatTime(selectedSource.last_update)}</p>
-                </div>
+      <UnifiedFormDialog
+        open={!!selectedSource}
+        onOpenChange={(open) => !open && setSelectedSource(null)}
+        title={selectedSource?.source_display_name || ''}
+        description={selectedSource?.source_type}
+        icon={<Database className="h-5 w-5" />}
+        width="xl"
+        showCancelButton={false}
+        submitLabel={t('common:close')}
+        onSubmit={async () => setSelectedSource(null)}
+      >
+        {selectedSource && (
+          <div className="space-y-4">
+            {/* Current Value */}
+            {selectedSource.current_value !== undefined && selectedSource.current_value !== null && (
+              <div className="bg-muted-30 rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-1">{t('data:currentValue', 'Current Value')}</p>
+                <p className="text-sm font-medium font-mono break-all overflow-hidden max-h-40">
+                  {typeof selectedSource.current_value === 'object'
+                    ? JSON.stringify(selectedSource.current_value, null, 2)
+                    : String(selectedSource.current_value)}
+                  {selectedSource.unit && <span className="font-normal text-muted-foreground ml-1">{selectedSource.unit}</span>}
+                </p>
               </div>
+            )}
 
-              {selectedSource.description && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Description</p>
-                  <p className="text-sm">{selectedSource.description}</p>
-                </div>
-              )}
-
-              {/* History Section */}
+            {/* Metadata Grid */}
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-1.5 text-sm font-medium">
-                    <History className="h-4 w-4" />
-                    History
-                  </div>
-                  <Select value={historyRange} onValueChange={setHistoryRange}>
-                    <SelectTrigger className="w-[100px] h-7 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1h">1 Hour</SelectItem>
-                      <SelectItem value="6h">6 Hours</SelectItem>
-                      <SelectItem value="24h">24 Hours</SelectItem>
-                      <SelectItem value="7d">7 Days</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {historyLoading ? (
-                  <div className="flex items-center justify-center h-24 text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    <span className="text-xs">Loading...</span>
-                  </div>
-                ) : historyData.length > 0 ? (
-                  <ScrollArea className="h-[240px] rounded border">
-                    <table className="w-full text-sm">
-                      <thead className="sticky top-0 bg-background">
-                        <tr className="border-b">
-                          <th className="text-left text-xs font-medium text-muted-foreground px-3 py-1.5">Timestamp</th>
-                          <th className="text-left text-xs font-medium text-muted-foreground px-3 py-1.5">Value</th>
-                          <th className="text-left text-xs font-medium text-muted-foreground px-3 py-1.5">Quality</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {historyData.map((point, i) => (
-                          <tr key={i} className="border-b last:border-0 hover:bg-muted-50">
-                            <td className="px-3 py-1.5 font-mono text-xs">{formatDateTime(point.timestamp)}</td>
-                            <td className="px-3 py-1.5 font-mono text-xs">{formatHistoryValue(point.value)}</td>
-                            <td className="px-3 py-1.5 text-xs text-muted-foreground">
-                              {point.quality !== null ? (point.quality * 100).toFixed(0) + '%' : '-'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </ScrollArea>
-                ) : (
-                  <p className="text-xs text-muted-foreground text-center py-6">
-                    No historical data available for this period
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">{t('data:field', 'Field')}</p>
+                <p className="text-sm font-medium">{selectedSource.field_display_name}</p>
               </div>
-            </DialogContentBody>
-          )}
-        </DialogContent>
-      </Dialog>
+              <div>
+                <p className="text-xs text-muted-foreground">{t('data:dataType', 'Data Type')}</p>
+                <Badge variant="secondary" className="text-[10px] mt-0.5">{selectedSource.data_type}</Badge>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{t('data:unit', 'Unit')}</p>
+                <p className="text-sm">{selectedSource.unit || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{t('data:lastUpdate', 'Last Update')}</p>
+                <p className="text-sm">{formatTime(selectedSource.last_update)}</p>
+              </div>
+            </div>
+
+            {selectedSource.description && (
+              <div>
+                <p className="text-xs text-muted-foreground">{t('data:description', 'Description')}</p>
+                <p className="text-sm">{selectedSource.description}</p>
+              </div>
+            )}
+
+            {/* History Section */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <History className="h-4 w-4" />
+                  {t('data:history', 'History')}
+                </div>
+                <Select value={historyRange} onValueChange={setHistoryRange}>
+                  <SelectTrigger className="w-[100px] h-7 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1h">{t('data:range.1h', '1 Hour')}</SelectItem>
+                    <SelectItem value="6h">{t('data:range.6h', '6 Hours')}</SelectItem>
+                    <SelectItem value="24h">{t('data:range.24h', '24 Hours')}</SelectItem>
+                    <SelectItem value="7d">{t('data:range.7d', '7 Days')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {historyLoading ? (
+                <div className="flex items-center justify-center h-24 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <span className="text-xs">{t('common:loading', 'Loading...')}</span>
+                </div>
+              ) : historyData.length > 0 ? (
+                <ScrollArea className="h-[240px] rounded border">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-background">
+                      <tr className="border-b">
+                        <th className="text-left text-xs font-medium text-muted-foreground px-3 py-1.5">{t('data:timestamp', 'Timestamp')}</th>
+                        <th className="text-left text-xs font-medium text-muted-foreground px-3 py-1.5">{t('data:value', 'Value')}</th>
+                        <th className="text-left text-xs font-medium text-muted-foreground px-3 py-1.5">{t('data:quality', 'Quality')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyData.map((point, i) => (
+                        <tr key={i} className="border-b last:border-0 hover:bg-muted-50">
+                          <td className="px-3 py-1.5 font-mono text-xs">{formatDateTime(point.timestamp)}</td>
+                          <td className="px-3 py-1.5 font-mono text-xs">{formatHistoryValue(point.value)}</td>
+                          <td className="px-3 py-1.5 text-xs text-muted-foreground">
+                            {point.quality !== null ? (point.quality * 100).toFixed(0) + '%' : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </ScrollArea>
+              ) : (
+                <p className="text-xs text-muted-foreground text-center py-6">
+                  {t('data:noHistory', 'No historical data available for this period')}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </UnifiedFormDialog>
     </>
   )
 }

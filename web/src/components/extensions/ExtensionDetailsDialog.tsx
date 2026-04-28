@@ -628,7 +628,7 @@ export function ExtensionDetailsDialog({
   }
 
   // Desktop: Traditional dialog
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -707,6 +707,7 @@ export function ExtensionDetailsDialog({
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }

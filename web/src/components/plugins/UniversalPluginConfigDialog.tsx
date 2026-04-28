@@ -747,7 +747,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   }
 
   // Desktop: Traditional dialog
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -807,6 +807,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }

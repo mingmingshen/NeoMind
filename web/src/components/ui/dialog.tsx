@@ -103,9 +103,13 @@ const DialogContent = React.forwardRef<
   }
 
   // Desktop: centered dialog
+  // Extract z-index from className for nested dialog support
+  const zIndexMatch = className?.match(/z-\[?(\d+)\]?/)
+  const overlayClassName = zIndexMatch ? `z-[${zIndexMatch[1]}]` : undefined
+
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         ref={ref}
         className={cn(

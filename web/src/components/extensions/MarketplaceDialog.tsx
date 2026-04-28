@@ -511,7 +511,7 @@ export function MarketplaceDialog({
   }
 
   // Desktop: Traditional dialog
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -574,7 +574,8 @@ export function MarketplaceDialog({
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }
 

@@ -52,6 +52,8 @@ export interface UnifiedFormDialogProps {
   cancelLabel?: string
   /** Whether to show the cancel button (default: true) */
   showCancelButton?: boolean
+  /** Whether to disable the submit button */
+  submitDisabled?: boolean
   /** Form content */
   children: ReactNode
   /** Additional class name for the dialog content */
@@ -106,6 +108,7 @@ export function UnifiedFormDialog({
   submitLabel,
   cancelLabel,
   showCancelButton = true,
+  submitDisabled = false,
   children,
   className,
   footer,
@@ -204,7 +207,7 @@ export function UnifiedFormDialog({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [open, isSubmitting, preventCloseOnSubmit, handleClose])
 
-  const isDisabled = loading || isSubmitting
+  const isDisabled = loading || isSubmitting || submitDisabled
 
   // Mobile full-screen render
   if (isMobile && fullScreenOnMobile) {
@@ -305,7 +308,7 @@ export function UnifiedFormDialog({
   }
 
   // Desktop render
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -411,7 +414,8 @@ export function UnifiedFormDialog({
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }
 

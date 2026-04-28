@@ -536,7 +536,7 @@ export function ExecutionDetailDialog({
   }
 
   // Desktop: Traditional dialog
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -768,6 +768,7 @@ export function ExecutionDetailDialog({
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }

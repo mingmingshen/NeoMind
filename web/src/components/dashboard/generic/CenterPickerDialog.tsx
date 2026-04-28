@@ -173,7 +173,7 @@ export function CenterPickerDialog({
   }
 
   // Desktop: Traditional dialog (following AddDeviceDialog pattern)
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -286,6 +286,7 @@ export function CenterPickerDialog({
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }

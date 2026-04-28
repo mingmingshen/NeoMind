@@ -262,7 +262,7 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
   }
 
   // Desktop: Traditional dialog
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -402,6 +402,7 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }

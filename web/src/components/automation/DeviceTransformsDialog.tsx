@@ -455,7 +455,7 @@ export function DeviceTransformsDialog({
   }
 
   // Desktop: Traditional dialog
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -641,6 +641,7 @@ export function DeviceTransformsDialog({
           devices={devices}
         />
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }

@@ -306,7 +306,7 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
   }
 
   // Desktop: Traditional dialog
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -458,7 +458,8 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }
 

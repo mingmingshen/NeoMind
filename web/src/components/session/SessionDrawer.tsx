@@ -3,7 +3,9 @@
  * Simplified session management with auto-naming and auto-cleanup
  */
 
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useEffect, useRef, memo } from "react"
+import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import {
   X,
@@ -207,7 +209,7 @@ const SessionDrawerMemo = memo(function SessionDrawer({
 
   const totalSessions = filteredSessions.length
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -393,7 +395,8 @@ const SessionDrawerMemo = memo(function SessionDrawer({
           </p>
         </div>
       </div>
-    </>
+    </>,
+    getPortalRoot()
   )
 })
 

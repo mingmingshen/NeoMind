@@ -659,7 +659,7 @@ export function LayerEditorDialog({
   }
 
   // Desktop: Traditional dialog (following AddDeviceDialog pattern)
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -764,6 +764,7 @@ export function LayerEditorDialog({
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }

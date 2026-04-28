@@ -4,6 +4,7 @@
  * - Mobile: Slide-out drawer (rendered via Portal to avoid stacking context issues)
  */
 
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useEffect, useRef, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate, useParams } from "react-router-dom"
@@ -640,7 +641,6 @@ export function SessionSidebar({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>,
-    document.body
+    </>, getPortalRoot()
   )
 }

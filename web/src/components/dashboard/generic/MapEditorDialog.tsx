@@ -385,7 +385,7 @@ export function MapEditorDialog({
   }
 
   // Desktop: Traditional dialog (following AddDeviceDialog pattern)
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       {open && (
@@ -480,6 +480,7 @@ export function MapEditorDialog({
           </div>
         </div>
       )}
-    </>
+    </>,
+    getPortalRoot()
   )
 }
