@@ -41,47 +41,47 @@ export type IndicatorFontWeight = keyof typeof indicatorFontWeight
 export const indicatorColors = {
   // Success/On state - vibrant green
   success: {
-    base: statusColors.success,           // oklch(0.646 0.222 142.5)
-    text: 'text-emerald-600 dark:text-emerald-400',
-    bg: 'bg-emerald-500/10',
-    border: 'border-emerald-500/20',
-    ring: 'ring-emerald-500/20',
-    shadow: 'shadow-emerald-500/20',
+    base: statusColors.success,
+    text: 'text-success',
+    bg: 'bg-success-light',
+    border: 'border-success/20',
+    ring: 'ring-success/20',
+    shadow: 'shadow-success/20',
   },
 
   // Warning state - warm amber
   warning: {
-    base: statusColors.warning,           // oklch(0.646 0.222 85.85)
-    text: 'text-amber-600 dark:text-amber-400',
-    bg: 'bg-amber-500/10',
-    border: 'border-amber-500/20',
-    ring: 'ring-amber-500/20',
-    shadow: 'shadow-amber-500/20',
+    base: statusColors.warning,
+    text: 'text-warning',
+    bg: 'bg-warning-light',
+    border: 'border-warning/20',
+    ring: 'ring-warning/20',
+    shadow: 'shadow-warning/20',
   },
 
   // Error state - clear red
   error: {
-    base: statusColors.error,             // oklch(0.576 0.222 25.85)
-    text: 'text-rose-600 dark:text-rose-400',
-    bg: 'bg-rose-500/10',
-    border: 'border-rose-500/20',
-    ring: 'ring-rose-500/20',
-    shadow: 'shadow-rose-500/20',
+    base: statusColors.error,
+    text: 'text-error',
+    bg: 'bg-error-light',
+    border: 'border-error/20',
+    ring: 'ring-error/20',
+    shadow: 'shadow-error/20',
   },
 
   // Info state - calm blue
   info: {
-    base: statusColors.info,              // oklch(0.646 0.222 264.38)
-    text: 'text-cyan-600 dark:text-cyan-400',
-    bg: 'bg-cyan-500/10',
-    border: 'border-cyan-500/20',
-    ring: 'ring-cyan-500/20',
-    shadow: 'shadow-cyan-500/20',
+    base: statusColors.info,
+    text: 'text-info',
+    bg: 'bg-info-light',
+    border: 'border-info/20',
+    ring: 'ring-info/20',
+    shadow: 'shadow-info/20',
   },
 
   // Neutral/Off state - subtle gray
   neutral: {
-    base: statusColors.neutral,           // oklch(0.551 0.0 264.38)
+    base: statusColors.neutral,
     text: 'text-muted-foreground',
     bg: 'bg-muted-50',
     border: 'border-border',
@@ -91,7 +91,7 @@ export const indicatorColors = {
 
   // Primary accent - brand color
   primary: {
-    base: chartColors[1],                 // oklch(0.646 0.222 264.38)
+    base: chartColors[1],
     text: 'text-primary',
     bg: 'bg-muted',
     border: 'border-border',

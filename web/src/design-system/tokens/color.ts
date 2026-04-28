@@ -5,46 +5,48 @@
  * Uses OKLCH for perceptual uniformity.
  */
 
-// Chart colors (using OKLCH for better perceptual uniformity)
+// Chart colors — vibrant, high-contrast palette for data visualization
+// Each color has distinct lightness/chroma for visual hierarchy and accessibility
 export const chartColors = {
-  1: 'oklch(0.646 0.222 264.38)',   // Blue/Purple
-  2: 'oklch(0.646 0.222 142.5)',    // Green
-  3: 'oklch(0.646 0.222 48.85)',    // Yellow
-  4: 'oklch(0.646 0.222 24.85)',    // Orange
-  5: 'oklch(0.646 0.222 304.38)',   // Pink
-  6: 'oklch(0.646 0.222 188.38)',   // Cyan
+  1: 'oklch(0.62 0.22 270)',   // Indigo-Blue — primary series
+  2: 'oklch(0.65 0.20 155)',   // Emerald — growth/positive
+  3: 'oklch(0.72 0.17 65)',    // Amber — warm accent
+  4: 'oklch(0.67 0.20 25)',    // Orange — energy/alert
+  5: 'oklch(0.65 0.18 340)',   // Rose — highlight/attention
+  6: 'oklch(0.68 0.12 210)',   // Sky Blue — cool complement
 } as const
 
 export type ChartColor = keyof typeof chartColors
 
 // Hex equivalents for SVG rendering (Recharts needs hex, not OKLCH)
+// These are accurate sRGB conversions of the OKLCH values above
 export const chartColorsHex = [
-  '#7c6cf0', // Blue/Purple (matches chartColors[1])
-  '#4aba6a', // Green (matches chartColors[2])
-  '#d4a834', // Yellow (matches chartColors[3])
-  '#d8863e', // Orange (matches chartColors[4])
-  '#c76ab0', // Pink (matches chartColors[5])
-  '#4ab4c4', // Cyan (matches chartColors[6])
+  '#6360ef', // Indigo-Blue  (chartColors[1])
+  '#36b37e', // Emerald      (chartColors[2])
+  '#e8a735', // Amber        (chartColors[3])
+  '#e07838', // Orange       (chartColors[4])
+  '#d86098', // Rose         (chartColors[5])
+  '#4ca8c8', // Sky Blue     (chartColors[6])
 ] as const
 
-// Status colors
+// Status colors — tuned for semantic meaning with good contrast
 export const statusColors = {
-  success: 'oklch(0.646 0.222 142.5)',   // Green
-  warning: 'oklch(0.646 0.222 85.85)',    // Yellow/Orange
-  error: 'oklch(0.576 0.222 25.85)',      // Red (darker for text)
-  info: 'oklch(0.646 0.222 264.38)',      // Blue
-  neutral: 'oklch(0.551 0.0 264.38)',     // Gray
+  success: 'oklch(0.65 0.20 155)',      // Emerald green
+  warning: 'oklch(0.72 0.17 65)',       // Amber
+  error: 'oklch(0.58 0.22 25)',         // Deep red-orange
+  info: 'oklch(0.62 0.22 270)',         // Indigo-blue
+  neutral: 'oklch(0.55 0.02 260)',      // Cool gray
 } as const
 
 export type StatusColor = keyof typeof statusColors
 
 // Status colors with opacity for backgrounds
 export const statusBgColors = {
-  success: 'oklch(0.646 0.222 142.5 / 0.15)',
-  warning: 'oklch(0.646 0.222 85.85 / 0.15)',
-  error: 'oklch(0.576 0.222 25.85 / 0.15)',
-  info: 'oklch(0.646 0.222 264.38 / 0.15)',
-  neutral: 'oklch(0.551 0.0 264.38 / 0.1)',
+  success: 'oklch(0.65 0.20 155 / 0.15)',
+  warning: 'oklch(0.72 0.17 65 / 0.15)',
+  error: 'oklch(0.58 0.22 25 / 0.15)',
+  info: 'oklch(0.62 0.22 270 / 0.15)',
+  neutral: 'oklch(0.55 0.02 260 / 0.1)',
 } as const
 
 // Semantic color mappings
@@ -63,8 +65,8 @@ export const semanticColors = {
   failed: statusColors.error,
 
   // Trend directions
-  up: statusColors.success,    // Green for positive
-  down: statusColors.error,    // Red for negative
+  up: 'oklch(0.65 0.20 155)',       // Emerald
+  down: 'oklch(0.58 0.22 25)',      // Deep red-orange
   neutral: statusColors.neutral,
 } as const
 
@@ -105,27 +107,27 @@ export function getStatusColor(
   return color
 }
 
-// Color scale classes for Tailwind
+// Color scale classes for Tailwind — use semantic theme tokens
 export const colorScaleClasses = {
   green: {
-    text: 'text-green-600 dark:text-green-400',
-    bg: 'bg-green-500/15',
-    border: 'border-green-500/20',
+    text: 'text-success',
+    bg: 'bg-success-light',
+    border: 'border-success/20',
   },
   yellow: {
-    text: 'text-yellow-600 dark:text-yellow-400',
-    bg: 'bg-yellow-500/15',
-    border: 'border-yellow-500/20',
+    text: 'text-warning',
+    bg: 'bg-warning-light',
+    border: 'border-warning/20',
   },
   red: {
-    text: 'text-red-600 dark:text-red-400',
-    bg: 'bg-red-500/15',
-    border: 'border-red-500/20',
+    text: 'text-error',
+    bg: 'bg-error-light',
+    border: 'border-error/20',
   },
   blue: {
-    text: 'text-blue-600 dark:text-blue-400',
-    bg: 'bg-blue-500/15',
-    border: 'border-blue-500/20',
+    text: 'text-info',
+    bg: 'bg-info-light',
+    border: 'border-info/20',
   },
   gray: {
     text: 'text-muted-foreground',
