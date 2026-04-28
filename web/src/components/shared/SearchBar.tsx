@@ -199,7 +199,7 @@ export function SearchBar({ placeholder }: SearchBarProps) {
                     <div className="flex items-center gap-2">
                       <span className="font-medium truncate">{result.title}</span>
                       <span
-                        className={`text-xs px-1.5 py-0.5 rounded text-white ${getTypeColor(
+                        className={`text-xs px-1.5 py-0.5 rounded text-primary-foreground ${getTypeColor(
                           result.type
                         )}`}
                       >

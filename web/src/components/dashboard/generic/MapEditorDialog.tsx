@@ -258,12 +258,12 @@ export function MapEditorDialog({
 
         <div className={cn(
           'w-8 h-8 rounded-full flex items-center justify-center',
-          config.bgColor === 'bg-info' && 'bg-info text-white',
-          config.bgColor === 'bg-success' && 'bg-success text-white',
-          config.bgColor === 'bg-accent-orange' && 'bg-accent-orange text-white',
-          config.bgColor === 'bg-accent-purple' && 'bg-accent-purple text-white',
+          config.bgColor === 'bg-info' && 'bg-info text-primary-foreground',
+          config.bgColor === 'bg-success' && 'bg-success text-primary-foreground',
+          config.bgColor === 'bg-accent-orange' && 'bg-accent-orange text-primary-foreground',
+          config.bgColor === 'bg-accent-purple' && 'bg-accent-purple text-primary-foreground',
         )}>
-          <Icon className="h-4 w-4 text-white" />
+          <Icon className="h-4 w-4 text-primary-foreground" />
         </div>
 
         <div className="flex-1 min-w-0">

@@ -158,8 +158,8 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
               {/* Step Number Badge */}
               <div className={cn(
                 "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
-                status === "completed" && "bg-success text-white",
-                status === "active" && "bg-info text-white",
+                status === "completed" && "bg-success text-primary-foreground",
+                status === "active" && "bg-info text-primary-foreground",
                 status === "pending" && "bg-muted text-muted-foreground"
               )}>
                 {index + 1}

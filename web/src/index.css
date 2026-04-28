@@ -418,10 +418,7 @@ a {
     border: none !important;
   }
 
-  /* Exception: Checkbox component - no border */
-  [role="checkbox"] {
-    border: none !important;
-  }
+  /* Checkbox border is handled by the Checkbox component itself */
 
   /* Exception: Tabs component - no border */
   [role="tablist"],

@@ -83,19 +83,19 @@ function getTypeConfig(t: (key: string) => string) {
     device: {
       label: t('customLayer.device'),
       icon: MapPin,
-      color: 'text-white',
+      color: 'text-primary-foreground',
       bgColor: 'bg-success',
     },
     metric: {
       label: t('customLayer.metric'),
       icon: Activity,
-      color: 'text-white',
+      color: 'text-primary-foreground',
       bgColor: 'bg-accent-purple',
     },
     command: {
       label: t('customLayer.command'),
       icon: Zap,
-      color: 'text-white',
+      color: 'text-primary-foreground',
       bgColor: 'bg-info',
     },
     text: {
@@ -107,7 +107,7 @@ function getTypeConfig(t: (key: string) => string) {
     icon: {
       label: t('customLayer.iconLabel'),
       icon: Sparkles,
-      color: 'text-white',
+      color: 'text-primary-foreground',
       bgColor: 'bg-accent-orange',
     },
   } as const

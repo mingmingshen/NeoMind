@@ -107,8 +107,8 @@ export function ValidationBadge({ count, type = 'error', onClick }: ValidationBa
 
   const styles = {
     error: 'bg-destructive text-destructive-foreground',
-    warning: 'bg-warning text-white',
-    info: 'bg-info text-white',
+    warning: 'bg-warning text-primary-foreground',
+    info: 'bg-info text-primary-foreground',
   }
 
   return (

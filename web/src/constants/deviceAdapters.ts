@@ -26,7 +26,7 @@ export const ADAPTER_TYPES: AdapterType[] = [
     name: 'HTTP (Polling)',
     description: 'Poll data from device REST APIs on a schedule',
     icon: 'Radio',
-    icon_bg: 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400',
+    icon_bg: 'bg-accent-orange-light text-accent-orange',
     mode: 'pull',
     can_add_multiple: true,
     builtin: true,

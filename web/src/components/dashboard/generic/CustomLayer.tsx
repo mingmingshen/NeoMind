@@ -153,19 +153,19 @@ interface LayerItemComponentProps {
 const TYPE_CONFIG = {
   device: {
     icon: MapPin,
-    color: 'text-white',
+    color: 'text-primary-foreground',
     bgColor: 'bg-success',
     borderColor: 'border-success',
   },
   metric: {
     icon: Activity,
-    color: 'text-white',
+    color: 'text-primary-foreground',
     bgColor: 'bg-accent-purple',
     borderColor: 'border-accent-purple',
   },
   command: {
     icon: Zap,
-    color: 'text-white',
+    color: 'text-primary-foreground',
     bgColor: 'bg-info',
     borderColor: 'border-info',
   },
@@ -177,13 +177,13 @@ const TYPE_CONFIG = {
   },
   icon: {
     icon: Sparkles,
-    color: 'text-white',
+    color: 'text-primary-foreground',
     bgColor: 'bg-accent-orange',
     borderColor: 'border-accent-orange',
   },
   component: {
     icon: Layers,
-    color: 'text-white',
+    color: 'text-primary-foreground',
     bgColor: 'bg-accent-cyan',
     borderColor: 'border-accent-cyan',
   },
@@ -579,7 +579,7 @@ function LayerItemComponent({
                 </div>
                 <Button
                   size="sm"
-                  className="w-full mt-2 bg-info hover:bg-info/90 text-white"
+                  className="w-full mt-2 bg-info hover:bg-info/90 text-primary-foreground"
                   onClick={async (e) => {
                     e.stopPropagation()
                     if (onExecuteCommand && item.deviceId && item.command) {

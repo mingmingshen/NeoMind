@@ -238,11 +238,11 @@ export function getStatusColorClass(
   const statusLower = status.toLowerCase()
 
   const statusColors: Record<string, string> = {
-    online: 'text-green-500',
-    active: 'text-green-500',
-    enabled: 'text-green-500',
-    success: 'text-green-500',
-    completed: 'text-green-500',
+    online: 'text-success',
+    active: 'text-success',
+    enabled: 'text-success',
+    success: 'text-success',
+    completed: 'text-success',
 
     offline: 'text-muted-foreground',
     inactive: 'text-muted-foreground',
@@ -250,18 +250,18 @@ export function getStatusColorClass(
     unknown: 'text-muted-foreground',
     idle: 'text-muted-foreground',
 
-    error: 'text-red-500',
-    failed: 'text-red-500',
-    danger: 'text-red-500',
+    error: 'text-error',
+    failed: 'text-error',
+    danger: 'text-error',
 
-    warning: 'text-yellow-500',
-    pending: 'text-yellow-500',
-    paused: 'text-yellow-500',
+    warning: 'text-warning',
+    pending: 'text-warning',
+    paused: 'text-warning',
 
-    info: 'text-blue-500',
-    running: 'text-blue-500',
-    loading: 'text-blue-500',
-    busy: 'text-blue-500',
+    info: 'text-info',
+    running: 'text-info',
+    loading: 'text-info',
+    busy: 'text-info',
   }
 
   return statusColors[statusLower] || 'text-muted-foreground'
@@ -274,22 +274,22 @@ export function getStatusBgClass(status: string): string {
   const statusLower = status.toLowerCase()
 
   const bgColors: Record<string, string> = {
-    online: 'bg-green-500/15',
-    active: 'bg-green-500/15',
-    success: 'bg-green-500/15',
+    online: 'bg-success-light',
+    active: 'bg-success-light',
+    success: 'bg-success-light',
 
     offline: 'bg-muted',
     idle: 'bg-muted',
 
-    error: 'bg-red-500/15',
-    failed: 'bg-red-500/15',
+    error: 'bg-error-light',
+    failed: 'bg-error-light',
 
-    warning: 'bg-yellow-500/15',
-    pending: 'bg-yellow-500/15',
+    warning: 'bg-warning-light',
+    pending: 'bg-warning-light',
 
-    info: 'bg-blue-500/15',
-    running: 'bg-blue-500/15',
-    loading: 'bg-blue-500/15',
+    info: 'bg-info-light',
+    running: 'bg-info-light',
+    loading: 'bg-info-light',
   }
 
   return bgColors[statusLower] || 'bg-muted'

@@ -9,15 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingState } from '@/components/shared/LoadingState'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogContentBody,
-} from '@/components/ui/dialog'
+import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -332,7 +324,7 @@ export function MessageChannelsTab({
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className={`w-8 h-8 rounded ${config.color} flex items-center justify-center text-white text-xs font-bold`}>
+                      <div className={`w-8 h-8 rounded ${config.color} flex items-center justify-center text-primary-foreground text-xs font-bold`}>
                         {channel.channel_type[0].toUpperCase()}
                       </div>
                       <CardTitle className="text-base">{channel.name}</CardTitle>
@@ -392,55 +384,46 @@ export function MessageChannelsTab({
       )}
 
       {/* Create Channel Dialog */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-md flex flex-col">
-          <DialogHeader>
-            <DialogTitle>{t('messages.channels.createTitle')}</DialogTitle>
-            <DialogDescription>
-              {t('messages.channels.createDescription')}
-            </DialogDescription>
-          </DialogHeader>
+      <UnifiedFormDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        title={t('messages.channels.createTitle')}
+        description={t('messages.channels.createDescription')}
+        width="sm"
+        onSubmit={handleCreateChannel}
+        submitDisabled={!newChannelName.trim()}
+        submitLabel={t('common:create')}
+      >
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="channel-name">{t('messages.channels.name')}</Label>
+            <Input
+              id="channel-name"
+              value={newChannelName}
+              onChange={(e) => setNewChannelName(e.target.value)}
+              placeholder={t('messages.channels.channelNamePlaceholder')}
+            />
+          </div>
 
-          <DialogContentBody className="space-y-4 px-4 pt-6 pb-4 sm:px-6">
-            <div>
-              <Label htmlFor="channel-name">{t('messages.channels.name')}</Label>
-              <Input
-                id="channel-name"
-                value={newChannelName}
-                onChange={(e) => setNewChannelName(e.target.value)}
-                placeholder={t('messages.channels.channelNamePlaceholder')}
-              />
-            </div>
+          <div>
+            <Label htmlFor="channel-type">{t('messages.channels.type')}</Label>
+            <Select value={newChannelType} onValueChange={setNewChannelType}>
+              <SelectTrigger id="channel-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {channelTypes.map((ct) => (
+                  <SelectItem key={ct.id} value={ct.id}>
+                    {ct.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-            <div>
-              <Label htmlFor="channel-type">{t('messages.channels.type')}</Label>
-              <Select value={newChannelType} onValueChange={setNewChannelType}>
-                <SelectTrigger id="channel-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {channelTypes.map((ct) => (
-                    <SelectItem key={ct.id} value={ct.id}>
-                      {ct.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {renderConfigFields()}
-          </DialogContentBody>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-              {t('common:cancel')}
-            </Button>
-            <Button onClick={handleCreateChannel} disabled={!newChannelName.trim()}>
-              {t('common:create')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          {renderConfigFields()}
+        </div>
+      </UnifiedFormDialog>
     </div>
   )
 }

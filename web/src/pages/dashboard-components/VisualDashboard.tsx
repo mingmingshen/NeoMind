@@ -4333,7 +4333,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                             <div className={`px-3 py-2 ${config.bgColor} border-b ${config.borderColor} flex items-center justify-between`}>
                               <div className="flex items-center gap-2">
                                 <div className={`w-5 h-5 rounded-full ${config.color} flex items-center justify-center`}>
-                                  <Icon className="h-4 w-4 text-white" />
+                                  <Icon className="h-4 w-4 text-primary-foreground" />
                                 </div>
                                 <span className="text-sm font-medium">{config.label}</span>
                                 <span className="text-xs text-muted-foreground">({typeBindings.length})</span>
@@ -4749,7 +4749,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                             <div className={`px-3 py-2 ${typeConfig.bgColor} border-b ${typeConfig.borderColor} flex items-center justify-between`}>
                               <div className="flex items-center gap-2">
                                 <div className={`w-5 h-5 rounded-full ${typeConfig.color} flex items-center justify-center`}>
-                                  <Icon className="h-4 w-4 text-white" />
+                                  <Icon className="h-4 w-4 text-primary-foreground" />
                                 </div>
                                 <span className="text-sm font-medium">{typeConfig.label}</span>
                                 <span className="text-xs text-muted-foreground">({typeBindings.length})</span>

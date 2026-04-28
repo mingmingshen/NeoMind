@@ -223,7 +223,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
             )}
             <Button
               size="sm"
-              className="h-7 text-xs bg-info hover:bg-info/90 text-white"
+              className="h-7 text-xs bg-info hover:bg-info/90 text-primary-foreground"
               onClick={async (e) => {
                 e.stopPropagation()
                 const markerSourceId = marker.sourceId ?? marker.deviceId
@@ -274,11 +274,11 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
           finalBgColor,
           'h-6 w-6 border-2 border-background shadow-sm',
           'group-hover:scale-125 transition-transform',
-          isSelected && 'ring-2 ring-white ring-offset-2'
+          isSelected && 'ring-2 ring-primary-foreground ring-offset-2'
         )}
       >
         {/* Icon inside marker */}
-        <Icon className="h-4 w-4 text-white" strokeWidth={2.5} />
+        <Icon className="h-4 w-4 text-primary-foreground" strokeWidth={2.5} />
       </span>
 
       {/* Enhanced tooltip - always visible when selected, or on hover */}

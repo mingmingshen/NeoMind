@@ -580,8 +580,8 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
   const isLongDesc = step.description.length > 300
   const displayDesc = descExpanded ? step.description : (isLongDesc ? step.description.slice(0, 300) + '...' : step.description)
 
-  const numberBg = isError ? 'bg-error text-white' :
-                    isThought ? 'bg-info text-white' :
+  const numberBg = isError ? 'bg-error text-primary-foreground' :
+                    isThought ? 'bg-info text-primary-foreground' :
                     'bg-primary text-primary-foreground'
   const borderColor = isError ? 'border-error' :
                       isThought ? 'border-info-light' :
