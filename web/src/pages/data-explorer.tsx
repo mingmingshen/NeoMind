@@ -314,11 +314,13 @@ export function DataExplorerPage() {
               <div className="flex items-center gap-2">
                 {sourceFilter}
                 <div className="relative">
-                  {isSearchPending ? (
-                    <Loader2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
-                  ) : (
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  )}
+                  <span className="absolute left-2.5 top-0 bottom-0 flex items-center">
+                    {isSearchPending ? (
+                      <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </span>
                   <Input
                     placeholder={t('data:search', 'Search data sources...')}
                     value={search}

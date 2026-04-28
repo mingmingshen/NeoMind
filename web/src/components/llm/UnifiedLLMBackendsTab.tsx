@@ -64,7 +64,7 @@ const LLM_PROVIDER_CONFIG: Record<string, {
   },
   qwen: {
     icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-violet-100 text-violet-700 dark:bg-violet-900/20 dark:text-violet-400',
+    iconBg: 'bg-accent-indigo-light text-accent-indigo',
   },
   deepseek: {
     icon: <Server className="h-6 w-6" />,

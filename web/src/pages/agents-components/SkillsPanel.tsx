@@ -50,7 +50,7 @@ const categoryConfig: Record<
   rule: { label: "Rule", icon: Target, color: "bg-accent-purple-light text-accent-purple border-accent-purple-light" },
   agent: { label: "Agent", icon: Wrench, color: "bg-success-light text-success border-success-light" },
   message: { label: "Message", icon: BookOpen, color: "bg-accent-orange-light text-accent-orange border-accent-orange-light" },
-  extension: { label: "Extension", icon: Wrench, color: "bg-teal-500/10 text-teal-600 border-teal-500/20" },
+  extension: { label: "Extension", icon: Wrench, color: "bg-accent-cyan-light text-accent-cyan border-accent-cyan-light" },
   general: { label: "General", icon: BookOpen, color: "bg-muted text-muted-foreground border-border" },
 }
 

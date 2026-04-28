@@ -302,7 +302,7 @@ export function AgentExecutionTimeline({
                                   if (!summary || isGeneric || isDuplicate) return null
                                   return (
                                     <TimelineSection
-                                      icon={<Sparkles className="h-4 w-4 text-violet-500" />}
+                                      icon={<Sparkles className="h-4 w-4 text-accent-indigo" />}
                                       title={t('agents:memory.llmResponse', 'LLM Response')}
                                     >
                                       <CollapsibleText content={summary} maxLines={6} />

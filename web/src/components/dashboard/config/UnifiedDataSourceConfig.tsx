@@ -1623,7 +1623,7 @@ export function UnifiedDataSourceConfig({
                         )}
                       </div>
                     </div>
-                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-600 border border-violet-500/20">
+                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-accent-indigo-light text-accent-indigo border border-accent-indigo-light">
                       {t('dataSource.transform')}
                     </span>
                   </button>
@@ -1762,7 +1762,7 @@ export function UnifiedDataSourceConfig({
                 iconColor = 'text-accent-orange'
               } else if (type === 'transform') {
                 TypeIcon = Workflow
-                iconColor = 'text-violet-500'
+                iconColor = 'text-accent-indigo'
               } else if (type === 'ai-metric') {
                 TypeIcon = Brain
                 iconColor = 'text-accent-emerald'
