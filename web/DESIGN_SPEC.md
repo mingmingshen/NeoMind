@@ -31,6 +31,10 @@ All colors are defined as OKLCH CSS variables in `src/index.css` (`:root` for li
 | Emerald | `text-accent-emerald` | `bg-accent-emerald-light` |
 | Indigo | `text-accent-indigo` | `bg-accent-indigo-light` |
 
+### Chart Colors
+
+Six chart-compatible tokens defined in `index.css`: `--chart-1` through `--chart-6`.
+
 ### Text on Colored Backgrounds
 
 When placing text/icons on colored backgrounds (buttons, badges, status pills), use `text-primary-foreground` — it resolves to white in both light and dark themes.
@@ -62,6 +66,26 @@ CSS variables defined as plain `oklch()` values do NOT support Tailwind's `/` op
 - Use pre-defined alpha variables: `bg-muted-20`, `bg-muted-30`, `bg-muted-50`, `bg-bg-50`, `bg-bg-70`, etc.
 - Use inline styles: `style={{ backgroundColor: 'oklch(0.18 0.02 270 / 10%)' }}`
 - Use `bg-success-light` / `bg-error-light` etc. (pre-defined at 8-10% opacity)
+
+### Chat-Specific Colors
+
+| Token | Purpose |
+|-------|---------|
+| `--msg-user-bg` / `--msg-user-text` | User message bubbles |
+| `--msg-ai-bg` / `--msg-ai-text` | AI message bubbles |
+| `--msg-system-bg` / `--msg-system-text` | System messages |
+| `--tool-bg` / `--tool-border` / `--tool-header-bg` | Tool call display |
+| `--thinking-bg` / `--thinking-border` / `--thinking-text` | Thinking state display |
+
+### Hover State Tokens
+
+| Token | Usage |
+|-------|-------|
+| `--primary-hover` | Primary button hover |
+| `--secondary-hover` | Secondary button hover |
+| `--destructive-hover` | Destructive button hover |
+| `--card-hover-bg` | Card hover background |
+| `--glass-border-hover` | Glass border hover state |
 
 ---
 
@@ -125,6 +149,27 @@ Use `UnifiedFormDialog` from `@/components/dialog/UnifiedFormDialog` for all for
 
 For multi-step builders (rule creation, data transform), use `FullScreenDialog` from `@/components/automation/dialog/FullScreenDialog`.
 
+### Confirmation Dialog: `useConfirm`
+
+Promise-based confirmation dialog for destructive actions:
+
+```tsx
+import { useConfirm } from '@/components/ui/use-confirm'
+
+const confirm = useConfirm()
+const yes = await confirm({ title: 'Delete?', description: 'This cannot be undone.' })
+if (yes) await api.deleteItem(id)
+```
+
+### Dialog State Hook: `useDialog`
+
+```tsx
+import { useDialog } from '@/hooks/useDialog'
+
+const { open, data, openDialog, closeDialog } = useDialog<User>()
+openDialog(user)  // passes user as data
+```
+
 ---
 
 ## 4. Loading States
@@ -151,6 +196,17 @@ For multi-step builders (rule creation, data transform), use `FullScreenDialog` 
 <UnifiedFormDialog loading={initialLoad} isSubmitting={saving} />
 ```
 
+### Loading Button Hook
+
+```tsx
+import { useLoadingButton } from '@/hooks/useLoadingButton'
+
+const { isLoading, handleClick } = useLoadingButton(async () => { await api.save(data) })
+<Button onClick={handleClick} disabled={isLoading}>
+  {isLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Save
+</Button>
+```
+
 **NEVER use `Loader2` spinners for page-level or table-level content loading.**
 
 ---
@@ -173,6 +229,10 @@ For multi-step builders (rule creation, data transform), use `FullScreenDialog` 
 
 **Mobile behavior:** First column becomes card title, remaining columns become key-value pairs. Skeleton rows shown during loading.
 
+### Virtual List: `VirtualList`
+
+For rendering 1000+ items (sessions, logs, etc.), use `VirtualList` from `@/components/ui/virtual-list` for high-performance rendering.
+
 ### Pagination: `Pagination`
 
 Default page size is **10** across all pages.
@@ -186,6 +246,38 @@ Default page size is **10** across all pages.
   hideOnMobile  // enables infinite scroll on mobile
   onLoadMore={loadMore}
 />
+```
+
+### Bulk Actions: `BulkActionBar`
+
+For multi-select operations:
+
+```tsx
+<BulkActionBar
+  selectedCount={selected.length}
+  onCancel={() => setSelected([])}
+  actions={[{ label: 'Delete', variant: 'destructive', onClick: handleBulkDelete }]}
+/>
+```
+
+### Stats Display: `StatsCard` / `MonitorStatsGrid`
+
+```tsx
+<StatsCard title="Devices" value={42} icon={Server} trend="+5%" />
+<MonitorStatsGrid stats={stats} />
+```
+
+### Status Badges: `StatusBadge`
+
+```tsx
+<StatusBadge status="online" />
+<StatusBadge variant="warning">Pending</StatusBadge>
+```
+
+### Empty States: `EmptyState`
+
+```tsx
+<EmptyState icon={Server} title="No devices" description="Add your first device" />
 ```
 
 ---
@@ -207,16 +299,28 @@ Default page size is **10** across all pages.
 
 Always import from `@/components/ui/`:
 
-| Component | Import Path |
-|-----------|-------------|
-| Input | `@/components/ui/input` |
-| Select | `@/components/ui/select` (Radix) |
-| Checkbox | `@/components/ui/checkbox` (Radix) |
-| Switch | `@/components/ui/switch` |
-| Label | `@/components/ui/label` |
-| Textarea | `@/components/ui/textarea` |
+| Component | Import Path | Notes |
+|-----------|-------------|-------|
+| Input | `@/components/ui/input` | Standard text input |
+| Select | `@/components/ui/select` | Radix-based dropdown |
+| Checkbox | `@/components/ui/checkbox` | Radix-based, use `onCheckedChange` |
+| Switch | `@/components/ui/switch` | Toggle switch |
+| Label | `@/components/ui/label` | Form label |
+| Textarea | `@/components/ui/textarea` | Multi-line input |
+| Slider | `@/components/ui/slider` | Range input |
+| ColorPicker | `@/components/ui/color-picker` | Color selection |
+| IconPicker | `@/components/ui/icon-picker` | Icon selection |
+| EntityIconPicker | `@/components/ui/entity-icon-picker` | Entity icon selection |
+| CodeEditor | `@/components/ui/code-editor` | Code/text editing |
 
 **NEVER use raw HTML `<input>`, `<select>`, `<checkbox>` elements in pages.**
+
+### Form Layout
+
+| Component | Import Path | Purpose |
+|-----------|-------------|---------|
+| FormSection | `@/components/ui/form-section` | Grouped form sections with title |
+| Field | `@/components/ui/field` | Label + input + error wrapper |
 
 ### Checkbox
 
@@ -226,6 +330,24 @@ All checkboxes must use the shared `Checkbox` from `@/components/ui/checkbox`. D
 import { Checkbox } from '@/components/ui/checkbox'
 <Checkbox checked={enabled} onCheckedChange={(checked) => setEnabled(!!checked)} />
 ```
+
+### Other UI Primitives
+
+| Component | Import Path | Purpose |
+|-----------|-------------|---------|
+| Card | `@/components/ui/card` | Content card containers |
+| Badge | `@/components/ui/badge` | Labels and tags |
+| Avatar | `@/components/ui/avatar` | User avatars |
+| Tabs | `@/components/ui/tabs` | Content tabs (in-page, not page-level) |
+| Accordion | `@/components/ui/accordion` | Collapsible sections |
+| Sheet | `@/components/ui/sheet` | Side panel |
+| Progress | `@/components/ui/progress` | Progress bar |
+| Skeleton | `@/components/ui/skeleton` | Custom skeleton shapes |
+| ScrollArea | `@/components/ui/scroll-area` | Custom scrollable area |
+| Separator | `@/components/ui/separator` | Visual divider |
+| Tooltip | `@/components/ui/tooltip` | Hover information |
+| Toast | `@/components/ui/use-toast` | Notification toasts |
+| Confirmer | `@/components/ui/confirmer` | Confirmation dialog |
 
 ### Status Colors
 
@@ -298,6 +420,25 @@ updateDeviceStatus: (id: string, status: string) => {
 }
 ```
 
+### Store Slices
+
+All slices follow the same pattern with `fetchCache`:
+
+| Slice | File | Key Resources |
+|-------|------|---------------|
+| device | `store/slices/deviceSlice.ts` | Devices, adapters |
+| agent | `store/slices/agentSlice.ts` | AI agents |
+| llmBackend | `store/slices/llmBackendSlice.ts` | LLM backends |
+| extension | `store/slices/extensionSlice.ts` | Extensions |
+| session | `store/slices/sessionSlice.ts` | Chat sessions |
+| alert | `store/slices/alertSlice.ts` | Alerts |
+| dashboard | `store/slices/dashboardSlice.ts` | Dashboards |
+| settings | `store/slices/settingsSlice.ts` | System settings |
+| auth | `store/slices/authSlice.ts` | Authentication |
+| ui | `store/slices/uiSlice.ts` | UI state |
+| update | `store/slices/updateSlice.ts` | Update checks |
+| aiAnalyst | `store/slices/aiAnalystSlice.ts` | AI analyst |
+
 ---
 
 ## 9. Portal System
@@ -314,7 +455,74 @@ import { getPortalRoot } from '@/lib/portal'
 
 ---
 
-## 10. Internationalization (i18n)
+## 10. Error Handling
+
+### Centralized Error System
+
+All error handling uses `@/lib/errors.ts` and `useErrorHandler` hook. **NEVER use bare `console.error` + `toast`** — always use the centralized system.
+
+```tsx
+import { useErrorHandler } from '@/hooks/useErrorHandler'
+
+const { handleError, showSuccess, withErrorHandling } = useErrorHandler()
+```
+
+### Error Handler API
+
+| Method | Purpose |
+|--------|---------|
+| `handleError(error, options?)` | Log + show toast. Options: `{ showToast, userMessage, operation }` |
+| `withErrorHandling(fn, options?)` | Async wrapper, auto-catches and handles |
+| `showSuccess(message)` | Success toast |
+| `getErrorMessage(error)` | Extract user-friendly message |
+
+### Usage Patterns
+
+```tsx
+// Manual handling
+try {
+  await api.deleteDevice(id)
+  showSuccess('Device deleted')
+} catch (error) {
+  handleError(error, { operation: 'Delete device' })
+}
+
+// Automatic handling
+const result = await withErrorHandling(
+  () => api.createDevice(data),
+  { operation: 'Create device' }
+)
+```
+
+### Error Classification
+
+Import from `@/lib/errors`:
+
+| Function | Purpose |
+|----------|---------|
+| `isNetworkError(error)` | Network/connection failures |
+| `isAuthError(error)` | 401/authentication errors |
+| `isValidationError(error)` | 400/422 validation errors |
+| `isNotFoundError(error)` | 404 errors |
+| `isConflictError(error)` | 409 conflicts |
+| `logError(error, context?)` | Structured error logging |
+
+### Form Submission Hook
+
+```tsx
+import { useFormSubmit } from '@/hooks/useErrorHandler'
+
+const { isSubmitting, handleSubmit } = useFormSubmit({
+  successMessage: 'Saved',
+  errorOperation: 'Save settings',
+})
+
+<form onSubmit={handleSubmit(async () => await api.save(data))}>
+```
+
+---
+
+## 11. Internationalization (i18n)
 
 All user-visible text must use the translation system. Translation files are in `src/i18n/locales/{en,zh}/`.
 
@@ -327,7 +535,7 @@ const { t } = useTranslation(['common', 'devices'])
 
 ---
 
-## 11. Glass Morphism & Surfaces
+## 12. Glass Morphism & Surfaces
 
 | Surface | Class | Use Case |
 |---------|-------|----------|
@@ -335,6 +543,7 @@ const { t } = useTranslation(['common', 'devices'])
 | Glass heavy | `bg-glass-heavy` | Fixed headers/footers |
 | Surface glass | `bg-surface-glass` | Overlays with backdrop-blur |
 | Glass border | `border-glass-border` | Subtle borders |
+| Glass border hover | `border-glass-border-hover` | Hover state |
 | Card | `bg-card` | Content cards |
 | Muted | `bg-muted` | Subtle backgrounds |
 
@@ -342,7 +551,87 @@ Fixed headers and footers should use `bg-surface-glass backdrop-blur` for the fr
 
 ---
 
-## 12. Spacing & Radius
+## 13. Mobile & Responsive
+
+### Breakpoints (Tailwind defaults)
+
+| Prefix | Width | Target |
+|--------|-------|--------|
+| (none) | < 640px | Mobile |
+| `sm:` | >= 640px | Large phones |
+| `md:` | >= 768px | Tablets |
+| `lg:` | >= 1024px | Laptops |
+| `xl:` | >= 1280px | Desktops |
+
+### Mobile Detection Hooks
+
+Import from `@/hooks/useMobile`:
+
+| Hook | Returns | Purpose |
+|------|---------|---------|
+| `useIsMobile()` | `boolean` | Viewport < 768px |
+| `useIsTouchDevice()` | `boolean` | Touch capability |
+| `useDeviceType()` | `'mobile' \| 'tablet' \| 'desktop'` | Full device classification |
+
+### Touch Interaction Hooks
+
+| Hook | Purpose |
+|------|---------|
+| `useTouchHover(options?)` | Touch-friendly hover state (toggle on tap) |
+| `useLongPress(options)` | Long-press gesture (500ms default, 10px threshold) |
+| `useTouchHandler()` | Touch event management |
+
+### Safe Area Insets (iPhone X+ notches)
+
+CSS utility classes: `.safe-top`, `.safe-bottom`, `.safe-left`, `.safe-right`, `.pt-safe`, `.pb-safe`
+
+Hook: `useSafeAreaInsets()` returns `{ top, right, bottom, left }` pixel values.
+
+CSS variables:
+```css
+--topnav-height: calc(4rem + env(safe-area-inset-top, 0px));
+--chat-content-padding-top: calc(6.5rem + env(safe-area-inset-top, 0px));
+```
+
+### Touch Targets
+
+Minimum 44x44px per iOS/Android guidelines. Small icon buttons (h-6 through h-9) are acceptable exceptions.
+
+### Body Scroll Lock
+
+Use `useMobileBodyScrollLock()` when a modal/dialog opens on mobile to prevent background scrolling.
+
+---
+
+## 14. Form Validation
+
+The codebase uses a **custom `useForm` hook** (not react-hook-form or zod):
+
+```tsx
+import { useForm } from '@/hooks/useForm'
+
+const { values, errors, setValue, handleSubmit, isSubmitting } = useForm({
+  initialValues: { name: '', type: 'mqtt' },
+  onSubmit: async (values) => { await api.createDevice(values) },
+  validate: (values) => {
+    const errors: Record<string, string> = {}
+    if (!values.name) errors.name = 'Name is required'
+    return Object.keys(errors).length > 0 ? errors : undefined
+  }
+})
+```
+
+**Features:**
+- Live validation on value change
+- Custom validation function (returns `Record<string, string>` or `undefined`)
+- `isSubmitting` state
+- `submitError` for submission-level errors
+- `setError(key, msg)` / `clearError(key)` for manual error management
+- `reset()` to restore initial values
+
+---
+
+## 15. Spacing & Radius
 
 Use Tailwind's standard spacing utilities (`p-2`, `gap-4`, etc.) and the predefined radius tokens:
 
@@ -357,22 +646,85 @@ Use Tailwind's standard spacing utilities (`p-2`, `gap-4`, etc.) and the predefi
 
 ---
 
-## 13. Animation
+## 16. Animation
 
 | Name | Duration | Use Case |
 |------|----------|----------|
 | `animate-fade-in` | 200ms | General appearance |
+| `animate-fade-out` | 200ms | Disappearance |
 | `animate-fade-in-up` | 300ms | Content appearing from below |
 | `animate-scale-in` | 200ms | Dialogs, popovers |
+| `animate-scale-out` | 200ms | Closing animations |
 | `animate-slide-in` | 200ms | Slide transitions |
-| `animate-slide-in-from-*` | 300ms | Directional slides |
+| `animate-slide-in-from-*` | 300ms | Directional slides (top/bottom/left/right) |
 | `animate-pulse-slow` | 3s | Status indicators |
 | `animate-spin-slow` | 3s | Slow loading |
+| `animate-bounce-subtle` | 2s | Subtle bounce (5px Y) |
+| `animate-shimmer` | 2s | Skeleton loading shimmer |
+| `animate-typewriter` | 2s | Typewriter effect |
+| `animate-blink` | 1s | Blinking cursor |
 
-**Timing:**
-- Fast (150ms): hover, focus states
-- Normal (200ms): general transitions
-- Slow (300ms): layout changes, page transitions
+**Stagger delays:** `delay-0`, `delay-100`, `delay-150`, `delay-200`, `delay-300`, `delay-400`, `delay-500`
+
+**Timing CSS variables:**
+- `--duration-fast`: 150ms (hover, focus)
+- `--duration-normal`: 200ms (general transitions)
+- `--duration-slow`: 300ms (layout changes)
+
+**Easing:** `--ease-out`, `--ease-in-out`, `--ease-spring`
+
+---
+
+## 17. Infinite Scroll
+
+For pages with infinite scroll on mobile:
+
+```tsx
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
+
+const { ref, isLoading } = useInfiniteScroll({
+  hasMore: page * pageSize < total,
+  isLoading: loadingMore,
+  onLoadMore: () => setPage(p => p + 1),
+  threshold: 200,
+})
+```
+
+---
+
+## 18. Polling
+
+For data that needs periodic refresh:
+
+```tsx
+import { useVisiblePolling } from '@/hooks/useVisiblePolling'
+
+// Only polls when tab is visible
+useVisiblePolling(fetchData, { interval: 30000, enabled: true })
+```
+
+---
+
+## 19. Search
+
+### SearchBar: Global search component
+
+```tsx
+import { SearchBar } from '@/components/shared'
+
+<SearchBar
+  placeholder="Search..."
+  onSearch={handleSearch}
+  resultTypes={[
+    { key: 'device', label: 'Device' },
+    { key: 'rule', label: 'Rule' },
+  ]}
+/>
+```
+
+### SearchResultsDialog
+
+Full search results overlay with categorized results.
 
 ---
 
@@ -388,6 +740,13 @@ Use Tailwind's standard spacing utilities (`p-2`, `gap-4`, etc.) and the predefi
 | Form Dialog | `web/src/components/dialog/UnifiedFormDialog.tsx` |
 | Full Screen Dialog | `web/src/components/automation/dialog/FullScreenDialog.tsx` |
 | Portal Utility | `web/src/lib/portal.tsx` |
+| Error Handling | `web/src/lib/errors.ts` |
+| Error Hook | `web/src/hooks/useErrorHandler.ts` |
 | Fetch Cache | `web/src/lib/utils/async.ts` |
 | Status Colors | `web/src/design-system/utils/format.ts` |
 | i18n Locales | `web/src/i18n/locales/{en,zh}/` |
+| Mobile Hooks | `web/src/hooks/useMobile.ts` |
+| Form Hook | `web/src/hooks/useForm.ts` |
+| Dialog Hook | `web/src/hooks/useDialog.ts` |
+| Infinite Scroll | `web/src/hooks/useInfiniteScroll.ts` |
+| Store Slices | `web/src/store/slices/` |
