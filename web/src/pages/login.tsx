@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom"
 import { useStore } from "@/store"
 import { Languages, Lock, User, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import {
   DropdownMenu,
@@ -367,18 +368,11 @@ export function LoginPage() {
 
               {/* Remember Me */}
               <label className="flex items-center gap-2 cursor-pointer group">
-                <div className="relative flex items-center">
-                  <input
-                    id="remember"
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="peer appearance-none h-4 w-4 rounded border border-border bg-bg-70 transition-all cursor-pointer checked:bg-primary checked:border-primary dark:checked:bg-foreground dark:checked:border-foreground"
-                  />
-                  <svg className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-white dark:text-background pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
+                <Checkbox
+                  id="remember"
+                  checked={rememberMe}
+                  onCheckedChange={(checked) => setRememberMe(!!checked)}
+                />
                 <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors leading-none">
                   {t('auth:rememberMe')}
                 </span>

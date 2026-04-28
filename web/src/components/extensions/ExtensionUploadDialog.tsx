@@ -1,16 +1,12 @@
-import { getPortalRoot } from '@/lib/portal'
 import { useState, useRef, useCallback } from "react"
-import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/hooks/use-toast"
 import { useStore } from "@/store"
-import { Loader2, Package, X } from "lucide-react"
-import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
-import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
+import { Loader2, Package } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { dialogHeader } from '@/design-system/tokens/size'
+import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 
 interface ExtensionUploadDialogProps {
   open: boolean
@@ -36,15 +32,10 @@ export function ExtensionUploadDialog({
   const { toast } = useToast()
   const fetchExtensions = useStore((state) => state.fetchExtensions)
   const isAuthenticated = useStore((state) => state.isAuthenticated)
-  const isMobile = useIsMobile()
-  const insets = useSafeAreaInsets()
 
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState<UploadProgress | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  // Lock body scroll on mobile
-  useMobileBodyScrollLock(isMobile && open)
 
   const handleFileSelect = () => {
     fileInputRef.current?.click()
@@ -316,142 +307,44 @@ export function ExtensionUploadDialog({
     </div>
   )
 
-  // Mobile: Full-screen portal
-  if (isMobile) {
-    return createPortal(
-      open ? (
-        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
-          <div className="flex h-full w-full flex-col">
-            {/* Header */}
-            <div
-              className={dialogHeader}
-              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <Package className="h-5 w-5 text-primary shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-base font-semibold truncate">{t('extensions:uploadExtension')}</h1>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {t('extensions:dragDropDescription')}
-                  </p>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={handleClose} disabled={uploading} className="shrink-0">
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
-              <div className="p-4">
-                {uploadContent}
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div
-              className="flex items-center justify-end gap-3 px-4 py-4 border-t shrink-0 bg-background"
-              style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
-            >
-              <Button variant="outline" onClick={handleClose} disabled={uploading} className="min-w-[80px]">
-                {t('common:cancel')}
-              </Button>
-              <Button onClick={handleFileSelect} disabled={uploading} className="min-w-[80px]">
-                {uploading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {t('extensions:installing')}
-                  </>
-                ) : (
-                  <>
-                    <Package className="mr-2 h-4 w-4" />
-                    {t('extensions:uploadAndInstall')}
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null, getPortalRoot()
-    )
-  }
-
-  // Desktop: Traditional dialog
-  return createPortal(
-    <>
-      {/* Backdrop */}
-      {open && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={handleClose}
-        />
-      )}
-
-      {/* Dialog */}
-      {open && (
-        <div
-          className={cn(
-            'fixed left-1/2 top-1/2 z-50',
-            'grid w-full gap-0',
-            'bg-background shadow-lg',
-            'duration-200',
-            'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
-            'rounded-lg sm:rounded-xl',
-            'max-h-[calc(100vh-2rem)]',
-            'flex flex-col',
-            'max-w-md',
-            '-translate-x-1/2 -translate-y-1/2'
-          )}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <Package className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold leading-none truncate">
-                {t('extensions:uploadExtension')}
-              </h2>
-            </div>
-            <button
-              onClick={handleClose}
-              disabled={uploading}
-              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Description */}
-          <div className="px-6 pt-4">
-            <p className="text-sm text-muted-foreground">{t('extensions:dragDropDescription')}</p>
-          </div>
-
-          {/* Content */}
-          <div className="px-6 py-4">
-            {uploadContent}
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted-30">
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={uploading}>
-              {t('common:cancel')}
-            </Button>
-            <Button size="sm" onClick={handleFileSelect} disabled={uploading}>
-              {uploading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {t('extensions:installing')}
-                </>
-              ) : (
-                <>
-                  <Package className="mr-2 h-4 w-4" />
-                  {t('extensions:uploadAndInstall')}
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      )}
-    </>,
-    getPortalRoot()
+  return (
+    <UnifiedFormDialog
+      open={open}
+      onOpenChange={(newOpen) => {
+        if (!newOpen) {
+          handleClose()
+        } else {
+          onOpenChange(newOpen)
+        }
+      }}
+      title={t('extensions:uploadExtension')}
+      description={t('extensions:dragDropDescription')}
+      icon={<Package className="h-5 w-5 text-primary" />}
+      width="sm"
+      isSubmitting={uploading}
+      preventCloseOnSubmit={true}
+      footer={
+        <>
+          <Button variant="outline" onClick={handleClose} disabled={uploading} className="min-w-[80px]">
+            {t('common:cancel')}
+          </Button>
+          <Button onClick={handleFileSelect} disabled={uploading} className="min-w-[80px]">
+            {uploading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {t('extensions:installing')}
+              </>
+            ) : (
+              <>
+                <Package className="mr-2 h-4 w-4" />
+                {t('extensions:uploadAndInstall')}
+              </>
+            )}
+          </Button>
+        </>
+      }
+    >
+      {uploadContent}
+    </UnifiedFormDialog>
   )
 }

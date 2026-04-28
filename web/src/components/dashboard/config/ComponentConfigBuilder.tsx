@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import type {
   SizeOption,
@@ -540,10 +541,9 @@ export function createControlConfig(config: {
           </label>
           {typeof config.value === 'boolean' ? (
             <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={config.value}
-                onChange={(e) => config.onValueChange?.(e.target.checked)}
+                onCheckedChange={(checked) => config.onValueChange?.(!!checked)}
                 className="rounded"
               />
               <label className="text-sm">Checked by default</label>

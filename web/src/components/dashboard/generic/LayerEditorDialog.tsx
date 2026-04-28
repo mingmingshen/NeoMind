@@ -8,16 +8,13 @@
  * - Drag to reposition items
  */
 
-import { getPortalRoot } from '@/lib/portal'
 import { useState, useCallback, useEffect } from 'react'
-import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
-import { dialogHeader } from '@/design-system/tokens/size'
 import {
   Trash2,
   GripVertical,
@@ -34,8 +31,7 @@ import {
 import { CustomLayer, type LayerBinding, type LayerItem } from './CustomLayer'
 import { getSourceId } from '@/types/dashboard'
 import { useStore } from '@/store'
-import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
-import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
+import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 
 // Re-export types for convenience
 export type { LayerBinding, LayerItem }
@@ -138,16 +134,11 @@ export function LayerEditorDialog({
 }: LayerEditorDialogProps) {
   const { t } = useTranslation('dashboardComponents')
   const typeConfig = getTypeConfig(t)
-  const isMobile = useIsMobile()
-  const insets = useSafeAreaInsets()
 
   const [bindings, setBindings] = useState<LayerBinding[]>(initialBindings)
   const [selectedBinding, setSelectedBinding] = useState<string | null>(null)
   const [editingTextBinding, setEditingTextBinding] = useState<string | null>(null)
   const [editingIconBinding, setEditingIconBinding] = useState<string | null>(null)
-
-  // Lock body scroll on mobile
-  useMobileBodyScrollLock(isMobile && open)
 
   // Get devices from store for reactive updates
   const devices = useStore(state => state.devices)
@@ -569,202 +560,77 @@ export function LayerEditorDialog({
     )
   }
 
-  // Mobile: Full-screen portal
-  if (isMobile) {
-    return createPortal(
-      open ? (
-        <div className="fixed inset-0 z-[60] bg-background animate-in fade-in duration-200">
-          <div className="flex h-full w-full flex-col">
-            {/* Header */}
-            <div
-              className={dialogHeader}
-              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <Layers className="h-5 w-5 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-base font-semibold truncate">
-                    {t('customLayer.editorTitle')}
-                  </h1>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} className="shrink-0">
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-
-            {/* Layer Preview - takes most space */}
-            <div className="flex-1 relative bg-muted-30">
-              <div className="absolute inset-0 p-2">
-                <CustomLayer
-                  bindings={bindings}
-                  backgroundType={backgroundType}
-                  backgroundColor={backgroundColor}
-                  backgroundImage={backgroundImage}
-                  showControls={true}
-                  showFullscreen={false}
-                  interactive={true}
-                  editable={false}
-                  size="md"
-                  onItemsChange={handleItemsChange}
-                  onLayerClick={handleLayerClick}
-                  className="w-full h-full"
-                />
-              </div>
-
-              {/* Positioning mode indicator */}
-              {selectedBinding && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-medium shadow-lg">
-                  {t('customLayer.clickToSetPosition')}
-                </div>
-              )}
-            </div>
-
-            {/* Bindings List - collapsible bottom panel */}
-            <div className="border-t bg-background shrink-0 max-h-[40vh] overflow-y-auto">
-              <div className="p-3 border-b bg-muted-30 sticky top-0">
-                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {t('customLayer.boundItems')} ({bindings.length})
-                </div>
-              </div>
-              <div className="p-2 space-y-1">
-                {bindings.length === 0 ? (
-                  <div className="text-center py-4 text-muted-foreground">
-                    <Layers className="h-6 w-6 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">{t('customLayer.noItems')}</p>
-                  </div>
-                ) : (
-                  bindings.map(renderBindingItem)
-                )}
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div
-              className="flex items-center justify-end gap-2 px-4 py-4 border-t bg-background shrink-0"
-              style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
-            >
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                {t('common.cancel')}
-              </Button>
-              <Button onClick={handleSave}>
-                <Check className="h-4 w-4 mr-1" />
-                {t('common.saveChanges')}
-              </Button>
+  return (
+    <UnifiedFormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('customLayer.editorTitle')}
+      icon={<Layers className="h-5 w-5 text-primary" />}
+      width="3xl"
+      className="sm:h-[90vh]"
+      contentClassName="p-0 flex flex-col overflow-hidden"
+      preventCloseOnSubmit={false}
+      footer={
+        <>
+          <Button variant="outline" onClick={() => onSave(undefined as any)}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={handleSave}>
+            <Check className="h-4 w-4 mr-2" />
+            {t('common.save')}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* Left Panel - Bindings List */}
+        <div className="w-72 border-r bg-muted-20 flex flex-col shrink-0">
+          <div className="px-4 py-2 border-b bg-muted-30 shrink-0">
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              {t('customLayer.boundItems')} ({bindings.length})
             </div>
           </div>
+
+          <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
+            {bindings.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">{t('customLayer.noItems')}</p>
+                <p className="text-xs mt-1">{t('customLayer.addDataSourceHint')}</p>
+              </div>
+            ) : (
+              bindings.map(renderBindingItem)
+            )}
+          </div>
         </div>
-      ) : null, getPortalRoot()
-    )
-  }
 
-  // Desktop: Traditional dialog (following AddDeviceDialog pattern)
-  return createPortal(
-    <>
-      {/* Backdrop */}
-      {open && (
-        <div
-          className="fixed inset-0 z-[55] bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => onOpenChange(false)}
-        />
-      )}
+        {/* Right Panel - Layer Preview */}
+        <div className="flex-1 relative bg-muted-30 min-w-0">
+          <div className="absolute inset-0 p-4">
+            <CustomLayer
+              bindings={bindings}
+              backgroundType={backgroundType}
+              backgroundColor={backgroundColor}
+              backgroundImage={backgroundImage}
+              showControls={true}
+              showFullscreen={false}
+              interactive={true}
+              editable={false}
+              size="md"
+              onItemsChange={handleItemsChange}
+              onLayerClick={handleLayerClick}
+              className="w-full h-full"
+            />
+          </div>
 
-      {/* Dialog */}
-      {open && (
-        <div
-          className={cn(
-            'fixed left-1/2 top-1/2 z-[60]',
-            'grid w-full gap-0',
-            'bg-background shadow-lg',
-            'duration-200',
-            'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
-            'rounded-lg sm:rounded-xl',
-            'max-h-[96vh] h-[90vh]',
-            'flex flex-col',
-            'max-w-5xl w-[90vw]',
-            '-translate-x-1/2 -translate-y-1/2'
+          {/* Positioning mode indicator */}
+          {selectedBinding && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-medium shadow-lg">
+              {t('customLayer.clickToSetPosition')}
+            </div>
           )}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <Layers className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold leading-none truncate">
-                {t('customLayer.editorTitle')}
-              </h2>
-            </div>
-            <button
-              onClick={() => onOpenChange(false)}
-              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 flex overflow-hidden min-h-0">
-            {/* Left Panel - Bindings List */}
-            <div className="w-72 border-r bg-muted-20 flex flex-col shrink-0">
-              <div className="px-4 py-2 border-b bg-muted-30 shrink-0">
-                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  {t('customLayer.boundItems')} ({bindings.length})
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
-                {bindings.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">{t('customLayer.noItems')}</p>
-                    <p className="text-xs mt-1">{t('customLayer.addDataSourceHint')}</p>
-                  </div>
-                ) : (
-                  bindings.map(renderBindingItem)
-                )}
-              </div>
-            </div>
-
-            {/* Right Panel - Layer Preview */}
-            <div className="flex-1 relative bg-muted-30 min-w-0">
-              <div className="absolute inset-0 p-4">
-                <CustomLayer
-                  bindings={bindings}
-                  backgroundType={backgroundType}
-                  backgroundColor={backgroundColor}
-                  backgroundImage={backgroundImage}
-                  showControls={true}
-                  showFullscreen={false}
-                  interactive={true}
-                  editable={false}
-                  size="md"
-                  onItemsChange={handleItemsChange}
-                  onLayerClick={handleLayerClick}
-                  className="w-full h-full"
-                />
-              </div>
-
-              {/* Positioning mode indicator */}
-              {selectedBinding && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-medium shadow-lg">
-                  {t('customLayer.clickToSetPosition')}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted-30">
-            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button size="sm" onClick={handleSave}>
-              <Check className="h-4 w-4 mr-1" />
-              {t('common.saveChanges')}
-            </Button>
-          </div>
         </div>
-      )}
-    </>,
-    getPortalRoot()
+      </div>
+    </UnifiedFormDialog>
   )
 }

@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -565,10 +566,9 @@ export function DeviceControl({
                           })
                         }}
                       >
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={selectedDevicesForBatch.has(device.id)}
-                          onChange={() => {}}
+                          onCheckedChange={() => {}}
                           className="pointer-events-none"
                         />
                         <span className="text-sm flex-1">{device.name || device.id}</span>

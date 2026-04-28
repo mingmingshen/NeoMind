@@ -2370,11 +2370,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showTrend ?? false}
-                        onChange={(e) => updateConfig('showTrend')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showTrend')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showTrend')}</span>
                     </label>
@@ -2447,21 +2445,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   </Field>
 
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={config.fill ?? true}
-                      onChange={(e) => updateConfig('fill')(e.target.checked)}
-                      className="rounded"
+                      onCheckedChange={(checked) => updateConfig('fill')(!!checked)}
                     />
                     <span className="text-sm">{t('visualDashboard.fillArea')}</span>
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={config.curved ?? true}
-                      onChange={(e) => updateConfig('curved')(e.target.checked)}
-                      className="rounded"
+                      onCheckedChange={(checked) => updateConfig('curved')(!!checked)}
                     />
                     <span className="text-sm">{t('visualDashboard.curved')}</span>
                   </label>
@@ -2475,21 +2469,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               render: () => (
                 <div className="space-y-3">
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={config.showValue ?? true}
-                      onChange={(e) => updateConfig('showValue')(e.target.checked)}
-                      className="rounded"
+                      onCheckedChange={(checked) => updateConfig('showValue')(!!checked)}
                     />
                     <span className="text-sm">{t('visualDashboard.showCurrentValue')}</span>
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={config.showThreshold ?? false}
-                      onChange={(e) => updateConfig('showThreshold')(e.target.checked)}
-                      className="rounded"
+                      onCheckedChange={(checked) => updateConfig('showThreshold')(!!checked)}
                     />
                     <span className="text-sm">{t('visualDashboard.showThreshold')}</span>
                   </label>
@@ -2844,21 +2834,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.smooth ?? true}
-                        onChange={(e) => updateConfig('smooth')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('smooth')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.smoothCurve')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.fillArea ?? false}
-                        onChange={(e) => updateConfig('fillArea')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('fillArea')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.fillArea')}</span>
                     </label>
@@ -2874,31 +2860,25 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showGrid ?? true}
-                        onChange={(e) => updateConfig('showGrid')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showGrid')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showGrid')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showLegend ?? false}
-                        onChange={(e) => updateConfig('showLegend')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showLegend')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showLegend')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showTooltip ?? true}
-                        onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showTooltip')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showTooltip')}</span>
                     </label>
@@ -2948,11 +2928,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.smooth ?? true}
-                        onChange={(e) => updateConfig('smooth')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('smooth')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.smoothCurve')}</span>
                     </label>
@@ -2968,31 +2946,25 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showGrid ?? true}
-                        onChange={(e) => updateConfig('showGrid')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showGrid')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showGrid')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showLegend ?? false}
-                        onChange={(e) => updateConfig('showLegend')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showLegend')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showLegend')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showTooltip ?? true}
-                        onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showTooltip')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showTooltip')}</span>
                     </label>
@@ -3072,41 +3044,33 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.stacked ?? false}
-                        onChange={(e) => updateConfig('stacked')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('stacked')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.stacked')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showGrid ?? true}
-                        onChange={(e) => updateConfig('showGrid')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showGrid')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showGrid')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showLegend ?? false}
-                        onChange={(e) => updateConfig('showLegend')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showLegend')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showLegend')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showTooltip ?? true}
-                        onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showTooltip')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showTooltip')}</span>
                     </label>
@@ -3191,31 +3155,25 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showLegend ?? false}
-                        onChange={(e) => updateConfig('showLegend')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showLegend')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showLegend')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showTooltip ?? true}
-                        onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showTooltip')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showTooltip')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showLabels ?? false}
-                        onChange={(e) => updateConfig('showLabels')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showLabels')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showLabel')}</span>
                     </label>
@@ -3331,29 +3289,23 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   />
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.rounded ?? true}
-                        onChange={(e) => updateConfig('rounded')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('rounded')(!!checked)}
                       />
                       <span className="text-xs">{t('visualDashboard.rounded')}</span>
                     </label>
                     <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.zoomable ?? true}
-                        onChange={(e) => updateConfig('zoomable')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('zoomable')(!!checked)}
                       />
                       <span className="text-xs">{t('visualDashboard.zoomable')}</span>
                     </label>
                     <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showShadow ?? false}
-                        onChange={(e) => updateConfig('showShadow')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showShadow')(!!checked)}
                       />
                       <span className="text-xs">{t('visualDashboard.shadow')}</span>
                     </label>
@@ -3486,11 +3438,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.rounded ?? true}
-                        onChange={(e) => updateConfig('rounded')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('rounded')(!!checked)}
                       />
                       <span className="text-xs">{t('visualDashboard.rounded')}</span>
                     </label>
@@ -3529,31 +3479,25 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showNavigation ?? true}
-                        onChange={(e) => updateConfig('showNavigation')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showNavigation')(!!checked)}
                       />
                       <span className="text-sm">{t('imageHistory.showNavigation', 'Show Navigation')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showDots ?? true}
-                        onChange={(e) => updateConfig('showDots')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showDots')(!!checked)}
                       />
                       <span className="text-sm">{t('imageHistory.showDotsIndicator', 'Show Dots Indicator')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.autoPlay ?? false}
-                        onChange={(e) => updateConfig('autoPlay')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('autoPlay')(!!checked)}
                       />
                       <span className="text-sm">{t('imageHistory.autoPlay', 'Auto Play')}</span>
                     </label>
@@ -3606,20 +3550,16 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   </div>
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.sandbox ?? true}
-                        onChange={(e) => updateConfig('sandbox')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('sandbox')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.sandboxIsolation')}</span>
                     </label>
                     <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={config.showHeader ?? true}
-                        onChange={(e) => updateConfig('showHeader')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showHeader')(!!checked)}
                       />
                       <span className="text-sm">{t('visualDashboard.showHeader')}</span>
                     </label>
@@ -3671,11 +3611,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   </Field>
 
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={config.allowFullScreen ?? true}
-                      onChange={(e) => updateConfig('allowFullScreen')(e.target.checked)}
-                      className="rounded"
+                      onCheckedChange={(checked) => updateConfig('allowFullScreen')(!!checked)}
                     />
                     <span className="text-sm">{t('webDisplay.allowFullscreen', 'Allow Fullscreen')}</span>
                   </label>
@@ -3742,21 +3680,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   </Field>
 
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={config.showCopyButton ?? false}
-                      onChange={(e) => updateConfig('showCopyButton')(e.target.checked)}
-                      className="rounded"
+                      onCheckedChange={(checked) => updateConfig('showCopyButton')(!!checked)}
                     />
                     <span className="text-sm">{t('markdownDisplay.showCopyButton', 'Show Copy Button')}</span>
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={config.sanitizeHtml ?? true}
-                      onChange={(e) => updateConfig('sanitizeHtml')(e.target.checked)}
-                      className="rounded"
+                      onCheckedChange={(checked) => updateConfig('sanitizeHtml')(!!checked)}
                     />
                     <span className="text-sm">{t('markdownDisplay.sanitizeHtml', 'Sanitize HTML')}</span>
                     <p className="text-xs text-muted-foreground">
@@ -3963,11 +3897,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   </Field>
 
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={config.showTitleOverlay ?? false}
-                      onChange={(e) => updateConfig('showTitleOverlay')(e.target.checked)}
-                      className="rounded"
+                      onCheckedChange={(checked) => updateConfig('showTitleOverlay')(!!checked)}
                     />
                     <span className="text-sm">{t('videoDisplay.showTitleOverlay', 'Show Title Overlay')}</span>
                   </label>
@@ -5022,11 +4954,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       case 'boolean':
                         return (
                           <label key={key} className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               checked={propValue ?? false}
-                              onChange={(e) => handleChange(e.target.checked)}
-                              className="rounded"
+                              onCheckedChange={(checked) => handleChange(!!checked)}
                             />
                             <span className="text-sm font-medium">{fieldLabel}</span>
                           </label>

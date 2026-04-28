@@ -7,6 +7,7 @@ import { Bot, Languages, Lock, User, Shield, Check, ArrowRight, ArrowLeft, Serve
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -591,12 +592,10 @@ export function SetupPage() {
                   {/* Newsletter Subscription Checkbox */}
                   {email && email.trim() && (
                     <div className="flex items-center gap-2 mt-2">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         id="subscribe"
                         checked={subscribeToNewsletter}
-                        onChange={(e) => setSubscribeToNewsletter(e.target.checked)}
-                        className="h-4 w-4 rounded border-border flex-shrink-0"
+                        onCheckedChange={(checked) => setSubscribeToNewsletter(!!checked)}
                       />
                       <label htmlFor="subscribe" className="text-xs text-muted-foreground cursor-pointer leading-tight">
                         {t('setup:subscribeNewsletter')}

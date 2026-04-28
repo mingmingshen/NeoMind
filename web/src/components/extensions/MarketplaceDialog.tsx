@@ -1,12 +1,11 @@
-import { getPortalRoot } from '@/lib/portal'
 import React, { useState, useEffect, useCallback } from "react"
-import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { useToast } from "@/components/ui/use-toast"
+import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import {
   Loader2,
   Download,
@@ -20,14 +19,11 @@ import {
   ChevronRight,
   ChevronLeft,
   ExternalLink,
-  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { dialogHeader } from '@/design-system/tokens/size'
 import { api } from "@/lib/api"
 import { useStore } from "@/store"
-import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
-import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
+import { useIsMobile } from "@/hooks/useMobile"
 
 // ============================================================================
 // TYPES
@@ -128,7 +124,6 @@ export function MarketplaceDialog({
   const extensions = useStore((state) => state.extensions)
   const fetchExtensions = useStore((state) => state.fetchExtensions)
   const isMobile = useIsMobile()
-  const insets = useSafeAreaInsets()
 
   // UI state
   const [loading, setLoading] = useState(false)
@@ -141,9 +136,6 @@ export function MarketplaceDialog({
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [marketVersion, setMarketVersion] = useState<string>("")
-
-  // Lock body scroll on mobile
-  useMobileBodyScrollLock(isMobile && open)
 
   // Load extensions when dialog opens
   useEffect(() => {
@@ -441,141 +433,64 @@ export function MarketplaceDialog({
     )
   }
 
-  // Mobile: Full-screen portal
-  if (isMobile) {
-    return createPortal(
-      open ? (
-        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
-          <div className="flex h-full w-full flex-col">
-            {/* Header */}
-            <div
-              className={dialogHeader}
-              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                {showDetail ? (
-                  <Button variant="ghost" size="icon" onClick={handleBack} disabled={installing} className="shrink-0 -ml-2">
-                    <ChevronLeft className="h-5 w-5" />
-                  </Button>
-                ) : (
-                  <Globe className="h-5 w-5 text-primary shrink-0" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-base font-semibold truncate">
-                    {showDetail
-                      ? selectedExtension?.name
-                      : t("extensions:market.title", "Extension Marketplace")}
-                  </h1>
-                  {!showDetail && marketVersion && (
-                    <p className="text-xs text-muted-foreground">v{marketVersion}</p>
-                  )}
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={handleClose} disabled={installing} className="shrink-0">
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
+  // Dynamic header icon and title
+  const dialogIcon = showDetail ? (
+    <Button variant="ghost" size={isMobile ? "icon" : "sm"} onClick={handleBack} disabled={installing} className={isMobile ? "-ml-2" : "-ml-2"}>
+      <ChevronLeft className={isMobile ? "h-5 w-5" : "h-4 w-4 mr-1"} />
+      {!isMobile && t("common:back")}
+    </Button>
+  ) : (
+    <Globe className="h-5 w-5 text-primary" />
+  )
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
-              <div className="p-4">
-                {showDetail ? <DetailContent /> : <ExtensionListContent />}
-              </div>
-            </div>
+  const dialogTitle = showDetail
+    ? (selectedExtension?.name || '')
+    : t("extensions:market.title", "Extension Marketplace")
 
-            {/* Footer for detail view */}
-            {showDetail && selectedExtension && !isInstalled(selectedExtension.id) && (
-              <div
-                className="flex items-center justify-end gap-3 px-4 py-4 border-t shrink-0 bg-background"
-                style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
-              >
-                <Button onClick={() => handleInstall(selectedExtension.id)} disabled={installing} className="w-full">
-                  {installing ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      {t("extensions:market.installing", "Installing...")}
-                    </>
-                  ) : (
-                    <>
-                      <Download className="h-4 w-4 mr-2" />
-                      {t("extensions:market.install", "Install")}
-                    </>
-                  )}
-                </Button>
-              </div>
+  const dialogDescription = !showDetail && marketVersion
+    ? `v${marketVersion}`
+    : undefined
+
+  // Footer: only show install button when viewing detail of an uninstalled extension
+  const showInstallFooter = showDetail && selectedExtension && !isInstalled(selectedExtension.id)
+
+  return (
+    <UnifiedFormDialog
+      open={open}
+      onOpenChange={(newOpen) => {
+        if (!newOpen) {
+          handleClose()
+        } else {
+          onOpenChange(newOpen)
+        }
+      }}
+      title={dialogTitle}
+      description={dialogDescription}
+      icon={dialogIcon}
+      width="3xl"
+      loading={loading}
+      preventCloseOnSubmit={false}
+      hideFooter={!showInstallFooter}
+      footer={
+        showInstallFooter ? (
+          <Button onClick={() => handleInstall(selectedExtension!.id)} disabled={installing} className={isMobile ? "w-full" : ""}>
+            {installing ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {t("extensions:market.installing", "Installing...")}
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-2" />
+                {t("extensions:market.install", "Install")}
+              </>
             )}
-          </div>
-        </div>
-      ) : null, getPortalRoot()
-    )
-  }
-
-  // Desktop: Traditional dialog
-  return createPortal(
-    <>
-      {/* Backdrop */}
-      {open && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={handleClose}
-        />
-      )}
-
-      {/* Dialog */}
-      {open && (
-        <div
-          className={cn(
-            'fixed left-1/2 top-1/2 z-50',
-            'grid w-full gap-0',
-            'bg-background shadow-lg',
-            'duration-200',
-            'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
-            'rounded-lg sm:rounded-xl',
-            'max-h-[calc(100vh-2rem)] sm:max-h-[90vh]',
-            'flex flex-col',
-            'max-w-4xl',
-            '-translate-x-1/2 -translate-y-1/2'
-          )}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              {showDetail ? (
-                <Button variant="ghost" size="sm" onClick={handleBack} disabled={installing} className="-ml-2">
-                  <ChevronLeft className="h-4 w-4 mr-1" />
-                  {t("common:back")}
-                </Button>
-              ) : (
-                <>
-                  <Globe className="h-5 w-5 text-primary" />
-                  <h2 className="text-lg font-semibold leading-none truncate">
-                    {t("extensions:market.title", "Extension Marketplace")}
-                  </h2>
-                  {marketVersion && (
-                    <Badge variant="outline" className="text-xs shrink-0">
-                      v{marketVersion}
-                    </Badge>
-                  )}
-                </>
-              )}
-            </div>
-            <button
-              onClick={handleClose}
-              disabled={installing}
-              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-4">
-            {showDetail ? <DetailContent /> : <ExtensionListContent />}
-          </div>
-        </div>
-      )}
-    </>,
-    getPortalRoot()
+          </Button>
+        ) : undefined
+      }
+    >
+      {showDetail ? <DetailContent /> : <ExtensionListContent />}
+    </UnifiedFormDialog>
   )
 }
 

@@ -1582,12 +1582,10 @@ function BasicInfoStep({
 
       {/* Enable Switch */}
       <div className="flex items-center gap-3">
-        <input
-          type="checkbox"
+        <Checkbox
           id="transform-enabled"
           checked={enabled}
-          onChange={e => onEnabledChange(e.target.checked)}
-          className="h-4 w-4"
+          onCheckedChange={(checked) => onEnabledChange(!!checked)}
         />
         <Label htmlFor="transform-enabled" className="text-sm font-medium cursor-pointer">
           {tBuilder('enabled')}

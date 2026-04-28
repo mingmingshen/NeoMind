@@ -1,15 +1,18 @@
 /**
  * UnifiedFormDialog Component
  *
- * A unified form dialog with mobile full-screen support, safe area insets,
+ * A unified dialog with mobile full-screen support, safe area insets,
  * loading states, and consistent interaction patterns.
  *
  * Features:
- * - Mobile full-screen via portal to document.body
+ * - Mobile full-screen via portal to #dialog-root
+ * - Desktop centered dialog via portal to #dialog-root
  * - Safe area insets integration
  * - Loading overlay pattern
  * - Consistent footer with Cancel/Submit buttons
- * - Validation error display
+ * - Custom footer support
+ * - Escape key / backdrop click to close
+ * - Focus trap on mobile
  */
 
 import { getPortalRoot } from '@/lib/portal'
@@ -56,10 +59,14 @@ export interface UnifiedFormDialogProps {
   submitDisabled?: boolean
   /** Form content */
   children: ReactNode
-  /** Additional class name for the dialog content */
+  /** Additional class name for the dialog container */
   className?: string
+  /** Additional class name for the content scroll area */
+  contentClassName?: string
   /** Custom footer content (replaces default buttons) */
   footer?: ReactNode
+  /** Whether to hide the footer entirely */
+  hideFooter?: boolean
   /** Whether to prevent closing during submission */
   preventCloseOnSubmit?: boolean
 }
@@ -73,26 +80,6 @@ const widthClasses = {
   '3xl': 'max-w-5xl',
 }
 
-/**
- * UnifiedFormDialog - A modern form dialog with mobile support
- *
- * @example
- * <UnifiedFormDialog
- *   open={open}
- *   onOpenChange={setOpen}
- *   title="Add Device"
- *   description="Configure a new device"
- *   onSubmit={handleSubmit}
- *   isSubmitting={submitting}
- *   submitError={error}
- * >
- *   <FormSection title="Basic Info">
- *     <FormField label="Name" required error={errors.name}>
- *       <Input {...} />
- *     </FormField>
- *   </FormSection>
- * </UnifiedFormDialog>
- */
 export function UnifiedFormDialog({
   open,
   onOpenChange,
@@ -111,7 +98,9 @@ export function UnifiedFormDialog({
   submitDisabled = false,
   children,
   className,
+  contentClassName,
   footer,
+  hideFooter = false,
   preventCloseOnSubmit = true,
 }: UnifiedFormDialogProps) {
   const { t } = useTranslation('common')
@@ -151,7 +140,6 @@ export function UnifiedFormDialog({
 
     const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
-    // Focus the first focusable element when opened
     const raf = requestAnimationFrame(() => {
       const firstFocusable = container.querySelector(focusableSelector) as HTMLElement
       firstFocusable?.focus()
@@ -209,6 +197,34 @@ export function UnifiedFormDialog({
 
   const isDisabled = loading || isSubmitting || submitDisabled
 
+  // Default footer buttons
+  const defaultFooter = (
+    <>
+      {showCancelButton && (
+        <Button
+          variant="outline"
+          onClick={handleClose}
+          disabled={isSubmitting && preventCloseOnSubmit}
+          className="min-w-[80px]"
+        >
+          {cancelText}
+        </Button>
+      )}
+      {onSubmit && (
+        <Button
+          onClick={handleSubmit}
+          disabled={isDisabled}
+          className="min-w-[80px]"
+        >
+          {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {submitText}
+        </Button>
+      )}
+    </>
+  )
+
+  const footerContent = hideFooter ? null : (footer || defaultFooter)
+
   // Mobile full-screen render
   if (isMobile && fullScreenOnMobile) {
     return createPortal(
@@ -243,10 +259,16 @@ export function UnifiedFormDialog({
             {/* Content */}
             <div
               ref={contentRef}
-              className="flex-1 overflow-y-auto overflow-x-hidden"
+              className={cn("flex-1 overflow-y-auto overflow-x-hidden", contentClassName)}
             >
               <div className="p-4 space-y-4">
-                {children}
+                {loading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  children
+                )}
               </div>
             </div>
 
@@ -261,39 +283,14 @@ export function UnifiedFormDialog({
             )}
 
             {/* Footer */}
-            <div
-              className="flex items-center justify-end gap-3 px-4 py-4 border-t shrink-0 bg-background"
-              style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
-            >
-              {footer ? (
-                footer
-              ) : (
-                <>
-                  {showCancelButton && (
-                    <Button
-                      variant="outline"
-                      onClick={handleClose}
-                      disabled={isSubmitting && preventCloseOnSubmit}
-                      className="min-w-[80px]"
-                    >
-                      {cancelText}
-                    </Button>
-                  )}
-                  {onSubmit && (
-                    <Button
-                      onClick={handleSubmit}
-                      disabled={isDisabled}
-                      className="min-w-[80px]"
-                    >
-                      {isSubmitting && (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      )}
-                      {submitText}
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
+            {footerContent && (
+              <div
+                className="flex items-center justify-end gap-3 px-4 py-4 border-t shrink-0 bg-background"
+                style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
+              >
+                {footerContent}
+              </div>
+            )}
 
             {/* Loading overlay */}
             {loading && (
@@ -338,19 +335,14 @@ export function UnifiedFormDialog({
         >
           {/* Header */}
           <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
-            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                {icon && <span className="text-muted-foreground">{icon}</span>}
-                <h2 className="text-lg font-semibold leading-none truncate">{title}</h2>
-              </div>
-              {description && (
-                <p className="text-sm text-muted-foreground">{description}</p>
-              )}
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              {icon && <span className="text-muted-foreground shrink-0">{icon}</span>}
+              <h2 className="text-lg font-semibold leading-none truncate">{title}</h2>
             </div>
             <button
               onClick={handleClose}
               disabled={isSubmitting && preventCloseOnSubmit}
-              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none shrink-0"
             >
               <X className="h-4 w-4" />
               <span className="sr-only">{t('close', 'Close')}</span>
@@ -360,7 +352,7 @@ export function UnifiedFormDialog({
           {/* Content */}
           <div
             ref={contentRef}
-            className="flex-1 overflow-y-auto p-6"
+            className={cn("flex-1 overflow-y-auto px-6 py-4", contentClassName)}
           >
             {loading ? (
               <div className="flex items-center justify-center py-8">
@@ -382,36 +374,11 @@ export function UnifiedFormDialog({
           )}
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t shrink-0 bg-muted-30">
-            {footer ? (
-              footer
-            ) : (
-              <>
-                {showCancelButton && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleClose}
-                    disabled={isSubmitting && preventCloseOnSubmit}
-                  >
-                    {cancelText}
-                  </Button>
-                )}
-                {onSubmit && (
-                  <Button
-                    size="sm"
-                    onClick={handleSubmit}
-                    disabled={isDisabled}
-                  >
-                    {isSubmitting && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    {submitText}
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
+          {footerContent && (
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted-30">
+              {footerContent}
+            </div>
+          )}
         </div>
       )}
     </>,

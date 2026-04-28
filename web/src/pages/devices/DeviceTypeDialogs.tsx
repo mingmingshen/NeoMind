@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -1962,10 +1963,9 @@ function CommandEditorCompact({
                           </Select>
                         </td>
                         <td className="px-2 py-1 text-center">
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             checked={param.required || false}
-                            onChange={(e) => updateParameter(pIdx, { required: e.target.checked })}
+                            onCheckedChange={(checked) => updateParameter(pIdx, { required: !!checked })}
                             className="h-4 w-4"
                           />
                         </td>

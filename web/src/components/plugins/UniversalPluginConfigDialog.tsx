@@ -1,8 +1,6 @@
-import { getPortalRoot } from '@/lib/portal'
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
-import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
-import { X, RefreshCw, Eye, Brain, Wrench, Loader2, Server } from "lucide-react"
+import { RefreshCw, Eye, Brain, Wrench, Loader2, Server } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,13 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FormField } from "@/components/ui/field"
 import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 import { ConfigFormBuilder } from "@/components/plugins/ConfigFormBuilder"
+import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import { useToast } from "@/hooks/use-toast"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
-import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
-import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { dialogHeader } from '@/design-system/tokens/size'
 import type { PluginConfigSchema } from "@/types"
 
 /**
@@ -110,8 +106,6 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   const { t } = useTranslation(["common", "plugins", "devices"])
   const { toast } = useToast()
   const { handleError } = useErrorHandler()
-  const isMobile = useIsMobile()
-  const insets = useSafeAreaInsets()
 
   const [saving, setSaving] = useState(false)
   const [newInstanceName, setNewInstanceName] = useState("")
@@ -153,9 +147,6 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     supports_tools: true,
     max_context: 8192,
   })
-
-  // Lock body scroll on mobile
-  useMobileBodyScrollLock(isMobile && open)
 
   const testResults = externalTestResults ?? internalTestResults
   const setTestResults = setExternalTestResults ?? setInternalTestResults
@@ -466,12 +457,6 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     return <span className="flex items-center gap-0.5">{icons}</span>
   }
 
-  const handleClose = () => {
-    if (!saving) {
-      onOpenChange(false)
-    }
-  }
-
   // Stable key for form content to prevent unnecessary remounting
   // Changes only when dialog type/instance changes, not on every keystroke
   const formKey = useMemo(() =>
@@ -479,335 +464,244 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     [pluginType.id, editingInstance?.id, open]
   )
 
-  // Form content as a JSX variable (not a function/component) to prevent remounting
-  const formContent = (
-    <FormSectionGroup key={formKey}>
-      {/* Instance Name Field (only for create mode) */}
-      {!isEditing && (
-        <FormField
-          label={t("plugins:instanceName", { defaultValue: "Instance Name" })}
-          required
-          error={nameError || undefined}
-        >
-          <Input
-            value={newInstanceName}
-            onChange={(e) => {
-              setNewInstanceName(e.target.value)
-              if (nameError) setNameError(null)
-            }}
-            placeholder={t("plugins:instanceNamePlaceholder", { defaultValue: "My Instance" })}
-            disabled={saving}
-          />
-        </FormField>
-      )}
-
-      {/* Edit Mode: Show instance info */}
-      {isEditing && (
-        <div className="flex items-center justify-between p-3 bg-muted-30 rounded-lg">
-          <div>
-            <h3 className="font-medium">{editingInstance.name}</h3>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant={getInstanceStatus(editingInstance) ? "default" : "secondary"}>
-                {getInstanceStatus(editingInstance)
-                  ? t("plugins:active", { defaultValue: "Active" })
-                  : t("plugins:inactive", { defaultValue: "Inactive" })
-                }
-              </Badge>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Ollama endpoint configuration */}
-      {isOllamaBackend && (
-        <FormField label={t("plugins:llm.endpoint", { defaultValue: "Ollama Endpoint" })}>
-          <div className="flex items-center gap-2">
+  return (
+    <UnifiedFormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={
+        isEditing
+          ? t("plugins:editInstance", { defaultValue: "Edit Instance" })
+          : pluginType.name
+      }
+      description={
+        isEditing
+          ? t("plugins:editInstanceDesc", { defaultValue: "Configure this instance" })
+          : pluginType.description
+      }
+      icon={<span className={pluginType.color}>{pluginType.icon}</span>}
+      width="xl"
+      hideFooter={true}
+      isSubmitting={saving}
+      preventCloseOnSubmit={false}
+    >
+      <FormSectionGroup key={formKey}>
+        {/* Instance Name Field (only for create mode) */}
+        {!isEditing && (
+          <FormField
+            label={t("plugins:instanceName", { defaultValue: "Instance Name" })}
+            required
+            error={nameError || undefined}
+          >
             <Input
-              value={ollamaEndpoint}
-              onChange={(e) => setOllamaEndpoint(e.target.value)}
-              placeholder="http://localhost:11434"
+              value={newInstanceName}
+              onChange={(e) => {
+                setNewInstanceName(e.target.value)
+                if (nameError) setNameError(null)
+              }}
+              placeholder={t("plugins:instanceNamePlaceholder", { defaultValue: "My Instance" })}
               disabled={saving}
             />
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => fetchOllamaModels(ollamaEndpoint)}
-              disabled={loadingModels}
-            >
-              <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
-            </Button>
+          </FormField>
+        )}
+
+        {/* Edit Mode: Show instance info */}
+        {isEditing && (
+          <div className="flex items-center justify-between p-3 bg-muted-30 rounded-lg">
+            <div>
+              <h3 className="font-medium">{editingInstance.name}</h3>
+              <div className="flex items-center gap-2 mt-1">
+                <Badge variant={getInstanceStatus(editingInstance) ? "default" : "secondary"}>
+                  {getInstanceStatus(editingInstance)
+                    ? t("plugins:active", { defaultValue: "Active" })
+                    : t("plugins:inactive", { defaultValue: "Inactive" })
+                  }
+                </Badge>
+              </div>
+            </div>
           </div>
-        </FormField>
-      )}
+        )}
 
-      {/* Ollama model selector */}
-      {isOllamaBackend && ollamaModels.length > 0 && (
-        <FormField label={t("plugins:llm.selectModel", { defaultValue: "Select Model" })}>
-          <div className="flex items-center gap-2">
-            <Select value={selectedModel} onValueChange={handleModelChange}>
-              <SelectTrigger className="flex-1">
-                <SelectValue placeholder={t("plugins:llm.selectModelPlaceholder", { defaultValue: "Select a model..." })} />
-              </SelectTrigger>
-              <SelectContent>
-                {ollamaModels.map((model) => (
-                  <SelectItem
-                    key={model.name}
-                    value={model.name}
-                  >
-                    {model.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => fetchOllamaModels(ollamaEndpoint)}
-              disabled={loadingModels}
-            >
-              <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
-            </Button>
-          </div>
-          {selectedModel && renderCapabilityBadges()}
-        </FormField>
-      )}
-
-      {/* No models message for Ollama */}
-      {isOllamaBackend && ollamaModels.length === 0 && !loadingModels && (
-        <div className="p-3 bg-muted-30 rounded-lg text-sm text-muted-foreground">
-          {t("plugins:llm.noModelsFound", { defaultValue: "No models found. Click refresh to fetch from Ollama." })}
-        </div>
-      )}
-
-      {/* Capability display for non-Ollama, non-llama.cpp LLM backends */}
-      {pluginType.type === "llm_backend" && !isOllamaBackend && !isLlamaCppBackend && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium">{t("plugins:llm.capabilities", { defaultValue: "Capabilities" })}</label>
-          {renderCapabilityBadges()}
-        </div>
-      )}
-
-      {/* llama.cpp endpoint check + server info */}
-      {isLlamaCppBackend && (
-        <FormField label={t("plugins:llm.llamacppEndpoint", { defaultValue: "llama.cpp Endpoint" })}>
-          <div className="space-y-3">
+        {/* Ollama endpoint configuration */}
+        {isOllamaBackend && (
+          <FormField label={t("plugins:llm.endpoint", { defaultValue: "Ollama Endpoint" })}>
             <div className="flex items-center gap-2">
               <Input
-                value={llamacppEndpoint}
-                onChange={(e) => setLlamacppEndpoint(e.target.value)}
-                placeholder="http://127.0.0.1:8080"
+                value={ollamaEndpoint}
+                onChange={(e) => setOllamaEndpoint(e.target.value)}
+                placeholder="http://localhost:11434"
                 disabled={saving}
               />
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => fetchLlamacppServerInfo(llamacppEndpoint, llamacppApiKey || undefined)}
-                disabled={loadingLlamacppInfo}
+                onClick={() => fetchOllamaModels(ollamaEndpoint)}
+                disabled={loadingModels}
               >
-                <RefreshCw className={cn("h-4 w-4", loadingLlamacppInfo && "animate-spin")} />
+                <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
               </Button>
             </div>
+          </FormField>
+        )}
 
-            {/* Model name - always visible when available */}
-            {(() => {
-              // Priority: live server info > saved config
-              const liveModel = llamacppServerInfo?.status === "ok" ? llamacppServerInfo.server.model_name : undefined
-              const savedModel = editingInstance?.config?.model as string | undefined
-              const modelName = liveModel || savedModel
-
-              if (!modelName) return (
-                <div className="p-2 bg-muted-30 rounded-md text-xs text-muted-foreground">
-                  {t("plugins:llm.clickToDetectModel", { defaultValue: "Click the check button to detect the loaded model from the server." })}
-                </div>
-              )
-
-              return (
-                <div className="flex items-center gap-2 p-2 bg-background rounded-md border">
-                  <Brain className="h-4 w-4 text-info shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs text-muted-foreground">{t("plugins:llm.loadedModel", { defaultValue: "Loaded Model" })}</div>
-                    <div className="font-medium text-sm truncate">{modelName}</div>
-                  </div>
-                  {!liveModel && savedModel && (
-                    <Badge variant="outline" className="text-xs shrink-0">
-                      {t("plugins:llm.saved", { defaultValue: "saved" })}
-                    </Badge>
-                  )}
-                </div>
-              )
-            })()}
-
-            {/* Server info display (live details) */}
-            {llamacppServerInfo && llamacppServerInfo.status === "ok" && (
-              <div className="p-3 bg-muted-30 rounded-lg space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <Server className="h-4 w-4 text-success" />
-                  <span className="font-medium text-success">
-                    {t("plugins:llm.serverConnected", { defaultValue: "Server connected" })}
-                  </span>
-                  <span className="text-muted-foreground">
-                    ({llamacppServerInfo.health.latency_ms}ms)
-                  </span>
-                </div>
-
-                {/* Server properties */}
-                {(llamacppServerInfo.server.n_ctx || llamacppServerInfo.server.total_slots || llamacppServerInfo.server.version) && (
-                  <div className="flex flex-wrap gap-2">
-                    {llamacppServerInfo.server.n_ctx && (
-                      <Badge variant="secondary" className="text-xs">
-                        {llamacppServerInfo.server.n_ctx >= 100000
-                          ? `${Math.round(llamacppServerInfo.server.n_ctx / 1000)}k ctx`
-                          : `${llamacppServerInfo.server.n_ctx} ctx`}
-                      </Badge>
-                    )}
-                    {llamacppServerInfo.server.total_slots && (
-                      <Badge variant="secondary" className="text-xs">
-                        {llamacppServerInfo.server.total_slots} slots
-                      </Badge>
-                    )}
-                    {llamacppServerInfo.server.version && (
-                      <Badge variant="secondary" className="text-xs">
-                        v{llamacppServerInfo.server.version}
-                      </Badge>
-                    )}
-                  </div>
-                )}
-                {renderCapabilityBadges()}
-              </div>
-            )}
-
-            {/* Error state */}
-            {llamacppServerInfo && llamacppServerInfo.status !== "ok" && (
-              <div className="p-3 bg-muted rounded-lg text-sm text-destructive">
-                {t("plugins:llm.serverUnreachable", { defaultValue: "Server unreachable" })}: {llamacppServerInfo.health.status}
-              </div>
-            )}
-          </div>
-        </FormField>
-      )}
-
-      {/* Config Form - Embedded directly */}
-      <div className="mt-4">
-        <ConfigFormBuilder
-          schema={schema}
-          onSubmit={isEditing ? handleUpdate : handleCreate}
-          loading={saving}
-          submitLabel={isEditing
-            ? t("common:save", { defaultValue: "Save" })
-            : t("common:create", { defaultValue: "Create" })
-          }
-        />
-      </div>
-    </FormSectionGroup>
-  )
-
-  // Mobile: Full-screen portal
-  if (isMobile) {
-    return createPortal(
-      open ? (
-        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
-          <div className="flex h-full w-full flex-col">
-            {/* Header */}
-            <div
-              className={dialogHeader}
-              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <span className={pluginType.color}>{pluginType.icon}</span>
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-base font-semibold truncate">
-                    {isEditing
-                      ? t("plugins:editInstance", { defaultValue: "Edit Instance" })
-                      : pluginType.name
-                    }
-                  </h1>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {isEditing
-                      ? t("plugins:editInstanceDesc", { defaultValue: "Configure this instance" })
-                      : pluginType.description
-                    }
-                  </p>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={handleClose} disabled={saving} className="shrink-0">
-                <X className="h-5 w-5" />
+        {/* Ollama model selector */}
+        {isOllamaBackend && ollamaModels.length > 0 && (
+          <FormField label={t("plugins:llm.selectModel", { defaultValue: "Select Model" })}>
+            <div className="flex items-center gap-2">
+              <Select value={selectedModel} onValueChange={handleModelChange}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder={t("plugins:llm.selectModelPlaceholder", { defaultValue: "Select a model..." })} />
+                </SelectTrigger>
+                <SelectContent>
+                  {ollamaModels.map((model) => (
+                    <SelectItem
+                      key={model.name}
+                      value={model.name}
+                    >
+                      {model.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => fetchOllamaModels(ollamaEndpoint)}
+                disabled={loadingModels}
+              >
+                <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
               </Button>
             </div>
+            {selectedModel && renderCapabilityBadges()}
+          </FormField>
+        )}
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
-              <div className="p-4">
-                {formContent}
-              </div>
-            </div>
+        {/* No models message for Ollama */}
+        {isOllamaBackend && ollamaModels.length === 0 && !loadingModels && (
+          <div className="p-3 bg-muted-30 rounded-lg text-sm text-muted-foreground">
+            {t("plugins:llm.noModelsFound", { defaultValue: "No models found. Click refresh to fetch from Ollama." })}
           </div>
-        </div>
-      ) : null, getPortalRoot()
-    )
-  }
+        )}
 
-  // Desktop: Traditional dialog
-  return createPortal(
-    <>
-      {/* Backdrop */}
-      {open && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => !saving && onOpenChange(false)}
-        />
-      )}
+        {/* Capability display for non-Ollama, non-llama.cpp LLM backends */}
+        {pluginType.type === "llm_backend" && !isOllamaBackend && !isLlamaCppBackend && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t("plugins:llm.capabilities", { defaultValue: "Capabilities" })}</label>
+            {renderCapabilityBadges()}
+          </div>
+        )}
 
-      {/* Dialog */}
-      {open && (
-        <div
-          className={cn(
-            'fixed left-1/2 top-1/2 z-50',
-            'grid w-full gap-0',
-            'bg-background shadow-lg',
-            'duration-200',
-            'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
-            'rounded-lg sm:rounded-xl',
-            'max-h-[calc(100vh-2rem)] sm:max-h-[90vh]',
-            'flex flex-col',
-            'max-w-2xl',
-            '-translate-x-1/2 -translate-y-1/2'
-          )}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
-            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+        {/* llama.cpp endpoint check + server info */}
+        {isLlamaCppBackend && (
+          <FormField label={t("plugins:llm.llamacppEndpoint", { defaultValue: "llama.cpp Endpoint" })}>
+            <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <span className={pluginType.color}>{pluginType.icon}</span>
-                <h2 className="text-lg font-semibold leading-none truncate">
-                  {isEditing
-                    ? t("plugins:editInstance", { defaultValue: "Edit Instance" })
-                    : pluginType.name
-                  }
-                </h2>
+                <Input
+                  value={llamacppEndpoint}
+                  onChange={(e) => setLlamacppEndpoint(e.target.value)}
+                  placeholder="http://127.0.0.1:8080"
+                  disabled={saving}
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => fetchLlamacppServerInfo(llamacppEndpoint, llamacppApiKey || undefined)}
+                  disabled={loadingLlamacppInfo}
+                >
+                  <RefreshCw className={cn("h-4 w-4", loadingLlamacppInfo && "animate-spin")} />
+                </Button>
               </div>
-              <p className="text-sm text-muted-foreground">
-                {isEditing
-                  ? t("plugins:editInstanceDesc", { defaultValue: "Configure this instance" })
-                  : pluginType.description
-                }
-              </p>
-            </div>
-            <button
-              onClick={handleClose}
-              disabled={saving}
-              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-6">
-            {formContent}
-          </div>
+              {/* Model name - always visible when available */}
+              {(() => {
+                // Priority: live server info > saved config
+                const liveModel = llamacppServerInfo?.status === "ok" ? llamacppServerInfo.server.model_name : undefined
+                const savedModel = editingInstance?.config?.model as string | undefined
+                const modelName = liveModel || savedModel
+
+                if (!modelName) return (
+                  <div className="p-2 bg-muted-30 rounded-md text-xs text-muted-foreground">
+                    {t("plugins:llm.clickToDetectModel", { defaultValue: "Click the check button to detect the loaded model from the server." })}
+                  </div>
+                )
+
+                return (
+                  <div className="flex items-center gap-2 p-2 bg-background rounded-md border">
+                    <Brain className="h-4 w-4 text-info shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs text-muted-foreground">{t("plugins:llm.loadedModel", { defaultValue: "Loaded Model" })}</div>
+                      <div className="font-medium text-sm truncate">{modelName}</div>
+                    </div>
+                    {!liveModel && savedModel && (
+                      <Badge variant="outline" className="text-xs shrink-0">
+                        {t("plugins:llm.saved", { defaultValue: "saved" })}
+                      </Badge>
+                    )}
+                  </div>
+                )
+              })()}
+
+              {/* Server info display (live details) */}
+              {llamacppServerInfo && llamacppServerInfo.status === "ok" && (
+                <div className="p-3 bg-muted-30 rounded-lg space-y-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Server className="h-4 w-4 text-success" />
+                    <span className="font-medium text-success">
+                      {t("plugins:llm.serverConnected", { defaultValue: "Server connected" })}
+                    </span>
+                    <span className="text-muted-foreground">
+                      ({llamacppServerInfo.health.latency_ms}ms)
+                    </span>
+                  </div>
+
+                  {/* Server properties */}
+                  {(llamacppServerInfo.server.n_ctx || llamacppServerInfo.server.total_slots || llamacppServerInfo.server.version) && (
+                    <div className="flex flex-wrap gap-2">
+                      {llamacppServerInfo.server.n_ctx && (
+                        <Badge variant="secondary" className="text-xs">
+                          {llamacppServerInfo.server.n_ctx >= 100000
+                            ? `${Math.round(llamacppServerInfo.server.n_ctx / 1000)}k ctx`
+                            : `${llamacppServerInfo.server.n_ctx} ctx`}
+                        </Badge>
+                      )}
+                      {llamacppServerInfo.server.total_slots && (
+                        <Badge variant="secondary" className="text-xs">
+                          {llamacppServerInfo.server.total_slots} slots
+                        </Badge>
+                      )}
+                      {llamacppServerInfo.server.version && (
+                        <Badge variant="secondary" className="text-xs">
+                          v{llamacppServerInfo.server.version}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                  {renderCapabilityBadges()}
+                </div>
+              )}
+
+              {/* Error state */}
+              {llamacppServerInfo && llamacppServerInfo.status !== "ok" && (
+                <div className="p-3 bg-muted rounded-lg text-sm text-destructive">
+                  {t("plugins:llm.serverUnreachable", { defaultValue: "Server unreachable" })}: {llamacppServerInfo.health.status}
+                </div>
+              )}
+            </div>
+          </FormField>
+        )}
+
+        {/* Config Form - Embedded directly */}
+        <div className="mt-4">
+          <ConfigFormBuilder
+            schema={schema}
+            onSubmit={isEditing ? handleUpdate : handleCreate}
+            loading={saving}
+            submitLabel={isEditing
+              ? t("common:save", { defaultValue: "Save" })
+              : t("common:create", { defaultValue: "Create" })
+            }
+          />
         </div>
-      )}
-    </>,
-    getPortalRoot()
+      </FormSectionGroup>
+    </UnifiedFormDialog>
   )
 }

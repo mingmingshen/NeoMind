@@ -2025,12 +2025,10 @@ function BasicInfoStep({
       </div>
 
       <div className="flex items-center gap-3">
-        <input
-          type="checkbox"
+        <Checkbox
           id="rule-enabled"
           checked={enabled}
-          onChange={e => onEnabledChange(e.target.checked)}
-          className="h-4 w-4"
+          onCheckedChange={(checked) => onEnabledChange(!!checked)}
         />
         <Label htmlFor="rule-enabled" className="text-sm font-medium cursor-pointer">
           {tBuilder('enabled')}
