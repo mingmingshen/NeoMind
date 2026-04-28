@@ -24,16 +24,33 @@ Service UUID:  9e5d1e47-5b13-4c4f-85b3-d0e6f5a7b8c9
 
 Characteristic 1: Device Info
   UUID: 9e5d1e48-... | Properties: Read
-  Returns: { "model": "NE101", "sn": "NE101A2F003", "fw": "1.0.0" }
+  Returns: {
+    "model": "NE101",
+    "sn": "NE101A2F003",
+    "fw": "1.0.0",
+    "netmod": ""             // current network mode: "wifi"/"cat1"/"halow"/""
+  }
 
 Characteristic 2: WiFi Scan
   UUID: 9e5d1e49-... | Properties: Read + Notify
   Trigger scan by subscribing to notifications.
+  Only available when netmod=wifi is selected.
   Returns array: [ { "ssid": "...", "rssi": -45, "auth": true }, ... ]
 
-Characteristic 3: WiFi Config
+Characteristic 3: Network Config
   UUID: 9e5d1e4a-... | Properties: Write (requires encrypted link)
-  Write: { "ssid": "...", "password": "..." }
+  Network type is selected first, then specific config is written.
+  The same characteristic accepts different payloads depending on network type.
+
+  WiFi payload:
+    { "type": "wifi", "ssid": "...", "password": "..." }
+
+  CAT.1 payload:
+    { "type": "cat1", "apn": "...", "user": "", "password": "", "pin": "", "auth_type": 0 }
+    auth_type: 0=None, 1=PAP, 2=CHAP, 3=PAP/CHAP
+
+  HaLow payload:
+    { "type": "halow", "ssid": "...", "password": "..." }
 
 Characteristic 4: MQTT Config
   UUID: 9e5d1e4b-... | Properties: Write (requires encrypted link)
@@ -42,33 +59,64 @@ Characteristic 4: MQTT Config
 
 Characteristic 5: Status
   UUID: 9e5d1e4c-... | Properties: Read + Notify
-  Returns: { "step": "idle" | "wifi_connecting" | "mqtt_connecting" | "done" | "failed", "error": "" }
+  Returns: { "step": "idle" | "net_connecting" | "mqtt_connecting" | "done" | "failed",
+             "error": "" }
 
 Characteristic 6: Apply
   UUID: 9e5d1e4d-... | Properties: Write
   Write: { "action": "apply" }
-  Triggers device to apply configuration and connect to network.
+  Triggers device to save all config to NVS, stop BLE, and connect to network.
 ```
+
+### Network Mode Selection (WiFi / CAT.1 / HaLow — pick one)
+
+NE101 supports three network modules. The user selects one in the BLE provisioning UI:
+
+| Network | NVS keys written | When to use |
+|---------|-----------------|-------------|
+| **WiFi** | `wifi:ssid`, `wifi:password`, `dev:netmod`="wifi" | Standard indoor use |
+| **CAT.1** | `cat1:apn`, `cat1:user`, `cat1:password`, `cat1:pin`, `cat1:authType`, `dev:netmod`="cat1" | Outdoor / no WiFi |
+| **HaLow** | `wifi:ssid`, `wifi:password`, `dev:netmod`="halow" | Long-range low-power |
+
+On the firmware side, the BLE write handler calls the same NVS functions used by the existing HTTP config API:
+- WiFi: `cfg_set_wifi_attr()` (same as `/api/v1/network/setWifiParam`)
+- CAT.1: `cfg_set_cellular_param_attr()` (same as `/api/v1/network/setCellularParam`)
+- HaLow: `cfg_set_wifi_attr()` + `set_netmod("halow")` (reuses WiFi config, different mode)
+- Network mode: `cfg_set_str(KEY_DEVICE_NETMOD, mode)` via `set_netmod()`
 
 ### Security
 
-WiFi Config and MQTT Config characteristics require BLE Secure Connections (pairing with encryption). ESP-IDF supports this natively via `esp_ble_set_encryption()`. This prevents WiFi credentials from being intercepted over the air.
+Network Config and MQTT Config characteristics require BLE Secure Connections (pairing with encryption). ESP-IDF supports this natively via `esp_ble_set_encryption()`. This prevents credentials from being intercepted over the air.
 
-### Provisioning Sequence
+### Provisioning Sequence (WiFi example)
 
 ```
 Platform (Web Bluetooth)           NE101 (BLE GATT Server)
   │                                    │
   ├── 1. Scan service UUID ──────────►│  Advertising "NE101-A2F003"
   ├── 2. Connect + Pair (encrypted) ─►│
-  ├── 3. Read Device Info ◄──────────┤  { model, sn, fw }
+  ├── 3. Read Device Info ◄──────────┤  { model, sn, fw, netmod }
   ├── 4. Subscribe WiFi Scan ◄───────┤  [ { ssid, rssi, auth }, ... ]
   │   (user selects SSID from list)   │
-  ├── 5. Write WiFi Config ─────────►│  { ssid, password }
+  ├── 5. Write Network Config ──────►│  { type:"wifi", ssid, password }
   ├── 6. Write MQTT Config ─────────►│  { host, port, topic_prefix }
   ├── 7. Write Apply ───────────────►│  { action: "apply" }
-  ├── 8. Subscribe Status Notify ◄──┤  wifi_connecting → mqtt_connecting → done
+  ├── 8. Subscribe Status Notify ◄──┤  net_connecting → mqtt_connecting → done
   ├── 9. Disconnect BLE ────────────►│  Device disables BLE, enters normal mode
+```
+
+### Provisioning Sequence (CAT.1 example)
+
+```
+Platform (Web Bluetooth)           NE101 (BLE GATT Server)
+  │                                    │
+  ├── 1-3. Same as WiFi               │
+  ├── 4. Write Network Config ──────►│  { type:"cat1", apn, user, password, pin }
+  ├── 5. Write MQTT Config ─────────►│  { host, port, topic_prefix }
+  ├── 6. Write Apply ───────────────►│  { action: "apply" }
+  ├── 7. Status: net_connecting       │  (CAT.1 dial-up)
+  │        → mqtt_connecting          │
+  │        → done                     │
 ```
 
 ## Device Type Matching
@@ -198,9 +246,14 @@ bool ble_prov_is_active(void);  // Check if BLE provisioning is active
 ```
 
 Integration points with existing code:
-- `config.c` NVS functions: `cfg_set_wifi_attr()` / `cfg_set_mqtt_attr()` to persist config
+- `config.c` NVS functions:
+  - WiFi: `cfg_set_wifi_attr()` (same path as HTTP `/api/v1/network/setWifiParam`)
+  - CAT.1: `cfg_set_cellular_param_attr()` (same path as HTTP `/api/v1/network/setCellularParam`)
+  - HaLow: `cfg_set_wifi_attr()` + `set_netmod("halow")`
+  - MQTT: `cfg_set_mqtt_attr()` (same path as HTTP `/api/v1/network/setMqttParam`)
+  - Network mode: `cfg_set_str(KEY_DEVICE_NETMOD, mode)` via `set_netmod()`
 - `system.c`: Trigger restart into work mode after provisioning
-- `main.c` `mode_selector()`: Add BLE provisioning mode for first boot (no WiFi config in NVS)
+- `main.c` `mode_selector()`: Add BLE provisioning mode for first boot (no network config in NVS)
 
 BLE provisioning triggered when:
 - First boot (no WiFi credentials in NVS)
@@ -282,6 +335,7 @@ Replaces the current `AddDeviceDialog`. Integrates all device-adding methods in 
 │  │ NE101-B1C042  ██████░░░░  -62dBm      │  │
 │  └───────────────────────────────────────┘  │
 │  MQTT Broker: [NeoMind 内置 ▾]                │
+│  网络类型: (○ WiFi  ○ CAT.1  ○ HaLow)         │
 │  WiFi: [扫描结果下拉选择 ▾]                    │
 │  密码: [____________]                        │
 │  设备名称: [NE101-A2F003 ▾]                   │
