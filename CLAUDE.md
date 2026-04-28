@@ -51,15 +51,24 @@ NeoMind/
 - Frontend: ES modules, functional components, Zustand slices pattern
 - Always run type checks after code changes
 
-### Frontend UI Standards
+### Frontend Design & Component Standards
 
-- **Loading States**: All page-level loading must use **skeleton screens** (not spinners)
-  - `ResponsiveTable`: built-in skeleton rows matching column structure (auto when `loading={true}`)
-  - `LoadingState variant="page"`: card grid skeleton for non-table pages
-  - Spinner (`Loader2`) only for inline/button/dialog-level loading, never for page content
-- **Pagination**: Default page size is **10** across all pages (devices, agents, messages, data explorer, etc.)
-- **Page Layout**: Use `PageLayout` with `PageTabsBar`/`PageTabsContent` pattern. Content grows naturally; `PageLayout`'s scroll container handles scrolling via `overflow-auto`
-- **Fetch Deduplication**: Store-level `fetchCache` (TTL 10s) prevents redundant API calls. Pattern: `shouldFetch` → `markFetching` → API call → `markFetched`. Invalidate on mutations. WebSocket events use optimistic updates (`updateDeviceStatus`) instead of full refetch.
+> **Full specification:** [`web/DESIGN_SPEC.md`](web/DESIGN_SPEC.md) — MUST read before any frontend UI work.
+
+Key rules summarized:
+
+- **Colors**: Only use design token classes (`text-success`, `bg-error-light`, `text-accent-orange`, etc.). NEVER use hardcoded Tailwind palette colors (`bg-blue-500`, `text-green-600`, etc.). Text on colored backgrounds uses `text-primary-foreground`.
+- **Opacity limitation**: CSS variable-based colors do NOT support Tailwind `/` opacity modifier (e.g., `bg-primary/10` silently fails). Use pre-defined tokens (`bg-muted-30`, `bg-success-light`) or inline styles.
+- **Loading States**: Page-level loading must use **skeleton screens** (`LoadingState variant="page"` or `ResponsiveTable` built-in). Spinner (`Loader2`) only for inline/button/dialog-level.
+- **Pagination**: Default page size is **10**. Mobile uses infinite scroll via `hideOnMobile`.
+- **Page Layout**: Use `PageLayout` with `PageTabsBar`/`PageTabsContent`. Content grows naturally; scroll handled by `PageLayout`.
+- **Dialogs**: Use `UnifiedFormDialog` for form dialogs, `FullScreenDialog` for builders. Do NOT use raw `Dialog` directly.
+- **UI Components**: Import from `@/components/ui/` (Button, Input, Select, Checkbox, Switch, Label, etc.). Do NOT use raw HTML form elements.
+- **Status Colors**: Use `getStatusColorClass()` / `getStatusBgClass()` from `@/design-system/utils/format`.
+- **Fetch Deduplication**: Store-level `fetchCache` (TTL 10s). Pattern: `shouldFetch` → `markFetching` → API call → `markFetched`. Invalidate on mutations. WebSocket events use optimistic updates.
+- **Z-Index**: Popovers at `z-[200]`, full-screen dialogs at `z-[100]`/`z-[110]`, overlays at `z-50`.
+- **i18n**: All user-visible text via `t()`. Never hardcode strings.
+- **Portals**: All modals/popovers must use `getPortalRoot()` from `@/lib/portal`.
 
 ## Documentation
 
