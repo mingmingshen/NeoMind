@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Field } from '@/components/ui/field'
 import { ColorPicker, CompactColorPicker, COLOR_PRESETS } from '@/components/ui/color-picker'
 import { cn } from '@/lib/utils'
+import { chartColorsHex } from '@/design-system/tokens/color'
 import { DataMappingConfig } from './UIConfigSections'
 import type {
   ConfigSection as ConfigSectionType,
@@ -171,11 +172,11 @@ const ConfigSectionItem = function ConfigSectionItem({ section }: { section: Con
     case 'multi-color': {
       const props = (section as MultiColorSection).props
       const colorFields: { key: string; labelKey: string; defaultColor: string; presetKey?: keyof typeof COLOR_PRESETS }[] = [
-        { key: 'primary', labelKey: 'backgroundColor', defaultColor: '#3b82f6', presetKey: 'primary' },
-        { key: 'secondary', labelKey: 'textColor', defaultColor: '#8b5cf6', presetKey: 'primary' },
-        { key: 'error', labelKey: 'borderColor', defaultColor: '#ef4444', presetKey: 'semantic' },
-        { key: 'warning', labelKey: 'color', defaultColor: '#eab308', presetKey: 'semantic' },
-        { key: 'success', labelKey: 'dataMapping', defaultColor: '#22c55e', presetKey: 'semantic' },
+        { key: 'primary', labelKey: 'backgroundColor', defaultColor: chartColorsHex[0], presetKey: 'primary' },
+        { key: 'secondary', labelKey: 'textColor', defaultColor: chartColorsHex[5], presetKey: 'primary' },
+        { key: 'error', labelKey: 'borderColor', defaultColor: chartColorsHex[3], presetKey: 'semantic' },
+        { key: 'warning', labelKey: 'color', defaultColor: chartColorsHex[2], presetKey: 'semantic' },
+        { key: 'success', labelKey: 'dataMapping', defaultColor: chartColorsHex[1], presetKey: 'semantic' },
       ]
       return (
         <div className="space-y-3">

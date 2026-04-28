@@ -72,7 +72,7 @@ const LLM_PROVIDER_CONFIG: Record<string, {
   },
   glm: {
     icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-pink-100 text-pink-700 dark:bg-pink-900/20 dark:text-pink-400',
+    iconBg: 'bg-accent-purple-light text-accent-purple',
   },
   minimax: {
     icon: <Server className="h-6 w-6" />,

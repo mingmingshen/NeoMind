@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button'
 import { ConfigSection } from './ConfigSection'
 import { ColorPicker, CompactColorPicker, COLOR_PRESETS } from '@/components/ui/color-picker'
+import { chartColorsHex } from '@/design-system/tokens/color'
 import type { SingleValueMappingConfig, TimeSeriesMappingConfig, CategoricalMappingConfig } from '@/lib/dataMapping'
 
 // ============================================================================
@@ -199,7 +200,7 @@ export interface ColorConfigProps {
 }
 
 export function ColorConfig({
-  color = '#3b82f6',
+  color = chartColorsHex[0],
   onChange,
   label = 'Color',
   readonly = false,
@@ -239,11 +240,11 @@ export function MultiColorConfig({
   readonly = false,
 }: MultiColorConfigProps) {
   const colorFields: { key: keyof typeof colors; label: string; defaultColor: string }[] = [
-    { key: 'primary', label: 'Primary Color', defaultColor: '#3b82f6' },
-    { key: 'secondary', label: 'Secondary Color', defaultColor: '#8b5cf6' },
-    { key: 'error', label: 'Error Color', defaultColor: '#ef4444' },
-    { key: 'warning', label: 'Warning Color', defaultColor: '#eab308' },
-    { key: 'success', label: 'Success Color', defaultColor: '#22c55e' },
+    { key: 'primary', label: 'Primary Color', defaultColor: chartColorsHex[0] },
+    { key: 'secondary', label: 'Secondary Color', defaultColor: chartColorsHex[5] },
+    { key: 'error', label: 'Error Color', defaultColor: chartColorsHex[3] },
+    { key: 'warning', label: 'Warning Color', defaultColor: chartColorsHex[2] },
+    { key: 'success', label: 'Success Color', defaultColor: chartColorsHex[1] },
   ]
 
   return (

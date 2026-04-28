@@ -8,6 +8,7 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Trash2, ChevronDown, ChevronUp, GripVertical } from 'lucide-react'
+import { chartColorsHex } from '@/design-system/tokens/color'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,11 +26,11 @@ export interface LEDStateRulesConfigProps {
 // State options with translations
 function getStateOptions(t: (key: string) => string) {
   return [
-    { value: 'on' as LEDState, label: t('stateMapping.on'), color: '#22c55e', icon: '●' },
-    { value: 'off' as LEDState, label: t('stateMapping.off'), color: '#64748b', icon: '○' },
-    { value: 'error' as LEDState, label: t('stateMapping.error'), color: '#ef4444', icon: '●' },
-    { value: 'warning' as LEDState, label: t('stateMapping.warning'), color: '#f59e0b', icon: '●' },
-    { value: 'unknown' as LEDState, label: t('stateMapping.unknown'), color: '#64748b', icon: '○' },
+    { value: 'on' as LEDState, label: t('stateMapping.on'), color: chartColorsHex[1], icon: '●' },         // Emerald
+    { value: 'off' as LEDState, label: t('stateMapping.off'), color: '#64748b', icon: '○' },                 // Slate
+    { value: 'error' as LEDState, label: t('stateMapping.error'), color: chartColorsHex[3], icon: '●' },      // Orange
+    { value: 'warning' as LEDState, label: t('stateMapping.warning'), color: chartColorsHex[2], icon: '●' },  // Amber
+    { value: 'unknown' as LEDState, label: t('stateMapping.unknown'), color: '#64748b', icon: '○' },          // Slate
   ]
 }
 

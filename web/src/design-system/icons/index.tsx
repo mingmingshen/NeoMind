@@ -190,12 +190,12 @@ export function EntityIcon({ type, className, size = 24 }: EntityIconProps) {
 
 // Status icons
 export const statusIcons = {
-  online: { icon: Wifi, color: 'text-green-500' },
+  online: { icon: Wifi, color: 'text-success' },
   offline: { icon: WifiOff, color: 'text-muted-foreground' },
-  error: { icon: XCircle, color: 'text-red-500' },
-  warning: { icon: AlertTriangle, color: 'text-yellow-500' },
-  success: { icon: CheckCircle2, color: 'text-green-500' },
-  loading: { icon: Clock, color: 'text-blue-500 animate-spin' },
+  error: { icon: XCircle, color: 'text-error' },
+  warning: { icon: AlertTriangle, color: 'text-warning' },
+  success: { icon: CheckCircle2, color: 'text-success' },
+  loading: { icon: Clock, color: 'text-info animate-spin' },
   unknown: { icon: Minus, color: 'text-muted-foreground' },
 } as const
 

@@ -28,18 +28,17 @@ function isThemeColor(color: string): boolean {
   return color.startsWith('hsl(var(')
 }
 
-// Preset color palettes
+// Preset color palettes — harmonized with design system
 export const COLOR_PRESETS = {
   primary: [
     THEME_FOREGROUND, // Theme foreground (black in light, white in dark)
-    '#ef4444', // Red
-    '#f97316', // Orange
-    '#eab308', // Yellow
-    '#22c55e', // Green
-    '#06b6d4', // Cyan
-    '#3b82f6', // Blue
-    '#8b5cf6', // Purple
-    '#ec4899', // Pink
+    '#6360ef', // Indigo-Blue
+    '#36b37e', // Emerald
+    '#e8a735', // Amber
+    '#e07838', // Orange
+    '#d86098', // Rose
+    '#4ca8c8', // Sky Blue
+    '#4aba6a', // Green
   ],
   neutral: [
     THEME_FOREGROUND, // Theme foreground (black in light, white in dark)
@@ -52,11 +51,11 @@ export const COLOR_PRESETS = {
     '#f5f5f5', // Zinc 100
   ],
   semantic: [
-    '#22c55e', // Success
-    '#eab308', // Warning
-    '#ef4444', // Error/Danger
-    '#3b82f6', // Info
-    '#8b5cf6', // Purple
+    '#36b37e', // Success (Emerald)
+    '#e8a735', // Warning (Amber)
+    '#e07838', // Error (Orange)
+    '#6360ef', // Info (Indigo-Blue)
+    '#4ca8c8', // Sky Blue
   ],
 }
 
@@ -82,7 +81,7 @@ function normalizeHexColor(value: string): string {
 }
 
 export function ColorPicker({
-  value = '#3b82f6',
+  value = '#6360ef',
   onChange,
   label,
   presets = 'primary',
@@ -216,7 +215,7 @@ export function ColorPicker({
                 <Input
                   value={inputValue}
                   onChange={(e) => handleInputChange(e.target.value)}
-                  placeholder="#3b82f6"
+                  placeholder="#6360ef"
                   className="pl-8 h-9 font-mono text-sm"
                   disabled={disabled}
                 />
@@ -241,7 +240,7 @@ export function ColorPicker({
           type="text"
           value={inputValue}
           onChange={(e) => handleInputChange(e.target.value)}
-          placeholder="#3b82f6"
+          placeholder="#6360ef"
           className="flex-1 h-10 font-mono text-sm"
           disabled={disabled}
         />
@@ -262,7 +261,7 @@ export interface CompactColorPickerProps {
 }
 
 export function CompactColorPicker({
-  value = '#3b82f6',
+  value = '#6360ef',
   onChange,
   presets = COLOR_PRESETS.primary,
   disabled = false,
@@ -304,7 +303,7 @@ export function CompactColorPicker({
             onChange?.(normalizeHexColor(newValue))
           }
         }}
-        placeholder="#3b82f6"
+        placeholder="#6360ef"
         className="flex-1 h-9 font-mono text-sm"
         disabled={disabled}
       />

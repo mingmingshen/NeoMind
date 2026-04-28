@@ -13,6 +13,7 @@ import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { useExtensionLifecycle } from '@/hooks/useExtensionLifecycle'
 import { logError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
+import { chartColorsHex } from '@/design-system/tokens/color'
 import { useIsMobile, useTouchHover } from '@/hooks/useMobile'
 import {
   LayoutDashboard,
@@ -590,7 +591,7 @@ function renderDashboardComponent(
           series={config.series || [{
             name: 'Value',
             data: [20, 22, 21, 24, 23, 26, 25, 28, 27, 30],
-            color: '#3b82f6'
+            color: chartColorsHex[0]
           }]}
           labels={config.labels || ['1h', '2h', '3h', '4h', '5h', '6h', '7h', '8h', '9h', '10h']}
           height={getChartHeight(component)}
@@ -616,7 +617,7 @@ function renderDashboardComponent(
           series={config.series || [{
             name: 'Value',
             data: [20, 22, 21, 24, 23, 26, 25, 28, 27, 30],
-            color: '#3b82f6'
+            color: chartColorsHex[0]
           }]}
           labels={config.labels || ['1h', '2h', '3h', '4h', '5h', '6h', '7h', '8h', '9h', '10h']}
           height={getChartHeight(component)}
@@ -1539,7 +1540,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       case 'line-chart':
       case 'area-chart':
         defaultConfig = {
-          series: [{ name: 'Value', data: [10, 25, 15, 30, 28, 35, 20], color: '#3b82f6' }],
+          series: [{ name: 'Value', data: [10, 25, 15, 30, 28, 35, 20], color: chartColorsHex[0] }],
           labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
         }
         break
@@ -2314,14 +2315,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   />
 
                   <ColorPicker
-                    value={config.iconColor || '#3b82f6'}
+                    value={config.iconColor || chartColorsHex[0]}
                     onChange={(color) => updateConfig('iconColor')(color)}
                     label={t('visualDashboard.iconColor')}
                     presets="primary"
                   />
 
                   <ColorPicker
-                    value={config.valueColor || '#3b82f6'}
+                    value={config.valueColor || chartColorsHex[0]}
                     onChange={(color) => updateConfig('valueColor')(color)}
                     label={t('visualDashboard.valueColor')}
                     presets="primary"
@@ -2415,7 +2416,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
                   {(config.colorMode || 'fixed') === 'fixed' && (
                     <ColorPicker
-                      value={config.color || '#3b82f6'}
+                      value={config.color || chartColorsHex[0]}
                       onChange={(color) => updateConfig('color')(color)}
                       label={t('visualDashboard.fixedModeColor')}
                       presets="primary"
@@ -2506,7 +2507,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       </Field>
 
                       <ColorPicker
-                        value={config.thresholdColor || '#ef4444'}
+                        value={config.thresholdColor || chartColorsHex[3]}
                         onChange={(color) => updateConfig('thresholdColor')(color)}
                         label={t('visualDashboard.thresholdColor')}
                         presets="semantic"
@@ -2824,7 +2825,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               render: () => (
                 <div className="space-y-3">
                   <ColorPicker
-                    value={config.color || '#3b82f6'}
+                    value={config.color || chartColorsHex[0]}
                     onChange={(color) => updateConfig('color')(color)}
                     label={t('visualDashboard.lineColor')}
                     presets="primary"
@@ -2928,7 +2929,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               render: () => (
                 <div className="space-y-3">
                   <ColorPicker
-                    value={config.color || '#3b82f6'}
+                    value={config.color || chartColorsHex[0]}
                     onChange={(color) => updateConfig('color')(color)}
                     label={t('visualDashboard.areaColor')}
                     presets="primary"
@@ -3034,7 +3035,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               render: () => (
                 <div className="space-y-3">
                   <ColorPicker
-                    value={config.color || '#8b5cf6'}
+                    value={config.color || chartColorsHex[0]}
                     onChange={(color) => updateConfig('color')(color)}
                     label={t('visualDashboard.barColor')}
                     presets="primary"
@@ -4161,7 +4162,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     <Label>{t('visualDashboard.markerColor')}</Label>
                     <Input
                       type="color"
-                      value={config.markerColor || '#3b82f6'}
+                      value={config.markerColor || chartColorsHex[0]}
                       onChange={(e) => updateConfig('markerColor')(e.target.value)}
                       className="h-9 w-full"
                     />
@@ -4591,7 +4592,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       <Label>{t('visualDashboard.backgroundColor')}</Label>
                       <Input
                         type="color"
-                        value={config.backgroundColor || '#f0f0f0'}
+                        value={config.backgroundColor || '#e5e5e5'}
                         onChange={(e) => updateConfig('backgroundColor')(e.target.value)}
                         className="h-9 w-full"
                       />

@@ -144,7 +144,7 @@ export function MessageChannelsTab({
                   href="https://webhook.site"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-blue-500 hover:underline"
+                  className="text-xs text-info hover:underline"
                 >
                   (Get free test URL →)
                 </a>
@@ -157,7 +157,7 @@ export function MessageChannelsTab({
                 onChange={(e) => setNewChannelConfig(prev => ({ ...prev, url: e.target.value }))}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                {t('messages.channels.webhookHint', 'Visit')} <a href="https://webhook.site" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">webhook.site</a> {t('messages.channels.webhookHint2', 'to get a free test URL')}
+                {t('messages.channels.webhookHint', 'Visit')} <a href="https://webhook.site" target="_blank" rel="noopener noreferrer" className="text-info hover:underline">webhook.site</a> {t('messages.channels.webhookHint2', 'to get a free test URL')}
               </p>
             </div>
             <div>
@@ -184,7 +184,7 @@ export function MessageChannelsTab({
               <p className="font-medium mb-2">{t('messages.channels.quickTestOptions', 'Quick Test Options:')}</p>
               <ul className="space-y-1 text-xs">
                 <li>• <strong>MailHog</strong>: Run <code className="bg-background px-1 py-0.5 rounded">mailhog</code> (localhost:1025)</li>
-                <li>• <strong>Ethereal</strong>: <a href="https://ethereal.email" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">ethereal.email</a></li>
+                <li>• <strong>Ethereal</strong>: <a href="https://ethereal.email" target="_blank" rel="noopener noreferrer" className="text-info hover:underline">ethereal.email</a></li>
                 <li>• <strong>Gmail</strong>: smtp.gmail.com:587 (use App Password)</li>
               </ul>
             </div>
