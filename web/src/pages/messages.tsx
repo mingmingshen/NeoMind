@@ -926,7 +926,7 @@ export default function MessagesPage() {
                 <Badge
                   key={`mt-${mt}`}
                   variant="secondary"
-                  className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
+                  className="gap-1 pr-1 cursor-pointer hover:bg-secondary-hover"
                   onClick={() => toggleMessageType(mt)}
                 >
                   <Bell className="h-4 w-4" />
@@ -939,7 +939,7 @@ export default function MessagesPage() {
                 <Badge
                   key={`sev-${sev}`}
                   variant="secondary"
-                  className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
+                  className="gap-1 pr-1 cursor-pointer hover:bg-secondary-hover"
                   onClick={() => toggleSeverity(sev)}
                 >
                   {sev === 'info' && <Info className="h-4 w-4 text-info" />}
@@ -955,7 +955,7 @@ export default function MessagesPage() {
                 <Badge
                   key={`stat-${stat}`}
                   variant="secondary"
-                  className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
+                  className="gap-1 pr-1 cursor-pointer hover:bg-secondary-hover"
                   onClick={() => toggleStatus(stat)}
                 >
                   {t(`messages.status.${stat}`)}
@@ -970,7 +970,7 @@ export default function MessagesPage() {
                   <Badge
                     key={`cat-${cat}`}
                     variant="secondary"
-                    className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
+                    className="gap-1 pr-1 cursor-pointer hover:bg-secondary-hover"
                     onClick={() => toggleCategory(cat)}
                   >
                     <Icon className="h-4 w-4" />
