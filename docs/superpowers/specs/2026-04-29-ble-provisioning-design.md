@@ -32,33 +32,66 @@ Characteristic 1: Device Info
     "supported_netmods": ["wifi"]    // hardware-available network modules, detected by firmware
   }
 
-Characteristic 2: WiFi Scan
-  UUID: 9e5d1e49-... | Properties: Read + Notify
-  Trigger scan by subscribing to notifications.
-  Only available when netmod=wifi is selected.
-  Returns array: [ { "ssid": "...", "rssi": -45, "auth": true }, ... ]
+Characteristic 2: Network Scan
+  UUID: 9e5d1e49-... | Properties: Write + Read + Notify
+  Platform writes scan request, device performs hardware scan, returns results via Notify.
+  Different payload per network type.
 
-Characteristic 3: Network Config
+  Write (trigger scan):
+    { "type": "wifi" }   or   { "type": "halow" }   or   { "type": "cat1_status" }
+
+  Notify (scan results) — WiFi / HaLow:
+    [ { "ssid": "...", "rssi": -45, "auth": true, "channel": 6 }, ... ]
+
+  Notify (scan results) — CAT.1 status (not a scan, but device probes modem):
+    {
+      "sim_ready": true,
+      "signal_level": "Good",          // from cat1_get_cellular_status()
+      "signal_dbm": -75,
+      "imei": "86xxxxxxxxxx",
+      "iccid": "89xxxxxxxxxx",
+      "isp": "China Mobile",
+      "network_type": "LTE",
+      "register_status": "Registered"
+    }
+
+  If CAT.1 returns sim_ready=false, platform should prompt user to insert SIM card.
+  WiFi/HaLow scan reuses existing wifi_get_list() and mm_wifi scan APIs.
+  CAT.1 status reuses existing cat1_get_cellular_status() and get_signal_quality().
+
+  WiFi SSID quick-fill: For WiFi network type, the NeoMind platform can detect
+  the host machine's current WiFi SSID and pre-fill the form. This avoids requiring
+  the user to manually type the SSID. The platform reads its own WiFi connection
+  info and offers it as the default. User only needs to enter the password.
+
+Characteristic 3: Config (generic, extensible)
   UUID: 9e5d1e4a-... | Properties: Write (requires encrypted link)
-  Network type is selected first, then specific config is written.
-  The same characteristic accepts different payloads depending on network type.
+  Generic config channel — distinguished by "type" field.
+  Current scope: network + MQTT only. Future types can be added without protocol change.
 
-  WiFi payload:
-    { "type": "wifi", "ssid": "...", "password": "..." }
+  Network — WiFi:
+    { "type": "net_wifi", "ssid": "...", "password": "..." }
 
-  CAT.1 payload:
-    { "type": "cat1", "apn": "...", "user": "", "password": "", "pin": "", "auth_type": 0 }
+  Network — CAT.1:
+    { "type": "net_cat1", "apn": "...", "user": "", "password": "", "pin": "", "auth_type": 0 }
     auth_type: 0=None, 1=PAP, 2=CHAP, 3=PAP/CHAP
 
-  HaLow payload:
-    { "type": "halow", "ssid": "...", "password": "..." }
+  Network — HaLow:
+    { "type": "net_halow", "ssid": "...", "password": "..." }
 
-Characteristic 4: MQTT Config
-  UUID: 9e5d1e4b-... | Properties: Write (requires encrypted link)
-  Write: { "host": "...", "port": 1883, "username": "", "password": "",
-           "topic_prefix": "device/ne101_camera/ne101a2f003" }
+  MQTT:
+    { "type": "mqtt", "host": "...", "port": 1883, "username": "", "password": "",
+      "topic_prefix": "device/ne101_camera/ne101a2f003" }
 
-Characteristic 5: Status
+  Future types (not implemented now, reserved for extension):
+    { "type": "capture", ... }       // capture schedule / trigger config
+    { "type": "camera", ... }        // image params (brightness, contrast, etc.)
+    { "type": "ai", ... }            // AI model selection / threshold
+    { "type": "system", ... }        // timezone, device name, etc.
+    { "type": "light", ... }         // fill light / night vision config
+  Device ignores unknown types silently for forward compatibility.
+
+Characteristic 4: Status
   UUID: 9e5d1e4c-... | Properties: Read + Notify
   All connection state changes are pushed by device via Notify.
   Platform does not poll — it subscribes once and receives all updates.
@@ -81,7 +114,7 @@ Characteristic 5: Status
   Platform reads current state on demand via Read property.
   Device sends Notify on every state transition.
 
-Characteristic 6: Apply
+Characteristic 5: Apply
   UUID: 9e5d1e4d-... | Properties: Write
   Write: { "action": "apply" }
   Triggers device to save all config to NVS, stop BLE, and connect to network.
@@ -120,11 +153,12 @@ Platform (Web Bluetooth)           NE101 (BLE GATT Server)
   │                                    │
   ├── 1. Scan service UUID ──────────►│  Advertising "NE101-A2F003"
   ├── 2. Connect + Pair (encrypted) ─►│
-  ├── 3. Read Device Info ◄──────────┤  { model, sn, fw, netmod }
-  ├── 4. Subscribe WiFi Scan ◄───────┤  [ { ssid, rssi, auth }, ... ]
+  ├── 3. Read Device Info ◄──────────┤  { model, sn, fw, netmod, supported_netmods }
+  ├── 4. Write Network Scan ────────►│  { type:"wifi" }
+  ├──    Notify scan results ◄───────┤  [ { ssid, rssi, auth, channel }, ... ]
   │   (user selects SSID from list)   │
-  ├── 5. Write Network Config ──────►│  { type:"wifi", ssid, password }
-  ├── 6. Write MQTT Config ─────────►│  { host, port, topic_prefix }
+  ├── 5. Write Config ──────────────►│  { type:"net_wifi", ssid, password }
+  ├── 6. Write Config ──────────────►│  { type:"mqtt", host, port, topic_prefix }
   ├── 7. Write Apply ───────────────►│  { action: "apply" }
   │   (platform waits, device drives all status)       │
   ├── 8. Status Notify ◄────────────┤  { step:"net_connecting", net_type:"wifi" }
@@ -140,7 +174,10 @@ Platform (Web Bluetooth)           NE101 (BLE GATT Server)
 Platform (Web Bluetooth)           NE101 (BLE GATT Server)
   │                                    │
   ├── 1-3. Same as WiFi               │
-  ├── 4. Write Network Config ──────►│  { type:"cat1", apn, user, password, pin }
+  ├── 4. Write Network Scan ────────►│  { type:"cat1_status" }
+  ├──    Notify CAT.1 status ◄───────┤  { sim_ready, signal_level, imei, isp, ... }
+  │   (platform shows SIM/signal info, user fills APN if needed)
+  ├── 5. Write Config ──────────────►│  { type:"net_cat1", apn, user, password, pin }
   ├── 5. Write MQTT Config ─────────►│  { host, port, topic_prefix }
   ├── 6. Write Apply ───────────────►│  { action: "apply" }
   ├── 7. Status Notify ◄────────────┤  { step:"net_connecting", net_type:"cat1" }
@@ -224,8 +261,8 @@ Frontend BLE UI                  NeoMind Backend                 NE101 Device
   │                                  │                              │
   ├── BLE Subscribe WiFi Scan ◄─────────────────────────────────────┤
   │   User selects WiFi from scanned list                           │
-  ├── BLE Write WiFi Config ────────────────────────────────────────►│
-  ├── BLE Write MQTT Config ────────────────────────────────────────►│
+  ├── BLE Write Config (net_wifi) ─────────────────────────────────────►│
+  ├── BLE Write Config (mqtt) ─────────────────────────────────────────►│
   │   { host, port, username,        │                              │
   │     password, topic_prefix }      │                              │
   ├── BLE Write Apply ──────────────────────────────────────────────►│
@@ -281,12 +318,12 @@ bool ble_prov_is_active(void);  // Check if BLE provisioning is active
 ```
 
 Integration points with existing code:
-- `config.c` NVS functions:
-  - WiFi: `cfg_set_wifi_attr()` (same path as HTTP `/api/v1/network/setWifiParam`)
-  - CAT.1: `cfg_set_cellular_param_attr()` (same path as HTTP `/api/v1/network/setCellularParam`)
-  - HaLow: `cfg_set_wifi_attr()` + `set_netmod("halow")`
-  - MQTT: `cfg_set_mqtt_attr()` (same path as HTTP `/api/v1/network/setMqttParam`)
-  - Network mode: `cfg_set_str(KEY_DEVICE_NETMOD, mode)` via `set_netmod()`
+- `config.c` NVS functions (same as existing HTTP API):
+  - `type:"net_wifi"` → `cfg_set_wifi_attr()` + `set_netmod("wifi")`
+  - `type:"net_cat1"` → `cfg_set_cellular_param_attr()` + `set_netmod("cat1")`
+  - `type:"net_halow"` → `cfg_set_wifi_attr()` + `set_netmod("halow")`
+  - `type:"mqtt"` → `cfg_set_mqtt_attr()`
+  - Unknown types → silently ignored (forward compatibility)
 - `system.c`: Trigger restart into work mode after provisioning
 - `main.c` `mode_selector()`: Add BLE provisioning mode for first boot (no network config in NVS)
 
@@ -376,8 +413,8 @@ Replaces the current `AddDeviceDialog`. Integrates all device-adding methods in 
 │  └───────────────────────────────────────┘  │
 │  MQTT Broker: [NeoMind 内置 ▾]                │
 │  网络类型: WiFi (设备自动识别)                  │  ← auto if only one
-│  WiFi: [扫描结果下拉选择 ▾]                    │
-│  密码: [____________]                        │
+│  WiFi: [NeoMind-5G ▾]                        │  ← pre-filled from host WiFi
+│  密码: [____________]                        │  ← user only types password
 │  设备名称: [NE101-A2F003 ▾]                   │
 │  设备类型: CamThink Sensing Camera (自动匹配)  │
 │                                             │
@@ -392,6 +429,8 @@ Tabs:
 - **自动发现** — pending devices from auto-onboard (from PendingDevicesList)
 
 This replaces the current entry point. The "添加设备" button on the devices page opens `AddDeviceGlobalDialog` instead of `AddDeviceDialog`.
+
+WiFi quick-fill: For Tauri desktop, use `tauri-plugin-network` or system command to read the host's current WiFi SSID. For web browser, SSID cannot be auto-detected — user must select from device scan results or type manually.
 
 BLE state managed with React hooks (no Zustand slice needed — BLE is session-scoped, not persistent).
 
