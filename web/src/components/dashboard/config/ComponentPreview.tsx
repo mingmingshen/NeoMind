@@ -49,6 +49,15 @@ export interface ComponentPreviewProps {
 const GRID_CELL_WIDTH = 100
 const GRID_CELL_HEIGHT = 80
 
+// Variant-aware height overrides for components whose variants need different sizes
+function getVariantAwareHeight(componentType: string, config: Record<string, unknown>, baseH: number): number {
+  if (componentType === 'progress-bar') {
+    const variant = config.variant as string
+    if (variant === 'icon' || variant === 'circular') return Math.max(baseH, 2)
+  }
+  return baseH
+}
+
 export const ComponentPreview = memo(function ComponentPreview({
   componentType,
   config,
@@ -71,9 +80,12 @@ export const ComponentPreview = memo(function ComponentPreview({
   // Use ref to track the active timer for cleanup
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Refs for auto-scaling
+  // Refs for auto-scaling — we use a simpler approach: render the component
+  // at the container's actual size with correct aspect ratio, no CSS transform scale.
+  // This is critical for chart components that use ResponsiveContainer, since
+  // transform:scale doesn't change getBoundingClientRect() measurements.
   const containerRef = useRef<HTMLDivElement>(null)
-  const [scale, setScale] = useState(1)
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null)
 
   // Detect dataSource changes
   useEffect(() => {
@@ -141,9 +153,11 @@ export const ComponentPreview = memo(function ComponentPreview({
     }
   }, [data, loading, error])
 
-  // Use component's default size from registry
-  const defaultW = meta?.sizeConstraints.defaultW ?? 4
-  const defaultH = meta?.sizeConstraints.defaultH ?? 3
+  // Use component's default size from registry (with variant-aware height)
+  const baseW = meta?.sizeConstraints.defaultW ?? 4
+  const baseH = meta?.sizeConstraints.defaultH ?? 3
+  const defaultH = getVariantAwareHeight(componentType, config, baseH)
+  const defaultW = baseW
 
   // Build a mock component for rendering with actual default size
   const componentDisplayTitle = title || (config.label as string) || (config.title as string) || ''
@@ -151,7 +165,7 @@ export const ComponentPreview = memo(function ComponentPreview({
   const mockComponent: DashboardComponent = {
     id: 'preview',
     type: componentType as ImplementedComponentType,
-    position: { x: 0, y: 0, w: defaultW, h: defaultH },
+    position: { x: 0, y: 0, w: baseW, h: defaultH },
     title: componentDisplayTitle,
     config: {
       ...config,
@@ -160,12 +174,13 @@ export const ComponentPreview = memo(function ComponentPreview({
     dataSource,
   }
 
-  // Calculate ideal component dimensions based on grid size
+  // Calculate ideal aspect ratio from grid dimensions
   const idealWidth = defaultW * GRID_CELL_WIDTH
   const idealHeight = defaultH * GRID_CELL_HEIGHT
+  const aspectRatio = idealWidth / idealHeight
 
-  // Calculate scale to fit content within container proportionally
-  const updateScale = useCallback(() => {
+  // Measure container to compute the correct rendering dimensions
+  const updateContainerSize = useCallback(() => {
     if (!containerRef.current) return
 
     const containerWidth = containerRef.current.clientWidth - 16 // Account for padding
@@ -173,26 +188,21 @@ export const ComponentPreview = memo(function ComponentPreview({
 
     if (containerWidth <= 0 || containerHeight <= 0) return
 
-    // Calculate scale factors for both dimensions
-    const scaleX = containerWidth / idealWidth
-    const scaleY = containerHeight / idealHeight
+    // Fit component with correct aspect ratio into the container
+    const scaledWidth = Math.min(containerWidth, containerHeight * aspectRatio)
+    const scaledHeight = scaledWidth / aspectRatio
 
-    // Use the smaller scale to ensure content fits both dimensions (maintains aspect ratio)
-    const newScale = Math.min(scaleX, scaleY, 1) // Don't scale up beyond 100%
+    setContainerSize({ width: Math.round(scaledWidth), height: Math.round(scaledHeight) })
+  }, [aspectRatio])
 
-    setScale(newScale)
-  }, [idealWidth, idealHeight])
-
-  // Update scale on mount and when container/props change
+  // Update size on mount and when container/props change
   useEffect(() => {
-    // Initial scale calculation with slight delay for layout
     const timer = requestAnimationFrame(() => {
-      updateScale()
+      updateContainerSize()
     })
 
-    // Update on resize
     const resizeObserver = new ResizeObserver(() => {
-      updateScale()
+      updateContainerSize()
     })
 
     if (containerRef.current) {
@@ -203,7 +213,7 @@ export const ComponentPreview = memo(function ComponentPreview({
       cancelAnimationFrame(timer)
       resizeObserver.disconnect()
     }
-  }, [updateScale])
+  }, [updateContainerSize])
 
   // Show previous data during loading (except on first load)
   const showLoading = loading && !hasLoadedOnceRef.current
@@ -246,17 +256,16 @@ export const ComponentPreview = memo(function ComponentPreview({
           </div>
         ) : (
           <div className="w-full h-full flex items-center justify-center overflow-hidden">
-            {/* Scaled component container with aspect-ratio wrapper */}
+            {/* Component rendered at correct aspect-ratio dimensions (no CSS transform) */}
             <div
               className={cn(
-                'transition-transform duration-200 ease-out origin-center',
+                'transition-all duration-200 ease-out',
                 isTransitioning && 'blur-[1px]'
               )}
-              style={{
-                width: `${idealWidth}px`,
-                height: `${idealHeight}px`,
-                transform: `scale(${scale})`,
-              }}
+              style={containerSize ? {
+                width: `${containerSize.width}px`,
+                height: `${containerSize.height}px`,
+              } : undefined}
             >
               <ComponentRenderer
                 key={`preview-${componentType}-${(config.backgroundType as string) || 'default'}`}
@@ -272,9 +281,9 @@ export const ComponentPreview = memo(function ComponentPreview({
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{meta?.name || componentType}</span>
           <div className="flex items-center gap-2">
-            {scale < 0.95 && (
+            {containerSize && (
               <span className="text-muted-foreground tabular-nums">
-                {Math.round(scale * 100)}%
+                {containerSize.width}×{containerSize.height}
               </span>
             )}
             <span className="text-muted-foreground">
