@@ -1,3 +1,4 @@
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -22,6 +23,7 @@ import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { TransformBuilder as TransformBuilderSplit } from './TransformBuilderSplit'
 import { TransformTestDialog } from './TransformTestDialog'
 import { cn } from '@/lib/utils'
+import { dialogHeader } from '@/design-system/tokens/size'
 import type { TransformAutomation, TransformScope } from '@/types'
 
 interface DeviceTransformsDialogProps {
@@ -363,7 +365,7 @@ export function DeviceTransformsDialog({
             <div className="flex h-full w-full flex-col">
               {/* Header */}
               <div
-                className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+                className={dialogHeader}
                 style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -448,8 +450,7 @@ export function DeviceTransformsDialog({
             devices={devices}
           />
         )}
-      </>,
-      document.body
+      </>, getPortalRoot()
     )
   }
 

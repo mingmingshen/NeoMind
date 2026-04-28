@@ -1,3 +1,4 @@
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useRef, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
@@ -9,6 +10,7 @@ import { Loader2, Package, X } from "lucide-react"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { cn } from "@/lib/utils"
+import { dialogHeader } from '@/design-system/tokens/size'
 
 interface ExtensionUploadDialogProps {
   open: boolean
@@ -322,7 +324,7 @@ export function ExtensionUploadDialog({
           <div className="flex h-full w-full flex-col">
             {/* Header */}
             <div
-              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              className={dialogHeader}
               style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
             >
               <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -370,8 +372,7 @@ export function ExtensionUploadDialog({
             </div>
           </div>
         </div>
-      ) : null,
-      document.body
+      ) : null, getPortalRoot()
     )
   }
 

@@ -12,6 +12,7 @@ import { Search, Check, Server, Zap, Info, X, ChevronRight, ChevronLeft, Circle,
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { dialogHeader } from '@/design-system/tokens/size'
 import { useStore } from '@/store'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
@@ -1964,7 +1965,7 @@ function MobileItemSelector({
       <div className="flex h-full w-full flex-col">
         {/* Header */}
         <div
-          className="flex items-center gap-3 px-4 py-4 border-b shrink-0 bg-background"
+          className={cn(dialogHeader, 'gap-3')}
           style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
         >
           <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0">

@@ -1,3 +1,4 @@
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -134,8 +135,35 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
     }
   }
 
-  const TestContent = () => (
-    <FormSectionGroup>
+  // Mobile: Full-screen portal
+  if (isMobile) {
+    return createPortal(
+      open ? (
+        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col">
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <Play className="h-5 w-5 text-muted-foreground shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-semibold truncate">{t('automation:testTransform', { defaultValue: 'Test Transform' })}</h1>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {t('automation:testTransformDesc', { defaultValue: 'Test with sample data' })}
+                  </p>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={handleClose} disabled={testing} className="shrink-0">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="p-4">
+                <FormSectionGroup>
       {/* Device Selection */}
       <FormSection title={t('automation:testDevice', { defaultValue: 'Test Device' })}>
         <FormField label={t('automation:selectDevice', { defaultValue: 'Select device' })}>
@@ -165,7 +193,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
           value={testData}
           onChange={(e) => setTestData(e.target.value)}
           placeholder='{"temperature": 23.5, "humidity": 65}'
-          rows={isMobile ? 8 : 10}
+          rows={8}
           className="font-mono text-sm"
         />
       </FormSection>
@@ -182,10 +210,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
 
       {/* Results */}
       {result && (
-        <FormSection
-          title={t('automation:testResults', { defaultValue: 'Test Results' })}
-          
-        >
+        <FormSection title={t('automation:testResults', { defaultValue: 'Test Results' })}>
           <div className="flex items-center gap-2 mb-4">
             <CheckCircle2 className="h-5 w-5 text-success" />
             <span className="font-medium">
@@ -193,7 +218,6 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
             </span>
             <Badge variant="outline">{result.count} {t('automation:metrics', { defaultValue: 'metrics' })}</Badge>
           </div>
-
           {result.metrics.length > 0 ? (
             <div className="space-y-2">
               <h4 className="font-medium">{t('automation:generatedMetrics', { defaultValue: 'Generated Metrics' })}</h4>
@@ -203,9 +227,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
                     <Badge variant="outline">{metric.metric}</Badge>
                     <span className="font-mono text-sm">{metric.value}</span>
                     {metric.quality !== null && (
-                      <span className="text-xs text-muted-foreground">
-                        (q: {(metric.quality * 100).toFixed(0)}%)
-                      </span>
+                      <span className="text-xs text-muted-foreground">(q: {(metric.quality * 100).toFixed(0)}%)</span>
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground">
@@ -219,7 +241,6 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
               {t('automation:noMetricsGenerated', { defaultValue: 'No metrics were generated. Check your transform configuration.' })}
             </p>
           )}
-
           {result.warnings.length > 0 && (
             <div className="mt-4 space-y-1">
               <h4 className="font-medium text-warning">{t('automation:warnings', { defaultValue: 'Warnings' })}</h4>
@@ -234,37 +255,6 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
         </FormSection>
       )}
     </FormSectionGroup>
-  )
-
-  // Mobile: Full-screen portal
-  if (isMobile) {
-    return createPortal(
-      open ? (
-        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
-          <div className="flex h-full w-full flex-col">
-            {/* Header */}
-            <div
-              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
-              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <Play className="h-5 w-5 text-muted-foreground shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-base font-semibold truncate">{t('automation:testTransform', { defaultValue: 'Test Transform' })}</h1>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {t('automation:testTransformDesc', { defaultValue: 'Test with sample data' })}
-                  </p>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={handleClose} disabled={testing} className="shrink-0">
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
-              <div className="p-4">
-                <TestContent />
               </div>
             </div>
 
@@ -292,8 +282,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
             </div>
           </div>
         </div>
-      ) : null,
-      document.body
+      ) : null, getPortalRoot()
     )
   }
 
@@ -348,7 +337,98 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            <TestContent />
+            <FormSectionGroup>
+      {/* Device Selection */}
+      <FormSection title={t('automation:testDevice', { defaultValue: 'Test Device' })}>
+        <FormField label={t('automation:selectDevice', { defaultValue: 'Select device' })}>
+          <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+            <SelectTrigger>
+              <SelectValue placeholder={t('automation:selectDevice', { defaultValue: 'Select device' })} />
+            </SelectTrigger>
+            <SelectContent>
+              {devices.map((d) => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.name} {d.device_type && `(${d.device_type})`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
+      </FormSection>
+
+      {/* Test Data */}
+      <FormSection title={t('automation:testData', { defaultValue: 'Test Data (JSON)' })}>
+        <div className="flex justify-end mb-2">
+          <Button variant="ghost" size="sm" onClick={loadSampleData}>
+            {t('automation:loadSample', { defaultValue: 'Load Sample' })}
+          </Button>
+        </div>
+        <Textarea
+          value={testData}
+          onChange={(e) => setTestData(e.target.value)}
+          placeholder='{"temperature": 23.5, "humidity": 65}'
+          rows={10}
+          className="font-mono text-sm"
+        />
+      </FormSection>
+
+      {/* Error Display */}
+      {error && (
+        <Card className="p-4 bg-muted border-destructive">
+          <div className="flex items-center gap-2 text-destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <span>{error}</span>
+          </div>
+        </Card>
+      )}
+
+      {/* Results */}
+      {result && (
+        <FormSection title={t('automation:testResults', { defaultValue: 'Test Results' })}>
+          <div className="flex items-center gap-2 mb-4">
+            <CheckCircle2 className="h-5 w-5 text-success" />
+            <span className="font-medium">
+              {t('automation:testSuccess', { defaultValue: 'Test completed successfully' })}
+            </span>
+            <Badge variant="outline">{result.count} {t('automation:metrics', { defaultValue: 'metrics' })}</Badge>
+          </div>
+          {result.metrics.length > 0 ? (
+            <div className="space-y-2">
+              <h4 className="font-medium">{t('automation:generatedMetrics', { defaultValue: 'Generated Metrics' })}</h4>
+              {result.metrics.map((metric, idx) => (
+                <div key={idx} className="pl-4 border-l-2 border-success">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{metric.metric}</Badge>
+                    <span className="font-mono text-sm">{metric.value}</span>
+                    {metric.quality !== null && (
+                      <span className="text-xs text-muted-foreground">(q: {(metric.quality * 100).toFixed(0)}%)</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {metric.device_id} @ {formatTimestamp(metric.timestamp)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t('automation:noMetricsGenerated', { defaultValue: 'No metrics were generated. Check your transform configuration.' })}
+            </p>
+          )}
+          {result.warnings.length > 0 && (
+            <div className="mt-4 space-y-1">
+              <h4 className="font-medium text-warning">{t('automation:warnings', { defaultValue: 'Warnings' })}</h4>
+              {result.warnings.map((warning, idx) => (
+                <div key={idx} className="text-sm text-warning flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <span>{warning}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </FormSection>
+      )}
+    </FormSectionGroup>
           </div>
 
           {/* Footer */}

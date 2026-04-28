@@ -1,3 +1,4 @@
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
@@ -16,6 +17,7 @@ import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { dialogHeader } from '@/design-system/tokens/size'
 import type { PluginConfigSchema } from "@/types"
 
 /**
@@ -477,9 +479,8 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     [pluginType.id, editingInstance?.id, open]
   )
 
-  // Render form content - defined as a function to avoid JSX-in-JSX issues
-  // but called directly (not as component) to prevent remounting
-  const renderFormContent = () => (
+  // Form content as a JSX variable (not a function/component) to prevent remounting
+  const formContent = (
     <FormSectionGroup key={formKey}>
       {/* Instance Name Field (only for create mode) */}
       {!isEditing && (
@@ -708,7 +709,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
           <div className="flex h-full w-full flex-col">
             {/* Header */}
             <div
-              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              className={dialogHeader}
               style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
             >
               <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -736,13 +737,12 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
             {/* Content */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               <div className="p-4">
-                {renderFormContent()}
+                {formContent}
               </div>
             </div>
           </div>
         </div>
-      ) : null,
-      document.body
+      ) : null, getPortalRoot()
     )
   }
 
@@ -803,7 +803,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-6 py-6">
-            {renderFormContent()}
+            {formContent}
           </div>
         </div>
       )}

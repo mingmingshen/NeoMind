@@ -282,3 +282,60 @@ export const dashboardScrollableContent = [
   // Scrollbar styling
   'scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent',
 ].join(' ')
+
+// ============================================================================
+// Shared Layout Tokens (dashboard + pages + dialogs)
+// ============================================================================
+
+/**
+ * General card container — used for cards, panels, stat boxes across the app
+ * Equivalent to `rounded-lg border bg-card shadow-sm` but centralized
+ */
+export const cardBase = [
+  'rounded-lg border bg-card shadow-sm',
+].join(' ')
+
+/**
+ * Card with padding — most common card pattern (card + standard padding)
+ */
+export const cardPadded = [
+  'rounded-lg border bg-card shadow-sm p-4',
+].join(' ')
+
+/**
+ * Dialog/Panel section header — sticky top bar with title
+ * Used in: dialog headers, sidebar headers, section headers
+ */
+export const sectionHeader = [
+  'flex items-center justify-between',
+  'px-4 py-3 border-b shrink-0',
+].join(' ')
+
+/**
+ * Dialog header — larger padding variant for full-screen dialogs
+ */
+export const dialogHeader = [
+  'flex items-center justify-between',
+  'px-4 py-4 border-b shrink-0 bg-background',
+].join(' ')
+
+/**
+ * Subsection header — smaller, used for grouping within a section
+ */
+export const subSectionHeader = [
+  'flex items-center gap-2',
+  'px-3 py-2 border-b shrink-0',
+  'text-xs font-medium text-muted-foreground bg-muted-30',
+].join(' ')
+
+/**
+ * Scrollable body — fills remaining space with scroll
+ */
+export const scrollableBody = [
+  'flex-1 min-h-0 overflow-y-auto overflow-x-hidden',
+].join(' ')
+
+/**
+ * Standard transition — used for interactive elements
+ */
+export const transitionDefault = 'transition-all duration-200'

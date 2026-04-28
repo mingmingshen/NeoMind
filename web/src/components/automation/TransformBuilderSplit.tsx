@@ -11,6 +11,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { cardPadded } from '@/design-system/tokens/size'
 import { useIsMobile } from '@/hooks/useMobile'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -1865,19 +1866,19 @@ function TestStep({
 
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-lg border bg-card p-4 text-center">
+        <div className={cn(cardPadded, "text-center")}>
           <div className="text-xl font-bold text-info">
             {jsCode.split('\n').filter(s => s.trim()).length}
           </div>
           <div className="text-xs text-muted-foreground">{tBuilder('test.codeLines')}</div>
         </div>
-        <div className="rounded-lg border bg-card p-4 text-center">
+        <div className={cn(cardPadded, "text-center")}>
           <div className="text-xl font-bold">
             {scopeType === 'global' ? tBuilder('scope.global') : scopeType}
           </div>
           <div className="text-xs text-muted-foreground">{tBuilder('test.scope')}</div>
         </div>
-        <div className="rounded-lg border bg-card p-4 text-center">
+        <div className={cn(cardPadded, "text-center")}>
           <div className="text-xl font-bold text-accent-purple">
             {extensionSources?.length || 0}
           </div>
@@ -1886,7 +1887,7 @@ function TestStep({
       </div>
 
       {/* Code Preview */}
-      <div className="rounded-lg border bg-card p-4">
+      <div className={cn(cardPadded)}>
         <h4 className="font-medium flex items-center gap-2 mb-3">
           <Code className="h-4 w-4" />
           {tBuilder('test.transformCode')}
@@ -1897,7 +1898,7 @@ function TestStep({
       </div>
 
       {/* Test Panel */}
-      <div className="rounded-lg border bg-card p-4">
+      <div className={cn(cardPadded)}>
         <h4 className="font-medium flex items-center gap-2 mb-3">
           <Play className="h-4 w-4" />
           {tBuilder('test.testPanel')}

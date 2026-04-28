@@ -6,6 +6,7 @@
  * Compatible with camera feeds and video sources.
  */
 
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import Hls from 'hls.js'
@@ -793,8 +794,7 @@ export function VideoDisplay({
           />
         )}
       </div>
-    </div>,
-    document.body
+    </div>, getPortalRoot()
   )
 
   return (

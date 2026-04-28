@@ -14,6 +14,7 @@
  * Using unified FullScreenDialog components with glassmorphism style.
  */
 
+import { getPortalRoot } from '@/lib/portal'
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { createPortal } from "react-dom"
@@ -2548,8 +2549,7 @@ function ResourceSelectionDialog({
             {tAgent('creator.resources.dialog.done')}
           </Button>
         </div>
-      </div>,
-      document.body
+      </div>, getPortalRoot()
     )
   }
 

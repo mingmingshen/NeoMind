@@ -5,6 +5,7 @@
  * Supports device markers, metric overlays, and command interactions.
  */
 
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
@@ -1192,8 +1193,7 @@ export function MapDisplay({
           t={t}
         />
       </div>
-    </div>,
-    document.body
+    </div>, getPortalRoot()
   ) : null
 
   return (

@@ -10,6 +10,7 @@
  * Fully responsive with touch-friendly controls and safe area support.
  */
 
+import { getPortalRoot } from '@/lib/portal'
 import { useMemo, useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -41,6 +42,7 @@ import type { ComponentConfigSchema } from './ComponentConfigBuilder'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import { cn } from '@/lib/utils'
+import { dialogHeader } from '@/design-system/tokens/size'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 
@@ -204,7 +206,7 @@ export function ComponentConfigDialog({
             <div className="flex h-full w-full flex-col">
               {/* Header */}
               <div
-                className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+                className={dialogHeader}
                 style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -370,8 +372,7 @@ export function ComponentConfigDialog({
             </div>
           </div>
         )}
-      </>,
-      document.body
+      </>, getPortalRoot()
     )
   }
 

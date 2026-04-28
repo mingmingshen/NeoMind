@@ -1,3 +1,4 @@
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
@@ -28,6 +29,7 @@ import type { AgentExecutionDetail, DataCollected } from "@/types"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { cn } from "@/lib/utils"
+import { dialogHeader } from '@/design-system/tokens/size'
 import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 
 interface ExecutionDetailDialogProps {
@@ -266,25 +268,43 @@ export function ExecutionDetailDialog({
     return pairs
   }
 
-  const ExecutionContent = () => {
-    if (loading) {
-      return (
-        <div className="h-full flex items-center justify-center">
-          <Clock className="h-5 w-5 animate-spin text-muted-foreground" />
-        </div>
-      )
-    }
+  // Mobile: Full-screen portal
+  if (isMobile) {
+    return createPortal(
+      open ? (
+        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col">
+            {/* Header */}
+            <div
+              className={dialogHeader}
+              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <Sparkles className="h-5 w-5 text-primary shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-semibold truncate">
+                    {t('agents:execution.title', { defaultValue: 'Execution' })} #{executionId.slice(-6)}
+                  </h1>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={handleClose} className="shrink-0">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
 
-    if (!execution) {
-      return (
-        <div className="text-center py-12 text-muted-foreground">
-          {t('agents:executionNotFound', { defaultValue: 'Execution not found' })}
-        </div>
-      )
-    }
-
-    return (
-      <div className="space-y-3">
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="p-4">
+                {loading ? (
+                  <div className="h-full flex items-center justify-center">
+                    <Clock className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : !execution ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    {t('agents:executionNotFound', { defaultValue: 'Execution not found' })}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
         {/* Status Bar */}
         <div className="flex items-center justify-between py-2 px-3 bg-muted-30 rounded-lg">
           <div className="flex items-center gap-2">
@@ -496,37 +516,7 @@ export function ExecutionDetailDialog({
           </FormSectionGroup>
         )}
       </div>
-    )
-  }
-
-  // Mobile: Full-screen portal
-  if (isMobile) {
-    return createPortal(
-      open ? (
-        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
-          <div className="flex h-full w-full flex-col">
-            {/* Header */}
-            <div
-              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
-              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <Sparkles className="h-5 w-5 text-primary shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-base font-semibold truncate">
-                    {t('agents:execution.title', { defaultValue: 'Execution' })} #{executionId.slice(-6)}
-                  </h1>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={handleClose} className="shrink-0">
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
-              <div className="p-4">
-                <ExecutionContent />
+                )}
               </div>
             </div>
 
@@ -541,8 +531,7 @@ export function ExecutionDetailDialog({
             </div>
           </div>
         </div>
-      ) : null,
-      document.body
+      ) : null, getPortalRoot()
     )
   }
 
@@ -591,7 +580,184 @@ export function ExecutionDetailDialog({
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            <ExecutionContent />
+            {loading ? (
+              <div className="h-full flex items-center justify-center">
+                <Clock className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : !execution ? (
+              <div className="text-center py-12 text-muted-foreground">
+                {t('agents:executionNotFound', { defaultValue: 'Execution not found' })}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Status Bar */}
+                <div className="flex items-center justify-between py-2 px-3 bg-muted-30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    {getStatusIcon(execution.status)}
+                    <span className="text-xs font-medium">{t(`agents:executionStatus.${execution.status.toLowerCase()}`)}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-4 w-4" />
+                      {formatTimestamp(execution.timestamp, false)}
+                    </span>
+                    <span>{execution.duration_ms}ms</span>
+                  </div>
+                </div>
+
+                {execution.error && (
+                  <Card className="p-2 border-destructive bg-muted">
+                    <div className="flex items-start gap-1.5 text-destructive">
+                      <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                      <div className="text-xs break-words">{execution.error}</div>
+                    </div>
+                  </Card>
+                )}
+
+                {execution.decision_process && (
+                  <FormSectionGroup>
+                    <FormSection
+                      title={t('agents:execution.analysis', { defaultValue: 'Situation Analysis' })}
+                      collapsible
+                    >
+                      <p className="text-xs leading-relaxed">{execution.decision_process.situation_analysis}</p>
+                    </FormSection>
+
+                    {execution.decision_process.data_collected.length > 0 && (
+                      <FormSection
+                        title={`${t('agents:execution.inputData', { defaultValue: 'Input Data' })} (${execution.decision_process.data_collected.length})`}
+                        collapsible
+                      >
+                        <div className="space-y-2">
+                          {execution.decision_process.data_collected.map((data, idx) => {
+                            const imageData = extractImageData(data)
+                            const hasImage = imageData !== null
+                            const dataPairs = getDataDisplayPairs(data)
+                            const isExpanded = expandedDataIndices.has(idx)
+                            return (
+                              <div key={idx} className="border rounded-lg overflow-hidden">
+                                <div
+                                  className="flex items-center justify-between p-2 bg-bg-50 cursor-pointer hover:bg-bg-80 transition-colors"
+                                  onClick={() => toggleDataExpanded(idx)}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    {hasImage && <ImageIcon className="h-4 w-4 text-accent-purple shrink-0" />}
+                                    <span className="text-[10px] font-medium truncate">{data.source}</span>
+                                    <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0">{data.data_type}</Badge>
+                                  </div>
+                                  {dataPairs.length > 0 && (
+                                    isExpanded ? (
+                                      <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+                                    ) : (
+                                      <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                                    )
+                                  )}
+                                </div>
+                                {hasImage && (
+                                  <div className="p-2 bg-black/5">
+                                    <img src={imageData!.src} alt={`${data.source} - ${t('agents:execution.inputImage', { defaultValue: 'Input Image' })}`} className="w-full max-h-[200px] object-contain rounded-md bg-background" />
+                                  </div>
+                                )}
+                                {isExpanded && dataPairs.length > 0 && (
+                                  <div className="p-2 border-t bg-background">
+                                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+                                      {dataPairs.slice(0, 10).map((pair, pairIdx) => (
+                                        <div key={pairIdx} className="flex items-baseline gap-1 min-w-0">
+                                          <span className="text-muted-foreground shrink-0">{pair.key}:</span>
+                                          <span className="truncate font-mono">{pair.value}</span>
+                                        </div>
+                                      ))}
+                                      {dataPairs.length > 10 && (
+                                        <div className="col-span-2 text-muted-foreground text-[9px]">
+                                          {t('agents:execution.moreFields', { count: dataPairs.length - 10, defaultValue: `+${dataPairs.length - 10} more fields` })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </FormSection>
+                    )}
+
+                    {execution.decision_process.reasoning_steps.length > 0 && (
+                      <FormSection title={t('agents:execution.reasoningSteps', { defaultValue: 'Reasoning Steps' })} collapsible>
+                        <div className="space-y-2">
+                          {execution.decision_process.reasoning_steps.map((step, idx, arr) => (
+                            <div key={idx} className="flex gap-2">
+                              <div className="flex flex-col items-center">
+                                <div className="w-5 h-5 rounded-full bg-muted text-primary text-[10px] flex items-center justify-center shrink-0">{step.step_number}</div>
+                                {idx < arr.length - 1 && <div className="w-0.5 flex-1 bg-border my-0.5" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs font-medium">{step.description}</div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Badge variant="outline" className="text-[9px] h-4 px-1">{step.step_type}</Badge>
+                                  <span className="text-[10px] text-muted-foreground">{Math.round(step.confidence * 100)}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </FormSection>
+                    )}
+
+                    {execution.decision_process.decisions.length > 0 && (
+                      <FormSection title={t('agents:execution.decisions', { defaultValue: 'Decisions' })} collapsible>
+                        <div className="space-y-1.5">
+                          {execution.decision_process.decisions.map((decision, idx) => (
+                            <div key={idx} className="p-2 bg-background rounded border">
+                              <div className="text-xs font-medium mb-1">{decision.description}</div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] text-muted-foreground truncate flex-1 mr-2">{decision.rationale}</span>
+                                <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0">{decision.action}</Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </FormSection>
+                    )}
+
+                    <Card className="p-3 bg-muted border-border">
+                      <div className="text-xs font-semibold text-primary mb-2">{t('agents:execution.conclusionLabel', { defaultValue: 'Conclusion' })}</div>
+                      <MarkdownMessage content={execution.decision_process.conclusion} />
+                    </Card>
+
+                    {execution.result?.summary && (() => {
+                      const summary = execution.result.summary.trim()
+                      const conclusion = execution.decision_process?.conclusion?.trim() ?? ''
+                      const isGeneric = summary === 'Completed tool execution rounds.' || summary === 'LLM generation failed during tool execution.'
+                      const normalize = (s: string) => s.replace(/\s+/g, ' ').trim()
+                      const isDuplicate = normalize(summary) === normalize(conclusion) || (conclusion.length > 100 && normalize(summary).includes(normalize(conclusion).slice(0, 200))) || (summary.length > 100 && normalize(conclusion).includes(normalize(summary).slice(0, 200)))
+                      if (!summary || isGeneric || isDuplicate) return null
+                      return (
+                        <FormSection title={t('agents:memory.llmResponse', 'LLM Response')} collapsible>
+                          <pre className="text-xs whitespace-pre-wrap font-mono bg-muted-50 p-3 rounded-lg border max-h-60 overflow-auto break-words leading-relaxed">{summary}</pre>
+                        </FormSection>
+                      )
+                    })()}
+
+                    {execution.result?.actions_executed && execution.result.actions_executed.length > 0 && (
+                      <FormSection title={t('agents:execution.actionsExecuted', { defaultValue: 'Actions Executed' })} collapsible>
+                        <div className="space-y-1">
+                          {execution.result.actions_executed.map((action, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-1.5 bg-background rounded border">
+                              <div className="flex-1 min-w-0 mr-2">
+                                <div className="text-xs truncate">{action.description}</div>
+                                <div className="text-[10px] text-muted-foreground truncate">{action.target}</div>
+                              </div>
+                              <Badge variant={action.success ? "default" : "destructive"} className="text-[9px] h-4 px-1 shrink-0">{action.success ? '✓' : '✗'}</Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </FormSection>
+                    )}
+                  </FormSectionGroup>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Footer */}

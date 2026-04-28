@@ -40,6 +40,7 @@ import {
   Play,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { cardPadded } from '@/design-system/tokens/size'
 import { useIsMobile } from '@/hooks/useMobile'
 import type { Rule, RuleTrigger, RuleCondition, RuleAction, DeviceType, Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor } from '@/types'
 // Unified dialog components
@@ -2617,22 +2618,22 @@ function ReviewStep({ name, description, enabled, condition, actions, forDuratio
 
       {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-lg border bg-card p-4 text-center">
+        <div className={cn(cardPadded, "text-center")}>
           <div className="text-2xl font-bold text-accent-purple">{condition ? 1 : 0}</div>
           <div className="text-xs text-muted-foreground">{tBuilder('review.triggerCondition')}</div>
         </div>
-        <div className="rounded-lg border bg-card p-4 text-center">
+        <div className={cn(cardPadded, "text-center")}>
           <div className="text-2xl font-bold text-success">{actions.length}</div>
           <div className="text-xs text-muted-foreground">{tBuilder('review.executeAction')}</div>
         </div>
-        <div className="rounded-lg border bg-card p-4 text-center">
+        <div className={cn(cardPadded, "text-center")}>
           <div className="text-2xl font-bold">{enabled ? tBuilder('review.enabled') : tBuilder('review.disabled')}</div>
           <div className="text-xs text-muted-foreground">{tBuilder('review.status')}</div>
         </div>
       </div>
 
       {/* Basic Info */}
-      <div className="rounded-lg border bg-card p-4">
+      <div className={cn(cardPadded)}>
         <h4 className="font-medium flex items-center gap-2 mb-3">
           <Settings className="h-4 w-4" />
           {tBuilder('review.basicInfo')}
@@ -2654,7 +2655,7 @@ function ReviewStep({ name, description, enabled, condition, actions, forDuratio
       </div>
 
       {/* DSL Preview */}
-      <div className="rounded-lg border bg-card p-4">
+      <div className={cn(cardPadded)}>
         <h4 className="font-medium flex items-center gap-2 mb-3">
           <Code className="h-4 w-4" />
           {tBuilder('review.ruleDSL')}

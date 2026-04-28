@@ -12,12 +12,14 @@
  * - Validation error display
  */
 
+import { getPortalRoot } from '@/lib/portal'
 import { ReactNode, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { X, Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { dialogHeader } from '@/design-system/tokens/size'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 
@@ -212,7 +214,7 @@ export function UnifiedFormDialog({
           <div className="flex h-full w-full flex-col">
             {/* Header */}
             <div
-              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              className={dialogHeader}
               style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
             >
               <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -298,8 +300,7 @@ export function UnifiedFormDialog({
             )}
           </div>
         </div>
-      ) : null,
-      document.body
+      ) : null, getPortalRoot()
     )
   }
 

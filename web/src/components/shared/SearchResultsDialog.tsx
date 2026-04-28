@@ -1,3 +1,4 @@
+import { getPortalRoot } from '@/lib/portal'
 import { useEffect, useState, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
@@ -12,6 +13,7 @@ import { useNavigate } from "react-router-dom"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { cn } from "@/lib/utils"
+import { dialogHeader } from '@/design-system/tokens/size'
 
 interface SearchResultsDialogProps {
   open: boolean
@@ -125,8 +127,35 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
     return acc
   }, {} as Record<string, SearchResult[]>)
 
-  const SearchContent = () => (
-    <div className="space-y-4">
+  // Mobile: Full-screen portal
+  if (isMobile) {
+    return createPortal(
+      open ? (
+        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col">
+            {/* Header */}
+            <div
+              className={dialogHeader}
+              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <Search className="h-5 w-5 text-primary shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-semibold truncate">{t('search.title', { defaultValue: 'Global Search' })}</h1>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {t('search.description', { defaultValue: 'Search devices, rules, alerts' })}
+                  </p>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={handleClose} className="shrink-0">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="p-4">
+                <div className="space-y-4">
       {/* Search Input */}
       <div className="flex gap-2">
         <Input
@@ -214,37 +243,6 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
         </div>
       )}
     </div>
-  )
-
-  // Mobile: Full-screen portal
-  if (isMobile) {
-    return createPortal(
-      open ? (
-        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
-          <div className="flex h-full w-full flex-col">
-            {/* Header */}
-            <div
-              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
-              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <Search className="h-5 w-5 text-primary shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-base font-semibold truncate">{t('search.title', { defaultValue: 'Global Search' })}</h1>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {t('search.description', { defaultValue: 'Search devices, rules, alerts' })}
-                  </p>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={handleClose} className="shrink-0">
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
-              <div className="p-4">
-                <SearchContent />
               </div>
             </div>
 
@@ -259,8 +257,7 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
             </div>
           </div>
         </div>
-      ) : null,
-      document.body
+      ) : null, getPortalRoot()
     )
   }
 
@@ -314,7 +311,94 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            <SearchContent />
+            <div className="space-y-4">
+      {/* Search Input */}
+      <div className="flex gap-2">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={t('placeholders.search')}
+          className="flex-1"
+          autoFocus
+        />
+        <Button onClick={handleSearch} disabled={loading || !query.trim()}>
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Search className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+
+      {/* Results */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : hasSearched && results.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <Search className="h-12 w-12 text-muted-foreground mb-4" />
+          <p className="text-lg font-medium">{t('search.noResults', { defaultValue: 'No results found' })}</p>
+          <p className="text-sm text-muted-foreground">
+            {t('search.tryDifferent', { defaultValue: 'Try different keywords' })}
+          </p>
+        </div>
+      ) : !hasSearched ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+          <Search className="h-12 w-12 mb-4 opacity-50" />
+          <p>{t('search.placeholder', { defaultValue: 'Enter keywords and click search' })}</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {Object.entries(groupedResults).map(([type, typeResults]) => (
+            <div key={type}>
+              <div className="flex items-center gap-2 mb-2">
+                {getTypeIcon(type as SearchResult["type"])}
+                <span className="font-medium text-sm">
+                  {getTypeLabel(type as SearchResult["type"])}
+                </span>
+                <Badge variant="secondary" className="text-xs">
+                  {typeResults.length}
+                </Badge>
+              </div>
+              <div className="space-y-1 ml-6">
+                {typeResults.map((result) => (
+                  <button
+                    key={result.id}
+                    className="flex w-full items-center gap-3 rounded-md p-2 text-left text-sm hover:bg-accent transition-colors"
+                    onClick={() => handleResultClick(result)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{result.title}</div>
+                      {result.description && (
+                        <div className="text-xs text-muted-foreground truncate">
+                          {result.description}
+                        </div>
+                      )}
+                    </div>
+                    {result.relevance_score !== undefined && (
+                      <Badge
+                        variant="outline"
+                        className={cn("text-xs", getTypeColor(result.type))}
+                      >
+                        {(result.relevance_score * 100).toFixed(0)}%
+                      </Badge>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {hasSearched && results.length > 0 && (
+            <div className="text-xs text-center text-muted-foreground pt-2 border-t">
+              {t('search.foundCount', { count: results.length, defaultValue: `Found ${results.length} results` })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
           </div>
         </div>
       )}

@@ -1,3 +1,4 @@
+import { getPortalRoot } from '@/lib/portal'
 import { useEffect, useState, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
@@ -10,6 +11,7 @@ import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
+import { dialogHeader } from '@/design-system/tokens/size'
 import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 import { FormField } from "@/components/ui/field"
 
@@ -135,8 +137,37 @@ export function LLMBackendConfigDialog({
     }
   }, [loading, onOpenChange])
 
-  const DialogContent = () => (
-    <FormSectionGroup>
+  // Mobile: Full-screen portal
+  if (isMobile) {
+    return createPortal(
+      open ? (
+        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col">
+            {/* Header */}
+            <div
+              className={dialogHeader}
+              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <Settings className="h-5 w-5 text-primary shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-semibold truncate">
+                    {mode === 'create' ? t('settings:llm.create') : t('settings:llm.edit')}
+                  </h1>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {backend?.name || t('settings:llm.newBackend', { defaultValue: 'New Backend' })}
+                  </p>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={handleClose} disabled={loading} className="shrink-0">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="p-4">
+                <FormSectionGroup>
       <FormField
         label={t('settings:llm.name')}
         required
@@ -190,39 +221,6 @@ export function LLMBackendConfigDialog({
         </div>
       )}
     </FormSectionGroup>
-  )
-
-  // Mobile: Full-screen portal
-  if (isMobile) {
-    return createPortal(
-      open ? (
-        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
-          <div className="flex h-full w-full flex-col">
-            {/* Header */}
-            <div
-              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
-              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <Settings className="h-5 w-5 text-primary shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-base font-semibold truncate">
-                    {mode === 'create' ? t('settings:llm.create') : t('settings:llm.edit')}
-                  </h1>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {backend?.name || t('settings:llm.newBackend', { defaultValue: 'New Backend' })}
-                  </p>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={handleClose} disabled={loading} className="shrink-0">
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
-              <div className="p-4">
-                <DialogContent />
               </div>
             </div>
 
@@ -241,8 +239,7 @@ export function LLMBackendConfigDialog({
             </div>
           </div>
         </div>
-      ) : null,
-      document.body
+      ) : null, getPortalRoot()
     )
   }
 
@@ -292,7 +289,60 @@ export function LLMBackendConfigDialog({
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            <DialogContent />
+            <FormSectionGroup>
+      <FormField
+        label={t('settings:llm.name')}
+        required
+      >
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('settings:llm.namePlaceholder')}
+        />
+      </FormField>
+
+      {mode === 'create' && (
+        <>
+          <FormField
+            label={t('settings:llm.endpoint')}
+          >
+            <Input
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              placeholder="http://localhost:11434"
+            />
+          </FormField>
+
+          <FormField
+            label={t('settings:llm.model')}
+            required
+          >
+            <Input
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="qwen2.5:7b"
+            />
+          </FormField>
+
+          <FormField
+            label={t('settings:llm.apiKey')}
+          >
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={t('settings:llm.apiKeyPlaceholder', { defaultValue: 'Optional API key' })}
+            />
+          </FormField>
+        </>
+      )}
+
+      {mode === 'edit' && (
+        <div className="text-sm text-muted-foreground p-4 border rounded-lg bg-muted-30">
+          {t('settings:llm.configPlaceholder', { defaultValue: 'Configuration fields will be dynamically generated based on backend type' })}
+        </div>
+      )}
+    </FormSectionGroup>
           </div>
 
           {/* Footer */}

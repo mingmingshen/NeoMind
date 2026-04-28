@@ -1,3 +1,4 @@
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useEffect, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
@@ -13,6 +14,7 @@ import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { cn } from "@/lib/utils"
+import { dialogHeader } from '@/design-system/tokens/size'
 import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 
 interface AgentMemoryDialogProps {
@@ -87,25 +89,42 @@ export function AgentMemoryDialog({
 
   const isBusy = loading || clearing
 
-  const MemoryContent = () => {
-    if (loading && !memory) {
-      return (
-        <div className="flex items-center justify-center py-8">
-          <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      )
-    }
+  // Mobile: Full-screen portal
+  if (isMobile) {
+    return createPortal(
+      open ? (
+        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col">
+            {/* Header */}
+            <div
+              className={dialogHeader}
+              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <Brain className="h-5 w-5 text-primary shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-semibold truncate">{t('agents:memory.title')}</h1>
+                  <p className="text-xs text-muted-foreground truncate">{agentName}</p>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={handleClose} disabled={clearing} className="shrink-0">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
 
-    if (!memory) {
-      return (
-        <div className="text-center py-8 text-muted-foreground">
-          {t('agents:memory.noMemory')}
-        </div>
-      )
-    }
-
-    return (
-      <FormSectionGroup>
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="p-4">
+                {loading && !memory ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : !memory ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    {t('agents:memory.noMemory')}
+                  </div>
+                ) : (
+                  <FormSectionGroup>
         {/* State Variables */}
         {Object.keys(memory.state_variables).length > 0 && (
           <FormSection
@@ -179,36 +198,7 @@ export function AgentMemoryDialog({
           {t('agents:memory.updatedAt')}: {formatTimestamp(memory.updated_at)}
         </div>
       </FormSectionGroup>
-    )
-  }
-
-  // Mobile: Full-screen portal
-  if (isMobile) {
-    return createPortal(
-      open ? (
-        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
-          <div className="flex h-full w-full flex-col">
-            {/* Header */}
-            <div
-              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
-              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <Brain className="h-5 w-5 text-primary shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-base font-semibold truncate">{t('agents:memory.title')}</h1>
-                  <p className="text-xs text-muted-foreground truncate">{agentName}</p>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={handleClose} disabled={clearing} className="shrink-0">
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
-              <div className="p-4">
-                <MemoryContent />
+                )}
               </div>
             </div>
 
@@ -236,8 +226,7 @@ export function AgentMemoryDialog({
             </div>
           </div>
         </div>
-      ) : null,
-      document.body
+      ) : null, getPortalRoot()
     )
   }
 
@@ -292,7 +281,85 @@ export function AgentMemoryDialog({
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
-            <MemoryContent />
+            {loading && !memory ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : !memory ? (
+              <div className="text-center py-8 text-muted-foreground">
+                {t('agents:memory.noMemory')}
+              </div>
+            ) : (
+              <FormSectionGroup>
+                {/* State Variables */}
+                {Object.keys(memory.state_variables).length > 0 && (
+                  <FormSection
+                    title={t('agents:memory.stateVariables')}
+                  >
+                    <div className="grid grid-cols-2 gap-4">
+                      {Object.entries(memory.state_variables).map(([key, value]) => (
+                        <div key={key} className="space-y-1">
+                          <div className="text-xs text-muted-foreground">{key}</div>
+                          <div className="text-sm font-mono bg-muted px-2 py-1 rounded truncate">
+                            {String(value)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </FormSection>
+                )}
+
+                {/* Baselines */}
+                {memory.baselines && Object.keys(memory.baselines).length > 0 && (
+                  <FormSection
+                    title={t('agents:memory.baselines')}
+                  >
+                    <div className="space-y-2">
+                      {Object.entries(memory.baselines).map(([metric, value]) => (
+                        <div key={metric} className="flex justify-between items-center">
+                          <span className="text-sm">{metric}</span>
+                          <Badge variant="secondary">{value.toFixed(2)}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </FormSection>
+                )}
+
+                {/* Learned Patterns */}
+                {memory.learned_patterns.length > 0 && (
+                  <FormSection
+                    title={t('agents:memory.learnedPatterns')}
+                  >
+                    <div className="space-y-2">
+                      {memory.learned_patterns.map((pattern, idx) => (
+                        <Card key={idx} className="p-3">
+                          <div className="font-medium text-sm">{pattern.description}</div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {t('agents:memory.confidence', { defaultValue: 'Confidence' })}: {(pattern.confidence * 100).toFixed(0)}%
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  </FormSection>
+                )}
+
+                {/* Trend Data Summary */}
+                {memory.trend_data.length > 0 && (
+                  <FormSection
+                    title={`${t('agents:memory.trendData')} (${memory.trend_data.length} ${t('common:points')})`}
+                  >
+                    <div className="text-sm text-muted-foreground">
+                      {t('agents:memory.trendDataHint', { count: memory.trend_data.length })}
+                    </div>
+                  </FormSection>
+                )}
+
+                {/* Updated At */}
+                <div className="text-xs text-muted-foreground pt-2">
+                  {t('agents:memory.updatedAt')}: {formatTimestamp(memory.updated_at)}
+                </div>
+              </FormSectionGroup>
+            )}
           </div>
 
           {/* Footer */}

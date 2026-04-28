@@ -45,6 +45,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { cardPadded } from "@/design-system/tokens/size"
 import { api, fetchAPI } from "@/lib/api"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import type { DeviceType, MetricDefinition, CommandDefinition } from "@/types"
@@ -1249,15 +1250,15 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
         <div className="space-y-6 max-w-3xl mx-auto">
           {/* Summary Cards */}
           <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="rounded-lg border bg-card p-4 text-center">
+            <div className={cn(cardPadded, "text-center")}>
               <div className="text-2xl font-bold text-primary">{data.metrics?.length || 0}</div>
               <div className="text-xs text-muted-foreground">Metrics</div>
             </div>
-            <div className="rounded-lg border bg-card p-4 text-center">
+            <div className={cn(cardPadded, "text-center")}>
               <div className="text-2xl font-bold text-info">{data.commands?.length || 0}</div>
               <div className="text-xs text-muted-foreground">Commands</div>
             </div>
-            <div className="rounded-lg border bg-card p-4 text-center">
+            <div className={cn(cardPadded, "text-center")}>
               <div className="text-2xl font-bold text-success">
                 {data.mode === 'simple' ? 'Raw' : 'Full'}
               </div>
@@ -1266,7 +1267,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
           </div>
 
           {/* Basic Info */}
-          <div className="rounded-lg border bg-card p-4">
+          <div className={cn(cardPadded)}>
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-medium flex items-center gap-2">
                 <Settings className="h-4 w-4" />
@@ -1305,7 +1306,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
           </div>
 
           {/* Metrics */}
-          <div className="rounded-lg border bg-card p-4">
+          <div className={cn(cardPadded)}>
             <div className="flex items-center justify-between mb-4">
               <h4 className="font-medium flex items-center gap-2">
                 <ArrowDown className="h-4 w-4 text-success" />
@@ -1338,7 +1339,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
           </div>
 
           {/* Commands */}
-          <div className="rounded-lg border bg-card p-4">
+          <div className={cn(cardPadded)}>
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-medium flex items-center gap-2">
                 <FileText className="h-4 w-4 text-info" />
@@ -1369,7 +1370,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
           </div>
 
           {/* Validation */}
-          <div className="rounded-lg border bg-card p-4">
+          <div className={cn(cardPadded)}>
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-medium">Validation</h4>
               <Button

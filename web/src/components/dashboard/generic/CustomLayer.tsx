@@ -7,6 +7,7 @@
  * Data binding support similar to Map component with typed bindings.
  */
 
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
@@ -1378,8 +1379,7 @@ export function CustomLayer({
           )}
         </div>
       </div>
-    </div>,
-    document.body
+    </div>, getPortalRoot()
   ) : null
 
   return (

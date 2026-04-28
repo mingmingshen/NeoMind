@@ -6,6 +6,7 @@
  * Supports mobile full-screen and desktop modal views.
  */
 
+import { getPortalRoot } from '@/lib/portal'
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -18,6 +19,7 @@ import { useAppStore } from '@/store'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { cn } from '@/lib/utils'
+import { dialogHeader } from '@/design-system/tokens/size'
 
 export interface UpdateDialogProps {
   /** Whether the dialog is open */
@@ -171,108 +173,6 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
     }
   }
 
-  const UpdateContent = () => (
-    <div className="space-y-4">
-      {/* Release Notes */}
-      {currentUpdateInfo?.body && installStatus === 'idle' && (
-        <div className="max-h-60 overflow-y-auto rounded-md border p-3 text-sm">
-          <div className="prose prose-sm dark:prose-invert max-w-none">
-            {updateInfo?.body}
-          </div>
-        </div>
-      )}
-
-      {/* Progress Bar */}
-      {(installStatus === 'downloading' || installStatus === 'installing') && (
-        <div className="space-y-2">
-          <Progress value={getProgressPercent()} className="h-2" />
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>{getStatusMessage()}</span>
-            {currentProgress && (
-              <span>
-                {formatBytes(currentProgress.current)} / {formatBytes(currentProgress.total)} ({Math.round(getProgressPercent())}%)
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Success Message */}
-      {installStatus === 'done' && (
-        <div className="flex items-center gap-2 p-3 rounded-md bg-success-light dark:bg-success-light border border-success-light dark:border-success-light">
-          <Check className="w-5 h-5 text-success dark:text-success" />
-          <p className="text-sm text-success">
-            {t('settings:updateCompleteMessage')}
-          </p>
-        </div>
-      )}
-
-      {/* Error Message */}
-      {installStatus === 'error' && (
-        <div className="flex items-start gap-2 p-3 rounded-md bg-error-light border border-error">
-          <AlertCircle className="w-5 h-5 text-error mt-0.5" />
-          <p className="text-sm text-error">
-            {getStatusMessage()}
-          </p>
-        </div>
-      )}
-    </div>
-  )
-
-  const FooterContent = () => {
-    switch (installStatus) {
-      case 'idle':
-        return (
-          <>
-            <Button variant="ghost" onClick={handleClose} className="text-muted-foreground">
-              {t('settings:remindLater')}
-            </Button>
-            <Button variant="outline" onClick={handleClose}>
-              {t('settings:skipThisUpdate')}
-            </Button>
-            <Button onClick={handleUpdate} className="gap-2">
-              <Download className="w-4 h-4" />
-              {t('settings:updateNow')}
-            </Button>
-          </>
-        )
-      case 'downloading':
-        return (
-          <Button disabled variant="secondary">
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            {t('settings:downloading')}
-          </Button>
-        )
-      case 'installing':
-        return (
-          <Button disabled variant="secondary">
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            {t('settings:installing')}
-          </Button>
-        )
-      case 'done':
-        return (
-          <Button onClick={handleRelaunch} className="gap-2">
-            <Rocket className="w-4 h-4" />
-            {t('settings:relaunchToComplete')}
-          </Button>
-        )
-      case 'error':
-        return (
-          <>
-            <Button variant="outline" onClick={handleClose}>
-              {t('common:close')}
-            </Button>
-            <Button onClick={handleUpdate} variant="default">
-              {t('common:retry')}
-            </Button>
-          </>
-        )
-      default:
-        return null
-    }
-  }
-
   // Mobile: Full-screen portal
   if (isMobile) {
     return createPortal(
@@ -281,7 +181,7 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
           <div className="flex h-full w-full flex-col">
             {/* Header */}
             <div
-              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              className={dialogHeader}
               style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
             >
               <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -307,7 +207,51 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               <div className="p-4">
                 <p className="text-sm text-muted-foreground mb-4">{getDescription()}</p>
-                <UpdateContent />
+                <div className="space-y-4">
+                  {/* Release Notes */}
+                  {currentUpdateInfo?.body && installStatus === 'idle' && (
+                    <div className="max-h-60 overflow-y-auto rounded-md border p-3 text-sm">
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        {updateInfo?.body}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Progress Bar */}
+                  {(installStatus === 'downloading' || installStatus === 'installing') && (
+                    <div className="space-y-2">
+                      <Progress value={getProgressPercent()} className="h-2" />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>{getStatusMessage()}</span>
+                        {currentProgress && (
+                          <span>
+                            {formatBytes(currentProgress.current)} / {formatBytes(currentProgress.total)} ({Math.round(getProgressPercent())}%)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Success Message */}
+                  {installStatus === 'done' && (
+                    <div className="flex items-center gap-2 p-3 rounded-md bg-success-light dark:bg-success-light border border-success-light dark:border-success-light">
+                      <Check className="w-5 h-5 text-success dark:text-success" />
+                      <p className="text-sm text-success">
+                        {t('settings:updateCompleteMessage')}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Error Message */}
+                  {installStatus === 'error' && (
+                    <div className="flex items-start gap-2 p-3 rounded-md bg-error-light border border-error">
+                      <AlertCircle className="w-5 h-5 text-error mt-0.5" />
+                      <p className="text-sm text-error">
+                        {getStatusMessage()}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -316,12 +260,48 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
               className="flex items-center justify-end gap-3 px-4 py-4 border-t shrink-0 bg-background"
               style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
             >
-              <FooterContent />
+              {installStatus === 'idle' ? (
+                <>
+                  <Button variant="ghost" onClick={handleClose} className="text-muted-foreground">
+                    {t('settings:remindLater')}
+                  </Button>
+                  <Button variant="outline" onClick={handleClose}>
+                    {t('settings:skipThisUpdate')}
+                  </Button>
+                  <Button onClick={handleUpdate} className="gap-2">
+                    <Download className="w-4 h-4" />
+                    {t('settings:updateNow')}
+                  </Button>
+                </>
+              ) : installStatus === 'downloading' ? (
+                <Button disabled variant="secondary">
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {t('settings:downloading')}
+                </Button>
+              ) : installStatus === 'installing' ? (
+                <Button disabled variant="secondary">
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {t('settings:installing')}
+                </Button>
+              ) : installStatus === 'done' ? (
+                <Button onClick={handleRelaunch} className="gap-2">
+                  <Rocket className="w-4 h-4" />
+                  {t('settings:relaunchToComplete')}
+                </Button>
+              ) : installStatus === 'error' ? (
+                <>
+                  <Button variant="outline" onClick={handleClose}>
+                    {t('common:close')}
+                  </Button>
+                  <Button onClick={handleUpdate} variant="default">
+                    {t('common:retry')}
+                  </Button>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
-      ) : null,
-      document.body
+      ) : null, getPortalRoot()
     )
   }
 
@@ -388,12 +368,93 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
 
           {/* Content */}
           <div className="px-6 py-4">
-            <UpdateContent />
+            <div className="space-y-4">
+              {/* Release Notes */}
+              {currentUpdateInfo?.body && installStatus === 'idle' && (
+                <div className="max-h-60 overflow-y-auto rounded-md border p-3 text-sm">
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    {updateInfo?.body}
+                  </div>
+                </div>
+              )}
+
+              {/* Progress Bar */}
+              {(installStatus === 'downloading' || installStatus === 'installing') && (
+                <div className="space-y-2">
+                  <Progress value={getProgressPercent()} className="h-2" />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{getStatusMessage()}</span>
+                    {currentProgress && (
+                      <span>
+                        {formatBytes(currentProgress.current)} / {formatBytes(currentProgress.total)} ({Math.round(getProgressPercent())}%)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Success Message */}
+              {installStatus === 'done' && (
+                <div className="flex items-center gap-2 p-3 rounded-md bg-success-light dark:bg-success-light border border-success-light dark:border-success-light">
+                  <Check className="w-5 h-5 text-success dark:text-success" />
+                  <p className="text-sm text-success">
+                    {t('settings:updateCompleteMessage')}
+                  </p>
+                </div>
+              )}
+
+              {/* Error Message */}
+              {installStatus === 'error' && (
+                <div className="flex items-start gap-2 p-3 rounded-md bg-error-light border border-error">
+                  <AlertCircle className="w-5 h-5 text-error mt-0.5" />
+                  <p className="text-sm text-error">
+                    {getStatusMessage()}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted-30">
-            <FooterContent />
+            {installStatus === 'idle' ? (
+              <>
+                <Button variant="ghost" onClick={handleClose} className="text-muted-foreground">
+                  {t('settings:remindLater')}
+                </Button>
+                <Button variant="outline" onClick={handleClose}>
+                  {t('settings:skipThisUpdate')}
+                </Button>
+                <Button onClick={handleUpdate} className="gap-2">
+                  <Download className="w-4 h-4" />
+                  {t('settings:updateNow')}
+                </Button>
+              </>
+            ) : installStatus === 'downloading' ? (
+              <Button disabled variant="secondary">
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                {t('settings:downloading')}
+              </Button>
+            ) : installStatus === 'installing' ? (
+              <Button disabled variant="secondary">
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                {t('settings:installing')}
+              </Button>
+            ) : installStatus === 'done' ? (
+              <Button onClick={handleRelaunch} className="gap-2">
+                <Rocket className="w-4 h-4" />
+                {t('settings:relaunchToComplete')}
+              </Button>
+            ) : installStatus === 'error' ? (
+              <>
+                <Button variant="outline" onClick={handleClose}>
+                  {t('common:close')}
+                </Button>
+                <Button onClick={handleUpdate} variant="default">
+                  {t('common:retry')}
+                </Button>
+              </>
+            ) : null}
           </div>
         </div>
       )}

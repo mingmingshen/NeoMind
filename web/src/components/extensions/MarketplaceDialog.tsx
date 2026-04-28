@@ -1,3 +1,4 @@
+import { getPortalRoot } from '@/lib/portal'
 import React, { useState, useEffect, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
@@ -22,6 +23,7 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { dialogHeader } from '@/design-system/tokens/size'
 import { api } from "@/lib/api"
 import { useStore } from "@/store"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
@@ -447,7 +449,7 @@ export function MarketplaceDialog({
           <div className="flex h-full w-full flex-col">
             {/* Header */}
             <div
-              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              className={dialogHeader}
               style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
             >
               <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -504,8 +506,7 @@ export function MarketplaceDialog({
             )}
           </div>
         </div>
-      ) : null,
-      document.body
+      ) : null, getPortalRoot()
     )
   }
 
