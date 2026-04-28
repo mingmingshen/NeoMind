@@ -33,15 +33,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogContentBody,
-} from "@/components/ui/dialog"
+import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import {
   Table,
   TableBody,
@@ -435,46 +427,40 @@ export function DeviceControl({
             {t('devices:control.refreshDevices')}
           </Button>
 
-          <Dialog open={quickCommandOpen} onOpenChange={setQuickCommandOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" disabled={!selectedDeviceId}>
-                <Terminal className="mr-2 h-4 w-4" />
-                {t('devices:control.quickCommand')}
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="flex flex-col">
-              <DialogHeader>
-                <DialogTitle>{t('devices:control.sendCustomCommand')}</DialogTitle>
-              </DialogHeader>
-              <DialogContentBody className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>{t('devices:control.targetDevice')}</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedDevice?.name || selectedDevice?.id || t('devices:control.notSelected')}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="quick-payload">{t('devices:control.commandParamsJson')}</Label>
-                  <Textarea
-                    id="quick-payload"
-                    value={quickCommandPayload}
-                    onChange={(e) => setQuickCommandPayload(e.target.value)}
-                    placeholder='{"action": "value"}'
-                    rows={6}
-                    className="font-mono text-sm"
-                  />
-                </div>
-              </DialogContentBody>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setQuickCommandOpen(false)}>
-                  {t('common:cancel')}
-                </Button>
-                <Button onClick={handleQuickCommand} disabled={isSending}>
-                  {isSending ? t('devices:control.sending') : t('devices:control.send')}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button variant="outline" size="sm" disabled={!selectedDeviceId} onClick={() => setQuickCommandOpen(true)}>
+            <Terminal className="mr-2 h-4 w-4" />
+            {t('devices:control.quickCommand')}
+          </Button>
+
+          <UnifiedFormDialog
+            open={quickCommandOpen}
+            onOpenChange={setQuickCommandOpen}
+            title={t('devices:control.sendCustomCommand')}
+            width="sm"
+            onSubmit={handleQuickCommand}
+            isSubmitting={isSending}
+            submitLabel={t('devices:control.send')}
+          >
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>{t('devices:control.targetDevice')}</Label>
+                <p className="text-sm text-muted-foreground">
+                  {selectedDevice?.name || selectedDevice?.id || t('devices:control.notSelected')}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quick-payload">{t('devices:control.commandParamsJson')}</Label>
+                <Textarea
+                  id="quick-payload"
+                  value={quickCommandPayload}
+                  onChange={(e) => setQuickCommandPayload(e.target.value)}
+                  placeholder='{"action": "value"}'
+                  rows={6}
+                  className="font-mono text-sm"
+                />
+              </div>
+            </div>
+          </UnifiedFormDialog>
 
           {batchMode ? (
             <>

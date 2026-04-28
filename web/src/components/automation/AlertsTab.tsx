@@ -5,14 +5,7 @@ import { shallow } from "zustand/shallow"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import {
   Table,
   TableBody,
@@ -281,47 +274,14 @@ export function AlertsTab() {
       </Card>
 
       {/* Alert Detail Dialog */}
-      <Dialog open={!!selectedAlert} onOpenChange={() => setSelectedAlert(null)}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader className="shrink-0">
-            <DialogTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5" />
-              {selectedAlert?.title}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedAlert && <AlertBadge level={selectedAlert.severity as "critical" | "warning" | "info" | "emergency"} />}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedAlert && (
-            <div className="space-y-4 overflow-y-auto flex-1">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">{t('common:status')}:</span>{' '}
-                  {selectedAlert.acknowledged ? (
-                    <Badge variant="outline">{t('alerts:acknowledged')}</Badge>
-                  ) : (
-                    <Badge variant="default">{t('alerts:unacknowledged')}</Badge>
-                  )}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">{t('alerts:source')}:</span>{' '}
-                  <span className="font-medium">{selectedAlert.source || 'N/A'}</span>
-                </div>
-                <div className="col-span-2">
-                  <span className="text-muted-foreground">{t('alerts:createdAt')}:</span>{' '}
-                  <span className="font-medium">{formatTimestamp(selectedAlert.created_at)}</span>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-medium mb-2">{t('alerts:detailDescription')}</h4>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">
-                  {selectedAlert.message}
-                </p>
-              </div>
-            </div>
-          )}
-          <DialogFooter className="shrink-0">
+      <UnifiedFormDialog
+        open={!!selectedAlert}
+        onOpenChange={(open) => { if (!open) setSelectedAlert(null) }}
+        title={selectedAlert?.title || ''}
+        icon={<Bell className="h-5 w-5" />}
+        width="sm"
+        footer={
+          <>
             {!selectedAlert?.acknowledged && (
               <Button
                 onClick={() => {
@@ -338,9 +298,41 @@ export function AlertsTab() {
             <Button variant="outline" onClick={() => setSelectedAlert(null)}>
               {t('common:close')}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        {selectedAlert && (
+          <div className="space-y-4">
+            <div>
+              <AlertBadge level={selectedAlert.severity as "critical" | "warning" | "info" | "emergency"} />
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">{t('common:status')}:</span>{' '}
+                {selectedAlert.acknowledged ? (
+                  <Badge variant="outline">{t('alerts:acknowledged')}</Badge>
+                ) : (
+                  <Badge variant="default">{t('alerts:unacknowledged')}</Badge>
+                )}
+              </div>
+              <div>
+                <span className="text-muted-foreground">{t('alerts:source')}:</span>{' '}
+                <span className="font-medium">{selectedAlert.source || 'N/A'}</span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-muted-foreground">{t('alerts:createdAt')}:</span>{' '}
+                <span className="font-medium">{formatTimestamp(selectedAlert.created_at)}</span>
+              </div>
+            </div>
+            <div>
+              <h4 className="text-sm font-medium mb-2">{t('alerts:detailDescription')}</h4>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">
+                {selectedAlert.message}
+              </p>
+            </div>
+          </div>
+        )}
+      </UnifiedFormDialog>
     </div>
   )
 }

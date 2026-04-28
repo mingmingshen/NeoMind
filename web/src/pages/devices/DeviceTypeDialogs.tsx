@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogContentBody, DialogFooter } from "@/components/ui/dialog"
+import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -955,30 +955,33 @@ function DataDefinitionStep({
       </div>
 
       {/* JSON Import Dialog */}
-      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent className="sm:max-w-lg z-[110]">
-          <DialogHeader>
-            <DialogTitle>{t('devices:metricEditor.jsonDialogTitle')}</DialogTitle>
-            <DialogDescription>
-              {t('devices:metricEditor.jsonDialogDesc')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogContentBody className="space-y-4 py-4">
-            <Textarea
-              value={jsonInput}
-              onChange={(e) => setJsonInput(e.target.value)}
-              placeholder={t('devices:metricEditor.jsonPlaceholder')}
-              className="font-mono text-xs min-h-[150px] resize-none"
-            />
-            {importError && (
-              <p className="text-xs text-destructive flex items-center gap-1">
-                <AlertCircle className="h-4 w-4" />
-                {importError}
-              </p>
-            )}
-            <div className="p-3 bg-muted-50 rounded text-xs">
-              <p className="font-medium mb-1">{t('devices:metricEditor.exampleJson')}</p>
-              <pre className="text-muted-foreground">{`{
+      <UnifiedFormDialog
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        title={t('devices:metricEditor.jsonDialogTitle')}
+        description={t('devices:metricEditor.jsonDialogDesc')}
+        width="md"
+        className="z-[110]"
+        contentClassName="space-y-4"
+        onSubmit={async () => { parseJsonToMetrics() }}
+        submitLabel={t('devices:metricEditor.parseAndGenerate')}
+        cancelLabel={t('devices:metricEditor.cancel')}
+      >
+        <Textarea
+          value={jsonInput}
+          onChange={(e) => setJsonInput(e.target.value)}
+          placeholder={t('devices:metricEditor.jsonPlaceholder')}
+          className="font-mono text-xs min-h-[150px] resize-none"
+        />
+        {importError && (
+          <p className="text-xs text-destructive flex items-center gap-1">
+            <AlertCircle className="h-4 w-4" />
+            {importError}
+          </p>
+        )}
+        <div className="p-3 bg-muted-50 rounded text-xs">
+          <p className="font-medium mb-1">{t('devices:metricEditor.exampleJson')}</p>
+          <pre className="text-muted-foreground">{`{
   "sensor": {
     "temperature": 25.5,
     "humidity": 60
@@ -986,18 +989,8 @@ function DataDefinitionStep({
   "status": "online",
   "battery": 85
 }`}</pre>
-            </div>
-          </DialogContentBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowImportDialog(false)}>
-              {t('devices:metricEditor.cancel')}
-            </Button>
-            <Button onClick={parseJsonToMetrics}>
-              {t('devices:metricEditor.parseAndGenerate')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </UnifiedFormDialog>
     </div>
   )
 }
@@ -2259,27 +2252,31 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl sm:h-[85vh] sm:max-h-[85vh] flex flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 flex-wrap">
-            {deviceType.name}
-            <Badge variant="outline" className="text-xs font-normal">
-              {deviceType.device_type}
+    <UnifiedFormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={deviceType.name}
+      description="Device type details and capabilities"
+      width="3xl"
+      contentClassName="flex-1 overflow-y-auto"
+      footer={
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-xs font-normal">
+            {deviceType.device_type}
+          </Badge>
+          {isRawMode && (
+            <Badge variant="secondary" className="text-xs">
+              <Zap className="h-4 w-4 mr-1" />
+              Raw Data Mode
             </Badge>
-            {isRawMode && (
-              <Badge variant="secondary" className="text-xs">
-                <Zap className="h-4 w-4 mr-1" />
-                Raw Data Mode
-              </Badge>
-            )}
-          </DialogTitle>
-          <DialogDescription className="flex items-center gap-2 mt-1">
-            Device type details and capabilities
-          </DialogDescription>
-        </DialogHeader>
-
-        <DialogContentBody className="flex-1 overflow-y-auto">
+          )}
+          <div className="flex-1" />
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </div>
+      }
+    >
           <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-4 gap-4">
@@ -2478,15 +2475,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
               </Card>
             )}
           </div>
-        </DialogContentBody>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </UnifiedFormDialog>
   )
 }
 
@@ -2666,27 +2655,44 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl sm:max-h-[80vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5" />
-            {t('devices:cloud.importTitle', "从云端导入设备类型")}
-          </DialogTitle>
-          <DialogDescription>
-            {t('devices:cloud.importDescription', "选择需要的设备类型快速添加到系统")}
-          </DialogDescription>
-        </DialogHeader>
-
-        <DialogContentBody className="flex-1 overflow-y-auto">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-muted-foreground">
-                {t('devices:cloud.loading', "加载中...")}
-              </span>
-            </div>
-          ) : deviceTypes.length === 0 ? (
+    <UnifiedFormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('devices:cloud.importTitle', "从云端导入设备类型")}
+      description={t('devices:cloud.importDescription', "选择需要的设备类型快速添加到系统")}
+      icon={<Download className="h-5 w-5" />}
+      width="2xl"
+      loading={loading}
+      contentClassName="flex-1 overflow-y-auto"
+      footer={
+        <>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={importing}
+          >
+            {t('common:cancel')}
+          </Button>
+          <Button
+            onClick={handleImport}
+            disabled={importing || selectedIds.size === 0}
+          >
+            {importing ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {t('devices:cloud.importing', "导入中...")}
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-2" />
+                {t('devices:cloud.importButton', "导入 ({{count}})", { count: selectedIds.size })}
+              </>
+            )}
+          </Button>
+        </>
+      }
+    >
+          {loading ? null : deviceTypes.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               {t('devices:cloud.noDeviceTypes', "暂无可用设备类型")}
             </div>
@@ -2755,34 +2761,6 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
               </div>
             </div>
           )}
-        </DialogContentBody>
-
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={importing}
-          >
-            {t('common:cancel')}
-          </Button>
-          <Button
-            onClick={handleImport}
-            disabled={importing || selectedIds.size === 0}
-          >
-            {importing ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {t('devices:cloud.importing', "导入中...")}
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4 mr-2" />
-                {t('devices:cloud.importButton', "导入 ({{count}})", { count: selectedIds.size })}
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </UnifiedFormDialog>
   )
 }

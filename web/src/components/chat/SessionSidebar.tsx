@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogContentBody,
 } from "@/components/ui/dialog"
+import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
@@ -275,37 +276,27 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
       </Dialog>
 
       {/* Rename Dialog */}
-      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
-        <DialogContent className="flex flex-col">
-          <DialogHeader>
-            <DialogTitle>{t('renameSession')}</DialogTitle>
-            <DialogDescription>
-              {t('renameDesc')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogContentBody className="py-4">
-            <Input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder={t('renamePlaceholder')}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleRenameConfirm()
-                }
-              }}
-            />
-          </DialogContentBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
-              {t('cancel')}
-            </Button>
-            <Button onClick={handleRenameConfirm}>
-              {t('save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <UnifiedFormDialog
+        open={renameDialogOpen}
+        onOpenChange={setRenameDialogOpen}
+        title={t('renameSession')}
+        width="sm"
+        onSubmit={handleRenameConfirm}
+        isSubmitting={loading}
+        submitLabel={t('save')}
+      >
+        <Input
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          placeholder={t('renamePlaceholder')}
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              handleRenameConfirm()
+            }
+          }}
+        />
+      </UnifiedFormDialog>
 
       {/* Clear All History Confirmation Dialog */}
       <Dialog open={clearAllDialogOpen} onOpenChange={setClearAllDialogOpen}>

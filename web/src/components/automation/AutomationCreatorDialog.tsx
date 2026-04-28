@@ -1,14 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogContentBody,
-} from '@/components/ui/dialog'
+import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -212,309 +204,300 @@ export function AutomationCreatorDialog({
   }, {} as Record<string, AutomationTemplate[]>)
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] p-0 gap-0 flex flex-col [&>[data-radix-dialog-close]]:right-12 [&>[data-radix-dialog-close]]:top-7 sm:[&>[data-radix-dialog-close]]:right-12 sm:[&>[data-radix-dialog-close]]:top-7">
-        <DialogHeader className="px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4 border-t-0 border-x-0 border-b shrink-0 pr-10 sm:pr-12">
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5" />
-            {t('automation:createAutomation')}
-          </DialogTitle>
-          <DialogDescription>
-            {t('automation:createAutomationDesc')}
-          </DialogDescription>
-        </DialogHeader>
+    <UnifiedFormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('automation:createAutomation')}
+      description={t('automation:createAutomationDesc')}
+      icon={<Sparkles className="h-5 w-5" />}
+      width="3xl"
+      hideFooter
+      contentClassName="p-0"
+    >
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="flex-1 min-h-0 overflow-hidden flex flex-col">
+        <div className="px-4 pt-3 pb-2 sm:px-6 sm:pt-4 sm:pb-2 shrink-0">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="templates" className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4" />
+              {t('automation:templates')}
+            </TabsTrigger>
+            <TabsTrigger value="manual" className="flex items-center gap-2">
+              <Zap className="h-4 w-4" />
+              {t('automation:manual')}
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="flex-1 min-h-0 overflow-hidden flex flex-col">
-          <div className="px-4 pt-3 pb-2 sm:px-6 sm:pt-4 sm:pb-2 shrink-0">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="templates" className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4" />
-                {t('automation:templates')}
-              </TabsTrigger>
-              <TabsTrigger value="manual" className="flex items-center gap-2">
-                <Zap className="h-4 w-4" />
-                {t('automation:manual')}
-              </TabsTrigger>
-            </TabsList>
-          </div>
-
-          {/* Templates Tab */}
-          <TabsContent value="templates" className="flex-1 min-h-0 overflow-hidden flex flex-col px-4 py-3 sm:px-6 sm:py-4">
-            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 h-full overflow-hidden">
-              {/* Template List */}
-              <div className="w-full sm:w-1/2 overflow-y-auto sm:pr-2">
-                {loadingTemplates ? (
-                  <div className="flex items-center justify-center h-40">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {Object.keys(groupedTemplates).length === 0 ? (
-                      <div className="text-center text-muted-foreground py-8">
-                        {t('automation:noTemplates')}
+        {/* Templates Tab */}
+        <TabsContent value="templates" className="flex-1 min-h-0 overflow-hidden flex flex-col px-4 py-3 sm:px-6 sm:py-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 h-full overflow-hidden">
+            {/* Template List */}
+            <div className="w-full sm:w-1/2 overflow-y-auto sm:pr-2">
+              {loadingTemplates ? (
+                <div className="flex items-center justify-center h-40">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {Object.keys(groupedTemplates).length === 0 ? (
+                    <div className="text-center text-muted-foreground py-8">
+                      {t('automation:noTemplates')}
+                    </div>
+                  ) : (
+                    Object.entries(groupedTemplates).map(([category, categoryTemplates]) => (
+                      <div key={category}>
+                        <h4 className="text-sm font-medium capitalize mb-2 text-muted-foreground">
+                          {category}
+                        </h4>
+                        <div className="space-y-2">
+                          {categoryTemplates.map((template) => (
+                            <Card
+                              key={template.id}
+                              className={cn(
+                                'p-3 cursor-pointer hover:bg-accent transition-colors',
+                                selectedTemplate?.id === template.id && 'bg-accent border-primary'
+                              )}
+                              onClick={() => handleSelectTemplate(template)}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    'bg-accent-purple-light text-accent-purple'
+                                  )}
+                                >
+                                  <Zap className="h-4 w-4 mr-1" />
+                                  {template.automation_type}
+                                </Badge>
+                                <span className="font-medium">{template.name}</span>
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {template.description}
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
                       </div>
-                    ) : (
-                      Object.entries(groupedTemplates).map(([category, categoryTemplates]) => (
-                        <div key={category}>
-                          <h4 className="text-sm font-medium capitalize mb-2 text-muted-foreground">
-                            {category}
-                          </h4>
-                          <div className="space-y-2">
-                            {categoryTemplates.map((template) => (
-                              <Card
-                                key={template.id}
-                                className={cn(
-                                  'p-3 cursor-pointer hover:bg-accent transition-colors',
-                                  selectedTemplate?.id === template.id && 'bg-accent border-primary'
-                                )}
-                                onClick={() => handleSelectTemplate(template)}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <Badge
-                                    variant="outline"
-                                    className={cn(
-                                      'bg-accent-purple-light text-accent-purple'
-                                    )}
-                                  >
-                                    <Zap className="h-4 w-4 mr-1" />
-                                    {template.automation_type}
-                                  </Badge>
-                                  <span className="font-medium">{template.name}</span>
-                                </div>
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  {template.description}
-                                </div>
-                              </Card>
-                            ))}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Template Parameters */}
-              <div className="w-full sm:w-1/2 overflow-y-auto sm:pl-2 sm:border-t-0 sm:border-l border-t">
-                {selectedTemplate ? (
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="font-medium">{selectedTemplate.name}</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {selectedTemplate.description}
-                      </p>
-                    </div>
-
-                    <div className="space-y-3">
-                      {selectedTemplate.parameters.map((param) => (
-                        <div key={param.name}>
-                          <Label htmlFor={`param-${param.name}`} className="flex items-center gap-1">
-                            {param.label}
-                            {param.required && <span className="text-destructive">*</span>}
-                          </Label>
-                          {errors[`param-${param.name}`] && (
-                            <p className="text-sm text-destructive mt-1">{errors[`param-${param.name}`]}</p>
-                          )}
-
-                          {param.param_type === 'device' ? (
-                            <Select
-                              value={templateParams[param.name] || ''}
-                              onValueChange={(value) =>
-                                setTemplateParams((prev) => ({ ...prev, [param.name]: value }))
-                              }
-                            >
-                              <SelectTrigger id={`param-${param.name}`}>
-                                <SelectValue placeholder={t('automation:selectDevice')} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {devices.map((device) => (
-                                  <SelectItem key={device.id} value={device.id}>
-                                    {device.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : param.param_type === 'enum' && param.options?.length > 0 ? (
-                            <Select
-                              value={templateParams[param.name] || ''}
-                              onValueChange={(value) =>
-                                setTemplateParams((prev) => ({ ...prev, [param.name]: value }))
-                              }
-                            >
-                              <SelectTrigger id={`param-${param.name}`}>
-                                <SelectValue placeholder={t('automation:selectPlaceholder')} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {param.options.map((option: string) => (
-                                  <SelectItem key={option} value={option}>
-                                    {option}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : param.param_type === 'number' ? (
-                            <Input
-                              id={`param-${param.name}`}
-                              type="number"
-                              value={templateParams[param.name] || ''}
-                              onChange={(e) =>
-                                setTemplateParams((prev) => ({ ...prev, [param.name]: e.target.value }))
-                              }
-                            />
-                          ) : param.param_type === 'boolean' ? (
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                id={`param-${param.name}`}
-                                checked={templateParams[param.name] === 'true'}
-                                onCheckedChange={(checked) =>
-                                  setTemplateParams((prev) => ({ ...prev, [param.name]: checked.toString() }))
-                                }
-                              />
-                              <Label htmlFor={`param-${param.name}`} className="text-sm text-muted-foreground">
-                                {templateParams[param.name] === 'true' ? t('common:yes') : t('common:no')}
-                              </Label>
-                            </div>
-                          ) : (
-                            <Input
-                              id={`param-${param.name}`}
-                              value={templateParams[param.name] || ''}
-                              onChange={(e) =>
-                                setTemplateParams((prev) => ({ ...prev, [param.name]: e.target.value }))
-                              }
-                              placeholder={param.default || ''}
-                            />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="space-y-2 pt-4 border-t">
-                      <Label htmlFor="template-automation-name">{t('automation:automationName')}</Label>
-                      <Input
-                        id="template-automation-name"
-                        value={automationName}
-                        onChange={(e) => { setAutomationName(e.target.value); setErrors(prev => { const next = { ...prev }; delete next.name; return next }) }}
-                        onBlur={() => { const err = validateRequired(automationName, 'Automation name') || validateLength(automationName, 'Automation name', 1, 100); if (err) setErrors(prev => ({ ...prev, name: err })) }}
-                        placeholder={t('automation:automationNamePlaceholder')}
-                        className={cn(errors.name && "border-destructive")}
-                      />
-                      {errors.name && (
-                        <p className="text-sm text-destructive mt-1">{errors.name}</p>
-                      )}
-                    </div>
-
-                    <Button
-                      onClick={handleCreateFromTemplate}
-                      disabled={creating || !automationName.trim()}
-                      className="w-full"
-                    >
-                      {creating ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          {t('automation:creating')}
-                        </>
-                      ) : (
-                        t('automation:createAutomation')
-                      )}
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-muted-foreground">
-                    {t('automation:selectTemplate')}
-                  </div>
-                )}
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* Manual Tab */}
-          <TabsContent value="manual" className="flex-1 min-h-0 overflow-y-auto px-4 py-3 sm:px-6 sm:py-4 space-y-4">
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <h3 className="font-medium">{t('automation:creator.basicInfo')}</h3>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="manual-name">{t('automation:automationName')} *</Label>
-                  <Input
-                    id="manual-name"
-                    value={automationName}
-                    onChange={(e) => { setAutomationName(e.target.value); setErrors(prev => { const next = { ...prev }; delete next.name; return next }) }}
-                    onBlur={() => { const err = validateRequired(automationName, 'Automation name') || validateLength(automationName, 'Automation name', 1, 100); if (err) setErrors(prev => ({ ...prev, name: err })) }}
-                    placeholder={t('automation:automationNamePlaceholder')}
-                    className={cn(errors.name && "border-destructive")}
-                  />
-                  {errors.name && (
-                    <p className="text-sm text-destructive mt-1">{errors.name}</p>
+                    ))
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    id="auto-enable"
-                    checked={enabled}
-                    onCheckedChange={setEnabled}
-                  />
-                  <Label htmlFor="auto-enable" className="text-sm cursor-pointer">
-                    {t('automation:enableAfterCreate')}
-                  </Label>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="manual-description">{t('common:description')}</Label>
-                <Textarea
-                  id="manual-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder={t('automation:descriptionPlaceholder')}
-                  className="min-h-[80px]"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>{t('automation:automationType')}</Label>
-                <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted">
-                  <Sparkles className="h-4 w-4" />
-                  <span className="text-sm">{t('automation:transform')}</span>
-                </div>
-              </div>
-
-              <div className="p-4 bg-muted rounded-md">
-                <p className="text-sm font-medium mb-2">{t('automation:creator.tip')}</p>
-                <p className="text-xs text-muted-foreground">
-                  {t('automation:creator.tipDesc')}
-                </p>
-              </div>
-
-              <Button
-                onClick={handleCreateManual}
-                disabled={!selectedType || !automationName.trim() || creating}
-                className="w-full"
-              >
-                {creating ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    {t('automation:creating')}
-                  </>
-                ) : (
-                  <>
-                    <Zap className="h-4 w-4 mr-2" />
-                    {t('automation:creator.continueConfig')}
-                  </>
-                )}
-              </Button>
+              )}
             </div>
-          </TabsContent>
-        </Tabs>
 
-        <DialogFooter className="px-4 py-3 sm:px-6 sm:py-4 border-t shrink-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('automation:cancel')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            {/* Template Parameters */}
+            <div className="w-full sm:w-1/2 overflow-y-auto sm:pl-2 sm:border-t-0 sm:border-l border-t">
+              {selectedTemplate ? (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-medium">{selectedTemplate.name}</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {selectedTemplate.description}
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    {selectedTemplate.parameters.map((param) => (
+                      <div key={param.name}>
+                        <Label htmlFor={`param-${param.name}`} className="flex items-center gap-1">
+                          {param.label}
+                          {param.required && <span className="text-destructive">*</span>}
+                        </Label>
+                        {errors[`param-${param.name}`] && (
+                          <p className="text-sm text-destructive mt-1">{errors[`param-${param.name}`]}</p>
+                        )}
+
+                        {param.param_type === 'device' ? (
+                          <Select
+                            value={templateParams[param.name] || ''}
+                            onValueChange={(value) =>
+                              setTemplateParams((prev) => ({ ...prev, [param.name]: value }))
+                            }
+                          >
+                            <SelectTrigger id={`param-${param.name}`}>
+                              <SelectValue placeholder={t('automation:selectDevice')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {devices.map((device) => (
+                                <SelectItem key={device.id} value={device.id}>
+                                  {device.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : param.param_type === 'enum' && param.options?.length > 0 ? (
+                          <Select
+                            value={templateParams[param.name] || ''}
+                            onValueChange={(value) =>
+                              setTemplateParams((prev) => ({ ...prev, [param.name]: value }))
+                            }
+                          >
+                            <SelectTrigger id={`param-${param.name}`}>
+                              <SelectValue placeholder={t('automation:selectPlaceholder')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {param.options.map((option: string) => (
+                                <SelectItem key={option} value={option}>
+                                  {option}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : param.param_type === 'number' ? (
+                          <Input
+                            id={`param-${param.name}`}
+                            type="number"
+                            value={templateParams[param.name] || ''}
+                            onChange={(e) =>
+                              setTemplateParams((prev) => ({ ...prev, [param.name]: e.target.value }))
+                            }
+                          />
+                        ) : param.param_type === 'boolean' ? (
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              id={`param-${param.name}`}
+                              checked={templateParams[param.name] === 'true'}
+                              onCheckedChange={(checked) =>
+                                setTemplateParams((prev) => ({ ...prev, [param.name]: checked.toString() }))
+                              }
+                            />
+                            <Label htmlFor={`param-${param.name}`} className="text-sm text-muted-foreground">
+                              {templateParams[param.name] === 'true' ? t('common:yes') : t('common:no')}
+                            </Label>
+                          </div>
+                        ) : (
+                          <Input
+                            id={`param-${param.name}`}
+                            value={templateParams[param.name] || ''}
+                            onChange={(e) =>
+                              setTemplateParams((prev) => ({ ...prev, [param.name]: e.target.value }))
+                            }
+                            placeholder={param.default || ''}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="space-y-2 pt-4 border-t">
+                    <Label htmlFor="template-automation-name">{t('automation:automationName')}</Label>
+                    <Input
+                      id="template-automation-name"
+                      value={automationName}
+                      onChange={(e) => { setAutomationName(e.target.value); setErrors(prev => { const next = { ...prev }; delete next.name; return next }) }}
+                      onBlur={() => { const err = validateRequired(automationName, 'Automation name') || validateLength(automationName, 'Automation name', 1, 100); if (err) setErrors(prev => ({ ...prev, name: err })) }}
+                      placeholder={t('automation:automationNamePlaceholder')}
+                      className={cn(errors.name && "border-destructive")}
+                    />
+                    {errors.name && (
+                      <p className="text-sm text-destructive mt-1">{errors.name}</p>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handleCreateFromTemplate}
+                    disabled={creating || !automationName.trim()}
+                    className="w-full"
+                  >
+                    {creating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        {t('automation:creating')}
+                      </>
+                    ) : (
+                      t('automation:createAutomation')
+                    )}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  {t('automation:selectTemplate')}
+                </div>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Manual Tab */}
+        <TabsContent value="manual" className="flex-1 min-h-0 overflow-y-auto px-4 py-3 sm:px-6 sm:py-4 space-y-4">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <h3 className="font-medium">{t('automation:creator.basicInfo')}</h3>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="manual-name">{t('automation:automationName')} *</Label>
+                <Input
+                  id="manual-name"
+                  value={automationName}
+                  onChange={(e) => { setAutomationName(e.target.value); setErrors(prev => { const next = { ...prev }; delete next.name; return next }) }}
+                  onBlur={() => { const err = validateRequired(automationName, 'Automation name') || validateLength(automationName, 'Automation name', 1, 100); if (err) setErrors(prev => ({ ...prev, name: err })) }}
+                  placeholder={t('automation:automationNamePlaceholder')}
+                  className={cn(errors.name && "border-destructive")}
+                />
+                {errors.name && (
+                  <p className="text-sm text-destructive mt-1">{errors.name}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="auto-enable"
+                  checked={enabled}
+                  onCheckedChange={setEnabled}
+                />
+                <Label htmlFor="auto-enable" className="text-sm cursor-pointer">
+                  {t('automation:enableAfterCreate')}
+                </Label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="manual-description">{t('common:description')}</Label>
+              <Textarea
+                id="manual-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder={t('automation:descriptionPlaceholder')}
+                className="min-h-[80px]"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('automation:automationType')}</Label>
+              <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted">
+                <Sparkles className="h-4 w-4" />
+                <span className="text-sm">{t('automation:transform')}</span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-muted rounded-md">
+              <p className="text-sm font-medium mb-2">{t('automation:creator.tip')}</p>
+              <p className="text-xs text-muted-foreground">
+                {t('automation:creator.tipDesc')}
+              </p>
+            </div>
+
+            <Button
+              onClick={handleCreateManual}
+              disabled={!selectedType || !automationName.trim() || creating}
+              className="w-full"
+            >
+              {creating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t('automation:creating')}
+                </>
+              ) : (
+                <>
+                  <Zap className="h-4 w-4 mr-2" />
+                  {t('automation:creator.continueConfig')}
+                </>
+              )}
+            </Button>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </UnifiedFormDialog>
   )
 }

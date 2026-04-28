@@ -4,15 +4,7 @@ import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { Badge } from "@/components/ui/badge"
 import { ResponsiveTable } from "@/components/shared"
 import { Eye, Cpu, Globe, Badge as BadgeIcon, Clock, Activity, Check, ChevronDown, X, Loader2, Search as SearchIcon, Hourglass, CheckCircle2, XCircle, AlertTriangle } from "lucide-react"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogContentBody,
-} from "@/components/ui/dialog"
+import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -609,13 +601,42 @@ export function PendingDevicesList({
 
       {/* Unified Approval/Details Dialog */}
       {showApproveDialog && selectedDraftForApproval && (
-        <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
-          <DialogContent className="sm:max-w-3xl sm:max-h-[85vh] overflow-hidden flex flex-col">
-            <DialogHeader className="pb-2">
-              <DialogTitle>{t('devices:pending.approveTitle')}</DialogTitle>
-            </DialogHeader>
-
-            <DialogContentBody className="flex-1 overflow-y-auto space-y-6 py-2">
+        <UnifiedFormDialog
+          open={showApproveDialog}
+          onOpenChange={setShowApproveDialog}
+          title={t('devices:pending.approveTitle')}
+          width="2xl"
+          contentClassName="overflow-y-auto"
+          onSubmit={handleFinalApprove}
+          isSubmitting={processing === selectedDraftForApproval.id}
+          submitLabel={t('devices:pending.confirmRegister')}
+          submitDisabled={processing === selectedDraftForApproval.id || !selectedDeviceType.trim()}
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                className="text-destructive hover:text-destructive hover:bg-error-light"
+                onClick={() => {
+                  setShowApproveDialog(false)
+                  if (selectedDraftForApproval) handleReject(selectedDraftForApproval)
+                }}
+                disabled={processing === selectedDraftForApproval.id}
+              >
+                {t('devices:pending.reject')}
+              </Button>
+              <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
+                {t('common:cancel')}
+              </Button>
+              <Button
+                onClick={handleFinalApprove}
+                disabled={processing === selectedDraftForApproval.id || !selectedDeviceType.trim()}
+              >
+                {processing === selectedDraftForApproval.id ? t('common:processing') : t('devices:pending.confirmRegister')}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-6">
               {/* Device Info Section */}
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
@@ -986,46 +1007,19 @@ export function PendingDevicesList({
                   </div>
                 )}
               </div>
-            </DialogContentBody>
-
-            <DialogFooter className="gap-2 pt-4 border-t">
-              <Button
-                variant="ghost"
-                className="text-destructive hover:text-destructive hover:bg-error-light"
-                onClick={() => {
-                  setShowApproveDialog(false)
-                  if (selectedDraftForApproval) handleReject(selectedDraftForApproval)
-                }}
-                disabled={processing === selectedDraftForApproval.id}
-              >
-                {t('devices:pending.reject')}
-              </Button>
-              <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
-                {t('common:cancel')}
-              </Button>
-              <Button
-                onClick={handleFinalApprove}
-                disabled={processing === selectedDraftForApproval.id || !selectedDeviceType.trim()}
-              >
-                {processing === selectedDraftForApproval.id ? t('common:processing') : t('devices:pending.confirmRegister')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          </div>
+        </UnifiedFormDialog>
       )}
 
       {/* Reject confirmation dialog */}
-      <Dialog open={!!rejectDialogDraft} onOpenChange={(open: boolean) => !open && setRejectDialogDraft(null)}>
-        <DialogContent className="sm:max-w-md flex flex-col">
-          <DialogHeader>
-            <DialogTitle>{t('devices:pending.reject')}</DialogTitle>
-            <DialogDescription>
-              {rejectDialogDraft && t('devices:pending.rejectConfirm', { deviceId: rejectDialogDraft.device_id })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogContentBody className="pt-4">
-          </DialogContentBody>
-          <DialogFooter className="gap-2">
+      <UnifiedFormDialog
+        open={!!rejectDialogDraft}
+        onOpenChange={(open) => { if (!open) setRejectDialogDraft(null) }}
+        title={t('devices:pending.reject')}
+        description={rejectDialogDraft ? t('devices:pending.rejectConfirm', { deviceId: rejectDialogDraft.device_id }) : undefined}
+        width="sm"
+        footer={
+          <>
             <Button
               variant="outline"
               onClick={() => setRejectDialogDraft(null)}
@@ -1040,9 +1034,11 @@ export function PendingDevicesList({
             >
               {processing === rejectDialogDraft?.id ? t('common:processing') : t('common:confirm')}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <></>
+      </UnifiedFormDialog>
     </>
   )
 }

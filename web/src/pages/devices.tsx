@@ -14,15 +14,7 @@ import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination } from "@/components/shared"
 import { Upload, Download, Settings, Server, Layers, FileEdit, Cloud } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogContentBody,
-} from "@/components/ui/dialog"
+import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -950,101 +942,91 @@ export function DevicesPage() {
       />
 
       {/* Auto-onboarding Configuration Dialog */}
-      <Dialog open={showOnboardConfigDialog} onOpenChange={setShowOnboardConfigDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('devices:pending.configTitle')}</DialogTitle>
-            <DialogDescription>
-              {t('devices:pending.configDesc')}
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogContentBody className="space-y-6 py-4">
-            {/* Enable/Disable auto-onboarding */}
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="onboard-enabled">{t('devices:pending.configSettings.enabled')}</Label>
-                <p className="text-xs text-muted-foreground">
-                  {t('devices:pending.configSettings.enabledDesc')}
-                </p>
-              </div>
-              <Switch
-                id="onboard-enabled"
-                checked={pendingOnboardConfig.enabled}
-                onCheckedChange={(checked) =>
-                  setPendingOnboardConfig({ ...pendingOnboardConfig, enabled: checked })
-                }
-              />
+      <UnifiedFormDialog
+        open={showOnboardConfigDialog}
+        onOpenChange={setShowOnboardConfigDialog}
+        title={t('devices:pending.configTitle')}
+        width="sm"
+        onSubmit={saveOnboardConfig}
+        isSubmitting={savingOnboardConfig}
+        submitLabel={t('common:save')}
+      >
+        <div className="space-y-6">
+          {/* Enable/Disable auto-onboarding */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="onboard-enabled">{t('devices:pending.configSettings.enabled')}</Label>
+              <p className="text-xs text-muted-foreground">
+                {t('devices:pending.configSettings.enabledDesc')}
+              </p>
             </div>
+            <Switch
+              id="onboard-enabled"
+              checked={pendingOnboardConfig.enabled}
+              onCheckedChange={(checked) =>
+                setPendingOnboardConfig({ ...pendingOnboardConfig, enabled: checked })
+              }
+            />
+          </div>
 
-            {/* Max samples */}
-            <div className="space-y-2">
-              <Label htmlFor="maxSamples">{t('devices:pending.configSettings.maxSamples')}</Label>
+          {/* Max samples */}
+          <div className="space-y-2">
+            <Label htmlFor="maxSamples">{t('devices:pending.configSettings.maxSamples')}</Label>
+            <Input
+              id="maxSamples"
+              type="number"
+              min={1}
+              max={100}
+              value={pendingOnboardConfig.max_samples}
+              onChange={(e) =>
+                setPendingOnboardConfig({
+                  ...pendingOnboardConfig,
+                  max_samples: Math.max(1, parseInt(e.target.value) || 10),
+                })
+              }
+              disabled={!pendingOnboardConfig.enabled}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t('devices:pending.configSettings.maxSamplesDesc')}
+            </p>
+          </div>
+
+          {/* Draft retention time */}
+          <div className="space-y-2">
+            <Label htmlFor="retention">{t('devices:pending.configSettings.retention')}</Label>
+            <div className="flex items-center gap-2">
               <Input
-                id="maxSamples"
+                id="retention"
                 type="number"
-                min={1}
-                max={100}
-                value={pendingOnboardConfig.max_samples}
+                min={3600}
+                max={604800}
+                step={3600}
+                value={pendingOnboardConfig.draft_retention_secs}
                 onChange={(e) =>
                   setPendingOnboardConfig({
                     ...pendingOnboardConfig,
-                    max_samples: Math.max(1, parseInt(e.target.value) || 10),
+                    draft_retention_secs: Math.max(3600, parseInt(e.target.value) || 86400),
                   })
                 }
                 disabled={!pendingOnboardConfig.enabled}
               />
-              <p className="text-xs text-muted-foreground">
-                {t('devices:pending.configSettings.maxSamplesDesc')}
-              </p>
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                {Math.round(pendingOnboardConfig.draft_retention_secs / 3600)} {t('devices:pending.hours')}
+              </span>
             </div>
+            <p className="text-xs text-muted-foreground">
+              {t('devices:pending.configSettings.retentionDesc')}
+            </p>
+          </div>
 
-            {/* Draft retention time */}
-            <div className="space-y-2">
-              <Label htmlFor="retention">{t('devices:pending.configSettings.retention')}</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="retention"
-                  type="number"
-                  min={3600}
-                  max={604800}
-                  step={3600}
-                  value={pendingOnboardConfig.draft_retention_secs}
-                  onChange={(e) =>
-                    setPendingOnboardConfig({
-                      ...pendingOnboardConfig,
-                      draft_retention_secs: Math.max(3600, parseInt(e.target.value) || 86400),
-                    })
-                  }
-                  disabled={!pendingOnboardConfig.enabled}
-                />
-                <span className="text-sm text-muted-foreground whitespace-nowrap">
-                  {Math.round(pendingOnboardConfig.draft_retention_secs / 3600)} {t('devices:pending.hours')}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {t('devices:pending.configSettings.retentionDesc')}
-              </p>
-            </div>
-
-            {/* Info box */}
-            <div className="rounded-md bg-muted p-3 text-sm">
-              <p className="text-muted-foreground">
-                💡 {t('devices:pending.configSettings.info')}
-              </p>
-            </div>
-          </DialogContentBody>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowOnboardConfigDialog(false)}>
-              {t('common:cancel')}
-            </Button>
-            <Button onClick={saveOnboardConfig} disabled={savingOnboardConfig}>
-              {savingOnboardConfig ? t('common:saving') : t('common:save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          {/* Info box */}
+          <div className="rounded-md bg-muted p-3 text-sm">
+            <p className="text-muted-foreground">
+              💡 {t('devices:pending.configSettings.info')}
+            </p>
+          </div>
+        </div>
+      </UnifiedFormDialog>
     </>
   )
 }
