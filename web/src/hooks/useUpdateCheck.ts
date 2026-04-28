@@ -173,8 +173,10 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
       await invoke('download_and_install')
 
       // Persist the installed version so next restart won't re-show the dialog
-      if (updateInfo?.version) {
-        localStorage.setItem('neomind_installed_version', updateInfo.version)
+      // Read from store directly to avoid stale closure over updateInfo
+      const latestInfo = useAppStore.getState().updateInfo
+      if (latestInfo?.version) {
+        localStorage.setItem('neomind_installed_version', latestInfo.version)
       }
 
       setUpdateStatus('done')
