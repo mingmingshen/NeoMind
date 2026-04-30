@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useBleProvision } from '@/hooks/useBleProvision'
 import { WifiState } from '@/lib/ble-protocol'
-import { api, isTauriEnv } from '@/lib/api'
+import { api } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,7 +43,6 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
   const [brokerId, setBrokerId] = useState('embedded')
   const [brokers, setBrokers] = useState<BrokerOption[]>([])
   const [registeredDeviceId, setRegisteredDeviceId] = useState<string | null>(null)
-  const [serverSsid, setServerSsid] = useState<string | null>(null)
 
   useEffect(() => {
     api.get<{ brokers: Array<{ id: string; name: string; broker: string }> }>('/brokers')
@@ -55,12 +54,6 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
         setBrokers(list)
       })
       .catch(() => {})
-
-    if (isTauriEnv()) {
-      api.get<{ ssid: string; ip: string }>('/system/network-info')
-        .then((d) => d.ssid && setServerSsid(d.ssid))
-        .catch(() => {})
-    }
   }, [t])
 
   // --- Step 1: Scan ---
@@ -122,11 +115,6 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
         {ble.scanning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Bluetooth className="w-4 h-4 mr-2" />}
         {t('devices:ble.scanBtn')}
       </Button>
-      {serverSsid && (
-        <p className="text-xs text-muted-foreground">
-          {t('devices:ble.serverSsid', { ssid: serverSsid })}
-        </p>
-      )}
     </div>
   )
 
@@ -145,7 +133,7 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
         <div className="space-y-3">
           <div>
             <Label>{t('devices:ble.ssid')}</Label>
-            <Input value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} placeholder={serverSsid || 'SSID'} />
+            <Input value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} placeholder="SSID" />
           </div>
           <div>
             <Label>{t('devices:ble.password')}</Label>
