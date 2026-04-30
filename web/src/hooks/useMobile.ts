@@ -53,11 +53,9 @@ export function getDeviceType(): DeviceType {
  * Updates on resize to handle device orientation changes
  */
 export function useIsTouchDevice(): boolean {
-  const [isTouch, setIsTouch] = useState(false)
+  const [isTouch, setIsTouch] = useState(() => isTouchDevice())
 
   useEffect(() => {
-    setIsTouch(isTouchDevice())
-
     const handleResize = () => {
       setIsTouch(isTouchDevice())
     }
@@ -73,14 +71,16 @@ export function useIsTouchDevice(): boolean {
  * Hook to detect the current device type
  */
 export function useDeviceType(): DeviceType {
-  const [deviceType, setDeviceType] = useState<DeviceType>('desktop')
+  const [deviceType, setDeviceType] = useState<DeviceType>(() => {
+    if (typeof window === 'undefined') return 'desktop'
+    return getDeviceType()
+  })
 
   useEffect(() => {
     const updateDeviceType = () => {
       setDeviceType(getDeviceType())
     }
 
-    updateDeviceType()
     window.addEventListener('resize', updateDeviceType)
     return () => window.removeEventListener('resize', updateDeviceType)
   }, [])
@@ -93,14 +93,16 @@ export function useDeviceType(): DeviceType {
  * Based on screen width only (not touch capability) to support desktop browser simulation
  */
 export function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth < 768
+  })
 
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768)
     }
 
-    checkMobile()
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
   }, [])

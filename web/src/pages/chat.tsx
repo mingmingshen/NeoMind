@@ -56,11 +56,13 @@ function MessageImages({ images }: { images: ChatImage[] }) {
 
 // Hook to detect desktop breakpoint (lg: 1024px)
 function useIsDesktop() {
-  const [isDesktop, setIsDesktop] = useState(false)
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth >= 1024
+  })
 
   useEffect(() => {
     const checkIsDesktop = () => setIsDesktop(window.innerWidth >= 1024)
-    checkIsDesktop()
     window.addEventListener("resize", checkIsDesktop)
     return () => window.removeEventListener("resize", checkIsDesktop)
   }, [])

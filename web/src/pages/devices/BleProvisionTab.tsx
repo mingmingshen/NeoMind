@@ -57,8 +57,8 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
       .catch(() => {})
 
     if (isTauriEnv()) {
-      api.get<{ ssid: string }>('/system/wifi-ssid')
-        .then((d) => setServerSsid(d.ssid))
+      api.get<{ ssid: string; ip: string }>('/system/network-info')
+        .then((d) => d.ssid && setServerSsid(d.ssid))
         .catch(() => {})
     }
   }, [t])
