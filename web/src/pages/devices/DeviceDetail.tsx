@@ -276,7 +276,7 @@ export function DeviceDetail({
 
   return (
     <>
-      <div className="flex flex-col h-full bg-gradient-to-b from-background to-muted">
+      <div className="flex flex-col flex-1 bg-gradient-to-b from-background to-muted">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5">
           <div className="flex items-center gap-3">

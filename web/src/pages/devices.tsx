@@ -33,6 +33,7 @@ import {
 import { CloudImportDialog } from "@/pages/devices/DeviceTypeDialogs"
 import { DeviceTypeGeneratorDialog } from "@/components/devices/DeviceTypeGeneratorDialog"
 import { PendingDevicesList } from "./devices/PendingDevicesList"
+import { AddDeviceGlobalDialog } from "./devices/AddDeviceGlobalDialog"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 
 type DeviceTabValue = "devices" | "types" | "drafts"
@@ -690,6 +691,7 @@ export function DevicesPage() {
       <PageLayout
         title={deviceDetailView ? undefined : t('devices:title')}
         subtitle={deviceDetailView ? undefined : t('devices:subtitle')}
+        noPadding={!!deviceDetailView}
         hideFooterOnMobile
         headerContent={
           !deviceDetailView ? (
@@ -818,9 +820,12 @@ export function DevicesPage() {
                 onEdit={handleEditDevice}
                 onDelete={handleDeleteDevice}
                 onPageChange={setDevicePage}
-                onAddDevice={() => setAddDeviceDialogOpen(true)}
+                onAddDevice={() => {
+                  if (deviceTypes.length === 0) fetchDeviceTypes()
+                  setAddDeviceDialogOpen(true)
+                }}
                 addDeviceDialog={
-                  <AddDeviceDialog
+                  <AddDeviceGlobalDialog
                     open={addDeviceDialogOpen}
                     onOpenChange={setAddDeviceDialogOpen}
                     deviceTypes={deviceTypes}

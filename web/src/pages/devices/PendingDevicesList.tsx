@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { Badge } from "@/components/ui/badge"
-import { ResponsiveTable } from "@/components/shared"
-import { Eye, Cpu, Globe, Badge as BadgeIcon, Clock, Activity, Check, ChevronDown, X, Loader2, Search as SearchIcon, Hourglass, CheckCircle2, XCircle, AlertTriangle } from "lucide-react"
+import { ResponsiveTable, EmptyState } from "@/components/shared"
+import { Eye, Cpu, Globe, Badge as BadgeIcon, Clock, Activity, Check, ChevronDown, X, Loader2, Search as SearchIcon, Hourglass, CheckCircle2, XCircle, AlertTriangle, BarChart3, CircleDot } from "lucide-react"
 import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -52,6 +53,8 @@ export function PendingDevicesList({
 
   const [drafts, setDrafts] = useState<DraftDevice[]>([])
   const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
+  const [hasBroker, setHasBroker] = useState<boolean | null>(null)
 
   // Use external pagination state if provided, otherwise use internal state
   const [internalPage, setInternalPage] = useState(externalPage || 1)
@@ -149,6 +152,25 @@ export function PendingDevicesList({
       setLoading(false)
     }
   }, [selectedDraftForApproval])
+
+  // Check broker status when drafts are empty
+  useEffect(() => {
+    if (loading || activeDrafts.length > 0) return
+
+    let cancelled = false
+    const checkBroker = async () => {
+      try {
+        const { status } = await api.getMqttStatus()
+        if (!cancelled) {
+          setHasBroker(!!status.external_brokers && status.external_brokers.length > 0)
+        }
+      } catch {
+        if (!cancelled) setHasBroker(false)
+      }
+    }
+    checkBroker()
+    return () => { cancelled = true }
+  }, [loading, activeDrafts.length])
 
   // Fetch type signatures for type reuse
   const fetchTypeSignatures = useCallback(async () => {
@@ -408,59 +430,29 @@ export function PendingDevicesList({
           },
           {
             key: 'deviceId',
-            label: (
-              <div className="flex items-center gap-2">
-                <Cpu className="h-4 w-4" />
-                {t('devices:pending.headers.deviceId')}
-              </div>
-            ),
+            label: t('devices:pending.headers.deviceId'),
           },
           {
             key: 'source',
-            label: (
-              <div className="flex items-center gap-2">
-                <Globe className="h-4 w-4" />
-                {t('devices:pending.headers.source')}
-              </div>
-            ),
+            label: t('devices:pending.headers.source'),
           },
           {
             key: 'deviceType',
-            label: (
-              <div className="flex items-center gap-2">
-                <Activity className="h-4 w-4" />
-                {t('devices:pending.deviceType')}
-              </div>
-            ),
+            label: t('devices:pending.deviceType'),
           },
           {
             key: 'status',
-            label: (
-              <div className="flex items-center gap-2">
-                <BadgeIcon className="h-4 w-4" />
-                {t('devices:pending.headers.status')}
-              </div>
-            ),
+            label: t('devices:pending.headers.status'),
             align: 'center',
           },
           {
             key: 'metrics',
-            label: (
-              <div className="flex items-center gap-2">
-                <BadgeIcon className="h-4 w-4" />
-                {t('devices:pending.metrics')}
-              </div>
-            ),
+            label: t('devices:pending.metrics'),
             align: 'center',
           },
           {
             key: 'discoveredAt',
-            label: (
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                {t('devices:pending.headers.discoveredAt')}
-              </div>
-            ),
+            label: t('devices:pending.headers.discoveredAt'),
             align: 'center',
           },
         ]}
@@ -468,9 +460,23 @@ export function PendingDevicesList({
         rowKey={(draft) => (draft as unknown as DraftDevice).id}
         loading={loading}
         emptyState={
-          <div className="flex items-center justify-center py-12">
-            <p className="text-muted-foreground">{t('devices:pending.noPending')}</p>
-          </div>
+          hasBroker === false ? (
+            <EmptyState
+              icon="settings"
+              title={t('devices:pending.noBrokerTitle')}
+              description={t('devices:pending.noBrokerDesc')}
+              action={{
+                label: t('devices:pending.goToSettings'),
+                onClick: () => navigate('/settings?tab=connections'),
+              }}
+            />
+          ) : (
+            <EmptyState
+              icon="inbox"
+              title={t('devices:pending.noDraftsTitle')}
+              description={t('devices:pending.noDraftsDesc')}
+            />
+          )
         }
         renderCell={(columnKey, rowData) => {
           const draft = rowData as unknown as DraftDevice
@@ -551,7 +557,11 @@ export function PendingDevicesList({
               )
 
             case 'status':
-              return getStatusBadge(draft.status)
+              return (
+                <div className="flex justify-center">
+                  {getStatusBadge(draft.status)}
+                </div>
+              )
 
             case 'metrics':
               return hasGeneratedType ? (

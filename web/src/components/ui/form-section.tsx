@@ -12,7 +12,7 @@ import { useIsMobile } from '@/hooks/useMobile'
 
 export interface FormSectionProps {
   /** Section title */
-  title: string
+  title?: string
   /** Optional description below title */
   description?: string
   /** Whether the section is collapsible */
@@ -85,19 +85,23 @@ export const FormSection = forwardRef<HTMLDivElement, FormSectionProps>(({
         } : undefined}
         aria-expanded={collapsible ? isExpanded : undefined}
       >
-        <div className="flex-1 min-w-0">
-          <h3 className={cn(
-            'text-sm font-medium text-muted-foreground',
-            isMobile && 'text-base'
-          )}>
-            {title}
-          </h3>
-          {description && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {description}
-            </p>
-          )}
-        </div>
+        {(title || description) && (
+          <div className="flex-1 min-w-0">
+            {title && (
+              <h3 className={cn(
+                'text-sm font-medium text-muted-foreground',
+                isMobile && 'text-base'
+              )}>
+                {title}
+              </h3>
+            )}
+            {description && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {description}
+              </p>
+            )}
+          </div>
+        )}
 
         {collapsible && (
           <ChevronDown className={cn(

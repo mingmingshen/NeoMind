@@ -61,6 +61,21 @@ body,
 }
 
 /* ============================================================================
+ * FOCUS MANAGEMENT
+ * Suppress focus ring on mouse/touch clicks while preserving keyboard navigation.
+ * Some browsers (Tauri, Chromium) trigger :focus-visible on click — this fixes it.
+ * ============================================================================ */
+:focus {
+  outline: none;
+}
+
+/* Remove ring on mouse/touch focus, keep for keyboard tab focus */
+*:focus:not(:focus-visible) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* ============================================================================
  * VISUAL VIEWPORT - Mobile keyboard handling (2025)
  * ============================================================================ */
 

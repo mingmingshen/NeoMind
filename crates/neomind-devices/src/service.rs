@@ -335,9 +335,13 @@ impl DeviceService {
                 tracing::warn!("Failed to load command history from storage: {}", e);
             });
 
+        // Migrate last_seen for old devices that have telemetry data but last_seen == 1 (sentinel)
+        self.migrate_last_seen_from_telemetry().await;
+
         let event_bus = self.event_bus.clone();
         let device_status = self.device_status.clone();
         let telemetry_storage = self.telemetry_storage.clone();
+        let registry = self.registry.clone();
 
         tokio::spawn(async move {
             let event_bus_for_publish = event_bus.clone();
@@ -379,7 +383,8 @@ impl DeviceService {
                         {
                             let mut status = device_status.write().await;
                             let entry = status.entry(device_id.clone()).or_default();
-                            entry.last_seen = chrono::Utc::now().timestamp();
+                            let now_ts = chrono::Utc::now().timestamp();
+                            entry.last_seen = now_ts;
                             // If status was disconnected, mark as connected
                             if entry.status == ConnectionStatus::Disconnected {
                                 entry.status = ConnectionStatus::Connected;
@@ -400,6 +405,8 @@ impl DeviceService {
                             } else {
                                 drop(status);
                             }
+                            // Persist last_seen to registry (redb) for server-restart survival
+                            registry.update_last_seen(&device_id, now_ts).await;
                         }
 
                         // Write to telemetry storage if available.
@@ -514,7 +521,9 @@ impl DeviceService {
                         });
 
                         // Check if this device is stale
-                        if status.is_connected() && config.is_stale(status.last_seen) {
+                        // Use status field directly (not is_connected()) because is_connected()
+                        // also checks last_seen timeout, making the conditions mutually exclusive
+                        if matches!(status.status, ConnectionStatus::Connected) && config.is_stale(status.last_seen) {
                             stale_devices.push((device_id.clone(), status.last_seen));
                         } else if status.last_seen == 0 {
                             // Device was never seen - mark as disconnected
@@ -628,6 +637,53 @@ pub struct DeviceHealth {
 }
 
 impl DeviceService {
+    /// Migrate last_seen for old devices: if last_seen == 1 (sentinel from registry migration),
+    /// try to get the real timestamp from telemetry storage.
+    async fn migrate_last_seen_from_telemetry(&self) {
+        let devices_to_migrate: Vec<(String, String)> = self
+            .registry
+            .list_devices()
+            .into_iter()
+            .filter(|d| d.last_seen == 1)
+            .map(|d| (d.device_id.clone(), d.device_type.clone()))
+            .collect();
+
+        if devices_to_migrate.is_empty() {
+            return;
+        }
+
+        let telemetry_storage = self.telemetry_storage.read().await;
+        let Some(storage) = telemetry_storage.as_ref() else {
+            return;
+        };
+
+        tracing::info!(
+            "Migrating last_seen from telemetry for {} devices",
+            devices_to_migrate.len()
+        );
+
+        for (device_id, _device_type) in devices_to_migrate {
+            // Get metrics for this device, then query the latest data point of the first metric
+            match storage.list_metrics(&device_id).await {
+                Ok(metrics) if !metrics.is_empty() => {
+                    // Pick the first metric and get its latest data point
+                    if let Ok(Some(latest)) = storage.latest(&device_id, &metrics[0]).await {
+                        let ts = latest.timestamp;
+                        tracing::debug!(
+                            "Migrating last_seen for {} → {} from telemetry",
+                            device_id,
+                            ts
+                        );
+                        self.registry.update_last_seen(&device_id, ts).await;
+                    }
+                }
+                _ => {
+                    // No telemetry data — keep last_seen = 1 (treat as previously seen)
+                }
+            }
+        }
+    }
+
     /// Set telemetry storage
     pub async fn set_telemetry_storage(&self, storage: Arc<TimeSeriesStorage>) {
         *self.telemetry_storage.write().await = Some(storage);
@@ -1677,6 +1733,7 @@ mod tests {
             adapter_type: "mqtt".to_string(),
             connection_config: ConnectionConfig::new(),
             adapter_id: None,
+            last_seen: 0,
         };
 
         service.register_device(config).await.unwrap();

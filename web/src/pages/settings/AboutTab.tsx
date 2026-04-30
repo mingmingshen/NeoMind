@@ -122,7 +122,13 @@ export function AboutTab() {
     return Math.round((used / total) * 100)
   }
 
-  const getMemoryColor = (percent: number) => {
+  const getMemoryBarColor = (percent: number) => {
+    if (percent >= 80) return "bg-error"
+    if (percent >= 60) return "bg-warning"
+    return "bg-success"
+  }
+
+  const getMemoryTextColor = (percent: number) => {
     if (percent >= 80) return "text-error"
     if (percent >= 60) return "text-warning"
     return "text-success"
@@ -240,15 +246,15 @@ export function AboutTab() {
                     {formatBytes(systemInfo.used_memory)} / {formatBytes(systemInfo.total_memory)}
                   </span>
                 </div>
-                <div className="w-full bg-background rounded-full h-2 overflow-hidden">
+                <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                   <div
-                    className={`h-full ${getMemoryColor(getMemoryPercent(systemInfo.used_memory, systemInfo.total_memory))} transition-all`}
+                    className={`h-full ${getMemoryBarColor(getMemoryPercent(systemInfo.used_memory, systemInfo.total_memory))} rounded-full transition-all`}
                     style={{ width: `${getMemoryPercent(systemInfo.used_memory, systemInfo.total_memory)}%` }}
                   />
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>{t("settings:usedMemory")}: {formatBytes(systemInfo.used_memory)}</span>
-                  <span className={getMemoryColor(getMemoryPercent(systemInfo.used_memory, systemInfo.total_memory))}>
+                  <span className={getMemoryTextColor(getMemoryPercent(systemInfo.used_memory, systemInfo.total_memory))}>
                     {getMemoryPercent(systemInfo.used_memory, systemInfo.total_memory)}%
                   </span>
                   <span>{t("settings:freeMemory")}: {formatBytes(systemInfo.available_memory)}</span>

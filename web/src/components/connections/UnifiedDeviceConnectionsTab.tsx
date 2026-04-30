@@ -977,7 +977,7 @@ function brokerToInstance(broker: any): PluginInstance {
     enabled: broker.enabled ?? true,
     running: broker.connected ?? false,
     config: {
-      broker: String(broker.broker || ''),
+      broker: String(broker.host || broker.broker || ''),
       port: Number(broker.port || 1883),
       username: broker.username || '',
       password: broker.password || '',

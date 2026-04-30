@@ -673,6 +673,8 @@ export interface MqttStatus {
 export interface ExternalBrokerConnection {
   id: string
   name: string
+  /** API may return "host" or "broker" depending on version */
+  host?: string
   broker: string
   port: number
   tls: boolean

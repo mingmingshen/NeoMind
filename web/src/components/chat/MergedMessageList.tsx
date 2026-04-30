@@ -142,8 +142,8 @@ export function MergedMessageList({
                   ) : !streamingThinking && streamingToolCalls.length === 0 && (
                     /* Loading indicator - shown when waiting for first response */
                     <div className="flex items-center gap-3 py-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">正在思考...</span>
+                      <Loader2 className="h-4 w-4 animate-spin opacity-60" />
+                      <span className="text-sm opacity-60">正在思考...</span>
                     </div>
                   )}
                 </div>

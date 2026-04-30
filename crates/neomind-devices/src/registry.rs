@@ -238,6 +238,9 @@ pub struct DeviceConfig {
     /// Adapter/Plugin ID that manages this device
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter_id: Option<String>,
+    /// Last seen timestamp (persisted, 0 = never connected)
+    #[serde(default)]
+    pub last_seen: i64,
 }
 
 /// Unified connection configuration for different protocols
@@ -516,7 +519,20 @@ impl DeviceRegistry {
             .list_devices()
             .map_err(|e| DeviceError::Storage(format!("Failed to load devices: {}", e)))?;
 
+        // Track devices that need last_seen migration (old data without the field)
+        let mut migrated_devices = Vec::new();
+
         for storage_device in storage_devices {
+            // Backward compat: old stored data has no last_seen field → defaults to 0.
+            // These devices existed before this feature, so they were likely connected.
+            // Use sentinel value 1 to mean "was connected before tracking was added".
+            let last_seen = if storage_device.last_seen == 0 {
+                migrated_devices.push(storage_device.device_id.clone());
+                1
+            } else {
+                storage_device.last_seen
+            };
+
             let config = DeviceConfig {
                 device_id: storage_device.device_id,
                 name: storage_device.name,
@@ -524,6 +540,7 @@ impl DeviceRegistry {
                 adapter_type: storage_device.adapter_type,
                 connection_config: convert_connection_config(storage_device.connection_config),
                 adapter_id: storage_device.adapter_id,
+                last_seen,
             };
 
             let device_id = config.device_id.clone();
@@ -535,6 +552,19 @@ impl DeviceRegistry {
                 .entry(device_type)
                 .or_insert_with(Vec::new)
                 .push(device_id);
+        }
+
+        // Persist last_seen migration for old devices
+        if !migrated_devices.is_empty() {
+            tracing::info!(
+                "Migrating last_seen for {} existing devices (backward compat)",
+                migrated_devices.len()
+            );
+            for device_id in &migrated_devices {
+                if let Err(e) = store.update_last_seen(device_id, 1) {
+                    tracing::warn!("Failed to migrate last_seen for {}: {}", device_id, e);
+                }
+            }
         }
 
         tracing::info!(
@@ -648,6 +678,7 @@ impl DeviceRegistry {
                     device.connection_config.clone(),
                 ),
                 adapter_id: device.adapter_id.clone(),
+                last_seen: device.last_seen,
             };
             store
                 .save_device(&storage_config)
@@ -893,6 +924,7 @@ impl DeviceRegistry {
                     config.connection_config.clone(),
                 ),
                 adapter_id: config.adapter_id.clone(),
+                last_seen: config.last_seen,
             })
         } else {
             None
@@ -923,6 +955,24 @@ impl DeviceRegistry {
     /// Get a device configuration
     pub fn get_device(&self, device_id: &str) -> Option<DeviceConfig> {
         self.devices.get(device_id).map(|v| v.value().clone())
+    }
+
+    /// Update only the `last_seen` field for a device.
+    /// Lightweight alternative to `update_device` — no template validation or type index updates.
+    pub async fn update_last_seen(&self, device_id: &str, last_seen: i64) {
+        // Update in-memory
+        if let Some(mut config) = self.devices.get_mut(device_id) {
+            config.last_seen = last_seen;
+        } else {
+            return;
+        }
+
+        // Persist to storage
+        if let Some(store) = &self.storage {
+            if let Err(e) = store.update_last_seen(device_id, last_seen) {
+                tracing::warn!("Failed to persist last_seen for {}: {}", device_id, e);
+            }
+        }
     }
 
     /// List all device configurations
@@ -1020,6 +1070,7 @@ impl DeviceRegistry {
                     config.connection_config.clone(),
                 ),
                 adapter_id: config.adapter_id.clone(),
+                last_seen: config.last_seen,
             })
         } else {
             None
@@ -1138,6 +1189,7 @@ mod tests {
             adapter_type: "mqtt".to_string(),
             connection_config: ConnectionConfig::mqtt("sensors/sensor1/data", None::<String>),
             adapter_id: None,
+            last_seen: 0,
         };
 
         registry.register_device(config).await.unwrap();
@@ -1158,6 +1210,7 @@ mod tests {
             adapter_type: "mqtt".to_string(),
             connection_config: ConnectionConfig::new(),
             adapter_id: None,
+            last_seen: 0,
         };
 
         let result = registry.register_device(config).await;
@@ -1181,6 +1234,7 @@ mod tests {
                 adapter_type: "mqtt".to_string(),
                 connection_config: ConnectionConfig::new(),
                 adapter_id: None,
+                last_seen: 0,
             };
             registry.register_device(config).await.unwrap();
         }
@@ -1204,6 +1258,7 @@ mod tests {
             adapter_type: "mqtt".to_string(),
             connection_config: ConnectionConfig::new(),
             adapter_id: None,
+            last_seen: 0,
         };
         registry.register_device(config).await.unwrap();
 

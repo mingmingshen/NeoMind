@@ -193,6 +193,7 @@ async fn test_e2e_device_registration_and_command() {
             Some("device/test_sensor/sensor_001/commands"),
         ),
         adapter_id: Some("test_adapter".to_string()),
+        last_seen: 0,
     };
 
     service
@@ -353,6 +354,7 @@ async fn test_e2e_device_with_template() {
             None::<String>,
         ),
         adapter_id: None,
+        last_seen: 0,
     };
 
     service.register_device(device_config).await.unwrap();

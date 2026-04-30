@@ -35,6 +35,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/health/status", get(basic::health_status_handler))
         .route("/api/health/live", get(basic::liveness_handler))
         .route("/api/health/ready", get(basic::readiness_handler))
+        .route("/api/system/network-info", get(basic::network_info_handler))
         // Auth status (public - shows if auth is enabled)
         .route("/api/auth/status", get(auth_handlers::auth_status_handler))
         // User authentication (public - login and register)

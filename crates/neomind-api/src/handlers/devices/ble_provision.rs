@@ -90,6 +90,30 @@ fn get_server_ip() -> String {
     std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string())
 }
 
+/// Resolve broker configuration from broker_id.
+fn resolve_broker_config(broker_id: &str) -> Result<(String, u16, String, String), ErrorResponse> {
+    if broker_id == "embedded" {
+        let store = config::open_settings_store()
+            .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
+        let settings = store.get_mqtt_settings();
+        let host = get_server_ip();
+        Ok((host, settings.port, String::new(), String::new()))
+    } else {
+        let store = config::open_settings_store()
+            .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
+        let broker = store
+            .load_external_broker(broker_id)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to load broker: {}", e)))?
+            .ok_or_else(|| ErrorResponse::not_found(format!("Broker not found: {}", broker_id)))?;
+        Ok((
+            broker.broker,
+            broker.port,
+            broker.username.unwrap_or_default(),
+            broker.password.unwrap_or_default(),
+        ))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
@@ -121,38 +145,36 @@ pub async fn ble_provision_handler(
     // 2. Generate device_id from SN
     let device_id = req.sn.to_lowercase().replace('-', "_");
 
-    // 3. Check for duplicate
-    if state.devices.service.get_device(&device_id).is_some() {
-        return Err(ErrorResponse::conflict(format!(
-            "Device already exists: {}",
-            device_id
-        )));
+    // 3. Check for duplicate — if device already exists, return its MQTT config
+    //    so the BLE client can continue provisioning (re-provisioning scenario)
+    if let Some(existing) = state.devices.service.get_device(&device_id) {
+        tracing::info!(
+            category = "ble",
+            device_id = %device_id,
+            "BLE provision: device already exists, returning existing config"
+        );
+
+        // Resolve broker config for the existing device
+        let (host, port, username, password) = resolve_broker_config(&req.broker_id)?;
+        let topic_prefix = format!("device/{}/{}", existing.device_type, device_id);
+
+        let mqtt_config = MqttConfigResponse {
+            host,
+            port,
+            username,
+            password,
+            topic_prefix,
+        };
+
+        return ok(json!({
+            "device_id": device_id,
+            "mqtt_config": mqtt_config,
+            "already_exists": true,
+        }));
     }
 
     // 4. Resolve broker config
-    let (host, port, username, password) = if req.broker_id == "embedded" {
-        let store = config::open_settings_store()
-            .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
-        let settings = store.get_mqtt_settings();
-        let host = get_server_ip();
-        (host, settings.port, String::new(), String::new())
-    } else {
-        // External broker
-        let store = config::open_settings_store()
-            .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
-        let broker = store
-            .load_external_broker(&req.broker_id)
-            .map_err(|e| ErrorResponse::internal(format!("Failed to load broker: {}", e)))?
-            .ok_or_else(|| {
-                ErrorResponse::not_found(format!("Broker not found: {}", req.broker_id))
-            })?;
-        (
-            broker.broker,
-            broker.port,
-            broker.username.unwrap_or_default(),
-            broker.password.unwrap_or_default(),
-        )
-    };
+    let (host, port, username, password) = resolve_broker_config(&req.broker_id)?;
 
     // 5. Build DeviceConfig
     let topic_prefix = format!("device/{}/{}", req.device_type, device_id);
@@ -180,6 +202,7 @@ pub async fn ble_provision_handler(
             extra,
         },
         adapter_id: None,
+                last_seen: 0,
     };
 
     // 6. Register device

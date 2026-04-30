@@ -108,21 +108,21 @@ pub async fn list_devices_handler(
             }
         }
 
-        // Filter by status (using the already-queried status)
-        // Use is_connected() to properly check both status and last_seen timeout
+        // Filter by status
+        // Three-state: online / offline / disconnected
+        // Support legacy filters: "connected" → "online", "disconnected" → "disconnected"
         if let Some(ref filter_status) = pagination.status {
             let is_connected = device_status.is_connected();
-            let status_str = if is_connected {
-                "connected"
+            let device_status_str = if is_connected {
+                "online"
+            } else if config.last_seen > 0 {
+                "offline"
             } else {
-                match device_status.status {
-                    AdapterConnectionStatus::Connecting => "connecting",
-                    AdapterConnectionStatus::Reconnecting => "reconnecting",
-                    AdapterConnectionStatus::Error => "error",
-                    _ => "disconnected",
-                }
+                "disconnected"
             };
-            if status_str != filter_status {
+            let matches = device_status_str == filter_status.as_str()
+                || (filter_status == "connected" && device_status_str == "online");
+            if !matches {
                 continue;
             }
         }
@@ -156,25 +156,37 @@ pub async fn list_devices_handler(
         let online = device_status.is_connected();
 
         // Determine status string based on actual connectivity
-        let status = if online {
-            MdlConnectionStatus::Connected
+        //   - online: currently connected and active (is_connected() && last_seen < 5min)
+        //   - offline: was online before but timed out (config.last_seen > 0)
+        //   - disconnected: never connected / never reported data (config.last_seen == 0)
+        let status_str = if online {
+            "online"
+        } else if config.last_seen > 0 {
+            "offline"
         } else {
-            MdlConnectionStatus::Disconnected
+            "disconnected"
         };
-        let status = convert_status(status);
 
-        // Use cached last_seen instead of querying again
+        // Use persisted last_seen (config.last_seen) for display — survives server restarts.
+        // Fall back to in-memory last_seen_ts if config.last_seen is 0/1 but device is currently online.
+        // last_seen == 1 is a migration sentinel (old device without real timestamp).
+        let effective_last_seen = if config.last_seen > 1 {
+            config.last_seen
+        } else {
+            last_seen_ts
+        };
+
         // Handle the case where last_seen is 0 (never seen) - return None
-        let last_seen = if last_seen_ts == 0 {
-            // Device has never been seen - return None to show as "-" in UI
+        let last_seen = if effective_last_seen <= 1 {
+            // No real timestamp available - return None to show as "-" in UI
             None
         } else {
-            chrono::DateTime::from_timestamp(last_seen_ts, 0).map(|dt| dt.to_rfc3339())
+            chrono::DateTime::from_timestamp(effective_last_seen, 0).map(|dt| dt.to_rfc3339())
         };
 
         let last_seen_dt =
-            chrono::DateTime::from_timestamp(last_seen_ts, 0).unwrap_or_else(chrono::Utc::now);
-        let instance = config_to_device_instance(&config, status, last_seen_dt);
+            chrono::DateTime::from_timestamp(effective_last_seen, 0).unwrap_or_else(chrono::Utc::now);
+        let instance = config_to_device_instance(&config, convert_status(device_status.status), last_seen_dt);
 
         // Look up template from batch-fetched map (no per-device lock)
         let template = template_map.get(config.device_type.as_str());
@@ -190,7 +202,7 @@ pub async fn list_devices_handler(
                 .unwrap_or_else(|| config.device_id.clone()),
             device_type: config.device_type.clone(),
             adapter_type: config.adapter_type.clone(),
-            status: format_status_to_str(&instance.status).to_string(),
+            status: status_str.to_string(),
             last_seen,
             online,
             plugin_id,
@@ -617,6 +629,7 @@ pub async fn add_device_handler(
         adapter_type: req.adapter_type,
         connection_config,
         adapter_id: None, // Will be set by adapter when registered
+        last_seen: 0,
     };
 
     // Register device using new DeviceService
@@ -663,6 +676,7 @@ pub async fn update_device_handler(
         adapter_type: req.adapter_type.unwrap_or(existing.adapter_type),
         connection_config,
         adapter_id: req.adapter_id.or(existing.adapter_id),
+        last_seen: existing.last_seen,
     };
 
     // Update device using new DeviceService

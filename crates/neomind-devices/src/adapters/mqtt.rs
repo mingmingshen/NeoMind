@@ -1057,6 +1057,7 @@ impl MqttAdapter {
             adapter_type: "mqtt".to_string(),
             connection_config: crate::registry::ConnectionConfig::default(),
             adapter_id: Some(self.config.name.clone()),
+            last_seen: chrono::Utc::now().timestamp(),
         };
 
         if let Err(e) = self

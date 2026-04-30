@@ -216,6 +216,8 @@ pub struct DeviceConfig {
     pub connection_config: ConnectionConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter_id: Option<String>,
+    #[serde(default)]
+    pub last_seen: i64,
 }
 
 /// Connection configuration.
@@ -649,6 +651,22 @@ impl DeviceRegistryStore {
         Ok(())
     }
 
+    /// Update only the `last_seen` field for a device. Lightweight alternative to `update_device`.
+    pub fn update_last_seen(&self, device_id: &str, last_seen: i64) -> Result<(), Error> {
+        let mut config = self
+            .load_device(device_id)?
+            .ok_or_else(|| Error::NotFound(device_id.to_string()))?;
+        config.last_seen = last_seen;
+        let json = serde_json::to_string(&config)?;
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(DEVICES_TABLE)?;
+            table.insert(device_id, json.as_str())?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
     /// Check if a device exists.
     pub fn device_exists(&self, device_id: &str) -> Result<bool, Error> {
         let read_txn = self.db.begin_read()?;
@@ -951,6 +969,7 @@ mod tests {
                 ..Default::default()
             },
             adapter_id: Some("main-mqtt".to_string()),
+            last_seen: 0,
         };
 
         store.save_device(&config).unwrap();
@@ -980,6 +999,7 @@ mod tests {
                 adapter_type: "mqtt".to_string(),
                 connection_config: Default::default(),
                 adapter_id: None,
+                last_seen: 0,
             })
             .unwrap();
 
@@ -991,6 +1011,7 @@ mod tests {
                 adapter_type: "mqtt".to_string(),
                 connection_config: Default::default(),
                 adapter_id: None,
+                last_seen: 0,
             })
             .unwrap();
 
@@ -1002,6 +1023,7 @@ mod tests {
                 adapter_type: "mqtt".to_string(),
                 connection_config: Default::default(),
                 adapter_id: None,
+                last_seen: 0,
             })
             .unwrap();
 

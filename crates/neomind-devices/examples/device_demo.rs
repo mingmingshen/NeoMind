@@ -66,6 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         adapter_type: "mqtt".to_string(),
         connection_config: ConnectionConfig::mqtt("sensors/greenhouse/temp1", None::<String>),
         adapter_id: Some("main-mqtt".to_string()),
+        last_seen: 0,
     };
 
     device_service.register_device(temp_sensor).await?;
@@ -117,6 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         adapter_type: "mqtt".to_string(),
         connection_config: ConnectionConfig::mqtt("actuators/greenhouse/fan1", None::<String>),
         adapter_id: Some("main-mqtt".to_string()),
+        last_seen: 0,
     };
 
     device_service.register_device(fan_actuator).await?;

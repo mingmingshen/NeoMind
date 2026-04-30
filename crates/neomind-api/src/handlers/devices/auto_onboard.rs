@@ -13,7 +13,7 @@ use crate::automation::{AutoOnboardManager, DiscoveredMetric};
 use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_devices::{
-    ConnectionConfig, DeviceConfig, DeviceTypeMode, DeviceTypeTemplate,
+    ConnectionConfig, ConnectionStatus, DeviceConfig, DeviceTypeMode, DeviceTypeTemplate,
     MdlMetricDefinition as MetricDefinition,
 };
 
@@ -245,6 +245,7 @@ pub async fn approve_draft_device(
                     .adapter_id
                     .clone()
                     .or_else(|| Some("internal-mqtt".to_string())),
+                last_seen: chrono::Utc::now().timestamp(),
             };
 
             // Register the device
@@ -340,6 +341,7 @@ pub async fn approve_draft_device(
                     .adapter_id
                     .clone()
                     .or_else(|| Some("internal-mqtt".to_string())),
+                last_seen: chrono::Utc::now().timestamp(),
             };
 
             // Register the device
@@ -357,6 +359,22 @@ pub async fn approve_draft_device(
                 format!("Device '{}' registered as type '{}'", device_id, type_id),
             )
         };
+
+    // Mark device as Connected - it was actively sending data when discovered
+    device_service
+        .update_device_status(&device_id, ConnectionStatus::Connected)
+        .await;
+
+    // Publish DeviceOnline event so frontend immediately shows device as online
+    if let Some(event_bus) = state.core.event_bus.as_ref() {
+        let _ = event_bus
+            .publish(neomind_core::NeoMindEvent::DeviceOnline {
+                device_id: device_id.clone(),
+                device_type: device_type.clone(),
+                timestamp: chrono::Utc::now().timestamp(),
+            })
+            .await;
+    }
 
     // Remove draft completely after successful registration (same behavior as reject)
     // This allows the device to be re-discovered if needed and keeps the pending list clean

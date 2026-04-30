@@ -1111,9 +1111,9 @@ export function ChatPage() {
                                 <MarkdownMessage content={displayContent} variant="assistant" />
                               ) : isCurrentlyStreaming ? (
                                 <div className="flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
-                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
-                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '0ms' }} />
+                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '150ms' }} />
+                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '300ms' }} />
                                 </div>
                               ) : null}
                             </>
@@ -1134,9 +1134,9 @@ export function ChatPage() {
                               <MarkdownMessage content={displayContent} variant="assistant" />
                             ) : isCurrentlyStreaming ? (
                               <div className="flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
-                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
-                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '0ms' }} />
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '150ms' }} />
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground opacity-40 animate-bounce" style={{ animationDelay: '300ms' }} />
                               </div>
                             ) : null}
                           </>
@@ -1191,10 +1191,10 @@ export function ChatPage() {
 
         {/* Input Area - fixed on mobile, normal flex on desktop */}
         <div className={cn(
-          "bg-background px-2.5 sm:px-4 pt-3 pb-5 sm:pt-3 sm:pb-6 safe-bottom",
+          "px-2.5 sm:px-4 pt-3 pb-5 sm:pt-3 sm:pb-6 safe-bottom",
           isDesktop
             ? "border-0"
-            : "fixed bottom-0 left-0 right-0 z-40 border-t border-border"
+            : "fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-[var(--surface-glass)] backdrop-blur-xl"
         )} style={isDesktop ? undefined : { paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
           <div className="max-w-3xl mx-auto">
             {/* Connection status - show on mobile when not connected */}

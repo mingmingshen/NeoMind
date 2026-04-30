@@ -699,7 +699,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
       </div>
 
       {/* Input area */}
-      <div className="border-t border-[var(--border)] bg-[var(--card)] px-3 sm:px-4 py-3 sm:py-4 pb-6 sm:pb-4 safe-bottom flex-shrink-0">
+      <div className="border-t border-[var(--border)] bg-[var(--background)] backdrop-blur-xl px-3 sm:px-4 py-3 sm:py-4 pb-6 sm:pb-4 safe-bottom flex-shrink-0">
         <div className="max-w-3xl mx-auto">
           <div className="relative">
             {/* Suggestions */}

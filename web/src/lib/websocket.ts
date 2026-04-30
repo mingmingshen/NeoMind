@@ -34,9 +34,10 @@ export class ChatWebSocket {
   private countdownTimer: ReturnType<typeof setInterval> | null = null
   private tokenCheckTimer: ReturnType<typeof setInterval> | null = null
   private reconnectAttempts = 0
-  private maxReconnectAttempts = 10  // 最多重连10次
+  private maxReconnectAttempts = 15  // 快速重连最多15次
   private baseReconnectDelay = 1000  // 初始重连延迟1秒
   private maxReconnectDelay = 30000   // 最大重连延迟30秒
+  private slowReconnectDelay = 30000  // 超过上限后每30s轮询一次，无限重试
   private isManualDisconnect = false  // 是否用户主动断开
   private wasConnected = false  // 跟踪是否曾经连接过（用于区分初始连接和重连）
   private messageHandlers: Set<MessageHandler> = new Set()
@@ -48,9 +49,25 @@ export class ChatWebSocket {
   private readonly MAX_PENDING_MESSAGES = 50  // P0: Limit pending messages to prevent memory leak
   private lastToken: string | null = null
   private currentState: ConnectionState = { status: 'disconnected' }
+  private onlineHandler: (() => void) | null = null
 
   constructor() {
     this.loadPendingMessages()
+
+    // Listen for network recovery to trigger immediate reconnect
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      this.onlineHandler = () => {
+        if (!this.isConnected() && !this.isManualDisconnect && !this.isConnecting) {
+          this.reconnectAttempts = 0  // Reset backoff on network recovery
+          this.connect(this.sessionId || undefined)
+        }
+      }
+      window.addEventListener('online', this.onlineHandler)
+    }
+  }
+
+  private get isConnecting(): boolean {
+    return this.ws?.readyState === WebSocket.CONNECTING
   }
 
   private loadPendingMessages() {
@@ -79,6 +96,9 @@ export class ChatWebSocket {
       clearInterval(this.tokenCheckTimer)
       this.tokenCheckTimer = null
     }
+
+    // Calling connect() is an explicit intent to connect — reset manual disconnect flag
+    this.isManualDisconnect = false
 
     this.sessionId = initialSessionId || null
 
@@ -166,21 +186,19 @@ export class ChatWebSocket {
 
     this.ws.onclose = (event) => {
       this.notifyConnection(false)
-      // Don't reconnect if the server rejected us (auth error) or normal close
+      // Only stop reconnecting on auth rejection (4001)
+      // Reconnect on everything else including normal close (server restart)
       // Code 4000 is used for token change - we DO want to reconnect
-      if (event.code !== 1000 && event.code !== 4001) {
-        this.scheduleReconnect()
-      } else {
-        // Clear pending messages only on auth error (4001)
-        if (event.code === 4001 && this.pendingMessages.length > 0) {
+      if (event.code === 4001) {
+        // Auth error - stop reconnecting
+        if (this.pendingMessages.length > 0) {
           console.warn(`[WebSocket] Auth error, clearing ${this.pendingMessages.length} pending messages`)
           this.pendingMessages = []
           storage.remove(STORAGE_KEY)
-        } else if (event.code === 1000) {
-          // Normal close - persist messages for next session
-          this.persistPendingMessages()
         }
         this.setState({ status: 'disconnected' })
+      } else {
+        this.scheduleReconnect()
       }
     }
 
@@ -276,17 +294,42 @@ export class ChatWebSocket {
     }
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      // Persist messages when we give up reconnecting (don't clear)
-      if (this.pendingMessages.length > 0) {
-        console.warn(`[WebSocket] Max reconnect attempts reached. ${this.pendingMessages.length} messages persisted for next session`)
-        this.persistPendingMessages()
-      }
+      // Switch to slow polling mode - keep retrying every 30s indefinitely
+      // instead of giving up permanently
+      this.reconnectAttempts++ // Keep incrementing to track total attempts
+
       this.setState({
-        status: 'error',
-        errorMessage: '连接已断开，请点击重新连接',
+        status: 'reconnecting',
         retryCount: this.reconnectAttempts,
-        nextRetryIn: undefined
+        nextRetryIn: Math.ceil(this.slowReconnectDelay / 1000)
       })
+
+      let countdown = Math.ceil(this.slowReconnectDelay / 1000)
+      if (this.countdownTimer) {
+        clearInterval(this.countdownTimer)
+      }
+      this.countdownTimer = setInterval(() => {
+        countdown--
+        this.setState({
+          status: 'reconnecting',
+          retryCount: this.reconnectAttempts,
+          nextRetryIn: countdown
+        })
+        if (countdown <= 0) {
+          if (this.countdownTimer) {
+            clearInterval(this.countdownTimer)
+            this.countdownTimer = null
+          }
+        }
+      }, 1000)
+
+      this.reconnectTimer = setTimeout(() => {
+        if (this.countdownTimer) {
+          clearInterval(this.countdownTimer)
+          this.countdownTimer = null
+        }
+        this.connect(this.sessionId || undefined)
+      }, this.slowReconnectDelay)
       return
     }
 
@@ -393,6 +436,12 @@ export class ChatWebSocket {
     if (this.ws) {
       this.ws.close(1000, 'User disconnected')
       this.ws = null
+    }
+
+    // Remove network listener
+    if (this.onlineHandler && typeof window !== 'undefined') {
+      window.removeEventListener('online', this.onlineHandler)
+      this.onlineHandler = null
     }
 
     // Persist pending messages on manual disconnect (don't clear)

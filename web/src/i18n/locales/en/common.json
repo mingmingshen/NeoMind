@@ -482,7 +482,7 @@
     "online": "Online",
     "offline": "Offline",
     "connected": "Connected",
-    "disconnected": "Disconnected",
+    "disconnected": "Never Connected",
     "active": "Active",
     "inactive": "Inactive",
     "enabled": "Enabled",

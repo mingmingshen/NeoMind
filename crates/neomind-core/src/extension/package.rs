@@ -586,6 +586,14 @@ impl ExtensionPackage {
             None
         };
 
+        // 🔧 macOS: Re-sign all extracted dylibs after installation
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(binary_dir) = binary_path.parent() {
+                Self::resign_dylibs_macos(binary_dir);
+            }
+        }
+
         // Get component definitions
         let components = self
             .manifest
@@ -708,6 +716,18 @@ impl ExtensionPackage {
         let config_path = ext_dir.join("config");
         Self::extract_directory_sync(&mut archive, "config/", &config_path)?;
 
+        // 🔧 macOS: Re-sign all extracted dylibs after installation.
+        // When a .nep replaces an existing extension, macOS may cache the old code signature
+        // for the file path/inode. Re-signing forces a fresh CDHash so the kernel accepts
+        // the new binary when the extension-runner loads it via dlopen.
+        // Without this, the runner gets SIGKILL (Code Signature Invalid) on launch.
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(binary_dir) = binary_file.parent() {
+                Self::resign_dylibs_macos(binary_dir);
+            }
+        }
+
         // Get component definitions
         let components = manifest
             .frontend
@@ -743,6 +763,47 @@ impl ExtensionPackage {
             models_dir,
             resources_dir,
         })
+    }
+
+    /// Re-sign all .dylib files in the binary directory on macOS.
+    /// This ensures macOS kernel code-signing cache is updated after
+    /// overwriting existing dylibs during .nep installation.
+    #[cfg(target_os = "macos")]
+    fn resign_dylibs_macos(dir: &Path) {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+
+        let mut count = 0u32;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("dylib") {
+                // Run codesign --force --sign - <path>
+                let result = std::process::Command::new("codesign")
+                    .args(["--force", "--sign", "-"])
+                    .arg(&path)
+                    .output();
+
+                match result {
+                    Ok(output) if output.status.success() => count += 1,
+                    Ok(output) => {
+                        tracing::warn!(
+                            "codesign failed for {}: {}",
+                            path.display(),
+                            String::from_utf8_lossy(&output.stderr).trim()
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!("codesign failed for {}: {}", path.display(), e);
+                    }
+                }
+            }
+        }
+
+        if count > 0 {
+            tracing::info!("Re-signed {} dylib(s) after installation", count);
+        }
     }
 
     /// Extract a single file from the archive (synchronous)

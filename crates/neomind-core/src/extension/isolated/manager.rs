@@ -306,6 +306,31 @@ impl IsolatedExtensionManager {
                                 // Reload the extension
                                 match self.load(&path).await {
                                     Ok(_) => {
+                                        // Warm-up health check: verify the restarted extension
+                                        // can actually respond to IPC commands before declaring it ready.
+                                        // This prevents a race where the frontend immediately sends
+                                        // commands (e.g., get_bindings) while the extension process
+                                        // is still initializing its internal state.
+                                        {
+                                            let extensions = self.extensions.read().await;
+                                            if let Some(ext) = extensions.get(&ext_id) {
+                                                match ext.health_check().await {
+                                                    Ok(true) => {
+                                                        tracing::info!(
+                                                            extension_id = %ext_id,
+                                                            "Post-restart health check passed"
+                                                        );
+                                                    }
+                                                    Ok(false) | Err(_) => {
+                                                        tracing::warn!(
+                                                            extension_id = %ext_id,
+                                                            "Post-restart health check failed, extension may not be fully ready"
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+
                                         // 🔧 Phase 1: Update restart tracking
                                         {
                                             let mut info_cache = self.info_cache.write();

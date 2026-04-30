@@ -12,17 +12,17 @@ export function getStatusColor(status: string): 'success' | 'warning' | 'error' 
   }
 
   // Warning statuses
-  if (['pending', 'waiting', 'buffering', 'warning', 'disconnected', 'retry'].includes(s)) {
+  if (['offline', 'pending', 'waiting', 'buffering', 'warning', 'retry'].includes(s)) {
     return 'warning'
   }
 
   // Error statuses
-  if (['offline', 'inactive', 'disabled', 'failed', 'error', 'rejected', 'timeout', 'critical'].includes(s)) {
+  if (['inactive', 'disabled', 'failed', 'error', 'rejected', 'timeout', 'critical'].includes(s)) {
     return 'error'
   }
 
   // Info statuses
-  if (['idle', 'paused', 'stopped', 'info'].includes(s)) {
+  if (['idle', 'paused', 'stopped', 'info', 'disconnected'].includes(s)) {
     return 'info'
   }
 
@@ -40,7 +40,7 @@ export function getStatusLabel(status: string): string {
     online: '在线',
     offline: '离线',
     connected: '已连接',
-    disconnected: '已断开',
+    disconnected: '未连接',
 
     // Execution status
     active: '运行中',

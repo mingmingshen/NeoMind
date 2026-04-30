@@ -56,6 +56,7 @@ pub struct MqttStatusDto {
 pub struct ExternalBrokerConnectionDto {
     pub id: String,
     pub name: String,
+    #[serde(rename = "broker")]
     pub host: String,
     pub port: u16,
     pub tls: bool,

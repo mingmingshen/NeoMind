@@ -23,6 +23,8 @@ export interface PageLayoutProps {
   hideFooterOnMobile?: boolean
   /** Whether to fix actions bar on mobile (don't scroll with content) */
   fixedActionsOnMobile?: boolean
+  /** Whether to remove scroll container padding (for full-bleed children like detail views) */
+  noPadding?: boolean
 }
 
 const maxWidthClass = {
@@ -62,6 +64,7 @@ export function PageLayout({
   borderedHeader = false,
   hideFooterOnMobile = false,
   fixedActionsOnMobile = false,
+  noPadding = false,
 }: PageLayoutProps) {
   const isMobile = useIsMobile()
 
@@ -93,12 +96,13 @@ export function PageLayout({
         {/* Scrollable content - adjust padding based on footer visibility */}
         <div
           className={cn(
-            'flex-1 flex flex-col overflow-auto px-4 sm:px-6 md:px-8',
-            showFooter ? 'pb-24 sm:pb-28' : 'pb-4 sm:pb-6'
+            'flex-1 flex flex-col overflow-auto',
+            !noPadding && 'px-4 sm:px-6 md:px-8',
+            !noPadding && (showFooter ? 'pb-24 sm:pb-28' : 'pb-4 sm:pb-6')
           )}
           data-page-scroll-container
         >
-          <div className={cn('mx-auto w-full', maxWidthClass[maxWidth])}>
+          <div className={cn('mx-auto w-full flex flex-col min-h-full', maxWidthClass[maxWidth])}>
             {children}
           </div>
         </div>

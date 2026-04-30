@@ -249,7 +249,7 @@ export function FullScreenDialogSidebar({
 
   return (
     <aside className={cn(
-      "shrink-0 w-[140px] md:w-[160px]",
+      "shrink-0 w-[180px] md:w-[220px]",
       "border-r border-border",
       "bg-black/[0.02] dark:bg-white/[0.02]",
       className
