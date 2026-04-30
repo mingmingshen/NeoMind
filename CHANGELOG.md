@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.7.1] - 2026-04-30
+
+### Added
+
+- **BLE Provisioning** — Zero-touch device setup via Bluetooth Low Energy with Web Bluetooth API
+- **Auto Discovery Broker Guidance** — Contextual empty state in Pending Devices that guides users to add MQTT broker in Settings
+- **Network Info API** — `GET /api/system/network-info` returns WiFi SSID and LAN IP for BLE provisioning
+
+### Fixed
+
+- **Device Type Dropdown Loading** — Add Device dialog now fetches device types on open instead of relying on stale cache
+- **WebSocket Not Auto-Recovering** — Added missing `online` event listener for network recovery and reset `isManualDisconnect` flag in `connect()`
+- **WebSocket Disconnected After Page Refresh** — Auth state initially false caused disconnect flag to stick, blocking reconnect
+- **About Page Memory Progress Bar** — Used `bg-*` classes instead of `text-*` for progress bar fill color
+- **Layout Flicker on Page Switch** — Responsive hooks (`useIsDesktop`, `useIsMobile`, `useIsTouchDevice`, `useDeviceType`) now read `window.innerWidth` synchronously on first render
+- **Focus Ring on Click** — Suppressed `:focus-visible` ring on mouse clicks in Tauri/Chromium
+- **BLE WiFi SSID 404** — Fixed frontend calling non-existent `/system/wifi-ssid` endpoint → use registered `/system/network-info`
+
+### Changed
+
+- **Pending Devices Table** — Removed column header icons for cleaner appearance
+- **Add Device Dialog Icons** — Updated tab and header icons for better semantic meaning
+
+---
+
 ## [v0.7.0] - 2026-04-28
 
 ### Added
