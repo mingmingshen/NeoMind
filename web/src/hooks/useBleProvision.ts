@@ -25,6 +25,7 @@ import {
   decodeRespGetStatus,
   decodeRespSetConfig,
   viewToBytes,
+  writeWithMtu,
 } from '@/lib/ble-protocol'
 import type { BleMqttConfig } from '@/lib/ble-protocol'
 
@@ -197,16 +198,22 @@ export function useBleProvision(): UseBleProvisionReturn {
         setConnecting(false)
         setProvisioning(true)
 
-        // 3. Write MQTT config to custom endpoint
+        // 3. Write MQTT config to custom endpoint (write+read for verification)
         setProvisioningStep('writingMqtt')
-        try {
-          const mqttChar = await service.getCharacteristic(BLE_CHAR_MQTT)
-          const mqttData = encodeMqttConfig(mqttConfig)
-          console.log(`[BLE] Writing MQTT config: ${mqttData.byteLength} bytes`)
-          await mqttChar.writeValue(mqttData)
-          console.log('[BLE] MQTT config written successfully')
-        } catch (mqttErr) {
-          console.warn('[BLE] Failed to write MQTT config (non-fatal):', mqttErr)
+        const mqttChar = await service.getCharacteristic(BLE_CHAR_MQTT)
+        const mqttData = encodeMqttConfig(mqttConfig)
+        console.log(`[BLE] Writing MQTT config: ${mqttData.byteLength} bytes`)
+        await writeWithMtu(mqttChar, mqttData)
+        // Read back response — firmware returns {"status":0} on success
+        await sleep(300)
+        const mqttResp = await mqttChar.readValue()
+        const mqttRespText = new TextDecoder().decode(mqttResp)
+        console.log(`[BLE] MQTT config response: ${mqttRespText}`)
+        if (mqttResp.byteLength === 0) {
+          throw new Error('MQTT config: device returned empty response')
+        }
+        if (!mqttRespText.includes('"status":0')) {
+          throw new Error(`MQTT config rejected by device: ${mqttRespText}`)
         }
 
         // 4. Write WiFi credentials
