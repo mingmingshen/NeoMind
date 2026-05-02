@@ -74,7 +74,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 async function writeAndRead(
   char: BluetoothRemoteGATTCharacteristic,
   data: Uint8Array,
-  timeoutMs: number,
   label: string,
 ): Promise<DataView> {
   // Firmware characteristics only support READ|WRITE (no NOTIFY).
@@ -219,7 +218,7 @@ export function useBleProvision(): UseBleProvisionReturn {
         // 4. Write WiFi credentials
         setProvisioningStep('writingWifi')
         const setConfigData = encodeSetConfig(ssid, password)
-        const setResp = await writeAndRead(configChar, setConfigData, 10_000, 'Set WiFi config')
+        const setResp = await writeAndRead(configChar, setConfigData, 'Set WiFi config')
         const setStatus = decodeRespSetConfig(viewToBytes(setResp))
         if (setStatus !== 0) {
           throw new Error(`SetConfig failed with status ${setStatus}`)
@@ -232,7 +231,7 @@ export function useBleProvision(): UseBleProvisionReturn {
           await sleep(1000)
           try {
             const statusResp = await writeAndRead(
-              configChar, encodeGetStatus(), 5_000, 'Get status',
+              configChar, encodeGetStatus(), 'Get status',
             )
             const { wifiState: ws } = decodeRespGetStatus(viewToBytes(statusResp))
             setWifiState(ws)
