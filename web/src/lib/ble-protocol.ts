@@ -3,20 +3,41 @@
 // Uses ESP-IDF standard provisioning over BLE with protobuf encoding.
 // Security0 = no encryption, so we can encode protobuf manually without
 // pulling in protobufjs.
+//
+// Proto structure (from ESP-IDF wifi_config.proto):
+//   WiFiConfigPayload {
+//     WiFiConfigMsgType msg = 1;           // enum varint
+//     oneof payload {
+//       CmdGetStatus    cmd_get_status    = 10;
+//       RespGetStatus   resp_get_status   = 11;
+//       CmdSetConfig    cmd_set_config    = 12;
+//       RespSetConfig   resp_set_config   = 13;
+//       CmdApplyConfig  cmd_apply_config  = 14;
+//       RespApplyConfig resp_apply_config = 15;
+//     }
+//   }
+//   CmdSetConfig { bytes ssid = 1; bytes passphrase = 2; }
+//   CmdGetStatus {} (empty)
+//   RespSetConfig { Status status = 1; }
+//   RespGetStatus { Status status = 1; WifiStationState sta_state = 2;
+//                   oneof { WifiConnectFailedReason fail_reason = 10;
+//                           WifiConnectedState connected = 11; } }
 
 // ---------------------------------------------------------------------------
 // Service & Characteristic UUIDs (ESP-IDF standard)
 // ---------------------------------------------------------------------------
 
-/** ESP-IDF BLE provisioning service UUID */
+/** ESP-IDF BLE provisioning service UUID (must match firmware) */
 export const BLE_PROV_SERVICE_UUID = '0000ffff-0000-1000-8000-00805f9b34fb'
 
-/** Protocol version */
-export const BLE_CHAR_PROTO_VER = '0000ff01-0000-1000-8000-00805f9b34fb'
+/** Scan endpoint */
+export const BLE_CHAR_SCAN = '0000ff50-0000-1000-8000-00805f9b34fb'
 /** Session endpoint (Security0 handshake) */
-export const BLE_CHAR_SESSION = '0000ff02-0000-1000-8000-00805f9b34fb'
+export const BLE_CHAR_SESSION = '0000ff51-0000-1000-8000-00805f9b34fb'
 /** Config endpoint (WiFi credentials + status) */
-export const BLE_CHAR_CONFIG = '0000ff03-0000-1000-8000-00805f9b34fb'
+export const BLE_CHAR_CONFIG = '0000ff52-0000-1000-8000-00805f9b34fb'
+/** Custom MQTT config endpoint (ESP-IDF custom protocomm endpoint, UUID = 0xFF54) */
+export const BLE_CHAR_MQTT = '0000ff54-0000-1000-8000-00805f9b34fb'
 
 // ---------------------------------------------------------------------------
 // Enum values (from ESP-IDF proto definitions)
@@ -31,6 +52,16 @@ export const enum WifiState {
 
 export const enum ProvStatus {
   Success = 0,
+}
+
+/** WiFiConfigMsgType enum values */
+const enum ConfigMsgType {
+  TypeCmdGetStatus = 0,
+  TypeRespGetStatus = 1,
+  TypeCmdSetConfig = 2,
+  TypeRespSetConfig = 3,
+  TypeCmdApplyConfig = 4,
+  TypeRespApplyConfig = 5,
 }
 
 // ---------------------------------------------------------------------------
@@ -52,10 +83,40 @@ export interface BleMqttConfig {
   topic_prefix: string
 }
 
-/** Maps BLE device model strings to NeoMind device type identifiers */
+/** Maps BLE device model strings to NeoMind device type identifiers (fallback) */
 export const MODEL_TO_DEVICE_TYPE: Record<string, string> = {
   NE101: 'ne101_camera',
   NE301: 'ne301_camera',
+}
+
+/** Derive device type from model string: NE101 → ne101_camera */
+export function modelToDeviceType(model: string): string | null {
+  // Check known models first
+  if (MODEL_TO_DEVICE_TYPE[model]) return MODEL_TO_DEVICE_TYPE[model]
+  // Generic pattern: uppercase model → lowercase + suffix
+  if (/^[A-Z]+\d+$/.test(model)) return `${model.toLowerCase()}_camera`
+  return null
+}
+
+/** Parse BLE advertised device name into model and MAC suffix.
+ *  e.g. "NE101_70B0E2" → { model: "NE101", macSuffix: "70B0E2" }
+ *       "NE301-A1B2C3" → { model: "NE301", macSuffix: "A1B2C3" }
+ */
+export function parseBleDeviceName(name: string): { model: string; macSuffix: string } | null {
+  const match = name.match(/^([A-Z]+\d+)[-_](\w+)$/)
+  if (!match) return null
+  return { model: match[1], macSuffix: match[2] }
+}
+
+/** Encode MQTT config as JSON for the custom BLE MQTT endpoint */
+export function encodeMqttConfig(config: {
+  host: string
+  port: number
+  username: string
+  password: string
+  topic_prefix: string
+}): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(config))
 }
 
 // ---------------------------------------------------------------------------
@@ -84,9 +145,8 @@ function decodeVarint(data: Uint8Array, offset: number): [number, number] {
   return [value, offset]
 }
 
-/** Encode a protobuf string field (field_number, UTF-8 value) */
-function encodeStringField(field: number, value: string): Uint8Array {
-  const payload = new TextEncoder().encode(value)
+/** Encode a protobuf bytes/string field (field_number, raw bytes) */
+function encodeBytesField(field: number, payload: Uint8Array): Uint8Array {
   const tag = encodeVarint((field << 3) | 2) // wire type 2 = length-delimited
   const len = encodeVarint(payload.length)
   const out = new Uint8Array(tag.length + len.length + payload.length)
@@ -97,49 +157,118 @@ function encodeStringField(field: number, value: string): Uint8Array {
   return out
 }
 
-/**
- * Encode CmdSetConfig { string ssid = 1; string passphrase = 2; }
- */
-export function encodeSetConfig(ssid: string, passphrase: string): Uint8Array {
-  const a = encodeStringField(1, ssid)
-  const b = encodeStringField(2, passphrase)
-  const out = new Uint8Array(a.length + b.length)
-  out.set(a, 0)
-  out.set(b, a.length)
+/** Encode a protobuf string field (field_number, UTF-8 value) */
+function encodeStringField(field: number, value: string): Uint8Array {
+  return encodeBytesField(field, new TextEncoder().encode(value))
+}
+
+/** Encode a varint field (field_number, value) */
+function encodeVarintField(field: number, value: number): Uint8Array {
+  const tag = encodeVarint((field << 3) | 0) // wire type 0 = varint
+  const val = encodeVarint(value)
+  const out = new Uint8Array(tag.length + val.length)
+  out.set(tag, 0)
+  out.set(val, tag.length)
   return out
 }
 
+/** Encode a nested message field (field_number, serialized inner message) */
+function encodeMessageField(field: number, inner: Uint8Array): Uint8Array {
+  return encodeBytesField(field, inner)
+}
+
+/** Concatenate multiple Uint8Arrays */
+function concat(...parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((s, p) => s + p.length, 0)
+  const out = new Uint8Array(total)
+  let off = 0
+  for (const p of parts) { out.set(p, off); off += p.length }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// WiFiConfigPayload encoder
+// ---------------------------------------------------------------------------
+
 /**
- * Encode CmdGetStatus {} (empty message)
+ * Encode WiFiConfigPayload with CmdSetConfig.
+ * WiFiConfigPayload { msg = TypeCmdSetConfig; cmd_set_config = { ssid, passphrase } }
  */
-export function encodeGetStatus(): Uint8Array {
-  return new Uint8Array(0)
+export function encodeSetConfig(ssid: string, passphrase: string): Uint8Array {
+  // Inner CmdSetConfig { bytes ssid = 1; bytes passphrase = 2; }
+  const inner = concat(
+    encodeBytesField(1, new TextEncoder().encode(ssid)),
+    encodeBytesField(2, new TextEncoder().encode(passphrase)),
+  )
+  // WiFiConfigPayload { msg = 2; cmd_set_config = inner }
+  return concat(
+    encodeVarintField(1, ConfigMsgType.TypeCmdSetConfig),  // msg = TypeCmdSetConfig
+    encodeMessageField(12, inner),                          // cmd_set_config (field 12!)
+  )
 }
 
 /**
- * Decode RespGetStatus { Status status = 1; WifiStationState wifi_state = 10; }
+ * Encode WiFiConfigPayload with CmdGetStatus.
+ * WiFiConfigPayload { msg = TypeCmdGetStatus; cmd_get_status = {} }
+ */
+export function encodeGetStatus(): Uint8Array {
+  // CmdGetStatus is empty, but we still need the WiFiConfigPayload wrapper
+  return concat(
+    encodeVarintField(1, ConfigMsgType.TypeCmdGetStatus),   // msg = TypeCmdGetStatus
+    encodeMessageField(10, new Uint8Array(0)),              // cmd_get_status = {} (field 10!)
+  )
+}
+
+// ---------------------------------------------------------------------------
+// WiFiConfigPayload decoder
+// ---------------------------------------------------------------------------
+
+/**
+ * Decode RespSetConfig from WiFiConfigPayload.
+ * WiFiConfigPayload.resp_set_config { Status status = 1; }
+ */
+export function decodeRespSetConfig(data: Uint8Array): number {
+  // Parse WiFiConfigPayload to find resp_set_config (field 13)
+  const inner = extractField(data, 13)
+  if (!inner || inner.length === 0) return -1
+
+  // Parse RespSetConfig { Status status = 1; }
+  const [tag, off1] = decodeVarint(inner, 0)
+  if ((tag >> 3) === 1) {
+    const [val] = decodeVarint(inner, off1)
+    return val
+  }
+  return -1
+}
+
+/**
+ * Decode RespGetStatus from WiFiConfigPayload.
+ * WiFiConfigPayload.resp_get_status { Status status = 1; WifiStationState sta_state = 2; ... }
  */
 export function decodeRespGetStatus(data: Uint8Array): {
   status: number
   wifiState: number
   failedReason: number
 } {
+  // Parse WiFiConfigPayload to find resp_get_status (field 11)
+  const inner = extractField(data, 11)
+  if (!inner || inner.length === 0) return { status: 0, wifiState: 0, failedReason: 0 }
+
+  // Parse RespGetStatus
   let status = 0, wifiState = 0, failedReason = 0, offset = 0
-  while (offset < data.length) {
-    const [tag, off1] = decodeVarint(data, offset)
+  while (offset < inner.length) {
+    const [tag, off1] = decodeVarint(inner, offset)
     offset = off1
     const fieldNum = tag >> 3
     const wireType = tag & 7
     if (wireType === 0) {
-      // varint (enum/int)
-      const [val, off2] = decodeVarint(data, offset)
+      const [val, off2] = decodeVarint(inner, offset)
       offset = off2
       if (fieldNum === 1) status = val
-      else if (fieldNum === 10) wifiState = val
-      else if (fieldNum === 11) failedReason = val
+      else if (fieldNum === 2) wifiState = val
+      else if (fieldNum === 10) failedReason = val
     } else if (wireType === 2) {
-      // length-delimited: skip
-      const [len, off2] = decodeVarint(data, offset)
+      const [len, off2] = decodeVarint(inner, offset)
       offset = off2 + len
     } else {
       break
@@ -148,17 +277,55 @@ export function decodeRespGetStatus(data: Uint8Array): {
   return { status, wifiState, failedReason }
 }
 
-/**
- * Decode RespSetConfig { Status status = 1; }
- */
-export function decodeRespSetConfig(data: Uint8Array): number {
-  if (data.length === 0) return 0
-  const [tag, off1] = decodeVarint(data, 0)
-  if ((tag >> 3) === 1) {
-    const [val] = decodeVarint(data, off1)
-    return val
+/** Extract a length-delimited field from a protobuf message */
+function extractField(data: Uint8Array, targetField: number): Uint8Array | null {
+  let offset = 0
+  while (offset < data.length) {
+    const [tag, off1] = decodeVarint(data, offset)
+    offset = off1
+    const fieldNum = tag >> 3
+    const wireType = tag & 7
+    if (wireType === 0) {
+      const [, off2] = decodeVarint(data, offset)
+      offset = off2
+    } else if (wireType === 2) {
+      const [len, off2] = decodeVarint(data, offset)
+      offset = off2
+      if (fieldNum === targetField) {
+        return data.slice(offset, offset + len)
+      }
+      offset += len
+    } else {
+      break
+    }
   }
-  return -1
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// BLE MTU-aware write
+// ---------------------------------------------------------------------------
+
+/** Default BLE ATT MTU payload size (23 byte MTU - 3 byte ATT header) */
+const BLE_DEFAULT_MTU_PAYLOAD = 20
+
+/**
+ * Write a Uint8Array to a BLE characteristic, chunking if the payload
+ * exceeds the negotiated MTU. Uses writeValueWithResponse for reliability.
+ *
+ * @param char  The BLE characteristic to write to
+ * @param data  The full payload
+ * @param mtu   Negotiated MTU payload size (default: 20)
+ */
+export async function writeWithMtu(
+  char: BluetoothRemoteGATTCharacteristic,
+  data: Uint8Array,
+  mtu: number = BLE_DEFAULT_MTU_PAYLOAD,
+): Promise<void> {
+  for (let offset = 0; offset < data.length; offset += mtu) {
+    const chunk = data.slice(offset, Math.min(offset + mtu, data.length))
+    await char.writeValueWithResponse(chunk)
+  }
 }
 
 // ---------------------------------------------------------------------------
