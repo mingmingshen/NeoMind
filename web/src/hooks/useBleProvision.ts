@@ -3,46 +3,34 @@
 // Encapsulates Web Bluetooth interactions with ESP-IDF wifi_prov_mgr.
 // Protocol: Security0 (no encryption) + protobuf over BLE.
 //
-// Flow:
-//   1. Scan for BLE devices (filter by NE101 name prefix + prov service UUID)
-//   2. Connect → discover characteristics → start Security0 session
-//   3. Write WiFi credentials (protobuf CmdSetConfig)
-//   4. Poll connection status (CmdGetStatus)
-//   5. On success: pre-register device via HTTP API → done
+// Flow (pure BLE, no HTTP during connection):
+//   1. Scan for BLE devices (filter by prov service UUID)
+//   2. Parse device name → extract model + SN
+//   3. GATT connect → discover characteristics
+//   4. Write MQTT config to custom BLE endpoint (JSON)
+//   5. Write WiFi credentials (protobuf CmdSetConfig)
+//   6. Poll connection status (CmdGetStatus)
 
 import { useState, useRef, useCallback } from 'react'
 
 import {
   BLE_PROV_SERVICE_UUID,
   BLE_CHAR_CONFIG,
-  BLE_CHAR_SESSION,
+  BLE_CHAR_MQTT,
   WifiState,
   encodeSetConfig,
   encodeGetStatus,
+  encodeMqttConfig,
+  parseBleDeviceName,
   decodeRespGetStatus,
   decodeRespSetConfig,
   viewToBytes,
-  MODEL_TO_DEVICE_TYPE,
 } from '@/lib/ble-protocol'
 import type { BleMqttConfig } from '@/lib/ble-protocol'
-import { fetchAPI } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface BleProvisionRequest {
-  model: string
-  sn: string
-  device_type: string
-  device_name: string
-  broker_id: string
-}
-
-interface BleProvisionResponse {
-  device_id: string
-  mqtt_config: BleMqttConfig
-}
 
 export interface UseBleProvisionReturn {
   scanning: boolean
@@ -51,11 +39,19 @@ export interface UseBleProvisionReturn {
   disconnected: boolean
   error: string | null
   device: BluetoothDevice | null
+  deviceModel: string | null
+  deviceMac: string | null
   wifiState: WifiState | null
+  provisioningStep: string | null
 
   scan: () => Promise<BluetoothDevice | null>
-  connectAndProvision: (device: BluetoothDevice, ssid: string, password: string) => Promise<boolean>
-  preRegister: (params: { model: string; sn: string; deviceName: string; brokerId: string }) => Promise<BleProvisionResponse>
+  /** Pure BLE: connect → write MQTT → write WiFi → poll. No HTTP inside. */
+  connectAndProvision: (
+    device: BluetoothDevice,
+    ssid: string,
+    password: string,
+    mqttConfig: BleMqttConfig,
+  ) => Promise<boolean>
   disconnect: () => void
   clearError: () => void
 }
@@ -80,23 +76,24 @@ async function writeAndRead(
   timeoutMs: number,
   label: string,
 ): Promise<DataView> {
-  // Start notifications first
-  await char.startNotifications()
+  // Firmware characteristics only support READ|WRITE (no NOTIFY).
+  // Write request, wait briefly for device handler to set response, then read.
+  console.log(`[BLE] writeAndRead "${label}": writing ${data.byteLength} bytes`)
+  await char.writeValueWithResponse(data)
+  console.log(`[BLE] writeAndRead "${label}": write OK, reading...`)
 
-  const respPromise = new Promise<DataView>((resolve) => {
-    const handler = (e: Event) => {
-      const t = e.target as unknown as BluetoothRemoteGATTCharacteristic
-      t.removeEventListener('characteristicvaluechanged', handler)
-      resolve(t.value!)
+  // Retry read up to 3 times with 300ms delay — the ESP-IDF protocomm handler
+  // sets the attribute value asynchronously on write, so we may need a brief wait.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await sleep(300)
+    const value = await char.readValue()
+    if (value.byteLength > 0) {
+      console.log(`[BLE] writeAndRead "${label}": read OK, ${value.byteLength} bytes`)
+      return value
     }
-    char.addEventListener('characteristicvaluechanged', handler)
-  })
-
-  await char.writeValue(data)
-  const resp = await withTimeout(respPromise, timeoutMs, label)
-
-  try { await char.stopNotifications() } catch { /* ignore */ }
-  return resp
+    console.log(`[BLE] writeAndRead "${label}": read returned empty (attempt ${attempt + 1})`)
+  }
+  throw new Error(`${label}: read returned empty after 3 attempts`)
 }
 
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
@@ -112,7 +109,10 @@ export function useBleProvision(): UseBleProvisionReturn {
   const [disconnected, setDisconnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [device, setDevice] = useState<BluetoothDevice | null>(null)
+  const [deviceModel, setDeviceModel] = useState<string | null>(null)
+  const [deviceMac, setDeviceMac] = useState<string | null>(null)
   const [wifiState, setWifiState] = useState<WifiState | null>(null)
+  const [provisioningStep, setProvisioningStep] = useState<string | null>(null)
 
   const gattRef = useRef<BluetoothRemoteGATTServer | null>(null)
   const configCharRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null)
@@ -130,15 +130,23 @@ export function useBleProvision(): UseBleProvisionReturn {
     setScanning(true)
     setError(null)
     setDisconnected(false)
+    setDeviceModel(null)
+    setDeviceMac(null)
 
     try {
       const selected = await navigator.bluetooth.requestDevice({
-        filters: [
-          { services: [BLE_PROV_SERVICE_UUID] },
-          { namePrefix: 'NE101' },
-        ],
+        filters: [{ services: [BLE_PROV_SERVICE_UUID] }],
         optionalServices: [BLE_PROV_SERVICE_UUID],
       })
+
+      if (selected.name) {
+        const parsed = parseBleDeviceName(selected.name)
+        if (parsed) {
+          setDeviceModel(parsed.model)
+          setDeviceMac(parsed.macSuffix)
+        }
+      }
+
       const onDisconnect = () => setDisconnected(true)
       selected.addEventListener('gattserverdisconnected', onDisconnect)
       disconnectHandlerRef.current = () =>
@@ -154,42 +162,55 @@ export function useBleProvision(): UseBleProvisionReturn {
     }
   }, [])
 
-  // --- connect and provision ---
+  // --- connect and provision (pure BLE) ---
 
   const connectAndProvision = useCallback(
-    async (bleDevice: BluetoothDevice, ssid: string, password: string): Promise<boolean> => {
+    async (
+      bleDevice: BluetoothDevice,
+      ssid: string,
+      password: string,
+      mqttConfig: BleMqttConfig,
+    ): Promise<boolean> => {
       setConnecting(true)
       setError(null)
       setWifiState(null)
 
       try {
-        // 1. Connect GATT
+        // 1. GATT connect
+        setProvisioningStep('connecting')
         const gatt = bleDevice.gatt!
-        const server = await withTimeout(gatt.connect(), 15_000, 'GATT connect') as BluetoothRemoteGATTServer
+        if (gatt.connected) {
+          try { gatt.disconnect() } catch { /* ignore */ }
+          await sleep(500)
+        }
+        const server = await withTimeout(gatt.connect(), 30_000, 'GATT connect') as BluetoothRemoteGATTServer
         gattRef.current = server
 
-        // 2. Get provisioning service
+        // 2. Get provisioning service + characteristics
         const service = await withTimeout(
           server.getPrimaryService(BLE_PROV_SERVICE_UUID),
           10_000, 'Get prov service',
         )
-
-        // 3. Get characteristics
-        const sessionChar = await service.getCharacteristic(BLE_CHAR_SESSION)
         const configChar = await service.getCharacteristic(BLE_CHAR_CONFIG)
         configCharRef.current = configChar
 
         setConnecting(false)
         setProvisioning(true)
 
-        // 4. Security0 session handshake (write empty bytes)
+        // 3. Write MQTT config to custom endpoint
+        setProvisioningStep('writingMqtt')
         try {
-          await writeAndRead(sessionChar, new Uint8Array(0), 5_000, 'Session init')
-        } catch {
-          // Some implementations don't require session init
+          const mqttChar = await service.getCharacteristic(BLE_CHAR_MQTT)
+          const mqttData = encodeMqttConfig(mqttConfig)
+          console.log(`[BLE] Writing MQTT config: ${mqttData.byteLength} bytes`)
+          await mqttChar.writeValue(mqttData)
+          console.log('[BLE] MQTT config written successfully')
+        } catch (mqttErr) {
+          console.warn('[BLE] Failed to write MQTT config (non-fatal):', mqttErr)
         }
 
-        // 5. Send WiFi credentials
+        // 4. Write WiFi credentials
+        setProvisioningStep('writingWifi')
         const setConfigData = encodeSetConfig(ssid, password)
         const setResp = await writeAndRead(configChar, setConfigData, 10_000, 'Set WiFi config')
         const setStatus = decodeRespSetConfig(viewToBytes(setResp))
@@ -197,7 +218,8 @@ export function useBleProvision(): UseBleProvisionReturn {
           throw new Error(`SetConfig failed with status ${setStatus}`)
         }
 
-        // 6. Poll connection status (max 30s)
+        // 5. Poll connection status (max 30s)
+        setProvisioningStep('polling')
         setWifiState(WifiState.Connecting)
         for (let i = 0; i < 30; i++) {
           await sleep(1000)
@@ -209,15 +231,20 @@ export function useBleProvision(): UseBleProvisionReturn {
             setWifiState(ws)
 
             if (ws === WifiState.Connected) {
+              setProvisioningStep('done')
               return true
             }
             if (ws === WifiState.ConnectionFailed) {
               throw new Error('WiFi connection failed — check SSID and password')
             }
-            // Connecting / Disconnected → keep polling
           } catch (pollErr) {
-            // If poll fails due to disconnect, propagate
             if (pollErr instanceof Error && pollErr.message.includes('timed out')) continue
+            // GATT disconnected during polling — device rebooting for WiFi
+            if (pollErr instanceof Error && pollErr.message.includes('disconnected')) {
+              console.log('[BLE] GATT disconnected during polling (device likely connecting WiFi)')
+              setProvisioningStep('done')
+              return true
+            }
             throw pollErr
           }
         }
@@ -228,35 +255,11 @@ export function useBleProvision(): UseBleProvisionReturn {
         return false
       } finally {
         setProvisioning(false)
+        setProvisioningStep(null)
         setConnecting(false)
       }
-    }, [],
-  )
-
-  // --- preRegister ---
-
-  const preRegister = useCallback(
-    async (params: {
-      model: string
-      sn: string
-      deviceName: string
-      brokerId: string
-    }): Promise<BleProvisionResponse> => {
-      const deviceType = MODEL_TO_DEVICE_TYPE[params.model]
-      if (!deviceType) throw new Error(`Unknown model: ${params.model}`)
-
-      const body: BleProvisionRequest = {
-        model: params.model,
-        sn: params.sn,
-        device_type: deviceType,
-        device_name: params.deviceName,
-        broker_id: params.brokerId,
-      }
-      return fetchAPI<BleProvisionResponse>('/devices/ble-provision', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      })
-    }, [],
+    },
+    [],
   )
 
   // --- disconnect ---
@@ -269,12 +272,16 @@ export function useBleProvision(): UseBleProvisionReturn {
     gattRef.current = null
     configCharRef.current = null
     setDevice(null)
+    setDeviceModel(null)
+    setDeviceMac(null)
     setWifiState(null)
     setError(null)
+    setProvisioningStep(null)
   }, [])
 
   return {
-    scanning, connecting, provisioning, disconnected, error, device, wifiState,
-    scan, connectAndProvision, preRegister, disconnect, clearError,
+    scanning, connecting, provisioning, disconnected, error, device,
+    deviceModel, deviceMac, wifiState, provisioningStep,
+    scan, connectAndProvision, disconnect, clearError,
   }
 }
