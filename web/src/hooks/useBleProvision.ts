@@ -25,7 +25,6 @@ import {
   decodeRespGetStatus,
   decodeRespSetConfig,
   viewToBytes,
-  writeWithMtu,
 } from '@/lib/ble-protocol'
 import type { BleMqttConfig } from '@/lib/ble-protocol'
 
@@ -197,22 +196,42 @@ export function useBleProvision(): UseBleProvisionReturn {
         setConnecting(false)
         setProvisioning(true)
 
-        // 3. Write MQTT config to custom endpoint (write+read for verification)
+        // 3. Write MQTT config to custom endpoint (optional — older firmware may not have it)
         setProvisioningStep('writingMqtt')
-        const mqttChar = await service.getCharacteristic(BLE_CHAR_MQTT)
-        const mqttData = encodeMqttConfig(mqttConfig)
-        console.log(`[BLE] Writing MQTT config: ${mqttData.byteLength} bytes`)
-        await writeWithMtu(mqttChar, mqttData)
-        // Read back response — firmware returns {"status":0} on success
-        await sleep(300)
-        const mqttResp = await mqttChar.readValue()
-        const mqttRespText = new TextDecoder().decode(mqttResp)
-        console.log(`[BLE] MQTT config response: ${mqttRespText}`)
-        if (mqttResp.byteLength === 0) {
-          throw new Error('MQTT config: device returned empty response')
-        }
-        if (!mqttRespText.includes('"status":0')) {
-          throw new Error(`MQTT config rejected by device: ${mqttRespText}`)
+        try {
+          let mqttChar: BluetoothRemoteGATTCharacteristic
+          try {
+            mqttChar = await service.getCharacteristic(BLE_CHAR_MQTT)
+          } catch {
+            // Enumerate all characteristics and find the non-standard one
+            const allChars = await (service as any).getCharacteristics() as BluetoothRemoteGATTCharacteristic[]
+            console.log(`[BLE] All characteristics: ${allChars.map((c: any) => c.uuid).join(', ')}`)
+            const standardUuids = ['ff50', 'ff51', 'ff52', 'ff53']
+            const custom = allChars.find((c: any) =>
+              !standardUuids.some(su => c.uuid.toLowerCase().includes(su))
+            )
+            if (!custom) {
+              console.warn('[BLE] No custom MQTT characteristic found — skipping MQTT config (firmware may use defaults)')
+              mqttChar = null!
+            } else {
+              console.log(`[BLE] Found custom characteristic: ${(custom as any).uuid}`)
+              mqttChar = custom
+            }
+          }
+          if (mqttChar) {
+            const mqttData = encodeMqttConfig(mqttConfig)
+            console.log(`[BLE] Writing MQTT config: ${mqttData.byteLength} bytes`)
+            const mqttResp = await writeAndRead(mqttChar, mqttData, 'MQTT config')
+            const mqttRespText = new TextDecoder().decode(mqttResp)
+            console.log(`[BLE] MQTT config response: ${mqttRespText}`)
+            if (mqttResp.byteLength === 0) {
+              console.warn('[BLE] MQTT config: device returned empty response')
+            } else if (!mqttRespText.includes('"status":0')) {
+              console.warn(`[BLE] MQTT config rejected by device: ${mqttRespText}`)
+            }
+          }
+        } catch (mqttErr) {
+          console.warn('[BLE] MQTT config write failed (non-fatal):', mqttErr)
         }
 
         // 4. Write WiFi credentials
