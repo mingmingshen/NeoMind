@@ -7,11 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v0.7.1] - 2026-04-30
+## [v0.7.1] - 2026-05-04
 
 ### Added
 
-- **BLE Provisioning** — Zero-touch device setup via Bluetooth Low Energy with Web Bluetooth API
+- **BLE Provisioning** — Zero-touch device setup via Bluetooth Low Energy with dual transport support (Tauri native BLE via btleplug + Web Bluetooth API)
+- **BLE Device Config Read** — Read device info (MAC, SN, model, netmod type) from BLE characteristic on connect for pre-filling configuration
+- **BLE Netmod Support** — Adapt provisioning UI based on device network module type (WiFi / HaLow / Cat.1 cellular), hide WiFi config for Cat.1 devices
+- **BLE Re-provisioning** — Update existing device info (name, broker, MQTT config) when re-provisioning via BLE; show "Configuration Updated" success message
+- **BLE Device Name Sync** — Write user-specified device name to firmware storage during BLE provisioning
+- **BLE Preparation Guide** — Step-by-step instructions on scan page to guide users through the provisioning flow
 - **Auto Discovery Broker Guidance** — Contextual empty state in Pending Devices that guides users to add MQTT broker in Settings
 - **Network Info API** — `GET /api/system/network-info` returns WiFi SSID and LAN IP for BLE provisioning
 
@@ -24,9 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Layout Flicker on Page Switch** — Responsive hooks (`useIsDesktop`, `useIsMobile`, `useIsTouchDevice`, `useDeviceType`) now read `window.innerWidth` synchronously on first render
 - **Focus Ring on Click** — Suppressed `:focus-visible` ring on mouse clicks in Tauri/Chromium
 - **BLE WiFi SSID 404** — Fixed frontend calling non-existent `/system/wifi-ssid` endpoint → use registered `/system/network-info`
+- **BLE Success Screen** — Deferred `onComplete` callback to done phase close button instead of closing dialog immediately on apply
+- **BLE MQTT Characteristic Optional** — Handle older firmware without MQTT characteristic gracefully
+- **BLE Empty WiFi Password** — Allow empty password for open WiFi networks
 
 ### Changed
 
+- **BLE Two-Phase Provisioning** — Split into resolve-only (get MQTT config) → BLE write → register device, preventing phantom devices on BLE failure
+- **BLE Scanned Device Cards** — Display MAC address instead of model name for easier device identification
 - **Pending Devices Table** — Removed column header icons for cleaner appearance
 - **Add Device Dialog Icons** — Updated tab and header icons for better semantic meaning
 

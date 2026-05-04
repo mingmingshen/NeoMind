@@ -61,6 +61,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 - **Multi-Backend Support**: Ollama, OpenAI, Anthropic, Google, xAI, Qwen, DeepSeek, GLM, MiniMax (including thinking model compatibility)
 
 ### 🔌 Modular Device Integration
+- **BLE Provisioning**: Zero-touch device setup via Bluetooth Low Energy (Tauri native + Web Bluetooth), supporting WiFi, HaLow, and Cat.1 devices
 - **MQTT Protocol**: Primary device integration with embedded broker, mTLS and CA certificate support
 - **Device Discovery**: Automatic device detection and type registration
 - **HTTP/Webhook**: Flexible device adapter options
@@ -132,6 +133,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 ![Devices](docs/img/device.png)
 ![Device Info](docs/img/device_info.png)
 ![Device Types](docs/img/device_type.png)
+![BLE Provisioning](docs/img/ble_provision.png)
 ![Pending Devices](docs/img/pending_devices.png)
 
 **Automation**
@@ -402,10 +404,10 @@ The installer will be in `web/src-tauri/target/release/bundle/`
 │ ├─────────┤ │  │ ├─────────┤ │  │ │  Tools  │ │  │          │          │
 │ │Commands │ │  │ │Transform│ │  │ │         │ │  │          ▼          │
 │ └─────────┘ │  │ └─────────┘ │  │ ├─────────┤ │  │ ┌─────────────────┐ │
-│             │  │             │  │ │ Memory  │ │  │ │  Capabilities   │ │
-└─────────────┘  └─────────────┘  │ └─────────┘ │  │ │ Device/Storage/ │ │
-                                 └─────────────┘  │ │ Event/Rule/...  │ │
-                                                  │ └─────────────────┘ │
+│ ┌─────────┐ │  │             │  │ │ Memory  │ │  │ │  Capabilities   │ │
+│ │BLE Prov │ │  │             │  │ └─────────┘ │  │ │ Device/Storage/ │ │
+│ └─────────┘ │  │             │  │             │  │ │ Event/Rule/...  │ │
+└─────────────┘  └─────────────┘  └─────────────┘  │ └─────────────────┘ │
                                                   │                     │
                                                   │  Process Isolation  │
                                                   │  (.so/.dylib/.wasm) │
