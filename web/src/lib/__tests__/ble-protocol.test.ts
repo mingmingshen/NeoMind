@@ -18,9 +18,18 @@ import {
 // ---------------------------------------------------------------------------
 
 describe('parseBleDeviceName', () => {
-  it('parses underscore format: NE101_70B0E2', () => {
+  it('parses underscore format with full MAC: NE101_AABBCC70B0E2', () => {
+    expect(parseBleDeviceName('NE101_AABBCC70B0E2')).toEqual({
+      model: 'NE101',
+      mac: 'AA:BB:CC:70:B0:E2',
+      macSuffix: '70B0E2',
+    })
+  })
+
+  it('parses old 3-byte suffix format: NE101_70B0E2', () => {
     expect(parseBleDeviceName('NE101_70B0E2')).toEqual({
       model: 'NE101',
+      mac: '70B0E2',
       macSuffix: '70B0E2',
     })
   })
@@ -28,14 +37,16 @@ describe('parseBleDeviceName', () => {
   it('parses dash format: NE301-A1B2C3', () => {
     expect(parseBleDeviceName('NE301-A1B2C3')).toEqual({
       model: 'NE301',
+      mac: 'A1B2C3',
       macSuffix: 'A1B2C3',
     })
   })
 
-  it('parses longer MAC suffixes', () => {
-    expect(parseBleDeviceName('NE101_70B0E2F1A3')).toEqual({
-      model: 'NE101',
-      macSuffix: '70B0E2F1A3',
+  it('parses full MAC with dash: NE301-AABBCCEEDFF0', () => {
+    expect(parseBleDeviceName('NE301-AABBCCEEDFF0')).toEqual({
+      model: 'NE301',
+      mac: 'AA:BB:CC:EE:DF:F0',
+      macSuffix: 'EEDFF0',
     })
   })
 

@@ -168,7 +168,7 @@ export function useBleProvision(): UseBleProvisionReturn {
       const parsed = parseBleDeviceName(dev.name)
       if (parsed) {
         setDeviceModel(parsed.model)
-        setDeviceMac(parsed.macSuffix)
+        setDeviceMac(parsed.mac)
       }
     }
     setDevice({ id: dev.id, name: dev.name })

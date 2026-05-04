@@ -112,10 +112,17 @@ export function modelToDeviceType(model: string): string | null {
  *  e.g. "NE101_70B0E2" → { model: "NE101", macSuffix: "70B0E2" }
  *       "NE301-A1B2C3" → { model: "NE301", macSuffix: "A1B2C3" }
  */
-export function parseBleDeviceName(name: string): { model: string; macSuffix: string } | null {
-  const match = name.match(/^([A-Z]+\d+)[-_](\w+)$/)
+export function parseBleDeviceName(name: string): { model: string; mac: string; macSuffix: string } | null {
+  const match = name.match(/^([A-Z]+\d+)[-_]([0-9A-Fa-f]+)$/)
   if (!match) return null
-  return { model: match[1], macSuffix: match[2] }
+  const model = match[1]
+  const hex = match[2]
+  // Full MAC (12 hex chars) or suffix (6 hex chars, old firmware)
+  const macSuffix = hex.length === 12 ? hex.slice(6) : hex
+  const mac = hex.length === 12
+    ? `${hex.slice(0,2)}:${hex.slice(2,4)}:${hex.slice(4,6)}:${hex.slice(6,8)}:${hex.slice(8,10)}:${hex.slice(10,12)}`
+    : macSuffix
+  return { model, mac, macSuffix }
 }
 
 /** Encode MQTT config as JSON for the custom BLE MQTT endpoint */

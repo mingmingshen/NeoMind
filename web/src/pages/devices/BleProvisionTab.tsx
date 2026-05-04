@@ -217,10 +217,10 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
                     <Bluetooth className="w-5 h-5 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{dev.name}</p>
+                    <p className="text-sm font-medium truncate">{parsed ? parsed.model : dev.name}</p>
                     {parsed && (
                       <p className="text-xs text-muted-foreground">
-                        MAC: {parsed.macSuffix}
+                        {parsed.mac}
                       </p>
                     )}
                   </div>
@@ -350,16 +350,16 @@ export function BleProvisionTab({ onComplete }: BleProvisionTabProps) {
             <Bluetooth className="w-5 h-5 text-success" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{ble.device?.name}</p>
-            <p className="text-xs text-success">
-              {t('devices:ble.connected')}
+            <p className="text-sm font-medium truncate">
+              {ble.deviceModel || parseBleDeviceName(ble.device?.name || '')?.model || ble.device?.name}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              <span className="text-success">{t('devices:ble.connected')}</span>
+              {ble.deviceSn && <span className="ml-2">SN: {ble.deviceSn}</span>}
+              {!ble.deviceSn && ble.deviceMac && <span className="ml-2">MAC: {ble.deviceMac}</span>}
               {ble.deviceNetmod && (
-                <span className="text-muted-foreground ml-2">
-                  {t('devices:ble.networkType', { type: NETMOD_LABELS[ble.deviceNetmod] })}
-                </span>
+                <span className="ml-2">{NETMOD_LABELS[ble.deviceNetmod]}</span>
               )}
-              {ble.deviceSn && <span className="text-muted-foreground ml-2">SN: {ble.deviceSn}</span>}
-              {!ble.deviceSn && ble.deviceMac && <span className="text-muted-foreground ml-2">MAC: {ble.deviceMac}</span>}
             </p>
           </div>
         </div>
