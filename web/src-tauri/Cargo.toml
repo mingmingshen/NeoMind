@@ -29,6 +29,7 @@ tracing-subscriber = "0.3"
 # neomind-api pulls in all other required crates as dependencies
 edge-api = { path = "../../crates/neomind-api", package = "neomind-api", features = ["embedded-broker"] }
 tauri-plugin-notification = "2"
+tauri-plugin-blec = "0.8"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

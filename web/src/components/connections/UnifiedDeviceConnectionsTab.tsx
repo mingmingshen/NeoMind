@@ -102,7 +102,7 @@ const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
           },
           subscribe_topics: {
             type: 'array',
-            description: 'Topics to subscribe (one per line). Wildcards: + matches single level, # matches all levels (must be last). Examples: ne301/+, sensor/+/data, device/#',
+            description: 'Extra custom topics to subscribe (one per line). System topics (device/+/+/uplink, device/+/+/downlink) are always auto-subscribed. Wildcards: + matches single level, # matches all levels (must be last).',
             default: ['ne301/#'],
           },
         },
@@ -132,6 +132,7 @@ const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
             client_cert: 'Required for mutual TLS (mTLS) authentication.',
             client_key: 'Required for mutual TLS (mTLS) authentication.',
             client_id: 'Unique identifier for this MQTT connection. Auto-generated if not specified.',
+            subscribe_topics: 'System auto-subscribes: device/+/+/uplink, device/+/+/downlink. Add extra custom topics here.',
           },
           visibility_rules: [
             {

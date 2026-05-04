@@ -135,3 +135,4 @@ tarpaulin-report.html
 .playwright-mcp
 CLAUDE.md*.backup2
 .superpowers
+scripts/__pycache__/ble_simulator.cpython-312.pyc

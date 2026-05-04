@@ -27,8 +27,8 @@
 // Service & Characteristic UUIDs (ESP-IDF standard)
 // ---------------------------------------------------------------------------
 
-/** ESP-IDF BLE provisioning service UUID (must match firmware) */
-export const BLE_PROV_SERVICE_UUID = '0000ffff-0000-1000-8000-00805f9b34fb'
+/** BLE provisioning service UUID (ESP-IDF standard, must match firmware) */
+export const BLE_PROV_SERVICE_UUID = '0000fffe-0000-1000-8000-00805f9b34fb'
 
 /** Scan endpoint */
 export const BLE_CHAR_SCAN = '0000ff50-0000-1000-8000-00805f9b34fb'
@@ -36,8 +36,8 @@ export const BLE_CHAR_SCAN = '0000ff50-0000-1000-8000-00805f9b34fb'
 export const BLE_CHAR_SESSION = '0000ff51-0000-1000-8000-00805f9b34fb'
 /** Config endpoint (WiFi credentials + status) */
 export const BLE_CHAR_CONFIG = '0000ff52-0000-1000-8000-00805f9b34fb'
-/** Custom MQTT config endpoint (ESP-IDF custom protocomm endpoint, UUID = 0xFF54) */
-export const BLE_CHAR_MQTT = '0000ff54-0000-1000-8000-00805f9b34fb'
+/** Custom config endpoint (UUID = 0xFF53 — raw NimBLE GATT characteristic) */
+export const BLE_CHAR_MQTT = '0000ff53-0000-1000-8000-00805f9b34fb'
 
 // ---------------------------------------------------------------------------
 // Enum values (from ESP-IDF proto definitions)
@@ -81,6 +81,16 @@ export interface BleMqttConfig {
   username: string
   password: string
   topic_prefix: string
+  client_id: string
+}
+
+/** Device network mode reported via BLE */
+export type BleNetmod = 'wifi' | 'halow' | 'cat1'
+
+export const NETMOD_LABELS: Record<BleNetmod, string> = {
+  wifi: 'WiFi',
+  halow: 'WiFi HaLow',
+  cat1: 'Cat.1 LTE',
 }
 
 /** Maps BLE device model strings to NeoMind device type identifiers (fallback) */
@@ -115,6 +125,7 @@ export function encodeMqttConfig(config: {
   username: string
   password: string
   topic_prefix: string
+  client_id: string
 }): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(config))
 }

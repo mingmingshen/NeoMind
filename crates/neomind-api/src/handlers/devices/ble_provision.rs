@@ -1,7 +1,8 @@
 //! BLE provisioning handler for zero-touch device setup.
 //!
-//! This module provides the REST endpoint for provisioning devices via BLE,
-//! generating MQTT configuration and registering the device in the system.
+//! Two-phase provisioning to avoid phantom devices when BLE fails:
+//!   Phase 1 (resolve_only=true):  Resolve MQTT config without registering.
+//!   Phase 2 (resolve_only=false): Register device after BLE write succeeds.
 
 use std::collections::HashMap;
 
@@ -31,6 +32,10 @@ pub struct BleProvisionRequest {
     pub device_name: String,
     /// Broker identifier – "embedded" for the built-in broker, or a UUID for an external broker.
     pub broker_id: String,
+    /// If true, only resolve MQTT config without registering the device.
+    /// Used for the two-phase BLE provisioning flow (resolve → BLE write → register).
+    #[serde(default)]
+    pub resolve_only: bool,
 }
 
 /// MQTT configuration returned to the BLE client so the device can connect.
@@ -41,6 +46,8 @@ pub struct MqttConfigResponse {
     pub username: String,
     pub password: String,
     pub topic_prefix: String,
+    /// Device MQTT client ID (matches device_id)
+    pub client_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -122,9 +129,11 @@ fn resolve_broker_config(broker_id: &str) -> Result<(String, u16, String, String
 ///
 /// `POST /api/devices/ble-provision`
 ///
-/// Validates the device type, generates a device ID from the serial number, resolves the
-/// MQTT broker configuration, registers the device and returns the MQTT connection details
-/// so that the BLE client can program the device over-the-air.
+/// Two-phase provisioning:
+///   Phase 1 (resolve_only=true): Validate, generate device_id, resolve MQTT config.
+///     Does NOT register the device. Returns MQTT config for BLE write.
+///   Phase 2 (resolve_only=false, default): Register the device after BLE write succeeds.
+///     If device already exists, returns its config (idempotent).
 pub async fn ble_provision_handler(
     State(state): State<ServerState>,
     Json(req): Json<BleProvisionRequest>,
@@ -145,16 +154,15 @@ pub async fn ble_provision_handler(
     // 2. Generate device_id from SN
     let device_id = req.sn.to_lowercase().replace('-', "_");
 
-    // 3. Check for duplicate — if device already exists, return its MQTT config
-    //    so the BLE client can continue provisioning (re-provisioning scenario)
+    // 3. Check for duplicate — if device already exists, update or return config
     if let Some(existing) = state.devices.service.get_device(&device_id) {
         tracing::info!(
             category = "ble",
             device_id = %device_id,
-            "BLE provision: device already exists, returning existing config"
+            resolve_only = req.resolve_only,
+            "BLE provision: device already exists"
         );
 
-        // Resolve broker config for the existing device
         let (host, port, username, password) = resolve_broker_config(&req.broker_id)?;
         let topic_prefix = format!("device/{}/{}", existing.device_type, device_id);
 
@@ -163,8 +171,57 @@ pub async fn ble_provision_handler(
             port,
             username,
             password,
-            topic_prefix,
+            topic_prefix: topic_prefix.clone(),
+            client_id: device_id.clone(),
         };
+
+        // Phase 2 (resolve_only=false): update existing device info
+        if !req.resolve_only {
+            let mut extra = existing.connection_config.extra.clone();
+            extra.insert(
+                "ble_reprovisioned".to_string(),
+                serde_json::Value::Bool(true),
+            );
+            extra.insert(
+                "provisioned_at".to_string(),
+                serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+            );
+
+            let updated = neomind_devices::DeviceConfig {
+                device_id: device_id.clone(),
+                name: req.device_name,
+                device_type: existing.device_type.clone(),
+                adapter_type: existing.adapter_type.clone(),
+                connection_config: neomind_devices::ConnectionConfig {
+                    telemetry_topic: Some(format!("{}/uplink", topic_prefix)),
+                    command_topic: Some(format!("{}/downlink", topic_prefix)),
+                    json_path: existing.connection_config.json_path.clone(),
+                    entity_id: existing.connection_config.entity_id.clone(),
+                    extra,
+                },
+                adapter_id: existing.adapter_id.clone(),
+                last_seen: existing.last_seen,
+            };
+
+            state
+                .devices
+                .service
+                .update_device(&device_id, updated)
+                .await
+                .map_err(|e| {
+                    ErrorResponse::internal(format!(
+                        "Failed to update re-provisioned device: {}",
+                        e
+                    ))
+                })?;
+
+            tracing::info!(
+                category = "ble",
+                device_id = %device_id,
+                broker_id = %req.broker_id,
+                "BLE re-provisioned device updated"
+            );
+        }
 
         return ok(json!({
             "device_id": device_id,
@@ -175,10 +232,26 @@ pub async fn ble_provision_handler(
 
     // 4. Resolve broker config
     let (host, port, username, password) = resolve_broker_config(&req.broker_id)?;
-
-    // 5. Build DeviceConfig
     let topic_prefix = format!("device/{}/{}", req.device_type, device_id);
 
+    let mqtt_config = MqttConfigResponse {
+        host,
+        port,
+        username,
+        password,
+        topic_prefix: topic_prefix.clone(),
+        client_id: device_id.clone(),
+    };
+
+    // Phase 1: resolve_only — return MQTT config without registering
+    if req.resolve_only {
+        return ok(json!({
+            "device_id": device_id,
+            "mqtt_config": mqtt_config,
+        }));
+    }
+
+    // Phase 2: register the device
     let mut extra = HashMap::new();
     extra.insert(
         "ble_provisioned".to_string(),
@@ -202,10 +275,9 @@ pub async fn ble_provision_handler(
             extra,
         },
         adapter_id: None,
-                last_seen: 0,
+        last_seen: 0,
     };
 
-    // 6. Register device
     state
         .devices
         .service
@@ -221,15 +293,6 @@ pub async fn ble_provision_handler(
         broker_id = %req.broker_id,
         "BLE provisioned device registered"
     );
-
-    // 7. Return MQTT configuration
-    let mqtt_config = MqttConfigResponse {
-        host,
-        port,
-        username,
-        password,
-        topic_prefix,
-    };
 
     ok(json!({
         "device_id": device_id,

@@ -93,6 +93,7 @@ describe('encodeMqttConfig', () => {
       username: 'user1',
       password: 'pass1',
       topic_prefix: 'device/ne101_camera/ne101_abc123',
+      client_id: 'ne101_abc123',
     }
     const bytes = encodeMqttConfig(config)
     const json = JSON.parse(new TextDecoder().decode(bytes))
@@ -106,6 +107,7 @@ describe('encodeMqttConfig', () => {
       username: '',
       password: '',
       topic_prefix: 'test',
+      client_id: '',
     }
     const bytes = encodeMqttConfig(config)
     const json = JSON.parse(new TextDecoder().decode(bytes))

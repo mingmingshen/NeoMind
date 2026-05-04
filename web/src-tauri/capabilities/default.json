@@ -31,6 +31,7 @@
     "process:allow-restart",
     "shell:allow-open",
     "notification:default",
-    "notification:allow-is-permission-granted"
+    "notification:allow-is-permission-granted",
+    "blec:default"
   ]
 }

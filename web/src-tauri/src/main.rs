@@ -195,7 +195,7 @@ pub fn run() {
         server_thread: Arc::new(Mutex::new(None)),
     };
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -207,7 +207,19 @@ pub fn run() {
         // When a second instance is launched, focus the existing window
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
-        }))
+        }));
+
+    // BLE plugin - native Bluetooth LE for device provisioning
+    // Graceful fallback: if BLE adapter is unavailable, the app works fine without it
+    let builder = match std::panic::catch_unwind(tauri_plugin_blec::init) {
+        Ok(plugin) => builder.plugin(plugin),
+        Err(e) => {
+            eprintln!("BLE plugin init skipped (non-fatal): {:?}", e);
+            builder
+        }
+    };
+
+    builder
         .manage(server_state)
         .manage(update::UpdateCache(std::sync::Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
