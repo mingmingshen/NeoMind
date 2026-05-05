@@ -111,7 +111,7 @@ export function AgentMemoryDialog({
             <FormSection
               title={t('agents:memory.stateVariables')}
             >
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {Object.entries(memory.state_variables).map(([key, value]) => (
                   <div key={key} className="space-y-1">
                     <div className="text-xs text-muted-foreground">{key}</div>

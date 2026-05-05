@@ -21,7 +21,6 @@ import {
   Navigation,
   ZoomIn,
   ZoomOut,
-  RefreshCw,
   Map as MapIcon,
   Maximize2,
   Minimize2,

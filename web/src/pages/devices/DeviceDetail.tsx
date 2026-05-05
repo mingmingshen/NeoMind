@@ -22,12 +22,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ChevronLeft, RefreshCw, Send, Clock, Zap, Settings, Info, ChevronRight, X, Image as ImageIcon, Database, Download } from "lucide-react"
+import { ChevronLeft, Send, Clock, Zap, Settings, Info, ChevronRight, X, Image as ImageIcon, Database, Download } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { Device, DeviceType, CommandDefinition, TelemetryDataResponse, DeviceCurrentStateResponse } from "@/types"
 import { isBase64Image } from "./utils"
 import { cn } from "@/lib/utils"
+import { useIsMobile } from "@/hooks/useMobile"
 
 // Pagination constants
 const PAGE_SIZE = 10
@@ -146,6 +147,7 @@ export function DeviceDetail({
   onSendCommand,
 }: DeviceDetailProps) {
   const { t } = useTranslation(['common', 'devices'])
+  const isMobile = useIsMobile()
   const [commandDialogOpen, setCommandDialogOpen] = useState(false)
   const [metricHistoryOpen, setMetricHistoryOpen] = useState(false)
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
@@ -278,34 +280,34 @@ export function DeviceDetail({
     <>
       <div className="flex flex-col flex-1 bg-gradient-to-b from-background to-muted">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5">
+        <div className={cn("flex items-center justify-between", isMobile ? "px-3 py-3" : "px-6 py-5")}>
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full">
               <ChevronLeft className="h-5 w-5" />
             </Button>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <div className={cn(
-                "w-12 h-12 rounded-xl flex items-center justify-center",
+                "w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center",
                 device.status === 'online'
                   ? "bg-gradient-to-br from-success-light to-accent-emerald-light"
                   : "bg-gradient-to-br from-muted to-muted"
               )}>
                 <Zap className={cn(
-                  "h-6 w-6",
+                  "h-5 w-5 sm:h-6 sm:w-6",
                   device.status === 'online' ? "text-success" : "text-muted-foreground"
                 )} />
               </div>
-              <div>
-                <h1 className="text-xl font-semibold">{device.name || device.id}</h1>
-                <p className="text-sm text-muted-foreground mt-0.5">
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-xl font-semibold truncate">{device.name || device.id}</h1>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 truncate">
                   {device.device_type} · {device.device_id || device.id}
                 </p>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <div className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm",
+              "flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs sm:text-sm",
               device.status === 'online'
                 ? "bg-success-light text-success"
                 : "bg-muted text-muted-foreground"
@@ -316,23 +318,20 @@ export function DeviceDetail({
               )} />
               {device.status === 'online' ? t('devices:status.online') : t('devices:status.offline')}
             </div>
-            <Button variant="ghost" size="icon" onClick={onRefresh} disabled={telemetryLoading} className="rounded-full">
-              <RefreshCw className={cn("h-5 w-5", telemetryLoading && "animate-spin")} />
-            </Button>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto px-6 pb-6">
+        <div className={cn("flex-1 overflow-auto", isMobile ? "px-3 pb-3" : "px-6 pb-6")}>
           <div className="max-w-6xl mx-auto space-y-5">
 
             {/* Device Info Card */}
-            <div className="bg-gradient-to-br from-card to-muted rounded-lg p-6 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
+            <div className={cn("bg-gradient-to-br from-card to-muted rounded-lg shadow-sm", isMobile ? "p-4" : "p-6")}>
+              <div className="flex items-center gap-2 mb-3 sm:mb-4">
                 <Info className="h-5 w-5 text-muted-foreground" />
                 <h2 className="font-semibold">{t('devices:detailPage.deviceInfo')}</h2>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">{t('devices:detailPage.connectionMethod')}</p>
                   <Badge variant="secondary" className="text-xs">{device.adapter_type || 'mqtt'}</Badge>
@@ -360,8 +359,8 @@ export function DeviceDetail({
 
             {/* Raw Data Section - for Simple Mode devices */}
             {deviceType?.mode === 'simple' && (
-              <div className="bg-gradient-to-br from-card to-muted rounded-lg p-6 shadow-sm">
-                <div className="flex items-center gap-2 mb-4">
+              <div className={cn("bg-gradient-to-br from-card to-muted rounded-lg shadow-sm", isMobile ? "p-4" : "p-6")}>
+                <div className="flex items-center gap-2 mb-3 sm:mb-4">
                   <Database className="h-5 w-5 text-muted-foreground" />
                   <h2 className="font-semibold">{t('devices:detailPage.rawDataTitle')}</h2>
                   <Badge variant="outline" className="text-xs">Raw Mode</Badge>
@@ -396,7 +395,7 @@ export function DeviceDetail({
                     </Badge>
                   )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={cn("grid gap-3 sm:gap-4", isMobile ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3")}>
                   {metricDefinitions.map((metricDef) => {
                     // Get value from unified response (deviceCurrentState.metrics)
                     // This is the single source of truth for all metric values
@@ -417,7 +416,8 @@ export function DeviceDetail({
                         key={metricDef.name}
                         onClick={() => handleMetricCardClick(metricDef.name)}
                         className={cn(
-                          "group rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border",
+                          "group rounded-lg text-left transition-all duration-200 hover:shadow-md",
+                          isMobile ? "p-3 active:scale-[0.99]" : "p-6 hover:scale-[1.02]",
                           isVirtual
                             ? "bg-gradient-to-br from-accent-purple-light to-blue-500/5 border-accent-purple-light hover:border-accent-purple"
                             : "bg-gradient-to-br from-muted to-muted border-border hover:border-border"
@@ -465,12 +465,15 @@ export function DeviceDetail({
                   <h2 className="font-semibold">{t('devices:detailPage.commandControl')}</h2>
                   <span className="text-xs text-muted-foreground">({commands.length})</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={cn("grid gap-3 sm:gap-4", isMobile ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3")}>
                   {commands.map((cmd) => (
                     <button
                       key={cmd.name}
                       onClick={() => handleCommandClick(cmd)}
-                      className="group bg-gradient-to-br from-card to-muted rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border border-border hover:border-border"
+                      className={cn(
+                        "group bg-gradient-to-br from-card to-muted rounded-lg text-left transition-all duration-200 hover:shadow-md border border-border hover:border-border",
+                        isMobile ? "p-3 active:scale-[0.99]" : "p-6 hover:scale-[1.02]"
+                      )}
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1 min-w-0">
@@ -510,9 +513,9 @@ export function DeviceDetail({
         setMetricHistoryOpen(open)
         if (!open) onMetricBack()
       }}>
-        <DialogContent className="sm:max-w-3xl flex flex-col">
+        <DialogContent className={cn("flex flex-col", isMobile ? "max-w-full" : "sm:max-w-3xl")}>
           <DialogHeader>
-            <DialogTitle className="text-xl flex items-center gap-2">
+            <DialogTitle className="text-lg sm:text-xl flex items-center gap-2">
               <Clock className="h-5 w-5" />
               {selectedMetric && getMetricDisplayName(selectedMetric)}
             </DialogTitle>
@@ -520,8 +523,9 @@ export function DeviceDetail({
               {t('devices:detailPage.metricHistory')}
             </DialogDescription>
           </DialogHeader>
-          <DialogContentBody className="max-h-[500px] overflow-y-auto pr-4">
+          <DialogContentBody className={cn("overflow-y-auto", isMobile ? "max-h-[60vh]" : "max-h-[500px] pr-4")}>
               {currentMetricData.length > 0 ? (
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent border-border">
@@ -587,14 +591,15 @@ export function DeviceDetail({
                     })}
                   </TableBody>
                 </Table>
+                </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">{t('devices:detailPage.noHistoryData')}</div>
               )}
           </DialogContentBody>
           {/* Pagination Footer */}
           {totalCount > 0 && (
-            <div className="flex items-center justify-between px-6 py-3 border-t border-border">
-              <div className="text-sm text-muted-foreground">
+            <div className={cn("flex items-center justify-between border-t border-border", isMobile ? "px-3 py-2" : "px-6 py-3")}>
+              <div className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-sm")}>
                 {t('devices:detailPage.paginationInfo', { 
                   start: (currentPage - 1) * PAGE_SIZE + 1, 
                   end: Math.min(currentPage * PAGE_SIZE, totalCount), 

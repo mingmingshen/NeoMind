@@ -31,6 +31,7 @@ import {
   Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useIsMobile } from "@/hooks/useMobile"
 import { api } from "@/lib/api"
 import type { AiAgentDetail } from "@/types"
 import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent } from "@/lib/events"
@@ -69,6 +70,7 @@ export function AgentDetailPanel({
 }: AgentDetailPanelProps) {
   const { t } = useTranslation(['common', 'agents'])
   const { handleError } = useErrorHandler()
+  const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
   const [executions, setExecutions] = useState<any[]>([])
   const [executionsLoading, setExecutionsLoading] = useState(false)
@@ -229,22 +231,22 @@ export function AgentDetailPanel({
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as DetailTab)} className="flex-1 flex flex-col">
-        <div className="px-4 pt-3">
-          <TabsList className="w-full justify-start bg-muted-50 h-9">
-            <TabsTrigger value="overview" className="h-7 text-sm">
-              <Eye className="h-4 w-4 mr-1.5" />
+        <div className={cn("pt-3", isMobile ? "px-2" : "px-4")}>
+          <TabsList className={cn("bg-muted-50 h-9", isMobile ? "w-full overflow-x-auto" : "w-full justify-start")}>
+            <TabsTrigger value="overview" className={cn("h-7", isMobile ? "text-xs px-2" : "text-sm")}>
+              <Eye className={cn("mr-1", isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
               {t('agents:detail.overview')}
             </TabsTrigger>
-            <TabsTrigger value="history" className="h-7 text-sm">
-              <Clock className="h-4 w-4 mr-1.5" />
+            <TabsTrigger value="history" className={cn("h-7", isMobile ? "text-xs px-2" : "text-sm")}>
+              <Clock className={cn("mr-1", isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
               {t('agents:detail.history')}
             </TabsTrigger>
-            <TabsTrigger value="memory" className="h-7 text-sm">
-              <Brain className="h-4 w-4 mr-1.5" />
+            <TabsTrigger value="memory" className={cn("h-7", isMobile ? "text-xs px-2" : "text-sm")}>
+              <Brain className={cn("mr-1", isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
               {t('agents:detail.memory')}
             </TabsTrigger>
-            <TabsTrigger value="messages" className="h-7 text-sm">
-              <MessageSquare className="h-4 w-4 mr-1.5" />
+            <TabsTrigger value="messages" className={cn("h-7", isMobile ? "text-xs px-2" : "text-sm")}>
+              <MessageSquare className={cn("mr-1", isMobile ? "h-3.5 w-3.5" : "h-4 w-4")} />
               {t('agents:detail.messages')}
             </TabsTrigger>
           </TabsList>
@@ -253,12 +255,12 @@ export function AgentDetailPanel({
         {/* Tab Contents */}
         <div className="flex-1 min-h-0">
           {/* Overview Tab */}
-          <TabsContent value="overview" className="h-full m-0 p-4 pt-2">
+          <TabsContent value="overview" className={cn("h-full m-0 pt-2", isMobile ? "p-2" : "p-4")}>
             <ScrollArea className="h-full">
               <div className="space-y-4 pr-2">
                 {/* Stats Grid - Top section */}
                 <DetailSection title="" icon={null}>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className={cn("gap-2", isMobile ? "grid grid-cols-2" : "grid grid-cols-4")}>
                     <StatItem
                       icon={<Activity className="h-4 w-4" />}
                       label={t('agents:detail.executions')}
@@ -304,7 +306,7 @@ export function AgentDetailPanel({
                 </DetailSection>
 
                 {/* Schedule & Config - Two columns */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className={cn("gap-4", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
                   {/* Schedule */}
                   <DetailSection title={t('agents:detail.schedule')} icon={Clock}>
                     <div className="space-y-1.5">
@@ -358,7 +360,7 @@ export function AgentDetailPanel({
                       ))}
                     </div>
                     {/* Resource list */}
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className={cn("gap-2", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
                       {(agent.resources || []).slice(0, 8).map((resource, idx) => (
                         <div key={idx} className="flex items-center justify-between px-2.5 py-1.5 rounded bg-background border">
                           <span className="text-sm truncate flex-1 mr-2" title={resource.resource_id}>
@@ -381,7 +383,7 @@ export function AgentDetailPanel({
                 {/* Timestamps - if LLM backend was shown above */}
                 {agent.llm_backend_id && (
                   <DetailSection title={t('common:info')} icon={Settings}>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className={cn("gap-2", isMobile ? "grid grid-cols-1" : "grid grid-cols-3")}>
                       <InfoRow label={t('common:createdAt')} value={new Date(agent.created_at).toLocaleString()} />
                       <InfoRow label={t('common:updatedAt')} value={new Date(agent.updated_at).toLocaleString()} />
                       {agent.last_execution_at && (
@@ -405,7 +407,7 @@ export function AgentDetailPanel({
           </TabsContent>
 
           {/* Memory Tab */}
-          <TabsContent value="memory" className="h-full m-0 p-4 pt-2">
+          <TabsContent value="memory" className={cn("h-full m-0 pt-2", isMobile ? "p-2" : "p-4")}>
             <MemoryContent memory={memory} loading={memoryLoading} />
           </TabsContent>
 
@@ -503,7 +505,7 @@ function InfoRow({ label, value, mono }: InfoRowProps) {
   return (
     <div className="flex justify-between items-center py-1 text-sm">
       <span className="text-muted-foreground text-xs">{label}</span>
-      <span className={cn("font-medium text-xs truncate max-w-[180px]", mono && "font-mono")}>{value}</span>
+      <span className={cn("font-medium text-xs truncate max-w-[180px] sm:max-w-[280px]", mono && "font-mono")}>{value}</span>
     </div>
   )
 }
@@ -519,6 +521,7 @@ interface MemoryContentProps {
 
 function MemoryContent({ memory, loading }: MemoryContentProps) {
   const { t } = useTranslation(['common', 'agents'])
+  const isMobile = useIsMobile()
 
   if (loading) {
     return (
@@ -577,7 +580,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
     <ScrollArea className="h-full">
       <div className="space-y-4 pr-2">
         {/* Memory Stats Summary */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className={cn("gap-2", isMobile ? "grid grid-cols-1" : "grid grid-cols-3")}>
           {(shortTermSummariesCount > 0 || longTermMemoriesCount > 0 || longTermPatternsCount > 0) && (
             <>
               {shortTermSummariesCount > 0 && (
@@ -787,7 +790,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
             title={t('agents:detail.stateVariables')}
             icon={Database}
           >
-            <div className="grid grid-cols-2 gap-2">
+            <div className={cn("gap-2", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
               {Object.entries(memory.state_variables || {}).map(([key, value]) => (
                 <div key={key} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border">
                   <span className="text-xs font-medium truncate flex-1 mr-2" title={key}>{key}</span>

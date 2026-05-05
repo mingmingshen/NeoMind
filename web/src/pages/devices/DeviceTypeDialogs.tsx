@@ -1243,17 +1243,17 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="space-y-6 max-w-3xl mx-auto">
           {/* Summary Cards */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className={cn(cardPadded, "text-center")}>
-              <div className="text-2xl font-bold text-primary">{data.metrics?.length || 0}</div>
-              <div className="text-xs text-muted-foreground">Metrics</div>
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
+            <div className={cn(cardPadded, "text-center !p-3 sm:!p-4")}>
+              <div className="text-xl sm:text-2xl font-bold text-primary">{data.metrics?.length || 0}</div>
+              <div className="text-[11px] sm:text-xs text-muted-foreground">Metrics</div>
             </div>
-            <div className={cn(cardPadded, "text-center")}>
-              <div className="text-2xl font-bold text-info">{data.commands?.length || 0}</div>
-              <div className="text-xs text-muted-foreground">Commands</div>
+            <div className={cn(cardPadded, "text-center !p-3 sm:!p-4")}>
+              <div className="text-xl sm:text-2xl font-bold text-info">{data.commands?.length || 0}</div>
+              <div className="text-[11px] sm:text-xs text-muted-foreground">Commands</div>
             </div>
-            <div className={cn(cardPadded, "text-center")}>
-              <div className="text-2xl font-bold text-success">
+            <div className={cn(cardPadded, "text-center !p-3 sm:!p-4")}>
+              <div className="text-xl sm:text-2xl font-bold text-success">
                 {data.mode === 'simple' ? 'Raw' : 'Full'}
               </div>
               <div className="text-xs text-muted-foreground">Mode</div>
@@ -1457,11 +1457,11 @@ function MetricEditorCompact({
       "rounded-lg border p-3 space-y-2",
       error && "border-destructive"
     )}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-sm">{metric.name}</span>
-          <Badge variant="outline" className="text-xs">{formatDataType(metric.data_type)}</Badge>
-          {metric.unit && <span className="text-xs text-muted-foreground">{metric.unit}</span>}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-mono text-sm truncate">{metric.name}</span>
+          <Badge variant="outline" className="text-xs shrink-0">{formatDataType(metric.data_type)}</Badge>
+          {metric.unit && <span className="text-xs text-muted-foreground shrink-0">{metric.unit}</span>}
         </div>
         <div className="flex items-center gap-1">
           <Button
@@ -1502,7 +1502,7 @@ function MetricEditorCompact({
           </div>
 
           {/* Second row: Data type, unit, range */}
-          <div className="grid grid-cols-[1fr_1fr_1.5fr] gap-3 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1.5fr] gap-3 items-end">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{t('devices:metricEditor.dataType')}</Label>
               <Select
@@ -1721,10 +1721,10 @@ function CommandEditorCompact({
       "rounded-lg border p-3 space-y-2",
       error && "border-destructive"
     )}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-sm">{command.name}</span>
-          <Badge variant="secondary" className="text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-mono text-sm truncate">{command.name}</span>
+          <Badge variant="secondary" className="text-xs shrink-0">
             {t('devices:commandEditor.paramCount', { count: command.parameters?.length || 0 })}
           </Badge>
           {command.fixed_values && Object.keys(command.fixed_values).length > 0 && (
@@ -1906,8 +1906,8 @@ function CommandEditorCompact({
                 {t('devices:commandEditor.noParams')}
               </div>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full text-xs">
+              <div className="border rounded-lg overflow-x-auto">
+                <table className="w-full text-xs min-w-[500px]">
                   <thead className="bg-muted">
                     <tr>
                       <th className="px-2 py-1 text-left font-medium">{t('devices:commandEditor.tableName')}</th>
@@ -2279,44 +2279,44 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
     >
           <div className="space-y-6">
             {/* Summary Cards */}
-            <div className="grid grid-cols-4 gap-4">
-              <Card className="p-4">
-                <div className="flex items-center gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+              <Card className="p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <div className="p-2 rounded-lg bg-success-light dark:bg-success-light">
-                    <ArrowDown className="h-5 w-5 text-success dark:text-success" />
+                    <ArrowDown className="h-4 w-4 sm:h-5 sm:w-5 text-success dark:text-success" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{deviceType.metrics?.length || 0}</div>
-                    <div className="text-xs text-muted-foreground">Native Metrics</div>
+                    <div className="text-lg sm:text-2xl font-bold">{deviceType.metrics?.length || 0}</div>
+                    <div className="text-[11px] sm:text-xs text-muted-foreground">Native Metrics</div>
                   </div>
                 </div>
               </Card>
-              <Card className="p-4">
-                <div className="flex items-center gap-3">
+              <Card className="p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <div className="p-2 rounded-lg bg-accent-purple-light">
-                    <Sparkles className="h-5 w-5 text-accent-purple" />
+                    <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-accent-purple" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{virtualMetrics.length || 0}</div>
-                    <div className="text-xs text-muted-foreground">Virtual Metrics</div>
+                    <div className="text-lg sm:text-2xl font-bold">{virtualMetrics.length || 0}</div>
+                    <div className="text-[11px] sm:text-xs text-muted-foreground">Virtual Metrics</div>
                   </div>
                 </div>
               </Card>
-              <Card className="p-4">
-                <div className="flex items-center gap-3">
+              <Card className="p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <div className="p-2 rounded-lg bg-info-light">
-                    <FileText className="h-5 w-5 text-info" />
+                    <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-info" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{deviceType.commands?.length || 0}</div>
-                    <div className="text-xs text-muted-foreground">Commands</div>
+                    <div className="text-lg sm:text-2xl font-bold">{deviceType.commands?.length || 0}</div>
+                    <div className="text-[11px] sm:text-xs text-muted-foreground">Commands</div>
                   </div>
                 </div>
               </Card>
-              <Card className="p-4">
-                <div className="flex items-center gap-3">
+              <Card className="p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <div className="p-2 rounded-lg bg-accent-orange-light">
-                    <Settings className="h-5 w-5 text-accent-orange" />
+                    <Settings className="h-4 w-4 sm:h-5 sm:w-5 text-accent-orange" />
                   </div>
                   <div>
                     <div className="text-lg font-bold">{isRawMode ? 'Raw' : 'Full'}</div>
@@ -2366,13 +2366,13 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                 <div className="space-y-2">
                   {deviceType.metrics.map((metric, i) => (
                     <div key={i} className="p-3 bg-muted-50 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm">{metric.name}</span>
-                          <span className="text-muted-foreground">•</span>
-                          <span className="text-sm">{metric.display_name}</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-mono text-sm truncate">{metric.name}</span>
+                          <span className="text-muted-foreground shrink-0">•</span>
+                          <span className="text-sm truncate">{metric.display_name}</span>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           <Badge variant="outline" className="text-xs">{formatDataType(metric.data_type)}</Badge>
                           {metric.unit && (
                             <span className="text-xs text-muted-foreground">({metric.unit})</span>
@@ -2406,18 +2406,18 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                   <div className="space-y-2">
                     {virtualMetrics.map((metric, i) => (
                       <div key={i} className="p-3 bg-accent-purple-light border border-accent-purple-light rounded-lg">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Sparkles className="h-4 w-4 text-accent-purple" />
-                            <code className="text-sm text-accent-purple">{metric.name}</code>
-                            <span className="text-muted-foreground">•</span>
-                            <span className="text-sm">{metric.display_name}</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Sparkles className="h-4 w-4 text-accent-purple shrink-0" />
+                            <code className="text-sm text-accent-purple truncate">{metric.name}</code>
+                            <span className="text-muted-foreground shrink-0">•</span>
+                            <span className="text-sm truncate">{metric.display_name}</span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 shrink-0">
                             <Badge variant="outline" className="text-xs text-accent-purple">{formatDataType(metric.data_type)}</Badge>
-                            <span className="text-xs text-muted-foreground">via {metric.transform_name}</span>
                           </div>
                         </div>
+                        <div className="text-[11px] text-muted-foreground mt-1 ml-6">via {metric.transform_name}</div>
                       </div>
                     ))}
                   </div>

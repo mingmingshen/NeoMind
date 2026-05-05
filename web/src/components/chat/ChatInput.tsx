@@ -17,7 +17,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
-import { ConnectionStatus } from '@/components/chat/ConnectionStatus'
+
 import { cn } from '@/lib/utils'
 import type { ConnectionState } from '@/lib/websocket'
 import type { ChatImage, LlmBackendInstance } from '@/types'
@@ -229,16 +229,6 @@ export const ChatInput = memo(function ChatInput({
     <div className="bg-background sm:static fixed bottom-0 left-0 right-0 z-40 px-2.5 sm:px-4 py-3 sm:py-3 pb-8 sm:pb-4 safe-bottom border-t border-border sm:border-0"
       style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
       <div className="max-w-3xl mx-auto">
-        {/* Connection status - show on mobile when not connected */}
-        {!isDesktop && (connectionState.status === 'reconnecting' || connectionState.status === 'error') && (
-          <div className="mb-2 flex justify-center">
-            <ConnectionStatus
-              state={connectionState}
-              onManualReconnect={onManualReconnect}
-            />
-          </div>
-        )}
-
         {/* Input toolbar */}
         <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2">
           <ModelSelector

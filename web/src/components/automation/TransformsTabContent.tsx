@@ -380,7 +380,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                                 </div>
                               )}
 
-                              <div className="grid grid-cols-2 gap-4 text-sm">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                                 <div>
                                   <span className="text-muted-foreground">{t('automation:created', { defaultValue: 'Created' })}: </span>
                                   {formatTimestamp(transform.created_at)}
@@ -556,7 +556,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                           )}
 
                           {/* Metadata */}
-                          <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                             <div>
                               <span className="text-muted-foreground">{t('automation:created', { defaultValue: 'Created' })}: </span>
                               {formatTimestamp(transform.created_at)}

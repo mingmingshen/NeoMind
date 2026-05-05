@@ -2125,7 +2125,7 @@ function ConditionStep({
       {/* Trigger Type Selector */}
       <div className="space-y-4 max-w-3xl mx-auto">
         <Label className="text-sm font-medium">{tBuilder('triggerType')}</Label>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <button
             type="button"
             onClick={() => {
@@ -2302,7 +2302,7 @@ function ConditionStep({
               {/* Cron Templates */}
               <div>
                 <Label className="text-xs text-muted-foreground">{tBuilder('cronTemplate') || 'Cron 模板'}</Label>
-                <div className="grid grid-cols-4 gap-2 mt-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
                   {CRON_TEMPLATES.slice(0, 8).map(template => (
                     <button
                       key={template.id}
@@ -2615,7 +2615,7 @@ function ReviewStep({ name, description, enabled, condition, actions, forDuratio
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div className={cn(cardPadded, "text-center")}>
           <div className="text-2xl font-bold text-accent-purple">{condition ? 1 : 0}</div>
           <div className="text-xs text-muted-foreground">{tBuilder('review.triggerCondition')}</div>
@@ -2636,7 +2636,7 @@ function ReviewStep({ name, description, enabled, condition, actions, forDuratio
           <Settings className="h-4 w-4" />
           {tBuilder('review.basicInfo')}
         </h4>
-        <div className="grid grid-cols-2 gap-4 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
           <div>
             <span className="text-muted-foreground">{tBuilder('review.name')}:</span>
             <span className="ml-2 font-medium">{name || '-'}</span>

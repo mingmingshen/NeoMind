@@ -42,6 +42,7 @@ export function SettingsPage() {
         title={t('settings:title')}
         subtitle={t('settings:description')}
         borderedHeader={false}
+        hasBottomNav
         headerContent={
           <PageTabsBar
             tabs={tabs}

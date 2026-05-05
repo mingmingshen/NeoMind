@@ -1309,7 +1309,7 @@ export function AgentEditorFullScreen({
                 <Brain className="h-4 w-4 text-muted-foreground" />
                 {tAgent('executionMode', 'Execution Mode')}
               </Label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn("gap-3", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
                 <button
                   type="button"
                   onClick={() => setExecutionMode('focused')}

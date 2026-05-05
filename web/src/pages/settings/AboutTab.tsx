@@ -12,7 +12,6 @@ import {
   Database,
   Layers,
   Github,
-  RefreshCw,
   Activity,
   Monitor,
   Download,
@@ -49,7 +48,6 @@ export function AboutTab() {
   const { updateInfo, setUpdateDialogOpen } = useAppStore()
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
 
   // Reuse global useUpdateCheck - only need checkUpdate for manual trigger
@@ -62,8 +60,7 @@ export function AboutTab() {
     onUpToDate: handleUpToDate,
   })
 
-  const loadSystemInfo = async (showRefreshing = false) => {
-    if (showRefreshing) setRefreshing(true)
+  const loadSystemInfo = async () => {
     try {
       const response = await api.getSystemStats()
       setSystemInfo(response)
@@ -71,7 +68,6 @@ export function AboutTab() {
       handleError(e, { operation: 'Load system info', showToast: false })
     } finally {
       setLoading(false)
-      if (showRefreshing) setRefreshing(false)
     }
   }
 
@@ -154,21 +150,10 @@ export function AboutTab() {
       {/* System Info */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-info" />
-              {t("settings:systemInfo")}
-            </CardTitle>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => loadSystemInfo(true)}
-              disabled={refreshing}
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-            </Button>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-info" />
+            {t("settings:systemInfo")}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -262,7 +247,7 @@ export function AboutTab() {
               </div>
 
               {/* Memory breakdown */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-3 bg-muted-30 rounded-lg text-center">
                   <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground mb-1">
                     <Database className="h-4 w-4" />

@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next"
 import { Badge } from "@/components/ui/badge"
+import { Card } from "@/components/ui/card"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { ResponsiveTable, StatusBadge, EmptyState } from "@/components/shared"
 import { Eye, MoreVertical, Trash2, Cpu, Database, Waves, Pencil, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -7,6 +9,7 @@ import { formatTimestamp } from "@/lib/utils/format"
 import type { Device } from "@/types"
 import { TransformsBadge } from "@/components/automation"
 import { useDeviceEvents } from "@/hooks/useEvents"
+import { useIsMobile } from "@/hooks/useMobile"
 import { useStore } from "@/store"
 
 interface DeviceListProps {
@@ -40,6 +43,7 @@ export function DeviceList({
 }: DeviceListProps) {
   const { t } = useTranslation(['common', 'devices'])
   const updateDeviceStatus = useStore((state) => state.updateDeviceStatus)
+  const isMobile = useIsMobile()
 
   // Listen to device status change events
   useDeviceEvents({
@@ -79,6 +83,76 @@ export function DeviceList({
             icon: <Plus className="h-4 w-4" />,
           }}
         />
+      ) : isMobile ? (
+        <div className="space-y-2">
+          {paginatedDevices.map((device) => {
+            const AdapterIcon = getAdapterIcon(device.adapter_type)
+            return (
+              <Card
+                key={device.id}
+                className="overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all"
+                onClick={() => onViewDetails(device)}
+              >
+                <div className="px-3 py-2.5">
+                  {/* Row 1: icon + name + status + actions */}
+                  <div className="flex items-center gap-2.5">
+                    <div className={cn(
+                      "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                      device.status === 'online'
+                        ? "bg-success-light text-success"
+                        : "bg-muted text-muted-foreground"
+                    )}>
+                      <Cpu className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">{device.name || "-"}</div>
+                    </div>
+                    <StatusBadge status={device.status} />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <button className="p-1 rounded-md hover:bg-muted">
+                          <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onViewDetails(device) }}>
+                          <Eye className="h-4 w-4 mr-2" />
+                          {t('devices:actions.viewDetails')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(device) }}>
+                          <Pencil className="h-4 w-4 mr-2" />
+                          {t('common:edit')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-error"
+                          onClick={(e) => { e.stopPropagation(); onDelete(device.id) }}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          {t('common:delete')}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  {/* Row 2: type badge + adapter + last seen */}
+                  <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
+                    <Badge variant="outline" className="text-[11px] h-5 px-1.5">
+                      {device.device_type}
+                    </Badge>
+                    <div className="flex items-center gap-1">
+                      <AdapterIcon className="h-3 w-3 text-muted-foreground" />
+                      <Badge variant="outline" className="text-[11px] h-5 px-1.5">
+                        {device.adapter_type || 'mqtt'}
+                      </Badge>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground ml-auto">
+                      {formatTimestamp(device.last_seen, false)}
+                    </span>
+                  </div>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
       ) : (
         <ResponsiveTable
         columns={[

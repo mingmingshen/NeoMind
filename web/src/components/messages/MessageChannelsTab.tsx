@@ -282,10 +282,6 @@ export function MessageChannelsTab({
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">{t('messages.channels.title')}</h3>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onRefresh} disabled={isLoading}>
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            {t('common.refresh')}
-          </Button>
           <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-1" />
             {t('messages.channels.create')}

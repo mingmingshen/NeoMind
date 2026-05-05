@@ -1863,7 +1863,7 @@ function TestStep({
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div className={cn(cardPadded, "text-center")}>
           <div className="text-xl font-bold text-info">
             {jsCode.split('\n').filter(s => s.trim()).length}

@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PageLayout } from '@/components/layout/PageLayout'
+import { Card } from '@/components/ui/card'
 import { ResponsiveTable, type TableColumn, Pagination, EmptyState } from '@/components/shared'
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav } from '@/components/shared/PageTabs'
 import { Input } from '@/components/ui/input'
@@ -16,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, Database, RefreshCw, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye } from 'lucide-react'
+import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { UnifiedDataSourceInfo } from '@/types'
 import { useIsMobile } from '@/hooks/useMobile'
@@ -73,6 +74,9 @@ export function DataExplorerPage() {
   const [sourceOptions, setSourceOptions] = useState<[string, string][]>([])
   const [loading, setLoading] = useState(true)
 
+  // Mobile: track loaded page count for cumulative append
+  const [mobileLoadedPages, setMobileLoadedPages] = useState(1)
+
   // Filters
   const [search, setSearch] = useState('')
   const [activeType, setActiveType] = useState<SourceType>('all')
@@ -113,7 +117,19 @@ export function DataExplorerPage() {
 
       const res = await api.listUnifiedDataSources(params)
       if (controller.signal.aborted) return
-      setPageData(res?.data || [])
+      const newData = res?.data || []
+      if (isMobile && page > 1) {
+        // Mobile: accumulate data for infinite scroll
+        setPageData(prev => {
+          // Deduplicate by id
+          const existingIds = new Set(prev.map(d => d.id))
+          const unique = newData.filter((d: UnifiedDataSourceInfo) => !existingIds.has(d.id))
+          return [...prev, ...unique]
+        })
+      } else {
+        setPageData(newData)
+      }
+      setMobileLoadedPages(page)
       setTotalCount(res?.total || 0)
       setSourceOptions(res?.source_options || [])
     } catch (err) {
@@ -131,7 +147,10 @@ export function DataExplorerPage() {
   }, [fetchDataSources])
 
   // Reset page when filters change
-  useEffect(() => { setPage(1) }, [debouncedSearch, activeType, selectedSourceName])
+  useEffect(() => {
+    setPage(1)
+    setMobileLoadedPages(1)
+  }, [debouncedSearch, activeType, selectedSourceName])
   useEffect(() => { setSelectedSourceName('__all__') }, [activeType])
 
   // Debounce search input
@@ -251,6 +270,47 @@ export function DataExplorerPage() {
   const isSearchPending = search !== debouncedSearch
 
   const dataTable = (
+    isMobile ? (
+      <div className="space-y-2">
+        {pageData.length === 0 && !loading ? (
+          <EmptyState
+            icon={<Database className="h-12 w-12" />}
+            title={search ? t('data:noResults', 'No data sources match your search') : t('data:noSources', 'No data sources available')}
+            description={search ? undefined : t('data:noSourcesDesc', 'Data sources will appear here once devices are connected or extensions are registered')}
+          />
+        ) : pageData.map((source) => (
+          <Card
+            key={source.id}
+            className="overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all"
+            onClick={() => setSelectedSource(source)}
+          >
+            <div className="px-3 py-2.5">
+              {/* Row 1: source + field + eye button */}
+              <div className="flex items-center gap-2.5">
+                <SourceTypeBadge type={source.source_type} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm truncate">{source.field_display_name}</div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={(e) => { e.stopPropagation(); setSelectedSource(source) }}
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
+              </div>
+              {/* Row 2: ID + data type + time */}
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <code className="text-[11px] text-muted-foreground font-mono truncate flex-1">{source.id}</code>
+                <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{source.data_type}</Badge>
+                <span className="text-[11px] text-muted-foreground">{formatTime(source.last_update)}</span>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    ) : (
     <ResponsiveTable
       columns={columns}
       data={pageData as unknown as Record<string, unknown>[]}
@@ -268,6 +328,7 @@ export function DataExplorerPage() {
         />
       }
     />
+    )
   )
 
   const sourceFilter = sourceOptions.length > 1 ? (
@@ -296,20 +357,12 @@ export function DataExplorerPage() {
         title={t('data:title', 'Data Explorer')}
         subtitle={t('data:subtitle', 'Browse all data sources across devices, extensions, and transforms')}
         hideFooterOnMobile
+        hasBottomNav
         headerContent={
           <PageTabsBar
             tabs={tabs}
             activeTab={activeType}
             onTabChange={(v) => setActiveType(v)}
-            actions={[
-              {
-                label: t('common:refresh', 'Refresh'),
-                icon: <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />,
-                variant: 'outline',
-                onClick: fetchDataSources,
-                disabled: loading,
-              },
-            ]}
             actionsExtra={
               <div className="flex items-center gap-2">
                 {sourceFilter}
@@ -340,6 +393,7 @@ export function DataExplorerPage() {
               pageSize={pageSize}
               currentPage={page}
               onPageChange={setPage}
+              isLoading={loading}
             />
           ) : undefined
         }
@@ -382,7 +436,7 @@ export function DataExplorerPage() {
             )}
 
             {/* Metadata Grid */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <p className="text-xs text-muted-foreground">{t('data:field', 'Field')}</p>
                 <p className="text-sm font-medium">{selectedSource.field_display_name}</p>

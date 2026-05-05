@@ -192,6 +192,38 @@ export function useWindowScrollLoad({
 }: UseWindowScrollLoadOptions) {
   const [showLoadingIndicator, setShowLoadingIndicator] = useState(false)
 
+  // Use refs for values that change frequently to avoid re-subscribing
+  const isLoadingRef = useRef(isLoading)
+  const hasMoreRef = useRef(hasMore)
+  const onLoadMoreRef = useRef(onLoadMore)
+  const triggeredRef = useRef(false)
+
+  useEffect(() => { isLoadingRef.current = isLoading }, [isLoading])
+  useEffect(() => { hasMoreRef.current = hasMore }, [hasMore])
+  useEffect(() => { onLoadMoreRef.current = onLoadMore }, [onLoadMore])
+
+  // Reset triggered flag when loading completes
+  // For server-side pagination: isLoading transitions false→true→false, reset on false
+  // For client-side pagination (isLoading always false): triggeredRef is reset after
+  // a short delay to allow DOM to update with new data
+  useEffect(() => {
+    if (!isLoading && triggeredRef.current) {
+      // Delay reset to let React render new items and scroll container grow,
+      // so user is no longer at the very bottom when next scroll check happens
+      const timer = setTimeout(() => {
+        triggeredRef.current = false
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [isLoading])
+
+  // Also reset loading indicator when loading completes
+  useEffect(() => {
+    if (!isLoading) {
+      setShowLoadingIndicator(false)
+    }
+  }, [isLoading])
+
   useEffect(() => {
     if (!enabled) {
       return
@@ -200,7 +232,7 @@ export function useWindowScrollLoad({
     let timeoutId: ReturnType<typeof setTimeout> | null = null
 
     const handleScroll = () => {
-      if (!hasMore || isLoading) {
+      if (!hasMoreRef.current || isLoadingRef.current || triggeredRef.current) {
         return
       }
 
@@ -240,9 +272,10 @@ export function useWindowScrollLoad({
           clearTimeout(timeoutId)
         }
         timeoutId = setTimeout(() => {
-          if (hasMore && !isLoading) {
+          if (hasMoreRef.current && !isLoadingRef.current && !triggeredRef.current) {
+            triggeredRef.current = true
             setShowLoadingIndicator(true)
-            onLoadMore()
+            onLoadMoreRef.current()
           }
         }, 100)
       }
@@ -255,7 +288,7 @@ export function useWindowScrollLoad({
 
     target.addEventListener('scroll', handleScroll, { passive: true })
 
-    // Also check on mount in case already scrolled
+    // Check on mount in case already scrolled to bottom
     handleScroll()
 
     return () => {
@@ -264,14 +297,7 @@ export function useWindowScrollLoad({
         clearTimeout(timeoutId)
       }
     }
-  }, [enabled, hasMore, isLoading, offset, onLoadMore, containerSelector])
-
-  // Hide loading indicator when loading completes
-  useEffect(() => {
-    if (!isLoading) {
-      setShowLoadingIndicator(false)
-    }
-  }, [isLoading])
+  }, [enabled, offset, containerSelector])
 
   return {
     showLoadingIndicator,

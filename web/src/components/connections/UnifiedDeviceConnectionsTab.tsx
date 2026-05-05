@@ -547,18 +547,18 @@ export function UnifiedDeviceConnectionsTab() {
       return (
         <>
           {/* Header with back button */}
-          <div className="flex items-center gap-4 mb-6">
-            <Button variant="ghost" size="sm" onClick={() => setView('list')} className="gap-1">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
+            <Button variant="ghost" size="sm" onClick={() => setView('list')} className="gap-1 self-start -ml-2">
               <ArrowLeft className="h-4 w-4" />
               {t('plugins:llm.back')}
             </Button>
             <div className="flex items-center gap-3">
-              <div className={cn("flex items-center justify-center w-12 h-12 rounded-lg", adapterType?.icon_bg)}>
-                <IconComponent className="h-6 w-6" />
+              <div className={cn("flex items-center justify-center w-10 sm:w-12 h-10 sm:h-12 rounded-lg shrink-0", adapterType?.icon_bg)}>
+                <IconComponent className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <div>
-                <h2 className="text-2xl font-bold">{adapterType?.name}</h2>
-                <p className="text-sm text-muted-foreground">{adapterType?.description}</p>
+              <div className="min-w-0">
+                <h2 className="text-lg sm:text-2xl font-bold truncate">{adapterType?.name}</h2>
+                <p className="text-sm text-muted-foreground line-clamp-2">{adapterType?.description}</p>
               </div>
             </div>
           </div>
@@ -575,11 +575,11 @@ export function UnifiedDeviceConnectionsTab() {
               {/* Webhook URL */}
               <div className="space-y-2">
                 <Label>Webhook URL</Label>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   <Input
                     readOnly
                     value={getWebhookUrl()}
-                    className="font-mono text-sm"
+                    className="font-mono text-xs sm:text-sm min-w-0"
                   />
                   <Button
                     size="sm"
@@ -598,8 +598,8 @@ export function UnifiedDeviceConnectionsTab() {
               {/* Request Format */}
               <div className="space-y-2">
                 <Label>Request Format</Label>
-                <div className="rounded-lg bg-muted p-4">
-                  <pre className="text-sm overflow-x-auto">
+                <div className="rounded-lg bg-muted p-3 sm:p-4 -mx-1 sm:mx-0">
+                  <pre className="text-xs sm:text-sm overflow-x-auto whitespace-pre">
 {`POST ${getWebhookUrl()}
 
 {
@@ -617,8 +617,8 @@ export function UnifiedDeviceConnectionsTab() {
               {/* Response Format */}
               <div className="space-y-2">
                 <Label>Response Format</Label>
-                <div className="rounded-lg bg-muted p-4">
-                  <pre className="text-sm">
+                <div className="rounded-lg bg-muted p-3 sm:p-4 -mx-1 sm:mx-0">
+                  <pre className="text-xs sm:text-sm overflow-x-auto whitespace-pre">
 {`{
   "success": true,
   "device_id": "sensor01",
@@ -635,10 +635,10 @@ export function UnifiedDeviceConnectionsTab() {
                 {getDeviceCount('webhook') > 0 ? (
                   <div className="space-y-2">
                     {devices.filter((d: any) => d.adapter_type === 'webhook').map((device: any) => (
-                      <div key={device.id} className="flex items-center justify-between p-2 rounded border">
-                        <div>
-                          <div className="font-medium">{device.name || device.id}</div>
-                          <div className="text-xs text-muted-foreground font-mono">
+                      <div key={device.id} className="flex items-center justify-between gap-2 p-2 rounded border">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium text-sm truncate">{device.name || device.id}</div>
+                          <div className="text-xs text-muted-foreground font-mono truncate">
                             {getWebhookUrl().replace('{device_id}', device.id)}
                           </div>
                         </div>

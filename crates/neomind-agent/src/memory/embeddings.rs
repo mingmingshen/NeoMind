@@ -642,7 +642,7 @@ struct OpenAIEmbedData {
 impl EmbeddingModel for OpenAIEmbedding {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, Error> {
         let results: Vec<Vec<f32>> = self.embed_batch(&[text.to_string()]).await?;
-        Ok(results.into_iter().next().unwrap())
+        Ok(results.into_iter().next().expect("embed_batch returns same count as input"))
     }
 
     async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, Error> {
@@ -779,7 +779,7 @@ impl EmbeddingModel for CachedEmbeddingModel {
             }
         }
 
-        Ok(results.into_iter().map(|r| r.unwrap()).collect())
+        Ok(results.into_iter().map(|r| r.expect("batch embedding should succeed for all items")).collect())
     }
 
     fn dimension(&self) -> usize {

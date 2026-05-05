@@ -30,7 +30,10 @@ import {
   Play,
   Brain,
   Wrench,
+  MoreVertical,
 } from "lucide-react"
+import { Card } from "@/components/ui/card"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { ResponsiveTable } from "@/components/shared"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -58,6 +61,7 @@ import { useToast } from "@/hooks/use-toast"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
+import { useIsMobile } from "@/hooks/useMobile"
 import type { LlmBackendInstance, MemorySystemConfig } from "@/types"
 
 // Default config for initialization
@@ -182,6 +186,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   const { t } = useTranslation("agents")
   const { handleError } = useErrorHandler()
   const { toast } = useToast()
+  const isMobile = useIsMobile()
 
   // State
   const [stats, setStats] = useState<Record<string, CategoryStats>>({})
@@ -409,6 +414,59 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   return (
     <div className="space-y-4">
       {/* Category table */}
+      {isMobile ? (
+        <div className="space-y-2">
+          {tableData.map((row) => {
+            const Icon = row.icon
+            return (
+              <Card
+                key={row.id}
+                className="overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all"
+                onClick={() => handleViewEdit(row.id)}
+              >
+                <div className="px-3 py-2.5">
+                  {/* Row 1: icon + name + actions */}
+                  <div className="flex items-center gap-2.5">
+                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center border shrink-0", row.color)}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">{row.name}</div>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <button className="p-1 rounded-md hover:bg-muted">
+                          <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewEdit(row.id) }}>
+                          <Eye className="h-4 w-4 mr-2" />
+                          {t("systemMemory.viewEdit", "View/Edit")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExport(row.id) }}>
+                          <Download className="h-4 w-4 mr-2" />
+                          {t("systemMemory.export", "Export")}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  {/* Row 2: entries + size + modified */}
+                  <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
+                    <Badge variant="secondary" className="text-[11px] font-mono h-5 px-1.5">
+                      {row.entry_count} entries
+                    </Badge>
+                    <span className="text-[11px] text-muted-foreground">{formatBytes(row.file_size)}</span>
+                    <span className="text-[11px] text-muted-foreground ml-auto">
+                      {row.modified_at > 0 ? formatTimestamp(row.modified_at, false) : "-"}
+                    </span>
+                  </div>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      ) : (
       <ResponsiveTable
         columns={[
           {
@@ -518,6 +576,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
           },
         ]}
       />
+      )}
 
       {/* Full Screen Dialog for View/Edit */}
       <FullScreenDialog open={dialogOpen} onOpenChange={handleDialogClose}>
@@ -537,7 +596,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
 
         <FullScreenDialogContent className="flex-col">
           {contentLoading ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex-1 flex items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : editing ? (
@@ -621,7 +680,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
 
         <FullScreenDialogContent>
           {configLoading ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex-1 flex items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : (
@@ -633,7 +692,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                     <Sparkles className="h-4 w-4 text-accent-purple" />
                     {t("systemMemory.config.extraction", "Extraction Settings")}
                   </h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>{t("systemMemory.config.minMessages", "Min Messages")}</Label>
                       <Input
@@ -724,7 +783,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                     <Archive className="h-4 w-4 text-info" />
                     {t("systemMemory.config.compression", "Compression Settings")}
                   </h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>{t("systemMemory.config.decayPeriodDays", "Decay Period (Days)")}</Label>
                       <Input
@@ -773,7 +832,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                     <Cpu className="h-4 w-4 text-success" />
                     {t("systemMemory.config.llmBackends", "LLM Backends")}
                   </h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>{t("systemMemory.config.extractionBackend", "Extraction Model")}</Label>
                       <Select
@@ -891,7 +950,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                     <Clock className="h-4 w-4 text-accent-orange" />
                     {t("systemMemory.config.schedule", "Schedule")}
                   </h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>{t("systemMemory.config.autoExtraction", "Auto Extraction")}</Label>
                       <div className="flex items-center">

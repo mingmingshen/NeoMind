@@ -693,6 +693,7 @@ export function DevicesPage() {
         subtitle={deviceDetailView ? undefined : t('devices:subtitle')}
         noPadding={!!deviceDetailView}
         hideFooterOnMobile
+        hasBottomNav
         headerContent={
           !deviceDetailView ? (
             <PageTabsBar

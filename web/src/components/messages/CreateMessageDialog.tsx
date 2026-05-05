@@ -202,7 +202,7 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
             )}
 
             {/* Category and Severity on same row */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField label={t('messages.category.label')}>
                 <Select value={category} onValueChange={(v) => setCategory(v as MessageCategory)}>
                   <SelectTrigger>

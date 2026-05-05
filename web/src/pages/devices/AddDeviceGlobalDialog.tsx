@@ -161,7 +161,7 @@ export function AddDeviceGlobalDialog({
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Main scrollable content */}
           <FullScreenDialogMain>
-            <div className="max-w-2xl mx-auto px-5 md:px-8 py-6">
+            <div className={cn("max-w-2xl mx-auto py-6", isMobile ? "px-3" : "px-5 md:px-8")}>
               {/* Mobile tab bar */}
               {isMobile && (
                 <div className="flex gap-1 mb-6 overflow-x-auto pb-1 -mx-1 px-1">
@@ -264,6 +264,7 @@ function StepCard({ step, icon: Icon, title, description, status = 'pending' }: 
 
 function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) => void }) {
   const { t } = useTranslation(['devices', 'common'])
+  const isMobile = useIsMobile()
   const [mqttStatus, setMqttStatus] = useState<MqttStatus | null>(null)
   const [brokers, setBrokers] = useState<ExternalBroker[]>([])
   const [loading, setLoading] = useState(true)
@@ -387,7 +388,7 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
                 <span className="ml-auto">{brokerRunning ? t('devices:auto.brokerRunning') : t('devices:auto.brokerStopped')}</span>
               </div>
               <div className="p-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className={cn("gap-3", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
                   <div className="space-y-1">
                     <span className="text-xs text-muted-foreground">{t('devices:auto.brokerAddress')}</span>
                     <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
@@ -425,7 +426,7 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
                   )}
                 </div>
                 <div className="p-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className={cn("gap-3", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
                     <div className="space-y-1">
                       <span className="text-xs text-muted-foreground">{t('devices:auto.brokerAddress')}</span>
                       <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
@@ -540,6 +541,7 @@ function ManualAddForm({
   renderFooter: (node: ReactNode) => void
 }) {
   const { t } = useTranslation(['common', 'devices'])
+  const isMobile = useIsMobile()
 
   const [selectedDeviceType, setSelectedDeviceType] = useState('')
   const [deviceId, setDeviceId] = useState('')
@@ -684,7 +686,7 @@ function ManualAddForm({
         description={t('devices:add.connectionSettingsDesc')}
       >
         {/* Adapter type — visual cards */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className={cn("gap-2", isMobile ? "grid grid-cols-1" : "grid grid-cols-3")}>
           {ADAPTER_TYPES.map(({ value, icon: AdapterIcon, color, bg }) => {
             const isActive = adapterType === value
             return (

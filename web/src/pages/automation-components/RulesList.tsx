@@ -5,12 +5,15 @@
 import { useState } from "react"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
+import { Card } from "@/components/ui/card"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { ResponsiveTable } from "@/components/shared"
-import { Edit, Play, Trash2, Bell, FileText, FlaskConical, AlertTriangle, Sparkles, Clock, CheckCircle2, Timer, Zap } from "lucide-react"
+import { Edit, Play, Trash2, Bell, FileText, FlaskConical, AlertTriangle, Sparkles, Clock, CheckCircle2, Timer, Zap, MoreVertical } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import type { Rule, RuleAction } from "@/types"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
+import { useIsMobile } from "@/hooks/useMobile"
 
 interface RulesListProps {
   rules: Rule[]
@@ -174,6 +177,7 @@ export function RulesList({
   onExecute,
 }: RulesListProps) {
   const { t } = useTranslation(['common', 'automation'])
+  const isMobile = useIsMobile()
   const [internalPage, setInternalPage] = useState(1)
 
   // Use props if provided, otherwise use internal state (backward compatibility)
@@ -186,6 +190,95 @@ export function RulesList({
   const paginatedRules = propsPaginatedRules ?? rules.slice(startIndex, endIndex)
 
   return (
+    isMobile ? (
+      <div className="space-y-2">
+        {paginatedRules.map((rule) => {
+          const actions = rule.actions && rule.actions.length > 0
+            ? rule.actions
+            : parseActionsFromDSL(rule.dsl)
+          const condition = formatConditionDisplay(rule)
+          const hasTriggered = rule.last_triggered && rule.last_triggered !== '-' && rule.last_triggered !== 0
+
+          return (
+            <Card
+              key={rule.id}
+              className={cn(
+                "overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all",
+                !rule.enabled && "opacity-50"
+              )}
+              onClick={() => onEdit(rule)}
+            >
+              <div className="px-3 py-2.5">
+                {/* Row 1: icon + name + switch + actions */}
+                <div className="flex items-center gap-2.5">
+                  <div className={cn(
+                    "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                    rule.enabled ? "bg-warning-light text-warning" : "bg-muted text-muted-foreground"
+                  )}>
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{rule.name}</div>
+                  </div>
+                  <Switch
+                    checked={rule.enabled}
+                    onCheckedChange={() => onToggleStatus(rule)}
+                    className="scale-75"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                      <button className="p-1 rounded-md hover:bg-muted">
+                        <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(rule) }}>
+                        <Edit className="h-4 w-4 mr-2" />
+                        {t('common:edit')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onExecute(rule) }}>
+                        <Play className="h-4 w-4 mr-2" />
+                        {t('automation:execute')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-error"
+                        onClick={(e) => { e.stopPropagation(); onDelete(rule) }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        {t('common:delete')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                {/* Row 2: condition + action badges + last triggered */}
+                <div className="mt-1.5 ml-[42px]">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <code className="text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded truncate max-w-[180px]">
+                      {condition.text}
+                    </code>
+                    {actions.slice(0, 2).map((action, i) => {
+                      const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.Execute
+                      return (
+                        <Badge key={i} variant="outline" className={cn("text-[11px] h-5 px-1.5 gap-0.5", config.color)}>
+                          {t(config.label)}
+                        </Badge>
+                      )
+                    })}
+                    {actions.length > 2 && (
+                      <span className="text-[11px] text-muted-foreground">+{actions.length - 2}</span>
+                    )}
+                    <span className="text-[11px] text-muted-foreground ml-auto">
+                      {hasTriggered ? formatTimestamp(rule.last_triggered) : t('automation:never', 'Never')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )
+        })}
+      </div>
+    ) : (
     <ResponsiveTable
       columns={[
         {
@@ -400,5 +493,6 @@ export function RulesList({
         },
       ]}
     />
+    )
   )
 }

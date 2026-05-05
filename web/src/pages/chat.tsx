@@ -1199,8 +1199,8 @@ export function ChatPage() {
             : "fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-[var(--surface-glass)] backdrop-blur-xl"
         )} style={isDesktop ? undefined : { paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
           <div className="max-w-3xl mx-auto">
-            {/* Connection status - show on mobile when not connected */}
-            {!isDesktop && (connectionState.status === 'reconnecting' || connectionState.status === 'error') && (
+            {/* Connection status - show on mobile when previously connected but now reconnecting/error */}
+            {!isDesktop && connectionState.wasConnected && (connectionState.status === 'reconnecting' || connectionState.status === 'error') && (
               <div className="mb-2 flex justify-center">
                 <ConnectionStatus
                   state={connectionState}

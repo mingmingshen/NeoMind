@@ -73,19 +73,17 @@ export function FullScreenDialog({
       {/* Inner container - prevents click propagation */}
       <div
         className={cn(
-          "flex flex-col flex-1 m-3 md:m-4 overflow-hidden",
+          "flex flex-col flex-1 overflow-hidden",
           // Glass card effect
           "bg-bg-95",
           "backdrop-blur-xl",
-          "border border-border",
-          "rounded-2xl",
-          "shadow-2xl shadow-black/10",
+          isMobile ? "rounded-none" : "m-3 md:m-4 border border-border rounded-2xl shadow-2xl shadow-black/10",
           className
         )}
         onClick={(e) => e.stopPropagation()}
         style={isMobile ? {
-          marginTop: `${insets.top + 12}px`,
-          marginBottom: `${insets.bottom + 12}px`,
+          marginTop: `${insets.top}px`,
+          marginBottom: `${insets.bottom}px`,
         } : undefined}
       >
         {children}
@@ -125,8 +123,8 @@ export function FullScreenDialogHeader({
   return (
     <header
       className={cn(
-        "shrink-0 flex items-center justify-between gap-4",
-        "px-5 md:px-6 py-4 md:py-5",
+        "shrink-0 flex items-center justify-between gap-3 md:gap-4",
+        "px-3 md:px-5 lg:px-6 py-3 md:py-4 lg:py-5",
         "border-b border-border"
       )}
     >
@@ -134,20 +132,20 @@ export function FullScreenDialogHeader({
       <div className="flex items-center gap-4 min-w-0 flex-1">
         <div className={cn(
           "shrink-0 flex items-center justify-center",
-          "w-10 h-10 md:w-11 md:h-11",
-          "rounded-xl",
+          "w-8 h-8 md:w-10 md:h-11",
+          "rounded-lg md:rounded-xl",
           iconBg
         )}>
-          <div className={cn("w-5 h-5 md:w-5.5 md:h-5.5", iconColor)}>
+          <div className={cn("w-4 h-4 md:w-5 md:h-5", iconColor)}>
             {icon}
           </div>
         </div>
         <div className="min-w-0 flex-1">
-          <h1 className="text-lg md:text-xl font-semibold truncate text-foreground">
+          <h1 className="text-base md:text-lg lg:text-xl font-semibold truncate text-foreground">
             {title}
           </h1>
           {subtitle && (
-            <p className="text-sm text-muted-foreground truncate mt-0.5">
+            <p className="text-xs md:text-sm text-muted-foreground truncate mt-0.5">
               {subtitle}
             </p>
           )}
@@ -161,8 +159,8 @@ export function FullScreenDialogHeader({
           onClick={onClose}
           className={cn(
             "shrink-0 flex items-center justify-center",
-            "w-9 h-9 md:w-10 md:h-10",
-            "rounded-xl",
+            "w-8 h-8 md:w-9 lg:h-10",
+            "rounded-lg md:rounded-xl",
             "text-muted-foreground hover:text-foreground",
             "bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10",
             "transition-all"
@@ -214,13 +212,13 @@ export function FullScreenDialogFooter({
   return (
     <footer
       className={cn(
-        "shrink-0 flex items-center justify-end gap-3",
-        "px-5 md:px-6 py-4",
+        "shrink-0 flex items-center justify-end gap-2 md:gap-3",
+        "px-3 md:px-5 lg:px-6 py-3 md:py-4",
         "border-t border-border",
         "bg-black/[0.02] dark:bg-white/[0.02]",
         className
       )}
-      style={isMobile ? { paddingBottom: `${Math.max(insets.bottom, 16)}px` } : undefined}
+      style={isMobile ? { paddingBottom: `${Math.max(insets.bottom, 12)}px` } : undefined}
     >
       {children}
     </footer>

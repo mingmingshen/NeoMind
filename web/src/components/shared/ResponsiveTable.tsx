@@ -266,7 +266,7 @@ export function ResponsiveTable({
       </div>
 
       {/* Mobile Card List */}
-      <div className="md:hidden space-y-3">
+      <div className="md:hidden space-y-2">
         {data.length === 0 ? (
           <Card className="overflow-hidden border-border">
             <div className="p-8">
@@ -296,10 +296,12 @@ export function ResponsiveTable({
                 onClick={() => onRowClick?.(rowData)}
               >
                 {/* Card Header - First column as title */}
-                <div className="bg-muted-30 px-4 py-3 border-b border-border rounded-t-xl">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      {renderCell(columns[0].key, rowData)}
+                <div className="bg-muted-30 px-3 py-2.5 border-b border-border rounded-t-xl">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                      <div className="min-w-0 flex-1 truncate">
+                        {renderCell(columns[0].key, rowData)}
+                      </div>
                     </div>
                     {visibleActions && visibleActions.length > 0 && (
                       <DropdownMenu>
@@ -307,7 +309,7 @@ export function ResponsiveTable({
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-9 w-9 shrink-0 hover:bg-muted-foreground/10"
+                            className="h-8 w-8 shrink-0 hover:bg-muted-foreground/10"
                             aria-label="Actions"
                           >
                             <MoreVertical className="h-4 w-4" />
@@ -338,7 +340,7 @@ export function ResponsiveTable({
                 </div>
 
                 {/* Card Body - Other columns as key-value pairs */}
-                <div className="p-3 sm:p-4 space-y-2 sm:space-y-2.5">
+                <div className="p-3 space-y-1.5">
                   {columns.slice(1).map((column) => {
                     const cellContent = renderCell(column.key, rowData)
                     // Skip if content is empty
@@ -347,12 +349,14 @@ export function ResponsiveTable({
                     }
 
                     return (
-                      <div key={column.key} className="flex items-start gap-2 sm:gap-3 py-0.5">
-                        <span className="text-xs text-muted-foreground shrink-0 w-24 sm:w-28 pt-0.5 font-medium">
-                          {renderColumnLabel(column.label)}
+                      <div key={column.key} className="flex items-start gap-2 py-0.5 min-w-0">
+                        <span className="text-[11px] text-muted-foreground shrink-0 w-20 pt-0.5 font-medium truncate">
+                          {typeof column.label === 'string' ? column.label : column.key}
                         </span>
-                        <div className="text-sm flex-1 text-left min-w-0 break-words">
-                          {cellContent}
+                        <div className="text-sm flex-1 text-left min-w-0 overflow-hidden">
+                          <div className="truncate">
+                            {cellContent}
+                          </div>
                         </div>
                       </div>
                     )
@@ -384,9 +388,9 @@ export function MobileCard({ title, subtitle, icon, actions, children, className
   return (
     <Card className={cn('overflow-hidden border-border rounded-lg shadow-sm', onClick && 'cursor-pointer active:scale-[0.99] transition-all', className)}>
       {/* Card Header */}
-      <div className="bg-muted-30 px-4 py-3 border-b border-border rounded-t-xl">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
+      <div className="bg-muted-30 px-3 py-2.5 border-b border-border rounded-t-xl">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
             {icon && <div className="shrink-0">{icon}</div>}
             <div className="min-w-0 flex-1">
               <div className="font-medium text-sm truncate">{title}</div>
@@ -398,7 +402,7 @@ export function MobileCard({ title, subtitle, icon, actions, children, className
       </div>
 
       {/* Card Body */}
-      <div className="p-3 sm:p-4">
+      <div className="p-3">
         {children}
       </div>
     </Card>

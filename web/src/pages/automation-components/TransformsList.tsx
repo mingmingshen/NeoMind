@@ -5,11 +5,14 @@
 import { useState } from "react"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
+import { Card } from "@/components/ui/card"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { ResponsiveTable } from "@/components/shared"
-import { Edit, Trash2, Code, Database, Globe, Cpu, HardDrive, CheckCircle2, Download } from "lucide-react"
+import { Edit, Trash2, Code, Database, Globe, Cpu, HardDrive, CheckCircle2, Download, MoreVertical } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import type { TransformAutomation } from "@/types"
+import { useIsMobile } from "@/hooks/useMobile"
 
 interface TransformsListProps {
   transforms: TransformAutomation[]
@@ -71,6 +74,7 @@ export function TransformsList({
   onExport,
 }: TransformsListProps) {
   const { t } = useTranslation(['common', 'automation'])
+  const isMobile = useIsMobile()
   const [internalPage, setInternalPage] = useState(1)
 
   // Use props if provided, otherwise use internal state (backward compatibility)
@@ -109,6 +113,82 @@ export function TransformsList({
   }
 
   return (
+    isMobile ? (
+      <div className="space-y-2">
+        {paginatedTransforms.map((transform) => {
+          const scopeInfo = getScopeInfo(transform.scope)
+          const ScopeIcon = scopeInfo.icon
+
+          return (
+            <Card
+              key={transform.id}
+              className={cn(
+                "overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all",
+                !transform.enabled && "opacity-50"
+              )}
+              onClick={() => onEdit(transform)}
+            >
+              <div className="px-3 py-2.5">
+                {/* Row 1: icon + name + switch + actions */}
+                <div className="flex items-center gap-2.5">
+                  <div className={cn(
+                    "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                    transform.enabled ? "bg-accent-cyan-light text-accent-cyan" : "bg-muted text-muted-foreground"
+                  )}>
+                    <Code className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{transform.name}</div>
+                  </div>
+                  <Switch
+                    checked={transform.enabled}
+                    onCheckedChange={() => onToggleStatus(transform)}
+                    className="scale-75"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                      <button className="p-1 rounded-md hover:bg-muted">
+                        <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(transform) }}>
+                        <Edit className="h-4 w-4 mr-2" />
+                        {t('common:edit')}
+                      </DropdownMenuItem>
+                      {onExport && (
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onExport(transform) }}>
+                          <Download className="h-4 w-4 mr-2" />
+                          {t('common:export')}
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        className="text-error"
+                        onClick={(e) => { e.stopPropagation(); onDelete(transform) }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        {t('common:delete')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                {/* Row 2: scope badge + output prefix */}
+                <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
+                  <Badge variant="outline" className={cn("text-[11px] h-5 px-1.5 gap-0.5", scopeInfo.color)}>
+                    <ScopeIcon className="h-3 w-3" />
+                    {getScopeLabel(transform.scope)}
+                  </Badge>
+                  <code className="text-[11px] text-muted-foreground truncate">
+                    {(transform.output_prefix || 'transform') + '.'}
+                  </code>
+                </div>
+              </div>
+            </Card>
+          )
+        })}
+      </div>
+    ) : (
     <ResponsiveTable
       columns={[
         {
@@ -255,5 +335,6 @@ export function TransformsList({
         },
       ]}
     />
+    )
   )
 }

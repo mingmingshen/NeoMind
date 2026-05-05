@@ -190,7 +190,7 @@ export function AgentCard({
       </div>
 
       {/* Stats Grid - simplified without borders */}
-      <div className="grid grid-cols-3 gap-3 mb-3">
+      <div className="grid grid-cols-3 gap-2 mb-3">
         {/* Execution Count */}
         <div className="text-center p-2 rounded-lg bg-muted-30">
           <div className="text-lg font-semibold">{agent.execution_count}</div>

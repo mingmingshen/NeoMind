@@ -557,12 +557,6 @@ export function AutomationPage() {
       label: tCommon('create'),
       onClick: handleCreate,
     },
-    {
-      label: tCommon('refresh'),
-      variant: 'outline' as const,
-      onClick: loadItems,
-      disabled: loading,
-    },
   ]
 
   return (
@@ -571,6 +565,7 @@ export function AutomationPage() {
         title={tAuto('title')}
         subtitle={tAuto('pageDescription')}
         hideFooterOnMobile
+        hasBottomNav
         headerContent={
           <PageTabsBar
             tabs={tabs}

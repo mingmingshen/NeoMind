@@ -30,6 +30,7 @@ import { formatTimestamp } from "@/lib/utils/format"
 import { useToast } from "@/hooks/use-toast"
 import { useEvents } from "@/hooks/useEvents"
 import { api } from "@/lib/api"
+import { useIsMobile } from "@/hooks/useMobile"
 import type { DraftDevice, SuggestedDeviceType } from "@/types"
 
 interface PendingDevicesListProps {
@@ -50,6 +51,7 @@ export function PendingDevicesList({
   const { t } = useTranslation(['common', 'devices'])
   const { handleError } = useErrorHandler()
   const { toast } = useToast()
+  const isMobile = useIsMobile()
 
   const [drafts, setDrafts] = useState<DraftDevice[]>([])
   const [loading, setLoading] = useState(true)
@@ -110,10 +112,14 @@ export function PendingDevicesList({
   const registeredCount = drafts.filter(d => d.status === 'registered').length
 
   // Paginated data
-  const paginatedDrafts = activeDrafts.slice(
-    (page - 1) * itemsPerPage,
-    page * itemsPerPage
-  )
+  // On mobile: show cumulative data (all pages up to current) for infinite scroll
+  // On desktop: show only current page
+  const paginatedDrafts = isMobile
+    ? activeDrafts.slice(0, page * itemsPerPage)
+    : activeDrafts.slice(
+        (page - 1) * itemsPerPage,
+        page * itemsPerPage
+      )
 
   // Reset pagination when data changes (only if using internal pagination)
   useEffect(() => {
@@ -622,9 +628,10 @@ export function PendingDevicesList({
           submitLabel={t('devices:pending.confirmRegister')}
           submitDisabled={processing === selectedDraftForApproval.id || !selectedDeviceType.trim()}
           footer={
-            <>
+            <div className="flex flex-wrap items-center gap-2 justify-end">
               <Button
                 variant="ghost"
+                size="sm"
                 className="text-destructive hover:text-destructive hover:bg-error-light"
                 onClick={() => {
                   setShowApproveDialog(false)
@@ -634,16 +641,17 @@ export function PendingDevicesList({
               >
                 {t('devices:pending.reject')}
               </Button>
-              <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
+              <Button variant="outline" size="sm" onClick={() => setShowApproveDialog(false)}>
                 {t('common:cancel')}
               </Button>
               <Button
+                size="sm"
                 onClick={handleFinalApprove}
                 disabled={processing === selectedDraftForApproval.id || !selectedDeviceType.trim()}
               >
                 {processing === selectedDraftForApproval.id ? t('common:processing') : t('devices:pending.confirmRegister')}
               </Button>
-            </>
+            </div>
           }
         >
           <div className="space-y-6">
@@ -652,7 +660,7 @@ export function PendingDevicesList({
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                   {t('devices:pending.deviceInfo')}
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm bg-muted-30 rounded-lg p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 sm:gap-x-6 gap-y-2 text-sm bg-muted-30 rounded-lg p-3 sm:p-4">
                   <div>
                     <span className="text-muted-foreground">{t('devices:pending.headers.deviceId')}: </span>
                     <span className="font-mono font-medium">{selectedDraftForApproval.device_id}</span>
@@ -712,7 +720,7 @@ export function PendingDevicesList({
                       </div>
                     )}
                   </div>
-                  <div className="border rounded-lg overflow-hidden">
+                  <div className="border rounded-lg overflow-x-auto -mx-1 px-1">
                     <Table>
                       <TableHeader>
                         <TableRow>

@@ -357,7 +357,7 @@ impl ServerState {
         });
 
         // Create device service
-        let event_bus_for_service = (**event_bus.as_ref().unwrap()).clone();
+        let event_bus_for_service = (**event_bus.as_ref().expect("event_bus initialized during startup")).clone();
         let device_service = Arc::new(DeviceService::new(
             device_registry.clone(),
             event_bus_for_service,
@@ -466,7 +466,7 @@ impl ServerState {
             .await;
 
         // Wire rule engine to device service
-        let event_bus_for_action = (**event_bus.as_ref().unwrap()).clone();
+        let event_bus_for_action = (**event_bus.as_ref().expect("event_bus initialized during startup")).clone();
         let device_service_for_action = devices.service.clone();
         let device_action_executor = Arc::new(DeviceActionExecutor::with_device_service(
             event_bus_for_action,

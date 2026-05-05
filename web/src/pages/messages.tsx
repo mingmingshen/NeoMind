@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination, ResponsiveTable } from '@/components/shared'
-import { MessageSquare, Network, Settings, Filter as FilterIcon, Inbox } from 'lucide-react'
+import { MessageSquare, Network, Settings, Filter as FilterIcon, Inbox, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { confirm } from '@/hooks/use-confirm'
@@ -145,6 +145,8 @@ export default function MessagesPage() {
   // Pagination - server-side
   const [messagePage, setMessagePage] = useState(1)
   const messagesPerPage = 10
+  // Mobile: track loaded page count for cumulative append
+  const [mobileLoadedPages, setMobileLoadedPages] = useState(1)
 
   // Filters - support multiple selections
   const [selectedSeverities, setSelectedSeverities] = useState<Set<MessageSeverity>>(new Set())
@@ -521,7 +523,17 @@ export default function MessagesPage() {
         return bTime - aTime
       })
 
-      setMessages(messagesArray)
+      if (isMobile && messagePage > 1) {
+        // Mobile: accumulate data for infinite scroll
+        setMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id))
+          const unique = messagesArray.filter(m => !existingIds.has(m.id))
+          return [...prev, ...unique]
+        })
+      } else {
+        setMessages(messagesArray)
+      }
+      setMobileLoadedPages(messagePage)
       setTotalCount(serverTotal + (deliveryLogsResponse?.logs?.length ?? 0))
     } catch (error) {
       handleError(error, { operation: 'Fetch messages', showToast: false })
@@ -546,6 +558,7 @@ export default function MessagesPage() {
   // Reset page when filters change (page change is handled by fetchMessages dependency)
   useEffect(() => {
     setMessagePage(1)
+    setMobileLoadedPages(1)
   }, [selectedSeverities, selectedStatuses, selectedCategories, selectedMessageTypes])
 
   // Fetch on mount and when page/filters change
@@ -893,6 +906,7 @@ export default function MessagesPage() {
         title={t('messages.title')}
         subtitle={t('messages.description')}
         hideFooterOnMobile
+        hasBottomNav
         headerContent={
           <PageTabsBar
             tabs={tabs}
@@ -909,12 +923,13 @@ export default function MessagesPage() {
               pageSize={messagesPerPage}
               currentPage={messagePage}
               onPageChange={setMessagePage}
+              isLoading={loading}
             />
           ) : undefined
         }
       >
         {/* Messages Tab */}
-        <PageTabsContent value="messages" activeTab={activeTab} className="flex flex-col overflow-hidden">
+        <PageTabsContent value="messages" activeTab={activeTab} className="flex flex-col">
           {/* Active Filter Chips */}
           {hasActiveFilters && (
             <div className="flex flex-wrap items-center gap-2 mb-4 shrink-0">
@@ -992,6 +1007,122 @@ export default function MessagesPage() {
           )}
 
           {/* Messages Table - Responsive (Desktop: Table, Mobile: Cards) */}
+          {isMobile ? (
+            <div className="space-y-2">
+              {messages.length === 0 && loading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <Card key={i} className="overflow-hidden border-border">
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-muted animate-pulse" />
+                        <div className="flex-1 space-y-1">
+                          <div className="h-4 bg-muted rounded w-2/3 animate-pulse" />
+                          <div className="h-3 bg-muted rounded w-1/3 animate-pulse" />
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                ))
+              ) : messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-12">
+                  <Inbox className="h-10 w-10 text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">{t('messages.empty.title')}</p>
+                </div>
+              ) : (
+                messages.map((message) => {
+                  const severityConfig = SEVERITY_CONFIG[message.severity] || SEVERITY_CONFIG.info
+                  const statusConfig = STATUS_CONFIG[message.status] || STATUS_CONFIG.active
+                  const SeverityIcon = severityConfig.icon
+                  const isDataPush = message.message_type === 'data_push'
+                  const isDimmed = message.status === 'resolved' || message.status === 'archived'
+
+                  return (
+                    <Card
+                      key={message.id}
+                      className={cn(
+                        "overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all",
+                        isDimmed && "opacity-50"
+                      )}
+                      onClick={() => setSelectedMessage(message)}
+                    >
+                      <div className="px-3 py-2.5">
+                        {/* Row 1: severity icon + title + status + actions */}
+                        <div className="flex items-center gap-2.5">
+                          <div className={cn(
+                            "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border",
+                            severityConfig.bgColor
+                          )}>
+                            <SeverityIcon className={cn("h-4 w-4", severityConfig.color)} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm truncate">{message.title}</div>
+                          </div>
+                          <Badge variant={statusConfig.variant} className="text-[10px] h-5 px-1.5 shrink-0">
+                            {t(statusConfig.label)}
+                          </Badge>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                              <button className="p-1 rounded-md hover:bg-muted">
+                                <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-40">
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setSelectedMessage(message) }}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                {t('messages.viewDetails', 'View Details')}
+                              </DropdownMenuItem>
+                              {message.status === 'active' && (
+                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleAcknowledge(message.id) }}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  {t('messages.acknowledge')}
+                                </DropdownMenuItem>
+                              )}
+                              {message.status !== 'resolved' && message.status !== 'archived' && (
+                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleResolve(message.id) }}>
+                                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                                  {t('messages.resolve')}
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={(e) => { e.stopPropagation(); handleDelete(message.id) }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                {t('delete')}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        {/* Row 2: type badge + category + time */}
+                        <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
+                          <Badge variant="outline" className={cn(
+                            "text-[10px] h-5 px-1.5 shrink-0",
+                            isDataPush
+                              ? "bg-accent-purple-light text-accent-purple border-accent-purple-light"
+                              : "bg-info-light text-info border-info"
+                          )}>
+                            {isDataPush ? t('messages.type.data_push') : t('messages.type.notification')}
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px] h-5 px-1.5 shrink-0">
+                            {message.category}
+                          </Badge>
+                          <span className="text-[11px] text-muted-foreground ml-auto shrink-0">
+                            {formatTimestamp(message.timestamp, false)}
+                          </span>
+                        </div>
+                      </div>
+                    </Card>
+                  )
+                })
+              )}
+              {/* Loading more indicator - only when appending data */}
+              {messages.length > 0 && loading && (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              )}
+            </div>
+          ) : (
           <ResponsiveTable
             columns={[
                 {
@@ -1178,11 +1309,149 @@ export default function MessagesPage() {
                 ) : undefined
               }
             />
+          )}
         </PageTabsContent>
 
         {/* Channels Tab */}
         <PageTabsContent value="channels" activeTab={activeTab}>
           {/* Channels Responsive Table */}
+          {isMobile ? (
+            <div className="space-y-2">
+              {loading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <Card key={i} className="overflow-hidden border-border">
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-muted animate-pulse" />
+                        <div className="flex-1 space-y-1">
+                          <div className="h-4 bg-muted rounded w-2/3 animate-pulse" />
+                          <div className="h-3 bg-muted rounded w-1/3 animate-pulse" />
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                ))
+              ) : channels.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-12">
+                  <Inbox className="h-10 w-10 text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">{t('messages.channels.empty.title')}</p>
+                </div>
+              ) : (
+                channels.map((channel) => {
+                  const config: Record<string, { icon: typeof Bell; color: string }> = {
+                    console: { icon: Bell, color: 'bg-muted text-muted-foreground' },
+                    memory: { icon: RefreshCw, color: 'bg-info-light text-info' },
+                    webhook: { icon: Megaphone, color: 'bg-success-light text-success' },
+                    email: { icon: Bell, color: 'bg-accent-purple-light text-accent-purple' },
+                  }
+                  const channelConfig = config[channel.channel_type] || config.console
+                  const ChannelIcon = channelConfig.icon
+                  const testResult = testResults[channel.name]
+
+                  return (
+                    <Card
+                      key={channel.name}
+                      className="overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all"
+                      onClick={() => handleViewChannel(channel.name)}
+                    >
+                      <div className="px-3 py-2.5">
+                        {/* Row 1: icon + name + status + actions */}
+                        <div className="flex items-center gap-2.5">
+                          <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", channelConfig.color)}>
+                            <ChannelIcon className="h-4 w-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm truncate">{channel.name}</div>
+                          </div>
+                          <Badge variant={channel.enabled ? 'default' : 'secondary'} className="text-[10px] h-5 px-1.5 shrink-0">
+                            {channel.enabled ? t('enabled') : t('disabled')}
+                          </Badge>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                              <button className="p-1 rounded-md hover:bg-muted">
+                                <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-40">
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewChannel(channel.name) }}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                {t('view')}
+                              </DropdownMenuItem>
+                              {channel.channel_type !== 'console' && channel.channel_type !== 'memory' && (
+                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleOpenFilterDialog(channel) }}>
+                                  <FilterIcon className="mr-2 h-4 w-4" />
+                                  {t('messages.channels.configureFilter', 'Configure Filter')}
+                                </DropdownMenuItem>
+                              )}
+                              {channel.channel_type === 'email' && (
+                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleManageRecipients(channel) }}>
+                                  <UserPlus className="mr-2 h-4 w-4" />
+                                  {t('messages.channels.manageRecipients', 'Manage Recipients')}
+                                </DropdownMenuItem>
+                              )}
+                              {channel.channel_type !== 'console' && channel.channel_type !== 'memory' && (
+                                <>
+                                  {!channel.enabled && (
+                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleToggleEnabled(channel.name, true) }}>
+                                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                                      {t('enable')}
+                                    </DropdownMenuItem>
+                                  )}
+                                  {channel.enabled && (
+                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleToggleEnabled(channel.name, false) }}>
+                                      <X className="mr-2 h-4 w-4" />
+                                      {t('disable')}
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteChannel(channel.name) }}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    {t('delete')}
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        {/* Row 2: type badge + details + test */}
+                        <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
+                          <Badge variant="outline" className="text-[10px] h-5 px-1.5 shrink-0">
+                            {channel.channel_type}
+                          </Badge>
+                          {(channel.channel_type === 'webhook' || channel.channel_type === 'email') && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 px-1.5 text-[10px]"
+                              onClick={(e) => { e.stopPropagation(); handleTestChannel(channel.name) }}
+                              disabled={testingChannel === channel.name}
+                            >
+                              <TestTube className="h-3 w-3 mr-0.5" />
+                              {testingChannel === channel.name ? '...' : 'Test'}
+                            </Button>
+                          )}
+                          {channel.channel_type === 'email' && channel.recipients && channel.recipients.length > 0 && (
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                              <Mail className="h-3 w-3" />
+                              {channel.recipients.length}
+                            </span>
+                          )}
+                          {testResult && (
+                            <span className={cn("text-[10px]", testResult.success ? 'text-success' : 'text-error')}>
+                              {testResult.success ? '✓' : '✗'} {testResult.message}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  )
+                })
+              )}
+            </div>
+          ) : (
           <ResponsiveTable
             columns={[
               {
@@ -1360,6 +1629,7 @@ export default function MessagesPage() {
               ) : undefined
             }
           />
+          )}
         </PageTabsContent>
       </PageLayout>
 
@@ -1488,7 +1758,7 @@ export default function MessagesPage() {
               title={t('messages.basicInfo', 'Basic Information')}
               description={t('messages.basicInfoDesc', 'Message category and source details')}
             >
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-muted-foreground text-xs">{t('messages.category.label', 'Category')}</Label>
                   <div className="font-medium">{selectedMessage.category}</div>
@@ -1612,7 +1882,7 @@ export default function MessagesPage() {
               title={t('messages.basicInfo', 'Basic Information')}
               description={t('messages.basicInfoDesc', 'Channel name and type')}
             >
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <Label className="text-muted-foreground text-xs">{t('messages.channels.name')}</Label>
                   <div className="font-medium">{viewChannel.name}</div>

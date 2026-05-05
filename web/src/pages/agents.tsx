@@ -7,11 +7,11 @@
  * Also includes System Memory tab for viewing aggregated memory.
  */
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { PageLayout } from "@/components/layout/PageLayout"
-import { PageTabsBar, PageTabsContent, PageTabsBottomNav } from "@/components/shared"
+import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination } from "@/components/shared"
 import { LoadingState } from "@/components/shared/LoadingState"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
@@ -20,7 +20,7 @@ import { useEvents } from "@/hooks/useEvents"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { showErrorToast } from "@/lib/error-messages"
 import { useIsMobile } from "@/hooks/useMobile"
-import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw, Settings, Sparkles, Zap, BookOpen, Edit, Play } from "lucide-react"
+import { Loader2, Bot, Plus, Brain, Cpu, Settings, Sparkles, Zap, BookOpen, Edit, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
 import type { AiAgent, AiAgentDetail, Extension, UnifiedDataSourceInfo } from "@/types"
@@ -451,6 +451,27 @@ export function AgentsPage() {
 
   const isMobile = useIsMobile()
 
+  // Pagination state
+  const AGENTS_PER_PAGE = 10
+  const [agentsPage, setAgentsPage] = useState(1)
+
+  // Reset pagination when agents change
+  useEffect(() => {
+    setAgentsPage(1)
+  }, [agents.length])
+
+  // Paginated agents
+  // On mobile: show cumulative data (all pages up to current)
+  // On desktop: show only current page
+  const paginatedAgents = useMemo(() => {
+    if (isMobile) {
+      return agentsWithExecutingStatus.slice(0, agentsPage * AGENTS_PER_PAGE)
+    } else {
+      const startIndex = (agentsPage - 1) * AGENTS_PER_PAGE
+      return agentsWithExecutingStatus.slice(startIndex, startIndex + AGENTS_PER_PAGE)
+    }
+  }, [agentsWithExecutingStatus, agentsPage, isMobile])
+
   // Wrapper functions for memory operations with loading state
   const handleTriggerExtract = useCallback(async () => {
     if (isExtracting) return
@@ -474,7 +495,6 @@ export function AgentsPage() {
     ? [
         { label: tAgent('systemMemory.config.title', 'Config'), icon: <Settings className="h-4 w-4" />, onClick: () => memoryPanelRef.current?.openConfig() },
         { label: tAgent('systemMemory.extract', 'Extract'), icon: isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />, onClick: handleTriggerExtract, loading: isExtracting, disabled: isExtracting },
-        { label: tCommon('refresh'), icon: <RefreshCw className="h-4 w-4" />, onClick: () => setMemoryRefreshKey(k => k + 1), disabled: isExtracting },
       ]
     : activeTab === 'skills'
     ? [
@@ -498,9 +518,20 @@ export function AgentsPage() {
         />
       }
       hideFooterOnMobile
+      hasBottomNav
+      footer={
+        activeTab === 'agents' && agents.length > AGENTS_PER_PAGE ? (
+          <Pagination
+            total={agents.length}
+            pageSize={AGENTS_PER_PAGE}
+            currentPage={agentsPage}
+            onPageChange={setAgentsPage}
+          />
+        ) : undefined
+      }
     >
       <PageTabsContent value="agents" activeTab={activeTab}>
-        {loading ? (
+        {agents.length === 0 && loading ? (
           <LoadingState variant="page" />
         ) : agents.length === 0 ? (
           <div className="flex min-h-[500px] items-center justify-center">
@@ -516,7 +547,7 @@ export function AgentsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {agentsWithExecutingStatus.map((agent) => (
+            {paginatedAgents.map((agent) => (
               <AgentCard
                 key={agent.id}
                 agent={agent}

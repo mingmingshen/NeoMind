@@ -34,7 +34,7 @@ impl TransformStore for SharedAutomationStore {
         // We try to extract the inner transform data from possible envelope shapes:
         let inner = if data.is_object() && data.get("transform").is_some() {
             // Wrapped: {"transform": {...}}
-            data.get("transform").cloned().unwrap()
+            data.get("transform").cloned().expect("transform field existence verified above")
         } else if data.is_object() && data.get("type").is_some() {
             // Already an Automation serde format: {"type": "transform", ...}
             // Note: Automation is now a type alias for TransformAutomation, but serde may still

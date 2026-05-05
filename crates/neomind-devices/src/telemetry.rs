@@ -148,7 +148,7 @@ impl TimeSeriesStorage {
     /// The lock is held only for the Arc::clone (atomic increment), never across .await.
     #[inline]
     fn store(&self) -> Arc<StorageTimeSeriesStore> {
-        self.store.read().unwrap().clone()
+        self.store.read().expect("telemetry store lock poisoned").clone()
     }
 
     /// Create a new time series storage at the given path
@@ -167,7 +167,7 @@ impl TimeSeriesStorage {
 
     /// Swap the underlying store (used for deferred persistent storage loading).
     pub fn swap_store(&self, new_store: Arc<StorageTimeSeriesStore>) {
-        *self.store.write().unwrap() = new_store;
+        *self.store.write().expect("telemetry store lock poisoned") = new_store;
     }
 
     /// Write a data point (all value types are stored)

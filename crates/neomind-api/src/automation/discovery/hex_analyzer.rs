@@ -492,8 +492,8 @@ pub fn compute_stats(values: &[Value]) -> ValueStats {
     };
 
     let string_length = if !string_lengths.is_empty() {
-        let min_len = *string_lengths.iter().min().unwrap();
-        let max_len = *string_lengths.iter().max().unwrap();
+        let min_len = *string_lengths.iter().min().expect("string_lengths non-empty verified above");
+        let max_len = *string_lengths.iter().max().expect("string_lengths non-empty verified above");
         Some((min_len, max_len))
     } else {
         None

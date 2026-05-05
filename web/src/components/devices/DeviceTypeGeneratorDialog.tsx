@@ -685,7 +685,7 @@ export function DeviceTypeGeneratorDialog({
             </div>
 
             {/* Name and ID Inputs */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField label={tGen('step4.typeName')} required>
                 <Input
                   placeholder={tGen('step4.typeNamePlaceholder')}

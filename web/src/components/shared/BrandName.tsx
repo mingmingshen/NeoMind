@@ -54,6 +54,8 @@ export function BrandLogo({ className }: { className?: string }) {
     <img
       src="/logo-square.png"
       alt="NeoMind Logo"
+      width={36}
+      height={36}
       className={cn('w-9 h-9 rounded-xl shadow-sm', className)}
     />
   )

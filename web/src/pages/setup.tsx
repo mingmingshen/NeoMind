@@ -801,7 +801,7 @@ export function SetupPage() {
               <div className="space-y-4">
                 <div>
                   <Label className="text-sm">{t('setup:selectTimezone')}</Label>
-                  <div className="grid grid-cols-2 gap-2 mt-3 max-h-[180px] overflow-y-auto">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 max-h-[180px] overflow-y-auto">
                     {timezoneOptions.map((tz) => (
                       <button
                         key={tz.id}
@@ -931,7 +931,7 @@ export function SetupPage() {
                 {/* Provider Selection */}
                 <div>
                   <Label className="text-sm">{t('setup:llmProvider')}</Label>
-                  <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                     {llmProviders.map((provider) => (
                       <button
                         key={provider.id}

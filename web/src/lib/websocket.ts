@@ -14,6 +14,7 @@ export interface ConnectionState {
   retryCount?: number
   nextRetryIn?: number  // seconds
   errorMessage?: string
+  wasConnected?: boolean  // true if we ever had a successful connection
 }
 
 // Persistence configuration
@@ -396,8 +397,8 @@ export class ChatWebSocket {
   }
 
   private setState(state: ConnectionState) {
-    this.currentState = state
-    this.stateChangeHandlers.forEach(handler => handler(state))
+    this.currentState = { ...state, wasConnected: this.wasConnected }
+    this.stateChangeHandlers.forEach(handler => handler(this.currentState))
   }
 
   // Public API for connection state

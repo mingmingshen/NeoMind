@@ -23,7 +23,6 @@ import {
   AlertTriangle,
   ShieldAlert,
   Trash2,
-  RefreshCw,
 } from 'lucide-react'
 import type { NotificationMessage, MessageStats, MessageSeverity, MessageStatus, MessageCategory } from '@/types'
 

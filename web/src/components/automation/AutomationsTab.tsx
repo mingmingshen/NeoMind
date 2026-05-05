@@ -4,6 +4,7 @@ import { api } from '@/lib/api'
 import type { Automation } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -12,6 +13,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
 import { LoadingState, EmptyState, ResponsiveTable } from '@/components/shared'
 import { AutomationCreatorDialog } from '@/components/automation'
 import { formatTimestamp } from '@/lib/utils/format'
@@ -20,15 +27,16 @@ import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { showErrorToast } from '@/lib/error-messages'
 import { confirm } from '@/hooks/use-confirm'
 import {
-  RefreshCw,
   Plus,
   Search,
   Play,
   Edit,
   Trash2,
   Sparkles,
+  MoreVertical,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
+import { useIsMobile } from '@/hooks/useMobile'
 
 export interface AutomationsTabProps {
   searchQuery?: string
@@ -42,6 +50,7 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
   const { t } = useTranslation(['automation', 'common'])
   const { toast } = useToast()
   const { handleError } = useErrorHandler()
+  const isMobile = useIsMobile()
 
   // Data state
   const [automations, setAutomations] = useState<Automation[]>([])
@@ -189,9 +198,6 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={loadAutomations}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
           <Button size="sm" onClick={() => setCreatorOpen(true)}>
             <Plus className="h-4 w-4 mr-1" />
             {t('automation:createAutomation')}
@@ -214,6 +220,66 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
             onClick: () => setCreatorOpen(true),
           }}
         />
+      ) : isMobile ? (
+        <div className="space-y-2">
+          {automations.map((automation) => (
+            <Card
+              key={automation.id}
+              className="overflow-hidden border-border shadow-sm active:scale-[0.99] transition-all"
+            >
+              <div className="px-3 py-2.5">
+                {/* Row 1: icon + name + switch + actions */}
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-warning-light text-warning">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{automation.name}</div>
+                  </div>
+                  <Switch
+                    checked={automation.enabled}
+                    onCheckedChange={() => handleToggleEnabled(automation)}
+                    className="scale-75"
+                  />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="p-1 rounded-md hover:bg-muted">
+                        <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleExecute(automation)}>
+                        <Play className="h-4 w-4 mr-2" />
+                        {t('automation:execute')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => {}}>
+                        <Edit className="h-4 w-4 mr-2" />
+                        {t('automation:edit')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-error"
+                        onClick={() => handleDelete(automation)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        {t('automation:delete')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                {/* Row 2: type + complexity + execution count + time */}
+                <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
+                  <Badge variant="outline" className={getTypeColor(automation.type) + " text-[11px] h-5 px-1.5"}>
+                    {getTypeLabel(automation.type)}
+                  </Badge>
+                  <div className="flex gap-0.5">{getComplexityDots(automation.complexity)}</div>
+                  <span className="text-[11px] text-muted-foreground ml-auto">
+                    {automation.execution_count}x &middot; {formatTimestamp(automation.updated_at)}
+                  </span>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
       ) : (
         <ResponsiveTable
           columns={[

@@ -1746,12 +1746,13 @@ impl OllamaShowResponse {
 
 /// Tool call returned by the model.
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
 struct OllamaToolCall {
     /// Tool call ID (for tracking)
+    #[allow(dead_code)]
     id: Option<String>,
     /// Type of tool call (always "function")
     #[serde(rename = "type")]
+    #[allow(dead_code)]
     call_type: Option<String>,
     /// Function to call
     function: OllamaCalledFunction,
@@ -1775,7 +1776,6 @@ fn deserialize_arguments<'de, D>(deserializer: D) -> Result<serde_json::Value, D
 where
     D: serde::Deserializer<'de>,
 {
-    // Create a visitor that can handle both string and object
     struct ArgumentsVisitor;
 
     impl<'de> serde::de::Visitor<'de> for ArgumentsVisitor {
@@ -1789,7 +1789,6 @@ where
         where
             E: serde::de::Error,
         {
-            // Try to parse the string as JSON
             serde_json::from_str(value).map_err(E::custom)
         }
 
@@ -1797,7 +1796,6 @@ where
         where
             M: serde::de::MapAccess<'de>,
         {
-            // Deserialize as a JSON object directly
             serde_json::Value::deserialize(serde::de::value::MapAccessDeserializer::new(map))
         }
     }

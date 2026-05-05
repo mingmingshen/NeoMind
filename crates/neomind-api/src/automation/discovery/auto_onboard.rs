@@ -269,7 +269,7 @@ impl AutoOnboardManager {
             if !limiters.contains_key(device_id) {
                 limiters.insert(device_id.to_string(), MessageRateLimiter::new());
             }
-            limiters.get(device_id).cloned().unwrap()
+            limiters.get(device_id).cloned().expect("limiter exists because it was just fetched or created")
         };
 
         // Check rate limits

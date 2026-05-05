@@ -306,7 +306,7 @@ export function AlertsTab() {
             <div>
               <AlertBadge level={selectedAlert.severity as "critical" | "warning" | "info" | "emergency"} />
             </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-muted-foreground">{t('common:status')}:</span>{' '}
                 {selectedAlert.acknowledged ? (

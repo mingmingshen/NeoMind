@@ -65,6 +65,7 @@ export function Pagination({
     onLoadMore: onLoadMore || (() => hasMore && onPageChange(currentPage + 1)),
     enabled: useMobileInfiniteScroll,
     containerSelector: '[data-page-scroll-container]',
+    offset: 250,
   })
 
   // Early return for no pagination needed (only on desktop)

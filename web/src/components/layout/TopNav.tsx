@@ -211,13 +211,18 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-64 p-0">
+            <SheetContent side="left" className="w-64 p-0 [&>button]:hidden">
               <div className="flex flex-col h-full">
                 {/* Header */}
-                <div className="px-6 py-4 border-b">
-                  <Link to="/chat" onClick={handleNavClick}>
+                <div className="flex items-center justify-between px-4 py-3 border-b">
+                  <Link to="/chat" onClick={handleNavClick} className="flex items-center">
                     <BrandLogoWithName />
                   </Link>
+                  <SheetClose asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </SheetClose>
                 </div>
 
                 {/* Navigation Items */}

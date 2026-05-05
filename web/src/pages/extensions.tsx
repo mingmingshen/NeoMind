@@ -46,15 +46,6 @@ export function ExtensionsPage() {
     fetchExtensions()
   }, [fetchExtensions])
 
-  // Refresh handler
-  const handleRefresh = async () => {
-    await fetchExtensions()
-    toast({
-      title: t("common:refreshed"),
-      variant: "default",
-    })
-  }
-
   // Extension action handlers
   const handleUninstall = async (id: string): Promise<boolean> => {
     const ext = extensions.find(e => e.id === id)
@@ -139,33 +130,26 @@ export function ExtensionsPage() {
         borderedHeader={false}
       >
         {/* Header Actions */}
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setMarketplaceDialogOpen(true)}
             >
-              <Globe className="h-4 w-4 mr-2" />
-              {t("extensions:marketplace", { defaultValue: "Marketplace" })}
+              <Globe className="h-4 w-4 mr-1 sm:mr-2" />
+              <span className="hidden sm:inline">{t("extensions:marketplace", { defaultValue: "Marketplace" })}</span>
+              <span className="sm:hidden">{t("extensions:marketplace", { defaultValue: "Market" })}</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => setUploadDialogOpen(true)}
             >
-              <Upload className="h-4 w-4 mr-2" />
+              <Upload className="h-4 w-4 mr-1 sm:mr-2" />
               {t("extensions:uploadExtension", { defaultValue: "Upload" })}
             </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleRefresh}
-            disabled={extensionsLoading}
-          >
-            <RefreshCw className={`h-4 w-4 ${extensionsLoading ? "animate-spin" : ""}`} />
-          </Button>
         </div>
 
         {/* Extensions Grid */}

@@ -176,7 +176,7 @@ unsafe extern "C" fn runner_native_capability_invoke(
         )
         .unwrap_or_else(|_| {
             std::ffi::CString::new("{\"success\":false,\"error\":\"runner bridge failed\"}")
-                .unwrap()
+                .expect("fallback error JSON is valid ASCII")
         })
         .into_raw()
     };
@@ -227,7 +227,7 @@ unsafe extern "C" fn runner_native_capability_invoke(
             std::ffi::CString::new(
                 "{\"success\":false,\"error\":\"failed to serialize native capability response\"}",
             )
-            .unwrap()
+            .expect("fallback error JSON is valid ASCII")
         })
         .into_raw()
 }

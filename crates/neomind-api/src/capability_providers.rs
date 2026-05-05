@@ -408,7 +408,7 @@ impl EventCapabilityProvider {
                 CapabilityError::InvalidParameters("Missing subscription_id".to_string())
             })?;
 
-        self.subscriptions.write().unwrap().remove(subscription_id);
+        self.subscriptions.write().expect("subscriptions lock poisoned").remove(subscription_id);
 
         Ok(json!({
             "success": true,
@@ -419,14 +419,14 @@ impl EventCapabilityProvider {
     pub fn get_subscriptions(&self) -> Vec<EventSubscriptionInfo> {
         self.subscriptions
             .read()
-            .unwrap()
+            .expect("subscriptions lock poisoned")
             .values()
             .cloned()
             .collect()
     }
 
     pub fn remove_extension_subscriptions(&self, extension_id: &str) {
-        let mut subs = self.subscriptions.write().unwrap();
+        let mut subs = self.subscriptions.write().expect("subscriptions lock poisoned");
         subs.retain(|_, sub| sub.extension_id.as_deref() != Some(extension_id));
     }
 }

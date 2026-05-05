@@ -19,8 +19,11 @@ import {
   Hash,
   Zap,
   Target,
+  MoreVertical,
 } from "lucide-react"
 import CodeMirror from "@uiw/react-codemirror"
+import { Card } from "@/components/ui/card"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { ResponsiveTable, Pagination } from "@/components/shared"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -35,6 +38,7 @@ import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { useIsMobile } from "@/hooks/useMobile"
 import type { SkillSummary, SkillDetail } from "@/types/skill"
 
 // Category configuration with colors matching MemoryPanel style
@@ -96,6 +100,7 @@ export const SkillsPanel = forwardRef<SkillsPanelHandle>(function SkillsPanel(
 ) {
   const { handleError } = useErrorHandler()
   const { toast } = useToast()
+  const isMobile = useIsMobile()
 
   // Data state
   const [skills, setSkills] = useState<SkillSummary[]>([])
@@ -280,6 +285,69 @@ anti_triggers:
   return (
     <div className="space-y-4">
       {/* Skills table */}
+      {isMobile ? (
+        <div className="space-y-2">
+          {tableData.map((row) => {
+            const catConf = categoryConfig[row.category] || categoryConfig.general
+            const Icon = catConf.icon
+            return (
+              <Card
+                key={row.id}
+                className="overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all"
+                onClick={() => handleView(row.id)}
+              >
+                <div className="px-3 py-2.5">
+                  {/* Row 1: icon + name + actions */}
+                  <div className="flex items-center gap-2.5">
+                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center border shrink-0", catConf.color)}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">{row.name}</div>
+                    </div>
+                    <Badge variant="secondary" className="text-[11px] font-mono h-5 px-1.5">
+                      {row.priority}
+                    </Badge>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <button className="p-1 rounded-md hover:bg-muted">
+                          <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleView(row.id) }}>
+                          <Eye className="h-4 w-4 mr-2" />
+                          View
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEdit(row.id) }}>
+                          <Pencil className="h-4 w-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-error"
+                          onClick={(e) => { e.stopPropagation(); handleDelete(row.id, row.name) }}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  {/* Row 2: keywords + size */}
+                  <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
+                    <span className="text-[11px] text-muted-foreground">{row.category}</span>
+                    <span className="text-[11px] text-muted-foreground ml-auto">
+                      {row.body_length > 1024
+                        ? `${(row.body_length / 1024).toFixed(1)} KB`
+                        : `${row.body_length} B`}
+                    </span>
+                  </div>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      ) : (
       <ResponsiveTable
         columns={[
           {
@@ -392,6 +460,7 @@ anti_triggers:
           },
         ]}
       />
+      )}
 
       {/* Pagination */}
       <Pagination

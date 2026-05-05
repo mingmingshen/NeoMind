@@ -170,7 +170,7 @@ impl ExtensionMetricsCollector {
 
             // Check if we should collect metrics for this extension based on its collect_interval
             let should_collect = {
-                let mut states = self.extension_states.write().unwrap();
+                let mut states = self.extension_states.write().expect("extension_states lock poisoned");
                 let state = states.entry(extension_id.clone()).or_insert_with(|| {
                     // Initialize state from extension config
                     let interval = Self::get_collect_interval(&info);

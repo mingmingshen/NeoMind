@@ -270,7 +270,7 @@ impl StructureAnalyzer {
             .iter()
             .map(|(path, info)| {
                 let data_type = if info.data_types.len() == 1 {
-                    info.data_types.iter().next().unwrap().clone()
+                    info.data_types.iter().next().expect("data_types non-empty verified above").clone()
                 } else if info.data_types.is_empty() {
                     InferredType::Unknown
                 } else {

@@ -1,11 +1,14 @@
 import { useTranslation } from "react-i18next"
 import { Badge } from "@/components/ui/badge"
+import { Card } from "@/components/ui/card"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { ResponsiveTable } from "@/components/shared"
 import { Eye, Pencil, Trash2, Download, MoreVertical, Cpu, Database, Activity } from "lucide-react"
 import type { DeviceType } from "@/types"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { TransformsBadge } from "@/components/automation"
+import { useIsMobile } from "@/hooks/useMobile"
 
 interface DeviceTypeListProps {
   deviceTypes: DeviceType[]
@@ -36,6 +39,7 @@ export function DeviceTypeList({
 }: DeviceTypeListProps) {
   const { t } = useTranslation(['common', 'devices'])
   const { toast } = useToast()
+  const isMobile = useIsMobile()
 
   // Export single device type as JSON file
   const handleExport = async (deviceType: DeviceType) => {
@@ -63,6 +67,78 @@ export function DeviceTypeList({
       {/* Dialogs - addTypeDialog is controlled by parent PageTabs actions */}
       {addTypeDialog}
 
+      {isMobile ? (
+        <div className="space-y-2">
+          {paginatedDeviceTypes.map((dt) => (
+            <Card
+              key={dt.device_type}
+              className="overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all"
+              onClick={() => onViewDetails(dt)}
+            >
+              <div className="px-3 py-2.5">
+                {/* Row 1: icon + name + stats + actions */}
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-info-light text-info">
+                    <Database className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{dt.name}</div>
+                  </div>
+                  {/* Compact stats: icon + count */}
+                  <span className="flex items-center gap-0.5 text-[11px] text-info shrink-0">
+                    <Activity className="h-3 w-3" />
+                    {dt.metrics?.length ?? dt.metric_count ?? 0}
+                  </span>
+                  <span className="flex items-center gap-0.5 text-[11px] text-accent-purple shrink-0">
+                    <Cpu className="h-3 w-3" />
+                    {dt.commands?.length ?? dt.command_count ?? 0}
+                  </span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                      <button className="p-1 rounded-md hover:bg-muted shrink-0">
+                        <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onViewDetails(dt) }}>
+                        <Eye className="h-4 w-4 mr-2" />
+                        {t('devices:types.actions.view')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExport(dt) }}>
+                        <Download className="h-4 w-4 mr-2" />
+                        {t('devices:types.actions.export')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(dt) }}>
+                        <Pencil className="h-4 w-4 mr-2" />
+                        {t('common:edit')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-error"
+                        onClick={(e) => { e.stopPropagation(); onDelete(dt.device_type) }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        {t('common:delete')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                {/* Row 2: device_type code + description */}
+                <div className="flex items-center gap-1.5 mt-1 ml-[40px]">
+                  <code className="text-[10px] text-muted-foreground font-mono shrink-0">{dt.device_type}</code>
+                  {dt.description && (
+                    <>
+                      <span className="text-[10px] text-muted-foreground">·</span>
+                      <span className="text-[10px] text-muted-foreground truncate min-w-0">
+                        {dt.description}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
       <ResponsiveTable
         columns={[
           {
@@ -192,6 +268,7 @@ export function DeviceTypeList({
           },
         ]}
       />
+      )}
     </>
   )
 }

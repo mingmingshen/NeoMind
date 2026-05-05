@@ -84,6 +84,116 @@ export function AgentsList({
 
   return (
     <>
+      {isMobile ? (
+        <div className="space-y-2">
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} className="overflow-hidden border-border">
+                <div className="p-3 space-y-2">
+                  <Skeleton className="h-5 w-1/3" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
+              </Card>
+            ))
+          ) : agents.length === 0 ? (
+            <EmptyStateInline title={t('agents:noAgents')} colSpan={1} />
+          ) : (
+            paginatedAgents.map((agent) => {
+              const statusConfig = STATUS_CONFIG[agent.status] || STATUS_CONFIG.Paused
+              return (
+                <Card
+                  key={agent.id}
+                  className={cn(
+                    "overflow-hidden border-border shadow-sm active:scale-[0.99] transition-all",
+                    agent.status === 'Paused' && "opacity-50"
+                  )}
+                >
+                  <div className="px-3 py-2.5">
+                    {/* Row 1: icon + name + switch + actions */}
+                    <div className="flex items-center gap-2.5">
+                      <div className={cn(
+                        "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                        agent.status === 'Active' || agent.status === 'Executing'
+                          ? "bg-accent-purple-light text-accent-purple"
+                          : "bg-muted text-muted-foreground"
+                      )}>
+                        <Bot className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm truncate">{agent.name}</div>
+                      </div>
+                      <Switch
+                        checked={agent.status === 'Active' || agent.status === 'Executing'}
+                        onCheckedChange={() => onToggleStatus(agent)}
+                        disabled={agent.status === 'Executing'}
+                        className="scale-75"
+                      />
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button className="p-1 rounded-md hover:bg-muted">
+                            <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40">
+                          <DropdownMenuItem onClick={() => onEdit(agent)}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            {t('common:edit')}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => onExecute(agent)}
+                            disabled={agent.status === 'Executing'}
+                          >
+                            <Play className="mr-2 h-4 w-4" />
+                            {t('agents:execute')}
+                          </DropdownMenuItem>
+                          {onViewMemory && (
+                            <DropdownMenuItem onClick={() => onViewMemory(agent.id, agent.name)}>
+                              <Brain className="mr-2 h-4 w-4" />
+                              {t('agents:viewMemory')}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
+                          {onViewExecutions && (
+                            <DropdownMenuItem onClick={() => onViewExecutions(agent)}>
+                              <History className="mr-2 h-4 w-4" />
+                              {t('agents:viewExecutions')}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            onClick={() => onDelete(agent)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {t('common:delete')}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    {/* Row 2: stats + last execution */}
+                    <div className="flex items-center gap-2 mt-1.5 ml-[42px]">
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <Activity className="h-3 w-3 text-muted-foreground" />
+                        <span className="font-medium">{agent.execution_count}</span>
+                        <CheckCircle2 className="h-3 w-3 text-success" />
+                        <span className="font-medium text-success">{agent.success_count}</span>
+                        {agent.error_count > 0 && (
+                          <>
+                            <XCircle className="h-3 w-3 text-error" />
+                            <span className="font-medium text-error">{agent.error_count}</span>
+                          </>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-muted-foreground ml-auto">
+                        {formatTimestamp(agent.last_execution_at || undefined)}
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+              )
+            })
+          )}
+        </div>
+      ) : (
       <Card className="overflow-hidden">
         <Table>
           <TableHeader>
@@ -256,6 +366,7 @@ export function AgentsList({
           </TableBody>
         </Table>
       </Card>
+      )}
 
       {agents.length > ITEMS_PER_PAGE && (
         <div className="px-4 pt-4 border-t">

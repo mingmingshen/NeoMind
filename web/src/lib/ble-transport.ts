@@ -129,7 +129,6 @@ class WebBluetoothTransport implements BleTransport {
 
     this.bleDevice = selected
     const deviceName = selected.name || 'Unknown'
-    console.log(`[BLE] WebBluetooth selected: name="${deviceName}", id="${selected.id}"`)
     return [{
       id: selected.id,
       name: deviceName,
@@ -148,19 +147,15 @@ class WebBluetoothTransport implements BleTransport {
 
     const gatt = this.bleDevice.gatt
     if (gatt.connected) {
-      console.log('[BLE] GATT already connected, disconnecting first...')
       try { gatt.disconnect() } catch { /* ignore */ }
       await new Promise(r => setTimeout(r, 800))
     }
 
-    console.log('[BLE] Connecting GATT...')
     const server = await gatt.connect()
-    console.log('[BLE] GATT connected, discovering service...')
 
     // Direct UUID lookup to bypass Chrome's GATT cache
     const service = await (server as any).getPrimaryService(BLE_PROV_SERVICE_UUID)
     this.characteristic = await (service as any).getCharacteristic(BLE_CHAR_MQTT)
-    console.log('[BLE] Characteristic acquired')
 
     if (!this.characteristic) {
       throw new Error('Config characteristic not found on device')

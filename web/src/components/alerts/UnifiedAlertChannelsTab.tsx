@@ -502,18 +502,18 @@ export function UnifiedAlertChannelsTab({
     return (
       <>
         {/* Header with back button */}
-        <div className="flex items-center gap-4 mb-4">
-          <Button variant="ghost" size="sm" onClick={() => setView('list')} className="gap-1">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4">
+          <Button variant="ghost" size="sm" onClick={() => setView('list')} className="gap-1 self-start -ml-2">
             <ArrowLeft className="h-4 w-4" />
             {t('plugins:llm.back')}
           </Button>
           <div className="flex items-center gap-3">
-            <div className={cn("flex items-center justify-center w-10 h-10 rounded-lg", info.iconBg)}>
+            <div className={cn("flex items-center justify-center w-10 h-10 rounded-lg shrink-0", info.iconBg)}>
               {info.icon}
             </div>
-            <div>
-              <h2 className="text-2xl font-bold">{info.name}</h2>
-              <p className="text-sm text-muted-foreground">{selectedType.description}</p>
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-2xl font-bold truncate">{info.name}</h2>
+              <p className="text-sm text-muted-foreground line-clamp-2">{selectedType.description}</p>
             </div>
           </div>
         </div>
@@ -553,9 +553,9 @@ export function UnifiedAlertChannelsTab({
                 >
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <CardTitle className="text-base">{instance.name}</CardTitle>
+                          <CardTitle className="text-base truncate">{instance.name}</CardTitle>
                           {instance.enabled && (
                             <Badge variant="default" className="text-xs">{t('alerts:enabled')}</Badge>
                           )}

@@ -153,7 +153,7 @@ export function PreferencesTab() {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Language */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <Label className="text-sm font-medium">
                 {t("settings:language")}
@@ -166,7 +166,7 @@ export function PreferencesTab() {
               value={preferences.language}
               onValueChange={(v) => updatePreference("language", v as Language)}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -191,7 +191,7 @@ export function PreferencesTab() {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Time Format */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <Label className="text-sm font-medium">
                 {t("settings:timeFormat")}
@@ -204,7 +204,7 @@ export function PreferencesTab() {
               value={preferences.timeFormat}
               onValueChange={(v) => updatePreference("timeFormat", v as TimeFormat)}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -219,7 +219,7 @@ export function PreferencesTab() {
 
           {/* System Timezone */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div className="flex-1">
                 <Label className="text-sm font-medium">
                   {t("settings:systemTimezone")}
@@ -249,7 +249,7 @@ export function PreferencesTab() {
                   }}
                   disabled={timezoneLoading}
                 >
-                  <SelectTrigger className="w-[280px]">
+                  <SelectTrigger className="w-full sm:w-[280px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

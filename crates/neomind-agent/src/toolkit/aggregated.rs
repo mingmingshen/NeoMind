@@ -2568,7 +2568,7 @@ impl MessageTool {
                 .take(limit)
                 .map(|m| {
                     if detailed {
-                        serde_json::to_value(m).unwrap()
+                        serde_json::to_value(m).expect("skill metadata serialization should not fail")
                     } else {
                         serde_json::json!({
                             "id": m.id,
@@ -3568,7 +3568,7 @@ Tips: Common pitfalls and best practices."#
                 let mut registry_guard = self.registry.write().await;
                 match registry_guard.add_user_skill(content) {
                     Ok(id) => {
-                        let skill = registry_guard.get(&id).unwrap();
+                        let skill = registry_guard.get(&id).expect("skill was just added to registry");
                         self.persist(&id, content);
                         Ok(ToolOutput::success(serde_json::json!({
                             "id": skill.metadata.id,
@@ -3593,7 +3593,7 @@ Tips: Common pitfalls and best practices."#
                 let mut registry_guard = self.registry.write().await;
                 match registry_guard.update_user_skill(id, content) {
                     Ok(()) => {
-                        let skill = registry_guard.get(id).unwrap();
+                        let skill = registry_guard.get(id).expect("skill was just updated in registry");
                         self.persist(id, content);
                         Ok(ToolOutput::success(serde_json::json!({
                             "id": skill.metadata.id,

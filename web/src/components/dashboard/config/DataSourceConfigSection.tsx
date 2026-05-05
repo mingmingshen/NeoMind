@@ -197,7 +197,7 @@ export function DataSourceConfigSection({
             <p className="text-xs text-muted-foreground">
               Bind this component to a data source for real-time updates
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {allowedTypes.includes('device') && (
                 <Button
                   variant="outline"

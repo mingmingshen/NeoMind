@@ -1014,7 +1014,7 @@ async fn handle_ws_socket(
 
                                         if needs_switch {
                                             // Switch to requested session
-                                            let req_id = requested_session_id.as_ref().unwrap();
+                                            let req_id = requested_session_id.as_ref().expect("requested_session_id validated in needs_switch check");
                                             {
                                                 let mut write_guard = current_session_id.write().await;
                                                 *write_guard = Some(req_id.clone());

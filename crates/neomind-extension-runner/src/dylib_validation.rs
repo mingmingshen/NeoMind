@@ -24,7 +24,7 @@ pub enum ValidationError {
     InvalidFormat(String),
 
     #[error("macOS LC_ID_DYLIB validation failed: {0}")]
-    InvalidDylibId(#[allow(dead_code)] String),
+    InvalidDylibId(String),
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),

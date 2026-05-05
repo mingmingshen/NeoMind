@@ -85,10 +85,10 @@ pub async fn serve_asset(Path(path): Path<String>) -> impl IntoResponse {
             };
 
             let mut headers = HeaderMap::new();
-            headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(&mime).unwrap());
+            headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(&mime).unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream")));
             headers.insert(
                 header::CACHE_CONTROL,
-                HeaderValue::from_str(cache_control).unwrap(),
+                HeaderValue::from_str(cache_control).unwrap_or_else(|_| HeaderValue::from_static("public, max-age=3600")),
             );
 
             (headers, file.data.to_vec()).into_response()

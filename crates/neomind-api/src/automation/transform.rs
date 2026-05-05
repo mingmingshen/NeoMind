@@ -165,7 +165,7 @@ impl JsTransformExecutor {
 
                         // Try to find extension_id (single or double quoted)
                         if after_open[parse_pos..].find(['\'', '"']).is_some() {
-                            let quote_char = after_open.chars().nth(parse_pos).unwrap();
+                            let quote_char = after_open.chars().nth(parse_pos).expect("parse_pos within bounds verified by find");
                             let ext_id_start = parse_pos + 1;
                             parse_pos = ext_id_start;
 
@@ -195,7 +195,7 @@ impl JsTransformExecutor {
 
                                 // Find command quote
                                 if after_open[parse_pos..].find(['\'', '"']).is_some() {
-                                    let cmd_quote_char = after_open.chars().nth(parse_pos).unwrap();
+                                    let cmd_quote_char = after_open.chars().nth(parse_pos).expect("parse_pos within bounds verified by find");
                                     let cmd_start = parse_pos + 1;
                                     parse_pos = cmd_start;
 
@@ -262,7 +262,7 @@ impl JsTransformExecutor {
                                                 || next_char == Some('"')
                                             {
                                                 // String parameter - could be nested JSON
-                                                let quote = next_char.unwrap();
+                                                let quote = next_char.expect("quote position verified by find");
                                                 parse_pos += 1;
                                                 let str_start = parse_pos;
 
@@ -1631,7 +1631,7 @@ impl TransformEngine {
                 self.extract_value_by_path(root, &path)
                     .map(|v| {
                         if v.is_string() {
-                            v.as_str().unwrap().to_string()
+                            v.as_str().unwrap_or_default().to_string()
                         } else {
                             v.to_string()
                         }
@@ -1813,7 +1813,7 @@ impl TransformEngine {
             AggregationFunc::Last => values[values.len() - 1],
             AggregationFunc::Median => {
                 let mut sorted = values.to_vec();
-                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 sorted[sorted.len() / 2]
             }
             AggregationFunc::StdDev => {

@@ -25,6 +25,8 @@ export interface PageLayoutProps {
   fixedActionsOnMobile?: boolean
   /** Whether to remove scroll container padding (for full-bleed children like detail views) */
   noPadding?: boolean
+  /** Whether page has a bottom tab navigation bar (mobile) - adds extra bottom padding */
+  hasBottomNav?: boolean
 }
 
 const maxWidthClass = {
@@ -65,6 +67,7 @@ export function PageLayout({
   hideFooterOnMobile = false,
   fixedActionsOnMobile = false,
   noPadding = false,
+  hasBottomNav = false,
 }: PageLayoutProps) {
   const isMobile = useIsMobile()
 
@@ -98,7 +101,11 @@ export function PageLayout({
           className={cn(
             'flex-1 flex flex-col overflow-auto',
             !noPadding && 'px-4 sm:px-6 md:px-8',
-            !noPadding && (showFooter ? 'pb-24 sm:pb-28' : 'pb-4 sm:pb-6')
+            !noPadding && (showFooter ? 'pb-24 sm:pb-28' : 'pb-4 sm:pb-6'),
+            // Extra bottom padding for mobile bottom nav bar
+            hasBottomNav && isMobile && 'pb-16',
+            // Safe area bottom padding for notched devices
+            'safe-bottom'
           )}
           data-page-scroll-container
         >
@@ -108,13 +115,17 @@ export function PageLayout({
         </div>
       </div>
       {/* Fixed footer with glass morphism effect */}
-      {showFooter && (
-        <div className="fixed bottom-0 left-0 right-0 bg-surface-glass backdrop-blur-xl border-t border-glass-border">
+      {showFooter ? (
+        <div className="fixed bottom-0 left-0 right-0 bg-surface-glass backdrop-blur-xl border-t border-glass-border safe-bottom">
           <div className={cn('w-full px-4 py-3 sm:px-6 sm:py-4 md:px-8', maxWidthClass[maxWidth], className)}>
             {footer}
           </div>
         </div>
-      )}
+      ) : isMobile && hideFooterOnMobile && footer ? (
+        /* Hidden mount point for footer content (e.g., Pagination) so hooks like
+           useWindowScrollLoad still run for mobile infinite scroll */
+        <div className="hidden">{footer}</div>
+      ) : null}
     </div>
   )
 }

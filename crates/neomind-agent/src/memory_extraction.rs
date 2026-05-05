@@ -697,7 +697,7 @@ mod tests {
             std::pin::Pin<Box<dyn Stream<Item = StreamChunk> + Send>>,
             neomind_core::llm::backend::LlmError,
         > {
-            unimplemented!()
+            Err(neomind_core::llm::backend::LlmError::InvalidInput("streaming not supported by mock".into()))
         }
 
         fn max_context_length(&self) -> usize {
