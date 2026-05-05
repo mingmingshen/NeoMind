@@ -222,6 +222,17 @@
     "extensions": "Extensions",
     "settings": "Settings"
   },
+  "navShort": {
+    "dashboard": "Chat",
+    "visual-dashboard": "Dashboard",
+    "devices": "Devices",
+    "automation": "Auto",
+    "agents": "Agents",
+    "data": "Data",
+    "messages": "Messages",
+    "extensions": "Extensions",
+    "settings": "Settings"
+  },
   "add": "Add",
   "edit": "Edit",
   "delete": "Delete",

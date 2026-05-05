@@ -31,6 +31,9 @@ body,
   /* Chat page top padding: TopNav + Mobile Header + safe area */
   --chat-content-padding-top: calc(6.5rem + env(safe-area-inset-top, 0px));
 }
+.safe-bottom {
+  padding-bottom: 0px;
+}
 @supports (padding: env(safe-area-inset-bottom)) {
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -38,6 +41,15 @@ body,
   /* Safe bottom with minimal fallback for chat input */
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 12px);
+  }
+  /* Safe bottom + bottom nav bar offset (for PageTabsBottomNav) */
+  .safe-bottom-nav {
+    padding-bottom: 8rem;
+  }
+  @supports (padding: env(safe-area-inset-bottom)) {
+    .safe-bottom-nav {
+      padding-bottom: calc(8rem + env(safe-area-inset-bottom, 0px));
+    }
   }
 }
 @supports (padding: env(safe-area-inset-left)) {

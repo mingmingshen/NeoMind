@@ -73,9 +73,12 @@ export function PageTabsBar({
 
   // On mobile, only show actions bar (tabs are in bottom nav)
   if (isMobile) {
+    // Hide if no actions to show
+    if (actions.length === 0 && !actionsExtra) return null
+
     return (
-      <div className="px-4 sm:px-6 md:px-8 py-2">
-        <div className="mb-3 flex shrink-0 flex-wrap justify-start gap-2">
+      <div className="px-4 py-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           {actions.map((action) => (
             <Button
               key={action.label}
@@ -83,10 +86,10 @@ export function PageTabsBar({
               size="sm"
               onClick={action.onClick}
               disabled={action.disabled || action.loading}
-              className="h-9 text-xs px-2.5 sm:px-3"
+              className="h-8 text-xs px-2.5"
             >
               {action.icon ? (
-                <span className="mr-1.5 shrink-0 flex items-center justify-center h-4 w-4">{action.icon}</span>
+                <span className="mr-1 shrink-0 flex items-center justify-center h-3.5 w-3.5">{action.icon}</span>
               ) : null}
               <span className="whitespace-nowrap">{action.label}</span>
             </Button>
@@ -288,8 +291,8 @@ export function PageTabs({
         )}
 
         {/* Mobile: Top actions bar */}
-        {isMobile && (
-          <div className="mb-3 flex shrink-0 flex-wrap justify-start gap-2">
+        {isMobile && actions.length > 0 && (
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
             {actions.map((action) => (
               <Button
                 key={action.label}
@@ -297,12 +300,12 @@ export function PageTabs({
                 size="sm"
                 onClick={action.onClick}
                 disabled={action.disabled || action.loading}
-                className="h-9 text-xs px-2.5 sm:px-3"
+                className="h-8 text-xs px-2.5"
               >
                 {action.loading ? (
-                  <span className="mr-1.5 h-4 w-4 animate-spin">⟳</span>
+                  <span className="mr-1 h-3.5 w-3.5 animate-spin">⟳</span>
                 ) : action.icon ? (
-                  <span className="mr-1.5 shrink-0 h-4 w-4">{action.icon}</span>
+                  <span className="mr-1 shrink-0 h-3.5 w-3.5">{action.icon}</span>
                 ) : null}
                 <span className="whitespace-nowrap">{action.label}</span>
               </Button>
@@ -412,7 +415,7 @@ export function PageTabsContent({ value, activeTab, children, className }: PageT
   if (value !== activeTab) return null
 
   return (
-    <div className={cn('mt-3', className)}>
+    <div className={cn('md:mt-3', className)}>
       {children}
     </div>
   )

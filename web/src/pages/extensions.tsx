@@ -130,7 +130,7 @@ export function ExtensionsPage() {
         borderedHeader={false}
       >
         {/* Header Actions */}
-        <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+        <div className="flex flex-wrap justify-between items-center gap-2 mb-2 sm:mb-4">
           <div className="flex gap-2">
             <Button
               variant="outline"

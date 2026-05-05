@@ -222,6 +222,17 @@
     "extensions": "扩展",
     "settings": "设置"
   },
+  "navShort": {
+    "dashboard": "对话",
+    "visual-dashboard": "看板",
+    "devices": "设备",
+    "automation": "自动化",
+    "agents": "智能体",
+    "data": "数据",
+    "messages": "消息",
+    "extensions": "扩展",
+    "settings": "设置"
+  },
   "add": "添加",
   "edit": "编辑",
   "delete": "删除",

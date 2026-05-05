@@ -822,7 +822,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-row overflow-hidden pt-[calc(4rem+env(safe-area-inset-top,0px))] lg:pt-[calc(4rem+env(safe-area-inset-top,0px))]">
+    <div className="fixed inset-0 flex flex-row overflow-hidden" style={{paddingTop: 'var(--topnav-height, calc(4rem + env(safe-area-inset-top, 0px)))'}}>
       {/* Pending stream recovery dialog */}
       {pendingStream?.hasPending && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-80 backdrop-blur-sm">
@@ -903,7 +903,7 @@ export function ChatPage() {
         <button
           onClick={() => setSidebarOpen(true)}
           className="fixed left-4 z-30 h-12 w-12 rounded-full bg-foreground backdrop-blur-sm text-background shadow-lg hover:bg-foreground transition-all active:scale-95 flex items-center justify-center"
-          style={{top: 'calc(4rem + env(safe-area-inset-top, 0px) + 0.5rem)'}}
+          style={{top: 'calc(var(--topnav-height, 4rem) + 0.5rem)'}}
         >
           <MessageSquare className="h-5 w-5" />
         </button>

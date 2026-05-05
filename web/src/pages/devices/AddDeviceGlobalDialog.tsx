@@ -162,9 +162,9 @@ export function AddDeviceGlobalDialog({
           {/* Main scrollable content */}
           <FullScreenDialogMain>
             <div className={cn("max-w-2xl mx-auto py-6", isMobile ? "px-3" : "px-5 md:px-8")}>
-              {/* Mobile tab bar */}
+              {/* Mobile tab bar - grid layout for equal width */}
               {isMobile && (
-                <div className="flex gap-1 mb-6 overflow-x-auto pb-1 -mx-1 px-1">
+                <div className="grid grid-cols-3 gap-2 mb-5">
                   {TABS.map((tab) => {
                     const Icon = tab.icon
                     const isActive = activeTab === tab.value
@@ -173,14 +173,14 @@ export function AddDeviceGlobalDialog({
                         key={tab.value}
                         onClick={() => setActiveTab(tab.value)}
                         className={cn(
-                          'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all shrink-0',
+                          'flex flex-col items-center gap-1.5 py-3 rounded-lg text-xs font-medium transition-all',
                           isActive
                             ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted-30 text-muted-foreground'
+                            : 'bg-muted-30 text-muted-foreground active:bg-muted'
                         )}
                       >
-                        <Icon className="h-4 w-4" />
-                        {t(tab.labelKey)}
+                        <Icon className="h-5 w-5" />
+                        <span className="leading-tight">{t(tab.labelKey)}</span>
                       </button>
                     )
                   })}
