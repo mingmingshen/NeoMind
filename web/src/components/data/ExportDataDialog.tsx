@@ -7,14 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Download, CalendarIcon, Clock } from 'lucide-react'
+
+import { Download, CalendarIcon } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { textNano } from '@/design-system/tokens/typography'
@@ -52,75 +46,20 @@ function fileTimestamp(): string {
   return format(new Date(), 'yyyyMMdd_HHmmss')
 }
 
-/** Web-native time picker: hour/second text inputs + minute dropdown (works in Tauri) */
+/**
+ * Time Picker following shadcn/ui convention:
+ * Uses <Input type="time"> with native picker indicator hidden via CSS.
+ * Renders as a clean text input (HH:mm:ss) that works in Tauri.
+ */
 function TimePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const parts = value.split(':')
-  const hour = parts[0] || '00'
-  const minute = parts[1] || '00'
-  const second = parts[2] || '00'
-
-  const pad = (n: string) => n.padStart(2, '0')
-
-  const handleChange = (h: string, m: string, s: string) => {
-    onChange(`${pad(h)}:${pad(m)}:${pad(s)}`)
-  }
-
-  // Clamp value 0-99 for text inputs
-  const clamp = (v: string, max: number): string => {
-    const n = parseInt(v, 10)
-    if (isNaN(n)) return '00'
-    return String(Math.min(Math.max(n, 0), max))
-  }
-
-  const minuteOptions = [
-    { value: '00', label: '00' },
-    { value: '05', label: '05' },
-    { value: '10', label: '10' },
-    { value: '15', label: '15' },
-    { value: '20', label: '20' },
-    { value: '25', label: '25' },
-    { value: '30', label: '30' },
-    { value: '35', label: '35' },
-    { value: '40', label: '40' },
-    { value: '45', label: '45' },
-    { value: '50', label: '50' },
-    { value: '55', label: '55' },
-  ]
-
   return (
-    <div className="flex items-center gap-1">
-      <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <Input
-        type="text"
-        inputMode="numeric"
-        value={hour}
-        onChange={e => handleChange(e.target.value.slice(0, 2), minute, second)}
-        onBlur={() => handleChange(clamp(hour, 23), minute, second)}
-        className="h-9 w-[42px] text-center text-sm px-1"
-        placeholder="HH"
-      />
-      <span className="text-sm text-muted-foreground">:</span>
-      <Select value={minute} onValueChange={v => handleChange(hour, v, second)}>
-        <SelectTrigger className="h-9 w-[58px] text-sm">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {minuteOptions.map(opt => (
-            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <span className="text-sm text-muted-foreground">:</span>
-      <Input
-        type="text"
-        inputMode="numeric"
-        value={second}
-        onChange={e => handleChange(hour, minute, e.target.value.slice(0, 2))}
-        onBlur={() => handleChange(hour, minute, clamp(second, 59))}
-        className="h-9 w-[42px] text-center text-sm px-1"
-        placeholder="SS"
-      />
-    </div>
+    <Input
+      type="time"
+      step="1"
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="h-9 w-full text-sm appearance-none bg-background [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
+    />
   )
 }
 
