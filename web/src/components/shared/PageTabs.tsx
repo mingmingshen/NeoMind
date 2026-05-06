@@ -87,7 +87,6 @@ export function PageTabsBar({
               size="sm"
               onClick={action.onClick}
               disabled={action.disabled || action.loading}
-              className="h-8 text-xs px-2.5"
             >
               {action.icon ? (
                 <span className="mr-1 shrink-0 flex items-center justify-center h-3.5 w-3.5">{action.icon}</span>
@@ -133,7 +132,7 @@ export function PageTabsBar({
             })}
           </div>
 
-          {actions.length > 0 && (
+          {(actions.length > 0 || actionsExtra) && (
             <div className="flex shrink-0 flex-wrap gap-2">
               {actions.map((action) => (
                 <Button
@@ -301,7 +300,6 @@ export function PageTabs({
                 size="sm"
                 onClick={action.onClick}
                 disabled={action.disabled || action.loading}
-                className="h-8 text-xs px-2.5"
               >
                 {action.loading ? (
                   <span className="mr-1 h-3.5 w-3.5 animate-spin">⟳</span>
