@@ -52,60 +52,74 @@ function fileTimestamp(): string {
   return format(new Date(), 'yyyyMMdd_HHmmss')
 }
 
-/** Web-native time picker using three Select components (works in Tauri) */
+/** Web-native time picker: hour/second text inputs + minute dropdown (works in Tauri) */
 function TimePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const parts = value.split(':')
-  const hour = parseInt(parts[0] || '0', 10)
-  const minute = parseInt(parts[1] || '0', 10)
-  const second = parseInt(parts[2] || '0', 10)
+  const hour = parts[0] || '00'
+  const minute = parts[1] || '00'
+  const second = parts[2] || '00'
 
-  const pad = (n: number) => String(n).padStart(2, '0')
+  const pad = (n: string) => n.padStart(2, '0')
 
-  const handleChange = (h: number, m: number, s: number) => {
+  const handleChange = (h: string, m: string, s: string) => {
     onChange(`${pad(h)}:${pad(m)}:${pad(s)}`)
   }
 
-  // Generate option lists
-  const hours = Array.from({ length: 24 }, (_, i) => i)
-  const minutes = Array.from({ length: 60 }, (_, i) => i)
+  // Clamp value 0-99 for text inputs
+  const clamp = (v: string, max: number): string => {
+    const n = parseInt(v, 10)
+    if (isNaN(n)) return '00'
+    return String(Math.min(Math.max(n, 0), max))
+  }
 
-  const selectClass = "h-9 text-sm"
+  const minuteOptions = [
+    { value: '00', label: '00' },
+    { value: '05', label: '05' },
+    { value: '10', label: '10' },
+    { value: '15', label: '15' },
+    { value: '20', label: '20' },
+    { value: '25', label: '25' },
+    { value: '30', label: '30' },
+    { value: '35', label: '35' },
+    { value: '40', label: '40' },
+    { value: '45', label: '45' },
+    { value: '50', label: '50' },
+    { value: '55', label: '55' },
+  ]
 
   return (
     <div className="flex items-center gap-1">
       <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <Select value={String(hour)} onValueChange={v => handleChange(parseInt(v), minute, second)}>
-        <SelectTrigger className={cn(selectClass, "w-[58px]")}>
+      <Input
+        type="text"
+        inputMode="numeric"
+        value={hour}
+        onChange={e => handleChange(e.target.value.slice(0, 2), minute, second)}
+        onBlur={() => handleChange(clamp(hour, 23), minute, second)}
+        className="h-9 w-[42px] text-center text-sm px-1"
+        placeholder="HH"
+      />
+      <span className="text-sm text-muted-foreground">:</span>
+      <Select value={minute} onValueChange={v => handleChange(hour, v, second)}>
+        <SelectTrigger className="h-9 w-[58px] text-sm">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent className="max-h-[200px]">
-          {hours.map(h => (
-            <SelectItem key={h} value={String(h)}>{pad(h)}</SelectItem>
+        <SelectContent>
+          {minuteOptions.map(opt => (
+            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
           ))}
         </SelectContent>
       </Select>
       <span className="text-sm text-muted-foreground">:</span>
-      <Select value={String(minute)} onValueChange={v => handleChange(hour, parseInt(v), second)}>
-        <SelectTrigger className={cn(selectClass, "w-[58px]")}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent className="max-h-[200px]">
-          {minutes.map(m => (
-            <SelectItem key={m} value={String(m)}>{pad(m)}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <span className="text-sm text-muted-foreground">:</span>
-      <Select value={String(second)} onValueChange={v => handleChange(hour, minute, parseInt(v))}>
-        <SelectTrigger className={cn(selectClass, "w-[58px]")}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent className="max-h-[200px]">
-          {minutes.map(s => (
-            <SelectItem key={s} value={String(s)}>{pad(s)}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <Input
+        type="text"
+        inputMode="numeric"
+        value={second}
+        onChange={e => handleChange(hour, minute, e.target.value.slice(0, 2))}
+        onBlur={() => handleChange(hour, minute, clamp(second, 59))}
+        className="h-9 w-[42px] text-center text-sm px-1"
+        placeholder="SS"
+      />
     </div>
   )
 }
