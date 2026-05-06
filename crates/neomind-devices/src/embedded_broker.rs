@@ -306,18 +306,14 @@ impl EmbeddedBroker {
     }
 }
 
-/// Helper function to check if a port is available
-pub fn is_port_available(port: u16) -> bool {
-    use std::net::{IpAddr, Ipv4Addr, TcpListener};
-
-    TcpListener::bind((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port)).is_ok()
-}
-
-/// Helper function to check if MQTT broker is already running on the specified port
+/// Check if a broker is listening on the given port by attempting a TCP connect.
 ///
-/// Returns true if a service is listening on the port (port is NOT available)
+/// Uses connect (not bind) because rumqttd sets SO_REUSEADDR, which makes
+/// bind-based checks unreliable — they succeed even when the port is in use.
 pub fn is_broker_running(port: u16) -> bool {
-    !is_port_available(port)
+    use std::net::{IpAddr, Ipv4Addr, TcpStream};
+    let addr = (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
+    TcpStream::connect_timeout(&addr.into(), std::time::Duration::from_millis(200)).is_ok()
 }
 
 #[cfg(test)]

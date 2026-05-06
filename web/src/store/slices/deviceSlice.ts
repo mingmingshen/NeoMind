@@ -449,10 +449,11 @@ export const createDeviceSlice: StateCreator<
 
   // Update device status from real-time events
   updateDeviceStatus: (deviceId: string, status: 'online' | 'offline') => {
+    const now = new Date().toISOString()
     set((state) => ({
       devices: state.devices.map((device) =>
         device.id === deviceId || device.device_id === deviceId
-          ? { ...device, status }
+          ? { ...device, status, online: status === 'online', last_seen: now }
           : device
       ),
     }))
@@ -461,7 +462,7 @@ export const createDeviceSlice: StateCreator<
       selectedDevice:
         state.selectedDevice?.id === deviceId ||
         state.selectedDevice?.device_id === deviceId
-          ? { ...state.selectedDevice, status }
+          ? { ...state.selectedDevice, status, online: status === 'online', last_seen: now }
           : state.selectedDevice,
     }))
   },
