@@ -7,6 +7,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Download, CalendarIcon, Clock } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
@@ -43,6 +50,64 @@ function sanitizeFilename(s: string): string {
 /** Get current time as filename-safe string: "YYYYMMDD_HHmmss" */
 function fileTimestamp(): string {
   return format(new Date(), 'yyyyMMdd_HHmmss')
+}
+
+/** Web-native time picker using three Select components (works in Tauri) */
+function TimePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const parts = value.split(':')
+  const hour = parseInt(parts[0] || '0', 10)
+  const minute = parseInt(parts[1] || '0', 10)
+  const second = parseInt(parts[2] || '0', 10)
+
+  const pad = (n: number) => String(n).padStart(2, '0')
+
+  const handleChange = (h: number, m: number, s: number) => {
+    onChange(`${pad(h)}:${pad(m)}:${pad(s)}`)
+  }
+
+  // Generate option lists
+  const hours = Array.from({ length: 24 }, (_, i) => i)
+  const minutes = Array.from({ length: 60 }, (_, i) => i)
+
+  const selectClass = "h-9 text-sm"
+
+  return (
+    <div className="flex items-center gap-1">
+      <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      <Select value={String(hour)} onValueChange={v => handleChange(parseInt(v), minute, second)}>
+        <SelectTrigger className={cn(selectClass, "w-[58px]")}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="max-h-[200px]">
+          {hours.map(h => (
+            <SelectItem key={h} value={String(h)}>{pad(h)}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <span className="text-sm text-muted-foreground">:</span>
+      <Select value={String(minute)} onValueChange={v => handleChange(hour, parseInt(v), second)}>
+        <SelectTrigger className={cn(selectClass, "w-[58px]")}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="max-h-[200px]">
+          {minutes.map(m => (
+            <SelectItem key={m} value={String(m)}>{pad(m)}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <span className="text-sm text-muted-foreground">:</span>
+      <Select value={String(second)} onValueChange={v => handleChange(hour, minute, parseInt(v))}>
+        <SelectTrigger className={cn(selectClass, "w-[58px]")}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="max-h-[200px]">
+          {minutes.map(s => (
+            <SelectItem key={s} value={String(s)}>{pad(s)}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
 }
 
 /** Truncate value string to Excel cell limit */
@@ -228,17 +293,17 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
           {/* Start Time Range */}
           <div>
             <label className="text-xs text-muted-foreground mb-1.5 block">{t('export.startTime')}</label>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     className={cn(
-                      "h-9 justify-start text-left text-sm font-normal",
+                      "h-9 justify-start text-left text-sm font-normal shrink-0",
                       !startDate && "text-muted-foreground"
                     )}
                   >
-                    <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
+                    <CalendarIcon className="mr-1.5 h-3.5 w-3.5 shrink-0" />
                     {startDate ? format(startDate, 'yyyy-MM-dd') : 'Pick date'}
                   </Button>
                 </PopoverTrigger>
@@ -251,33 +316,24 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
                   />
                 </PopoverContent>
               </Popover>
-              <div className="relative">
-                <Clock className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  type="time"
-                  step="1"
-                  value={startTime}
-                  onChange={e => setStartTime(e.target.value)}
-                  className="h-9 text-sm pl-7 w-[120px]"
-                />
-              </div>
+              <TimePicker value={startTime} onChange={setStartTime} />
             </div>
           </div>
 
           {/* End Time Range */}
           <div>
             <label className="text-xs text-muted-foreground mb-1.5 block">{t('export.endTime')}</label>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     className={cn(
-                      "h-9 justify-start text-left text-sm font-normal",
+                      "h-9 justify-start text-left text-sm font-normal shrink-0",
                       !endDate && "text-muted-foreground"
                     )}
                   >
-                    <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
+                    <CalendarIcon className="mr-1.5 h-3.5 w-3.5 shrink-0" />
                     {endDate ? format(endDate, 'yyyy-MM-dd') : 'Pick date'}
                   </Button>
                 </PopoverTrigger>
@@ -290,16 +346,7 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
                   />
                 </PopoverContent>
               </Popover>
-              <div className="relative">
-                <Clock className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  type="time"
-                  step="1"
-                  value={endTime}
-                  onChange={e => setEndTime(e.target.value)}
-                  className="h-9 text-sm pl-7 w-[120px]"
-                />
-              </div>
+              <TimePicker value={endTime} onChange={setEndTime} />
             </div>
           </div>
 
