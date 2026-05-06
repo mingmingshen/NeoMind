@@ -51,8 +51,43 @@ function truncateForExcel(val: string): string {
   return val.slice(0, EXCEL_CELL_MAX) + '...[truncated]'
 }
 
-function isBinaryDataType(dataType: string): boolean {
-  return dataType === 'binary'
+/** Check if a value looks like base64 image data */
+function isBase64Image(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  return value.startsWith('data:image/') || value.startsWith('data:application/octet-stream')
+}
+
+/** Check if a string is likely base64-encoded binary data */
+function isBase64Binary(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  // Long strings that match base64 pattern (no data: prefix)
+  if (value.length < 100) return false
+  return /^[A-Za-z0-9+/=\s]+$/.test(value.slice(0, 200))
+}
+
+/** Detect if the data contains image/binary content that should go to ZIP */
+function detectImageContent(data: Array<{ value: unknown }>): boolean {
+  if (data.length === 0) return false
+  // Check first few data points
+  const sample = data.slice(0, 5)
+  return sample.some(p => isBase64Image(p.value))
+}
+
+/** Extract MIME type and extension from data URI or guess from base64 */
+function parseImageData(value: string): { mime: string; ext: string; base64: string } {
+  const dataUriMatch = value.match(/^data:([^;]+);base64,(.+)$/s)
+  if (dataUriMatch) {
+    const mime = dataUriMatch[1]
+    const base64 = dataUriMatch[2]
+    const extMap: Record<string, string> = {
+      'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg',
+      'image/gif': 'gif', 'image/webp': 'webp', 'image/bmp': 'bmp',
+      'image/svg+xml': 'svg',
+    }
+    return { mime, ext: extMap[mime] || 'bin', base64 }
+  }
+  // Raw base64 — assume png
+  return { mime: 'image/png', ext: 'png', base64: value }
 }
 
 export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialogProps) {
@@ -68,8 +103,6 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
   const [endTime, setEndTime] = useState(format(now, 'HH:mm:ss'))
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const isBinary = source ? isBinaryDataType(source.data_type) : false
 
   // Reset state when source changes
   const handleOpenChange = useCallback((nextOpen: boolean) => {
@@ -125,20 +158,23 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
         })
       }
 
-      // Generate file
+      // Generate file — auto-detect image content from actual data values
       const baseName = `${sanitizeFilename(source.source_display_name)}_${sanitizeFilename(source.field_display_name)}_${fileTimestamp()}`
+      const isImageContent = detectImageContent(data)
 
-      if (isBinary) {
+      if (isImageContent || source.data_type === 'binary') {
         await generateZip(baseName, data, source)
+        toast({
+          title: t('export.success'),
+          description: `${baseName}.zip`,
+        })
       } else {
         await generateExcel(baseName, data)
+        toast({
+          title: t('export.success'),
+          description: `${baseName}.xlsx`,
+        })
       }
-
-      // Success toast
-      toast({
-        title: t('export.success'),
-        description: `${baseName}${isBinary ? '.zip' : '.xlsx'}`,
-      })
 
       // Close dialog on success
       handleOpenChange(false)
@@ -151,7 +187,7 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
         setExporting(false)
       }
     }
-  }, [source, startDate, startTime, endDate, endTime, isBinary, t, toast, handleOpenChange])
+  }, [source, startDate, startTime, endDate, endTime, t, toast, handleOpenChange])
 
   return (
     <UnifiedFormDialog
@@ -184,8 +220,8 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
               <Badge variant="secondary" className={textNano}>{source.data_type}</Badge>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">{isBinary ? t('export.format.zip') : t('export.format.excel')}</p>
-              <p className="text-sm">{isBinary ? '.zip' : '.xlsx'}</p>
+              <p className="text-xs text-muted-foreground">{t('export.format.auto')}</p>
+              <p className="text-sm">{t('export.format.autoDesc')}</p>
             </div>
           </div>
 
@@ -304,13 +340,14 @@ async function generateExcel(
   XLSX.writeFile(wb, `${baseName}.xlsx`)
 }
 
-/** Generate and download a ZIP file */
+/** Generate and download a ZIP file with decoded images */
 async function generateZip(
   baseName: string,
   data: Array<{ timestamp: number; value: unknown; quality: number | null }>,
   source: UnifiedDataSourceInfo,
 ) {
   const zip = new JSZip()
+  let imageCount = 0
 
   // manifest.json with metadata
   zip.file('manifest.json', JSON.stringify({
@@ -320,15 +357,49 @@ async function generateZip(
     data_type: source.data_type,
     point_count: data.length,
     exported_at: new Date().toISOString(),
-    note: 'Binary data export is partially supported. Actual file contents are placeholders.',
   }, null, 2))
 
-  // data.csv for quick reference
-  const csvRows = ['Timestamp,Value,Quality']
-  for (const p of data) {
-    const val = typeof p.value === 'object' ? JSON.stringify(p.value) : String(p.value ?? '')
+  // Process each data point
+  for (let i = 0; i < data.length; i++) {
+    const p = data[i]
+    const valStr = typeof p.value === 'string' ? p.value : JSON.stringify(p.value)
+    const timeStr = formatTimestamp(p.timestamp).replace(/[: ]/g, '-')
+
+    if (isBase64Image(p.value) || isBase64Binary(p.value)) {
+      // Decode base64 image → actual file
+      const parsed = parseImageData(valStr)
+      const filename = `images/${String(i + 1).padStart(4, '0')}_${timeStr}.${parsed.ext}`
+      // Convert base64 to binary
+      const binaryStr = atob(parsed.base64)
+      const bytes = new Uint8Array(binaryStr.length)
+      for (let j = 0; j < binaryStr.length; j++) {
+        bytes[j] = binaryStr.charCodeAt(j)
+      }
+      zip.file(filename, bytes)
+      imageCount++
+    } else {
+      // Non-image data point → CSV reference
+      const q = p.quality !== null ? `${(p.quality * 100).toFixed(0)}%` : '-'
+      const shortVal = valStr.length > 200 ? valStr.slice(0, 200) + '...' : valStr
+      // Will be collected into data.csv below
+    }
+  }
+
+  // data.csv with index mapping + non-image data
+  const csvRows = ['Index,Filename,Timestamp,Quality,Size']
+  for (let i = 0; i < data.length; i++) {
+    const p = data[i]
+    const valStr = typeof p.value === 'string' ? p.value : JSON.stringify(p.value)
+    const timeStr = formatTimestamp(p.timestamp).replace(/[: ]/g, '-')
     const q = p.quality !== null ? `${(p.quality * 100).toFixed(0)}%` : '-'
-    csvRows.push(`${formatTimestamp(p.timestamp)},${val},${q}`)
+
+    if (isBase64Image(p.value) || isBase64Binary(p.value)) {
+      const parsed = parseImageData(valStr)
+      const filename = `${String(i + 1).padStart(4, '0')}_${timeStr}.${parsed.ext}`
+      csvRows.push(`${i + 1},${filename},${formatTimestamp(p.timestamp)},${q},${parsed.base64.length} bytes`)
+    } else {
+      csvRows.push(`${i + 1},-,${formatTimestamp(p.timestamp)},${q},"${valStr.replace(/"/g, '""')}"`)
+    }
   }
   zip.file('data.csv', csvRows.join('\n'))
 

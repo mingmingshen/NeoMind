@@ -44,6 +44,8 @@
     "truncated": "显示 {{count}} / {{total}} 条数据",
     "format.excel": "Excel (.xlsx)",
     "format.zip": "ZIP (.zip)",
+    "format.auto": "自动检测",
+    "format.autoDesc": "根据内容自动选择格式",
     "binaryWarning": "二进制数据导出仅部分支持 — 实际文件内容可能不可用。",
     "success": "下载完成 — 已保存到下载文件夹"
   }
