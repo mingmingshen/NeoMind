@@ -28,7 +28,7 @@
     "supportsThinking": "Supports thinking",
     "addImage": "Add image",
     "notSupportImage": "Current model doesn't support images",
-    "visionError": "The current model doesn't support image input.\n\nPlease select a model that supports vision (like qwen3-vl), or remove the image and try again.\n\nModels that support vision show the 👁️ icon."
+    "visionError": "The current model doesn't support image input.\n\nPlease select a model that supports vision (like qwen3.5:4b), or remove the image and try again.\n\nModels that support vision show the 👁️ icon."
   },
   "thinking": {
     "title": "Thinking process",

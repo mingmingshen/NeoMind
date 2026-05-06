@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Remote Instance Shows Offline** — Instance selector always showed offline for remote instances because `isAuthenticated` only checked JWT token, not API key. Fixed `checkAuthStatus` to recognize API key as valid authentication, enabling WebSocket connections for remote instances
 - **Login Page Stuck on Remote Instance** — Switching to a remote instance with API key from login page stayed on login instead of redirecting to dashboard. Login page now detects API key auth and redirects immediately
 - **Stale Instance Cache After Edit** — Editing an instance (e.g. clearing API key) updated the Zustand store but not the localStorage cache (`neomind_instance_cache`), causing login page to use stale data. Fixed: all instance CRUD operations now sync to localStorage cache immediately
+- **API Key Stored in Plaintext in Browser** — Backend now returns masked API keys (e.g. `nmk_abc1****`) in list/get/update responses. Full keys are held only in JavaScript memory during the add/edit session and never persisted to localStorage. Edit form shows masked key with option to clear or replace
+- **Failed Switch Doesn't Revert** — Dismissing the error overlay after a failed instance switch left `currentInstanceId` pointing to the unreachable target, causing reconnection attempts on next refresh. Fixed: `clearSwitchingError` now reverts to the previous instance
+- **revertSwitch Could Get Stuck** — If the instance list was empty after switching to a remote instance, reverting failed silently. Fixed: `revertSwitch` now falls back to `getCachedInstances()` when the in-memory list is empty
+- **Duplicated localStorage Key Constants** — Instance-related localStorage keys were defined independently in `instanceSlice.ts` and `login.tsx`. Extracted to shared `instance-constants.ts` module
 
 ### Changed
 

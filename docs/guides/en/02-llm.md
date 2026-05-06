@@ -13,7 +13,7 @@ The LLM module implements a unified LLM runtime interface, supporting multiple l
 
 | Backend | Feature | Status | Default Model |
 |------|---------|------|----------|
-| **Ollama** | `ollama` | ✅ Default | `qwen3-vl:2b` |
+| **Ollama** | `ollama` | ✅ Default | `qwen3.5:4b` |
 | **llama.cpp** | `llamacpp` | ✅ | (loaded at server startup) |
 | **OpenAI** | `openai` | ✅ | `gpt-4o-mini` |
 | **Anthropic** | `anthropic` | ✅ | `claude-3-5-sonnet-20241022` |
@@ -82,7 +82,7 @@ POST /api/chat
 Content-Type: application/json
 
 {
-    "model": "qwen3-vl:2b",
+    "model": "qwen3.5:4b",
     "messages": [
         { "role": "user", "content": "Hello" }
     ],
@@ -288,7 +288,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Method 1: Direct creation
     let config = OllamaConfig {
         endpoint: "http://localhost:11434".to_string(),
-        model: "qwen3-vl:2b".to_string(),
+        model: "qwen3.5:4b".to_string(),
         timeout_secs: 120,
         stream: true,
         options: Default::default(),
@@ -299,7 +299,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Method 2: Using factory
     let runtime = create_backend("ollama", &serde_json::json!({
         "endpoint": "http://localhost:11434",
-        "model": "qwen3-vl:2b"
+        "model": "qwen3.5:4b"
     }))?;
 
     Ok(())
@@ -417,7 +417,7 @@ NeoMind automatically detects vision capabilities based on model name patterns:
 | OpenAI | `gpt-4o`, `gpt-4-vision`, `gpt-4-turbo` |
 | Anthropic | `claude-3`, `claude-4` |
 | Google | `gemini` |
-| Qwen | `qwen-vl`, `qwen2.5-vl`, `qwen3-vl`, `qwen-max`, `qwen-plus` |
+| Qwen | `qwen-vl`, `qwen2.5-vl`, `qwen3-vl`, `qwen3.5`, `qwen-max`, `qwen-plus` |
 | DeepSeek | `deepseek-vl` |
 | GLM | `glm-4v` |
 | MiniMax | `minimax-vl` |
@@ -465,7 +465,7 @@ pub trait Tokenizer {
 # config.toml
 [llm]
 backend = "ollama"  # ollama, openai, anthropic, google, xai
-model = "qwen3-vl:2b"
+model = "qwen3.5:4b"
 
 [llm.ollama]
 endpoint = "http://localhost:11434"
@@ -488,7 +488,7 @@ export LLM_PROVIDER=ollama
 
 # Ollama
 export OLLAMA_ENDPOINT=http://localhost:11434
-export OLLAMA_MODEL=qwen3-vl:2b
+export OLLAMA_MODEL=qwen3.5:4b
 
 # OpenAI
 export OPENAI_API_KEY=sk-...

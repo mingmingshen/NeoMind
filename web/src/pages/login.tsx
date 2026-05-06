@@ -15,11 +15,7 @@ import {
 import { BrandLogoHorizontal } from "@/components/shared/BrandName"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
 import { tokenManager, getApiBase, setApiBase, setApiKey, clearApiKey, getApiKey } from "@/lib/api"
-
-// Instance cache key — must match instanceSlice.ts
-const INSTANCE_CACHE_KEY = 'neomind_instance_cache'
-const CURRENT_INSTANCE_KEY = 'currentInstanceId'
-const PENDING_SWITCH_KEY = 'neomind_pending_switch'
+import { INSTANCE_CACHE_KEY, CURRENT_INSTANCE_KEY, PENDING_SWITCH_KEY } from "@/lib/instance-constants"
 
 interface CachedInstance {
   id: string

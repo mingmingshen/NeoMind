@@ -38,7 +38,7 @@ pub struct UpdateInstanceRequest {
     pub api_key: Option<String>,
 }
 
-/// List all instances
+/// List all instances (API keys masked)
 pub async fn list_instances_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
@@ -47,12 +47,14 @@ pub async fn list_instances_handler(
         .load_all()
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
+    let masked: Vec<_> = instances.iter().map(|i| i.masked()).collect();
+
     ok(json!({
-        "instances": instances,
+        "instances": masked,
     }))
 }
 
-/// Get a single instance by ID
+/// Get a single instance by ID (API key masked)
 pub async fn get_instance_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
@@ -63,7 +65,7 @@ pub async fn get_instance_handler(
         .map_err(|e| ErrorResponse::internal(e.to_string()))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Instance {}", id)))?;
 
-    ok(json!(instance))
+    ok(json!(instance.masked()))
 }
 
 /// Create a new remote instance
@@ -89,7 +91,7 @@ pub async fn create_instance_handler(
         .map_err(|e| ErrorResponse::internal(e.to_string()))?
         .ok_or_else(|| ErrorResponse::internal("Failed to load saved instance".to_string()))?;
 
-    ok(json!(saved))
+    ok(json!(saved.masked()))
 }
 
 /// Update an existing instance
@@ -127,7 +129,7 @@ pub async fn update_instance_handler(
         .save_instance(&instance)
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
-    ok(json!(instance))
+    ok(json!(instance.masked()))
 }
 
 /// Delete an instance

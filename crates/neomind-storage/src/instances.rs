@@ -55,6 +55,21 @@ fn default_status() -> String {
 }
 
 impl InstanceRecord {
+    /// Mask the API key for safe display in API responses.
+    /// Returns a copy with api_key replaced by "nmk_abc1****" or similar.
+    pub fn masked(&self) -> Self {
+        Self {
+            api_key: self.api_key.as_ref().map(|k| {
+                if k.len() > 8 {
+                    format!("{}****", &k[..8])
+                } else {
+                    "****".to_string()
+                }
+            }),
+            ..self.clone()
+        }
+    }
+
     /// Create a new remote instance record
     pub fn new(name: String, url: String, api_key: Option<String>) -> Self {
         let id = format!("inst_{}", uuid::Uuid::new_v4().to_string().split_at(8).0);

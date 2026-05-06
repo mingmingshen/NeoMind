@@ -594,7 +594,7 @@ impl LlmInterface {
     ///
     /// This returns the actual context limit based on the model's capabilities.
     /// For example:
-    /// - qwen3-vl:2b -> 32768
+    /// - qwen3.5:4b -> 32768
     /// - llama3:8b -> 8192
     /// - deepseek-r1 -> 64000
     ///

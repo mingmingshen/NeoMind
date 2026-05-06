@@ -14,14 +14,19 @@ import type { StateCreator } from 'zustand'
 import { api, getApiBase, setApiBase, setApiKey, clearApiKey } from '@/lib/api'
 import { tokenManager } from '@/lib/auth'
 import { logError } from '@/lib/errors'
+import { INSTANCE_CACHE_KEY, CURRENT_INSTANCE_KEY, PENDING_SWITCH_KEY } from '@/lib/instance-constants'
 
 // ============================================================================
-// Constants
+// In-memory API key store (never persisted to localStorage)
 // ============================================================================
 
-const INSTANCE_CACHE_KEY = 'neomind_instance_cache'
-const CURRENT_INSTANCE_KEY = 'currentInstanceId'
-const PENDING_SWITCH_KEY = 'neomind_pending_switch'
+/** Full API keys keyed by instance ID. Only populated via add/edit flow. */
+const _apiKeyMap: Record<string, string> = {}
+
+/** Get the full API key for an instance (from in-memory store only). */
+function getFullApiKey(instanceId: string): string | undefined {
+  return _apiKeyMap[instanceId]
+}
 
 // ============================================================================
 // Types
@@ -31,6 +36,7 @@ export interface InstanceInfo {
   id: string
   name: string
   url: string
+  /** Masked key from backend (e.g. "nmk_abc1****"). Full key only in memory via _apiKeyMap. */
   api_key?: string
   is_local: boolean
   last_status: string
@@ -110,10 +116,11 @@ function getCachedInstances(): InstanceInfo[] {
   }
 }
 
-/** Sync instance list to localStorage cache (used after mutations). */
+/** Sync instance list to localStorage cache (strips API keys for security). */
 function syncCache(instances: InstanceInfo[]) {
   try {
-    localStorage.setItem(INSTANCE_CACHE_KEY, JSON.stringify(instances))
+    const safe = instances.map(({ api_key: _, ...rest }) => rest)
+    localStorage.setItem(INSTANCE_CACHE_KEY, JSON.stringify(safe))
   } catch { /* ignore storage errors */ }
 }
 
@@ -231,6 +238,10 @@ export const createInstanceSlice: StateCreator<
   // Add a new instance
   addInstance: async (data) => {
     const instance = await createInstanceApi(data)
+    // Save full API key in memory (backend returns masked version)
+    if (data.api_key) {
+      _apiKeyMap[instance.id] = data.api_key
+    }
     const instances = [...get().instances, instance]
     set({ instances })
     syncCache(instances)
@@ -240,6 +251,14 @@ export const createInstanceSlice: StateCreator<
   // Update an existing instance
   updateInstance: async (id, data) => {
     const updated = await updateInstanceApi(id, data)
+    // Update in-memory key: save new key, or clear if empty
+    if (data.api_key !== undefined) {
+      if (data.api_key) {
+        _apiKeyMap[id] = data.api_key
+      } else {
+        delete _apiKeyMap[id]
+      }
+    }
     const instances = get().instances.map((i) => (i.id === id ? updated : i))
     set({ instances })
     syncCache(instances)
@@ -275,15 +294,18 @@ export const createInstanceSlice: StateCreator<
       return
     }
 
+    // Resolve full API key: prefer in-memory store (backend returns masked key)
+    const fullApiKey = !targetInstance.is_local
+      ? (getFullApiKey(id) || '') // from add/edit flow
+      : ''
+
     // For remote instances with API key: validate the key before switching
-    if (!targetInstance.is_local && targetInstance.api_key) {
+    if (!targetInstance.is_local && fullApiKey) {
       set({ switchingState: 'switching', switchingError: null })
       try {
         const apiUrl = targetInstance.url.replace(/\/+$/, '') + '/api'
-        // Use an authenticated endpoint to verify the API key actually works.
-        // /api/health is public and doesn't validate the key.
         const res = await fetch(`${apiUrl}/auth/verify`, {
-          headers: { 'X-API-Key': targetInstance.api_key },
+          headers: { 'X-API-Key': fullApiKey },
           signal: AbortSignal.timeout(8000),
         })
         if (res.status === 401) {
@@ -332,7 +354,7 @@ export const createInstanceSlice: StateCreator<
       targetId: id,
       previousId: currentInstanceId,
       apiUrl: targetInstance.is_local ? '' : `${targetInstance.url}/api`,
-      apiKey: targetInstance.is_local ? '' : (targetInstance.api_key || ''),
+      apiKey: targetInstance.is_local ? '' : fullApiKey,
     }))
 
     // Reload — the simplest and most reliable way to switch
@@ -349,17 +371,24 @@ export const createInstanceSlice: StateCreator<
 
     if (!pending?.previousId) return
 
-    // Write a new pending switch back to the previous instance
+    // Find previous instance from store, fall back to cache
     const { instances } = get()
-    const prevInstance = instances.find((i) => i.id === pending.previousId)
+    let prevInstance = instances.find((i) => i.id === pending.previousId)
+    if (!prevInstance) {
+      const cached = getCachedInstances()
+      prevInstance = cached.find((i) => i.id === pending.previousId)
+    }
     if (!prevInstance) return
+
+    // Resolve full API key from memory
+    const prevApiKey = prevInstance.is_local ? '' : (getFullApiKey(pending.previousId) || '')
 
     localStorage.setItem(CURRENT_INSTANCE_KEY, pending.previousId)
     localStorage.setItem(PENDING_SWITCH_KEY, JSON.stringify({
       targetId: pending.previousId,
       previousId: pending.targetId,
       apiUrl: prevInstance.is_local ? '' : `${prevInstance.url}/api`,
-      apiKey: prevInstance.is_local ? '' : (prevInstance.api_key || ''),
+      apiKey: prevApiKey,
     }))
 
     window.location.reload()
@@ -367,6 +396,12 @@ export const createInstanceSlice: StateCreator<
 
   // Clear switching error / dismiss the overlay
   clearSwitchingError: () => {
+    // Revert currentInstanceId to previous instance so next reload doesn't
+    // try to connect to the failed target
+    const { previousInstanceId } = get()
+    if (previousInstanceId) {
+      localStorage.setItem(CURRENT_INSTANCE_KEY, previousInstanceId)
+    }
     localStorage.removeItem(PENDING_SWITCH_KEY)
     set({ switchingState: 'idle', switchingError: null, previousInstanceId: null })
   },

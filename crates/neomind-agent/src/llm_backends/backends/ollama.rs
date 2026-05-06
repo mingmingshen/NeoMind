@@ -89,7 +89,7 @@ impl OllamaConfig {
 
 impl Default for OllamaConfig {
     fn default() -> Self {
-        Self::new("qwen3-vl:2b")
+        Self::new("qwen3.5:4b")
     }
 }
 

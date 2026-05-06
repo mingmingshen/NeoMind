@@ -201,7 +201,7 @@ pub struct GenerationParams {
 /// Maximum tokens we allow for any LLM generation.
 /// This prevents excessive token usage while still allowing reasonable responses.
 /// Adjusted: 2048 -> 4096 -> 8192
-/// qwen3-vl:2b generates ~4000-6000 tokens of thinking before content
+/// qwen3.5:4b generates ~4000-6000 tokens of thinking before content
 /// We need enough room for both thinking AND actual response content
 pub const MAX_GENERATION_TOKENS: usize = 8192;
 

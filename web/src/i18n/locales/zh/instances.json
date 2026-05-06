@@ -11,6 +11,8 @@
   "urlPlaceholder": "如：http://192.168.1.50:9375",
   "apiKey": "API 密钥",
   "apiKeyPlaceholder": "nmk_xxxx...",
+  "apiKeyEditPlaceholder": "输入新密钥以替换，留空则不变",
+  "apiKeyClear": "清除密钥",
   "apiKeyHint": "选填。填写远端实例的 API 密钥可免登录直接访问；不填则切换后需要用户名密码登录。",
   "apiKeyInvalid": {
     "title": "API 密钥验证失败",

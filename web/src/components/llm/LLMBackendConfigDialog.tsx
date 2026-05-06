@@ -162,7 +162,7 @@ export function LLMBackendConfigDialog({
               <Input
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder="qwen2.5:7b"
+                placeholder="qwen3.5:4b"
               />
             </FormField>
 

@@ -70,6 +70,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
   const [formName, setFormName] = useState('')
   const [formUrl, setFormUrl] = useState('')
   const [formApiKey, setFormApiKey] = useState('')
+  const [clearApiKey, setClearApiKey] = useState(false)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [apiKeyValidation, setApiKeyValidation] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle')
 
@@ -81,6 +82,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
     setFormApiKey('')
     setFormErrors({})
     setApiKeyValidation('idle')
+    setClearApiKey(false)
     setFormOpen(true)
   }
 
@@ -89,9 +91,11 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
     setEditingInstance(instance)
     setFormName(instance.name)
     setFormUrl(instance.url)
-    setFormApiKey(instance.api_key || '')
+    // Don't prefill masked key — show empty, user must re-enter to change
+    setFormApiKey('')
     setFormErrors({})
     setApiKeyValidation('idle')
+    setClearApiKey(false)
     setFormOpen(true)
   }
 
@@ -134,11 +138,19 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
     }
 
     if (editingInstance) {
-      await updateInstance(editingInstance.id, {
+      const updateData: { name: string; url: string; api_key?: string } = {
         name: formName,
         url: formUrl,
-        api_key: formApiKey.trim() || '',
-      })
+      }
+      if (clearApiKey) {
+        // Explicitly clear the API key
+        updateData.api_key = ''
+      } else if (formApiKey.trim()) {
+        // New key entered — update it
+        updateData.api_key = formApiKey.trim()
+      }
+      // else: no change, don't send api_key field
+      await updateInstance(editingInstance.id, updateData)
     } else {
       await addInstance({
         name: formName,
@@ -377,24 +389,41 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
               {t('apiKey')}
               <span className="text-xs text-muted-foreground font-normal">({t('optional')})</span>
             </Label>
-            <div className="relative">
-              <Input
-                type="password"
-                value={formApiKey}
-                onChange={(e) => { setFormApiKey(e.target.value); setApiKeyValidation('idle') }}
-                placeholder={t('apiKeyPlaceholder')}
-                className="pr-8"
-              />
-              {apiKeyValidation === 'valid' && (
-                <ShieldCheck className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-success" />
-              )}
-              {apiKeyValidation === 'invalid' && (
-                <AlertCircle className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive" />
-              )}
-              {apiKeyValidation === 'testing' && (
-                <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-              )}
-            </div>
+            {editingInstance && editingInstance.api_key && !clearApiKey && !formApiKey ? (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 rounded-md border border-border px-3 py-2 text-xs text-muted-foreground bg-muted">
+                  {editingInstance.api_key}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setClearApiKey(true)}
+                  className="text-destructive shrink-0"
+                >
+                  {t('apiKeyClear', { ns: 'instances' }) || t('delete')}
+                </Button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Input
+                  type="password"
+                  value={formApiKey}
+                  onChange={(e) => { setFormApiKey(e.target.value); setApiKeyValidation('idle'); setClearApiKey(false) }}
+                  placeholder={editingInstance ? t('apiKeyEditPlaceholder') : t('apiKeyPlaceholder')}
+                  className="pr-8"
+                />
+                {apiKeyValidation === 'valid' && (
+                  <ShieldCheck className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-success" />
+                )}
+                {apiKeyValidation === 'invalid' && (
+                  <AlertCircle className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive" />
+                )}
+                {apiKeyValidation === 'testing' && (
+                  <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                )}
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">{t('apiKeyHint')}</p>
           </div>
         </div>

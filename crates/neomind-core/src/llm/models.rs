@@ -10,7 +10,7 @@
 //! - **DeepSeek**: deepseek-v3.2, deepseek-r1, deepseek-chat, deepseek-coder
 //! - **Zhipu GLM**: glm-5, glm-4-plus, glm-4-flash, glm-z1
 //! - **MiniMax**: m2-1, m2-2, m2-her, minimax-text-01
-//! - **Ollama (Local)**: qwen3-vl, llama3, deepseek-r1, gemma3, phi-3
+//! - **Ollama (Local)**: qwen3.5, gemma4, deepseek-r1
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -711,56 +711,56 @@ pub fn get_builtin_models() -> HashMap<String, ModelInfo> {
 
     // ===== Ollama (Local) Common Models =====
     models.insert(
-        "llama3.1:8b".to_string(),
+        "qwen3.5:4b".to_string(),
         ModelInfo {
-            id: "llama3.1:8b".to_string(),
-            name: "Llama 3.1 8B".to_string(),
+            id: "qwen3.5:4b".to_string(),
+            name: "Qwen 3.5 4B".to_string(),
             provider: ProviderType::Ollama,
             capabilities: ModelCapabilities {
                 streaming: true,
-                function_calling: false,
+                function_calling: true,
+                vision: false,
+                audio: false,
+                video: false,
+                reasoning: true,
+                max_context: Some(128_000),
+                json_mode: true,
+            },
+        },
+    );
+    models.insert(
+        "gemma4:12b".to_string(),
+        ModelInfo {
+            id: "gemma4:12b".to_string(),
+            name: "Gemma 4 12B".to_string(),
+            provider: ProviderType::Ollama,
+            capabilities: ModelCapabilities {
+                streaming: true,
+                function_calling: true,
                 vision: false,
                 audio: false,
                 video: false,
                 reasoning: false,
                 max_context: Some(128_000),
-                json_mode: false,
+                json_mode: true,
             },
         },
     );
     models.insert(
-        "gemma3:4b".to_string(),
+        "gemma4:27b".to_string(),
         ModelInfo {
-            id: "gemma3:4b".to_string(),
-            name: "Gemma 3 4B".to_string(),
+            id: "gemma4:27b".to_string(),
+            name: "Gemma 4 27B".to_string(),
             provider: ProviderType::Ollama,
             capabilities: ModelCapabilities {
                 streaming: true,
-                function_calling: false,
+                function_calling: true,
                 vision: false,
                 audio: false,
                 video: false,
                 reasoning: false,
-                max_context: Some(8_192),
-                json_mode: false,
-            },
-        },
-    );
-    models.insert(
-        "phi-3.5:3.8b".to_string(),
-        ModelInfo {
-            id: "phi-3.5:3.8b".to_string(),
-            name: "Phi 3.5 3.8B".to_string(),
-            provider: ProviderType::Ollama,
-            capabilities: ModelCapabilities {
-                streaming: true,
-                function_calling: false,
-                vision: false,
-                audio: false,
-                video: false,
-                reasoning: false,
-                max_context: Some(32_768),
-                json_mode: false,
+                max_context: Some(128_000),
+                json_mode: true,
             },
         },
     );
@@ -836,7 +836,7 @@ mod tests {
         assert!(models.contains_key("m2-1"));
 
         // Verify Ollama models
-        assert!(models.contains_key("llama3.1:8b"));
+        assert!(models.contains_key("qwen3.5:4b"));
     }
 
     #[test]

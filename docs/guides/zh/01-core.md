@@ -360,7 +360,7 @@ pub const DEFAULT_OPENAI_ENDPOINT: &str = "https://api.openai.com/v1";
 // 默认模型
 pub fn models() -> Vec<&'static str> {
     vec![
-        "qwen3-vl:2b",     // Ollama默认
+        "qwen3.5:4b",      // Ollama默认
         "gpt-4o-mini",     // OpenAI
         "claude-3-5-sonnet", // Anthropic
     ]
