@@ -44,6 +44,7 @@
     "truncated": "Showing {{count}} of {{total}} data points",
     "format.excel": "Excel (.xlsx)",
     "format.zip": "ZIP (.zip)",
-    "binaryWarning": "Binary data export is partially supported — actual file contents may not be available."
+    "binaryWarning": "Binary data export is partially supported — actual file contents may not be available.",
+    "success": "Download complete — saved to your downloads folder"
   }
 }
