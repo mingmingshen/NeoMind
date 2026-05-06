@@ -12,6 +12,7 @@ import { useStore } from "@/store"
 import { createPortal } from "react-dom"
 import type { ChatSession } from "@/types"
 import { cn } from "@/lib/utils"
+import { textNano } from "@/design-system/tokens/typography"
 import { formatTimestamp } from "@/lib/utils/format"
 import {
   X,
@@ -485,7 +486,7 @@ export function SessionSidebar({
                                 )}>
                                   {getSessionTitle(session)}
                                 </h4>
-                                <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground">
+                                <div className={cn("flex items-center gap-1.5 mt-0.5", textNano, "text-muted-foreground")}>
                                   <Clock className="h-2.5 w-2.5" />
                                   <span>{session.updatedAt ? formatTimestamp(session.updatedAt / 1000, false) : formatTimestamp(session.createdAt / 1000, false)}</span>
                                   {session.messageCount ? (
@@ -548,7 +549,7 @@ export function SessionSidebar({
 
           {/* Footer */}
           <div className="p-2 border-t border-border">
-            <p className="text-[10px] text-muted-foreground text-center">
+            <p className={cn(textNano, "text-muted-foreground text-center")}>
               {t('session.totalSessions', { count: sessions.length })}
             </p>
           </div>

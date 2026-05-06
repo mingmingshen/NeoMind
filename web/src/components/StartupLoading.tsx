@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { getVersion } from "@tauri-apps/api/app"
 import { BrandLogoHorizontal } from "@/components/shared/BrandName"
+import { getApiBase } from "@/lib/api"
 
 interface BackendReadyEvent {
   status: "ready" | "timeout"
@@ -40,7 +41,7 @@ export function StartupLoading({ onReady }: { onReady: () => void }) {
       // emitted before the frontend was ready to listen.
       const checkHealth = async (): Promise<boolean> => {
         try {
-          const response = await fetch('http://localhost:9375/api/health', {
+          const response = await fetch(`${getApiBase()}/health`, {
             signal: AbortSignal.timeout(3000),
             // Use HEAD to minimize response body on failure
             method: 'HEAD',

@@ -11,6 +11,7 @@ import { Search, Server, Check, Zap, ChevronRight, ChevronLeft, Info, Layers, Da
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { textNano } from "@/design-system/tokens/typography"
 import { useStore } from '@/store'
 import { shallow } from 'zustand/shallow'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
@@ -512,7 +513,7 @@ export function DataSourceSidebar({
             <div className="text-center">
               <div className="relative">
                 <Database className="h-5 w-5 text-primary mx-auto" />
-                <span className="absolute -top-1 -right-1 h-4 w-4 bg-primary text-primary-foreground text-[10px] flex items-center justify-center rounded-full">
+                <span className={cn("absolute -top-1 -right-1 h-4 w-4 bg-primary text-primary-foreground", textNano, "flex items-center justify-center rounded-full")}>
                   {selectionCount}
                 </span>
               </div>

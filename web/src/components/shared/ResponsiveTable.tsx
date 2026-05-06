@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { MoreVertical, Loader2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { textMini } from "@/design-system/tokens/typography"
 
 export interface TableColumn {
   key: string
@@ -350,7 +351,7 @@ export function ResponsiveTable({
 
                     return (
                       <div key={column.key} className="flex items-start gap-2 py-0.5 min-w-0">
-                        <span className="text-[11px] text-muted-foreground shrink-0 w-20 pt-0.5 font-medium truncate">
+                        <span className={cn(textMini, "text-muted-foreground shrink-0 w-20 pt-0.5 font-medium truncate")}>
                           {typeof column.label === 'string' ? column.label : column.key}
                         </span>
                         <div className="text-sm flex-1 text-left min-w-0 overflow-hidden">

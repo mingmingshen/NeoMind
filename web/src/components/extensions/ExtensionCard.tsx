@@ -38,6 +38,7 @@ import {
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
+import { textNano, textMini } from "@/design-system/tokens/typography"
 import type { Extension } from "@/types"
 import { api } from "@/lib/api"
 
@@ -384,7 +385,7 @@ function ExtensionCapabilitiesDialog({
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
                         <Badge variant="outline" className={cn(
-                          "text-[10px] h-4 px-1 border-0",
+                          textNano, "h-4 px-1 border-0",
                           DATA_TYPE_COLORS[metric.data_type] || DATA_TYPE_COLORS.string
                         )}>
                           {metric.data_type}
@@ -466,7 +467,7 @@ export function ExtensionCard({
                 <div className="flex items-center gap-2">
                   <h3 className="font-medium text-sm">{extension.name}</h3>
                   <span className={cn(
-                    "text-[10px] px-1.5 py-0.5 rounded-full",
+                    textNano, "px-1.5 py-0.5 rounded-full",
                     isActive ? "bg-green-500/10 text-green-600 dark:text-green-400" :
                     "bg-red-500/10 text-red-600 dark:text-red-400"
                   )}>
@@ -474,9 +475,9 @@ export function ExtensionCard({
                   </span>
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[11px] text-muted-foreground font-mono truncate max-w-[100px]">{extension.id}</span>
+                  <span className={cn(textMini, "text-muted-foreground font-mono truncate max-w-[100px]")}>{extension.id}</span>
                   {extension.version && (
-                    <span className="text-[10px] text-muted-foreground">v{extension.version}</span>
+                    <span className={cn(textNano, "text-muted-foreground")}>v{extension.version}</span>
                   )}
                 </div>
               </div>
@@ -511,13 +512,13 @@ export function ExtensionCard({
           {/* Capabilities Badge */}
           <div className="flex items-center gap-2 mb-3">
             {extension.commands?.length > 0 && (
-              <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+              <span className={cn(textMini, "text-muted-foreground flex items-center gap-1")}>
                 <Terminal className="h-3 w-3" />
                 {extension.commands.length} {t('commands', { defaultValue: 'commands' })}
               </span>
             )}
             {extension.metrics?.length > 0 && (
-              <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+              <span className={cn(textMini, "text-muted-foreground flex items-center gap-1")}>
                 <Database className="h-3 w-3" />
                 {extension.metrics.length} {t('metrics', { defaultValue: 'metrics' })}
               </span>
@@ -533,14 +534,14 @@ export function ExtensionCard({
 
           {/* Author */}
           {extension.author && (
-            <p className="text-[10px] text-muted-foreground mb-3">
+            <p className={cn(textNano, "text-muted-foreground mb-3")}>
               {t('card.byAuthor', { author: extension.author })}
             </p>
           )}
 
           {/* Action Bar */}
           <div className="flex items-center justify-between pt-2 border-t border-border">
-            <span className="text-[10px] text-muted-foreground">
+            <span className={cn(textNano, "text-muted-foreground")}>
               {isActive ? t('card.active', { defaultValue: 'Active' }) : extension.state}
             </span>
             <div className="flex items-center gap-1">
@@ -548,7 +549,7 @@ export function ExtensionCard({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 text-[10px] px-2"
+                  className={cn("h-6", textNano, "px-2")}
                   onClick={() => setCapabilitiesDialogOpen(true)}
                 >
                   <Terminal className="mr-1 h-2.5 w-2.5" />

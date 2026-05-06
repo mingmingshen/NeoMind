@@ -23,6 +23,7 @@ import { useDataSource } from '@/hooks/useDataSource'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { dashboardCardBase } from '@/design-system/tokens/size'
+import { textNano, textMini } from "@/design-system/tokens/typography"
 import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { AnalystTimeline } from './ai-analyst/AnalystTimeline'
 import { AnalystInputBar } from './ai-analyst/AnalystInputBar'
@@ -387,7 +388,7 @@ export function AiAnalyst({
               {isStreaming ? (
                 <Badge
                   variant="default"
-                  className="text-[10px] h-5 gap-0.5 px-1.5"
+                  className={cn(textNano, "h-5 gap-0.5 px-1.5")}
                 >
                   <Loader2 className="h-2.5 w-2.5 animate-spin" />
                   Analyzing
@@ -395,19 +396,19 @@ export function AiAnalyst({
               ) : isConnected ? (
                 <Badge
                   variant="outline"
-                  className="text-[10px] h-5 text-success border-success-light"
+                  className={cn(textNano, "h-5 text-success border-success-light")}
                 >
                   Live
                 </Badge>
               ) : (
-                <Badge variant="secondary" className="text-[10px] h-5">
+                <Badge variant="secondary" className={cn(textNano, "h-5")}>
                   Offline
                 </Badge>
               )}
             </div>
 
             {/* Stats row */}
-            <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            <div className={cn("flex items-center gap-3", textMini, "text-muted-foreground")}>
               <span className="flex items-center gap-1">
                 <MessageSquare className="h-4 w-4" />
                 {messageCount} msgs

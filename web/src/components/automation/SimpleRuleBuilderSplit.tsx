@@ -41,6 +41,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { cardPadded } from '@/design-system/tokens/size'
+import { textNano } from "@/design-system/tokens/typography"
 import { useIsMobile } from '@/hooks/useMobile'
 import type { Rule, RuleTrigger, RuleCondition, RuleAction, DeviceType, Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor } from '@/types'
 // Unified dialog components
@@ -1094,7 +1095,7 @@ function RulePreviewPanel({
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-medium truncate">{resourceName}</div>
-            <div className="text-[10px] text-muted-foreground truncate">{cond.metric}</div>
+            <div className={cn(textNano, "text-muted-foreground truncate")}>{cond.metric}</div>
           </div>
           <div className="text-xs font-mono">
             {cond.operator} {cond.type === 'range' ? `[${cond.range_min}~${cond.range_max}]` : cond.threshold}
@@ -1164,7 +1165,7 @@ function RulePreviewPanel({
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium">{action.type}</div>
-              <div className="text-[10px] text-muted-foreground truncate">
+              <div className={cn(textNano, "text-muted-foreground truncate")}>
                 {action.type === 'Execute' ? `${action.command}` :
                  action.type === 'Notify' ? action.message :
                  action.type === 'Log' ? `${action.level}: ${action.message}` :
@@ -1174,7 +1175,7 @@ function RulePreviewPanel({
                  action.type}
               </div>
             </div>
-            <div className="text-[10px] text-muted-foreground">#{index + 1}</div>
+            <div className={cn(textNano, "text-muted-foreground")}>#{index + 1}</div>
           </div>
         ))}
       </div>
@@ -1185,7 +1186,7 @@ function RulePreviewPanel({
   const renderDSLPreview = () => {
     return (
       <div className="p-3">
-        <pre className="text-[10px] font-mono bg-muted-50 p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
+        <pre className={cn(textNano, "font-mono bg-muted-50 p-3 rounded overflow-x-auto whitespace-pre-wrap break-all")}>
           {previewDSL || '// No DSL generated'}
         </pre>
       </div>
@@ -1214,7 +1215,7 @@ function RulePreviewPanel({
       <div className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
         {isExtension ? <Puzzle className="h-4 w-4 text-accent-purple" /> : <Lightbulb className="h-4 w-4 text-info" />}
         <span className="truncate">{resourceName}</span>
-        <span className="font-mono text-[10px]">{cond.operator}</span>
+        <span className={cn("font-mono", textNano)}>{cond.operator}</span>
         <span>{cond.type === 'range' ? `[${cond.range_min}~${cond.range_max}]` : cond.threshold}</span>
       </div>
     )
@@ -1308,7 +1309,7 @@ function RulePreviewPanel({
             <div className="text-xs text-accent-purple space-y-1">
               {renderCompactCondition(condition)}
               {forDuration > 0 && (
-                <div className="flex items-center gap-2 text-[10px] mt-2 pt-2 border-t border-accent-purple-light">
+                <div className={cn("flex items-center gap-2", textNano, "mt-2 pt-2 border-t border-accent-purple-light")}>
                   <Clock className="h-4 w-4" />
                   <span>{tBuilder('forDuration') || '持续'}: {forDuration} {forUnit}</span>
                 </div>

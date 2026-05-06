@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import type { Automation } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -37,6 +38,7 @@ import {
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { useIsMobile } from '@/hooks/useMobile'
+import { textMini } from "@/design-system/tokens/typography"
 
 export interface AutomationsTabProps {
   searchQuery?: string
@@ -268,11 +270,11 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
                 </div>
                 {/* Row 2: type + complexity + execution count + time */}
                 <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
-                  <Badge variant="outline" className={getTypeColor(automation.type) + " text-[11px] h-5 px-1.5"}>
+                  <Badge variant="outline" className={cn(getTypeColor(automation.type), textMini, "h-5 px-1.5")}>
                     {getTypeLabel(automation.type)}
                   </Badge>
                   <div className="flex gap-0.5">{getComplexityDots(automation.complexity)}</div>
-                  <span className="text-[11px] text-muted-foreground ml-auto">
+                  <span className={cn(textMini, "text-muted-foreground ml-auto")}>
                     {automation.execution_count}x &middot; {formatTimestamp(automation.updated_at)}
                   </span>
                 </div>

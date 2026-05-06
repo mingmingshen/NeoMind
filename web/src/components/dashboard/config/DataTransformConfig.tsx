@@ -24,6 +24,8 @@ import type {
   DataSourceOrList,
 } from '@/types/dashboard'
 import { normalizeDataSource } from '@/types/dashboard'
+import { cn } from "@/lib/utils"
+import { textNano } from "@/design-system/tokens/typography"
 
 export interface DataTransformConfigProps {
   dataSource?: DataSourceOrList
@@ -252,7 +254,7 @@ export function DataTransformConfig({
         <div className="flex items-center justify-between">
           <Label>{t('dataTransform.timeRange')}</Label>
           {hasMixedSettings?.hasMixedTimeWindow && (
-            <span className="text-[10px] text-warning bg-warning-light px-1.5 py-0.5 rounded">
+            <span className={cn(textNano, "text-warning bg-warning-light px-1.5 py-0.5 rounded")}>
               {t('dataTransform.mixedValues')}
             </span>
           )}
@@ -282,7 +284,7 @@ export function DataTransformConfig({
         <div className="flex items-center justify-between">
           <Label>{t('dataTransform.aggregation')}</Label>
           {hasMixedSettings?.hasMixedAggregate && (
-            <span className="text-[10px] text-warning bg-warning-light px-1.5 py-0.5 rounded">
+            <span className={cn(textNano, "text-warning bg-warning-light px-1.5 py-0.5 rounded")}>
               {t('dataTransform.mixedValues')}
             </span>
           )}
@@ -307,7 +309,7 @@ export function DataTransformConfig({
           <div className="flex items-center justify-between">
             <Label>{t('dataTransform.dataPointLimit')}</Label>
             {hasMixedSettings?.hasMixedLimit && (
-              <span className="text-[10px] text-warning bg-warning-light px-1.5 py-0.5 rounded">
+              <span className={cn(textNano, "text-warning bg-warning-light px-1.5 py-0.5 rounded")}>
                 {t('dataTransform.mixedValues')}
               </span>
             )}

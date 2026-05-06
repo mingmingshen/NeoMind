@@ -11,6 +11,7 @@ import { javascript } from '@codemirror/lang-javascript'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { EditorView } from '@codemirror/view'
 import { cn } from '@/lib/utils'
+import { fontMonoStack } from '@/design-system/tokens/typography'
 
 export interface CodeEditorProps {
   /** Current code value */
@@ -84,7 +85,7 @@ export const CodeEditor = React.forwardRef<ReactCodeMirrorRef, CodeEditorProps>(
               },
               // Scroller (main content area)
               '.cm-scroller': {
-                fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                fontFamily: fontMonoStack,
                 lineHeight: '1.6',
               },
               // Content padding

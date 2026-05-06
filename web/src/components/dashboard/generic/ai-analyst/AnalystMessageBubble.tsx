@@ -11,6 +11,8 @@ import {
 } from 'lucide-react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import type { AnalystMessage } from './types'
+import { cn } from "@/lib/utils"
+import { textNano } from "@/design-system/tokens/typography"
 
 interface AnalystMessageBubbleProps {
   message: AnalystMessage
@@ -43,10 +45,10 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground truncate">
+              <span className={cn(textNano, "text-muted-foreground truncate")}>
                 {message.dataSource || 'Data source'}
               </span>
-              <span className="text-[10px] text-muted-foreground">{formatTime(message.timestamp)}</span>
+              <span className={cn(textNano, "text-muted-foreground")}>{formatTime(message.timestamp)}</span>
             </div>
             <div
               className="mt-1 rounded-lg overflow-hidden border border-border bg-muted-30 cursor-pointer max-w-[240px]"
@@ -86,10 +88,10 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-center">
-              <span className="text-[10px] text-muted-foreground truncate">
+              <span className={cn(textNano, "text-muted-foreground truncate")}>
                 {message.dataSource || 'Data source'}
               </span>
-              <span className="text-[10px] text-muted-foreground">{formatTime(message.timestamp)}</span>
+              <span className={cn(textNano, "text-muted-foreground")}>{formatTime(message.timestamp)}</span>
             </div>
             <div className="mt-1 rounded-lg px-3 py-1.5 bg-warning-light border border-warning max-w-[280px] overflow-hidden">
               {/* Inline images */}
@@ -149,17 +151,17 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] text-accent-purple flex items-center gap-1">
+            <span className={cn(textNano, "text-accent-purple flex items-center gap-1")}>
               <Cpu className="h-2.5 w-2.5" />
               {message.modelName || 'AI'}
             </span>
             {isStreaming ? (
-              <span className="text-[10px] text-accent-purple flex items-center gap-1">
+              <span className={cn(textNano, "text-accent-purple flex items-center gap-1")}>
                 <Loader2 className="h-2.5 w-2.5 animate-spin" />
                 Analyzing...
               </span>
             ) : (
-              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+              <span className={cn(textNano, "text-muted-foreground flex items-center gap-1")}>
                 <Clock className="h-2.5 w-2.5" />
                 {message.duration ? formatDuration(message.duration) : formatTime(message.timestamp)}
               </span>
@@ -188,8 +190,8 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
       <div className="flex items-start gap-2 justify-end">
         <div className="flex-1 min-w-0 flex flex-col items-end">
           <div className="flex justify-between items-center w-full">
-            <span className="text-[10px] text-muted-foreground">{formatTime(message.timestamp)}</span>
-            <span className="text-[10px] text-accent-purple/70 flex items-center gap-1">
+            <span className={cn(textNano, "text-muted-foreground")}>{formatTime(message.timestamp)}</span>
+            <span className={cn(textNano, "text-accent-purple/70 flex items-center gap-1")}>
               <User className="h-2.5 w-2.5" />
               User
             </span>

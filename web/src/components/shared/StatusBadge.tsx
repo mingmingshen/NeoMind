@@ -2,6 +2,7 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { getStatusColor } from '@/lib/utils/status'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { textNano } from "@/design-system/tokens/typography"
 
 const badgeVariants = cva(
   'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium transition-colors',
@@ -15,7 +16,7 @@ const badgeVariants = cva(
         muted: 'bg-muted text-muted-foreground',
       },
       size: {
-        sm: 'px-1.5 py-0.5 text-[10px]',
+        sm: 'px-1.5 py-0.5 text-[10px]', // textNano token - kept as static string for CVA variant
         md: 'px-2 py-0.5 text-xs',
         lg: 'px-2.5 py-1 text-sm',
       },

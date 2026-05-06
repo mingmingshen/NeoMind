@@ -60,6 +60,7 @@ import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useToast } from "@/hooks/use-toast"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { fontMonoStack, textMini } from "@/design-system/tokens/typography"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useIsMobile } from "@/hooks/useMobile"
 import type { LlmBackendInstance, MemorySystemConfig } from "@/types"
@@ -453,11 +454,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                   </div>
                   {/* Row 2: entries + size + modified */}
                   <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
-                    <Badge variant="secondary" className="text-[11px] font-mono h-5 px-1.5">
+                    <Badge variant="secondary" className={cn(textMini, "font-mono h-5 px-1.5")}>
                       {row.entry_count} entries
                     </Badge>
-                    <span className="text-[11px] text-muted-foreground">{formatBytes(row.file_size)}</span>
-                    <span className="text-[11px] text-muted-foreground ml-auto">
+                    <span className={cn(textMini, "text-muted-foreground")}>{formatBytes(row.file_size)}</span>
+                    <span className={cn(textMini, "text-muted-foreground ml-auto")}>
                       {row.modified_at > 0 ? formatTimestamp(row.modified_at, false) : "-"}
                     </span>
                   </div>
@@ -608,8 +609,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 theme={isDark ? "dark" : "light"}
                 style={{
                   fontSize: "14px",
-                  fontFamily:
-                    'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
+                  fontFamily: fontMonoStack,
                   height: "100%",
                   width: "100%",
                 }}

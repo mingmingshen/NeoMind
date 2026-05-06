@@ -12,6 +12,7 @@ import { Edit, Play, Trash2, Bell, FileText, FlaskConical, AlertTriangle, Sparkl
 import { useTranslation } from "react-i18next"
 import type { Rule, RuleAction } from "@/types"
 import { cn } from "@/lib/utils"
+import { textMini } from "@/design-system/tokens/typography"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useIsMobile } from "@/hooks/useMobile"
 
@@ -254,21 +255,21 @@ export function RulesList({
                 {/* Row 2: condition + action badges + last triggered */}
                 <div className="mt-1.5 ml-[42px]">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <code className="text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded truncate max-w-[180px]">
+                    <code className={cn(textMini, "font-mono bg-muted px-1.5 py-0.5 rounded truncate max-w-[180px]")}>
                       {condition.text}
                     </code>
                     {actions.slice(0, 2).map((action, i) => {
                       const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.Execute
                       return (
-                        <Badge key={i} variant="outline" className={cn("text-[11px] h-5 px-1.5 gap-0.5", config.color)}>
+                        <Badge key={i} variant="outline" className={cn(textMini, "h-5 px-1.5 gap-0.5", config.color)}>
                           {t(config.label)}
                         </Badge>
                       )
                     })}
                     {actions.length > 2 && (
-                      <span className="text-[11px] text-muted-foreground">+{actions.length - 2}</span>
+                      <span className={cn(textMini, "text-muted-foreground")}>+{actions.length - 2}</span>
                     )}
-                    <span className="text-[11px] text-muted-foreground ml-auto">
+                    <span className={cn(textMini, "text-muted-foreground ml-auto")}>
                       {hasTriggered ? formatTimestamp(rule.last_triggered) : t('automation:never', 'Never')}
                     </span>
                   </div>

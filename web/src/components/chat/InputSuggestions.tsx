@@ -24,6 +24,7 @@ import {
   Clock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { textNano } from "@/design-system/tokens/typography"
 import { getApiBase } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 
@@ -386,7 +387,7 @@ function SuggestionItem({ suggestion, index, selectedIndex, onSelect, onMouseEnt
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium truncate">{suggestion.label}</p>
           {isHighPriority && !isSelected && (
-            <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] text-[10px]">
+            <span className={cn("flex-shrink-0 px-1.5 py-0.5 rounded-full bg-[var(--primary)]/10 text-[var(--primary)]", textNano)}>
               {t("chat.suggestions.badge")}
             </span>
           )}
@@ -404,7 +405,7 @@ function SuggestionItem({ suggestion, index, selectedIndex, onSelect, onMouseEnt
 
       {/* Category badge */}
       {!isSelected && (
-        <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-[var(--muted)] text-muted-foreground">
+        <span className={cn("flex-shrink-0 px-1.5 py-0.5 rounded", textNano, "bg-[var(--muted)] text-muted-foreground")}>
           {categoryName}
         </span>
       )}

@@ -26,6 +26,7 @@ import { showErrorToast } from "@/lib/error-messages"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { cn } from "@/lib/utils"
+import { textNano } from "@/design-system/tokens/typography"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -1330,7 +1331,7 @@ export function AgentEditorFullScreen({
                     <div className="flex items-center gap-1.5 flex-1 min-w-0">
                       <span className="text-sm font-medium">{tAgent('focusedMode', 'Focused Mode')}</span>
                       {isFocusedMode && (
-                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
+                        <Badge variant="secondary" className={cn(textNano, "h-4 px-1.5 shrink-0")}>
                           {tAgent('saveToken', 'Save Tokens')}
                         </Badge>
                       )}
@@ -1361,7 +1362,7 @@ export function AgentEditorFullScreen({
                     <div className="flex items-center gap-1.5 flex-1 min-w-0">
                       <span className="text-sm font-medium">{tAgent('freeMode', 'Free Mode')}</span>
                       {isFreeMode && (
-                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
+                        <Badge variant="secondary" className={cn(textNano, "h-4 px-1.5 shrink-0")}>
                           {tAgent('recommended', 'Recommended')}
                         </Badge>
                       )}
@@ -2010,7 +2011,7 @@ export function AgentEditorFullScreen({
                                 {getSourceIcon(e.type, "h-4 w-4 shrink-0 text-muted-foreground")}
                                 <span className="truncate flex-1">{e.name}</span>
                                 {hasTrigger && (
-                                  <Badge variant="secondary" className="h-4 min-w-[18px] text-[10px] px-1 rounded-full">
+                                  <Badge variant="secondary" className={cn("h-4 min-w-[18px]", textNano, "px-1 rounded-full")}>
                                     {activeAllSelected && isViewing ? tAgent('creator.schedule.reactive.allMetrics') : fieldCount}
                                   </Badge>
                                 )}
@@ -2099,7 +2100,7 @@ export function AgentEditorFullScreen({
                                 {hasAll ? (
                                   <Badge
                                     variant="secondary"
-                                    className="text-[10px] h-5 px-1.5 gap-0.5 cursor-pointer hover:bg-muted transition-colors"
+                                    className={cn(textNano, "h-5 px-1.5 gap-0.5 cursor-pointer hover:bg-muted transition-colors")}
                                     onClick={removeEntity}
                                   >
                                     {tAgent('creator.schedule.reactive.allMetrics')}
@@ -2110,7 +2111,7 @@ export function AgentEditorFullScreen({
                                     <Badge
                                       key={f}
                                       variant="outline"
-                                      className="text-[10px] h-5 px-1.5 gap-0.5 font-normal cursor-pointer hover:bg-muted transition-colors"
+                                      className={cn(textNano, "h-5 px-1.5 gap-0.5 font-normal cursor-pointer hover:bg-muted transition-colors")}
                                       onClick={() => removeTriggerField(g.type, g.id, f)}
                                     >
                                       {f}
@@ -2736,7 +2737,7 @@ function ScheduleCard({ icon, label, description, active, onClick, isMobile = fa
       </div>
       <div className="text-center">
         <div className={cn("font-medium", active ? "text-foreground" : "text-muted-foreground", isMobile ? "text-sm" : "text-xs")}>{label}</div>
-        <div className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-[10px]")}>{description}</div>
+        <div className={cn("text-muted-foreground", isMobile ? "text-xs" : textNano)}>{description}</div>
       </div>
     </button>
   )

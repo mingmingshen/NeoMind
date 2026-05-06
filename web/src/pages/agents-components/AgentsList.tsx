@@ -28,6 +28,7 @@ import { EmptyStateInline, Pagination } from "@/components/shared"
 import { Bot, Edit, Play, Trash2, MoreVertical, Clock, Activity, Zap, CheckCircle2, XCircle, Loader2, History, Bell, Brain } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
+import { textMini } from "@/design-system/tokens/typography"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { AiAgent } from "@/types"
 
@@ -171,7 +172,7 @@ export function AgentsList({
                     </div>
                     {/* Row 2: stats + last execution */}
                     <div className="flex items-center gap-2 mt-1.5 ml-[42px]">
-                      <div className="flex items-center gap-1.5 text-[11px]">
+                      <div className={cn("flex items-center gap-1.5", textMini)}>
                         <Activity className="h-3 w-3 text-muted-foreground" />
                         <span className="font-medium">{agent.execution_count}</span>
                         <CheckCircle2 className="h-3 w-3 text-success" />
@@ -183,7 +184,7 @@ export function AgentsList({
                           </>
                         )}
                       </div>
-                      <span className="text-[11px] text-muted-foreground ml-auto">
+                      <span className={cn(textMini, "text-muted-foreground ml-auto")}>
                         {formatTimestamp(agent.last_execution_at || undefined)}
                       </span>
                     </div>

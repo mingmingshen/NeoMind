@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
 import { cn } from "@/lib/utils"
+import { textBody, textCode, textHeading } from "@/design-system/tokens/typography"
 
 interface MarkdownMessageProps {
   content: string
@@ -47,7 +48,7 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
       const isBlock = !!className
       if (!isBlock) {
         return (
-          <code className={cn("bg-muted px-1 py-0.5 rounded text-[12px] font-mono text-foreground", className)} {...(props as any)}>
+          <code className={cn("bg-muted px-1 py-0.5 rounded", textCode, "font-mono text-foreground", className)} {...(props as any)}>
             {children}
           </code>
         )
@@ -77,7 +78,7 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
       <div
         className={cn(
           // Base prose classes — use prose for structure, override size to 13px
-          "prose max-w-none text-[13px]",
+          "prose max-w-none", textBody,
           // Text wrapping
           "break-words overflow-wrap-anywhere",
           "prose-p:leading-relaxed prose-p:my-1",
@@ -85,7 +86,7 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
           "prose-h1:text-[15px] prose-h2:text-[13px] prose-h3:text-[12px]",
           "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
           "prose-strong:font-semibold",
-          "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-[12px] prose-code:font-mono",
+          "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-[12px] prose-code:font-mono",  // text-[12px] kept for Tailwind prose modifier
           "prose-code:break-all prose-code:whitespace-pre-wrap",
           "prose-pre:bg-muted prose-pre:p-3 prose-pre:rounded-lg prose-pre:my-2",
           "prose-pre:overflow-x-auto prose-pre:max-w-full",
@@ -94,7 +95,7 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
           "prose-ul:my-1 prose-ul:pl-4 prose-ul:list-disc",
           "prose-ol:my-1 prose-ol:pl-4 prose-ol:list-decimal",
           "prose-li:my-0.5",
-          "prose-table:my-2 prose-table:text-[12px]",
+          "prose-table:my-2 prose-table:text-[12px]",  // text-[12px] kept for Tailwind prose modifier
           "prose-th:px-2 prose-th:py-1 prose-th:border prose-th:border-border prose-th:bg-muted-50",
           "prose-td:px-2 prose-td:py-1 prose-td:border prose-td:border-border",
           "prose-hr:my-2 prose-hr:border-border",

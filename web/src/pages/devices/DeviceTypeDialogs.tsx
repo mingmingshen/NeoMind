@@ -47,6 +47,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { cardPadded } from "@/design-system/tokens/size"
+import { textMini } from "@/design-system/tokens/typography"
 import { api, fetchAPI } from "@/lib/api"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import type { DeviceType, MetricDefinition, CommandDefinition } from "@/types"
@@ -1246,11 +1247,11 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
           <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
             <div className={cn(cardPadded, "text-center !p-3 sm:!p-4")}>
               <div className="text-xl sm:text-2xl font-bold text-primary">{data.metrics?.length || 0}</div>
-              <div className="text-[11px] sm:text-xs text-muted-foreground">Metrics</div>
+              <div className={cn(textMini, "sm:text-xs text-muted-foreground")}>Metrics</div>
             </div>
             <div className={cn(cardPadded, "text-center !p-3 sm:!p-4")}>
               <div className="text-xl sm:text-2xl font-bold text-info">{data.commands?.length || 0}</div>
-              <div className="text-[11px] sm:text-xs text-muted-foreground">Commands</div>
+              <div className={cn(textMini, "sm:text-xs text-muted-foreground")}>Commands</div>
             </div>
             <div className={cn(cardPadded, "text-center !p-3 sm:!p-4")}>
               <div className="text-xl sm:text-2xl font-bold text-success">
@@ -2287,7 +2288,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                   </div>
                   <div>
                     <div className="text-lg sm:text-2xl font-bold">{deviceType.metrics?.length || 0}</div>
-                    <div className="text-[11px] sm:text-xs text-muted-foreground">Native Metrics</div>
+                    <div className={cn(textMini, "sm:text-xs text-muted-foreground")}>Native Metrics</div>
                   </div>
                 </div>
               </Card>
@@ -2298,7 +2299,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                   </div>
                   <div>
                     <div className="text-lg sm:text-2xl font-bold">{virtualMetrics.length || 0}</div>
-                    <div className="text-[11px] sm:text-xs text-muted-foreground">Virtual Metrics</div>
+                    <div className={cn(textMini, "sm:text-xs text-muted-foreground")}>Virtual Metrics</div>
                   </div>
                 </div>
               </Card>
@@ -2309,7 +2310,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                   </div>
                   <div>
                     <div className="text-lg sm:text-2xl font-bold">{deviceType.commands?.length || 0}</div>
-                    <div className="text-[11px] sm:text-xs text-muted-foreground">Commands</div>
+                    <div className={cn(textMini, "sm:text-xs text-muted-foreground")}>Commands</div>
                   </div>
                 </div>
               </Card>
@@ -2417,7 +2418,7 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
                             <Badge variant="outline" className="text-xs text-accent-purple">{formatDataType(metric.data_type)}</Badge>
                           </div>
                         </div>
-                        <div className="text-[11px] text-muted-foreground mt-1 ml-6">via {metric.transform_name}</div>
+                        <div className={cn(textMini, "text-muted-foreground mt-1 ml-6")}>via {metric.transform_name}</div>
                       </div>
                     ))}
                   </div>

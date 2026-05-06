@@ -16,6 +16,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Wrench, ChevronDown, CheckCircle2, Loader2, Code, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { textBody, textMini } from "@/design-system/tokens/typography"
 import type { ToolCall } from "@/types"
 
 // ─── Helpers ───
@@ -128,7 +129,7 @@ export function ToolProcessBlock({
             <Wrench className="h-2.5 w-2.5" />
           )}
         </div>
-        <span className="text-[13px] font-medium text-foreground">
+        <span className={cn(textBody, "font-medium text-foreground")}>
           {isStreaming
             ? `${completedCount}/${toolCalls.length} ${t("toolCall.status.running")}`
             : `${toolCalls.length} ${t("toolCall.title")} · ${steps.length} ${t("toolCall.rounds")}`
@@ -189,12 +190,12 @@ function RoundContent({ content }: { content: string }) {
       >
         <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
         {!isExpanded && (
-          <span className="text-[13px] text-muted-foreground truncate">
+          <span className={cn(textBody, "text-muted-foreground truncate")}>
             {content.slice(0, 100)}{content.length > 100 && "..."}
           </span>
         )}
         {isExpanded && (
-          <span className="text-[13px] text-muted-foreground">Details</span>
+          <span className={cn(textBody, "text-muted-foreground")}>Details</span>
         )}
         <div className="flex-1" />
         <ChevronDown className={cn(
@@ -204,7 +205,7 @@ function RoundContent({ content }: { content: string }) {
       </button>
       {isExpanded && (
         <div className="px-3 pb-2">
-          <div className="text-[13px] font-mono text-muted-foreground whitespace-pre-wrap break-words bg-muted-30 rounded p-2 leading-relaxed">
+          <div className={cn(textBody, "font-mono text-muted-foreground whitespace-pre-wrap break-words bg-muted-30 rounded p-2 leading-relaxed")}>
             {content}
           </div>
         </div>
@@ -256,9 +257,9 @@ function ToolCallItem({
             <Wrench className="h-2.5 w-2.5" />
           )}
         </div>
-        <span className="font-mono text-[13px] truncate">{getToolDisplayName(toolCall.name, toolCall.arguments)}</span>
+        <span className={cn("font-mono", textBody, "truncate")}>{getToolDisplayName(toolCall.name, toolCall.arguments)}</span>
         <span className={cn(
-          "text-[11px] px-1.5 py-0.5 rounded shrink-0",
+          textMini, "px-1.5 py-0.5 rounded shrink-0",
           status === "completed" && "bg-accent-emerald-light text-accent-emerald",
           status === "running" && "bg-warning-light text-warning",
           status === "pending" && "bg-muted text-muted-foreground"
@@ -276,20 +277,20 @@ function ToolCallItem({
         <div className="px-3 pb-2 space-y-1.5">
           {hasArguments && (
             <div className="rounded-lg bg-muted-50 p-1.5">
-              <div className="text-[11px] text-muted-foreground mb-0.5 flex items-center gap-1">
+              <div className={cn(textMini, "text-muted-foreground mb-0.5 flex items-center gap-1")}>
                 <Code className="h-4 w-4" />{t("toolCall.arguments")}
               </div>
-              <pre className="text-[13px] font-mono text-muted-foreground whitespace-pre-wrap break-words">
+              <pre className={cn(textBody, "font-mono text-muted-foreground whitespace-pre-wrap break-words")}>
                 {formatJson(toolCall.arguments)}
               </pre>
             </div>
           )}
           {hasResult && (
             <div className="rounded-lg bg-muted-50 p-1.5">
-              <div className="text-[11px] text-muted-foreground mb-0.5 flex items-center gap-1">
+              <div className={cn(textMini, "text-muted-foreground mb-0.5 flex items-center gap-1")}>
                 <CheckCircle2 className="h-4 w-4" />{t("toolCall.result")}
               </div>
-              <pre className="text-[13px] font-mono text-muted-foreground whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+              <pre className={cn(textBody, "font-mono text-muted-foreground whitespace-pre-wrap break-words max-h-32 overflow-y-auto")}>
                 {formatJson(toolCall.result)}
               </pre>
             </div>

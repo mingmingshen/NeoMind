@@ -81,6 +81,7 @@ import { Separator } from '@/components/ui/separator'
 import { CreateMessageDialog } from '@/components/messages/CreateMessageDialog'
 import { formatTimestamp } from '@/lib/utils/format'
 import { cn } from '@/lib/utils'
+import { textNano, textMini } from "@/design-system/tokens/typography"
 
 type TabValue = 'messages' | 'channels'
 
@@ -1057,7 +1058,7 @@ export default function MessagesPage() {
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-sm truncate">{message.title}</div>
                           </div>
-                          <Badge variant={statusConfig.variant} className="text-[10px] h-5 px-1.5 shrink-0">
+                          <Badge variant={statusConfig.variant} className={cn(textNano, "h-5 px-1.5 shrink-0")}>
                             {t(statusConfig.label)}
                           </Badge>
                           <DropdownMenu>
@@ -1096,17 +1097,17 @@ export default function MessagesPage() {
                         {/* Row 2: type badge + category + time */}
                         <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
                           <Badge variant="outline" className={cn(
-                            "text-[10px] h-5 px-1.5 shrink-0",
+                            textNano, "h-5 px-1.5 shrink-0",
                             isDataPush
                               ? "bg-accent-purple-light text-accent-purple border-accent-purple-light"
                               : "bg-info-light text-info border-info"
                           )}>
                             {isDataPush ? t('messages.type.data_push') : t('messages.type.notification')}
                           </Badge>
-                          <Badge variant="outline" className="text-[10px] h-5 px-1.5 shrink-0">
+                          <Badge variant="outline" className={cn(textNano, "h-5 px-1.5 shrink-0")}>
                             {message.category}
                           </Badge>
-                          <span className="text-[11px] text-muted-foreground ml-auto shrink-0">
+                          <span className={cn(textMini, "text-muted-foreground ml-auto shrink-0")}>
                             {formatTimestamp(message.timestamp, false)}
                           </span>
                         </div>
@@ -1363,7 +1364,7 @@ export default function MessagesPage() {
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-sm truncate">{channel.name}</div>
                           </div>
-                          <Badge variant={channel.enabled ? 'default' : 'secondary'} className="text-[10px] h-5 px-1.5 shrink-0">
+                          <Badge variant={channel.enabled ? 'default' : 'secondary'} className={cn(textNano, "h-5 px-1.5 shrink-0")}>
                             {channel.enabled ? t('enabled') : t('disabled')}
                           </Badge>
                           <DropdownMenu>
@@ -1418,14 +1419,14 @@ export default function MessagesPage() {
                         </div>
                         {/* Row 2: type badge + details + test */}
                         <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
-                          <Badge variant="outline" className="text-[10px] h-5 px-1.5 shrink-0">
+                          <Badge variant="outline" className={cn(textNano, "h-5 px-1.5 shrink-0")}>
                             {channel.channel_type}
                           </Badge>
                           {(channel.channel_type === 'webhook' || channel.channel_type === 'email') && (
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-5 px-1.5 text-[10px]"
+                              className={cn("h-5 px-1.5", textNano)}
                               onClick={(e) => { e.stopPropagation(); handleTestChannel(channel.name) }}
                               disabled={testingChannel === channel.name}
                             >
@@ -1434,13 +1435,13 @@ export default function MessagesPage() {
                             </Button>
                           )}
                           {channel.channel_type === 'email' && channel.recipients && channel.recipients.length > 0 && (
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                            <span className={cn(textNano, "text-muted-foreground flex items-center gap-0.5")}>
                               <Mail className="h-3 w-3" />
                               {channel.recipients.length}
                             </span>
                           )}
                           {testResult && (
-                            <span className={cn("text-[10px]", testResult.success ? 'text-success' : 'text-error')}>
+                            <span className={cn(textNano, testResult.success ? 'text-success' : 'text-error')}>
                               {testResult.success ? '✓' : '✗'} {testResult.message}
                             </span>
                           )}

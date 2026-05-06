@@ -28,6 +28,7 @@ import { api } from "@/lib/api"
 import type { Message, ServerMessage, ChatImage } from "@/types"
 import type { SkillSummary, SkillListResponse } from "@/types/skill"
 import { cn } from "@/lib/utils"
+import { textNano, textMini } from "@/design-system/tokens/typography"
 import { getPortalRoot } from "@/lib/portal"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
@@ -1154,7 +1155,7 @@ export function ChatPage() {
 
                   {message.role === "user" && user && (
                     <Avatar className="h-6 w-6 sm:h-8 sm:w-8 order-2">
-                      <AvatarFallback className="bg-muted text-muted-foreground text-[10px] sm:text-xs">
+                      <AvatarFallback className={cn("bg-muted text-muted-foreground", textNano, "sm:text-xs")}>
                         {getUserInitials(user.username)}
                       </AvatarFallback>
                     </Avatar>
@@ -1284,12 +1285,12 @@ export function ChatPage() {
                               )}
                             </div>
                           </div>
-                          <p className="text-[10px] text-muted-foreground truncate">
+                          <p className={cn(textNano, "text-muted-foreground truncate")}>
                             {backend.backend_type} · {backend.model}
                           </p>
                         </div>
                         {backend.id === activeBackendId && (
-                          <span className="text-[10px] text-muted-foreground">✓</span>
+                          <span className={cn(textNano, "text-muted-foreground")}>✓</span>
                         )}
                       </DropdownMenuItem>
                     ))}
@@ -1340,7 +1341,7 @@ export function ChatPage() {
                           : t('chat:input.skills')}
                       </span>
                       {selectedSkills.length > 0 && (
-                        <span className="bg-primary text-primary-foreground text-[10px] rounded-full h-4 min-w-4 px-1 flex items-center justify-center">
+                        <span className={cn("bg-primary text-primary-foreground", textNano, "rounded-full h-4 min-w-4 px-1 flex items-center justify-center")}>
                           {selectedSkills.length}
                         </span>
                       )}
@@ -1364,7 +1365,7 @@ export function ChatPage() {
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm truncate">{skill.name}</p>
-                          <p className="text-[10px] text-muted-foreground truncate">
+                          <p className={cn(textNano, "text-muted-foreground truncate")}>
                             {skill.category}
                           </p>
                         </div>
@@ -1396,7 +1397,7 @@ export function ChatPage() {
                 if (messages.length === 0 || isWelcomeMode) return null
                 return (
                   <span className={cn(
-                    "text-[11px] shrink-0 transition-colors",
+                    textMini, "shrink-0 transition-colors",
                     ratio > 0.9 ? "text-error" : ratio > 0.7 ? "text-warning" : "text-muted-foreground"
                   )}>
                     Context {(displayTokens / 1000).toFixed(1)}K / {(maxContext / 1000).toFixed(0)}K

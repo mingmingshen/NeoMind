@@ -31,6 +31,7 @@ import {
   Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { textNano } from "@/design-system/tokens/typography"
 import { useIsMobile } from "@/hooks/useMobile"
 import { api } from "@/lib/api"
 import type { AiAgentDetail } from "@/types"
@@ -587,21 +588,21 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
                 <div className="flex flex-col items-center p-3 rounded-lg bg-info-light border border-info">
                   <History className="h-4 w-4 text-info mb-1" />
                   <span className="text-lg font-bold text-info">{shortTermSummariesCount}</span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{t('agents:memory.shortTerm')}</span>
+                  <span className={cn(textNano, "text-muted-foreground uppercase tracking-wide")}>{t('agents:memory.shortTerm')}</span>
                 </div>
               )}
               {longTermMemoriesCount > 0 && (
                 <div className="flex flex-col items-center p-3 rounded-lg bg-accent-purple-light border border-accent-purple-light">
                   <Sparkles className="h-4 w-4 text-accent-purple mb-1" />
                   <span className="text-lg font-bold text-accent-purple">{longTermMemoriesCount}</span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{t('agents:memory.longTerm')}</span>
+                  <span className={cn(textNano, "text-muted-foreground uppercase tracking-wide")}>{t('agents:memory.longTerm')}</span>
                 </div>
               )}
               {longTermPatternsCount > 0 && (
                 <div className="flex flex-col items-center p-3 rounded-lg bg-warning-light border border-warning">
                   <TrendingUp className="h-4 w-4 text-warning mb-1" />
                   <span className="text-lg font-bold text-warning">{longTermPatternsCount}</span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{t('agents:detail.learnedPatterns')}</span>
+                  <span className={cn(textNano, "text-muted-foreground uppercase tracking-wide")}>{t('agents:detail.learnedPatterns')}</span>
                 </div>
               )}
             </>
@@ -617,7 +618,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
             <div className="p-3 rounded-lg bg-gradient-to-br from-info-light to-accent-purple-light border border-info">
               {memory.working.current_analysis && (
                 <div className="mb-2">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">{t('agents:memory.situationAnalysis')}</div>
+                  <div className={cn(textNano, "text-muted-foreground uppercase tracking-wide mb-1")}>{t('agents:memory.situationAnalysis')}</div>
                   <p className="text-sm leading-relaxed">{memory.working.current_analysis}</p>
                 </div>
               )}
@@ -625,7 +626,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
                 <div className="flex items-start gap-2 pt-2 border-t border-border">
                   <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
                   <div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">{t('agents:memory.conclusion')}</div>
+                    <div className={cn(textNano, "text-muted-foreground uppercase tracking-wide mb-0.5")}>{t('agents:memory.conclusion')}</div>
                     <p className="text-sm font-medium">{memory.working.current_conclusion}</p>
                   </div>
                 </div>

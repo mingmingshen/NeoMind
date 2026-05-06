@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { dialogHeader } from '@/design-system/tokens/size'
+import { textMicro, textNano } from '@/design-system/tokens/typography'
 import { useStore } from '@/store'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
@@ -855,7 +856,7 @@ export function UnifiedDataSourceConfig({
         {/* Device list header with count */}
         <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-muted-30 flex items-center justify-between">
           <span>{t('dataSource.deviceList')}</span>
-          <span className="text-[10px] text-muted-foreground bg-muted-50 px-1.5 py-0.5 rounded">
+          <span className={cn(textNano, "text-muted-foreground bg-muted-50 px-1.5 py-0.5 rounded")}>
             {filteredDevices.length} {t('dataSource.count')}
           </span>
         </div>
@@ -903,7 +904,7 @@ export function UnifiedDataSourceConfig({
                       'text-sm truncate',
                       isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
                     )}>{device.name || device.id}</div>
-                    <div className="text-[10px] text-muted-foreground truncate flex items-center gap-1.5">
+                    <div className={cn(textNano, "text-muted-foreground truncate flex items-center gap-1.5")}>
                       <span>{device.device_type}</span>
                       {availableCount > 0 && (
                         <>
@@ -919,7 +920,7 @@ export function UnifiedDataSourceConfig({
                     <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                   )}
                   {!isMobile && selectedCount > 0 && (
-                    <span className="shrink-0 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-medium bg-primary text-primary-foreground rounded-sm">
+                    <span className={cn("shrink-0 min-w-[18px] h-[18px] flex items-center justify-center", textNano, "font-medium bg-primary text-primary-foreground rounded-sm")}>
                       {selectedCount}
                     </span>
                   )}
@@ -1071,7 +1072,7 @@ export function UnifiedDataSourceConfig({
           info: { label: t('dataSource.badgeInfo'), className: 'bg-warning-light text-warning border-warning' },
         }[itemType]
         return (
-          <span className={cn('px-1.5 py-0.5 text-[10px] font-medium rounded-[3px] border shrink-0', config.className)}>
+          <span className={cn('px-1.5 py-0.5', textNano, 'font-medium rounded-[3px] border shrink-0', config.className)}>
             {config.label}
           </span>
         )
@@ -1083,7 +1084,7 @@ export function UnifiedDataSourceConfig({
           return (
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-success-light border border-success-light" title={`${t('dataSource.hasHistoricalData')} (${count ?? 0} ${t('dataSource.dataPoints')})`}>
               <Circle className="h-1.5 w-1.5 fill-success text-success" />
-              <span className="text-[10px] text-success font-medium">{count ?? 0}</span>
+              <span className={cn(textNano, "text-success font-medium")}>{count ?? 0}</span>
             </div>
           )
         }
@@ -1091,7 +1092,7 @@ export function UnifiedDataSourceConfig({
           return (
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted-30 border border-muted" title={t('dataSource.noHistoricalData')}>
               <Circle className="h-1.5 w-1.5 fill-muted-foreground text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground">{t('dataSource.noData')}</span>
+              <span className={cn(textNano, "text-muted-foreground")}>{t('dataSource.noData')}</span>
             </div>
           )
         }
@@ -1105,7 +1106,7 @@ export function UnifiedDataSourceConfig({
               <Database className="h-4 w-4" />
               {t('dataSource.metricsOf', { device: selectedDevice.name || selectedDevice.id })}
             </span>
-            <span className="text-[10px] text-muted-foreground bg-muted-50 px-1.5 py-0.5 rounded">
+            <span className={cn(textNano, "text-muted-foreground bg-muted-50 px-1.5 py-0.5 rounded")}>
               {items.length} {t('dataSource.count')}
             </span>
           </div>
@@ -1156,8 +1157,8 @@ export function UnifiedDataSourceConfig({
                     </div>
 
                     {/* Subtitle row */}
-                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                      <code className="px-1 py-0.5 bg-muted rounded text-[9px] font-mono">
+                    <div className={cn("flex items-center gap-1.5", textNano, "text-muted-foreground")}>
+                      <code className={cn("px-1 py-0.5 bg-muted rounded", textMicro, "font-mono")}>
                         {item.propertyName}
                       </code>
                       {item.currentValue !== undefined && item.currentValue !== null && (
@@ -1260,7 +1261,7 @@ export function UnifiedDataSourceConfig({
         {/* Extension list header with count */}
         <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-muted-30 flex items-center justify-between">
           <span>{t('extensions:extensionList') || 'Extensions'}</span>
-          <span className="text-[10px] text-muted-foreground bg-muted-50 px-1.5 py-0.5 rounded">
+          <span className={cn(textNano, "text-muted-foreground bg-muted-50 px-1.5 py-0.5 rounded")}>
             {filteredExtensions.length} {t('dataSource.count')}
           </span>
         </div>
@@ -1302,7 +1303,7 @@ export function UnifiedDataSourceConfig({
                     )}>
                       {ext.name}
                     </div>
-                    <div className="text-[10px] text-muted-foreground truncate">
+                    <div className={cn(textNano, "text-muted-foreground truncate")}>
                       {ext.version && `v${ext.version}`}
                       {ext.description && ` · ${ext.description}`}
                     </div>
@@ -1487,7 +1488,7 @@ export function UnifiedDataSourceConfig({
                       )}>
                         {device.name || device.id}
                       </div>
-                      <div className="text-[10px] text-muted-foreground truncate">
+                      <div className={cn(textNano, "text-muted-foreground truncate")}>
                         {device.device_type}
                       </div>
                     </div>
@@ -1545,13 +1546,13 @@ export function UnifiedDataSourceConfig({
                     )}>
                       {metric.name}
                     </div>
-                    <div className="text-[10px] text-muted-foreground truncate">
+                    <div className={cn(textNano, "text-muted-foreground truncate")}>
                       {metric.description}
                     </div>
                   </div>
 
                   {/* Data type indicator */}
-                  <div className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                  <div className={cn("shrink-0", textNano, "px-1.5 py-0.5 rounded bg-muted text-muted-foreground")}>
                     {metric.unit || '—'}
                   </div>
                 </button>
@@ -1605,8 +1606,8 @@ export function UnifiedDataSourceConfig({
                       )}>
                         {source.source_display_name} · {source.field_display_name}
                       </div>
-                      <div className="text-[10px] text-muted-foreground truncate flex items-center gap-1.5">
-                        <code className="px-1 py-0.5 bg-muted rounded text-[9px] font-mono">
+                      <div className={cn(textNano, "text-muted-foreground truncate flex items-center gap-1.5")}>
+                        <code className={cn("px-1 py-0.5 bg-muted rounded", textMicro, "font-mono")}>
                           {source.source_name}:{source.field}
                         </code>
                         {source.unit && source.unit !== '-' && (
@@ -1623,7 +1624,7 @@ export function UnifiedDataSourceConfig({
                         )}
                       </div>
                     </div>
-                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-accent-indigo-light text-accent-indigo border border-accent-indigo-light">
+                    <span className={cn("shrink-0", textNano, "px-1.5 py-0.5 rounded bg-accent-indigo-light text-accent-indigo border border-accent-indigo-light")}>
                       {t('dataSource.transform')}
                     </span>
                   </button>
@@ -1678,8 +1679,8 @@ export function UnifiedDataSourceConfig({
                       )}>
                         {source.source_display_name} · {source.field_display_name}
                       </div>
-                      <div className="text-[10px] text-muted-foreground truncate flex items-center gap-1.5">
-                        <code className="px-1 py-0.5 bg-muted rounded text-[9px] font-mono">
+                      <div className={cn(textNano, "text-muted-foreground truncate flex items-center gap-1.5")}>
+                        <code className={cn("px-1 py-0.5 bg-muted rounded", textMicro, "font-mono")}>
                           {source.source_name}:{source.field}
                         </code>
                         {source.unit && source.unit !== '-' && (
@@ -1696,7 +1697,7 @@ export function UnifiedDataSourceConfig({
                         )}
                       </div>
                     </div>
-                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-accent-emerald-light text-accent-emerald border border-accent-emerald-light">
+                    <span className={cn("shrink-0", textNano, "px-1.5 py-0.5 rounded bg-accent-emerald-light text-accent-emerald border border-accent-emerald-light")}>
                       AI
                     </span>
                   </button>

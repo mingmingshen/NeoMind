@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { cardPadded } from '@/design-system/tokens/size'
+import { textNano } from "@/design-system/tokens/typography"
 import { useIsMobile } from '@/hooks/useMobile'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -731,7 +732,7 @@ return ${resultParam}`
                               )}>
                                 {param.name}
                               </span>
-                              <span className="text-[10px] px-1.5 rounded bg-muted">
+                              <span className={cn(textNano, "px-1.5 rounded bg-muted")}>
                                 {param.data_type.slice(0, 3)}
                               </span>
                               {param.required && (
@@ -845,7 +846,7 @@ function TransformPreviewPanel({
                 {deviceTypeMetrics?.slice(0, 3).map((metric, idx) => (
                   <div key={idx} className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
                     <span className="text-xs truncate">{metric.display_name || metric.name}</span>
-                    {metric.unit && <span className="text-[10px] text-muted-foreground">({metric.unit})</span>}
+                    {metric.unit && <span className={cn(textNano, "text-muted-foreground")}>({metric.unit})</span>}
                   </div>
                 ))}
                 {deviceMetricCount > 3 && (
@@ -865,7 +866,7 @@ function TransformPreviewPanel({
                   <div key={idx} className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
                     <Puzzle className="h-4 w-4 text-accent-purple" />
                     <span className="text-xs truncate">{source.extension_name}</span>
-                    <span className="text-[10px] text-muted-foreground">·</span>
+                    <span className={cn(textNano, "text-muted-foreground")}>·</span>
                     <span className="text-xs truncate">{source.display_name || source.field}</span>
                   </div>
                 ))}
@@ -912,7 +913,7 @@ function TransformPreviewPanel({
           <div className="flex items-center gap-2 bg-muted-50 rounded px-2 py-1">
             <FileCode className="h-4 w-4" />
             <span className="font-mono">{outputPrefix || 'transform'}</span>
-            <span className="text-[10px] text-muted-foreground">.key</span>
+            <span className={cn(textNano, "text-muted-foreground")}>.key</span>
           </div>
         </div>
       </div>
@@ -981,7 +982,7 @@ function TransformPreviewPanel({
       <div className="flex-1 overflow-y-auto">
         {showDSL ? (
           <div className="p-3 bg-background rounded-lg border max-h-full overflow-y-auto">
-            <pre className="text-[10px] font-mono bg-muted-50 p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
+            <pre className={cn(textNano, "font-mono bg-muted-50 p-3 rounded overflow-x-auto whitespace-pre-wrap break-all")}>
               {jsCode || '// No code'}
             </pre>
           </div>

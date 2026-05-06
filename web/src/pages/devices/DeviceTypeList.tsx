@@ -6,9 +6,11 @@ import { ResponsiveTable } from "@/components/shared"
 import { Eye, Pencil, Trash2, Download, MoreVertical, Cpu, Database, Activity } from "lucide-react"
 import type { DeviceType } from "@/types"
 import { api } from "@/lib/api"
+import { cn } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
 import { TransformsBadge } from "@/components/automation"
 import { useIsMobile } from "@/hooks/useMobile"
+import { textNano, textMini } from "@/design-system/tokens/typography"
 
 interface DeviceTypeListProps {
   deviceTypes: DeviceType[]
@@ -85,11 +87,11 @@ export function DeviceTypeList({
                     <div className="font-medium text-sm truncate">{dt.name}</div>
                   </div>
                   {/* Compact stats: icon + count */}
-                  <span className="flex items-center gap-0.5 text-[11px] text-info shrink-0">
+                  <span className={cn("flex items-center gap-0.5", textMini, "text-info shrink-0")}>
                     <Activity className="h-3 w-3" />
                     {dt.metrics?.length ?? dt.metric_count ?? 0}
                   </span>
-                  <span className="flex items-center gap-0.5 text-[11px] text-accent-purple shrink-0">
+                  <span className={cn("flex items-center gap-0.5", textMini, "text-accent-purple shrink-0")}>
                     <Cpu className="h-3 w-3" />
                     {dt.commands?.length ?? dt.command_count ?? 0}
                   </span>
@@ -124,11 +126,11 @@ export function DeviceTypeList({
                 </div>
                 {/* Row 2: device_type code + description */}
                 <div className="flex items-center gap-1.5 mt-1 ml-[40px]">
-                  <code className="text-[10px] text-muted-foreground font-mono shrink-0">{dt.device_type}</code>
+                  <code className={cn(textNano, "text-muted-foreground font-mono shrink-0")}>{dt.device_type}</code>
                   {dt.description && (
                     <>
-                      <span className="text-[10px] text-muted-foreground">·</span>
-                      <span className="text-[10px] text-muted-foreground truncate min-w-0">
+                      <span className={cn(textNano, "text-muted-foreground")}>·</span>
+                      <span className={cn(textNano, "text-muted-foreground truncate min-w-0")}>
                         {dt.description}
                       </span>
                     </>

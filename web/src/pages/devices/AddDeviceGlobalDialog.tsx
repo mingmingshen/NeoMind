@@ -7,6 +7,7 @@ import {
   Copy, LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { textMini } from "@/design-system/tokens/typography"
 import { useIsMobile } from '@/hooks/useMobile'
 
 import {
@@ -145,7 +146,7 @@ export function AddDeviceGlobalDialog({
                   <div className="min-w-0">
                     <span className="truncate block">{t(tab.labelKey)}</span>
                     <span className={cn(
-                      'text-[11px] leading-tight block mt-0.5 truncate',
+                      textMini, 'leading-tight block mt-0.5 truncate',
                       isActive ? 'text-primary/70' : 'text-muted-foreground'
                     )}>
                       {t(tab.descKey)}
@@ -714,7 +715,7 @@ function ManualAddForm({
                   )}>
                     {t(`devices:add.adapterLabel_${value}`)}
                   </span>
-                  <span className="text-[11px] text-muted-foreground leading-tight block mt-0.5 truncate max-w-[140px]">
+                  <span className={cn(textMini, "text-muted-foreground leading-tight block mt-0.5 truncate max-w-[140px]")}>
                     {t(`devices:add.adapterDesc_${value}`)}
                   </span>
                 </div>

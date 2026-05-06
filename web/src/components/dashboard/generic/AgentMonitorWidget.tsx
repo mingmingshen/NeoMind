@@ -29,6 +29,7 @@ import {
   Maximize2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { textMicro, badgeSize, textNano, textMini } from '@/design-system/tokens/typography'
 import { api } from '@/lib/api'
 import { useEvents } from '@/hooks/useEvents'
 import { Badge } from '@/components/ui/badge'
@@ -340,7 +341,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                 <XCircle className="h-4 w-4 text-error" />
               )}
               <span>#{execution.id.slice(-6)}</span>
-              <Badge variant="outline" className="text-[10px]">{execution.trigger_type}</Badge>
+              <Badge variant="outline" className={textNano}>{execution.trigger_type}</Badge>
             </DialogTitle>
           </DialogHeader>
 
@@ -396,7 +397,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                             <div className="absolute bottom-0 left-0 right-0 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <span className="text-[9px] text-white/90 truncate block">{img.source}</span>
+                              <span className={cn(textMicro, "text-white/90 truncate block")}>{img.source}</span>
                             </div>
                             <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded p-0.5">
                               <Maximize2 className="h-4 w-4 text-white" />
@@ -410,7 +411,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                     {metricTags.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {metricTags.map((tag, idx) => (
-                          <Badge key={idx} variant="secondary" className="text-[10px] h-5 px-1.5">
+                          <Badge key={idx} variant="secondary" className={cn(textNano, "h-5 px-1.5")}>
                             {tag}
                           </Badge>
                         ))}
@@ -562,23 +563,23 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
             <XCircle className="h-4 w-4 text-error shrink-0" />
           )}
 
-          <span className="text-[10px] font-mono text-muted-foreground">
+          <span className={cn(textNano, "font-mono text-muted-foreground")}>
             #{execution.id.slice(-6)}
           </span>
 
           {isLatest && (
-            <Badge variant="default" className="text-[8px] h-4 px-1">
+            <Badge variant="default" className={cn(textMicro, "h-4 px-1")}>
               Latest
             </Badge>
           )}
 
-          <Badge variant="outline" className="text-[9px] h-4 px-1">
+          <Badge variant="outline" className={cn(badgeSize.micro, "h-4 px-1")}>
             {execution.trigger_type}
           </Badge>
 
-          <span className="text-[10px] text-muted-foreground">{formatTime(execution.timestamp)}</span>
+          <span className={cn(textNano, "text-muted-foreground")}>{formatTime(execution.timestamp)}</span>
           {execution.duration_ms > 0 && (
-            <span className="text-[10px] font-mono text-muted-foreground">{formatDuration(execution.duration_ms)}</span>
+            <span className={cn(textNano, "font-mono text-muted-foreground")}>{formatDuration(execution.duration_ms)}</span>
           )}
           <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
         </div>
@@ -600,7 +601,7 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
               ))}
               {images.length > 4 && (
                 <div className="h-10 w-10 rounded border border-border bg-muted-50 flex items-center justify-center">
-                  <span className="text-[9px] text-muted-foreground">+{images.length - 4}</span>
+                  <span className={cn(textMicro, "text-muted-foreground")}>+{images.length - 4}</span>
                 </div>
               )}
             </div>
@@ -610,12 +611,12 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
           {metricTags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {metricTags.slice(0, 8).map((tag, idx) => (
-                <Badge key={idx} variant="secondary" className="text-[9px] h-4 px-1">
+                <Badge key={idx} variant="secondary" className={cn(badgeSize.micro, "h-4 px-1")}>
                   {tag}
                 </Badge>
               ))}
               {metricTags.length > 8 && (
-                <Badge variant="outline" className="text-[9px] h-4 px-1">
+                <Badge variant="outline" className={cn(badgeSize.micro, "h-4 px-1")}>
                   +{metricTags.length - 8}
                 </Badge>
               )}
@@ -627,14 +628,14 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
       {/* Conclusion preview */}
       {dp?.conclusion && (
         <div className="px-3 py-2">
-          <p className="text-[11px] text-foreground line-clamp-2">{dp.conclusion}</p>
+          <p className={cn(textMini, "text-foreground line-clamp-2")}>{dp.conclusion}</p>
         </div>
       )}
 
       {/* Error */}
       {execution.error && (
         <div className="px-3 py-2">
-          <p className="text-[10px] text-error line-clamp-2">{execution.error}</p>
+          <p className={cn(textNano, "text-error line-clamp-2")}>{execution.error}</p>
         </div>
       )}
     </button>
@@ -921,27 +922,27 @@ export function AgentMonitorWidget({
               <div className="flex items-center gap-2 mb-1">
                 <h3 className={cn(indicatorFontWeight.title, 'truncate')}>{displayAgent?.name || 'Agent'}</h3>
                 {currentlyExecuting ? (
-                  <Badge variant="default" className="text-[10px] h-5 gap-0.5 px-1.5">
+                  <Badge variant="default" className={cn(textNano, "h-5 gap-0.5 px-1.5")}>
                     <Loader2 className="h-2.5 w-2.5 animate-spin" />
                     Running
                   </Badge>
                 ) : displayAgent?.status === 'Active' ? (
-                  <Badge variant="outline" className="text-[10px] h-5 text-success border-success-light">
+                  <Badge variant="outline" className={cn(textNano, "h-5 text-success border-success-light")}>
                     <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
                     Active
                   </Badge>
                 ) : displayAgent?.status === 'Paused' ? (
-                  <Badge variant="secondary" className="text-[10px] h-5">
+                  <Badge variant="secondary" className={cn(textNano, "h-5")}>
                     <Pause className="h-2.5 w-2.5 mr-0.5" />
                     Paused
                   </Badge>
                 ) : displayAgent?.status === 'Error' ? (
-                  <Badge variant="destructive" className="text-[10px] h-5">Error</Badge>
+                  <Badge variant="destructive" className={cn(textNano, "h-5")}>Error</Badge>
                 ) : null}
               </div>
 
               {/* Stats inline */}
-              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+              <div className={cn("flex items-center gap-3", textMini, "text-muted-foreground")}>
                 <span className="flex items-center gap-1">
                   <Activity className="h-4 w-4" />
                   {executionCount} runs
@@ -968,7 +969,7 @@ export function AgentMonitorWidget({
             <div className="mt-3 p-2.5 rounded-lg bg-muted-30 border border-border">
               <div className="flex items-center gap-1.5 mb-1">
                 <Target className="h-4 w-4 text-primary" />
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Task Prompt</span>
+                <span className={cn(textNano, "font-medium text-muted-foreground uppercase tracking-wide")}>Task Prompt</span>
               </div>
               <p className="text-xs text-foreground line-clamp-2">{promptText}</p>
             </div>
@@ -1014,8 +1015,8 @@ export function AgentMonitorWidget({
                           else desc = `Step ${step.step}`
                         }
                         return (
-                          <div key={idx} className="flex items-start gap-2 text-[11px] text-info">
-                            <span className="font-mono text-[10px] text-info">#{step.step}</span>
+                          <div key={idx} className={cn("flex items-start gap-2", textMini, "text-info")}>
+                            <span className={cn("font-mono", textNano, "text-info")}>#{step.step}</span>
                             <span className="line-clamp-1">{desc}</span>
                           </div>
                         )
@@ -1063,7 +1064,7 @@ export function AgentMonitorWidget({
                           <MessageSquare className="h-4 w-4 text-accent-purple" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[10px] text-muted-foreground mb-0.5">
+                          <div className={cn(textNano, "text-muted-foreground mb-0.5")}>
                             User hint • {new Date(msg.timestamp * 1000).toLocaleString()}
                           </div>
                           <p className="text-xs bg-accent-purple-light rounded-lg px-2.5 py-1.5 border border-accent-purple-light">

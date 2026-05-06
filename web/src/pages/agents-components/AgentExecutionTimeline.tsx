@@ -23,6 +23,7 @@ import {
   Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { textNano, textMini } from "@/design-system/tokens/typography"
 import { formatTimestamp } from "@/lib/utils/format"
 import { api } from "@/lib/api"
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
@@ -769,17 +770,17 @@ function ToolCallStep({ step }: { step: ReasoningStep }) {
             <Wrench className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="font-mono text-sm truncate">{toolName}</span>
             <span className={cn(
-              "text-[10px] px-1.5 py-0.5 rounded shrink-0",
+              textNano, "px-1.5 py-0.5 rounded shrink-0",
               isSuccess ? "bg-accent-emerald-light text-accent-emerald" : "bg-error-light text-error"
             )}>
               {isSuccess ? t('agents:memory.success') : t('agents:memory.failed')}
             </span>
           </div>
           {inputPreview && !expanded && (
-            <div className="text-[11px] text-muted-foreground mt-0.5 truncate font-mono">{inputPreview}</div>
+            <div className={cn(textMini, "text-muted-foreground mt-0.5 truncate font-mono")}>{inputPreview}</div>
           )}
           {outputSummary && !expanded && (
-            <div className="text-[11px] mt-0.5 truncate">{outputSummary}</div>
+            <div className={cn(textMini, "mt-0.5 truncate")}>{outputSummary}</div>
           )}
         </div>
         <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform shrink-0 mt-0.5", expanded && "rotate-180")} />

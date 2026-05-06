@@ -13,6 +13,8 @@ import { Badge } from '@/components/ui/badge'
 import { useAnalystModels } from './useAnalystModels'
 import type { AiAnalystConfig } from './types'
 import { DEFAULT_SYSTEM_PROMPT } from './types'
+import { cn } from "@/lib/utils"
+import { textNano } from "@/design-system/tokens/typography"
 
 interface AnalystConfigPanelProps {
   open: boolean
@@ -126,7 +128,7 @@ export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSou
                 {contextWindowSize}
               </Badge>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">
+            <p className={cn(textNano, "text-muted-foreground mt-1")}>
               Number of recent data+response pairs to display in timeline
             </p>
           </div>

@@ -11,6 +11,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { BrainCircuit, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { textBody, textMini, textNano } from "@/design-system/tokens/typography"
 
 interface ThinkingBlockProps {
   thinking?: string
@@ -56,9 +57,9 @@ export function ThinkingBlock({
             "h-4 w-4",
             isStreaming ? "text-info animate-pulse" : "text-muted-foreground"
           )} />
-          <span className="text-[13px] font-medium">{t("thinking.title")}</span>
+          <span className={cn(textBody, "font-medium")}>{t("thinking.title")}</span>
           {isStreaming && (
-            <span className="text-[10px] text-muted-foreground">{t("thinking.thinking")}</span>
+            <span className={cn(textNano, "text-muted-foreground")}>{t("thinking.thinking")}</span>
           )}
           <div className="flex-1" />
           <ChevronDown className={cn(
@@ -71,7 +72,7 @@ export function ThinkingBlock({
             {hasRoundThinking ? (
               <PerRoundThinking rounds={roundThinking!} isStreaming={isStreaming} compact />
             ) : (
-              <div className="text-[13px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-words">
+              <div className={cn(textBody, "leading-relaxed text-muted-foreground whitespace-pre-wrap break-words")}>
                 {thinking}
                 {isStreaming && <span className="inline-block w-1 h-3.5 bg-muted-foreground/30 animate-pulse ml-0.5 align-middle" />}
               </div>
@@ -156,7 +157,7 @@ function PerRoundThinking({
     const [, text] = sortedRounds[0]
     return (
       <div className={cn(
-        "leading-relaxed text-muted-foreground whitespace-pre-wrap break-words text-[13px]"
+        "leading-relaxed text-muted-foreground whitespace-pre-wrap break-words", textBody,
       )}>
         {text}
         {isStreaming && <span className={cn(
@@ -175,14 +176,14 @@ function PerRoundThinking({
           <div className="flex items-center gap-1.5 mb-1">
             <span className={cn(
               "inline-flex items-center justify-center rounded-full font-medium",
-              "h-5 px-2 text-[11px]",
+              "h-5 px-2", textMini,
               getRoundColor(round)
             )}>
               R{round}
             </span>
             {idx === sortedRounds.length - 1 && isStreaming && (
               <span className={cn(
-                "text-muted-foreground animate-pulse text-[11px]"
+                "text-muted-foreground animate-pulse", textMini,
               )}>
                 {compact ? "" : "thinking..."}
               </span>
@@ -190,7 +191,7 @@ function PerRoundThinking({
           </div>
           {/* Round thinking text */}
           <div className={cn(
-            "leading-relaxed text-muted-foreground whitespace-pre-wrap break-words text-[13px] pl-6"
+            "leading-relaxed text-muted-foreground whitespace-pre-wrap break-words pl-6", textBody,
           )}>
             {text}
             {idx === sortedRounds.length - 1 && isStreaming && (

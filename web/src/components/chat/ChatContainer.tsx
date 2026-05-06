@@ -49,6 +49,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import { textNano } from "@/design-system/tokens/typography"
 
 interface ChatContainerProps {
   className?: string
@@ -751,12 +752,12 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                         )} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm truncate">{backend.name || backend.model}</p>
-                          <p className="text-[10px] text-muted-foreground truncate">
+                          <p className={cn(textNano, "text-muted-foreground truncate")}>
                             {backend.backend_type} · {backend.model}
                           </p>
                         </div>
                         {backend.id === activeBackendId && (
-                          <span className="text-[10px] text-muted-foreground">✓</span>
+                          <span className={cn(textNano, "text-muted-foreground")}>✓</span>
                         )}
                       </DropdownMenuItem>
                     ))}
@@ -793,7 +794,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                           : t("input.skills")}
                       </span>
                       {selectedSkills.length > 0 && (
-                        <span className="bg-primary text-primary-foreground text-[10px] rounded-full h-4 min-w-4 px-1 flex items-center justify-center">
+                        <span className={cn("bg-primary text-primary-foreground", textNano, "rounded-full h-4 min-w-4 px-1 flex items-center justify-center")}>
                           {selectedSkills.length}
                         </span>
                       )}
@@ -827,7 +828,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm truncate">{skill.name}</p>
-                          <p className="text-[10px] text-muted-foreground truncate">
+                          <p className={cn(textNano, "text-muted-foreground truncate")}>
                             {skill.category}
                           </p>
                         </div>

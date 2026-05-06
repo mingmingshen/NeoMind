@@ -32,7 +32,7 @@ import {
 } from '@/components/ui/dialog'
 import { EmptyState, LoadingState } from '@/components/shared'
 import { cn } from '@/lib/utils'
-import { api } from '@/lib/api'
+import { api, getServerOrigin } from '@/lib/api'
 import { UniversalPluginConfigDialog, type PluginInstance, type UnifiedPluginType } from '@/components/plugins/UniversalPluginConfigDialog'
 import type { PluginConfigSchema, AdapterType } from '@/types'
 import { useToast } from '@/hooks/use-toast'
@@ -318,7 +318,7 @@ export function UnifiedDeviceConnectionsTab() {
   }
 
   const getWebhookUrl = () => {
-    const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375' : window.location.origin
+    const apiBase = getServerOrigin()
     return `${apiBase}/api/devices/webhook/{device_id}`
   }
 

@@ -14,6 +14,7 @@ import { useIsMobile } from "@/hooks/useMobile"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { textNano } from "@/design-system/tokens/typography"
 import type { AgentExecution } from "@/types"
 
 interface AgentExecutionsListProps {
@@ -92,7 +93,7 @@ export function AgentExecutionsList({
                     {formatTimestamp(execution.timestamp, false)}
                   </span>
                   <span className={cn(
-                    "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ml-auto",
+                    "inline-flex items-center px-1.5 py-0.5 rounded", textNano, "font-medium ml-auto",
                     getStatusClass(execution.status)
                   )}>
                     {getStatusLabel(execution.status)}
@@ -103,16 +104,16 @@ export function AgentExecutionsList({
                 </div>
                 {/* Row 2: trigger + duration + error */}
                 <div className="flex items-center gap-1.5 mt-1.5">
-                  <Badge variant="outline" className="text-[10px] h-5 px-1.5 shrink-0">
+                  <Badge variant="outline" className={cn(textNano, "h-5 px-1.5 shrink-0")}>
                     {execution.trigger_type}
                   </Badge>
                   {execution.duration_ms > 0 && (
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className={cn(textNano, "text-muted-foreground")}>
                       {execution.duration_ms}ms
                     </span>
                   )}
                   {execution.error && (
-                    <span className="text-[10px] text-destructive truncate min-w-0">
+                    <span className={cn(textNano, "text-destructive truncate min-w-0")}>
                       {execution.error}
                     </span>
                   )}

@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { entityIcons, getIconForEntity } from '@/design-system/icons'
+import { textNano } from "@/design-system/tokens/typography"
 import type { EntityIcon } from '@/design-system/icons'
 
 export interface EntityIconPickerProps {
@@ -145,7 +146,7 @@ export function EntityIconPicker({
                       title={icon.name}
                     >
                       <IconPreview iconName={icon.id} size={18} />
-                      <span className="text-[10px] truncate w-full text-center">{icon.name}</span>
+                      <span className={cn(textNano, "truncate w-full text-center")}>{icon.name}</span>
                     </button>
                   )
                 })}

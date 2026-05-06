@@ -5,6 +5,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { ResponsiveTable, StatusBadge, EmptyState } from "@/components/shared"
 import { Eye, MoreVertical, Trash2, Cpu, Database, Waves, Pencil, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { textMini } from "@/design-system/tokens/typography"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { Device } from "@/types"
 import { TransformsBadge } from "@/components/automation"
@@ -135,16 +136,16 @@ export function DeviceList({
                   </div>
                   {/* Row 2: type badge + adapter + last seen */}
                   <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
-                    <Badge variant="outline" className="text-[11px] h-5 px-1.5">
+                    <Badge variant="outline" className={cn(textMini, "h-5 px-1.5")}>
                       {device.device_type}
                     </Badge>
                     <div className="flex items-center gap-1">
                       <AdapterIcon className="h-3 w-3 text-muted-foreground" />
-                      <Badge variant="outline" className="text-[11px] h-5 px-1.5">
+                      <Badge variant="outline" className={cn(textMini, "h-5 px-1.5")}>
                         {device.adapter_type || 'mqtt'}
                       </Badge>
                     </div>
-                    <span className="text-[11px] text-muted-foreground ml-auto">
+                    <span className={cn(textMini, "text-muted-foreground ml-auto")}>
                       {formatTimestamp(device.last_seen, false)}
                     </span>
                   </div>

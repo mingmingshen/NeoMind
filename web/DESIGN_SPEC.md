@@ -89,7 +89,81 @@ CSS variables defined as plain `oklch()` values do NOT support Tailwind's `/` op
 
 ---
 
-## 2. Page Layout
+## 2. Typography
+
+### Font Family
+
+| Token | Class | Usage |
+|-------|-------|-------|
+| Sans | `font-sans` (default) | All UI text — Plus Jakarta Sans + Noto Sans SC + system-ui |
+| Mono | `font-mono` | Code, device IDs, monospaced data |
+
+For inline styles (CodeMirror, Recharts), use `fontMonoStack` from `@/design-system/tokens/typography`.
+
+### Font Size Tokens
+
+All custom font sizes are defined as semantic tokens in `@/design-system/tokens/typography`. **NEVER hardcode `text-[Xpx]` in components** — import the appropriate token instead.
+
+| Token | Size | Use Case |
+|-------|------|----------|
+| `textMicro` | 9px | Extreme micro labels — data type badges in execution details |
+| `textNano` | 10px | Timestamps, tiny metadata, compact badges |
+| `textMini` | 11px | Badge text, secondary labels, tab labels |
+| `textCode` | 12px | Inline code in markdown, code snippets |
+| `textBody` | 13px | Chat messages, tool call text, markdown body |
+| `textHeading` | 15px | Markdown headings within content |
+
+Standard Tailwind sizes fill the remaining tiers:
+
+| Class | Size | Use Case |
+|-------|------|----------|
+| `text-xs` | 12px | Small labels, secondary text, helper text |
+| `text-sm` | 14px | Body text, form labels, descriptions |
+| `text-base` | 16px | Standard body, primary content |
+| `text-lg` | 18px | Section headings |
+| `text-xl`+ | 20px+ | Page titles, hero text |
+
+### Badge Size Presets
+
+Use `badgeSize` from typography tokens for consistent badge text:
+
+```tsx
+import { badgeSize } from '@/design-system/tokens/typography'
+
+<Badge className={cn(badgeSize.micro, "h-4 px-1")}>int</Badge>    // 9px
+<Badge className={cn(badgeSize.small, "h-5 px-2")}>online</Badge> // 10px
+<Badge className={cn(badgeSize.default, "h-5 px-2")}>Active</Badge> // 11px
+```
+
+### Visual Hierarchy
+
+```
+9px(micro) → 10px(nano) → 11px(mini) → 12px(xs/code) → 13px(body) → 14px(sm) → 15px(heading) → 16px(base)
+```
+
+The smallest sizes (9-11px) are reserved for **non-essential metadata** that users scan rather than read: timestamps, device IDs, status badges, data type labels. Primary content and interactive elements always use 12px or larger.
+
+### Exceptions: When `text-[Xpx]` Must Stay
+
+These patterns require literal static strings and cannot use tokens:
+
+1. **Tailwind prose modifiers** — `prose-h1:text-[15px]` (JIT needs full string)
+2. **CVA variant configs** — `sm: 'text-[10px]'` (must be static for type inference)
+3. **Third-party library APIs** — Recharts `tick={{ fontSize: 10 }}`, CodeMirror `theme({ fontSize: '13px' })`
+
+### Import Pattern
+
+```tsx
+import { textNano, textMini, textBody, cn } from '@/design-system/tokens/typography'
+import { cn } from '@/lib/utils'
+
+<span className={cn(textNano, "text-muted-foreground")}>2 min ago</span>
+<p className={cn(textBody, "leading-relaxed")}>Chat message content</p>
+```
+
+---
+
+## 3. Page Layout
 
 ### Mandatory Pattern: `PageLayout`
 
@@ -121,7 +195,7 @@ Every page must use `PageLayout` from `@/components/layout/PageLayout`.
 
 ---
 
-## 3. Dialogs
+## 4. Dialogs
 
 ### Standard Dialogs: `UnifiedFormDialog`
 
@@ -172,7 +246,7 @@ openDialog(user)  // passes user as data
 
 ---
 
-## 4. Loading States
+## 5. Loading States
 
 ### Page-Level: Skeleton Screens
 
@@ -211,7 +285,7 @@ const { isLoading, handleClick } = useLoadingButton(async () => { await api.save
 
 ---
 
-## 5. Data Display
+## 6. Data Display
 
 ### Tables: `ResponsiveTable`
 
@@ -282,7 +356,7 @@ For multi-select operations:
 
 ---
 
-## 6. UI Components
+## 7. UI Components
 
 ### Button Variants
 
@@ -363,7 +437,7 @@ import { getStatusColorClass, getStatusBgClass } from '@/design-system/utils/for
 
 ---
 
-## 7. Z-Index Stack
+## 8. Z-Index Stack
 
 | Level | Value | Usage |
 |-------|-------|-------|
@@ -379,7 +453,7 @@ All popover-type components (Select, DropdownMenu, Popover, Tooltip) render via 
 
 ---
 
-## 8. Store & Data Fetching
+## 9. Store & Data Fetching
 
 ### Fetch Deduplication Pattern
 
@@ -441,7 +515,7 @@ All slices follow the same pattern with `fetchCache`:
 
 ---
 
-## 9. Portal System
+## 10. Portal System
 
 All modal/popover content must render through `getPortalRoot()` from `@/lib/portal`. This ensures correct z-index stacking.
 
@@ -455,7 +529,7 @@ import { getPortalRoot } from '@/lib/portal'
 
 ---
 
-## 10. Error Handling
+## 11. Error Handling
 
 ### Centralized Error System
 
@@ -522,7 +596,7 @@ const { isSubmitting, handleSubmit } = useFormSubmit({
 
 ---
 
-## 11. Internationalization (i18n)
+## 12. Internationalization (i18n)
 
 All user-visible text must use the translation system. Translation files are in `src/i18n/locales/{en,zh}/`.
 
@@ -535,7 +609,7 @@ const { t } = useTranslation(['common', 'devices'])
 
 ---
 
-## 12. Glass Morphism & Surfaces
+## 13. Glass Morphism & Surfaces
 
 | Surface | Class | Use Case |
 |---------|-------|----------|
@@ -551,7 +625,7 @@ Fixed headers and footers should use `bg-surface-glass backdrop-blur` for the fr
 
 ---
 
-## 13. Mobile & Responsive
+## 14. Mobile & Responsive
 
 ### Breakpoints (Tailwind defaults)
 
@@ -603,7 +677,7 @@ Use `useMobileBodyScrollLock()` when a modal/dialog opens on mobile to prevent b
 
 ---
 
-## 14. Form Validation
+## 15. Form Validation
 
 The codebase uses a **custom `useForm` hook** (not react-hook-form or zod):
 
@@ -631,7 +705,7 @@ const { values, errors, setValue, handleSubmit, isSubmitting } = useForm({
 
 ---
 
-## 15. Spacing & Radius
+## 16. Spacing & Radius
 
 Use Tailwind's standard spacing utilities (`p-2`, `gap-4`, etc.) and the predefined radius tokens:
 
@@ -646,7 +720,7 @@ Use Tailwind's standard spacing utilities (`p-2`, `gap-4`, etc.) and the predefi
 
 ---
 
-## 16. Animation
+## 17. Animation
 
 | Name | Duration | Use Case |
 |------|----------|----------|
@@ -675,7 +749,7 @@ Use Tailwind's standard spacing utilities (`p-2`, `gap-4`, etc.) and the predefi
 
 ---
 
-## 17. Infinite Scroll
+## 18. Infinite Scroll
 
 For pages with infinite scroll on mobile:
 
@@ -692,7 +766,7 @@ const { ref, isLoading } = useInfiniteScroll({
 
 ---
 
-## 18. Polling
+## 19. Polling
 
 For data that needs periodic refresh:
 
@@ -705,7 +779,7 @@ useVisiblePolling(fetchData, { interval: 30000, enabled: true })
 
 ---
 
-## 19. Search
+## 20. Search
 
 ### SearchBar: Global search component
 

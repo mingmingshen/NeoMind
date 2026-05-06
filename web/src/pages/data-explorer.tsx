@@ -19,10 +19,12 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye } from 'lucide-react'
 import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import type { UnifiedDataSourceInfo } from '@/types'
 import { useIsMobile } from '@/hooks/useMobile'
 import { useEvents } from '@/hooks/useEvents'
 import { useAbortController } from '@/hooks/useAbortController'
+import { textNano, textMini } from "@/design-system/tokens/typography"
 
 type SourceType = 'all' | string
 
@@ -38,7 +40,7 @@ function SourceTypeBadge({ type }: { type: string }) {
   }
   const Icon = iconMap[type] || Database
   return (
-    <Badge variant="outline" className={`text-[11px] px-1.5 py-0 h-6 gap-1 ${colorMap[type] || ''}`}>
+    <Badge variant="outline" className={`${textMini} px-1.5 py-0 h-6 gap-1 ${colorMap[type] || ''}`}>
       <Icon className="h-4 w-4" />
       {type}
     </Badge>
@@ -247,7 +249,7 @@ export function DataExplorerPage() {
       case 'source_type':
         return <SourceTypeBadge type={source.source_type} />
       case 'data_type':
-        return <Badge variant="secondary" className="text-[10px]">{source.data_type}</Badge>
+        return <Badge variant="secondary" className={textNano}>{source.data_type}</Badge>
       case 'last_update':
         return <span className="text-xs text-muted-foreground">{formatTime(source.last_update)}</span>
       case 'actions':
@@ -302,9 +304,9 @@ export function DataExplorerPage() {
               </div>
               {/* Row 2: ID + data type + time */}
               <div className="flex items-center gap-1.5 mt-1.5">
-                <code className="text-[11px] text-muted-foreground font-mono truncate flex-1">{source.id}</code>
-                <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{source.data_type}</Badge>
-                <span className="text-[11px] text-muted-foreground">{formatTime(source.last_update)}</span>
+                <code className={cn(textMini, "text-muted-foreground font-mono truncate flex-1")}>{source.id}</code>
+                <Badge variant="secondary" className={cn(textNano, "h-5 px-1.5")}>{source.data_type}</Badge>
+                <span className={cn(textMini, "text-muted-foreground")}>{formatTime(source.last_update)}</span>
               </div>
             </div>
           </Card>
@@ -443,7 +445,7 @@ export function DataExplorerPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">{t('data:dataType', 'Data Type')}</p>
-                <Badge variant="secondary" className="text-[10px] mt-0.5">{selectedSource.data_type}</Badge>
+                <Badge variant="secondary" className={cn(textNano, "mt-0.5")}>{selectedSource.data_type}</Badge>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">{t('data:unit', 'Unit')}</p>

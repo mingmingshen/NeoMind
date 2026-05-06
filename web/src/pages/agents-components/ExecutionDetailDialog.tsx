@@ -16,7 +16,9 @@ import {
 import { api } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { formatTimestamp } from "@/lib/utils/format"
+import { cn } from "@/lib/utils"
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
+import { textMicro, badgeSize, textNano } from "@/design-system/tokens/typography"
 import type { AgentExecutionDetail, DataCollected } from "@/types"
 import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
@@ -324,8 +326,8 @@ export function ExecutionDetailDialog({
                           >
                             <div className="flex items-center gap-2 min-w-0 flex-1">
                               {hasImage && <ImageIcon className="h-4 w-4 text-accent-purple shrink-0" />}
-                              <span className="text-[10px] font-medium truncate">{data.source}</span>
-                              <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0">{data.data_type}</Badge>
+                              <span className={cn(textNano, "font-medium truncate")}>{data.source}</span>
+                              <Badge variant="outline" className={cn(badgeSize.micro, "h-4 px-1 shrink-0")}>{data.data_type}</Badge>
                             </div>
                             {dataPairs.length > 0 && (
                               isExpanded ? (
@@ -348,7 +350,7 @@ export function ExecutionDetailDialog({
 
                           {isExpanded && dataPairs.length > 0 && (
                             <div className="p-2 border-t bg-background">
-                              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+                              <div className={cn("grid grid-cols-2 gap-x-3 gap-y-1", textNano)}>
                                 {dataPairs.slice(0, 10).map((pair, pairIdx) => (
                                   <div key={pairIdx} className="flex items-baseline gap-1 min-w-0">
                                     <span className="text-muted-foreground shrink-0">{pair.key}:</span>
@@ -356,7 +358,7 @@ export function ExecutionDetailDialog({
                                   </div>
                                 ))}
                                 {dataPairs.length > 10 && (
-                                  <div className="col-span-2 text-muted-foreground text-[9px]">
+                                  <div className={cn("col-span-2 text-muted-foreground", textMicro)}>
                                     {t('agents:execution.moreFields', { count: dataPairs.length - 10, defaultValue: `+${dataPairs.length - 10} more fields` })}
                                   </div>
                                 )}
@@ -380,7 +382,7 @@ export function ExecutionDetailDialog({
                     {execution.decision_process.reasoning_steps.map((step, idx, arr) => (
                       <div key={idx} className="flex gap-2">
                         <div className="flex flex-col items-center">
-                          <div className="w-5 h-5 rounded-full bg-muted text-primary text-[10px] flex items-center justify-center shrink-0">
+                          <div className={cn("w-5 h-5 rounded-full bg-muted text-primary", textNano, "flex items-center justify-center shrink-0")}>
                             {step.step_number}
                           </div>
                           {idx < arr.length - 1 && (
@@ -390,8 +392,8 @@ export function ExecutionDetailDialog({
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-medium">{step.description}</div>
                           <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className="text-[9px] h-4 px-1">{step.step_type}</Badge>
-                            <span className="text-[10px] text-muted-foreground">
+                            <Badge variant="outline" className={cn(badgeSize.micro, "h-4 px-1")}>{step.step_type}</Badge>
+                            <span className={cn(textNano, "text-muted-foreground")}>
                               {Math.round(step.confidence * 100)}%
                             </span>
                           </div>
@@ -413,8 +415,8 @@ export function ExecutionDetailDialog({
                       <div key={idx} className="p-2 bg-background rounded border">
                         <div className="text-xs font-medium mb-1">{decision.description}</div>
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-muted-foreground truncate flex-1 mr-2">{decision.rationale}</span>
-                          <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0">{decision.action}</Badge>
+                          <span className={cn(textNano, "text-muted-foreground truncate flex-1 mr-2")}>{decision.rationale}</span>
+                          <Badge variant="secondary" className={cn(badgeSize.micro, "h-4 px-1 shrink-0")}>{decision.action}</Badge>
                         </div>
                       </div>
                     ))}
@@ -462,9 +464,9 @@ export function ExecutionDetailDialog({
                       <div key={idx} className="flex items-center justify-between p-1.5 bg-background rounded border">
                         <div className="flex-1 min-w-0 mr-2">
                           <div className="text-xs truncate">{action.description}</div>
-                          <div className="text-[10px] text-muted-foreground truncate">{action.target}</div>
+                          <div className={cn(textNano, "text-muted-foreground truncate")}>{action.target}</div>
                         </div>
-                        <Badge variant={action.success ? "default" : "destructive"} className="text-[9px] h-4 px-1 shrink-0">
+                        <Badge variant={action.success ? "default" : "destructive"} className={cn(badgeSize.micro, "h-4 px-1 shrink-0")}>
                           {action.success ? '✓' : '✗'}
                         </Badge>
                       </div>

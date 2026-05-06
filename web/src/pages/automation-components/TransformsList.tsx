@@ -11,6 +11,7 @@ import { ResponsiveTable } from "@/components/shared"
 import { Edit, Trash2, Code, Database, Globe, Cpu, HardDrive, CheckCircle2, Download, MoreVertical } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
+import { textMini } from "@/design-system/tokens/typography"
 import type { TransformAutomation } from "@/types"
 import { useIsMobile } from "@/hooks/useMobile"
 
@@ -175,11 +176,11 @@ export function TransformsList({
                 </div>
                 {/* Row 2: scope badge + output prefix */}
                 <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
-                  <Badge variant="outline" className={cn("text-[11px] h-5 px-1.5 gap-0.5", scopeInfo.color)}>
+                  <Badge variant="outline" className={cn(textMini, "h-5 px-1.5 gap-0.5", scopeInfo.color)}>
                     <ScopeIcon className="h-3 w-3" />
                     {getScopeLabel(transform.scope)}
                   </Badge>
-                  <code className="text-[11px] text-muted-foreground truncate">
+                  <code className={cn(textMini, "text-muted-foreground truncate")}>
                     {(transform.output_prefix || 'transform') + '.'}
                   </code>
                 </div>

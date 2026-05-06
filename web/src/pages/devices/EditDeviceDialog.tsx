@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useTranslation } from "react-i18next"
+import { getServerOrigin } from "@/lib/api"
 import { Input } from "@/components/ui/input"
 import { toast } from "@/components/ui/use-toast"
 import {
@@ -237,7 +238,7 @@ export function EditDeviceDialog({
                 {t('devices:add.webhookUrlDescription')}
               </p>
               <code className="text-xs break-all block">
-                {(window as any).__TAURI__ ? 'http://localhost:9375' : window.location.origin}/api/devices/webhook/{device?.id}
+                {getServerOrigin()}/api/devices/webhook/{device?.id}
               </code>
             </div>
           </FormSection>

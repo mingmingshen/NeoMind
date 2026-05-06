@@ -18,6 +18,8 @@ import { BrandName, BrandLogoHorizontal } from "@/components/shared/BrandName"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { logError } from '@/lib/errors'
 import { getApiBase, isTauriEnv } from '@/lib/api'
+import { cn } from '@/lib/utils'
+import { textNano } from "@/design-system/tokens/typography"
 
 const languages = [
   { code: 'en', name: 'English' },
@@ -816,7 +818,7 @@ export function SetupPage() {
                         `}
                       >
                         <span className="font-medium text-xs">{tz.name}</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">
+                        <span className={cn(textNano, "text-muted-foreground font-mono")}>
                           {formatTimeInTimezone(tz.id)}
                         </span>
                       </button>

@@ -2,6 +2,7 @@ import { ReactNode } from 'react'
 import { useIsMobile } from '@/hooks/useMobile'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { textMini } from "@/design-system/tokens/typography"
 
 export interface TabAction {
   label: string
@@ -202,7 +203,7 @@ export function PageTabsBottomNav({ tabs, activeTab, onTabChange }: PageTabsBott
                   {Icon}
                 </span>
               )}
-              <span className="text-[11px] font-medium leading-tight truncate w-full text-center">
+              <span className={cn(textMini, "font-medium leading-tight truncate w-full text-center")}>
                 {tab.label}
               </span>
             </button>

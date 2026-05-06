@@ -38,6 +38,7 @@ import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { fontMonoStack, textMini } from "@/design-system/tokens/typography"
 import { useIsMobile } from "@/hooks/useMobile"
 import type { SkillSummary, SkillDetail } from "@/types/skill"
 
@@ -305,7 +306,7 @@ anti_triggers:
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm truncate">{row.name}</div>
                     </div>
-                    <Badge variant="secondary" className="text-[11px] font-mono h-5 px-1.5">
+                    <Badge variant="secondary" className={cn(textMini, "font-mono h-5 px-1.5")}>
                       {row.priority}
                     </Badge>
                     <DropdownMenu>
@@ -335,8 +336,8 @@ anti_triggers:
                   </div>
                   {/* Row 2: keywords + size */}
                   <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
-                    <span className="text-[11px] text-muted-foreground">{row.category}</span>
-                    <span className="text-[11px] text-muted-foreground ml-auto">
+                    <span className={cn(textMini, "text-muted-foreground")}>{row.category}</span>
+                    <span className={cn(textMini, "text-muted-foreground ml-auto")}>
                       {row.body_length > 1024
                         ? `${(row.body_length / 1024).toFixed(1)} KB`
                         : `${row.body_length} B`}
@@ -510,8 +511,7 @@ anti_triggers:
                 theme={isDark ? "dark" : "light"}
                 style={{
                   fontSize: "14px",
-                  fontFamily:
-                    'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
+                  fontFamily: fontMonoStack,
                   height: "100%",
                   width: "100%",
                 }}

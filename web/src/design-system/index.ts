@@ -9,6 +9,7 @@
 export * from './tokens/size'
 export * from './tokens/color'
 export * from './tokens/indicator'
+export * from './tokens/typography'
 
 // Icons
 export * from './icons'

@@ -10,9 +10,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { api } from "@/lib/api"
+import { cn } from "@/lib/utils"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import type { SearchResult, SearchSuggestion } from "@/types"
 import { useNavigate } from "react-router-dom"
+import { textNano } from "@/design-system/tokens/typography"
 
 interface SearchBarProps {
   placeholder?: string
@@ -140,7 +142,7 @@ export function SearchBar({ placeholder }: SearchBarProps) {
         >
           <Search className="mr-2 h-4 w-4" />
           <span className="truncate">{defaultPlaceholder}</span>
-          <kbd className="pointer-events-none absolute right-1.5 top-1.5 hidden h-6 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
+          <kbd className={cn("pointer-events-none absolute right-1.5 top-1.5 hidden h-6 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono", textNano, "font-medium opacity-100 sm:flex")}>
             <span className="text-xs">⌘</span>K
           </kbd>
         </Button>
