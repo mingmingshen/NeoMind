@@ -7,7 +7,7 @@
 
 import { create } from 'zustand'
 import { devtools, persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
-import { onUnauthorized, tokenManager } from '@/lib/api'
+import { onUnauthorized, tokenManager, getApiKey } from '@/lib/api'
 
 // ============================================================================
 // Storage Configuration
@@ -175,10 +175,17 @@ export { getPageTitle } from './types'
 // ============================================================================
 
 // Register a global callback for all 401 errors
-// This clears the invalid token and shows the login screen
+// When using API key auth, 401 on admin/JWT-only endpoints should NOT
+// clear the entire session — the API key is still valid for all other routes.
+// Only clear auth state when using JWT (token expired/invalid).
 onUnauthorized(() => {
-  // Clear the invalid token
+  const apiKey = getApiKey()
+  if (apiKey) {
+    // API key auth — don't clear session. A 401 likely means the endpoint
+    // requires JWT (admin routes). The API key is still valid for other routes.
+    return
+  }
+  // JWT auth — token is invalid, clear everything and redirect to login
   tokenManager.clearToken()
-  // Update store state
   useStore.setState({ token: null, user: null, isAuthenticated: false })
 })

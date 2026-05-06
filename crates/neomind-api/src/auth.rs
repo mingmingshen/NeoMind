@@ -337,6 +337,16 @@ impl AuthState {
             .unwrap_or(false)
     }
 
+    /// Validate an API key and return its info.
+    /// Returns `None` if the key is invalid or inactive.
+    pub fn validate_key_info(&self, key: &str) -> Option<ApiKeyInfo> {
+        let hash = self.crypto.hash_api_key(key);
+        self.api_keys
+            .get(&hash)
+            .map(|item| item.value().1.clone())
+            .filter(|info| info.active)
+    }
+
     /// List all API keys (for admin endpoints).
     /// Returns the masked keys (first 8 chars only) with info.
     pub async fn list_keys(&self) -> Vec<(String, ApiKeyInfo)> {
@@ -593,9 +603,22 @@ pub async fn hybrid_auth_middleware(
         });
 
     if let Some(key) = api_key {
-        if state.auth.api_key_state.validate_key(key) {
+        if let Some(info) = state.auth.api_key_state.validate_key_info(key) {
             req.extensions_mut()
                 .insert(ValidatedApiKey(key.to_string()));
+            // Construct service account SessionInfo from API key info
+            let service_account = crate::auth_users::SessionInfo {
+                user_id: format!("apikey:{}", info.id),
+                username: info.name,
+                role: if info.permissions.contains(&"*".to_string()) {
+                    crate::auth_users::UserRole::Admin
+                } else {
+                    crate::auth_users::UserRole::User
+                },
+                created_at: info.created_at,
+                expires_at: i64::MAX,
+            };
+            req.extensions_mut().insert(service_account);
             return Ok(next.run(req).await);
         }
     }

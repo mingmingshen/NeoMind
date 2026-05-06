@@ -58,7 +58,7 @@ pub async fn logout_handler(
 }
 
 /// Get current user info handler.
-/// Supports both JWT (returns actual user) and API key auth (returns service account info).
+/// Requires JWT authentication (API key auth is not supported for user info).
 pub async fn get_current_user_handler(
     Extension(user): Extension<SessionInfo>,
 ) -> Result<Json<serde_json::Value>, AuthError> {

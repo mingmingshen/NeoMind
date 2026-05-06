@@ -54,8 +54,10 @@ export const createAuthSlice: StateCreator<
         // On 500 or other errors, keep cached user info
       })
     } else if (apiKey) {
-      // API key auth — no user session, but authenticated
+      // API key auth — no JWT token, but authenticated via service account
       set({ token: null, isAuthenticated: true, user: null })
+      // Fetch service account info (backend returns virtual user for API key)
+      get().getCurrentUser().catch(() => {})
     } else {
       set({ isAuthenticated: false, user: null })
     }
