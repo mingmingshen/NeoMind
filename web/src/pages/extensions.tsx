@@ -128,30 +128,30 @@ export function ExtensionsPage() {
         title={t("extensions:title", { defaultValue: "Extensions" })}
         subtitle={t("extensions:description", { defaultValue: "Manage dynamic extensions and plugins" })}
         borderedHeader={false}
-      >
-        {/* Header Actions */}
-        <div className="flex flex-wrap justify-between items-center gap-2 mb-2 sm:mb-4">
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setMarketplaceDialogOpen(true)}
-            >
-              <Globe className="h-4 w-4 mr-1 sm:mr-2" />
-              <span className="hidden sm:inline">{t("extensions:marketplace", { defaultValue: "Marketplace" })}</span>
-              <span className="sm:hidden">{t("extensions:marketplace", { defaultValue: "Market" })}</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setUploadDialogOpen(true)}
-            >
-              <Upload className="h-4 w-4 mr-1 sm:mr-2" />
-              {t("extensions:uploadExtension", { defaultValue: "Upload" })}
-            </Button>
+        headerContent={
+          <div className="px-4 py-2 sm:px-6 md:px-8">
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMarketplaceDialogOpen(true)}
+              >
+                <Globe className="h-4 w-4 mr-1 sm:mr-2" />
+                <span className="hidden sm:inline">{t("extensions:marketplace", { defaultValue: "Marketplace" })}</span>
+                <span className="sm:hidden">{t("extensions:marketplace", { defaultValue: "Market" })}</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setUploadDialogOpen(true)}
+              >
+                <Upload className="h-4 w-4 mr-1 sm:mr-2" />
+                {t("extensions:uploadExtension", { defaultValue: "Upload" })}
+              </Button>
+            </div>
           </div>
-        </div>
-
+        }
+      >
         {/* Extensions Grid */}
         <ExtensionGrid
           extensions={extensions}

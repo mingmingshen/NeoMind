@@ -6,6 +6,7 @@
 
 import { useStore } from "@/store"
 import { cn } from "@/lib/utils"
+import { textNano, textMini } from "@/design-system/tokens/typography"
 import { useTranslation } from "react-i18next"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
@@ -14,8 +15,6 @@ import {
   Workflow,
   Puzzle,
   Settings,
-  Wifi,
-  WifiOff,
   LogOut,
   Bell,
   LayoutDashboard,
@@ -42,6 +41,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ThemeToggle } from "./ThemeToggle"
+import { InstanceSelector } from "./InstanceSelector"
+import { InstanceManagerDialog } from "@/components/instances/InstanceManagerDialog"
 import { useState, useEffect, useRef, useCallback, forwardRef } from "react"
 import { setTopNavHeight } from "@/hooks/useVisualViewport"
 import { useIsMobile } from "@/hooks/useMobile"
@@ -95,12 +96,12 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
   const { t, i18n } = useTranslation('common')
   const location = useLocation()
   const user = useStore((state) => state.user)
-  const isConnected = useStore((state) => state.wsConnected)
   const logout = useStore((state) => state.logout)
   const alerts = useStore((state) => state.alerts)
   const fetchAlerts = useStore((state) => state.fetchAlerts)
   const acknowledgeAlert = useStore((state) => state.acknowledgeAlert)
   const [alertDropdownOpen, setAlertDropdownOpen] = useState(false)
+  const [instanceManagerOpen, setInstanceManagerOpen] = useState(false)
 
   // Fetch alerts on mount and periodically
   useEffect(() => {
@@ -234,50 +235,20 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
           {/* Spacer */}
           <div className="flex-1 max-md:max-w-4" />
 
-          {/* Right side: Status + Theme + Alerts + User */}
+          {/* Right side: Instance + Theme + Alerts + User */}
           <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2.5">
-            {/* Connection status */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  className={cn(
-                    "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                    isConnected
-                      ? "bg-success-light text-success border border-success-light"
-                      : "text-destructive bg-muted"
-                  )}
-                >
-                  {isConnected ? (
-                    <Wifi className="h-4 w-4" />
-                  ) : (
-                    <WifiOff className="h-4 w-4" />
-                  )}
-                  <span className="hidden sm:inline">
-                    {isConnected ? t('connection.connected') : t('connection.disconnected')}
-                  </span>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">
-                {isConnected ? t('connection.wsConnected') : t('connection.wsDisconnected')}
-              </TooltipContent>
-            </Tooltip>
+            {/* Instance selector (replaces old connection status) */}
+            <InstanceSelector onManageInstances={() => setInstanceManagerOpen(true)} />
 
-            {/* Language toggle - hidden on mobile */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={toggleLanguage}
-                  className="hidden sm:flex h-10 w-10 rounded-lg text-muted-foreground hover:text-foreground text-xs font-medium"
-                >
-                  {i18n.language === 'zh' ? '中' : 'EN'}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs sm:block">
-                {i18n.language === 'zh' ? t('language.switchToEnglish') : t('language.switchToChinese')}
-              </TooltipContent>
-            </Tooltip>
+            {/* Language toggle */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleLanguage}
+              className="h-10 w-10 rounded-lg text-muted-foreground hover:text-foreground text-xs font-medium"
+            >
+              {i18n.language === 'zh' ? '中' : 'EN'}
+            </Button>
 
             {/* Theme toggle */}
             <ThemeToggle />
@@ -340,7 +311,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                             <Badge
                               variant="outline"
                               className={cn(
-                                "text-[10px] px-1 py-0 shrink-0 h-5 flex items-center",
+                                textNano, "px-1 py-0 shrink-0 h-5 flex items-center",
                                 getSeverityColor(alert.severity)
                               )}
                             >
@@ -362,7 +333,7 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                               </Button>
                             )}
                           </div>
-                          <p className="text-[11px] text-muted-foreground truncate ml-7 mt-0.5" title={alert.message}>
+                          <p className={cn(textMini, "text-muted-foreground truncate ml-7 mt-0.5")} title={alert.message}>
                             {alert.message}
                           </p>
                         </div>
@@ -393,9 +364,6 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                     <p className="text-sm font-medium">{user.username}</p>
                   </div>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={toggleLanguage}>
-                    {i18n.language === 'zh' ? 'English' : '中文'}
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
                     <LogOut className="h-4 w-4 mr-2" />
                     {t('logout')}
@@ -444,6 +412,12 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
           </div>
         )}
       </nav>
+
+      {/* Instance Manager Dialog */}
+      <InstanceManagerDialog
+        open={instanceManagerOpen}
+        onOpenChange={setInstanceManagerOpen}
+      />
     </TooltipProvider>
   )
 })

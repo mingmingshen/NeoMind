@@ -6,11 +6,13 @@ import { shallow } from "zustand/shallow"
 import { TopNav } from "@/components/layout/TopNav"
 import { Toaster } from "@/components/ui/toaster"
 import { Confirmer } from "@/components/ui/confirmer"
-import { tokenManager, getApiBase, isTauriEnv } from "@/lib/api"
+import { tokenManager, getApiBase, isTauriEnv, setApiBase, getApiKey } from "@/lib/api"
+import { setApiKey } from "@/lib/urls"
 import { StartupLoading } from "@/components/StartupLoading"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
 import { useExtensionComponents } from "@/hooks/useExtensionComponents"
 import { UpdateDialog } from '@/components/update'
+import { InstanceSwitchOverlay } from '@/components/layout/InstanceSwitchOverlay'
 import { useUpdateCheck } from '@/hooks/useUpdateCheck'
 
 // Performance optimization: Lazy load route components to reduce initial bundle size
@@ -96,9 +98,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   // Check token on every render (not in useEffect) to respond immediately to login
   const token = tokenManager.getToken()
+  const apiKey = getApiKey()
 
-  // Not authenticated - redirect to login
-  if (!token) {
+  // Not authenticated — no JWT and no API key
+  if (!token && !apiKey) {
     return <Navigate to="/login" replace />
   }
 
@@ -240,6 +243,31 @@ function App() {
     // Force layout recalculation
     void document.body.offsetHeight
   }, [location.pathname])
+
+  // Initialize instance: restore API base URL from saved instance selection
+  // Only runs when there's no pending switch (applyPendingSwitch handles that case).
+  // For normal refresh, we restore the remote URL from the cached instance list.
+  useEffect(() => {
+    // Skip if applyPendingSwitch already handled initialization (switching state)
+    if (useStore.getState().switchingState === 'switching') return
+
+    try {
+      const savedId = localStorage.getItem('currentInstanceId')
+      if (savedId && savedId !== 'local-default') {
+        // Restore API base from cached instances (available synchronously)
+        const cached = JSON.parse(localStorage.getItem('neomind_instance_cache') || '[]')
+        const instance = cached.find((i: { id: string }) => i.id === savedId)
+        if (instance && !instance.is_local) {
+          setApiBase(`${instance.url}/api`)
+          if (instance.api_key) {
+            setApiKey(instance.api_key)
+          }
+        }
+      }
+    } catch {
+      // Failed to restore — use default (local) URL
+    }
+  }, [])
 
   // Track path changes (keep existing logic for other parts of app)
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname)
@@ -484,6 +512,8 @@ function App() {
         open={updateDialogOpen}
         onClose={() => useStore.setState({ updateDialogOpen: false })}
       />
+      {/* Global Instance Switch Overlay */}
+      <InstanceSwitchOverlay />
     </>
   )
 }

@@ -1,0 +1,58 @@
+/**
+ * InstanceSelector - Pill badge showing current instance name + status
+ *
+ * Click opens the full-screen InstanceManagerDialog for switching + managing.
+ */
+
+import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useStore } from '@/store'
+import { cn } from '@/lib/utils'
+import { Wifi, WifiOff } from 'lucide-react'
+
+interface InstanceSelectorProps {
+  onManageInstances: () => void
+}
+
+export function InstanceSelector({ onManageInstances }: InstanceSelectorProps) {
+  const { t } = useTranslation('instances')
+  const instances = useStore((s) => s.instances)
+  const currentInstanceId = useStore((s) => s.currentInstanceId)
+  const switchingState = useStore((s) => s.switchingState)
+  const fetchInstances = useStore((s) => s.fetchInstances)
+  const isConnected = useStore((s) => s.wsConnected)
+
+  useEffect(() => {
+    fetchInstances()
+  }, [fetchInstances])
+
+  const currentInstance = instances.find((i) => i.id === currentInstanceId)
+  const isSwitching = switchingState === 'switching'
+  const isOnline = isConnected && (currentInstance?.last_status === 'online' || !currentInstance)
+
+  return (
+    <button
+      disabled={isSwitching}
+      onClick={onManageInstances}
+      className={cn(
+        "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors",
+        "cursor-pointer hover:opacity-80 disabled:opacity-50",
+        isOnline
+          ? "bg-success-light text-success border border-success-light"
+          : "text-destructive bg-muted"
+      )}
+    >
+      {isOnline ? (
+        <Wifi className="h-4 w-4" />
+      ) : (
+        <WifiOff className="h-4 w-4" />
+      )}
+      <span className="hidden sm:inline max-w-[120px] truncate">
+        {currentInstance?.name || t('local')}
+      </span>
+      <span className="sm:hidden">
+        {isOnline ? t('status.online') : t('status.offline')}
+      </span>
+    </button>
+  )
+}

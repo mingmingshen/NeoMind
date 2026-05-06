@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.7.2] - 2026-05-06
+
+### Added
+
+- **Multi-Instance Management** — Connect to and switch between multiple NeoMind backends (local + remote) with full-screen instance manager dialog, instance selector pill in navigation bar, and animated switch overlay
+- **Instance CRUD API** — REST endpoints (`/api/instances`) for creating, listing, updating, deleting, and testing remote backend instances with API key authentication
+- **Instance Storage** — Persistent storage for remote instance metadata in `instances.redb` (redb-backed)
+- **Unified Auth Verification** — New `GET /api/auth/verify` endpoint that accepts both JWT and API key authentication, used for pre-switch key validation
+- **API Key Pre-Validation** — Instance switching validates API keys against the remote backend before switching, preventing broken states with clear error messages
+- **API Key Form Validation** — Instance add/edit form validates API keys in real-time against the remote instance before saving, with visual feedback (check/error icons)
+- **Remote Instance UX** — Instance manager hides management actions (add/edit/delete) when connected to a remote instance, shows contextual hint banner
+- **CLI API Key Management** — `neomind api-key create/list/delete` commands for managing API keys from the command line with custom data directory support
+- **Auth Data Dir Support** — `AuthState::new_with_data_dir()` for CLI tools to use custom data directories for API key storage
+- **Persistent Encryption Key** — Encryption key for API key storage auto-generated and persisted to `data/encryption_key` file, survives server restarts without needing `NEOMIND_ENCRYPTION_KEY` env var
+- **Encryption Key Fallback Chain** — `CryptoService` now follows priority: env var → persistent file → generate + save, ensuring API keys remain valid across restarts
+
+### Fixed
+
+- **Infinite API Loop on Devices Page** — TransformsBadge and DeviceTransformsDialog fetched devices, device types, and transforms on every mount, causing N×3 redundant API calls per page load. Fixed with conditional dialog rendering (`{open && <Dialog />}`) and shared `fetchCache` for transform list queries
+- **Mobile Content Top Padding** — Extensions and Settings pages had inconsistent top spacing compared to other pages. Unified mobile content padding to `pt-2` in PageLayout
+- **Mobile Action Button Inconsistency** — Page action buttons used different sizes (`h-8 text-xs` vs `h-9 text-sm`) on mobile. Unified all page action buttons to use standard `size="sm"` for consistent appearance
+- **Extensions Page Header Layout** — Moved Extensions page action buttons into `headerContent` slot for consistent fixed positioning with other tabbed pages
+- **WebSocket Infinite Reconnect Loop** — Switching to a remote instance with an invalid API key caused WebSocket to repeatedly fail auth → reload page → fail again. Fixed by separating API key errors (disconnect without reload) from JWT errors (reload to re-login)
+- **WebSocket Close Code for Auth** — Server now sends close code `4001` for WebSocket auth rejections, allowing the client to distinguish auth failures from normal disconnects
+- **API Key Not Clearing on Edit** — Clearing the API key field in instance edit form didn't remove the key (empty string was sent as `undefined`). Fixed: frontend sends empty string, backend treats it as `api_key = None`
+- **Stale Zustand Persist Cache** — Old `currentInstanceId` from Zustand persist could override localStorage-based instance selection after page refresh. Fixed with persist version bump (v2) and migration that removes the stale field
+- **Validation Icon Layout Shift** — API key validation icon (checkmark/error/spinner) caused input field width to shift. Fixed by reserving space with `pr-8` padding on the input
+
+### Changed
+
+- **Dynamic API Base URL** — Refactored `getApiBase()` to support runtime URL switching via `setApiBase()` for multi-instance support, extracted URL/key utilities to `urls.ts`
+- **WebSocket/SSE/Extension Stream Auth** — All real-time connections support both JWT token and API key authentication. API key sent as query parameter for WebSocket/SSE, enabling passwordless access to remote instances
+- **ProtectedRoute Accepts API Key** — Frontend route guard allows access when either JWT token or API key is present, enabling passwordless remote instance access
+- **Connection Status → Instance Selector** — TopNav connection status indicator replaced with instance selector pill showing current instance name and connectivity status
+- **Instance Manager Full-Screen Dialog** — Instance list opens as full-screen dialog (replacing dropdown) for better usability on mobile and desktop
+- **Login Page Instance Selector** — Login page includes instance selector dropdown using cached instance list, allowing connection to remote backends before authentication
+- **Setup Wizard Split** — Setup wizard pages extracted into separate files under `web/src/pages/setup/` for maintainability
+
+---
+
 ## [v0.7.1] - 2026-05-04
 
 ### Added

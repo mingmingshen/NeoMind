@@ -13,6 +13,7 @@ use neomind_rules::{
     store::RuleStore, RuleEngine, UnifiedValueProvider,
 };
 use neomind_storage::dashboards::DashboardStore;
+use neomind_storage::instances::InstanceStore;
 use neomind_storage::llm_backends::LlmBackendStore;
 
 use crate::automation::{
@@ -141,6 +142,9 @@ pub struct ServerState {
 
     /// Dashboard store for visual dashboard persistence.
     pub dashboard_store: Arc<DashboardStore>,
+
+    /// Instance store for remote backend instance management.
+    pub instance_store: Arc<InstanceStore>,
 
     /// Server start timestamp.
     pub started_at: i64,
@@ -655,6 +659,17 @@ impl ServerState {
             }
         };
 
+        let instance_store = match InstanceStore::open("data/instances.redb") {
+            Ok(store) => store,
+            Err(e) => {
+                tracing::error!(category = "storage", error = %e, "Failed to open instance store");
+                InstanceStore::memory().unwrap_or_else(|e| {
+                    tracing::error!(category = "storage", error = %e, "Failed to create in-memory instance store");
+                    std::process::exit(1);
+                })
+            }
+        };
+
         Self {
             core,
             devices,
@@ -666,6 +681,7 @@ impl ServerState {
             rate_limiter,
             auto_onboard_manager,
             dashboard_store,
+            instance_store,
             started_at,
             gpu_info,
             agent_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -821,6 +837,7 @@ impl ServerState {
         let response_cache = Arc::new(crate::cache::ResponseCache::with_default_ttl());
         let auto_onboard_manager = Arc::new(tokio::sync::RwLock::new(None));
         let dashboard_store = DashboardStore::memory().unwrap();
+        let instance_store = InstanceStore::memory().unwrap();
 
         // Empty GPU info for testing
         let gpu_info = Arc::new(std::sync::OnceLock::from(vec![]));
@@ -836,6 +853,7 @@ impl ServerState {
             rate_limiter,
             auto_onboard_manager,
             dashboard_store,
+            instance_store,
             started_at,
             gpu_info,
             agent_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -1002,7 +1020,7 @@ impl ServerState {
         let mqtt_config = MqttAdapterConfig {
             name: "internal-mqtt".to_string(),
             mqtt: neomind_devices::mqtt::MqttConfig {
-                broker: "localhost".to_string(),
+                broker: "127.0.0.1".to_string(), // Use IPv4 literal to avoid IPv6 resolution on Windows
                 port: 1883,
                 client_id: Some("neomind-internal".to_string()),
                 username: None,

@@ -75,10 +75,14 @@ export function DeviceTransformsDialog({
     }
   }
 
+  // Only fetch devices/deviceTypes when dialog opens (not on mount)
+  // This prevents N×3 API calls when multiple TransformsBadge are rendered in a list
   useEffect(() => {
-    fetchDevices()
-    fetchDeviceTypes()
-  }, [])
+    if (open) {
+      fetchDevices()
+      fetchDeviceTypes()
+    }
+  }, [open])
 
   const fetchTransforms = async () => {
     setLoading(true)

@@ -23,8 +23,8 @@ pub async fn create_router() -> Router {
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         agents, auth as auth_handlers, auth_users, automations, basic, capabilities, config,
-        dashboards, data, devices, events, extension_stream, extensions, llm_backends, memory,
-        message_channels, messages, mqtt, rules, sessions, settings, setup, skills, stats,
+        dashboards, data, devices, events, extension_stream, extensions, instances, llm_backends,
+        memory, message_channels, messages, mqtt, rules, sessions, settings, setup, skills, stats,
         suggestions, tools,
     };
 
@@ -38,6 +38,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/system/network-info", get(basic::network_info_handler))
         // Auth status (public - shows if auth is enabled)
         .route("/api/auth/status", get(auth_handlers::auth_status_handler))
+        // Auth verification (public route - validates credentials internally)
+        .route("/api/auth/verify", get(auth_users::get_auth_status_handler))
         // User authentication (public - login and register)
         .route("/api/auth/login", post(auth_users::login_handler))
         .route("/api/auth/register", post(auth_users::register_handler))
@@ -824,6 +826,19 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route(
             "/api/llm-backends/:id/test",
             post(llm_backends::test_backend_handler),
+        )
+        // Instances API (remote backend management)
+        .route("/api/instances", get(instances::list_instances_handler))
+        .route("/api/instances", post(instances::create_instance_handler))
+        .route(
+            "/api/instances/:id",
+            get(instances::get_instance_handler)
+                .put(instances::update_instance_handler)
+                .delete(instances::delete_instance_handler),
+        )
+        .route(
+            "/api/instances/:id/test",
+            post(instances::test_instance_handler),
         )
         // Apply rate limiting middleware to all protected routes
         .route_layer(axum::middleware::from_fn_with_state(

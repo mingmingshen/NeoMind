@@ -11,7 +11,8 @@ import type {
   ExtensionSessionStats,
 } from '@/types'
 import { tokenManager } from './auth'
-import { isTauriEnv } from './api'
+import { getServerOrigin } from './api'
+import { buildWsUrl } from './urls'
 
 type MessageHandler = (message: ExtensionServerMessage) => void
 type ConnectionHandler = (state: ExtensionStreamConnectionState) => void
@@ -92,12 +93,8 @@ export class ExtensionStreamClient {
     }
     this.notifyConnectionChange()
 
-    // Build WebSocket URL
-    const isTauri = isTauriEnv()
-    const isSecure = window.location.protocol === 'https:'
-    const protocol = (isTauri ? false : isSecure) ? 'wss:' : 'ws:'
-    const host = isTauri ? 'localhost:9375' : window.location.host
-    const wsUrl = `${protocol}//${host}/api/extensions/${this.extensionId}/stream`
+    // Build WebSocket URL using dynamic server origin (supports instance switching)
+    const wsUrl = buildWsUrl(getServerOrigin(), `/api/extensions/${this.extensionId}/stream`)
 
     // Add JWT token as query parameter
     const token = tokenManager.getToken()

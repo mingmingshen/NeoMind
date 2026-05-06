@@ -452,9 +452,10 @@ export function UnifiedDeviceConnectionsTab() {
 
   // Handle test
   const handleTest = async (id: string) => {
-    const instance = editingInstance
+    // Check by id prefix or against externalBrokers list — works from both dialog and card list
+    const isExternalBroker = id !== 'builtin' && externalBrokers.some((b) => b.id === id)
 
-    if (instance?.plugin_type === 'mqtt') {
+    if (isExternalBroker || editingInstance?.plugin_type === 'mqtt') {
       const result = await api.testBroker(id)
       return {
         success: result.success,

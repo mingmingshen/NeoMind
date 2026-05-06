@@ -11,7 +11,7 @@ import * as jsxRuntime from 'react/jsx-runtime'
 import * as lucideReact from 'lucide-react'
 import { ComponentMeta } from './types'
 import type { DashboardComponentDto, DashboardComponentsResponse } from '@/types'
-import { isTauriEnv } from '@/lib/api'
+import { isTauriEnv, getServerOrigin } from '@/lib/api'
 
 // Make React and ReactDOM available globally for extension components
 // Extension bundles are built with React as an external dependency
@@ -168,10 +168,9 @@ export class DynamicComponentRegistry {
       // Handle API URLs - use script tag injection for IIFE bundles
       // This works for both Tauri and web browser environments
       if (bundleUrl.startsWith('/api/')) {
-        // In Tauri, we need to use the full URL since the backend runs on port 9375
-        // In web browser, Vite proxy will handle the request
-        if (isTauri) {
-          const url = new URL(bundleUrl, 'http://localhost:9375')
+        // For absolute URLs (Tauri or remote instance), use the dynamic server origin
+        if (isTauri || getServerOrigin() !== window.location.origin) {
+          const url = new URL(bundleUrl, getServerOrigin())
           url.searchParams.set('_t', Date.now().toString())
           bundleUrl = url.toString()
         } else {

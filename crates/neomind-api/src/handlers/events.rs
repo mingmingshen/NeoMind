@@ -256,6 +256,9 @@ pub struct EventStreamParams {
     /// JWT authentication token
     #[serde(default)]
     pub token: Option<String>,
+    /// API key authentication (for remote instance access)
+    #[serde(default)]
+    pub api_key: Option<String>,
 }
 
 /// POST /api/events
@@ -329,18 +332,27 @@ pub async fn publish_event_handler(
 ///
 /// Streams real-time events from the event bus using Server-Sent Events.
 /// Clients can filter by event type or category.
-/// Requires JWT token authentication via `?token=xxx` parameter.
+/// Supports JWT token (`?token=xxx`) or API key (`?api_key=xxx`) authentication.
 pub async fn event_stream_handler(
     State(state): State<ServerState>,
     Query(params): Query<EventStreamParams>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, axum::Error>>>, StatusCode> {
-    // Validate JWT token - must be provided
-    let token = params.token.as_ref().ok_or(StatusCode::UNAUTHORIZED)?;
-    state
-        .auth
-        .user_state
-        .validate_token(token)
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+    // Validate authentication: JWT token or API key
+    let authenticated = if let Some(token) = params.token.as_ref() {
+        state
+            .auth
+            .user_state
+            .validate_token(token)
+            .is_ok()
+    } else if let Some(api_key) = params.api_key.as_ref() {
+        state.auth.api_key_state.validate_key(api_key)
+    } else {
+        false
+    };
+
+    if !authenticated {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
 
     // Get the event bus from the server state
     let event_bus = state.core.event_bus.as_ref().ok_or(StatusCode::NOT_FOUND)?;
@@ -451,29 +463,57 @@ pub async fn event_websocket_handler(
 
         let mut rx = create_filtered_receiver(&event_bus, &params.category);
         let auth_user_state = state.auth.user_state.clone();
+        let auth_api_key_state = state.auth.api_key_state.clone();
 
-        // First, wait for authentication message
-        while let Some(msg) = socket.recv().await {
-            match msg {
-                Ok(Message::Text(text)) => {
-                    // Handle authentication message
-                    if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
-                        if data["type"] == "Auth" {
-                            if let Some(token) = data["token"].as_str() {
-                                match auth_user_state.validate_token(token) {
-                                    Ok(_) => {
-                                        tracing::info!("WebSocket event stream authenticated");
+        // Check if API key was provided in query params — skip Auth message flow
+        let pre_authenticated = params
+            .api_key
+            .as_ref()
+            .is_some_and(|key| auth_api_key_state.validate_key(key));
+
+        if pre_authenticated {
+            let _ = socket.send(Message::Text(
+                serde_json::json!({"type": "Authenticated", "message": "Authentication successful"}).to_string()
+            )).await;
+        } else {
+            // Wait for Auth message (JWT token)
+            while let Some(msg) = socket.recv().await {
+                match msg {
+                    Ok(Message::Text(text)) => {
+                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
+                            if data["type"] == "Auth" {
+                                // Try JWT token
+                                if let Some(token) = data["token"].as_str() {
+                                    match auth_user_state.validate_token(token) {
+                                        Ok(_) => {
+                                            tracing::info!("WebSocket event stream authenticated");
+                                            let _ = socket.send(Message::Text(
+                                                serde_json::json!({"type": "Authenticated", "message": "Authentication successful"}).to_string()
+                                            )).await;
+                                            break;
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(error = %e, "JWT validation failed, rejecting WebSocket connection");
+                                            let _ = socket.send(Message::Text(
+                                                serde_json::json!({"type": "Error", "message": "Invalid or expired token"}).to_string()
+                                            )).await;
+                                            let _ = socket.close().await;
+                                            return;
+                                        }
+                                    }
+                                }
+                                // Try API key via Auth message
+                                if let Some(api_key) = data["api_key"].as_str() {
+                                    if auth_api_key_state.validate_key(api_key) {
+                                        tracing::info!("WebSocket event stream authenticated via API key");
                                         let _ = socket.send(Message::Text(
                                             serde_json::json!({"type": "Authenticated", "message": "Authentication successful"}).to_string()
                                         )).await;
-
-                                        // Break out of recv loop to start sending events
                                         break;
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(error = %e, "JWT validation failed, rejecting WebSocket connection");
+                                    } else {
+                                        tracing::warn!("Invalid API key, rejecting WebSocket connection");
                                         let _ = socket.send(Message::Text(
-                                            serde_json::json!({"type": "Error", "message": "Invalid or expired token"}).to_string()
+                                            serde_json::json!({"type": "Error", "message": "Invalid API key"}).to_string()
                                         )).await;
                                         let _ = socket.close().await;
                                         return;
@@ -481,21 +521,21 @@ pub async fn event_websocket_handler(
                                 }
                             }
                         }
-                    }
 
-                    // If not authenticated after first message, close connection
-                    tracing::warn!("No valid auth message received, closing WebSocket connection");
-                    let _ = socket.send(Message::Text(
-                        serde_json::json!({"type": "Error", "message": "Authentication required"})
-                            .to_string(),
-                    )).await;
-                    let _ = socket.close().await;
-                    return;
+                        // If not authenticated after first message, close connection
+                        tracing::warn!("No valid auth message received, closing WebSocket connection");
+                        let _ = socket.send(Message::Text(
+                            serde_json::json!({"type": "Error", "message": "Authentication required"})
+                                .to_string(),
+                        )).await;
+                        let _ = socket.close().await;
+                        return;
+                    }
+                    Ok(Message::Close(_)) | Err(_) => {
+                        return;
+                    }
+                    _ => {}
                 }
-                Ok(Message::Close(_)) | Err(_) => {
-                    return;
-                }
-                _ => {}
             }
         }
 

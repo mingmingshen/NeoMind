@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Database } from 'lucide-react'
 import { api } from '@/lib/api'
+import { fetchCache } from '@/lib/utils/async'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { DeviceTransformsDialog } from './DeviceTransformsDialog'
 
@@ -17,14 +18,21 @@ export function TransformsBadge({ deviceId, deviceTypeId, onRefresh }: Transform
   const [count, setCount] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const mountedRef = useRef(true)
 
   const fetchTransformCount = async () => {
+    // Use shared cache key — all TransformsBadge instances share one endpoint
+    const cacheKey = 'transforms-list'
+    if (!fetchCache.shouldFetch(cacheKey)) return
+
+    fetchCache.markFetching(cacheKey)
     setLoading(true)
     try {
       const result = await api.listTransforms()
+      if (!mountedRef.current) return
+
       let filtered = result.transforms || []
 
-      // Filter transforms by scope - new format: 'global' | { device_type: string } | { device: string } | { user: string }
       if (deviceId) {
         filtered = filtered.filter((tr) =>
           typeof tr.scope === 'object' && 'device' in tr.scope && tr.scope.device === deviceId
@@ -36,18 +44,23 @@ export function TransformsBadge({ deviceId, deviceTypeId, onRefresh }: Transform
       }
 
       setCount(filtered.length)
+      fetchCache.markFetched(cacheKey)
     } catch (error) {
+      fetchCache.invalidate('transforms-list')
       handleError(error, { operation: 'Fetch transform count', showToast: false })
     } finally {
-      setLoading(false)
+      if (mountedRef.current) setLoading(false)
     }
   }
 
   useEffect(() => {
+    mountedRef.current = true
     fetchTransformCount()
+    return () => { mountedRef.current = false }
   }, [deviceId, deviceTypeId])
 
   const handleRefresh = () => {
+    fetchCache.invalidate('transforms-list')
     fetchTransformCount()
     onRefresh?.()
   }
@@ -70,16 +83,19 @@ export function TransformsBadge({ deviceId, deviceTypeId, onRefresh }: Transform
         </Badge>
       </Button>
 
-      <DeviceTransformsDialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          setDialogOpen(open)
-          if (!open) handleRefresh()
-        }}
-        deviceId={deviceId}
-        deviceTypeId={deviceTypeId}
-        onTransformCreated={handleRefresh}
-      />
+      {/* Only mount the dialog when open to avoid N×3 API calls on page load */}
+      {dialogOpen && (
+        <DeviceTransformsDialog
+          open={dialogOpen}
+          onOpenChange={(open) => {
+            setDialogOpen(open)
+            if (!open) handleRefresh()
+          }}
+          deviceId={deviceId}
+          deviceTypeId={deviceTypeId}
+          onTransformCreated={handleRefresh}
+        />
+      )}
     </>
   )
 }

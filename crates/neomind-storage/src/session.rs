@@ -657,7 +657,10 @@ impl SessionStore {
     /// List all session IDs.
     pub fn list_sessions(&self) -> Result<Vec<String>, Error> {
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(SESSIONS_TABLE)?;
+        let table = match read_txn.open_table(SESSIONS_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Ok(Vec::new()),
+        };
 
         let mut sessions = Vec::new();
         for result in table.iter()? {
@@ -671,14 +674,20 @@ impl SessionStore {
     /// Check if a session exists.
     pub fn session_exists(&self, session_id: &str) -> Result<bool, Error> {
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(SESSIONS_TABLE)?;
+        let table = match read_txn.open_table(SESSIONS_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Ok(false),
+        };
         Ok(table.get(session_id)?.is_some())
     }
 
     /// Get session timestamp.
     pub fn get_session_timestamp(&self, session_id: &str) -> Result<Option<i64>, Error> {
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(SESSIONS_TABLE)?;
+        let table = match read_txn.open_table(SESSIONS_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        };
         Ok(table.get(session_id)?.map(|v| v.value()))
     }
 

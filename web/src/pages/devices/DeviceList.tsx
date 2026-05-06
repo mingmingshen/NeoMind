@@ -2,8 +2,8 @@ import { useTranslation } from "react-i18next"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
-import { ResponsiveTable, StatusBadge, EmptyState } from "@/components/shared"
-import { Eye, MoreVertical, Trash2, Cpu, Database, Waves, Pencil, Plus } from "lucide-react"
+import { ResponsiveTable, StatusBadge } from "@/components/shared"
+import { Eye, MoreVertical, Trash2, Cpu, Database, Waves, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { textMini } from "@/design-system/tokens/typography"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -73,18 +73,7 @@ export function DeviceList({
       {/* Dialogs (由上层 TAB 操作按钮控制 open 状态) */}
       {addDeviceDialog}
 
-      {devices.length === 0 && !loading ? (
-        <EmptyState
-          icon={<Cpu className="h-12 w-12" />}
-          title={t('devices:noDevices', 'No devices connected')}
-          description={t('devices:noDevicesDesc', 'Add your first device to start monitoring and controlling your IoT infrastructure')}
-          action={{
-            label: t('devices:addDevice', 'Add Device'),
-            onClick: _onAddDevice,
-            icon: <Plus className="h-4 w-4" />,
-          }}
-        />
-      ) : isMobile ? (
+      {isMobile ? (
         <div className="space-y-2">
           {paginatedDevices.map((device) => {
             const AdapterIcon = getAdapterIcon(device.adapter_type)

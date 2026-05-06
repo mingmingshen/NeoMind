@@ -272,14 +272,22 @@ impl EmbeddedBroker {
 
         tracing::info!("Embedded MQTT broker thread started");
 
-        // Give the broker a moment to start
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // Wait for the broker to become ready with retries
+        // rumqttd binds the port asynchronously, so we poll until it's listening
+        let max_wait = std::time::Duration::from_secs(5);
+        let check_interval = std::time::Duration::from_millis(100);
+        let start = std::time::Instant::now();
 
-        // Check if we can connect to the broker port (quick health check)
-        if !is_broker_running(self.config.port) {
-            return Err(EmbeddedBrokerError::Broker(
-                "Broker failed to start or port not available".to_string(),
-            ));
+        loop {
+            if is_broker_running(self.config.port) {
+                break;
+            }
+            if start.elapsed() >= max_wait {
+                return Err(EmbeddedBrokerError::Broker(
+                    "Broker failed to start or port not available".to_string(),
+                ));
+            }
+            std::thread::sleep(check_interval);
         }
 
         tracing::info!(

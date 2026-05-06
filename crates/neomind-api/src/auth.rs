@@ -56,7 +56,7 @@ pub struct AuthState {
     /// Maps hash -> (encrypted_key, ApiKeyInfo)
     api_keys: Arc<DashMap<String, (String, ApiKeyInfo)>>,
     /// Database path for persistence
-    db_path: &'static str,
+    db_path: String,
     /// Cryptographic service for key encryption
     crypto: Arc<CryptoService>,
 }
@@ -67,6 +67,11 @@ impl AuthState {
     pub fn new() -> Self {
         let db_path = "data/api_keys.redb";
         let crypto = Arc::new(CryptoService::from_env_or_generate());
+
+        // Ensure data directory exists
+        if let Some(parent) = std::path::Path::new(db_path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
 
         // Try to load from database first
         let keys = Self::load_from_db(db_path, &crypto).unwrap_or_else(|e| {
@@ -85,11 +90,18 @@ impl AuthState {
             keys
         };
 
-        Self {
+        let state = Self {
             api_keys: Arc::new(DashMap::from_iter(keys)),
-            db_path,
+            db_path: db_path.to_string(),
             crypto,
+        };
+
+        // Persist keys to database (ensures newly generated keys are saved)
+        if let Err(e) = state.save_to_db(db_path) {
+            warn!(category = "auth", error = %e, "Failed to persist API keys to database");
         }
+
+        state
     }
 
     /// Create a new auth state for testing.
@@ -102,9 +114,44 @@ impl AuthState {
 
         Self {
             api_keys: Arc::new(DashMap::new()),
-            db_path: ":memory:",
+            db_path: ":memory:".to_string(),
             crypto,
         }
+    }
+
+    /// Create a new auth state with a custom data directory.
+    /// Used by the CLI for `--data-dir` support.
+    pub fn new_with_data_dir(data_dir: &str) -> Self {
+        let db_path = format!("{}/api_keys.redb", data_dir);
+        let crypto = Arc::new(CryptoService::from_env_or_generate());
+
+        // Ensure directory exists
+        let _ = std::fs::create_dir_all(data_dir);
+
+        let keys = Self::load_from_db(&db_path, &crypto).unwrap_or_else(|e| {
+            warn!(category = "auth", error = %e, "Failed to load API keys from database, using defaults");
+            Self::load_default_keys(&crypto)
+        });
+
+        let keys = if keys.is_empty() {
+            info!(category = "auth", "No API keys found, generating default key");
+            Self::generate_default_key_silent(&crypto)
+        } else {
+            keys
+        };
+
+        let state = Self {
+            api_keys: Arc::new(DashMap::from_iter(keys)),
+            db_path,
+            crypto,
+        };
+
+        // Persist keys to database (ensures newly generated keys are saved)
+        if let Err(e) = state.save_to_db(&state.db_path) {
+            warn!(category = "auth", error = %e, "Failed to persist API keys to database");
+        }
+
+        state
     }
 
     /// Load API keys from redb database.
@@ -112,7 +159,11 @@ impl AuthState {
         path: &str,
         crypto: &CryptoService,
     ) -> Result<HashMap<String, (String, ApiKeyInfo)>, Box<dyn std::error::Error>> {
-        let db = Database::open(path)?;
+        let path_ref = std::path::Path::new(path);
+        if !path_ref.exists() {
+            return Err("Database file does not exist".into());
+        }
+        let db = Database::open(path_ref)?;
         let read_txn = db.begin_read()?;
 
         let mut keys = HashMap::new();
@@ -169,7 +220,15 @@ impl AuthState {
 
     /// Save API keys to database with encryption.
     fn save_to_db(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let db = Database::open(path)?;
+        let path_ref = std::path::Path::new(path);
+        let db = if path_ref.exists() {
+            Database::open(path_ref)?
+        } else {
+            if let Some(parent) = path_ref.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            Database::create(path_ref)?
+        };
         let write_txn = db.begin_write()?;
         {
             let mut table = write_txn.open_table(API_KEYS_TABLE)?;
@@ -218,6 +277,26 @@ impl AuthState {
 
         // Print the key prominently for the user
         crate::startup::log_startup().api_key_banner(&key, &info.name);
+
+        keys
+    }
+
+    /// Generate a default API key without printing banner (for CLI use).
+    fn generate_default_key_silent(crypto: &CryptoService) -> HashMap<String, (String, ApiKeyInfo)> {
+        let key = format!("nmk_{}", Uuid::new_v4().to_string().replace("-", ""));
+        let info = ApiKeyInfo {
+            id: Uuid::new_v4().to_string(),
+            name: "Default API Key".to_string(),
+            created_at: chrono::Utc::now().timestamp(),
+            permissions: vec!["*".to_string()],
+            active: true,
+        };
+
+        let hash = crypto.hash_api_key(&key);
+        let encrypted = crypto.encrypt_str(&key).unwrap_or_else(|_| key.clone());
+
+        let mut keys = HashMap::new();
+        keys.insert(hash, (encrypted, info));
 
         keys
     }
@@ -289,7 +368,7 @@ impl AuthState {
             .insert(hash.clone(), (encrypted, info.clone()));
 
         // Persist to database
-        if let Err(e) = self.save_to_db(self.db_path) {
+        if let Err(e) = self.save_to_db(&self.db_path) {
             warn!(category = "auth", error = %e, "Failed to save API key to database");
         }
 
@@ -303,7 +382,7 @@ impl AuthState {
 
         if removed {
             // Persist to database
-            if let Err(e) = self.save_to_db(self.db_path) {
+            if let Err(e) = self.save_to_db(&self.db_path) {
                 warn!(category = "auth", error = %e, "Failed to save API keys to database");
             }
         }
@@ -311,17 +390,33 @@ impl AuthState {
         removed
     }
 
-    /// Initialize persistent storage (create data directory if needed).
-    pub async fn init_storage(&self) {
-        if let Err(e) = tokio::fs::create_dir_all("data").await {
-            error!(category = "auth", error = %e, "Failed to create data directory");
+    /// Delete an API key by its hash and persist to database.
+    /// Used by CLI when only the hash is available (e.g. from list_keys).
+    pub async fn delete_key_by_hash(&self, hash: &str) -> bool {
+        let removed = self.api_keys.remove(hash).is_some();
+
+        if removed {
+            if let Err(e) = self.save_to_db(&self.db_path) {
+                warn!(category = "auth", error = %e, "Failed to save API keys to database");
+            }
         }
 
-        // Try to load from database, or save current keys
-        if Self::load_from_db(self.db_path, &self.crypto).is_ok() {
-            info!(category = "auth", "API keys loaded from persistent storage");
-        } else if let Err(e) = self.save_to_db(self.db_path) {
-            error!(category = "auth", error = %e, "Failed to initialize API key storage");
+        removed
+    }
+
+    /// Ensure persistent storage is in sync with in-memory state.
+    pub async fn init_storage(&self) {
+        if let Some(parent) = std::path::Path::new(&self.db_path).parent() {
+            if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                error!(category = "auth", error = %e, "Failed to create data directory");
+            }
+        }
+
+        // Persist all in-memory keys to database
+        if let Err(e) = self.save_to_db(&self.db_path) {
+            error!(category = "auth", error = %e, "Failed to persist API keys to database");
+        } else {
+            info!(category = "auth", count = self.api_keys.len(), "API keys persisted to storage");
         }
     }
 

@@ -9,12 +9,13 @@ use aes_gcm::{
 };
 use sha2::Sha256;
 use std::env;
-use tracing::warn;
+use tracing::{info, warn};
 
 // Import Engine trait for base64 operations
 use base64::Engine;
 
 const ENCRYPTION_KEY_ENV: &str = "NEOMIND_ENCRYPTION_KEY";
+const ENCRYPTION_KEY_FILE: &str = "data/encryption_key";
 const DEFAULT_ITERATIONS: u32 = 100_000;
 
 /// Error type for cryptographic operations.
@@ -60,27 +61,75 @@ impl CryptoService {
         Ok(Self { cipher })
     }
 
-    /// Create a CryptoService from environment variable.
+    /// Create a CryptoService from environment variable or persistent file.
     ///
-    /// Looks for `NEOMIND_ENCRYPTION_KEY` environment variable.
-    /// If not found, generates a random key (WARNING: not persistent across restarts).
+    /// Priority:
+    /// 1. `NEOMIND_ENCRYPTION_KEY` environment variable
+    /// 2. `data/encryption_key` file (auto-generated on first run)
+    /// 3. Generate random key and persist to file
     pub fn from_env_or_generate() -> Self {
+        // 1. Try environment variable first
         if let Ok(key_str) = env::var(ENCRYPTION_KEY_ENV) {
             let key = key_str.as_bytes();
-            Self::new(key).unwrap_or_else(|_| {
+            return Self::new(key).unwrap_or_else(|_| {
                 warn!(
                     category = "crypto",
-                    "Invalid encryption key in environment, using random key"
+                    "Invalid encryption key in environment, falling back to file"
                 );
-                Self::generate_random()
-            })
-        } else {
+                Self::from_file_or_generate()
+            });
+        }
+
+        // 2. Try persistent key file, or generate and save
+        Self::from_file_or_generate()
+    }
+
+    /// Load encryption key from file, or generate and persist a new one.
+    fn from_file_or_generate() -> Self {
+        // Try to load from file
+        if let Ok(key_hex) = std::fs::read_to_string(ENCRYPTION_KEY_FILE) {
+            let key_hex = key_hex.trim();
+            if let Ok(key_bytes) = hex::decode(key_hex) {
+                if key_bytes.len() >= 32 {
+                    info!(
+                        category = "crypto",
+                        "Loaded encryption key from {}",
+                        ENCRYPTION_KEY_FILE
+                    );
+                    return Self::new(&key_bytes).unwrap_or_else(|_| Self::generate_random());
+                }
+            }
             warn!(
                 category = "crypto",
-                "No {} set, using random key (keys will be invalid on restart)", ENCRYPTION_KEY_ENV
+                "Invalid encryption key file, regenerating"
             );
-            Self::generate_random()
         }
+
+        // Generate a new random 32-byte key and persist it
+        let raw_key = Aes256Gcm::generate_key(&mut OsRng);
+        let key_hex = hex::encode(raw_key);
+
+        // Ensure data directory exists
+        if let Some(parent) = std::path::Path::new(ENCRYPTION_KEY_FILE).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
+        if let Err(e) = std::fs::write(ENCRYPTION_KEY_FILE, &key_hex) {
+            warn!(
+                category = "crypto",
+                error = %e,
+                "Failed to persist encryption key to file"
+            );
+        } else {
+            info!(
+                category = "crypto",
+                "Generated and persisted encryption key to {}",
+                ENCRYPTION_KEY_FILE
+            );
+        }
+
+        let cipher = Aes256Gcm::new(&raw_key);
+        Self { cipher }
     }
 
     /// Generate a random encryption key.

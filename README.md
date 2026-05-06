@@ -10,7 +10,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 
 [![Build Status](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg)](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.7.1](https://img.shields.io/badge/v-0.7.1-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
+[![Version: 0.7.2](https://img.shields.io/badge/v-0.7.2-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.85+-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](https://github.com/camthink-ai/NeoMind/releases)
 
@@ -71,6 +71,12 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 - **Real-time Response**: Device changes automatically trigger rules and automations
 - **Decoupled Design**: All components communicate via event bus
 - **Multiple Transports**: REST API, WebSocket, SSE
+
+### 🔗 Multi-Instance Management
+- **Remote Backend Switching** — Connect to and switch between multiple NeoMind backends from a single web interface
+- **API Key Authentication** — Passwordless access to remote instances via API key (alternative to JWT login)
+- **Pre-Switch Validation** — API key connectivity validated before switching, preventing broken states
+- **Instance Manager UI** — Full-screen dialog for switching and managing remote instances
 
 ### 📦 Complete Storage System
 - **Time-Series**: Device metrics history and queries (redb)
@@ -191,7 +197,7 @@ After installation, access `http://your-server:9375` in your browser.
 **Install specific version:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.7.1 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.7.2 sh
 ```
 
 **Custom installation:**
@@ -223,7 +229,7 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 ```bash
 # 1. Download server binary and frontend (replace VERSION and PLATFORM)
 # PLATFORM: linux-amd64, linux-arm64, darwin-arm64
-VERSION=0.7.1
+VERSION=0.7.2
 
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-server-linux-amd64.tar.gz
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-web-${VERSION}.tar.gz
@@ -476,7 +482,7 @@ neomind/
 | Category | Endpoints |
 |----------|-----------|
 | **Health** | `/api/health`, `/api/health/status`, `/api/health/live`, `/api/health/ready` |
-| **Auth** | `/api/auth/login`, `/api/auth/register`, `/api/auth/status` |
+| **Auth** | `/api/auth/login`, `/api/auth/register`, `/api/auth/status`, `/api/auth/verify` |
 | **Setup** | `/api/setup/status`, `/api/setup/initialize`, `/api/setup/llm-config` |
 | **Devices** | `/api/devices`, `/api/devices/:id`, `/api/devices/discover` |
 | **Device Types** | `/api/device-types`, `/api/device-types/:id` |
@@ -491,6 +497,7 @@ neomind/
 | **Tools** | `/api/tools`, `/api/tools/:name/execute` |
 | **Messages** | `/api/messages`, `/api/messages/:id`, `/api/messages/channels` |
 | **Extensions** | `/api/extensions` (dynamic extensions) |
+| **Instances** | `/api/instances`, `/api/instances/:id`, `/api/instances/:id/test` |
 | **Data Sources** | `/api/data/sources` (unified query across devices, extensions, transforms, AI metrics) |
 | **Telemetry** | `/api/telemetry`, `/api/devices/:id/telemetry` (time-series queries) |
 | **Capabilities** | `/api/capabilities`, `/api/capabilities/:name` |
@@ -563,6 +570,8 @@ neomind logs --since 1h
 Manage NeoMind extensions:
 
 ```bash
+
+```bash
 # List installed extensions
 neomind extension list
 
@@ -580,6 +589,14 @@ neomind extension validate my-extension-1.0.0.nep
 
 # Get extension info
 neomind extension info my-extension
+```
+
+#### API Key Management
+
+```bash
+neomind api-key create              # Create a new API key
+neomind api-key list                # List all API keys
+neomind api-key delete <name>       # Delete an API key
 ```
 
 #### Server Management

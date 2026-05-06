@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { useStore } from "@/store"
-import { Languages, Lock, User, Shield } from "lucide-react"
+import { Languages, Lock, User, Shield, Server } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -14,7 +14,41 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { BrandLogoHorizontal } from "@/components/shared/BrandName"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
-import { tokenManager, getApiBase } from "@/lib/api"
+import { tokenManager, getApiBase, setApiBase, setApiKey, clearApiKey } from "@/lib/api"
+
+// Instance cache key — must match instanceSlice.ts
+const INSTANCE_CACHE_KEY = 'neomind_instance_cache'
+const CURRENT_INSTANCE_KEY = 'currentInstanceId'
+const PENDING_SWITCH_KEY = 'neomind_pending_switch'
+
+interface CachedInstance {
+  id: string
+  name: string
+  url: string
+  api_key?: string
+  is_local: boolean
+}
+
+function getCachedInstances(): CachedInstance[] {
+  try {
+    const raw = localStorage.getItem(INSTANCE_CACHE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+/** Derive current instance from the actual API base URL, not from cached ID.
+ *  _dynamicApiBase resets on page reload, so the truth is the URL itself. */
+function inferCurrentInstanceId(instances: CachedInstance[]): string {
+  const apiBase = getApiBase()
+  // Default API base means local
+  if (!apiBase || apiBase === '/api') return 'local-default'
+  if (typeof window !== 'undefined' && '__TAURI__' in window && apiBase === 'http://localhost:9375/api') return 'local-default'
+  // Match against cached remote instances
+  const match = instances.find(inst => `${inst.url}/api` === apiBase)
+  return match?.id || 'local-default'
+}
 
 const languages = [
   { code: 'en', name: 'English' },
@@ -52,7 +86,7 @@ function translateError(error: string, t: (key: string, params?: Record<string, 
 }
 
 export function LoginPage() {
-  const { t, i18n } = useTranslation(['common', 'auth'])
+  const { t, i18n } = useTranslation(['common', 'auth', 'instances'])
   const { login, checkAuthStatus } = useStore()
   const navigate = useNavigate()
   const [username, setUsername] = useState("")
@@ -64,6 +98,10 @@ export function LoginPage() {
   const [checkingAuth, setCheckingAuth] = useState(true)
   // Track if we've loaded credentials to avoid overwriting user's choice
   const [hasLoadedCredentials, setHasLoadedCredentials] = useState(false)
+
+  // Instance selector state
+  const [cachedInstances] = useState<CachedInstance[]>(getCachedInstances)
+  const [currentInstanceId] = useState(() => inferCurrentInstanceId(getCachedInstances()))
 
   // Check if already authenticated on mount
   useEffect(() => {
@@ -236,6 +274,19 @@ export function LoginPage() {
     }
   }
 
+  // Handle instance switch on login page
+  const handleInstanceSwitch = (instance: CachedInstance) => {
+    // Write pending switch so the overlay shows on reload
+    localStorage.setItem(CURRENT_INSTANCE_KEY, instance.id)
+    localStorage.setItem(PENDING_SWITCH_KEY, JSON.stringify({
+      targetId: instance.id,
+      previousId: currentInstanceId,
+      apiUrl: instance.is_local ? '' : `${instance.url}/api`,
+      apiKey: instance.is_local ? '' : (instance.api_key || ''),
+    }))
+    window.location.reload()
+  }
+
   // Show loading while checking authentication
   if (checkingAuth) {
     return (
@@ -296,26 +347,56 @@ export function LoginPage() {
             <BrandLogoHorizontal className="h-6 sm:h-7" />
           </div>
 
-          {/* Right - Language Switcher */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-1 px-2 sm:px-3">
-                <Languages className="h-4 w-4" />
-                <span>{languages.find(l => l.code === i18n.language)?.name || 'Language'}</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[130px]">
-              {languages.map((lang) => (
-                <DropdownMenuItem
-                  key={lang.code}
-                  onClick={() => i18n.changeLanguage(lang.code)}
-                  className={i18n.language === lang.code ? 'bg-muted' : ''}
-                >
-                  {lang.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Right - Instance Selector & Language Switcher */}
+          <div className="flex items-center gap-1">
+            {/* Instance Selector - only show if there are cached remote instances */}
+            {cachedInstances.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="gap-1 px-2 sm:px-3">
+                    <Server className="h-4 w-4" />
+                    <span className="hidden sm:inline">
+                      {currentInstanceId === 'local-default'
+                        ? t('instances:localBackend')
+                        : cachedInstances.find(i => i.id === currentInstanceId)?.name || t('instances:selectBackend')}
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[160px]">
+                  {cachedInstances.map((inst) => (
+                    <DropdownMenuItem
+                      key={inst.id}
+                      onClick={() => handleInstanceSwitch(inst)}
+                      className={currentInstanceId === inst.id ? 'bg-muted' : ''}
+                    >
+                      {inst.is_local ? t('instances:localBackend') : inst.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {/* Language Switcher */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-1 px-2 sm:px-3">
+                  <Languages className="h-4 w-4" />
+                  <span>{languages.find(l => l.code === i18n.language)?.name || 'Language'}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[130px]">
+                {languages.map((lang) => (
+                  <DropdownMenuItem
+                    key={lang.code}
+                    onClick={() => i18n.changeLanguage(lang.code)}
+                    className={i18n.language === lang.code ? 'bg-muted' : ''}
+                  >
+                    {lang.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </header>
 

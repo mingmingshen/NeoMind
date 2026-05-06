@@ -6,9 +6,6 @@ use axum::{
 };
 use serde_json::json;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::net::TcpStream;
-use tokio::time::timeout;
 
 use neomind_devices::adapter::DeviceAdapter;
 use neomind_devices::adapters::{create_adapter, mqtt::MqttAdapterConfig};
@@ -312,7 +309,9 @@ async fn update_broker_connection_status_no_store(
 /// List all external brokers.
 ///
 /// GET /api/brokers
-pub async fn list_brokers_handler() -> HandlerResult<serde_json::Value> {
+pub async fn list_brokers_handler(
+    State(state): State<crate::server::types::ServerState>,
+) -> HandlerResult<serde_json::Value> {
     let store = config::open_settings_store()
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
 
@@ -321,7 +320,33 @@ pub async fn list_brokers_handler() -> HandlerResult<serde_json::Value> {
         ErrorResponse::internal(format!("Failed to load brokers: {}", e))
     })?;
 
-    let dtos: Vec<ExternalBrokerDto> = brokers.into_iter().map(ExternalBrokerDto::from).collect();
+    // Collect live adapter statuses asynchronously
+    let mut live_status: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    for broker in &brokers {
+        let aid = format!("external-{}", broker.id);
+        if let Some(adapter) = state.devices.service.get_adapter(&aid).await {
+            live_status.insert(
+                broker.id.clone(),
+                matches!(adapter.connection_status(), neomind_devices::adapter::ConnectionStatus::Connected),
+            );
+        }
+    }
+
+    let dtos: Vec<ExternalBrokerDto> = brokers
+        .into_iter()
+        .map(|mut b| {
+            if let Some(&is_live) = live_status.get(&b.id) {
+                if b.connected != is_live {
+                    b.connected = is_live;
+                    if is_live {
+                        b.last_error = None;
+                    }
+                }
+            }
+            ExternalBrokerDto::from(b)
+        })
+        .collect();
+
     ok(json!({
         "brokers": dtos,
         "count": dtos.len(),
@@ -632,7 +657,7 @@ pub async fn delete_broker_handler(
     }
 }
 
-/// Test connection to an external broker.
+/// Test connection to an external broker using real MQTT CONNECT/CONNACK.
 ///
 /// POST /api/brokers/:id/test
 pub async fn test_broker_handler(Path(id): Path<String>) -> HandlerResult<serde_json::Value> {
@@ -648,7 +673,7 @@ pub async fn test_broker_handler(Path(id): Path<String>) -> HandlerResult<serde_
     let broker_host = broker.broker.clone();
     let broker_port = broker.port;
 
-    // Basic validation: check if host and port are valid
+    // Basic validation
     if broker_host.is_empty() {
         return ok(json!({
             "success": false,
@@ -656,7 +681,6 @@ pub async fn test_broker_handler(Path(id): Path<String>) -> HandlerResult<serde_
             "broker_url": broker_url,
         }));
     }
-
     if broker_port == 0 {
         return ok(json!({
             "success": false,
@@ -665,116 +689,57 @@ pub async fn test_broker_handler(Path(id): Path<String>) -> HandlerResult<serde_
         }));
     }
 
-    // Attempt actual TCP connection test
-    let addr = format!("{}:{}", broker_host, broker_port);
-    tracing::info!(category = "mqtt", broker_id = %id, addr = %addr, "Testing broker connection");
+    tracing::info!(
+        category = "mqtt",
+        broker_id = %id,
+        host = %broker_host,
+        port = broker_port,
+        tls = broker.tls,
+        "Testing MQTT connection with CONNECT/CONNACK"
+    );
 
-    // Use a timeout for the connection attempt
-    match timeout(Duration::from_secs(5), TcpStream::connect(&addr)).await {
-        Ok(Ok(stream)) => {
-            // Connection successful
-            let local_addr = stream.local_addr().ok().map(|a| a.to_string());
-            let peer_addr = stream.peer_addr().ok().map(|a| a.to_string());
+    // Perform real MQTT handshake via neomind-devices
+    let result = neomind_devices::adapters::mqtt::test_mqtt_connection(
+        &broker_host,
+        broker_port,
+        broker.username.as_deref(),
+        broker.password.as_deref(),
+        broker.tls,
+        broker.ca_cert.as_deref(),
+        broker.client_cert.as_deref(),
+        broker.client_key.as_deref(),
+    )
+    .await;
 
-            // Update broker status to connected
-            if let Err(e) = update_broker_connection_status(&store, &id, true, None).await {
-                tracing::warn!("Failed to update broker status: {}", e);
-            }
-
-            // Reload broker to get updated status
-            let broker_dto = match store.load_external_broker(&id) {
-                Ok(Some(updated_broker)) => {
-                    tracing::info!(category = "mqtt", broker_id = %id, connected = updated_broker.connected, "Reloaded broker after update");
-                    Some(ExternalBrokerDto::from(updated_broker))
-                }
-                Ok(None) => {
-                    tracing::warn!(category = "mqtt", broker_id = %id, "Broker not found after update");
-                    None
-                }
-                Err(e) => {
-                    tracing::warn!(category = "mqtt", broker_id = %id, error = %e, "Failed to reload broker after status update");
-                    None
-                }
-            };
-
-            ok(json!({
-                "success": true,
-                "message": "Successfully connected to broker",
-                "broker_url": broker_url,
-                "host": broker_host,
-                "port": broker_port,
-                "tls": broker.tls,
-                "local_addr": local_addr,
-                "peer_addr": peer_addr,
-                "validation_only": false,
-                "broker": broker_dto,
-            }))
-        }
-        Ok(Err(e)) => {
-            // Connection failed
-            let error_msg = format!("Connection failed: {}", e);
-
-            // Update broker status to disconnected with error
-            if let Err(err) =
-                update_broker_connection_status(&store, &id, false, Some(error_msg.clone())).await
-            {
-                tracing::warn!("Failed to update broker status: {}", err);
-            }
-
-            // Reload broker to get updated status
-            let broker_dto = match store.load_external_broker(&id) {
-                Ok(Some(updated_broker)) => Some(ExternalBrokerDto::from(updated_broker)),
-                Ok(None) => None,
-                Err(err) => {
-                    tracing::warn!("Failed to reload broker after status update: {}", err);
-                    None
-                }
-            };
-
-            ok(json!({
-                "success": false,
-                "message": error_msg,
-                "broker_url": broker_url,
-                "host": broker_host,
-                "port": broker_port,
-                "tls": broker.tls,
-                "validation_only": false,
-                "broker": broker_dto,
-            }))
-        }
-        Err(_) => {
-            // Timeout
-            let error_msg = "Connection timeout after 5 seconds".to_string();
-
-            // Update broker status to disconnected with error
-            if let Err(err) =
-                update_broker_connection_status(&store, &id, false, Some(error_msg.clone())).await
-            {
-                tracing::warn!("Failed to update broker status: {}", err);
-            }
-
-            // Reload broker to get updated status
-            let broker_dto = match store.load_external_broker(&id) {
-                Ok(Some(updated_broker)) => Some(ExternalBrokerDto::from(updated_broker)),
-                Ok(None) => None,
-                Err(err) => {
-                    tracing::warn!("Failed to reload broker after status update: {}", err);
-                    None
-                }
-            };
-
-            ok(json!({
-                "success": false,
-                "message": error_msg,
-                "broker_url": broker_url,
-                "host": broker_host,
-                "port": broker_port,
-                "tls": broker.tls,
-                "validation_only": false,
-                "broker": broker_dto,
-            }))
-        }
+    // Update broker status in storage
+    let error_for_storage = if result.success {
+        None
+    } else {
+        Some(result.message.clone())
+    };
+    if let Err(e) =
+        update_broker_connection_status(&store, &id, result.success, error_for_storage).await
+    {
+        tracing::warn!("Failed to update broker status: {}", e);
     }
+
+    // Reload broker to get updated status
+    let broker_dto = store
+        .load_external_broker(&id)
+        .ok()
+        .flatten()
+        .map(ExternalBrokerDto::from);
+
+    ok(json!({
+        "success": result.success,
+        "message": result.message,
+        "broker_url": broker_url,
+        "host": broker_host,
+        "port": broker_port,
+        "tls": broker.tls,
+        "validation_only": false,
+        "broker": broker_dto,
+    }))
 }
 
 /// Update broker connection status in storage

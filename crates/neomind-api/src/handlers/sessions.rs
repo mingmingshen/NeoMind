@@ -789,13 +789,15 @@ pub async fn chat_handler(
 
 /// WebSocket chat handler.
 ///
-/// Requires JWT token authentication via `?token=xxx` parameter.
+/// Supports two authentication methods:
+/// - JWT token via `?token=xxx` parameter (local instance)
+/// - API key via `?api_key=xxx` parameter (remote instance)
 pub async fn ws_chat_handler(
     ws: WebSocketUpgrade,
     State(state): State<ServerState>,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> axum::response::Response {
-    // Extract and validate JWT token
+    // Try JWT token authentication first
     let session_info = match params.get("token") {
         Some(token) => match state.auth.user_state.validate_token(token) {
             Ok(info) => {
@@ -819,18 +821,48 @@ pub async fn ws_chat_handler(
                 });
             }
         },
-        None => {
+        None => None,
+    };
+
+    // If no valid JWT, try API key authentication
+    if session_info.is_none() {
+        if let Some(api_key) = params.get("api_key") {
+            if state.auth.api_key_state.validate_key(api_key) {
+                info!("WebSocket authenticated via API key");
+                // No user session for API key auth — proceed without session_info
+            } else {
+                tracing::warn!("Invalid API key, rejecting WebSocket connection");
+                return ws.on_upgrade(|mut socket| async move {
+                    let _ = socket
+                        .send(AxumMessage::Text(
+                            json!({"type": "Error", "message": "Invalid API key"}).to_string(),
+                        ))
+                        .await;
+                    let _ = socket
+                        .send(AxumMessage::Close(Some(axum::extract::ws::CloseFrame {
+                            code: axum::extract::ws::CloseCode::from(4001u16),
+                            reason: "Invalid API key".into(),
+                        })))
+                        .await;
+                });
+            }
+        } else {
             tracing::warn!("No authentication provided, rejecting WebSocket connection");
             return ws.on_upgrade(|mut socket| {
                 async move {
                     let _ = socket.send(AxumMessage::Text(
-                        json!({"type": "Error", "message": "Authentication required. Provide a valid JWT token."}).to_string()
+                        json!({"type": "Error", "message": "Authentication required. Provide ?token=xxx or ?api_key=xxx."}).to_string()
                     )).await;
-                    let _ = socket.close().await;
+                    let _ = socket
+                        .send(AxumMessage::Close(Some(axum::extract::ws::CloseFrame {
+                            code: axum::extract::ws::CloseCode::from(4001u16),
+                            reason: "Authentication required".into(),
+                        })))
+                        .await;
                 }
             });
         }
-    };
+    }
 
     let session_id = params.get("sessionId").cloned();
     ws.on_upgrade(|socket| handle_ws_socket(socket, state, session_id, session_info))

@@ -438,8 +438,7 @@ impl MqttAdapter {
 
         tokio::spawn(async move {
             let mut eventloop = eventloop;
-            let mut error_count = 0;
-            let max_errors = 5;
+            let mut error_count: u32 = 0;
 
             while *running_flag.read().await {
                 match eventloop.poll().await {
@@ -463,18 +462,16 @@ impl MqttAdapter {
                     }
                     Err(e) => {
                         error_count += 1;
-                        if error_count >= max_errors {
-                            error!(
-                                "MQTT broker {} error count reached {}, stopping: {}",
-                                broker_id_clone, max_errors, e
-                            );
-                            break;
-                        }
-                        warn!(
-                            "MQTT broker {} error ({}/{}): {}",
-                            broker_id_clone, error_count, max_errors, e
+                        // Exponential backoff: 1s, 2s, 4s, 8s, ... capped at 30s
+                        // rumqttc handles reconnection internally — just keep polling
+                        let backoff = Duration::from_secs(
+                            (1u64 << error_count.min(4)).min(30),
                         );
-                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        warn!(
+                            "MQTT broker {} error ({}), reconnecting in {:?}: {}",
+                            broker_id_clone, error_count, backoff, e
+                        );
+                        tokio::time::sleep(backoff).await;
                     }
                 }
             }
@@ -685,8 +682,7 @@ impl MqttAdapter {
 
         tokio::spawn(async move {
             let mut eventloop = eventloop;
-            let mut error_count = 0;
-            let max_errors = 5;
+            let mut error_count: u32 = 0;
 
             while *running_flag2.read().await {
                 match eventloop.poll().await {
@@ -698,18 +694,16 @@ impl MqttAdapter {
                     }
                     Err(e) => {
                         error_count += 1;
-                        if error_count >= max_errors {
-                            error!(
-                                "MQTT broker {} error count reached {}, stopping: {}",
-                                broker_id_clone2, max_errors, e
-                            );
-                            break;
-                        }
-                        warn!(
-                            "MQTT broker {} error ({}/{}): {}",
-                            broker_id_clone2, error_count, max_errors, e
+                        // Exponential backoff: 1s, 2s, 4s, 8s, ... capped at 30s
+                        // rumqttc handles reconnection internally — just keep polling
+                        let backoff = Duration::from_secs(
+                            (1u64 << error_count.min(4)).min(30),
                         );
-                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        warn!(
+                            "MQTT broker {} error ({}), reconnecting in {:?}: {}",
+                            broker_id_clone2, error_count, backoff, e
+                        );
+                        tokio::time::sleep(backoff).await;
                     }
                 }
             }
@@ -726,7 +720,7 @@ impl MqttAdapter {
     }
 
     /// Build TLS transport with optional certificates.
-    fn build_tls_transport(
+    pub fn build_tls_transport(
         ca_cert: Option<&str>,
         client_cert: Option<&str>,
         client_key: Option<&str>,
@@ -1861,6 +1855,84 @@ pub fn create_mqtt_adapter_with_mapping(
     });
 
     adapter
+}
+
+/// Result of an MQTT connection test.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MqttTestResult {
+    pub success: bool,
+    pub message: String,
+}
+
+/// Test MQTT connectivity by performing a real CONNECT/CONNACK handshake.
+///
+/// This creates a temporary MQTT client, connects to the broker, and waits
+/// for CONNACK. Returns success if the broker accepts the connection.
+pub async fn test_mqtt_connection(
+    host: &str,
+    port: u16,
+    username: Option<&str>,
+    password: Option<&str>,
+    tls: bool,
+    ca_cert: Option<&str>,
+    client_cert: Option<&str>,
+    client_key: Option<&str>,
+) -> MqttTestResult {
+    let client_id = format!("neomind-test-{}", uuid::Uuid::new_v4());
+    let mut mqttoptions = rumqttc::MqttOptions::new(&client_id, host, port);
+    mqttoptions.set_max_packet_size(1024, 1024);
+    mqttoptions.set_keep_alive(Duration::from_secs(5));
+
+    if let (Some(user), Some(pass)) = (username, password) {
+        mqttoptions.set_credentials(user, pass);
+    }
+
+    if tls {
+        match MqttAdapter::build_tls_transport(ca_cert, client_cert, client_key) {
+            Ok(transport) => { mqttoptions.set_transport(transport); }
+            Err(e) => {
+                return MqttTestResult {
+                    success: false,
+                    message: format!("TLS configuration error: {}", e),
+                };
+            }
+        }
+    }
+
+    let (_client, mut eventloop) = rumqttc::AsyncClient::new(mqttoptions, 5);
+
+    // Poll for CONNACK with a 10-second timeout
+    let result = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match eventloop.poll().await {
+                Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(ack))) => {
+                    if ack.code == rumqttc::ConnectReturnCode::Success {
+                        return Ok("MQTT CONNECT successful".to_string());
+                    } else {
+                        return Err(format!("CONNACK rejected: {:?}", ack.code));
+                    }
+                }
+                Ok(_) => continue,
+                Err(e) => return Err(format!("{}", e)),
+            }
+        }
+    })
+    .await;
+
+    match result {
+        Ok(Ok(msg)) => MqttTestResult {
+            success: true,
+            message: msg,
+        },
+        Ok(Err(msg)) => MqttTestResult {
+            success: false,
+            message: msg,
+        },
+        Err(_) => MqttTestResult {
+            success: false,
+            message: "Connection timeout after 10 seconds".to_string(),
+        },
+    }
 }
 
 #[cfg(test)]

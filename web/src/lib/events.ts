@@ -2,7 +2,8 @@
 //
 // Provides real-time event streaming from the NeoMind event bus.
 
-import { tokenManager, isTauriEnv } from '@/lib/api'
+import { tokenManager, isTauriEnv, getServerOrigin, getApiKey } from '@/lib/api'
+import { buildWsUrl } from '@/lib/urls'
 
 export type EventType =
   | 'DeviceOnline'
@@ -230,18 +231,20 @@ export class EventsWebSocket {
       this.tokenCheckTimer = null
     }
 
-    // Get current token
+    // Get current token and API key
     const currentToken = tokenManager.getToken()
+    const apiKey = getApiKey()
 
-    // If no token, start polling for token
-    if (!currentToken) {
+    // Need either JWT token or API key to authenticate
+    if (!currentToken && !apiKey) {
       this.disconnect()
       this.notifyConnection(false)
 
-      // Poll for token every 500ms
+      // Poll for credentials every 500ms
       this.tokenCheckTimer = setInterval(() => {
         const token = tokenManager.getToken()
-        if (token) {
+        const key = getApiKey()
+        if (token || key) {
           if (this.tokenCheckTimer) {
             clearInterval(this.tokenCheckTimer)
             this.tokenCheckTimer = null
@@ -252,9 +255,9 @@ export class EventsWebSocket {
       return
     }
 
-    // If token changed, force reconnect
-    if (this.lastToken !== currentToken) {
-      // Reset reconnect attempts and auth failed flag when token changes
+    // If token/key changed, force reconnect
+    const authId = apiKey || currentToken
+    if (this.lastToken !== authId) {
       this.reconnectAttempts = 0
       this.authFailed = false
       if (this.isConnected()) {
@@ -262,7 +265,7 @@ export class EventsWebSocket {
       }
     }
 
-    this.lastToken = currentToken
+    this.lastToken = authId
 
     // Only disconnect if we're changing connection type or config significantly changed
     // Otherwise, reuse existing connection
@@ -312,22 +315,23 @@ export class EventsWebSocket {
     }
     eventTypes.forEach(type => params.append('event_type', type))
 
+    const apiKey = getApiKey()
+    const token = tokenManager.getToken()
+
     // Build WebSocket URL
-    // Note: Token is sent via Auth message after connection (more secure than URL)
-    // In development, use relative URL to go through Vite proxy
-    // In Tauri/production, connect directly to backend
     let wsUrl: string
-    if (isTauriEnv()) {
-      // Tauri: backend runs on localhost:9375
-      wsUrl = `ws://localhost:9375/api/events/ws?${params.toString()}`
-    } else if (window.location.port === '5173') {
+    if (!isTauriEnv() && window.location.port === '5173') {
       // Development: use relative URL to go through Vite proxy
-      // The proxy will forward to the backend
       wsUrl = `/api/events/ws?${params.toString()}`
     } else {
-      // Production: use current host with ws/wss protocol
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      wsUrl = `${wsProtocol}//${window.location.host}/api/events/ws?${params.toString()}`
+      // Tauri/production: use dynamic origin
+      wsUrl = `${buildWsUrl(getServerOrigin(), '/api/events/ws')}?${params.toString()}`
+    }
+
+    // For API key auth, pass it as query param (backend validates in on_upgrade)
+    if (apiKey) {
+      params.set('api_key', apiKey)
+      wsUrl += (wsUrl.includes('?') ? '&' : '?') + `api_key=${encodeURIComponent(apiKey)}`
     }
 
     try {
@@ -343,10 +347,15 @@ export class EventsWebSocket {
       // Don't notify connection yet - wait for authentication
       this.reconnectAttempts = 0
 
-      // Send authentication message immediately after connection is established
-      // Backend expects: {"type": "Auth", "token": "jwt-token"}
-      const token = tokenManager.getToken()
       const ws = this.ws
+
+      // If using API key via query param, auth is handled server-side
+      // Just wait for the Authenticated message from server
+      if (apiKey) {
+        return
+      }
+
+      // JWT auth: send Auth message
       if (token && ws && ws.readyState === WebSocket.OPEN) {
         try {
           ws.send(JSON.stringify({
@@ -354,18 +363,16 @@ export class EventsWebSocket {
             token: token
           }))
         } catch (e) {
-          // Failed to send auth message - set a flag to prevent reconnection from onclose
           this.isConnecting = false
-          this.authFailed = true  // Flag to prevent reconnection loop
+          this.authFailed = true
           this.notifyError(new Error(`Failed to send auth message: ${e}`))
-          // Use a timeout to close connection to prevent onclose from scheduling reconnect immediately
           setTimeout(() => {
             if (ws) ws.close()
           }, 0)
           return
         }
       } else {
-        // No token available or not ready, close the connection
+        // No token available, close the connection
         this.isConnecting = false
         this.authFailed = true
         this.notifyError(new Error('No token available for WebSocket authentication'))
@@ -440,16 +447,19 @@ export class EventsWebSocket {
     }
     eventTypes.forEach(type => params.append('event_type', type))
 
-    // Add JWT token for authentication
+    // Use API key or JWT token for authentication
+    const apiKey = getApiKey()
     const token = tokenManager.getToken()
-    if (!token) {
+    if (apiKey) {
+      params.set('api_key', apiKey)
+    } else if (token) {
+      params.set('token', token)
+    } else {
       this.isConnecting = false
-      this.notifyError(new Error('No token available for SSE connection'))
-      // Start polling for token
+      this.notifyError(new Error('No credentials available for SSE connection'))
       this.connect()
       return
     }
-    params.set('token', token)
 
     const sseUrl = `/api/events/stream?${params.toString()}`
     this.eventSource = new EventSource(sseUrl)

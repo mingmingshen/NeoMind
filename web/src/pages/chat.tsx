@@ -810,7 +810,7 @@ export function ChatPage() {
             {t('chat:notConfigured.description')}
           </p>
           <Button
-            onClick={() => navigate('/extensions')}
+            onClick={() => navigate('/settings')}
             className="gap-2"
             size="default"
           >

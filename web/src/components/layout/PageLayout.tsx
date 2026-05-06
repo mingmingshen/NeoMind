@@ -111,7 +111,7 @@ export function PageLayout({
           className={cn(
             'flex-1 flex flex-col overflow-auto',
             !noPadding && 'px-4 sm:px-6 md:px-8',
-            !noPadding && isMobile && 'pt-1',
+            !noPadding && isMobile && 'pt-2',
           )}
           data-page-scroll-container
         >

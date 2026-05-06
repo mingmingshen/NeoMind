@@ -1,217 +1,43 @@
+/**
+ * Setup Page - Simplified 2-step initial setup
+ *
+ * Step 1: Create admin account + select timezone (auto-detected)
+ * Step 2: Complete with quick-start guide
+ *
+ * LLM configuration is deferred — users configure it when they first use AI features.
+ */
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
-import { getLocalizedTimezones } from "@/lib/time"
-import { Bot, Languages, Lock, User, Shield, Check, ArrowRight, ArrowLeft, Server, ChevronRight, Globe } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { BrandName, BrandLogoHorizontal } from "@/components/shared/BrandName"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
-import { logError } from '@/lib/errors'
 import { getApiBase, isTauriEnv } from '@/lib/api'
-import { cn } from '@/lib/utils'
-import { textNano } from "@/design-system/tokens/typography"
+import { Loader2 } from "lucide-react"
+import { AccountStep } from "./setup/AccountStep"
+import { CompleteStep } from "./setup/CompleteStep"
 
-const languages = [
-  { code: 'en', name: 'English' },
-  { code: 'zh', name: '简体中文' },
-]
-
-// Mailchimp subscription function
-function mcSubscribe(email: string, username?: string): Promise<{ result: string; msg: string }> {
-  const base = "https://camthink.us2.list-manage.com/subscribe/post-json"
-
-  // Generate unique JSONP callback name
-  const cb = "mc_cb_" + Date.now() + "_" + Math.random().toString(16).slice(2)
-
-  const params = new URLSearchParams({
-    u: "4ecc400d85930178fb49aa9de",
-    id: "466fcc3b55",
-    f_id: "00e60ae1f0",
-    EMAIL: email,
-    // honeypot must be empty
-    b_4ecc400d85930178fb49aa9de_466fcc3b55: "",
-    // JSONP callback
-    c: cb,
-    // optional: cache buster
-    _: Date.now().toString(),
-  })
-
-  // Add username if provided (Mailchimp FNAME merge field)
-  if (username) {
-    params.append("FNAME", username)
-  }
-
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      cleanup()
-      reject(new Error("Mailchimp JSONP timeout"))
-    }, 8000)
-
-    function cleanup() {
-      clearTimeout(timeout)
-      try {
-        delete (window as any)[cb]
-      } catch (_) {
-        // ignore
-      }
-      if (script && script.parentNode) script.parentNode.removeChild(script)
-    }
-
-    ;(window as any)[cb] = function (data: { result: string; msg: string }) {
-      cleanup()
-      resolve(data) // data.result / data.msg
-    }
-
-    const script = document.createElement("script")
-    script.src = base + "?" + params.toString()
-    script.onerror = () => {
-      cleanup()
-      reject(new Error("Mailchimp JSONP network error"))
-    }
-    document.head.appendChild(script)
-  })
-}
-
-type SetupStep = 'welcome' | 'account' | 'timezone' | 'llm' | 'complete'
-type LlmProvider = 'ollama' | 'openai' | 'anthropic' | 'google' | 'xai' | 'llamacpp'
-
-interface LlmProviderInfo {
-  id: LlmProvider
-  name: string
-  description: string
-  defaultModel: string
-  defaultEndpoint?: string
-  needsApiKey: boolean
-}
-
-const llmProviders: LlmProviderInfo[] = [
-  {
-    id: 'ollama',
-    name: 'Ollama',
-    description: 'Local LLM runner - runs on your own machine',
-    defaultModel: 'ministral-3:3b',
-    defaultEndpoint: 'http://localhost:11434',
-    needsApiKey: false,
-  },
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    description: 'GPT-4 and other OpenAI models',
-    defaultModel: 'gpt-4o',
-    needsApiKey: true,
-  },
-  {
-    id: 'anthropic',
-    name: 'Anthropic',
-    description: 'Claude AI assistant',
-    defaultModel: 'claude-3-5-sonnet-20241022',
-    needsApiKey: true,
-  },
-  {
-    id: 'google',
-    name: 'Google AI',
-    description: 'Gemini models',
-    defaultModel: 'gemini-1.5-flash',
-    needsApiKey: true,
-  },
-  {
-    id: 'llamacpp',
-    name: 'llama.cpp',
-    description: 'Local LLM inference library',
-    defaultModel: '',
-    defaultEndpoint: 'http://localhost:8080',
-    needsApiKey: false,
-  },
-]
-
-// Error translation helper
-function translateError(error: string, t: (key: string, params?: Record<string, unknown>) => string): string {
-  const lowerError = error.toLowerCase()
-  if (lowerError.includes("password must be at least")) {
-    return t("minPasswordLength", { ns: 'validation' })
-  }
-  if (lowerError.includes("username must be at least")) {
-    return t("minUsernameLength", { ns: 'validation' })
-  }
-  if (lowerError.includes("password must contain")) {
-    return t("passwordComplexity")
-  }
-  if (lowerError.includes("setup already completed")) {
-    return t("setupAlreadyCompleted")
-  }
-  return error || t("setupFailed")
-}
+type SetupStep = 'account' | 'complete'
 
 export function SetupPage() {
-  const { t, i18n } = useTranslation(['common', 'auth', 'setup'])
   const navigate = useNavigate()
   const { login } = useStore()
   const { withErrorHandling } = useErrorHandler()
+  const { t } = useTranslation(['setup'])
 
-  // Get localized timezone options
-  const timezoneOptions = getLocalizedTimezones(t)
-  const [step, setStep] = useState<SetupStep>('welcome')
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState("")
+  const [step, setStep] = useState<SetupStep>('account')
+  const [checking, setChecking] = useState(true)
+  const [accountInfo, setAccountInfo] = useState<{ username: string; password: string } | null>(null)
 
-  // Account form state
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [email, setEmail] = useState("")
-  const [subscribeToNewsletter, setSubscribeToNewsletter] = useState(false)
+  const getApiUrl = (path: string) => `${getApiBase()}${path}`
 
-  // LLM config state
-  const [selectedProvider, setSelectedProvider] = useState<LlmProvider>('ollama')
-  const [llmModel, setLlmModel] = useState("ministral-3:3b")
-  const [llmEndpoint, setLlmEndpoint] = useState("http://localhost:11434")
-  const [llmApiKey, setLlmApiKey] = useState("")
-
-  // Timezone state
-  const [selectedTimezone, setSelectedTimezone] = useState("Asia/Shanghai")
-
-  // Validate password
-  const getPasswordErrors = (pwd: string): string[] => {
-    const errors: string[] = []
-    if (pwd.length < 8) {
-      errors.push(t('minPasswordLength', { ns: 'validation' }))
-    }
-    if (!pwd.match(/[a-zA-Z]/)) {
-      errors.push(t('passwordNeedsLetter', { ns: 'validation' }))
-    }
-    if (!pwd.match(/[0-9]/)) {
-      errors.push(t('passwordNeedsNumber', { ns: 'validation' }))
-    }
-    return errors
-  }
-
-  const passwordErrors = getPasswordErrors(password)
-
-  // Check setup status on mount
+  // Check if setup is already completed
   useEffect(() => {
     checkSetupStatus()
   }, [])
 
-  // Helper to get API base URL for current environment
-  const getApiUrl = (path: string) => {
-    const apiBase = getApiBase()
-    return `${apiBase}${path}`
-  }
-
   const checkSetupStatus = async () => {
     const result = await withErrorHandling(
       async () => {
-        // Retry logic for Tauri environment where backend might be starting up
         const maxRetries = isTauriEnv() ? 15 : 3
         const initialDelay = isTauriEnv() ? 500 : 100
 
@@ -220,12 +46,9 @@ export function SetupPage() {
             const response = await fetch(getApiUrl('/setup/status'), {
               signal: AbortSignal.timeout(3000),
             })
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}`)
-            }
+            if (!response.ok) throw new Error(`HTTP ${response.status}`)
             return await response.json() as { setup_required: boolean }
           } catch {
-            // Retry with exponential backoff
             if (i < maxRetries - 1) {
               await new Promise(resolve => setTimeout(resolve, initialDelay * (1 + i * 0.5)))
             } else {
@@ -238,861 +61,65 @@ export function SetupPage() {
       { operation: 'Check setup status', showToast: false }
     )
 
+    setChecking(false)
     if (result && !result.setup_required) {
-      // Setup already completed, redirect to chat
       navigate('/')
     }
   }
 
-  const handleAccountSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError("")
-
-    // Validate passwords match
-    if (password !== confirmPassword) {
-      setError(t('passwordsDoNotMatch', { ns: 'validation' }))
-      return
-    }
-
-    // Validate password strength
-    const pwdErrors = getPasswordErrors(password)
-    if (pwdErrors.length > 0) {
-      setError(pwdErrors[0])
-      return
-    }
-
-    setIsLoading(true)
-
+  const handleAccountCreated = async (username: string, password: string, token: string) => {
+    setAccountInfo({ username, password })
+    // Complete setup (mark as done on server)
     try {
-      const response = await fetch(getApiUrl('/setup/initialize'), {
+      await fetch(getApiUrl('/setup/complete'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username,
-          password,
-          email: email || undefined,
-        }),
+        headers: { 'Authorization': `Bearer ${token}` },
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.message || data.error || 'Failed to create admin account')
-      }
-
-      // Store token for next steps
-      localStorage.setItem('neomind_token', data.token)
-      localStorage.setItem('neomind_user', JSON.stringify(data.user))
-
-      // Subscribe to newsletter if requested and email is provided
-      if (subscribeToNewsletter && email && email.trim()) {
-        try {
-          await mcSubscribe(email, username)
-        } catch (subscribeErr) {
-          // Log error but don't block the setup flow
-          logError(subscribeErr, { operation: 'Newsletter subscription' })
-          console.warn('Newsletter subscription failed, but continuing setup')
-        }
-      }
-
-      // Move to timezone step
-      setStep('timezone')
-    } catch (err) {
-      setError(translateError(err instanceof Error ? err.message : String(err), t))
-    } finally {
-      setIsLoading(false)
+    } catch {
+      // Non-blocking — the account is already created
     }
-  }
-
-  const handleLlmSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError("")
-
-    setIsLoading(true)
-
-    try {
-      // Save timezone setting first
-      try {
-        await fetch(getApiUrl('/settings/timezone'), {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ timezone: selectedTimezone }),
-        })
-      } catch (tzError) {
-        logError(tzError, { operation: 'Save timezone' })
-        // Continue even if timezone save fails
-      }
-
-      // Save LLM config
-      await fetch(getApiUrl('/setup/llm-config'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: selectedProvider,
-          model: llmModel,
-          endpoint: llmEndpoint || undefined,
-          api_key: llmApiKey || undefined,
-        }),
-      })
-
-      // Complete setup
-      const response = await fetch(getApiUrl('/setup/complete'), {
-        method: 'POST',
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to complete setup')
-      }
-
-      // Move to complete step
-      setStep('complete')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleProviderSelect = (provider: LlmProvider) => {
-    setSelectedProvider(provider)
-    const providerInfo = llmProviders.find(p => p.id === provider)
-    if (providerInfo) {
-      setLlmModel(providerInfo.defaultModel)
-      if (providerInfo.defaultEndpoint) {
-        setLlmEndpoint(providerInfo.defaultEndpoint)
-      }
-    }
+    setStep('complete')
   }
 
   const handleComplete = () => {
-    // Auto-login with the created account
-    login(username, password, true).then(() => {
-      // Use window.location.href instead of navigate() to force a full page reload
-      // This ensures App.tsx re-checks the setup status and clears any stale state
-      window.location.href = '/'
-    }).catch(() => {
+    if (accountInfo) {
+      login(accountInfo.username, accountInfo.password, true).then(() => {
+        window.location.href = '/'
+      }).catch(() => {
+        navigate('/login')
+      })
+    } else {
       navigate('/login')
-    })
+    }
   }
 
-  // ==================== WELCOME STEP ====================
-  if (step === 'welcome') {
+  // Loading state while checking setup status
+  if (checking) {
     return (
-      <div className="min-h-screen flex flex-col bg-background overflow-hidden">
-        {/* Background Effects - Same as login page */}
-        <div className="fixed inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
-          <div className="absolute inset-0" style={{
-            backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
-            backgroundSize: '32px 32px'
-          }} />
-          <svg className="absolute inset-0 w-full h-full opacity-[0.03]" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <pattern id="network-grid" width="120" height="120" patternUnits="userSpaceOnUse">
-                <circle cx="60" cy="60" r="1.5" fill="currentColor" />
-                <line x1="60" y1="0" x2="60" y2="120" stroke="currentColor" strokeWidth="0.5" />
-                <line x1="0" y1="60" x2="120" y2="60" stroke="currentColor" strokeWidth="0.5" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#network-grid)" />
-          </svg>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
-          <div className="absolute top-[15%] left-[10%] w-32 h-32 bg-info-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '0s' }} />
-          <div className="absolute bottom-[20%] right-[15%] w-40 h-40 bg-accent-purple-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '7s', animationDelay: '1s' }} />
-          <div className="absolute top-[30%] right-[20%] w-24 h-24 bg-accent-cyan-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '5s', animationDelay: '2s' }} />
-          <div className="absolute bottom-[30%] left-[20%] w-28 h-28 bg-accent-indigo-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '3s' }} />
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">{t('setup:loading')}</span>
         </div>
-
-        {/* Top Header */}
-        <header className="relative z-10 backdrop-blur-sm">
-          <div className="flex items-center justify-between px-4 h-14 sm:px-6 sm:h-16">
-            <div className="flex items-center gap-3">
-              <BrandLogoHorizontal className="h-7" />
-            </div>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-1.5">
-                  <Languages className="h-4 w-4" />
-                  {languages.find(l => l.code === i18n.language)?.name || 'Language'}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[130px]">
-                {languages.map((lang) => (
-                  <DropdownMenuItem
-                    key={lang.code}
-                    onClick={() => i18n.changeLanguage(lang.code)}
-                    className={i18n.language === lang.code ? 'bg-muted' : ''}
-                  >
-                    {lang.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
-          <div className="w-full max-w-lg">
-            <div className="bg-bg-50 backdrop-blur-md rounded-lg p-4 sm:p-8">
-              {/* Welcome Icon */}
-              <div className="flex justify-center mb-4 sm:mb-6">
-                <div className="flex size-12 sm:size-16 items-center justify-center rounded-full bg-muted text-primary">
-                  <Bot className="size-6 sm:size-8" />
-                </div>
-              </div>
-
-              {/* Welcome Title */}
-              <h2 className="text-2xl sm:text-3xl font-semibold mb-2 sm:mb-3 text-center">{t('setup:title')}</h2>
-              <p className="text-muted-foreground text-center mb-4 sm:mb-8 text-sm sm:text-base">{t('setup:welcomeMessage')}</p>
-
-              {/* Features List */}
-              <div className="space-y-2 sm:space-y-3 mb-6 sm:mb-8">
-                {[
-                  { icon: User, text: t('setup:featureAccount') },
-                  { icon: Globe, text: t('setup:featureTimezone') },
-                  { icon: Server, text: t('setup:featureLlm') },
-                  { icon: Shield, text: t('setup:featureSecure') },
-                ].map((feature, index) => (
-                  <div key={index} className="flex items-center gap-3 text-sm">
-                    <div className="flex size-8 items-center justify-center rounded-full bg-muted text-primary">
-                      <feature.icon className="size-4" />
-                    </div>
-                    <span>{feature.text}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Start Button */}
-              <Button
-                onClick={() => setStep('account')}
-                className="w-full h-10 sm:h-11"
-                size="default"
-              >
-                {t('setup:getStarted')}
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </main>
       </div>
     )
   }
 
-  // ==================== ACCOUNT STEP ====================
   if (step === 'account') {
     return (
-      <div className="min-h-screen flex flex-col bg-background overflow-hidden">
-        {/* Background - same as login */}
-        <div className="fixed inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
-          <div className="absolute inset-0" style={{
-            backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
-            backgroundSize: '32px 32px'
-          }} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
-        </div>
-
-        {/* Header */}
-        <header className="relative z-10 backdrop-blur-sm">
-          <div className="flex items-center justify-between px-6 h-16">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setStep('welcome')}
-                className="gap-1.5"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                {t('setup:back')}
-              </Button>
-              <span className="text-sm text-muted-foreground">{t('setup:step', { current: 1, total: 3 })}</span>
-            </div>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-1.5">
-                  <Languages className="h-4 w-4" />
-                  {languages.find(l => l.code === i18n.language)?.name || 'Language'}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[130px]">
-                {languages.map((lang) => (
-                  <DropdownMenuItem
-                    key={lang.code}
-                    onClick={() => i18n.changeLanguage(lang.code)}
-                    className={i18n.language === lang.code ? 'bg-muted' : ''}
-                  >
-                    {lang.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
-          <div className="w-full max-w-md">
-            <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
-              {/* Progress Indicator */}
-              <div className="flex items-center justify-center gap-2 mb-6">
-                <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
-                  1
-                </div>
-                <div className="w-8 h-0.5 bg-muted" />
-                <div className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground text-sm font-bold">
-                  2
-                </div>
-                <div className="w-8 h-0.5 bg-muted" />
-                <div className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground text-sm font-bold">
-                  3
-                </div>
-              </div>
-
-              {/* Title */}
-              <h2 className="text-2xl font-semibold mb-2 text-center">{t('setup:createAccount')}</h2>
-              <p className="text-muted-foreground text-center mb-6 text-sm">{t('setup:accountDescription')}</p>
-
-              {/* Form */}
-              <form onSubmit={handleAccountSubmit} className="flex flex-col gap-4">
-                {/* Username Field */}
-                <div>
-                  <Label htmlFor="username" className="text-sm">{t('auth:username')}</Label>
-                  <div className="relative mt-1.5">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      id="username"
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder={t('setup:usernamePlaceholder')}
-                      autoComplete="username"
-                      required
-                      minLength={3}
-                      className="pl-9 h-10 bg-bg-70 border-border"
-                    />
-                  </div>
-                </div>
-
-                {/* Email Field (Optional) */}
-                <div>
-                  <Label htmlFor="email" className="text-sm">{t('setup:email')} <span className="text-muted-foreground">({t('optional')})</span></Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder={t('setup:emailPlaceholder')}
-                    autoComplete="email"
-                    className="h-10 bg-bg-70 border-border mt-1.5"
-                  />
-                  
-                  {/* Newsletter Subscription Checkbox */}
-                  {email && email.trim() && (
-                    <div className="flex items-center gap-2 mt-2">
-                      <Checkbox
-                        id="subscribe"
-                        checked={subscribeToNewsletter}
-                        onCheckedChange={(checked) => setSubscribeToNewsletter(!!checked)}
-                      />
-                      <label htmlFor="subscribe" className="text-xs text-muted-foreground cursor-pointer leading-tight">
-                        {t('setup:subscribeNewsletter')}
-                      </label>
-                    </div>
-                  )}
-                </div>
-
-                {/* Password Field */}
-                <div>
-                  <Label htmlFor="password" className="text-sm">{t('auth:password')}</Label>
-                  <div className="relative mt-1.5">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder={t('setup:passwordPlaceholder')}
-                      autoComplete="new-password"
-                      required
-                      minLength={8}
-                      className="pl-9 h-10 bg-bg-70 border-border"
-                    />
-                  </div>
-                </div>
-
-                {/* Confirm Password Field */}
-                <div>
-                  <Label htmlFor="confirmPassword" className="text-sm">{t('setup:confirmPassword')}</Label>
-                  <div className="relative mt-1.5">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      id="confirmPassword"
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder={t('setup:confirmPasswordPlaceholder')}
-                      autoComplete="new-password"
-                      required
-                      className="pl-9 h-10 bg-bg-70 border-border"
-                    />
-                  </div>
-                </div>
-
-                {/* Password Strength Indicator */}
-                {password && (
-                  <div className="space-y-1.5">
-                    <div className="text-xs text-muted-foreground">{t('setup:passwordStrength')}</div>
-                    <div className="flex gap-1">
-                      {passwordErrors.length === 0 ? (
-                        <>
-                          <div className="h-1 flex-1 rounded-full bg-success" />
-                          <div className="h-1 flex-1 rounded-full bg-success" />
-                          <div className="h-1 flex-1 rounded-full bg-success" />
-                          <div className="h-1 flex-1 rounded-full bg-success" />
-                        </>
-                      ) : password.length >= 8 ? (
-                        <>
-                          <div className="h-1 flex-1 rounded-full bg-success" />
-                          <div className="h-1 flex-1 rounded-full bg-warning" />
-                          <div className="h-1 flex-1 rounded-full bg-border" />
-                          <div className="h-1 flex-1 rounded-full bg-border" />
-                        </>
-                      ) : (
-                        <>
-                          <div className="h-1 flex-1 rounded-full bg-error" />
-                          <div className="h-1 flex-1 rounded-full bg-border" />
-                          <div className="h-1 flex-1 rounded-full bg-border" />
-                          <div className="h-1 flex-1 rounded-full bg-border" />
-                        </>
-                      )}
-                    </div>
-                    {passwordErrors.length > 0 && (
-                      <div className="text-xs text-destructive">{passwordErrors[0]}</div>
-                    )}
-                  </div>
-                )}
-
-                {/* Error Message */}
-                {error && (
-                  <div className="flex items-start gap-2 text-sm text-destructive bg-muted rounded-md p-3">
-                    <Shield className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                    <span>{error}</span>
-                  </div>
-                )}
-
-                {/* Submit Button */}
-                <Button
-                  type="submit"
-                  disabled={isLoading || !username || !password || !confirmPassword || passwordErrors.length > 0}
-                  className="h-10 w-full mt-2"
-                  size="default"
-                >
-                  {isLoading ? t('setup:creating') : t('setup:continue')}
-                  {!isLoading && <ArrowRight className="ml-2 h-4 w-4" />}
-                </Button>
-              </form>
-            </div>
-          </div>
-        </main>
-      </div>
+      <AccountStep
+        getApiUrl={getApiUrl}
+        onAccountCreated={handleAccountCreated}
+      />
     )
   }
 
-  // ==================== TIMEZONE STEP ====================
-  if (step === 'timezone') {
-    // Function to format current time in timezone
-    const formatTimeInTimezone = (tz: string) => {
-      try {
-        const now = new Date()
-        return new Intl.DateTimeFormat('zh-CN', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          timeZone: tz,
-          hour12: false,
-        }).format(now)
-      } catch {
-        return '--:--:--'
-      }
-    }
-
-    // Handle timezone continue
-    const handleTimezoneContinue = async () => {
-      setStep('llm')
-    }
-
-    return (
-      <div className="min-h-screen flex flex-col bg-background overflow-hidden">
-        {/* Background */}
-        <div className="fixed inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
-          <div className="absolute inset-0" style={{
-            backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
-            backgroundSize: '32px 32px'
-          }} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
-        </div>
-
-        {/* Header */}
-        <header className="relative z-10 backdrop-blur-sm">
-          <div className="flex items-center justify-between px-6 h-16">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setStep('account')}
-                className="gap-1.5"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                {t('setup:back')}
-              </Button>
-              <span className="text-sm text-muted-foreground">{t('setup:step', { current: 2, total: 3 })}</span>
-            </div>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-1.5">
-                  <Languages className="h-4 w-4" />
-                  {languages.find(l => l.code === i18n.language)?.name || 'Language'}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[130px]">
-                {languages.map((lang) => (
-                  <DropdownMenuItem
-                    key={lang.code}
-                    onClick={() => i18n.changeLanguage(lang.code)}
-                    className={i18n.language === lang.code ? 'bg-muted' : ''}
-                  >
-                    {lang.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
-          <div className="w-full max-w-md">
-            <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
-              {/* Progress Indicator */}
-              <div className="flex items-center justify-center gap-2 mb-6">
-                <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
-                  <Check className="size-4" />
-                </div>
-                <div className="w-12 h-0.5 bg-primary" />
-                <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
-                  2
-                </div>
-                <div className="w-12 h-0.5 bg-muted" />
-                <div className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground text-sm font-bold">
-                  3
-                </div>
-              </div>
-
-              {/* Title */}
-              <h2 className="text-2xl font-semibold mb-2 text-center">{t('setup:timezoneConfig')}</h2>
-              <p className="text-muted-foreground text-center mb-6 text-sm">{t('setup:timezoneDescription')}</p>
-
-              {/* Timezone Selection */}
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-sm">{t('setup:selectTimezone')}</Label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 max-h-[180px] overflow-y-auto">
-                    {timezoneOptions.map((tz) => (
-                      <button
-                        key={tz.id}
-                        type="button"
-                        onClick={() => setSelectedTimezone(tz.id)}
-                        className={`
-                          flex flex-col items-start gap-1 p-2 rounded-lg border text-left transition-colors
-                          ${selectedTimezone === tz.id
-                            ? 'border-primary bg-muted'
-                            : 'border-border hover:bg-muted-50'
-                          }
-                        `}
-                      >
-                        <span className="font-medium text-xs">{tz.name}</span>
-                        <span className={cn(textNano, "text-muted-foreground font-mono")}>
-                          {formatTimeInTimezone(tz.id)}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Current Time Preview */}
-                <div className="p-4 bg-muted-30 dark:bg-muted rounded-lg">
-                  <div className="text-center">
-                    <div className="text-xs text-muted-foreground mb-1">{t('setup:currentTimeInTimezone')}</div>
-                    <div className="text-2xl font-mono font-medium">
-                      {formatTimeInTimezone(selectedTimezone)}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">{selectedTimezone}</div>
-                  </div>
-                </div>
-
-                {/* Continue Button */}
-                <Button
-                  onClick={handleTimezoneContinue}
-                  className="w-full h-10"
-                  size="default"
-                >
-                  {t('setup:continue')}
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
-  }
-
-  // ==================== LLM CONFIG STEP ====================
-  if (step === 'llm') {
-    return (
-      <div className="min-h-screen flex flex-col bg-background overflow-hidden">
-        {/* Background */}
-        <div className="fixed inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
-          <div className="absolute inset-0" style={{
-            backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
-            backgroundSize: '32px 32px'
-          }} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
-        </div>
-
-        {/* Header */}
-        <header className="relative z-10 backdrop-blur-sm">
-          <div className="flex items-center justify-between px-6 h-16">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setStep('timezone')}
-                className="gap-1.5"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                {t('setup:back')}
-              </Button>
-              <span className="text-sm text-muted-foreground">{t('setup:step', { current: 3, total: 3 })}</span>
-            </div>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-1.5">
-                  <Languages className="h-4 w-4" />
-                  {languages.find(l => l.code === i18n.language)?.name || 'Language'}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[130px]">
-                {languages.map((lang) => (
-                  <DropdownMenuItem
-                    key={lang.code}
-                    onClick={() => i18n.changeLanguage(lang.code)}
-                    className={i18n.language === lang.code ? 'bg-muted' : ''}
-                  >
-                    {lang.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
-          <div className="w-full max-w-md">
-            <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
-              {/* Progress Indicator */}
-              <div className="flex items-center justify-center gap-2 mb-6">
-                <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
-                  <Check className="size-4" />
-                </div>
-                <div className="w-8 h-0.5 bg-primary" />
-                <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
-                  <Check className="size-4" />
-                </div>
-                <div className="w-8 h-0.5 bg-primary" />
-                <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
-                  3
-                </div>
-              </div>
-
-              {/* Title */}
-              <h2 className="text-2xl font-semibold mb-2 text-center">{t('setup:llmConfig')}</h2>
-              <p className="text-muted-foreground text-center mb-6 text-sm">{t('setup:llmDescription')}</p>
-
-              <form onSubmit={handleLlmSubmit} className="flex flex-col gap-4">
-                {/* Provider Selection */}
-                <div>
-                  <Label className="text-sm">{t('setup:llmProvider')}</Label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                    {llmProviders.map((provider) => (
-                      <button
-                        key={provider.id}
-                        type="button"
-                        onClick={() => handleProviderSelect(provider.id)}
-                        className={`
-                          flex flex-col items-start gap-1 p-3 rounded-lg border text-left transition-colors
-                          ${selectedProvider === provider.id
-                            ? 'border-primary bg-muted'
-                            : 'border-border hover:bg-muted-50'
-                          }
-                        `}
-                      >
-                        <span className="font-medium text-sm">{provider.name}</span>
-                        <span className="text-xs text-muted-foreground line-clamp-1">{provider.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Model Name */}
-                <div>
-                  <Label htmlFor="model" className="text-sm">{t('setup:modelName')}</Label>
-                  <Input
-                    id="model"
-                    type="text"
-                    value={llmModel}
-                    onChange={(e) => setLlmModel(e.target.value)}
-                    placeholder={t('setup:modelPlaceholder')}
-                    required={selectedProvider !== 'llamacpp'}
-                    className="h-10 bg-bg-70 border-border mt-1.5"
-                  />
-                </div>
-
-                {/* Endpoint (for Ollama and llama.cpp) */}
-                {(selectedProvider === 'ollama' || selectedProvider === 'llamacpp') && (
-                  <div>
-                    <Label htmlFor="endpoint" className="text-sm">{t('setup:endpoint')}</Label>
-                    <Input
-                      id="endpoint"
-                      type="text"
-                      value={llmEndpoint}
-                      onChange={(e) => setLlmEndpoint(e.target.value)}
-                      placeholder={selectedProvider === 'llamacpp' ? 'http://localhost:8080' : 'http://localhost:11434'}
-                      className="h-10 bg-bg-70 border-border mt-1.5"
-                    />
-                  </div>
-                )}
-
-                {/* API Key (for cloud providers) */}
-                {llmProviders.find(p => p.id === selectedProvider)?.needsApiKey && (
-                  <div>
-                    <Label htmlFor="apiKey" className="text-sm">{t('setup:apiKey')}</Label>
-                    <Input
-                      id="apiKey"
-                      type="password"
-                      value={llmApiKey}
-                      onChange={(e) => setLlmApiKey(e.target.value)}
-                      placeholder={t('setup:apiKeyPlaceholder')}
-                      className="h-10 bg-bg-70 border-border mt-1.5"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">{t('setup:apiKeyHint')}</p>
-                  </div>
-                )}
-
-                {/* Error Message */}
-                {error && (
-                  <div className="flex items-start gap-2 text-sm text-destructive bg-muted rounded-md p-3">
-                    <Shield className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                    <span>{error}</span>
-                  </div>
-                )}
-
-                {/* Buttons */}
-                <div className="flex gap-3 mt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setStep('account')}
-                    className="flex-1 h-10"
-                  >
-                    {t('setup:back')}
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={isLoading}
-                    className="flex-1 h-10"
-                  >
-                    {isLoading ? t('setup:configuring') : t('setup:complete')}
-                  </Button>
-                </div>
-
-                {/* Skip option */}
-                <button
-                  type="button"
-                  onClick={handleComplete}
-                  className="text-xs text-muted-foreground hover:text-foreground text-center w-full"
-                >
-                  {t('setup:skipLlm')} →
-                </button>
-              </form>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
-  }
-
-  // ==================== COMPLETE STEP ====================
   if (step === 'complete') {
     return (
-      <div className="min-h-screen flex flex-col bg-background overflow-hidden">
-        {/* Background with celebration */}
-        <div className="fixed inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
-          <div className="absolute inset-0" style={{
-            backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
-            backgroundSize: '32px 32px'
-          }} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-success/10 dark:bg-success/20 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '3s' }} />
-        </div>
-
-        {/* Main Content */}
-        <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
-          <div className="w-full max-w-md text-center">
-            <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
-              {/* Success Icon */}
-              <div className="flex justify-center mb-6">
-                <div className="flex size-16 items-center justify-center rounded-full bg-success/10 text-success dark:bg-success/20">
-                  <Check className="size-8" />
-                </div>
-              </div>
-
-              {/* Success Message */}
-              <h2 className="text-2xl font-semibold mb-2">{t('setup:completeTitle')}</h2>
-              <p className="text-muted-foreground mb-8">{t('setup:completeMessage')}</p>
-
-              {/* Created Account Info */}
-              <div className="bg-muted-30 dark:bg-muted rounded-lg p-4 mb-6 text-left">
-                <div className="text-sm font-medium mb-2">{t('setup:accountCreated')}:</div>
-                <div className="flex items-center gap-2">
-                  <User className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-mono">{username}</span>
-                </div>
-              </div>
-
-              {/* Continue Button */}
-              <Button
-                onClick={handleComplete}
-                className="w-full h-10"
-                size="default"
-              >
-                {t('setup:goToDashboard')}
-                <ChevronRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </main>
-      </div>
+      <CompleteStep
+        username={accountInfo?.username || ''}
+        onComplete={handleComplete}
+      />
     )
   }
 

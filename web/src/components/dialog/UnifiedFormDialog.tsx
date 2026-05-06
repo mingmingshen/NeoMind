@@ -225,11 +225,16 @@ export function UnifiedFormDialog({
 
   const footerContent = hideFooter ? null : (footer || defaultFooter)
 
+  // Extract z-index from className for nested dialog support (e.g. above FullScreenDialog z:100)
+  const zIndexMatch = className?.match(/z-\[?(\d+)\]?/)
+  const overlayZIndex = zIndexMatch ? `z-[${zIndexMatch[1]}]` : 'z-50'
+  const dialogZIndex = zIndexMatch ? `z-[${zIndexMatch[1]}]` : 'z-50'
+
   // Mobile full-screen render
   if (isMobile && fullScreenOnMobile) {
     return createPortal(
       open ? (
-        <div className="fixed inset-0 z-50 bg-background animate-in fade-in duration-200">
+        <div className={cn("fixed inset-0 bg-background animate-in fade-in duration-200", overlayZIndex)}>
           <div className="flex h-full w-full flex-col">
             {/* Header */}
             <div
@@ -305,10 +310,6 @@ export function UnifiedFormDialog({
   }
 
   // Desktop render
-  // Extract z-index from className for nested dialog support (e.g. above FullScreenDialog z:100)
-  const zIndexMatch = className?.match(/z-\[?(\d+)\]?/)
-  const overlayZIndex = zIndexMatch ? `z-[${zIndexMatch[1]}]` : 'z-50'
-
   return createPortal(
     <>
       {/* Backdrop */}
@@ -323,7 +324,8 @@ export function UnifiedFormDialog({
       {open && (
         <div
           className={cn(
-            'fixed left-1/2 top-1/2 z-50',
+            'fixed left-1/2 top-1/2',
+            dialogZIndex,
             'grid w-full gap-0',
             'bg-background border shadow-lg',
             'duration-200',

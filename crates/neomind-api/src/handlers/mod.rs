@@ -14,6 +14,7 @@ pub mod devices;
 pub mod events;
 pub mod extension_stream;
 pub mod extensions;
+pub mod instances;
 pub mod llm_backends;
 pub mod memory;
 pub mod message_channels;
@@ -87,6 +88,11 @@ pub use llm_backends::{
     activate_backend_handler, create_backend_handler, delete_backend_handler, get_backend_handler,
     get_backend_schema_handler, get_backend_stats_handler, list_backend_types_handler,
     list_backends_handler, test_backend_handler, update_backend_handler,
+};
+// Instances API
+pub use instances::{
+    create_instance_handler, delete_instance_handler, get_instance_handler,
+    list_instances_handler, test_instance_handler, update_instance_handler,
 };
 // User Authentication API
 pub use auth_users::{

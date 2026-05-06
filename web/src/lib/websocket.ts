@@ -2,7 +2,9 @@
 import type { ServerMessage, ClientChatMessage, ChatImage } from '@/types'
 import { tokenManager } from './auth'
 import { storage } from './utils/storage'
-import { isTauriEnv } from './api'
+import { isTauriEnv, getApiKey } from './api'
+import { buildWsUrl } from './urls'
+import { getServerOrigin } from './api'
 
 type MessageHandler = (message: ServerMessage) => void
 type ConnectionHandler = (connected: boolean, isReconnect?: boolean) => void
@@ -103,25 +105,36 @@ export class ChatWebSocket {
 
     this.sessionId = initialSessionId || null
 
-    // In Tauri desktop app, use localhost:9375 for WebSocket
-    // because window.location would be tauri://localhost
-    const isTauri = isTauriEnv()
-    const isSecure = window.location.protocol === 'https:'
-    const protocol = (isTauri ? false : isSecure) ? 'wss:' : 'ws:'
-    const host = isTauri ? 'localhost:9375' : window.location.host
-    let wsUrl = `${protocol}//${host}/api/chat`
+    // Build WebSocket URL using dynamic server origin (supports instance switching)
+    let wsUrl = buildWsUrl(getServerOrigin(), '/api/chat')
 
-    // Add JWT token as query parameter
+    // Determine authentication method: API Key (remote instance) or JWT (local instance)
+    const apiKey = getApiKey()
     const token = tokenManager.getToken()
 
-    if (!token) {
+    if (apiKey) {
+      // Remote instance: authenticate with API key
+      wsUrl += `?api_key=${encodeURIComponent(apiKey)}`
+    } else if (token) {
+      // Local instance: authenticate with JWT token
+      // If token changed, reconnect with new token
+      if (this.lastToken !== token && this.isConnected()) {
+        if (this.ws) {
+          this.ws.close(4000, 'Token changed - reconnecting')
+        }
+        return
+      }
+      this.lastToken = token
+      wsUrl += `?token=${encodeURIComponent(token)}`
+    } else {
+      // No credentials available — poll for token
       this.disconnect()
       this.notifyConnection(false)
 
-      // Poll for token
       this.tokenCheckTimer = setInterval(() => {
         const newToken = tokenManager.getToken()
-        if (newToken) {
+        const newApiKey = getApiKey()
+        if (newToken || newApiKey) {
           if (this.tokenCheckTimer) {
             clearInterval(this.tokenCheckTimer)
             this.tokenCheckTimer = null
@@ -130,25 +143,6 @@ export class ChatWebSocket {
         }
       }, 500)
       return
-    }
-
-    // If token changed, reconnect with new token
-    if (this.lastToken !== token && this.isConnected()) {
-      // Don't use disconnect() as it sets isManualDisconnect = true
-      // Just close and let the loop reconnect with new token
-      if (this.ws) {
-        // Use a non-1000 code so onclose will trigger reconnect
-        this.ws.close(4000, 'Token changed - reconnecting')
-      }
-      // Keep lastToken as the old one until we reconnect
-      // After reconnect, the new token will be used
-      return
-    }
-
-    this.lastToken = token
-
-    if (token) {
-      wsUrl += `?token=${encodeURIComponent(token)}`
     }
 
     // Don't create a new WebSocket if we're already connected with the same token
@@ -220,20 +214,27 @@ export class ChatWebSocket {
         }
 
         // Handle auth error message from server
-        // IMPORTANT: Only trigger reload for actual auth errors, NOT for LLM errors
-        // that happen to contain "token" (e.g., "request exceeds context size, 8225 tokens")
+        // IMPORTANT: Only trigger reload for JWT-related auth errors where
+        // the user needs to re-login. For API key errors (remote instance),
+        // just disconnect — reloading won't fix an invalid key.
         if (data.type === 'Error') {
           const msg = (data.message || '').toLowerCase()
-          const isAuthError = msg.includes('authentication') ||
-            msg.includes('unauthorized') ||
-            msg.includes('invalid api key') ||
-            msg.includes('access denied') ||
-            msg.includes('jwt') ||
+          const isJwtError = msg.includes('jwt') ||
             (msg.includes('token') && (msg.includes('expired') || msg.includes('invalid')))
-          if (isAuthError) {
-            // Stop reconnecting on auth failure
+          const isApiKeyError = msg.includes('invalid api key')
+
+          if (isApiKeyError) {
+            // API key auth failed — disconnect without reload.
+            // The user needs to fix the API key in instance settings.
+            console.warn('[WebSocket] API key auth failed, stopping reconnect')
             this.disconnect()
-            // Trigger a page reload to show login screen
+            return
+          }
+
+          if (isJwtError || msg.includes('authentication') ||
+            msg.includes('unauthorized') || msg.includes('access denied')) {
+            // JWT expired/invalid — reload to redirect to login
+            this.disconnect()
             setTimeout(() => window.location.reload(), 1000)
             return
           }

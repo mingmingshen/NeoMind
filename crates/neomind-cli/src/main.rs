@@ -87,6 +87,39 @@ enum Command {
         #[command(subcommand)]
         extension_cmd: ExtensionCommand,
     },
+    /// API key management commands.
+    ApiKey {
+        #[command(subcommand)]
+        key_cmd: ApiKeyCommand,
+    },
+}
+
+/// API key subcommands.
+#[derive(Subcommand, Debug)]
+enum ApiKeyCommand {
+    /// Create a new API key.
+    Create {
+        /// Name for the key.
+        #[arg(short, long, default_value = "default")]
+        name: String,
+        /// Data directory path.
+        #[arg(long, default_value = "data")]
+        data_dir: String,
+    },
+    /// List all API keys.
+    List {
+        /// Data directory path.
+        #[arg(long, default_value = "data")]
+        data_dir: String,
+    },
+    /// Delete an API key by name.
+    Delete {
+        /// Key name to delete.
+        name: String,
+        /// Data directory path.
+        #[arg(long, default_value = "data")]
+        data_dir: String,
+    },
 }
 
 /// Extension subcommands.
@@ -209,6 +242,7 @@ async fn main() -> Result<()> {
         } => run_logs(tail, follow, level, since).await,
         Command::Extension { extension_cmd } => run_extension_cmd(extension_cmd).await,
         Command::CheckUpdate => run_check_update().await,
+        Command::ApiKey { key_cmd } => run_api_key_cmd(key_cmd).await,
     }
 }
 
@@ -1237,5 +1271,67 @@ fn create_extension_scaffold(
     println!("  cargo init --lib");
     println!("  # Add neomind-extension-sdk dependency and implement Extension trait");
 
+    Ok(())
+}
+
+/// Run API key management commands.
+async fn run_api_key_cmd(cmd: ApiKeyCommand) -> Result<()> {
+    match cmd {
+        ApiKeyCommand::Create { name, data_dir } => {
+            std::fs::create_dir_all(&data_dir)?;
+
+            let auth = neomind_api::auth::AuthState::new_with_data_dir(&data_dir);
+            let (key, info) = auth.create_key(name.clone(), vec!["*".to_string()]).await;
+
+            println!("API Key created successfully!");
+            println!();
+            println!("  Name: {}", info.name);
+            println!("  ID:   {}", info.id);
+            println!("  Key:  {}", key);
+            println!();
+            println!("IMPORTANT: Save this key now. It will not be shown again.");
+        }
+        ApiKeyCommand::List { data_dir } => {
+            let auth = neomind_api::auth::AuthState::new_with_data_dir(&data_dir);
+            let keys = auth.list_keys().await;
+
+            if keys.is_empty() {
+                println!("No API keys found.");
+                return Ok(());
+            }
+
+            println!("{:<36} {:<20} {:<12} {:<20}", "ID", "Name", "Active", "Created");
+            println!("{}", "-".repeat(90));
+            for (_hash, info) in keys {
+                let created = {
+                    let days = info.created_at / 86400;
+                    let time = info.created_at % 86400;
+                    let hours = time / 3600;
+                    let minutes = (time % 3600) / 60;
+                    format!("{}-{:02}:{:02}", days, hours, minutes)
+                };
+                println!("{:<36} {:<20} {:<12} {}", info.id, info.name, if info.active { "yes" } else { "no" }, created);
+            }
+        }
+        ApiKeyCommand::Delete { name, data_dir } => {
+            let auth = neomind_api::auth::AuthState::new_with_data_dir(&data_dir);
+            let keys = auth.list_keys().await;
+            let target = keys.iter().find(|(_, info)| info.name == name);
+
+            match target {
+                Some((hash, info)) => {
+                    let removed = auth.delete_key_by_hash(hash).await;
+                    if removed {
+                        println!("Deleted API key '{}' (ID: {})", name, info.id);
+                    } else {
+                        anyhow::bail!("Failed to delete API key '{}'", name);
+                    }
+                }
+                None => {
+                    anyhow::bail!("API key '{}' not found", name);
+                }
+            }
+        }
+    }
     Ok(())
 }

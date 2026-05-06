@@ -68,6 +68,7 @@ pub mod device_registry;
 pub mod device_state;
 pub mod error;
 pub mod extensions;
+pub mod instances;
 pub mod llm_backends;
 pub mod llm_data;
 pub mod memory_config;
@@ -118,6 +119,8 @@ pub use settings::{
 pub use llm_backends::{
     BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStats, LlmBackendStore,
 };
+
+pub use instances::{InstanceRecord, InstanceStore};
 
 pub use extensions::{ExtensionRecord, ExtensionStats, ExtensionStore};
 

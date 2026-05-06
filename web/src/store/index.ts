@@ -62,6 +62,7 @@ import { createLlmBackendSlice } from './slices/llmBackendSlice'
 import { createDashboardSlice } from './slices/dashboardSlice'
 import { createUpdateSlice } from './slices/updateSlice'
 import { createAiAnalystSlice } from './slices/aiAnalystSlice'
+import { createInstanceSlice } from './slices/instanceSlice'
 
 // Import types
 import type { AuthSlice } from './slices/authSlice'
@@ -75,6 +76,7 @@ import type { LlmBackendSlice } from './slices/llmBackendSlice'
 import type { DashboardState } from './slices/dashboardSlice'
 import type { UpdateSlice } from './slices/updateSlice'
 import type { AiAnalystSlice } from './slices/aiAnalystSlice'
+import type { InstanceSlice } from './slices/instanceSlice'
 
 // ============================================================================
 // Combined Store Type
@@ -91,6 +93,7 @@ export type NeoMindStore = AuthSlice
   & DashboardState
   & UpdateSlice
   & AiAnalystSlice
+  & InstanceSlice
 
 // ============================================================================
 // Create Store
@@ -112,9 +115,11 @@ export const useStore = create<NeoMindStore>()(
         ...createDashboardSlice(set, get, api),
         ...createUpdateSlice(set, get, api),
         ...createAiAnalystSlice(set, get, api),
+        ...createInstanceSlice(set, get, api),
       }),
       {
         name: 'neomind-store',
+        version: 2,
         storage: safeStorage,
         partialize: (state) => ({
           // NOTE: Do NOT persist messages to LocalStorage!
@@ -127,7 +132,22 @@ export const useStore = create<NeoMindStore>()(
           // Persist update state so users are reminded after app restart
           updateInfo: state.updateInfo,
           updateDialogOpen: state.updateDialogOpen,
+          // NOTE: currentInstanceId is NOT persisted here — it's managed
+          // separately via localStorage('currentInstanceId') in instanceSlice
+          // so that applyPendingSwitch() and the initial state stay in sync.
         }),
+        migrate: (persisted, version) => {
+          if (version < 2) {
+            // v0/v1→v2: remove stale currentInstanceId that overrides
+            // the one managed by instanceSlice's own localStorage key.
+            // This fixes instances where the old persisted data caused
+            // isRemoteInstance() to return true, skipping API calls.
+            const old = persisted as Record<string, unknown>
+            delete old.currentInstanceId
+            return old
+          }
+          return persisted
+        },
       }
     ),
     // Performance optimization: Disable Redux DevTools in production

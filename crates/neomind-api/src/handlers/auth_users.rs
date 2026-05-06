@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{Extension, Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::Json,
 };
 
@@ -58,6 +58,7 @@ pub async fn logout_handler(
 }
 
 /// Get current user info handler.
+/// Supports both JWT (returns actual user) and API key auth (returns service account info).
 pub async fn get_current_user_handler(
     Extension(user): Extension<SessionInfo>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
@@ -67,6 +68,42 @@ pub async fn get_current_user_handler(
         "role": user.role.as_str(),
         "created_at": user.created_at,
     })))
+}
+
+/// Get auth status handler for API key auth.
+/// Returns basic info when authenticated via API key (no user session).
+pub async fn get_auth_status_handler(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, AuthError> {
+    // Check JWT first
+    if let Some(auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            if let Ok(session_info) = state.auth.user_state.validate_token(token) {
+                return Ok(Json(serde_json::json!({
+                    "authenticated": true,
+                    "method": "jwt",
+                    "user": {
+                        "id": session_info.user_id,
+                        "username": session_info.username,
+                        "role": session_info.role.as_str(),
+                    }
+                })));
+            }
+        }
+    }
+
+    // Check API key
+    if let Some(key) = headers.get("x-api-key").and_then(|v| v.to_str().ok()) {
+        if state.auth.api_key_state.validate_key(key) {
+            return Ok(Json(serde_json::json!({
+                "authenticated": true,
+                "method": "api_key"
+            })));
+        }
+    }
+
+    Err(AuthError::InvalidToken("Authentication required".to_string()))
 }
 
 /// Change password handler.
