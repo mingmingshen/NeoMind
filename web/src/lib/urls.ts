@@ -5,14 +5,26 @@
  * The main getApiBase() / setApiBase() live in api.ts for backward compatibility.
  */
 
-// API key state — separate from URL state
-let _currentApiKey = ''
+const API_KEY_SESSION_KEY = 'neomind_api_key'
+
+// Initialize from sessionStorage (survives page refresh, cleared on tab close)
+let _currentApiKey = (() => {
+  try { return sessionStorage.getItem(API_KEY_SESSION_KEY) || '' } catch { return '' }
+})()
 
 /**
  * Set the API key to use for all requests (remote instance auth).
+ * Persisted to sessionStorage so it survives page refresh within the same tab.
  */
 export function setApiKey(key: string): void {
   _currentApiKey = key
+  try {
+    if (key) {
+      sessionStorage.setItem(API_KEY_SESSION_KEY, key)
+    } else {
+      sessionStorage.removeItem(API_KEY_SESSION_KEY)
+    }
+  } catch { /* ignore */ }
 }
 
 /**
@@ -20,6 +32,7 @@ export function setApiKey(key: string): void {
  */
 export function clearApiKey(): void {
   _currentApiKey = ''
+  try { sessionStorage.removeItem(API_KEY_SESSION_KEY) } catch { /* ignore */ }
 }
 
 /**

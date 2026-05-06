@@ -13,6 +13,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const composingRef = React.useRef(false)
     const [buffer, setBuffer] = React.useState(valueProp)
 
+    // For password fields, IME composition produces intermediate
+    // characters that bypass the browser's ● masking, causing
+    // garbled display.  Disable the IME buffer for password inputs.
+    const isPassword = type === 'password'
+
     // Sync from parent when value changes externally (and not composing)
     React.useEffect(() => {
       if (!composingRef.current) {
@@ -28,9 +33,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           className
         )}
         ref={ref}
-        value={buffer}
+        value={isPassword ? valueProp : buffer}
         onChange={(e) => {
-          setBuffer(e.target.value)
+          if (!isPassword) {
+            setBuffer(e.target.value)
+          }
           if (!composingRef.current) {
             onChangeProp?.(e)
           }
@@ -42,7 +49,9 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         onCompositionEnd={(e) => {
           composingRef.current = false
           const v = (e.target as HTMLInputElement).value
-          setBuffer(v)
+          if (!isPassword) {
+            setBuffer(v)
+          }
           // Fire parent onChange with final value via a synthetic change event
           onChangeProp?.({ target: { value: v } } as React.ChangeEvent<HTMLInputElement>)
           compEndProp?.(e)

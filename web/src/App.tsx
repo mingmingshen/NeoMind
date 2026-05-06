@@ -7,7 +7,6 @@ import { TopNav } from "@/components/layout/TopNav"
 import { Toaster } from "@/components/ui/toaster"
 import { Confirmer } from "@/components/ui/confirmer"
 import { tokenManager, getApiBase, isTauriEnv, setApiBase, getApiKey } from "@/lib/api"
-import { setApiKey } from "@/lib/urls"
 import { StartupLoading } from "@/components/StartupLoading"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
 import { useExtensionComponents } from "@/hooks/useExtensionComponents"
@@ -259,9 +258,7 @@ function App() {
         const instance = cached.find((i: { id: string }) => i.id === savedId)
         if (instance && !instance.is_local) {
           setApiBase(`${instance.url}/api`)
-          if (instance.api_key) {
-            setApiKey(instance.api_key)
-          }
+          // API key is restored from sessionStorage by urls.ts module init
         }
       }
     } catch {
