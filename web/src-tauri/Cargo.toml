@@ -24,6 +24,8 @@ anyhow = "1"
 reqwest = { version = "0.12", features = ["blocking"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+tracing-appender = "0.2"
+chrono = "0.4"
 
 # Local workspace crates - relative to web/src-tauri/ directory
 # neomind-api pulls in all other required crates as dependencies

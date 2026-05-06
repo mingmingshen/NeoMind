@@ -1016,11 +1016,11 @@ export function ChatPage() {
                     _isStreaming: true,
                   } as Message & { _isStreaming?: boolean })
                 }
-                return allMessages.map((message) => {
+                return allMessages.map((message, idx) => {
                   const isCurrentlyStreaming = !!(message as any)._isStreaming
                   return (
                 <div
-                  key={message.id}
+                  key={message.id || `msg-${idx}`}
                   className={`flex gap-2 sm:gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   {message.role === "assistant" && (

@@ -7,7 +7,7 @@
 import type { StateCreator } from 'zustand'
 import type { AuthState } from '../types'
 import type { UserInfo } from '@/types'
-import { tokenManager, api } from '@/lib/api'
+import { tokenManager, api, getApiKey } from '@/lib/api'
 
 export interface AuthSlice extends AuthState {
   // UI state
@@ -37,8 +37,9 @@ export const createAuthSlice: StateCreator<
 
   // Actions
   checkAuthStatus: () => {
-    // Check for JWT token
+    // Check for JWT token or API key
     const token = tokenManager.getToken()
+    const apiKey = getApiKey()
     const cachedUser = tokenManager.getUser()
     if (token) {
       set({ token, isAuthenticated: true, user: cachedUser })
@@ -52,6 +53,9 @@ export const createAuthSlice: StateCreator<
         }
         // On 500 or other errors, keep cached user info
       })
+    } else if (apiKey) {
+      // API key auth — no user session, but authenticated
+      set({ token: null, isAuthenticated: true, user: null })
     } else {
       set({ isAuthenticated: false, user: null })
     }

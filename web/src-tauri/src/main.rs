@@ -50,6 +50,43 @@ fn get_app_data_dir(app_handle: &AppHandle) -> PathBuf {
     }
 }
 
+/// Clean up log files older than 7 days.
+fn cleanup_old_logs(log_dir: &std::path::Path) {
+    let max_age_secs: i64 = 7 * 24 * 60 * 60; // 7 days
+    let now = chrono::Utc::now();
+
+    let mut removed = 0u32;
+    if let Ok(entries) = fs::read_dir(log_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                if !filename.starts_with("neomind.log") {
+                    continue;
+                }
+                if let Some(date_str) = filename.strip_prefix("neomind.log.") {
+                    if let Ok(file_date) =
+                        chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                    {
+                        let file_datetime = file_date
+                            .and_time(chrono::NaiveTime::default())
+                            .and_utc();
+                        if (now - file_datetime).num_seconds() > max_age_secs {
+                            let _ = fs::remove_file(&path);
+                            removed += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if removed > 0 {
+        tracing::info!("Log cleanup: removed {} old file(s)", removed);
+    }
+}
+
 /// Show the main window
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -138,15 +175,41 @@ struct TrayState {
     _tray: Option<tauri::tray::TrayIcon>,
 }
 
-fn start_axum_server(state: tauri::State<ServerState>) -> Result<(), String> {
-    // Initialize tracing with RUST_LOG env var support
+fn start_axum_server(
+    state: tauri::State<ServerState>,
+    app_handle: &AppHandle,
+) -> Result<(), String> {
+    // Initialize tracing with dual output (stdout + file)
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
+
+    // Log to file in app data directory: ~/.neomind/logs/
+    let log_dir = get_app_data_dir(app_handle).join("logs");
+    let _ = fs::create_dir_all(&log_dir);
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "neomind.log");
+
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::Layer;
+
+    let stdout_layer = tracing_subscriber::fmt::layer()
         .with_target(false)
         .compact()
+        .with_filter(filter.clone())
+        .boxed();
+
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_target(true)
+        .with_writer(file_appender)
+        .with_filter(filter);
+
+    tracing_subscriber::registry()
+        .with(stdout_layer)
+        .with(file_layer)
         .init();
+
+    // Startup cleanup of old log files
+    cleanup_old_logs(&log_dir);
 
     // Clone the Arc before moving into the closure
     let runtime_arc = Arc::clone(&state.runtime);
@@ -343,7 +406,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     // Start server
     let state = app.state::<ServerState>();
-    if let Err(e) = start_axum_server(state) {
+    if let Err(e) = start_axum_server(state, &app_handle) {
         eprintln!("Failed to start server: {}", e);
     }
 

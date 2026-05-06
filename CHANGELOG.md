@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API Key Not Clearing on Edit** — Clearing the API key field in instance edit form didn't remove the key (empty string was sent as `undefined`). Fixed: frontend sends empty string, backend treats it as `api_key = None`
 - **Stale Zustand Persist Cache** — Old `currentInstanceId` from Zustand persist could override localStorage-based instance selection after page refresh. Fixed with persist version bump (v2) and migration that removes the stale field
 - **Validation Icon Layout Shift** — API key validation icon (checkmark/error/spinner) caused input field width to shift. Fixed by reserving space with `pr-8` padding on the input
+- **Remote Instance Shows Offline** — Instance selector always showed offline for remote instances because `isAuthenticated` only checked JWT token, not API key. Fixed `checkAuthStatus` to recognize API key as valid authentication, enabling WebSocket connections for remote instances
+- **Login Page Stuck on Remote Instance** — Switching to a remote instance with API key from login page stayed on login instead of redirecting to dashboard. Login page now detects API key auth and redirects immediately
+- **Stale Instance Cache After Edit** — Editing an instance (e.g. clearing API key) updated the Zustand store but not the localStorage cache (`neomind_instance_cache`), causing login page to use stale data. Fixed: all instance CRUD operations now sync to localStorage cache immediately
 
 ### Changed
 

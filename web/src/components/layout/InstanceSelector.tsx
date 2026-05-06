@@ -28,7 +28,9 @@ export function InstanceSelector({ onManageInstances }: InstanceSelectorProps) {
 
   const currentInstance = instances.find((i) => i.id === currentInstanceId)
   const isSwitching = switchingState === 'switching'
-  const isOnline = isConnected && (currentInstance?.last_status === 'online' || !currentInstance)
+  // Remote instances: rely solely on wsConnected (last_status is from cache, may be stale)
+  // Local instance: check both wsConnected and last_status
+  const isOnline = isConnected && (!currentInstance || currentInstance.is_local ? (currentInstance?.last_status === 'online' || !currentInstance) : true)
 
   return (
     <button

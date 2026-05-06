@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { BrandLogoHorizontal } from "@/components/shared/BrandName"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
-import { tokenManager, getApiBase, setApiBase, setApiKey, clearApiKey } from "@/lib/api"
+import { tokenManager, getApiBase, setApiBase, setApiKey, clearApiKey, getApiKey } from "@/lib/api"
 
 // Instance cache key — must match instanceSlice.ts
 const INSTANCE_CACHE_KEY = 'neomind_instance_cache'
@@ -107,6 +107,7 @@ export function LoginPage() {
   useEffect(() => {
     const checkExistingAuth = async () => {
       const token = tokenManager.getToken()
+      const apiKey = getApiKey()
       if (token) {
         // Verify token is still valid by checking auth status
         try {
@@ -118,6 +119,11 @@ export function LoginPage() {
           // Token invalid, clear it and continue to login form
           tokenManager.clearToken()
         }
+      } else if (apiKey) {
+        // API key auth — no login needed, go straight to app
+        checkAuthStatus()
+        navigate('/', { replace: true })
+        return
       }
       setCheckingAuth(false)
     }

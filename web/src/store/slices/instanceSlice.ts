@@ -110,6 +110,13 @@ function getCachedInstances(): InstanceInfo[] {
   }
 }
 
+/** Sync instance list to localStorage cache (used after mutations). */
+function syncCache(instances: InstanceInfo[]) {
+  try {
+    localStorage.setItem(INSTANCE_CACHE_KEY, JSON.stringify(instances))
+  } catch { /* ignore storage errors */ }
+}
+
 // ============================================================================
 // Boot-time: apply pending switch BEFORE anything else
 // ============================================================================
@@ -224,26 +231,26 @@ export const createInstanceSlice: StateCreator<
   // Add a new instance
   addInstance: async (data) => {
     const instance = await createInstanceApi(data)
-    set((state) => ({
-      instances: [...state.instances, instance],
-    }))
+    const instances = [...get().instances, instance]
+    set({ instances })
+    syncCache(instances)
     return instance.id
   },
 
   // Update an existing instance
   updateInstance: async (id, data) => {
     const updated = await updateInstanceApi(id, data)
-    set((state) => ({
-      instances: state.instances.map((i) => (i.id === id ? updated : i)),
-    }))
+    const instances = get().instances.map((i) => (i.id === id ? updated : i))
+    set({ instances })
+    syncCache(instances)
   },
 
   // Delete an instance
   deleteInstance: async (id) => {
     await deleteInstanceApi(id)
-    set((state) => ({
-      instances: state.instances.filter((i) => i.id !== id),
-    }))
+    const instances = get().instances.filter((i) => i.id !== id)
+    set({ instances })
+    syncCache(instances)
   },
 
   // Test instance connectivity

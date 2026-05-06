@@ -124,9 +124,11 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
 
       if (info.available) {
         // Skip if this version was just installed (hot update restart scenario)
+        // NOTE: Do NOT remove the marker here — keep it until the app version
+        // actually catches up and the updater returns available: false.
+        // Removing it prematurely causes the dialog to reappear on subsequent checks.
         const installedVersion = localStorage.getItem('neomind_installed_version')
         if (installedVersion && info.version === installedVersion) {
-          localStorage.removeItem('neomind_installed_version')
           setUpdateStatus('up-to-date')
           onUpToDateRef.current?.()
           return

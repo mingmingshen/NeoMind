@@ -2,6 +2,8 @@
 
 use std::io::Read;
 use std::net::SocketAddr;
+use std::path::Path;
+use std::time::SystemTime;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -9,6 +11,9 @@ use neomind_agent::{LlmBackend, SessionManager};
 use neomind_core::config::{
     endpoints, env_vars, models, normalize_ollama_endpoint, normalize_openai_endpoint,
 };
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::Layer;
 
 /// NeoMind AI Agent - Run LLMs on edge devices.
 #[derive(Parser, Debug)]
@@ -184,34 +189,65 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Initialize logging
-    let _log_level = if args.verbose {
-        tracing::Level::DEBUG
-    } else {
-        tracing::Level::INFO
-    };
-
-    // Check if JSON logging is requested (for production/container environments)
     let json_logging = std::env::var("NEOMIND_LOG_JSON")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(false);
 
     // Build the env filter for log level control
+    // -v/--verbose sets debug level; RUST_LOG env var takes precedence
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        tracing_subscriber::EnvFilter::new("neomind=info")
-            .add_directive(tracing::Level::INFO.into())
-            .add_directive(tracing::Level::WARN.into())
+        if args.verbose {
+            tracing_subscriber::EnvFilter::new("neomind=debug")
+                .add_directive(tracing::Level::DEBUG.into())
+        } else {
+            tracing_subscriber::EnvFilter::new("neomind=info")
+                .add_directive(tracing::Level::INFO.into())
+                .add_directive(tracing::Level::WARN.into())
+        }
     });
 
-    if json_logging {
-        // JSON format for production/container environments
+    // For serve command: dual output (stdout + file); for others: stdout only
+    let file_logging = matches!(args.command, Command::Serve { .. });
+
+    if file_logging {
+        let log_dir = Path::new("data/logs");
+        let file_appender = tracing_appender::rolling::daily(log_dir, "neomind.log");
+
+        let stdout_layer = if json_logging {
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_target(true)
+                .with_filter(env_filter.clone())
+                .boxed()
+        } else {
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_thread_ids(false)
+                .with_file(false)
+                .with_line_number(false)
+                .compact()
+                .with_level(false)
+                .with_filter(env_filter.clone())
+                .boxed()
+        };
+
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_target(true)
+            .with_writer(file_appender)
+            .with_filter(env_filter);
+
+        tracing_subscriber::registry()
+            .with(stdout_layer)
+            .with(file_layer)
+            .init();
+    } else if json_logging {
         tracing_subscriber::fmt()
             .json()
             .with_env_filter(env_filter)
             .with_target(true)
             .init();
     } else {
-        // Human-readable format for development - clean and compact
         tracing_subscriber::fmt()
             .with_env_filter(env_filter)
             .with_target(false)
@@ -670,7 +706,94 @@ async fn run_server(host: String, port: u16) -> Result<()> {
         .parse()
         .map_err(|_| anyhow::anyhow!("Invalid address: {}:{}", host, port))?;
 
+    // Startup cleanup of old log files
+    cleanup_old_logs();
+
+    // Spawn periodic log cleanup (every 24 hours)
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(24 * 60 * 60));
+        loop {
+            interval.tick().await;
+            cleanup_old_logs();
+        }
+    });
+
     neomind_api::run(addr).await
+}
+
+/// Clean up log files older than 7 days in data/logs/.
+fn cleanup_old_logs() {
+    use std::fs;
+
+    let log_dir = Path::new("data/logs");
+    if !log_dir.exists() {
+        return;
+    }
+
+    let max_age_secs: i64 = 7 * 24 * 60 * 60; // 7 days
+    let now = chrono::Utc::now();
+
+    let mut removed = 0u32;
+    let mut kept = 0u32;
+
+    if let Ok(entries) = fs::read_dir(log_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            let should_remove =
+                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                    if let Some(date_str) = filename.strip_prefix("neomind.log.") {
+                        // Parse date from filename: neomind.log.YYYY-MM-DD
+                        if let Ok(file_date) =
+                            chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                        {
+                            let file_datetime = file_date
+                                .and_time(chrono::NaiveTime::default())
+                                .and_utc();
+                            (now - file_datetime).num_seconds() > max_age_secs
+                        } else {
+                            // Non-date suffix, fall back to mtime
+                            is_file_older_than(&path, max_age_secs)
+                        }
+                    } else {
+                        // Not a rotated log file (e.g., current neomind.log), skip
+                        false
+                    }
+                } else {
+                    false
+                };
+
+            if should_remove {
+                if fs::remove_file(&path).is_ok() {
+                    removed += 1;
+                }
+            } else {
+                kept += 1;
+            }
+        }
+    }
+
+    if removed > 0 {
+        tracing::info!(
+            "Log cleanup: removed {} old file(s), kept {}",
+            removed,
+            kept
+        );
+    }
+}
+
+/// Check if a file is older than the given number of seconds (by mtime).
+fn is_file_older_than(path: &Path, max_age_secs: i64) -> bool {
+    let now = SystemTime::now();
+    path.metadata()
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|mtime| now.duration_since(mtime).ok())
+        .map(|age| age.as_secs() as i64 > max_age_secs)
+        .unwrap_or(false)
 }
 
 /// Run health check command.
@@ -771,50 +894,66 @@ async fn run_logs(
     _since: Option<String>,
 ) -> Result<()> {
     use std::fs::File;
-    use std::io::{BufRead, BufReader};
-    use std::path::Path;
+    use std::io::{BufRead, BufReader, Seek};
 
-    // Find log file
-    let log_paths = [
-        "./neomind.log",
-        "./data/neomind.log",
-        "/var/log/neomind.log",
+    // Search log directories: project data/logs/, macOS Tauri, Linux Tauri, Windows Tauri
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    let appdata = std::env::var("APPDATA").unwrap_or_default();
+
+    let log_dirs = [
+        std::path::PathBuf::from("data/logs"),
+        // macOS: ~/Library/Application Support/com.neomind.neomind/logs/
+        std::path::PathBuf::from(&home)
+            .join("Library/Application Support/com.neomind.neomind/logs"),
+        // Linux: ~/.local/share/com.neomind.neomind/logs/
+        std::path::PathBuf::from(&home)
+            .join(".local/share/com.neomind.neomind/logs"),
+        // Windows: %APPDATA%/com.neomind.neomind/logs/
+        std::path::PathBuf::from(&appdata)
+            .join("com.neomind.neomind/logs"),
+        // Fallback: ~/.neomind/logs/
+        std::path::PathBuf::from(&home).join(".neomind/logs"),
     ];
 
-    let log_path = log_paths
+    let log_dir = log_dirs
         .iter()
-        .find(|p| Path::new(p).exists())
-        .ok_or_else(|| anyhow::anyhow!("Log file not found. Searched in: {:?}", log_paths))?;
+        .find(|d| d.exists())
+        .ok_or_else(|| {
+            let paths: String = log_dirs
+                .iter()
+                .filter(|d| !d.as_os_str().is_empty())
+                .map(|d| format!("  {}", d.display()))
+                .collect::<Vec<_>>()
+                .join("\n");
+            anyhow::anyhow!(
+                "Log directory not found. Searched in:\n{}\n\
+                 Hint: Start the server with 'neomind serve' or run the Tauri desktop app.",
+                paths
+            )
+        })?;
+
+    // Find the newest log file
+    let log_path = find_newest_log(log_dir)?;
 
     if follow {
         // Follow mode (like tail -f)
-        println!("Following log file: {} (Ctrl+C to stop)\n", log_path);
+        println!("Following log file: {} (Ctrl+C to stop)\n", log_path.display());
 
-        let file = File::open(log_path)?;
-        let _metadata = file.metadata()?;
+        let file = File::open(&log_path)?;
         let mut reader = BufReader::new(file);
-
-        // Seek to end first
-        use std::io::Seek;
         reader.seek(std::io::SeekFrom::End(0))?;
 
-        // Read new lines
         let mut line = String::new();
         loop {
             match reader.read_line(&mut line) {
                 Ok(0) => {
-                    // EOF reached, wait for more data
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     continue;
                 }
                 Ok(_) => {
-                    let should_print = if let Some(ref lvl) = level {
-                        line.contains(lvl) || line.to_uppercase().contains(lvl.as_str())
-                    } else {
-                        true
-                    };
-
-                    if should_print {
+                    if matches_level(&line, &level) {
                         print!("{}", line);
                     }
                     line.clear();
@@ -827,19 +966,13 @@ async fn run_logs(
         }
     } else {
         // Tail mode - show last N lines
-        let file = File::open(log_path)?;
+        let file = File::open(&log_path)?;
         let reader = BufReader::new(file);
 
         let lines: Vec<String> = reader
             .lines()
             .map_while(Result::ok)
-            .filter(|l| {
-                if let Some(ref lvl) = level {
-                    l.contains(lvl) || l.to_uppercase().contains(lvl.as_str())
-                } else {
-                    true
-                }
-            })
+            .filter(|l| matches_level(l, &level))
             .collect();
 
         let start = if lines.len() > tail {
@@ -850,7 +983,7 @@ async fn run_logs(
 
         println!(
             "Log file: {} (showing last {} lines)\n",
-            log_path,
+            log_path.display(),
             lines.len() - start
         );
 
@@ -860,6 +993,43 @@ async fn run_logs(
     }
 
     Ok(())
+}
+
+/// Find the newest log file in the log directory.
+fn find_newest_log(log_dir: &Path) -> Result<std::path::PathBuf> {
+    let mut newest: Option<(std::path::PathBuf, SystemTime)> = None;
+
+    for entry in std::fs::read_dir(log_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        // Only consider neomind log files
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if !name.starts_with("neomind.log") {
+                continue;
+            }
+        }
+        let mtime = path.metadata().ok().and_then(|m| m.modified().ok());
+        if let Some(mtime) = mtime {
+            if newest.as_ref().is_none_or(|(_, prev)| mtime > *prev) {
+                newest = Some((path, mtime));
+            }
+        }
+    }
+
+    newest
+        .map(|(p, _)| p)
+        .ok_or_else(|| anyhow::anyhow!("No log files found in data/logs/"))
+}
+
+/// Check if a log line matches the requested level filter.
+fn matches_level(line: &str, level: &Option<String>) -> bool {
+    match level {
+        Some(lvl) => line.contains(lvl) || line.to_uppercase().contains(&lvl.to_uppercase()),
+        None => true,
+    }
 }
 
 /// Run extension management commands.
