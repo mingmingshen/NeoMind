@@ -10,6 +10,10 @@
   <key>NSMicrophoneUsageDescription</key>
   <string>This app may need microphone access for future voice features.</string>
 
+  <!-- Bluetooth access description -->
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>NeoMind uses Bluetooth to discover, provision, and communicate with IoT devices.</string>
+
   <!-- Local network access description -->
   <key>NSLocalNetworkUsageDescription</key>
   <string>NeoMind needs access to local network to connect to IoT devices and backend services.</string>
