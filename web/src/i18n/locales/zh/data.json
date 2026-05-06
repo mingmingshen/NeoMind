@@ -19,5 +19,31 @@
   "noSources": "未找到数据源",
   "search": "搜索数据源...",
   "filterSource": "筛选来源...",
-  "allSources": "全部来源"
+  "allSources": "全部来源",
+  "noSourcesDesc": "设备连接或扩展注册后，数据源将出现在此处",
+  "currentValue": "当前值",
+  "unit": "单位",
+  "lastUpdate": "最后更新",
+  "description": "描述",
+  "history": "历史记录",
+  "range.1h": "1 小时",
+  "range.6h": "6 小时",
+  "range.24h": "24 小时",
+  "range.7d": "7 天",
+  "timestamp": "时间戳",
+  "value": "值",
+  "quality": "质量",
+  "noHistory": "该时间段内没有历史数据",
+  "export": {
+    "title": "导出数据",
+    "startTime": "开始时间",
+    "endTime": "结束时间",
+    "button": "导出",
+    "exporting": "导出中...",
+    "noData": "所选时间范围内没有数据",
+    "truncated": "显示 {{count}} / {{total}} 条数据",
+    "format.excel": "Excel (.xlsx)",
+    "format.zip": "ZIP (.zip)",
+    "binaryWarning": "二进制数据导出仅部分支持 — 实际文件内容可能不可用。"
+  }
 }
