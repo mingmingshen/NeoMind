@@ -15,6 +15,7 @@ import { textNano } from '@/design-system/tokens/typography'
 import { SetupBackground } from './SetupBackground'
 import { SetupHeader } from './SetupHeader'
 import { getLocalizedTimezones, getBrowserTimezone, COMMON_TIMEZONE_IDS } from '@/lib/time/format'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // Mailchimp subscription function
 function mcSubscribe(email: string, username?: string): Promise<{ result: string; msg: string }> {
@@ -90,7 +91,6 @@ export function AccountStep({ getApiUrl, onAccountCreated }: AccountStepProps) {
   const browserTz = getBrowserTimezone()
   const defaultTz = COMMON_TIMEZONE_IDS.includes(browserTz as any) ? browserTz : "Asia/Shanghai"
   const [selectedTimezone, setSelectedTimezone] = useState(defaultTz)
-  const [showAllTimezones, setShowAllTimezones] = useState(false)
 
   // Password validation
   const getPasswordErrors = (pwd: string): string[] => {
@@ -171,21 +171,16 @@ export function AccountStep({ getApiUrl, onAccountCreated }: AccountStepProps) {
     }
   }
 
-  // Show top N timezones + selected if not in top list
-  const topTimezones = timezoneOptions.slice(0, 6)
-  const selectedInList = topTimezones.some(tz => tz.id === selectedTimezone)
-  const displayedTimezones = showAllTimezones
-    ? timezoneOptions
-    : selectedInList
-      ? topTimezones
-      : [...topTimezones, timezoneOptions.find(tz => tz.id === selectedTimezone)!]
-
   return (
-    <div className="min-h-screen flex flex-col bg-background overflow-hidden">
+    <div className="h-screen flex flex-col bg-background">
       <SetupBackground />
 
-      <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12 flex items-center justify-center">
-        <div className="w-full max-w-md">
+      <div className="absolute top-0 left-0 right-0 z-20">
+        <SetupHeader />
+      </div>
+
+      <main className="relative z-10 flex-1 overflow-y-auto px-4 py-8 sm:px-6 sm:py-12 flex items-center justify-center">
+        <div className="w-full max-w-md my-auto">
           <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
             {/* Icon */}
             <div className="flex justify-center mb-5">
@@ -312,39 +307,23 @@ export function AccountStep({ getApiUrl, onAccountCreated }: AccountStepProps) {
 
               {/* Timezone Section */}
               <div className="pt-2 border-t border-border">
-                <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-2 mb-2">
                   <Globe className="h-4 w-4 text-muted-foreground" />
                   <Label className="text-sm font-medium">{t('setup:selectTimezone')}</Label>
                   <span className={cn(textNano, "text-muted-foreground ml-auto")}>
                     {formatTimeInTimezone(selectedTimezone)}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {displayedTimezones.map((tz) => (
-                    <button
-                      key={tz.id}
-                      type="button"
-                      onClick={() => setSelectedTimezone(tz.id)}
-                      className={cn(
-                        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-left transition-colors',
-                        selectedTimezone === tz.id
-                          ? 'border-primary bg-muted'
-                          : 'border-border hover:bg-muted-50'
-                      )}
-                    >
-                      <span className="text-xs font-medium truncate">{tz.name}</span>
-                    </button>
-                  ))}
-                </div>
-                {!showAllTimezones && timezoneOptions.length > displayedTimezones.length && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllTimezones(true)}
-                    className="text-xs text-muted-foreground hover:text-foreground mt-2"
-                  >
-                    {t('setup:showAllTimezones')} →
-                  </button>
-                )}
+                <Select value={selectedTimezone} onValueChange={setSelectedTimezone}>
+                  <SelectTrigger className="h-10 bg-bg-70 border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    {timezoneOptions.map((tz) => (
+                      <SelectItem key={tz.id} value={tz.id}>{tz.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Error */}

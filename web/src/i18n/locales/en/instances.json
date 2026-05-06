@@ -49,6 +49,9 @@
   "noInstancesHint": "Add a remote NeoMind backend to monitor and manage it from here",
   "selectBackend": "Backend",
   "localBackend": "Local",
+  "authMethod": "Auth",
+  "authApiKey": "API Key",
+  "authUserLogin": "Login required",
   "validation": {
     "nameRequired": "Name is required",
     "urlRequired": "URL is required",

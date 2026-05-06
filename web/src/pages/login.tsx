@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { useStore } from "@/store"
-import { Languages, Lock, User, Shield, Server } from "lucide-react"
+import { Languages, Lock, User, Shield, ArrowLeft, Server, Globe, ChevronRight, Check, KeyRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -14,15 +14,26 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { BrandLogoHorizontal } from "@/components/shared/BrandName"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
-import { tokenManager, getApiBase, setApiBase, setApiKey, clearApiKey, getApiKey } from "@/lib/api"
+import { tokenManager, getApiBase, getApiKey, setApiBase, clearApiKey, setApiKey } from "@/lib/api"
 import { INSTANCE_CACHE_KEY, CURRENT_INSTANCE_KEY, PENDING_SWITCH_KEY } from "@/lib/instance-constants"
+import { decryptApiKey } from "@/store/slices/instanceSlice"
+
+const languages = [
+  { code: 'en', name: 'English' },
+  { code: 'zh', name: '简体中文' },
+]
+
+// LocalStorage keys for remembering credentials
+const CREDENTIALS_KEY = 'neomind_remembered_credentials'
 
 interface CachedInstance {
   id: string
   name: string
   url: string
   api_key?: string
+  encrypted_key?: string
   is_local: boolean
+  last_status: string
 }
 
 function getCachedInstances(): CachedInstance[] {
@@ -33,26 +44,6 @@ function getCachedInstances(): CachedInstance[] {
     return []
   }
 }
-
-/** Derive current instance from the actual API base URL, not from cached ID.
- *  _dynamicApiBase resets on page reload, so the truth is the URL itself. */
-function inferCurrentInstanceId(instances: CachedInstance[]): string {
-  const apiBase = getApiBase()
-  // Default API base means local
-  if (!apiBase || apiBase === '/api') return 'local-default'
-  if (typeof window !== 'undefined' && '__TAURI__' in window && apiBase === 'http://localhost:9375/api') return 'local-default'
-  // Match against cached remote instances
-  const match = instances.find(inst => `${inst.url}/api` === apiBase)
-  return match?.id || 'local-default'
-}
-
-const languages = [
-  { code: 'en', name: 'English' },
-  { code: 'zh', name: '简体中文' },
-]
-
-// LocalStorage keys for remembering credentials
-const CREDENTIALS_KEY = 'neomind_remembered_credentials'
 
 // Error translation helper
 function translateError(error: string, t: (key: string, params?: Record<string, unknown>) => string): string {
@@ -92,12 +83,32 @@ export function LoginPage() {
   const [error, setError] = useState("")
   const [isFirstSetup, setIsFirstSetup] = useState<boolean | null>(null)
   const [checkingAuth, setCheckingAuth] = useState(true)
-  // Track if we've loaded credentials to avoid overwriting user's choice
   const [hasLoadedCredentials, setHasLoadedCredentials] = useState(false)
+  const [showInstancePicker, setShowInstancePicker] = useState(false)
 
-  // Instance selector state
-  const [cachedInstances] = useState<CachedInstance[]>(getCachedInstances)
-  const [currentInstanceId] = useState(() => inferCurrentInstanceId(getCachedInstances()))
+  const cachedInstances = getCachedInstances()
+  const apiBase = getApiBase()
+  const isRemote = !!(apiBase && apiBase !== '/api' && !apiBase.includes('localhost') && !apiBase.includes('127.0.0.1'))
+
+  // Handle instance switch — use encrypted_key from backend
+  const handleInstanceSwitch = (instance: CachedInstance) => {
+    const fullKey = instance.encrypted_key ? decryptApiKey(instance.encrypted_key) : ''
+    localStorage.setItem(CURRENT_INSTANCE_KEY, instance.id)
+    localStorage.setItem(PENDING_SWITCH_KEY, JSON.stringify({
+      targetId: instance.id,
+      previousId: 'local-default',
+      apiUrl: instance.is_local ? '' : `${instance.url}/api`,
+      apiKey: instance.is_local ? '' : fullKey,
+    }))
+    window.location.reload()
+  }
+
+  const handleBackToLocal = () => {
+    localStorage.setItem(CURRENT_INSTANCE_KEY, 'local-default')
+    setApiBase('')
+    clearApiKey()
+    window.location.reload()
+  }
 
   // Check if already authenticated on mount
   useEffect(() => {
@@ -105,18 +116,14 @@ export function LoginPage() {
       const token = tokenManager.getToken()
       const apiKey = getApiKey()
       if (token) {
-        // Verify token is still valid by checking auth status
         try {
           await checkAuthStatus()
-          // If we get here without error, token is valid - redirect to home
           navigate('/', { replace: true })
           return
         } catch {
-          // Token invalid, clear it and continue to login form
           tokenManager.clearToken()
         }
       } else if (apiKey) {
-        // API key auth — no login needed, go straight to app
         checkAuthStatus()
         navigate('/', { replace: true })
         return
@@ -128,9 +135,8 @@ export function LoginPage() {
 
   // Load saved credentials on mount
   useEffect(() => {
-    if (checkingAuth) return // Skip if still checking auth
+    if (checkingAuth) return
 
-    // Check if this is first-time setup (no admin user exists)
     const checkSetupStatus = async () => {
       const apiBase = getApiBase()
       try {
@@ -140,7 +146,6 @@ export function LoginPage() {
         if (response.ok) {
           const data = await response.json() as { setup_required: boolean }
           setIsFirstSetup(data.setup_required)
-          // Redirect to setup if no users exist
           if (data.setup_required) {
             navigate('/setup', { replace: true })
           }
@@ -148,82 +153,51 @@ export function LoginPage() {
           setIsFirstSetup(false)
         }
       } catch {
-        // On error, assume setup not required (allow normal login)
         setIsFirstSetup(false)
       }
     }
     checkSetupStatus()
 
-    // Load saved credentials
     try {
       const saved = localStorage.getItem(CREDENTIALS_KEY)
       if (saved) {
         const credentials = JSON.parse(saved)
-        if (credentials.username) {
-          setUsername(credentials.username)
-        }
-        if (credentials.password) {
-          setPassword(credentials.password)
-        }
-        if (credentials.rememberMe !== undefined) {
-          setRememberMe(credentials.rememberMe)
-        }
+        if (credentials.username) setUsername(credentials.username)
+        if (credentials.password) setPassword(credentials.password)
+        if (credentials.rememberMe !== undefined) setRememberMe(credentials.rememberMe)
         setHasLoadedCredentials(true)
       }
-    } catch {
-      // Ignore parsing errors
-    }
+    } catch { /* ignore */ }
 
-    // Also check for token in localStorage (Tauri compatibility)
-    // In Tauri, sessionStorage may persist, but we should prioritize localStorage
     const localToken = localStorage.getItem('neomind_token')
     if (localToken) {
-      // If we have a token in localStorage, try to restore auth
       ;(async () => {
         try {
           await checkAuthStatus()
           navigate('/', { replace: true })
         } catch {
-          // Token invalid, continue to login form
           tokenManager.clearToken()
         }
       })()
     }
   }, [checkingAuth, navigate])
 
-  // Save credentials when rememberMe changes (but not during initial load)
+  // Save credentials when rememberMe changes
   useEffect(() => {
-    // Don't save if we just loaded credentials - this avoids overwriting
-    // the user's saved choice with the initial state
     if (!hasLoadedCredentials) return
-
-    // Always save the rememberMe choice when user explicitly changes it
     try {
-      const saved = localStorage.getItem(CREDENTIALS_KEY)
-      let existing: any = {}
-      if (saved) {
-        try {
-          existing = JSON.parse(saved)
-        } catch {
-          // Invalid JSON, start fresh
-        }
-      }
-
       if (rememberMe) {
-        // Save or update credentials
-        const newPassword = existing.password || '' // Keep existing password if available
+        const saved = localStorage.getItem(CREDENTIALS_KEY)
+        const existing = saved ? JSON.parse(saved) : {}
         localStorage.setItem(CREDENTIALS_KEY, JSON.stringify({
-          username: username || existing.username, // Keep existing username if current is empty
-          password: newPassword,
+          username: username || existing.username,
+          password: existing.password || '',
           rememberMe: true,
         }))
       } else {
-        // Clear saved credentials when unchecked
         localStorage.removeItem(CREDENTIALS_KEY)
       }
-    } catch {
-      // Ignore localStorage errors
-    }
+    } catch { /* ignore */ }
   }, [rememberMe, username, hasLoadedCredentials])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -233,60 +207,25 @@ export function LoginPage() {
 
     try {
       await login(username, password, rememberMe)
-
-      // Save credentials if remember me is checked
       if (rememberMe) {
-        try {
-          localStorage.setItem(CREDENTIALS_KEY, JSON.stringify({
-            username,
-            password,
-            rememberMe: true,
-          }))
-        } catch {
-          // Ignore localStorage errors
-        }
+        try { localStorage.setItem(CREDENTIALS_KEY, JSON.stringify({ username, password, rememberMe: true })) } catch { /* ignore */ }
       } else {
-        // Clear saved credentials
-        try {
-          localStorage.removeItem(CREDENTIALS_KEY)
-        } catch {
-          // Ignore localStorage errors
-        }
+        try { localStorage.removeItem(CREDENTIALS_KEY) } catch { /* ignore */ }
       }
-
-      // Update loaded credentials flag to prevent overwriting
       setHasLoadedCredentials(true)
-
-      // Navigate to dashboard after successful login
-      forceViewportReset() // Ensure keyboard state is reset
+      forceViewportReset()
       navigate('/', { replace: true })
     } catch (err) {
       setError(translateError(err instanceof Error ? err.message : String(t('auth:loginFailed')), t))
-      forceViewportReset() // Reset viewport state on error too
+      forceViewportReset()
     } finally {
       setIsLoading(false)
     }
   }
 
-  // Handle tap outside to dismiss keyboard
   const handleBackdropClick = () => {
     forceViewportReset()
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur()
-    }
-  }
-
-  // Handle instance switch on login page
-  const handleInstanceSwitch = (instance: CachedInstance) => {
-    // Write pending switch so the overlay shows on reload
-    localStorage.setItem(CURRENT_INSTANCE_KEY, instance.id)
-    localStorage.setItem(PENDING_SWITCH_KEY, JSON.stringify({
-      targetId: instance.id,
-      previousId: currentInstanceId,
-      apiUrl: instance.is_local ? '' : `${instance.url}/api`,
-      apiKey: instance.is_local ? '' : (instance.api_key || ''),
-    }))
-    window.location.reload()
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   }
 
   // Show loading while checking authentication
@@ -298,20 +237,76 @@ export function LoginPage() {
     )
   }
 
+  // Full-screen instance picker
+  if (showInstancePicker) {
+    return (
+      <div className="flex flex-col bg-background viewport-full">
+        {/* Header */}
+        <header className="flex items-center gap-3 px-4 sm:px-6 h-14 border-b border-border">
+          <Button variant="ghost" size="sm" onClick={() => setShowInstancePicker(false)}>
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            {t('common:back')}
+          </Button>
+          <h2 className="text-lg font-semibold">{t('instances:selectBackend')}</h2>
+        </header>
+
+        {/* Instance List */}
+        <div className="flex-1 overflow-auto px-4 py-4">
+          <div className="max-w-lg mx-auto space-y-3">
+            {cachedInstances.map((inst) => {
+              const isCurrent = inst.id === localStorage.getItem(CURRENT_INSTANCE_KEY)
+              const hasApiKey = !!(inst.encrypted_key || inst.api_key)
+              return (
+                <button
+                  key={inst.id}
+                  onClick={() => { setShowInstancePicker(false); handleInstanceSwitch(inst) }}
+                  className={`w-full flex items-center gap-4 p-4 rounded-xl bg-bg-50 border transition-colors text-left ${
+                    isCurrent ? 'border-primary' : 'border-border hover:border-primary'
+                  }`}
+                >
+                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${isCurrent ? 'bg-primary/10' : 'bg-muted'}`}>
+                    {inst.is_local ? <Globe className="h-5 w-5 text-primary" /> : <Server className={`h-5 w-5 ${isCurrent ? 'text-primary' : 'text-accent-cyan'}`} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate flex items-center gap-2">
+                      {inst.is_local ? t('instances:localBackend') : inst.name}
+                      {isCurrent && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                          <Check className="h-3 w-3" />
+                          {t('instances:current')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate flex items-center gap-2 mt-0.5">
+                      <span>{inst.is_local ? 'localhost:9375' : inst.url.replace(/^https?:\/\//, '')}</span>
+                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-muted">
+                        <KeyRound className="h-3 w-3" />
+                        {inst.is_local ? t('instances:authUserLogin') : hasApiKey ? t('instances:authApiKey') : t('instances:authUserLogin')}
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                </button>
+              )
+            })}
+            {cachedInstances.length === 0 && (
+              <p className="text-center text-muted-foreground py-12">{t('instances:noInstances')}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col bg-background relative overflow-hidden viewport-full">
-      {/* Background Effects - AI Network Theme */}
+      {/* Background Effects */}
       <div className="fixed inset-0">
-        {/* Base gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted" />
-
-        {/* Dot grid pattern - representing distributed nodes/edge devices */}
         <div className="absolute inset-0" style={{
           backgroundImage: 'radial-gradient(circle, hsl(var(--border) / 0.1) 1px, transparent 1px)',
           backgroundSize: '32px 32px'
         }} />
-
-        {/* Network connection lines - subtle tech feel */}
         <svg className="absolute inset-0 w-full h-full opacity-[0.03]" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <pattern id="network-grid" width="120" height="120" patternUnits="userSpaceOnUse">
@@ -322,17 +317,11 @@ export function LoginPage() {
           </defs>
           <rect width="100%" height="100%" fill="url(#network-grid)" />
         </svg>
-
-        {/* Central AI glow - representing intelligence hub */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-muted rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
-
-        {/* Edge node glows - representing distributed edge computing */}
         <div className="absolute top-[15%] left-[10%] w-32 h-32 bg-info-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '0s' }} />
         <div className="absolute bottom-[20%] right-[15%] w-40 h-40 bg-accent-purple-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '7s', animationDelay: '1s' }} />
         <div className="absolute top-[30%] right-[20%] w-24 h-24 bg-accent-cyan-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '5s', animationDelay: '2s' }} />
         <div className="absolute bottom-[30%] left-[20%] w-28 h-28 bg-accent-indigo-light rounded-full blur-2xl animate-pulse" style={{ animationDuration: '6s', animationDelay: '3s' }} />
-
-        {/* Diagonal accent lines - tech aesthetic */}
         <div className="absolute inset-0 opacity-[0.02]">
           <div className="absolute top-0 left-1/4 w-px h-full bg-gradient-to-b from-transparent via-primary to-transparent" />
           <div className="absolute top-0 right-1/4 w-px h-full bg-gradient-to-b from-transparent via-blue-500 to-transparent" />
@@ -341,44 +330,28 @@ export function LoginPage() {
         </div>
       </div>
 
-      {/* Top Header - No background, transparent */}
+      {/* Top Header */}
       <header className="absolute top-0 left-0 right-0 z-50 safe-top">
         <div className="flex items-center justify-between px-4 sm:px-6 h-14 sm:h-16">
-          {/* Left - Logo & Name */}
           <div className="flex items-center gap-2 sm:gap-3">
             <BrandLogoHorizontal className="h-6 sm:h-7" />
           </div>
-
-          {/* Right - Instance Selector & Language Switcher */}
           <div className="flex items-center gap-1">
-            {/* Instance Selector - only show if there are cached remote instances */}
-            {cachedInstances.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-1 px-2 sm:px-3">
-                    <Server className="h-4 w-4" />
-                    <span className="hidden sm:inline">
-                      {currentInstanceId === 'local-default'
-                        ? t('instances:localBackend')
-                        : cachedInstances.find(i => i.id === currentInstanceId)?.name || t('instances:selectBackend')}
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[160px]">
-                  {cachedInstances.map((inst) => (
-                    <DropdownMenuItem
-                      key={inst.id}
-                      onClick={() => handleInstanceSwitch(inst)}
-                      className={currentInstanceId === inst.id ? 'bg-muted' : ''}
-                    >
-                      {inst.is_local ? t('instances:localBackend') : inst.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+            {/* Backend switcher — always opens instance picker */}
+            {cachedInstances.length > 0 ? (() => {
+              const currentId = localStorage.getItem(CURRENT_INSTANCE_KEY)
+              const current = cachedInstances.find(i => i.id === currentId)
+              const label = current
+                ? (current.is_local ? t('instances:localBackend') : current.name)
+                : t('instances:localBackend')
+              return (
+                <Button variant="ghost" size="sm" className="gap-1 px-2 sm:px-3" onClick={() => setShowInstancePicker(true)}>
+                  <Server className="h-4 w-4" />
+                  <span className="hidden sm:inline">{label}</span>
+                </Button>
+              )
+            })() : null}
 
-            {/* Language Switcher */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="gap-1 px-2 sm:px-3">
@@ -402,24 +375,18 @@ export function LoginPage() {
         </div>
       </header>
 
-      {/* Main Content - Centered on both mobile and desktop */}
+      {/* Main Content */}
       <main
         className="flex-1 px-4 sm:px-6 safe-bottom flex items-center justify-center min-h-0"
         onClick={(e) => {
-          // If clicking outside the login card, dismiss keyboard
           if ((e.target as HTMLElement).closest('form, button, a')) return
           handleBackdropClick()
         }}
       >
         <div className="w-full max-w-md">
-          {/* Login Card */}
           <div className="bg-bg-50 backdrop-blur-md rounded-lg p-6 sm:p-8">
-            {/* Login Title */}
             <h2 className="text-2xl sm:text-3xl font-semibold mb-4 sm:mb-6 text-center">{t('auth:login')}</h2>
-
-            {/* Login Form */}
             <form onSubmit={handleSubmit} className="flex flex-col gap-4 sm:gap-5">
-              {/* Username Field */}
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
@@ -433,8 +400,6 @@ export function LoginPage() {
                   className="pl-9 h-11 bg-bg-70 border-border focus:bg-background dark:focus:bg-bg-50 focus:border-primary transition-colors text-base scroll-mb-32"
                 />
               </div>
-
-              {/* Password Field */}
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
@@ -448,8 +413,6 @@ export function LoginPage() {
                   className="pl-9 h-11 bg-bg-70 border-border focus:bg-background dark:focus:bg-bg-50 focus:border-primary transition-colors text-base scroll-mb-32"
                 />
               </div>
-
-              {/* Remember Me */}
               <label className="flex items-center gap-2 cursor-pointer group">
                 <Checkbox
                   id="remember"
@@ -460,16 +423,12 @@ export function LoginPage() {
                   {t('auth:rememberMe')}
                 </span>
               </label>
-
-              {/* Error Message */}
               {error && (
                 <div className="flex items-start gap-2 text-sm text-destructive bg-muted rounded-md p-3">
                   <Shield className="h-4 w-4 mt-0.5 flex-shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
-
-              {/* Submit Button */}
               <Button
                 type="submit"
                 disabled={isLoading || !username || !password}
@@ -481,8 +440,6 @@ export function LoginPage() {
             </form>
           </div>
         </div>
-
-        {/* Footer - Copyright - hidden on mobile, shown at bottom on desktop */}
         <footer className="hidden sm:block absolute left-0 right-0 z-10 text-center bottom-6">
           <p className="text-xs text-muted-foreground">
             © CamThink {new Date().getFullYear()}

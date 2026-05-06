@@ -17,13 +17,41 @@ import { logError } from '@/lib/errors'
 import { INSTANCE_CACHE_KEY, CURRENT_INSTANCE_KEY, PENDING_SWITCH_KEY } from '@/lib/instance-constants'
 
 // ============================================================================
-// In-memory API key store (never persisted to localStorage)
+// API key decryption (XOR + hex, matching backend's xor_encode)
 // ============================================================================
 
-/** Full API keys keyed by instance ID. Only populated via add/edit flow. */
+const KEY_CIPHER = 'NeoMind2024!@#'
+
+/** Decrypt XOR+hex encoded API key from backend. */
+export function decryptApiKey(encrypted: string): string {
+  const keyBytes = new TextEncoder().encode(KEY_CIPHER)
+  const bytes: number[] = []
+  for (let i = 0; i < encrypted.length; i += 2) {
+    bytes.push(parseInt(encrypted.substring(i, i + 2), 16))
+  }
+  return bytes
+    .map((b, i) => String.fromCharCode(b ^ keyBytes[i % keyBytes.length]))
+    .join('')
+}
+
+// ============================================================================
+// In-memory API key store (populated from backend encrypted_key)
+// ============================================================================
+
+/** Full API keys keyed by instance ID. */
 const _apiKeyMap: Record<string, string> = {}
 
-/** Get the full API key for an instance (from in-memory store only). */
+/** Save full API key for an instance. */
+function saveInstanceKey(instanceId: string, apiKey: string) {
+  _apiKeyMap[instanceId] = apiKey
+}
+
+/** Remove API key for an instance. */
+function removeInstanceKey(instanceId: string) {
+  delete _apiKeyMap[instanceId]
+}
+
+/** Get the full API key for an instance. */
 function getFullApiKey(instanceId: string): string | undefined {
   return _apiKeyMap[instanceId]
 }
@@ -36,8 +64,10 @@ export interface InstanceInfo {
   id: string
   name: string
   url: string
-  /** Masked key from backend (e.g. "nmk_abc1****"). Full key only in memory via _apiKeyMap. */
+  /** Masked key from backend (e.g. "nmk_abc1****"). */
   api_key?: string
+  /** XOR+hex encrypted full key from backend. */
+  encrypted_key?: string
   is_local: boolean
   last_status: string
   last_checked_at: number | null
@@ -147,7 +177,32 @@ function applyPendingSwitch(): PendingSwitch | null {
     pending = raw ? JSON.parse(raw) : null
   } catch { /* ignore */ }
 
-  if (!pending) return null
+  if (!pending) {
+    // No pending switch — reset to local only on truly fresh start.
+    // Keep remote if there's a JWT token (user logged in on remote) or
+    // an API key in sessionStorage (page refresh preserved it).
+    try {
+      const currentId = localStorage.getItem(CURRENT_INSTANCE_KEY)
+      if (currentId && currentId !== 'local-default') {
+        const hasJwt = !!localStorage.getItem('neomind_token')
+        const activeKey = sessionStorage.getItem('neomind_api_key')
+        if (!hasJwt && !activeKey) {
+          // Fresh start — reset to local instance
+          localStorage.setItem(CURRENT_INSTANCE_KEY, 'local-default')
+          setApiBase('')
+          clearApiKey()
+        } else if (!activeKey) {
+          // Has JWT but no API key — restore API base from cached instances
+          const cached = getCachedInstances()
+          const inst = cached.find(i => i.id === currentId)
+          if (inst && !inst.is_local) {
+            setApiBase(`${inst.url}/api`)
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    return null
+  }
 
   // Apply API base
   if (pending.apiUrl) {
@@ -164,6 +219,8 @@ function applyPendingSwitch(): PendingSwitch | null {
   // When set, ProtectedRoute allows access without JWT login.
   if (pending.apiKey) {
     setApiKey(pending.apiKey)
+    // Restore to in-memory map so subsequent switchInstance calls can find it
+    saveInstanceKey(pending.targetId, pending.apiKey)
   } else {
     clearApiKey()
   }
@@ -214,6 +271,12 @@ export const createInstanceSlice: StateCreator<
     set({ instanceLoading: true })
     try {
       const instances = await fetchInstancesApi()
+      // Decrypt encrypted keys from backend into in-memory store
+      for (const inst of instances) {
+        if (inst.encrypted_key) {
+          saveInstanceKey(inst.id, decryptApiKey(inst.encrypted_key))
+        }
+      }
       try {
         localStorage.setItem(INSTANCE_CACHE_KEY, JSON.stringify(instances))
       } catch { /* ignore storage errors */ }
@@ -238,9 +301,11 @@ export const createInstanceSlice: StateCreator<
   // Add a new instance
   addInstance: async (data) => {
     const instance = await createInstanceApi(data)
-    // Save full API key in memory (backend returns masked version)
-    if (data.api_key) {
-      _apiKeyMap[instance.id] = data.api_key
+    // Decrypt key from backend's encrypted_key
+    if (instance.encrypted_key) {
+      saveInstanceKey(instance.id, decryptApiKey(instance.encrypted_key))
+    } else if (data.api_key) {
+      saveInstanceKey(instance.id, data.api_key)
     }
     const instances = [...get().instances, instance]
     set({ instances })
@@ -251,12 +316,14 @@ export const createInstanceSlice: StateCreator<
   // Update an existing instance
   updateInstance: async (id, data) => {
     const updated = await updateInstanceApi(id, data)
-    // Update in-memory key: save new key, or clear if empty
-    if (data.api_key !== undefined) {
+    // Update in-memory key from backend's encrypted_key
+    if (updated.encrypted_key) {
+      saveInstanceKey(id, decryptApiKey(updated.encrypted_key))
+    } else if (data.api_key !== undefined) {
       if (data.api_key) {
-        _apiKeyMap[id] = data.api_key
+        saveInstanceKey(id, data.api_key)
       } else {
-        delete _apiKeyMap[id]
+        removeInstanceKey(id)
       }
     }
     const instances = get().instances.map((i) => (i.id === id ? updated : i))

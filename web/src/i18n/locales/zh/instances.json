@@ -49,6 +49,9 @@
   "noInstancesHint": "添加远端 NeoMind 后端以在此处监控和管理",
   "selectBackend": "后端",
   "localBackend": "本地",
+  "authMethod": "认证方式",
+  "authApiKey": "API 密钥免登",
+  "authUserLogin": "需要登录",
   "validation": {
     "nameRequired": "名称不能为空",
     "urlRequired": "地址不能为空",

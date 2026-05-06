@@ -54,6 +54,47 @@ fn default_status() -> String {
     "unknown".to_string()
 }
 
+/// XOR cipher key for API key encryption (shared with frontend).
+/// Can be overridden via NEOMIND_KEY_CIPHER environment variable.
+pub fn get_key_cipher() -> &'static [u8] {
+    use std::sync::OnceLock;
+    static CIPHER: OnceLock<Vec<u8>> = OnceLock::new();
+    CIPHER.get_or_init(|| {
+        std::env::var("NEOMIND_KEY_CIPHER")
+            .map(|s| s.into_bytes())
+            .unwrap_or_else(|_| b"NeoMind2024!@#".to_vec())
+    })
+}
+
+/// XOR encode bytes with a key, then hex-encode the result.
+/// Used to encrypt API keys for safe transit to the frontend.
+fn xor_encode(data: &str, key: &[u8]) -> String {
+    data.bytes()
+        .enumerate()
+        .fold(String::new(), |mut acc, (i, b)| {
+            use std::fmt::Write;
+            write!(acc, "{:02x}", b ^ key[i % key.len()]).unwrap();
+            acc
+        })
+}
+
+/// Instance data returned in API responses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstanceResponse {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    /// Masked API key for display (e.g. "nmk_abc1****")
+    pub api_key: Option<String>,
+    /// XOR+hex encrypted full API key (decryptable by frontend)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encrypted_key: Option<String>,
+    pub is_local: bool,
+    pub last_status: String,
+    pub last_checked_at: Option<i64>,
+    pub created_at: i64,
+}
+
 impl InstanceRecord {
     /// Mask the API key for safe display in API responses.
     /// Returns a copy with api_key replaced by "nmk_abc1****" or similar.
@@ -67,6 +108,28 @@ impl InstanceRecord {
                 }
             }),
             ..self.clone()
+        }
+    }
+
+    /// Return a response-safe copy with masked api_key and encrypted full key.
+    pub fn for_response(&self) -> InstanceResponse {
+        let encrypted_key = self.api_key.as_ref().map(|k| xor_encode(k, get_key_cipher()));
+        InstanceResponse {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            url: self.url.clone(),
+            api_key: self.api_key.as_ref().map(|k| {
+                if k.len() > 8 {
+                    format!("{}****", &k[..8])
+                } else {
+                    "****".to_string()
+                }
+            }),
+            encrypted_key,
+            is_local: self.is_local,
+            last_status: self.last_status.clone(),
+            last_checked_at: self.last_checked_at,
+            created_at: self.created_at,
         }
     }
 
