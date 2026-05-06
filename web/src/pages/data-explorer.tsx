@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye } from 'lucide-react'
+import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { UnifiedDataSourceInfo } from '@/types'
@@ -25,6 +25,7 @@ import { useIsMobile } from '@/hooks/useMobile'
 import { useEvents } from '@/hooks/useEvents'
 import { useAbortController } from '@/hooks/useAbortController'
 import { textNano, textMini } from "@/design-system/tokens/typography"
+import { ExportDataDialog } from '@/components/data/ExportDataDialog'
 
 type SourceType = 'all' | string
 
@@ -93,6 +94,7 @@ export function DataExplorerPage() {
 
   // Detail dialog
   const [selectedSource, setSelectedSource] = useState<UnifiedDataSourceInfo | null>(null)
+  const [exportSource, setExportSource] = useState<UnifiedDataSourceInfo | null>(null)
   const [historyRange, setHistoryRange] = useState<string>('1h')
   const [historyData, setHistoryData] = useState<Array<{ timestamp: number; value: unknown; quality: number | null }>>([])
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -254,14 +256,24 @@ export function DataExplorerPage() {
         return <span className="text-xs text-muted-foreground">{formatTime(source.last_update)}</span>
       case 'actions':
         return (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2"
-            onClick={(e) => { e.stopPropagation(); setSelectedSource(source) }}
-          >
-            <Eye className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={(e) => { e.stopPropagation(); setSelectedSource(source) }}
+            >
+              <Eye className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={(e) => { e.stopPropagation(); setExportSource(source) }}
+            >
+              <Download className="h-4 w-4" />
+            </Button>
+          </div>
         )
       default:
         return String(rowData[columnKey] ?? '')
@@ -293,14 +305,24 @@ export function DataExplorerPage() {
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm truncate">{source.field_display_name}</div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2"
-                  onClick={(e) => { e.stopPropagation(); setSelectedSource(source) }}
-                >
-                  <Eye className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={(e) => { e.stopPropagation(); setSelectedSource(source) }}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={(e) => { e.stopPropagation(); setExportSource(source) }}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               {/* Row 2: ID + data type + time */}
               <div className="flex items-center gap-1.5 mt-1.5">
@@ -521,6 +543,12 @@ export function DataExplorerPage() {
           </div>
         )}
       </UnifiedFormDialog>
+
+      <ExportDataDialog
+        open={!!exportSource}
+        onOpenChange={(open) => !open && setExportSource(null)}
+        source={exportSource}
+      />
     </>
   )
 }
