@@ -122,51 +122,53 @@ export function isTauriEnv(): boolean {
   return typeof window !== 'undefined' && '__TAURI__' in window
 }
 
+// Dynamic URL management — imported from urls.ts (re-exported for convenience)
+import { setApiKey as _setApiKey, clearApiKey as _clearApiKey, getApiKey as _getApiKey, resetToDefault as _resetToDefault, buildWsUrl as _buildWsUrl } from './urls'
+export const setApiKey = _setApiKey
+export const clearApiKey = _clearApiKey
+export const getApiKey = _getApiKey
+export const resetToDefault = _resetToDefault
+export const buildWsUrl = _buildWsUrl
+
 /**
  * Get API base URL based on environment.
- *
- * Priority:
- * 1. VITE_API_BASE_URL environment variable (for production cross-origin deployment)
- * 2. Tauri: http://localhost:9375/api (direct connection to local backend)
- * 3. Web: /api (relative path, relies on Vite proxy or reverse proxy)
- *
- * For production cross-origin deployment (frontend on app.com, backend on api.com):
- * - Set VITE_API_BASE_URL=https://api.com/api in your .env file
- * - Ensure CORS is configured on the backend
+ * Supports runtime switching via setApiBase().
  */
 export function getApiBase(): string {
-  // Check for explicit environment variable (highest priority)
+  // Dynamic override takes priority (set by InstanceSlice)
+  const dynamicBase = _dynamicApiBase
+  if (dynamicBase) return dynamicBase
+
+  // Check for explicit environment variable
   const envApiBase = import.meta.env.VITE_API_BASE_URL
-  if (envApiBase) {
-    return envApiBase
-  }
+  if (envApiBase) return envApiBase
+
   // Tauri desktop: direct connection
-  if (isTauriEnv()) {
-    return 'http://localhost:9375/api'
-  }
-  // Web (dev/prod): use relative path, let proxy handle forwarding
+  if (isTauriEnv()) return 'http://localhost:9375/api'
+
+  // Web (dev/prod): use relative path
   return '/api'
 }
 
 /** Get server origin URL based on environment */
 export function getServerOrigin(): string {
-  if (isTauriEnv()) {
+  const base = getApiBase()
+  try {
+    const url = new URL(base)
+    return url.origin
+  } catch {
+    if (typeof window !== 'undefined') return window.location.origin
     return 'http://localhost:9375'
   }
-  // For cross-origin, extract origin from VITE_API_BASE_URL if set
-  const envApiBase = import.meta.env.VITE_API_BASE_URL
-  if (envApiBase) {
-    try {
-      const url = new URL(envApiBase)
-      return url.origin
-    } catch {
-      // Invalid URL, fall back to current origin
-    }
-  }
-  return window.location.origin
 }
 
-const API_BASE = getApiBase()
+// Internal state for dynamic URL override
+let _dynamicApiBase = ''
+
+/** Set dynamic API base (used by InstanceSlice for instance switching) */
+export function setApiBase(url: string): void {
+  _dynamicApiBase = url
+}
 
 // ============================================================================
 // 401 Handling Callback Registry
@@ -238,6 +240,11 @@ export async function fetchAPI<T>(
     if (token) {
       headers['Authorization'] = `Bearer ${token}`
     }
+    // Also add API key if set (for remote instance auth)
+    const apiKey = getApiKey()
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey
+    }
   }
 
   // Ensure headers is not undefined for headers as Record<string, string>
@@ -248,7 +255,7 @@ export async function fetchAPI<T>(
   const MAX_RETRIES = 3
   const RETRY_DELAYS = [500, 1500, 3000] // Progressive backoff
   const RETRYABLE_STATUS = [429, 502, 503, 504]
-  let response = await fetch(`${API_BASE}${path}`, {
+  let response = await fetch(`${getApiBase()}${path}`, {
     ...fetchOptions,
     headers: finalHeaders,
     signal,
@@ -259,7 +266,7 @@ export async function fetchAPI<T>(
       // For 429, wait longer before retrying
       const delay = response.status === 429 ? RETRY_DELAYS[i] * 2 : RETRY_DELAYS[i]
       await new Promise(r => setTimeout(r, delay))
-      response = await fetch(`${API_BASE}${path}`, {
+      response = await fetch(`${getApiBase()}${path}`, {
         ...fetchOptions,
         headers: finalHeaders,
         signal,
@@ -1340,12 +1347,8 @@ export const api = {
     }
     const base64Data = btoa(binary)
 
-    // For large file uploads, use appropriate API base:
-    // - Tauri: Direct connection to localhost:9375
-    // - Web (dev/prod): Use relative path /api and let Vite proxy or reverse proxy handle forwarding
-    // This avoids CORS issues when accessing from LAN (e.g., http://192.168.x.x:5173)
-    const isTauri = isTauriEnv()
-    const uploadApiBase = isTauri ? 'http://localhost:9375/api' : API_BASE
+    // For large file uploads, use the dynamic API base (respects instance switching)
+    const uploadApiBase = getApiBase()
 
     // Get auth token
     const token = tokenManager.getToken()
@@ -1609,7 +1612,7 @@ export const api = {
       end: String(end),
       ...(limit ? { limit: String(limit) } : {}),
     }).toString()
-    return fetchAPI<{ source_id: string; data: Array<{ timestamp: number; value: number; quality: number }>; count: number }>(`/telemetry?${qs}`)
+    return fetchAPI<{ source_id: string; data: Array<{ timestamp: number; value: unknown; quality: number | null }>; count: number; total_count?: number }>(`/telemetry?${qs}`)
   },
 
   // ========== Bulk Operations API ==========
