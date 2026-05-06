@@ -257,10 +257,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/auth/change-password",
             post(auth_users::change_password_handler),
         )
-        // Apply JWT authentication middleware
+        // Apply hybrid authentication middleware (supports both JWT tokens and API keys)
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            jwt_auth_middleware,
+            hybrid_auth_middleware,
         ));
 
     // WebSocket routes - authentication handled in handler
