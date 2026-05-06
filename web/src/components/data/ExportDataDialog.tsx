@@ -261,7 +261,7 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
       title={t('export.title')}
       description={source?.id}
       icon={<Download className="h-5 w-5" />}
-      width="sm"
+      width="md"
       submitLabel={exporting ? t('export.exporting') : t('export.button')}
       onSubmit={handleExport}
       isSubmitting={exporting}
@@ -290,16 +290,17 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
             </div>
           </div>
 
-          {/* Start Time Range */}
-          <div>
-            <label className="text-xs text-muted-foreground mb-1.5 block">{t('export.startTime')}</label>
-            <div className="flex items-center gap-2 flex-wrap">
+          {/* Time Range - two columns: start | end */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Start */}
+            <div className="space-y-2">
+              <label className="text-xs text-muted-foreground block">{t('export.startTime')}</label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     className={cn(
-                      "h-9 justify-start text-left text-sm font-normal shrink-0",
+                      "h-9 w-full justify-start text-left text-sm font-normal",
                       !startDate && "text-muted-foreground"
                     )}
                   >
@@ -318,18 +319,16 @@ export function ExportDataDialog({ open, onOpenChange, source }: ExportDataDialo
               </Popover>
               <TimePicker value={startTime} onChange={setStartTime} />
             </div>
-          </div>
 
-          {/* End Time Range */}
-          <div>
-            <label className="text-xs text-muted-foreground mb-1.5 block">{t('export.endTime')}</label>
-            <div className="flex items-center gap-2 flex-wrap">
+            {/* End */}
+            <div className="space-y-2">
+              <label className="text-xs text-muted-foreground block">{t('export.endTime')}</label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     className={cn(
-                      "h-9 justify-start text-left text-sm font-normal shrink-0",
+                      "h-9 w-full justify-start text-left text-sm font-normal",
                       !endDate && "text-muted-foreground"
                     )}
                   >
