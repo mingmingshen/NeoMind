@@ -14,7 +14,7 @@ docs/guides/zh/
 ├── 05-automation.md          # 自动化模块
 ├── 06-rules.md               # 规则引擎模块
 ├── 07-tools.md               # 工具调用模块
-├── 08-memory.md              # 内存系统模块
+├── 08-memory.md              # 记忆系统模块
 ├── 09-messages.md            # 消息通知模块
 ├── 10-storage.md             # 存储层模块
 ├── 12-commands.md            # 命令队列模块
@@ -85,7 +85,7 @@ graph TB
 | [Automation](./05-automation.md) | 75% | 数据转换与自动化 |
 | [Rules](./06-rules.md) | 75% | DSL规则引擎 |
 | [Tools](./07-tools.md) | 80% | 函数调用工具 |
-| [Memory](./08-memory.md) | 85% | 三层内存系统 |
+| [Memory](./08-memory.md) | 85% | 分类记忆系统 |
 | [Messages](./09-messages.md) | 70% | 消息通知 |
 | [Storage](./10-storage.md) | 95% | 持久化存储、统一时序数据库 |
 | [Commands](./12-commands.md) | 70% | 设备命令队列 |
@@ -106,5 +106,5 @@ graph TB
 - **语言**: TypeScript
 - **框架**: React 18
 - **构建**: Vite
-- **状态**: Zustand (替代Redux Toolkit)
+- **状态**: Zustand
 - **UI**: Radix UI + Tailwind CSS

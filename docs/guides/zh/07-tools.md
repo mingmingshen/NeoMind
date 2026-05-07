@@ -296,6 +296,55 @@ pub struct GetAgentConversationTool {
 }
 ```
 
+### 交互工具
+
+NeoMind 提供交互工具，用于在智能体执行过程中与用户通信：
+
+#### AskUserTool
+
+在执行过程中提示用户输入：
+
+```rust
+/// 向用户提问
+pub struct AskUserTool;
+
+// 输入: { "question": "要控制哪个设备？", "options": ["device_1", "device_2"] }
+// 输出: { "type": "ask_user", "awaiting_user_response": true }
+```
+
+#### ConfirmActionTool
+
+在执行危险操作前请求确认：
+
+```rust
+/// 执行前确认操作
+pub struct ConfirmActionTool;
+
+// 输入: { "action": "删除所有设备", "risk_level": "high" }
+// 输出: { "type": "confirm_action", "awaiting_confirmation": true }
+```
+
+**危险操作检测**：系统自动检测中英文的危险操作：
+
+| 英文关键词 | 中文关键词 |
+|-----------|-----------|
+| delete, remove, clear | 删除, 移除, 清空 |
+| reset, format | 重置, 格式化 |
+| close all, turn off all | 关闭所有 |
+| delete all, batch delete | 删除所有, 批量删除 |
+
+**示例**：
+```rust
+// 以下会触发确认：
+tool.requires_confirmation("delete all rules");      // 英文
+tool.requires_confirmation("关闭所有设备");           // 中文
+tool.requires_confirmation("删除所有自动化规则");    // 中文
+
+// 以下不会触发确认：
+tool.requires_confirmation("show temperature");
+tool.requires_confirmation("获取温度");
+```
+
 ### 系统工具
 
 ```rust
@@ -537,6 +586,17 @@ let tools_json = registry.format_for_llm();
 | 业务工具 | ✅ | 完整实现 |
 | Mock实现 | ✅ | 用于测试 |
 | Real实现 | 🟡 | feature-gated |
+
+## Feature Flags
+
+```toml
+[features]
+default = ["device", "rule", "agent", "system"]
+device = ["mqtt", "http", "webhook"]
+rule = ["pest", "executor"]
+agent = ["llm"]
+system = ["stats", "restart"]
+```
 
 ## 设计原则
 

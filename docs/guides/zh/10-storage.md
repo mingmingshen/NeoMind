@@ -80,13 +80,16 @@ pub fn create_backend(
 
 ## 时序存储
 
-**重要变更 (v0.5.x)**: 所有时序数据现在统一存储在 `data/telemetry.redb`：
+**重要变更 (v0.6.x)**: 所有时序数据统一存储在 `data/telemetry.redb`。v0.6.11 中一级键从 `device_id` 重命名为 `source_id`，以反映遥测数据存储来自多种源类型，不仅是设备。
 
-| 数据类型 | device_part | metric_part | 说明 |
-|---------|-------------|-------------|------|
+| 数据类型 | source_id (source_part) | metric_part | 说明 |
+|---------|-------------------------|-------------|------|
 | 设备遥测 | `{device_id}` | `{metric_name}` | 设备上报的指标数据 |
 | 扩展指标 | `extension:{ext_id}` | `{metric_name}` | 扩展采集的指标数据 |
 | 转换指标 | `transform:{trans_id}` | `{metric_name}` | 转换后的虚拟指标 |
+| AI 指标 | `ai:{group}` | `{field}` | AI 智能体创建的自定义指标 |
+
+**DataSourceId 格式**: `{type}:{id}:{field}`（如 `extension:weather:temp`、`ai:anomaly:score`）
 
 ```rust
 pub struct TimeSeriesStore {
@@ -515,8 +518,48 @@ pub async fn migrate_from_sled(sled_path: &Path, redb_path: &Path) -> Result<()>
 
 ## API端点
 
+### 通用遥测 API (v0.6.11)
+
+统一端点，用于查询任意源类型的时序数据：
+
 ```
-# 通过各模块的handler访问
+GET /api/telemetry?source={source_id}&metric={metric_name}&start={timestamp}&end={timestamp}&limit={n}&aggregate={type}
+```
+
+**参数**:
+- `source`（必需）: 源 ID（如 `sensor_1`、`extension:weather`）
+- `metric`（必需）: 指标名称（如 `temperature`）
+- `start`（必需）: 开始时间戳（Unix 纪元）
+- `end`（必需）: 结束时间戳（Unix 纪元）
+- `limit`（可选）: 最大数据点数
+- `aggregate`（可选）: 聚合类型（`avg`、`min`、`max`、`sum`、`count`）
+
+返回数据使用 `"source_id"` 作为键。此端点独立于设备专用的 `/api/devices/:id/telemetry` 路由。
+
+### 数据源 API (v0.6.11)
+
+服务端分页的数据源列表：
+
+```
+GET /api/data/sources?offset={n}&limit={n}&source_type={type}&source={id}&search={query}&skip_telemetry={bool}
+```
+
+**参数**:
+- `offset` / `limit`: 分页（默认每页 10 条）
+- `source_type`: 按源类型过滤（`device`、`extension`、`ai`、`transform`）
+- `source`: 按源名称过滤
+- `search`: 跨源名称的全文搜索
+- `skip_telemetry`: 跳过批量列表的耗时遥测填充
+
+`populate_latest_values` 仅在分页子集上运行，显著减少大型部署的数据库查询次数。
+
+### 扩展指标 API
+
+```
+GET    /api/extensions/:id/metrics         # 列出扩展指标
+POST   /api/extensions/:id/metrics         # 注册指标
+DELETE /api/extensions/:id/metrics/:name   # 删除指标
+POST   /api/extensions/:id/push-metrics    # 从外部源推送指标值
 ```
 
 ## 使用示例
