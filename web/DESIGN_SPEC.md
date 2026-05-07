@@ -248,6 +248,30 @@ openDialog(user)  // passes user as data
 
 ## 5. Loading States
 
+### LoadingState Component
+
+`LoadingState` from `@/components/shared/LoadingState` provides two variants:
+
+| Variant | Behavior | Use Case |
+|---------|----------|----------|
+| `variant="page"` | Full skeleton screen (header + 6 cards grid) | Page-level loading |
+| `variant="default"` | Centered spinner with optional text | Inline/section loading |
+
+**Size options** (default variant only): `sm` (w-4 h-4), `md` (w-6 h-6), `lg` (w-8 h-8)
+
+```tsx
+import { LoadingState, LoadingSpinner } from '@/components/shared/LoadingState'
+
+// Page-level skeleton (MUST use for page loading)
+<LoadingState variant="page" />
+
+// Inline spinner with text
+<LoadingState size="sm" text="Loading..." />
+
+// Tiny inline spinner (buttons, badges)
+<LoadingSpinner className="text-muted-foreground" />
+```
+
 ### Page-Level: Skeleton Screens
 
 ```tsx
@@ -268,6 +292,17 @@ openDialog(user)  // passes user as data
 
 ```tsx
 <UnifiedFormDialog loading={initialLoad} isSubmitting={saving} />
+```
+
+### FullScreenDialog Loading
+
+For builder dialogs, show skeleton content or a loading overlay inside the dialog body:
+
+```tsx
+<FullScreenDialog open>
+  <FullScreenDialogHeader ... />
+  {loading ? <LoadingState variant="page" /> : <BuilderContent />}
+</FullScreenDialog>
 ```
 
 ### Loading Button Hook
@@ -437,19 +472,100 @@ import { getStatusColorClass, getStatusBgClass } from '@/design-system/utils/for
 
 ---
 
-## 8. Z-Index Stack
+## 8. Dialog & Z-Index Layering Standard
+
+### Z-Index Stack
 
 | Level | Value | Usage |
 |-------|-------|-------|
 | Base | `z-0` | Normal content |
 | Sticky | `z-10` | Sticky headers |
 | Dropdowns | `z-40` | Mobile nav, sidebars |
-| Overlay | `z-50` | Dialog overlays |
-| Full Screen | `z-[100]` | Full-screen dialogs |
-| Full Screen Header | `z-[110]` | Full-screen dialog headers |
-| Popovers | `z-[200]` | Select, DropdownMenu, Popover, Tooltip |
+| Overlay | `z-50` | Dialog overlays (UnifiedFormDialog, Sheet) |
+| Full Screen | `z-[100]` | Full-screen dialogs (FullScreenDialog) |
+| Full Screen Header | `z-[110]` | Full-screen dialog headers, nested dialogs |
+| Popovers / Alerts | `z-[200]` | Select, DropdownMenu, Popover, Tooltip, AlertDialog |
 
-All popover-type components (Select, DropdownMenu, Popover, Tooltip) render via portals to `#dialog-root` and use `z-[200]` to avoid being trapped behind full-screen dialog stacking contexts.
+### Dialog Type → Z-Index Mapping
+
+| Dialog Type | Z-Index | Backdrop | Portal |
+|------------|---------|----------|--------|
+| `UnifiedFormDialog` (base) | `z-50` | `bg-black/80 backdrop-blur-sm` | `#dialog-root` |
+| `FullScreenDialog` (base) | `z-[100]` (via `style`) | `bg-black/20 dark:bg-black/40 backdrop-blur-sm` | `#dialog-root` |
+| `FullScreenDialog` header | `z-[110]` (via `zIndex` prop) | — | — |
+| Nested `UnifiedFormDialog` inside `FullScreenDialog` | `z-[110]` via `className` | `bg-black/80 backdrop-blur-sm` | `#dialog-root` |
+| Nested `Dialog` inside `FullScreenDialog` (image viewer) | `z-[110]` via `className` | `bg-black/80` | `#dialog-root` |
+| `AlertDialog` / `useConfirm` (`Confirmer`) | `z-[200]` (always top) | `bg-black/60` | `#dialog-root` |
+| `Sheet` (side panel) | `z-50` | `bg-bg-80 backdrop-blur-sm` | `#dialog-root` |
+| Popover / Select / DropdownMenu / Tooltip | `z-[200]` | none | `#dialog-root` |
+| Toast notifications | `z-[200]` | none | viewport fixed |
+
+### Nesting Rules
+
+**Rule 1: Base dialog is z-50. FullScreen is z-[100]. Never mix without explicit z-index override.**
+
+```tsx
+// DON'T — UnifiedFormDialog at z-50 will be hidden behind FullScreenDialog at z-100
+<FullScreenDialog open>
+  <UnifiedFormDialog open={showEdit} />  {/* z-50 < z-100, hidden! */}
+</FullScreenDialog>
+
+// DO — Pass className override to raise z-index above FullScreenDialog
+<FullScreenDialog open>
+  <UnifiedFormDialog open={showEdit} className="z-[110]" />
+</FullScreenDialog>
+```
+
+**Rule 2: UnifiedFormDialog inside FullScreenDialog MUST use `className="z-[110]"`.**
+
+The `UnifiedFormDialog` auto-detects z-index from className: it extracts the value via regex (`z-\[?(\d+)\]?`) and applies it to both overlay and content.
+
+```tsx
+// Auto-detection in UnifiedFormDialog (built-in):
+const zIndexMatch = className?.match(/z-\[?(\d+)\]?/)
+const overlayZIndex = zIndexMatch ? `z-[${zIndexMatch[1]}]` : 'z-50'
+const dialogZIndex = zIndexMatch ? `z-[${zIndexMatch[1]}]` : 'z-50'
+```
+
+**Rule 3: AlertDialog / useConfirm is ALWAYS z-[200] regardless of context.**
+
+Safe to call from any depth — always renders on top. No z-index override needed.
+
+```tsx
+// Safe anywhere — even inside FullScreenDialog
+const confirm = useConfirm()
+const yes = await confirm({ title: 'Delete?', description: 'Cannot undo.' })
+```
+
+**Rule 4: Popovers/Selects inside FullScreenDialog portal to `#dialog-root` at z-[200].**
+
+All Radix-based popovers (Select, DropdownMenu, Popover, Tooltip) use `getPortalRoot()` → `#dialog-root` with `z-[200]`. No manual override needed.
+
+**Rule 5: NEVER open FullScreenDialog inside UnifiedFormDialog.**
+
+Reverse the order: use FullScreenDialog as the outer container, and UnifiedFormDialog (with z-[110]) as the inner.
+
+```tsx
+// DON'T — FullScreenDialog at z-100 inside UnifiedFormDialog at z-50
+<UnifiedFormDialog open>
+  <FullScreenDialog open /> {/* Layering violation! */}
+</UnifiedFormDialog>
+
+// DO — FullScreenDialog outer, UnifiedFormDialog inner with z-override
+<FullScreenDialog open>
+  <UnifiedFormDialog open={showForm} className="z-[110]" />
+</FullScreenDialog>
+```
+
+**Rule 6: FullScreenDialog uses inline `style={{ zIndex }}` (not Tailwind class).**
+
+The `zIndex` prop defaults to `100`. For nested FullScreenDialogs, pass `zIndex={110}`.
+
+```tsx
+<FullScreenDialog open zIndex={110}>
+  {/* This FullScreenDialog sits above another one */}
+</FullScreenDialog>
+```
 
 ---
 
@@ -500,7 +616,7 @@ All slices follow the same pattern with `fetchCache`:
 
 | Slice | File | Key Resources |
 |-------|------|---------------|
-| device | `store/slices/deviceSlice.ts` | Devices, adapters |
+| device | `store/slices/deviceSlice.ts` | Devices, adapters, device metrics |
 | agent | `store/slices/agentSlice.ts` | AI agents |
 | llmBackend | `store/slices/llmBackendSlice.ts` | LLM backends |
 | extension | `store/slices/extensionSlice.ts` | Extensions |
@@ -508,10 +624,49 @@ All slices follow the same pattern with `fetchCache`:
 | alert | `store/slices/alertSlice.ts` | Alerts |
 | dashboard | `store/slices/dashboardSlice.ts` | Dashboards |
 | settings | `store/slices/settingsSlice.ts` | System settings |
-| auth | `store/slices/authSlice.ts` | Authentication |
+| auth | `store/slices/authSlice.ts` | Authentication (JWT + API key) |
 | ui | `store/slices/uiSlice.ts` | UI state |
 | update | `store/slices/updateSlice.ts` | Update checks |
 | aiAnalyst | `store/slices/aiAnalystSlice.ts` | AI analyst |
+| instance | `store/slices/instanceSlice.ts` | Multi-instance management |
+| command | `store/slices/commandSlice.ts` | Device commands |
+| message | `store/slices/messageSlice.ts` | Notification messages |
+| transform | `store/slices/transformSlice.ts` | Data transforms |
+| storage | `store/slices/storageSlice.ts` | Storage metrics |
+
+### useDataSource Hook
+
+For dashboard components that bind to telemetry data. Handles fetch deduplication, 5-second TTL, and real-time WebSocket updates:
+
+```tsx
+import { useDataSource } from '@/hooks/useDataSource'
+
+const { data, loading, error, lastUpdate, sendCommand, sending } = useDataSource(
+  dataSource,       // DataSourceOrList from dashboard config
+  devices,          // Device[] from store
+  { refreshInterval: 5000 }
+)
+```
+
+**Features:**
+- Global fetch deduplication (prevents duplicate API calls across components)
+- 5-second TTL cache for telemetry data
+- Real-time updates via `useEvents` hook (DeviceMetric events)
+- Fuzzy matching for metric value lookup
+- Command sending support for interactive data sources
+
+### Persistence Layer
+
+Store slices persist state using a custom middleware pattern. Key persistence locations:
+
+| Data | Storage | Key |
+|------|---------|-----|
+| JWT token | `localStorage` / `sessionStorage` | `neomind_token` |
+| User info | `localStorage` / `sessionStorage` | `neomind_user` |
+| API key | `sessionStorage` | `neomind_api_key` |
+| Current instance | `localStorage` | `currentInstanceId` |
+| Instance cache | `localStorage` | `neomind_instance_cache` |
+| Time preferences | `localStorage` | `neomind_preferences` |
 
 ---
 
@@ -802,6 +957,721 @@ Full search results overlay with categorized results.
 
 ---
 
+## 21. API Client & Data Fetching
+
+### Centralized API Client
+
+All API calls go through the centralized `api` object from `@/lib/api`:
+
+```tsx
+import { api } from '@/lib/api'
+
+const devices = await api.getDevices()
+await api.createDevice(data)
+```
+
+### Instance-Aware API (Multi-Instance)
+
+The API client supports switching between local and remote instances:
+
+```tsx
+import { getApiBase, setApiBase, getApiKey, setApiKey, isTauriEnv } from '@/lib/api'
+
+// API base resolution order:
+// 1. Dynamic override (set by InstanceSlice) — highest priority
+// 2. VITE_API_BASE_URL env variable
+// 3. Tauri: 'http://localhost:9375/api'
+// 4. Web: '/api' (relative path)
+
+setApiBase('http://192.168.1.100:9375/api')  // Switch to remote instance
+setApiBase('')  // Reset to default
+```
+
+**Authentication priority:** JWT token (from `tokenManager`) > API key (from `sessionStorage`).
+
+### snake_case → camelCase Transformation
+
+Backend returns `snake_case`. The API client transforms responses to `camelCase` where needed. Type definitions in `@/types` use `camelCase`.
+
+### Request Authentication
+
+Every request automatically includes:
+- `Authorization: Bearer <token>` header if JWT exists
+- `X-API-Key: <key>` header if API key is set (remote instances)
+- `AbortSignal.timeout()` for request timeouts (polyfilled for older Safari)
+
+### Error Handling Integration
+
+API errors flow through `onUnauthorized()` callback registry — any component can register to handle 401 errors:
+
+```tsx
+import { onUnauthorized } from '@/lib/api'
+
+const cleanup = onUnauthorized(() => {
+  // Handle session expiry (e.g., redirect to login)
+})
+```
+
+---
+
+## 22. WebSocket & Real-Time Patterns
+
+### Chat WebSocket
+
+`@/lib/websocket.ts` — singleton `ws` object for chat communication:
+
+```tsx
+import { ws } from '@/lib/websocket'
+
+// Connect (auto-called by App on auth)
+ws.connect()
+
+// Send message
+ws.send(JSON.stringify({ type: 'user_message', content: 'Hello' }))
+
+// Listen for messages
+ws.onMessage((data) => { /* handle */ })
+
+// Connection state
+ws.onConnection((connected, isReconnect) => { /* handle */ })
+ws.isConnected()
+```
+
+**Reconnection:** Exponential backoff, max 15 attempts, max delay 30s. Auto-reconnects on network recovery. Stops reconnecting on auth rejection (code 4001).
+
+### Extension WebSocket
+
+`@/lib/extension-stream.ts` — `ExtensionStreamClient` class for extension streaming:
+
+```tsx
+import { ExtensionStreamClient } from '@/lib/extension-stream'
+
+const client = new ExtensionStreamClient('weather-forecast-v2')
+client.connect({ /* config */ })
+client.onResult((data, dataType, sequence) => { /* handle binary data */ })
+client.onSessionClosed((stats) => { /* session ended */ })
+```
+
+**Features:** Session-based streaming, binary data support, max 5 reconnect attempts with 1s base delay.
+
+### Global Events (SSE + WS)
+
+`@/lib/events.ts` — event streaming from the NeoMind event bus:
+
+```tsx
+import { useEvents } from '@/hooks/useEvents'
+
+// Subscribe to specific event categories
+useEvents({
+  categories: ['device', 'alert'],
+  onEvent: (event) => { /* handle */ },
+})
+```
+
+**Transport:** Prefers SSE (`/api/events/stream`), falls back to WS (`/api/events/ws`). Supports filtering by event category and type.
+
+**Event categories:** `device`, `rule`, `llm`, `alert`, `tool`, `agent`, `extension`, `all`
+
+### URL Construction
+
+All WebSocket URLs built via `buildWsUrl()` from `@/lib/urls`:
+
+```tsx
+import { buildWsUrl } from '@/lib/urls'
+
+buildWsUrl('http://localhost:9375', '/api/chat')
+// → 'ws://localhost:9375/api/chat'
+```
+
+---
+
+## 23. Routing & Page Organization
+
+### Route Structure
+
+Pages are in `src/pages/`, lazy-loaded via `React.lazy()` for bundle splitting:
+
+| Route | Page | File |
+|-------|------|------|
+| `/login` | LoginPage | `pages/login.tsx` |
+| `/setup` | SetupPage | `pages/setup.tsx` |
+| `/`, `/chat`, `/chat/:sessionId` | ChatPage | `pages/chat.tsx` |
+| `/visual-dashboard`, `/visual-dashboard/:id` | VisualDashboard | `pages/dashboard-components/VisualDashboard.tsx` |
+| `/data` | DataExplorerPage | `pages/data-explorer.tsx` |
+| `/devices`, `/devices/:id`, `/devices/types`, `/devices/drafts` | DevicesPage | `pages/devices.tsx` |
+| `/automation`, `/automation/transforms` | AutomationPage | `pages/automation.tsx` |
+| `/agents`, `/agents/memory`, `/agents/skills` | AgentsPage | `pages/agents.tsx` |
+| `/settings` | SettingsPage | `pages/settings.tsx` |
+| `/messages`, `/messages/channels` | MessagesPage | `pages/messages.tsx` |
+| `/extensions` | ExtensionsPage | `pages/extensions.tsx` |
+
+### Protected Route Pattern
+
+```tsx
+// ProtectedRoute checks: JWT token OR API key → render children, else redirect to /login
+<ProtectedRoute>
+  <YourPage />
+</ProtectedRoute>
+```
+
+**Flow:** Check `tokenManager.getToken()` or `getApiKey()`. If neither exists, redirect to `/login`. Background check for setup status.
+
+### Route Guards
+
+| Guard | Component | Purpose |
+|-------|-----------|---------|
+| `ProtectedRoute` | Wraps all `/` routes | Requires JWT or API key |
+| `SetupRoute` | Wraps `/setup` | Only accessible when setup required |
+
+### Page Layout Pattern
+
+Every page uses `PageLayout` with optional `PageTabsBar` for tab-based navigation (e.g., `/devices/types`, `/agents/skills`).
+
+---
+
+## 24. Time & Date Handling
+
+### useTimeFormat Hook
+
+```tsx
+import { useTimeFormat } from '@/hooks/useTimeFormat'
+
+const {
+  formatTime,          // Date → "2:30 PM" / "14:30" (based on preference)
+  formatTimeShort,     // Date → "2:30 PM"
+  formatDateTime,      // Date → "Jan 15, 2:30 PM"
+  formatDate,          // Date → "Jan 15, 2026"
+  formatRelativeTime,  // timestamp → "5 min ago"
+  formatTimeWithTimezone, // Date + tz → formatted with timezone
+  formatCurrentTimeInTimezone, // tz → current time in timezone
+  getCurrentTimeInfo,  // tz → { time, date, offset, ... }
+  preferences,         // TimePreferences (12h/24h, timezone)
+  refresh,             // Reload preferences from localStorage
+} = useTimeFormat()
+```
+
+**Rules:**
+- **NEVER hardcode time formats** — always use `useTimeFormat` hooks
+- Preferences stored in `localStorage` key `neomind_preferences`
+- Supports 12h/24h toggle, timezone selection
+- Auto-updates when preferences change in other tabs (via `StorageEvent`)
+
+### useGlobalTimezone Hook
+
+For system-wide timezone (agent scheduling, server operations):
+
+```tsx
+import { useGlobalTimezone } from '@/hooks/useTimeFormat'
+
+const { timezone, updateTimezone, availableTimezones } = useGlobalTimezone()
+```
+
+This syncs timezone with the backend via API (`api.getTimezone()`, `api.updateTimezone()`).
+
+### Formatting Functions
+
+Low-level formatters in `@/lib/time`:
+
+| Function | Purpose |
+|----------|---------|
+| `formatTime(date, prefs)` | Time with user preference (12h/24h) |
+| `formatTimeShort(date, prefs)` | Compact time |
+| `formatDateTime(date, prefs)` | Date + time |
+| `formatDate(date)` | Date only |
+| `formatRelativeTime(timestamp)` | Relative ("5 min ago", "2 hours ago") |
+| `formatTimeWithTimezone(date, tz, prefs)` | Time in specific timezone |
+
+---
+
+## 25. Authentication Patterns
+
+### Dual Authentication: JWT + API Key
+
+The system supports two auth methods:
+
+| Method | Use Case | Storage | Header |
+|--------|----------|---------|--------|
+| JWT Token | Local user login | `localStorage` / `sessionStorage` | `Authorization: Bearer <token>` |
+| API Key | Remote instance access | `sessionStorage` | `X-API-Key: <key>` |
+
+**Priority:** JWT token checked first, then API key.
+
+### Auth Store Slice
+
+```tsx
+import { useStore } from '@/store'
+
+const { isAuthenticated, user, login, logout } = useStore()
+
+// Login
+await useStore.getState().login(username, password, rememberMe)
+
+// Logout
+await useStore.getState().logout()
+
+// Check auth (auto-called on mount)
+useStore.getState().checkAuthStatus()
+```
+
+### Token Manager
+
+`tokenManager` manages JWT lifecycle:
+
+```tsx
+import { tokenManager } from '@/lib/auth'  // primary module
+import { tokenManager } from '@/lib/api'    // deprecated re-export
+
+// Storage: localStorage (remember=true) or sessionStorage (remember=false)
+tokenManager.getToken()
+tokenManager.setToken(token, remember)
+tokenManager.clearToken()
+tokenManager.getUser()
+tokenManager.setUser(user, remember)
+tokenManager.clearUser()
+```
+
+### Multi-Instance Auth
+
+When connecting to a remote instance, the `instanceSlice` handles:
+
+1. Set API base URL via `setApiBase()`
+2. Store API key via `setApiKey()` (persisted to `sessionStorage`)
+3. Clear on switch back: `clearApiKey()` + `setApiBase('')`
+
+```tsx
+// Switch to remote instance
+setApiBase('http://192.168.1.100:9375/api')
+setApiKey('nm-xxx...')
+
+// Switch back to local
+clearApiKey()
+setApiBase('')
+```
+
+### Protected Route Implementation
+
+In `App.tsx`, protected routes check auth on every render (not in `useEffect`) for immediate response:
+
+```tsx
+function ProtectedRoute({ children }) {
+  const token = tokenManager.getToken()
+  const apiKey = getApiKey()
+  if (!token && !apiKey) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+```
+
+---
+
+## 26. Icon System
+
+### Icon Library
+
+All icons use **lucide-react**. Do NOT import from other icon libraries.
+
+```tsx
+import { Thermometer, Wifi, Settings } from 'lucide-react'
+```
+
+### Icon Size Standards
+
+| Context | Size | Class |
+|---------|------|-------|
+| Button icon | 20px | `h-5 w-5` |
+| Inline icon | 16px | `h-4 w-4` |
+| Feature icon (card/dialog) | 20-24px | `h-5 w-5` or `h-6 w-6` |
+| TopNav icon | 20px | `h-5 w-5` |
+| Micro icon (badge, tag) | 14px | `h-3.5 w-3.5` |
+
+### Entity Icon Mapping
+
+`@/design-system/icons` provides centralized icon-to-entity-type mapping:
+
+```tsx
+import { getIconForEntity, EntityIcon, statusIcons } from '@/design-system/icons'
+
+// Get icon component by entity type string (case-insensitive)
+const Icon = getIconForEntity('temperature')  // → Thermometer
+const Icon2 = getIconForEntity('humidity')     // → Droplets
+const Icon3 = getIconForEntity('unknown_type') // → Activity (fallback)
+
+// Pre-built EntityIcon component
+<EntityIcon type="temperature" size={24} />
+
+// Status icons with semantic colors
+const { icon: WifiIcon, color } = statusIcons.online  // { icon: Wifi, color: 'text-success' }
+```
+
+**Entity type mappings:** `temperature`→Thermometer, `humidity`→Droplets, `pressure`→Gauge, `battery`→Battery, `power`→Power, `energy`→Zap, `light`→Lightbulb, `door`→DoorOpen, `lock`→Lock, `fan`→Fan, `location`→MapPin, `time`→Clock, etc.
+
+**Status icon mappings:** `online`→Wifi (text-success), `offline`→WifiOff (text-muted-foreground), `error`→XCircle (text-error), `warning`→AlertTriangle (text-warning), `success`→CheckCircle2 (text-success), `loading`→Clock (text-info animate-spin)
+
+### Icon Usage Rules
+
+- **NEVER use emoji** as icons — always use lucide-react
+- Use `getIconForEntity()` for dynamic icon rendering (e.g., device type → icon)
+- Use `statusIcons` for status indicators with built-in semantic colors
+- Use `Activity` as the fallback icon (via `DefaultIcon` export)
+
+---
+
+## 27. Dark Mode
+
+### Theme System
+
+Three-way theme toggle: **light** / **dark** / **system** (follows OS preference).
+
+```tsx
+import { useTheme } from '@/components/ui/theme'
+
+const { theme, setTheme, resolvedTheme } = useTheme()
+// theme: 'light' | 'dark' | 'system'
+// resolvedTheme: 'light' | 'dark' (actual applied theme)
+```
+
+### Implementation
+
+- **ThemeProvider** wraps the app root in `App.tsx`
+- Theme stored in `localStorage` key `"theme"`
+- Applies class `"light"` or `"dark"` to `<html>` element
+- System preference detected via `matchMedia("(prefers-color-scheme: dark)")`
+- Flash prevention: theme resolved synchronously on initial render
+
+### CSS Pattern
+
+All color variables defined in `index.css` with dual values:
+
+```css
+:root { --color-primary: oklch(0.55 0.15 260); }
+.dark { --color-primary: oklch(0.75 0.12 260); }
+```
+
+**Rules:**
+- All colors MUST be defined for both `:root` (light) and `.dark`
+- NEVER use `dark:` Tailwind prefix for custom colors — use CSS variables instead
+- The `dark:` prefix is only acceptable for Tailwind's built-in palette colors (which we don't use for custom colors)
+
+### Theme Toggle UI
+
+`ThemeToggle` component in `@/components/layout/ThemeToggle`:
+
+```tsx
+import { ThemeToggle } from '@/components/layout/ThemeToggle'
+
+// Renders dropdown with Light/Dark/System options
+// Icon changes based on current theme:
+//   system → Monitor icon
+//   dark   → Sun icon
+//   light  → Moon icon
+<ThemeToggle />
+```
+
+---
+
+## 28. Navigation (TopNav)
+
+### Desktop Navigation
+
+- **Layout**: Fixed top bar (`z-20`, `bg-surface-glass backdrop-blur-xl`)
+- **Nav items**: Icon buttons with `Tooltip` (delay 500ms), ghost variant, `w-11 h-11 rounded-lg`
+- **Active state**: `bg-muted text-primary`
+- **Right side**: Instance selector → Language toggle (中/EN) → Theme toggle → Alert bell (with unread badge) → User avatar dropdown
+- **Alert dropdown**: Shows latest 10 alerts with severity badges, unread indicator, acknowledge button
+
+### Mobile Navigation
+
+- **Layout**: Same fixed top bar + scrollable text tab bar below
+- **Tab bar**: Horizontally scrollable text labels (uses `mobileLabelKey` — shorter than desktop labels)
+- **Active indicator**: Animated underline (`h-[3px] bg-primary`, `transition-all duration-250 ease-out`)
+- **Swipe gesture**: Left/right swipe on tab bar navigates to adjacent tabs (threshold: 50px)
+- **Auto-scroll**: Active tab scrolled into view with `scrollIntoView({ behavior: 'smooth', inline: 'center' })`
+
+### Nav Items
+
+| ID | Path | Icon | Desktop Label | Mobile Label |
+|----|------|------|---------------|--------------|
+| dashboard | `/chat` | MessageSquare | nav.dashboard | navShort.dashboard |
+| agents | `/agents` | Bot | nav.agents | navShort.agents |
+| visual-dashboard | `/visual-dashboard` | LayoutDashboard | nav.visual-dashboard | navShort.visual-dashboard |
+| devices | `/devices` | Cpu | nav.devices | navShort.devices |
+| automation | `/automation` | Workflow | nav.automation | navShort.automation |
+| data | `/data` | Database | nav.data | navShort.data |
+| messages | `/messages` | Bell | nav.messages | navShort.messages |
+| extensions | `/extensions` | Puzzle | nav.extensions | navShort.extensions |
+| settings | `/settings` | Settings | nav.settings | navShort.settings |
+
+### Height Management
+
+TopNav height is tracked via `setTopNavHeight()` and exposed as `--topnav-height` CSS variable for use by `PageLayout` and other components.
+
+---
+
+## 29. Toast & Notifications
+
+### Toast System
+
+Radix UI-based toast with max 1 visible toast at a time.
+
+**Viewport**: `fixed top-0 z-[200]` on mobile (top-center), `fixed bottom-0 right-0 z-[200]` on desktop (bottom-right, max-width 420px).
+
+### Usage Patterns
+
+```tsx
+// Inside React components
+import { useToast } from '@/components/ui/use-toast'
+const { toast } = useToast()
+toast({ title: 'Saved', description: 'Settings updated' })
+
+// Outside React (API calls, plain functions)
+import { notifySuccess, notifyError, notifyFromError } from '@/lib/notify'
+notifySuccess('Device created')
+notifyError('Failed to connect')
+notifyFromError(error, 'Failed to save')  // Auto-extracts message
+```
+
+### Toast Variants
+
+| Variant | Use Case | Style |
+|---------|----------|-------|
+| `default` | Success, info, warning | `border bg-background text-foreground` |
+| `destructive` | Errors, failures | `border-destructive bg-destructive text-destructive-foreground` |
+
+### Centralized Notification
+
+`@/lib/notify` provides global notification functions callable from anywhere:
+
+| Function | Purpose |
+|----------|---------|
+| `notifySuccess(message, title?)` | Success toast |
+| `notifyError(message, title?)` | Error toast (destructive variant) |
+| `notifyWarning(message, title?)` | Warning toast |
+| `notifyInfo(message, title?)` | Info toast |
+| `notifyFromError(error, fallback?)` | Auto-extract error message and show destructive toast |
+
+**Rules:**
+- Use `notify*` functions from `@/lib/notify` for global notifications
+- Use `useToast` hook only when you need toast actions (e.g., undo button)
+- Toast auto-dismisses; swipe-to-dismiss supported
+
+---
+
+## 30. Data Visualization (Charts)
+
+### Chart Library
+
+Uses **Recharts** for all data visualization. Wrapped in dashboard components at `@/components/dashboard/generic/`.
+
+### Chart Types
+
+| Component | File | Use Case |
+|-----------|------|----------|
+| `LineChart` | `dashboard/generic/LineChart.tsx` | Time-series metrics |
+| `BarChart` | `dashboard/generic/BarChart.tsx` | Category comparison |
+| `PieChart` | `dashboard/generic/PieChart.tsx` | Distribution/proportion |
+| `Sparkline` | `dashboard/generic/Sparkline.tsx` | Mini inline trend |
+| `LEDIndicator` | `dashboard/generic/LEDIndicator.tsx` | Binary on/off state |
+| `ProgressBar` | `dashboard/generic/ProgressBar.tsx` | Progress/gauge |
+
+### Chart Color Tokens
+
+Use `chartColors` / `chartColorsHex` from `@/design-system/tokens/` for consistent chart palettes. Maps to `--chart-1` through `--chart-6` CSS variables.
+
+### Data Binding Pattern
+
+Charts bind to data sources via `useDataSource` hook:
+
+```tsx
+const { data, loading, error } = useDataSource(dataSource, devices)
+if (loading) return <LoadingState size="sm" />
+if (error) return <div className="text-muted-foreground text-sm">{error}</div>
+<LineChart data={data} config={chartConfig} />
+```
+
+### Chart Rules
+
+- Always wrap in `ResponsiveContainer` for adaptive sizing
+- Use design system color tokens, never hardcoded colors
+- Show skeleton loading state while data fetches
+- Handle empty data with meaningful empty state
+
+---
+
+## 31. Tooltip & Popover Patterns
+
+### Tooltip
+
+```tsx
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
+
+<TooltipProvider delayDuration={500}>
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <Button variant="ghost" size="icon">...</Button>
+    </TooltipTrigger>
+    <TooltipContent side="bottom" className="text-xs px-2 py-1">
+      {t('nav.settings')}
+    </TooltipContent>
+  </Tooltip>
+</TooltipProvider>
+```
+
+**Rules:**
+- Portals to `#dialog-root` via `getPortalRoot()` at `z-[200]`
+- Use `asChild` on trigger to avoid wrapping DOM
+- Keep tooltip text concise (use `text-xs` or `text-[10px]`)
+- `delayDuration={500}` for nav items (default is 700ms)
+- Supported sides: `top`, `bottom`, `left`, `right`
+
+### When to Use Tooltip vs Other Patterns
+
+| Pattern | When to Use |
+|---------|-------------|
+| Tooltip | Icon-only buttons that need a label hint |
+| Title attribute | Native HTML elements, quick access |
+| Description text | Complex concepts that need explanation |
+| Inline help text | Form fields needing guidance |
+
+---
+
+## 32. Copy/Clipboard Pattern
+
+For copy-to-clipboard actions, use the standard pattern:
+
+```tsx
+import { Check, Copy } from 'lucide-react'
+
+const [copied, setCopied] = useState(false)
+
+const handleCopy = async () => {
+  await navigator.clipboard.writeText(textToCopy)
+  setCopied(true)
+  setTimeout(() => setCopied(false), 2000)
+}
+
+<Button variant="ghost" size="icon" onClick={handleCopy}>
+  {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+</Button>
+```
+
+**Rules:**
+- Show checkmark icon for 2 seconds after copy
+- Use `text-success` color for the checkmark feedback
+- Use `navigator.clipboard.writeText()` (no additional library needed)
+
+---
+
+## 33. Accessibility (a11y)
+
+### Foundation: Radix UI
+
+All interactive primitives use **Radix UI**, which provides built-in accessibility: keyboard navigation, ARIA attributes, focus management, screen reader support. Components with built-in a11y:
+
+| Radix Component | A11y Features |
+|----------------|---------------|
+| `Dialog` / `AlertDialog` | Focus trap, Escape close, `aria-modal`, `aria-labelledby` |
+| `Select` | Arrow key navigation, type-ahead, `aria-expanded` |
+| `Tabs` | Arrow key navigation, `aria-selected` |
+| `Checkbox` / `Switch` | `aria-checked`, keyboard toggle |
+| `DropdownMenu` | Arrow keys, type-ahead, `aria-expanded` |
+| `Tooltip` | Focus trigger, Escape dismiss |
+| `Toast` | `role="status"`, `aria-live` |
+| `Popover` | Focus management, Escape dismiss |
+| `Accordion` | Arrow keys, Home/End, `aria-expanded` |
+| `Slider` | Arrow keys, `aria-valuenow` |
+
+### Focus Management
+
+**Dialogs** — `UnifiedFormDialog` implements tab trapping:
+
+```tsx
+// Auto-focuses first focusable element on open
+// Tab/Shift+Tab wraps between first and last focusable elements
+// Escape closes dialog
+```
+
+**Chat input** — Auto-focuses after sending a message:
+
+```tsx
+inputRef.current?.focus()
+```
+
+**Rule:** When opening a dialog, always auto-focus the first interactive element (input or primary button).
+
+### Form Accessibility
+
+The `Field` component from `@/components/ui/field` auto-links labels, errors, and descriptions:
+
+```tsx
+// Field auto-generates:
+// - <Label htmlFor={fieldId}>
+// - <input id={fieldId} aria-invalid={hasError} aria-describedby={fieldId}-description>
+// - Error message with id={fieldId}-description
+
+<Field label="Name" error={errors.name} required>
+  <Input />
+</Field>
+```
+
+**Rules:**
+- ALWAYS use `Field` wrapper — it handles `htmlFor`, `aria-invalid`, `aria-describedby` automatically
+- NEVER create bare `<input>` without associated `<label>`
+- Required field indicator (`*`) uses `aria-hidden="true"` — the `required` attribute on the input conveys this to screen readers
+
+### ARIA Attribute Usage
+
+| Attribute | When to Use | Example |
+|-----------|-------------|---------|
+| `aria-label` | Icon-only buttons without visible text | `<Button aria-label="Delete">` |
+| `aria-hidden="true"` | Decorative elements, visual-only indicators | Required `*` marker, close icon |
+| `aria-invalid` | Form fields with validation errors | Auto-handled by `Field` |
+| `aria-describedby` | Link field to error/help text | Auto-handled by `Field` |
+| `aria-expanded` | Collapsible sections, dropdowns | `<FormSection>` uses this |
+| `role="button"` | Non-`<button>` clickable elements | `<div role="button" tabIndex={0}>` |
+
+### Screen Reader Patterns
+
+```tsx
+// Hidden text for screen readers (visually hidden)
+<span className="sr-only">{t('common:close')}</span>
+
+// Image alt text — always provide meaningful description
+<img src={icon} alt={t('devices:detailPage.preview')} />
+
+// Decorative icons — use aria-hidden
+<Clock className="h-4 w-4" aria-hidden="true" />
+```
+
+**Rules:**
+- Icon-only buttons MUST have `aria-label` or a `<span className="sr-only">` label
+- Decorative images/icons use `aria-hidden="true"`
+- Content images MUST have meaningful `alt` text
+- NEVER leave `alt` attribute empty on content images
+
+### Keyboard Navigation
+
+| Key | Behavior |
+|-----|----------|
+| `Escape` | Close dialogs, popovers, dropdowns (Radix built-in) |
+| `Tab` / `Shift+Tab` | Move focus; wraps inside open dialogs (tab trap) |
+| `Enter` | Activate buttons, submit forms |
+| `Arrow keys` | Navigate within Select, DropdownMenu, Tabs, Slider |
+
+### Touch Accessibility
+
+- **Minimum touch target**: 44x44px for primary actions
+- **Icon buttons**: Default `h-10 w-10` (40x40px) — acceptable for secondary actions
+- **Interactive spacing**: `gap-1.5` minimum between adjacent touch targets
+- **Swipe gestures**: TopNav mobile tab bar supports left/right swipe (50px threshold)
+
+### Color Accessibility
+
+- OKLCH color space ensures perceptual uniformity across light/dark themes
+- Status colors (`text-success`, `text-error`, `text-warning`, `text-info`) designed with contrast in mind
+- **NEVER** rely on color alone to convey information — always pair with text label or icon
+- Chart colors (`--chart-1` through `--chart-6`) use distinct lightness values for distinguishability
+
+---
+
 ## Quick Reference: File Locations
 
 | Resource | Path |
@@ -824,3 +1694,26 @@ Full search results overlay with categorized results.
 | Dialog Hook | `web/src/hooks/useDialog.ts` |
 | Infinite Scroll | `web/src/hooks/useInfiniteScroll.ts` |
 | Store Slices | `web/src/store/slices/` |
+| API Client | `web/src/lib/api.ts` |
+| URL Management | `web/src/lib/urls.ts` |
+| Auth Module | `web/src/lib/auth.ts` |
+| Auth Store | `web/src/store/slices/authSlice.ts` |
+| Chat WebSocket | `web/src/lib/websocket.ts` |
+| Extension Stream | `web/src/lib/extension-stream.ts` |
+| Event System | `web/src/lib/events.ts` |
+| Events Hook | `web/src/hooks/useEvents.ts` |
+| Time Utilities | `web/src/lib/time.ts` |
+| Time Format Hook | `web/src/hooks/useTimeFormat.ts` |
+| Data Source Hook | `web/src/hooks/useDataSource.ts` |
+| LoadingState | `web/src/components/shared/LoadingState.tsx` |
+| Instance Store | `web/src/store/slices/instanceSlice.ts` |
+| Routes | `web/src/App.tsx` |
+| Pages | `web/src/pages/` |
+| Icon System | `web/src/design-system/icons/index.tsx` |
+| Theme Provider | `web/src/components/ui/theme.tsx` |
+| Theme Toggle | `web/src/components/layout/ThemeToggle.tsx` |
+| TopNav | `web/src/components/layout/TopNav.tsx` |
+| Toast Hook | `web/src/components/ui/use-toast.ts` |
+| Toast Component | `web/src/components/ui/toast.tsx` |
+| Global Notify | `web/src/lib/notify.ts` |
+| Chart Components | `web/src/components/dashboard/generic/` |
