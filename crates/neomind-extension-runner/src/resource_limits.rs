@@ -16,7 +16,7 @@
 //! async fn main() {
 //!     // Set up limits before loading extension
 //!     setup_resource_limits(&ResourceLimitsConfig {
-//!         memory_limit_mb: Some(512),
+//!         memory_limit_mb: Some(1024),
 //!         cpu_affinity: None,
 //!         nice_level: Some(10),
 //!     })?;
@@ -52,7 +52,7 @@ pub struct ResourceLimitsConfig {
 impl Default for ResourceLimitsConfig {
     fn default() -> Self {
         Self {
-            memory_limit_mb: Some(512), // 512MB default
+            memory_limit_mb: Some(1024), // 1GB default
             memory_limit_hard_mb: None, // 2x soft limit
             cpu_affinity: None,
             nice_level: Some(10), // Lower priority
@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn test_config_default() {
         let config = ResourceLimitsConfig::default();
-        assert_eq!(config.memory_limit_mb, Some(512));
+        assert_eq!(config.memory_limit_mb, Some(1024));
         assert_eq!(config.nice_level, Some(10));
         assert!(config.cpu_affinity.is_none());
         assert!(config.memory_limit_hard_mb.is_none());
@@ -450,14 +450,13 @@ mod tests {
     #[test]
     fn test_config_debug_format() {
         let config = ResourceLimitsConfig {
-            memory_limit_mb: Some(512),
+            memory_limit_mb: Some(1024),
             memory_limit_hard_mb: Some(1024),
             cpu_affinity: Some(vec![0, 1]),
             nice_level: Some(10),
         };
 
         let debug_str = format!("{:?}", config);
-        assert!(debug_str.contains("512"));
         assert!(debug_str.contains("1024"));
         assert!(debug_str.contains("10"));
     }

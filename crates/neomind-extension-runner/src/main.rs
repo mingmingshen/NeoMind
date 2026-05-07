@@ -106,7 +106,7 @@ struct Args {
     verbose: bool,
 
     /// Memory limit in MB (0 = no limit)
-    #[arg(long = "memory-limit", default_value = "512")]
+    #[arg(long = "memory-limit", default_value = "1024")]
     memory_limit_mb: u64,
 
     /// Hard memory limit in MB (0 = 2x soft limit)
