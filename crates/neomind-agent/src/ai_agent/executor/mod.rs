@@ -858,8 +858,8 @@ impl AgentExecutor {
             // Clear error text so summary response replaces it
             final_text.clear();
 
-            // Build Phase 2 prompt — natural language, NOT JSON template.
-            // Pattern mirrors Focused's build_phase2_prompt_with_tool_results.
+            // Build follow-up prompt — natural language, NOT JSON template.
+            // Includes full tool results so the LLM can produce a real analysis.
             let task = &agent.user_prompt;
             let mut phase2_user = format!(
                 "{}\n\n[Completed {} rounds of tool execution, {} tool results collected]\n\

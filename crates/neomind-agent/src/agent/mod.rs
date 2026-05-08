@@ -124,9 +124,9 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
                 result.push(msg.clone());
             } else {
                 // Compress tool result — may already be a cache summary
-                let summary = if msg.content.len() > 1000 {
+                let summary: Arc<str> = if msg.content.len() > 1000 {
                     let name = msg.tool_call_name.as_deref().unwrap_or("unknown");
-                    format!("[Tool: {} returned data (see cache)]", name)
+                    format!("[Tool: {} returned data (see cache)]", name).into()
                 } else {
                     msg.content.clone()
                 };
@@ -190,7 +190,7 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
 
                 result.push(AgentMessage {
                     role: msg.role.clone(),
-                    content: summary,
+                    content: summary.into(),
                     tool_calls: None,
                     tool_call_id: None,
                     tool_call_name: None,
@@ -275,8 +275,9 @@ pub fn compact_conversation(
         // Keep user messages verbatim (they contain critical intent)
         if msg.role == "user" {
             // Truncate very long user messages
-            let truncated_content = if msg.content.len() > 200 {
-                format!("{}... (message truncated)", &msg.content[..200])
+            let truncated_content: Arc<str> = if msg.content.len() > 200 {
+                let s: String = msg.content.chars().take(200).collect();
+                format!("{}... (message truncated)", s).into()
             } else {
                 msg.content.clone()
             };
@@ -319,7 +320,7 @@ pub fn compact_conversation(
 
         compressed_older.push(AgentMessage {
             role: "system".to_string(),
-            content: old_summary,
+            content: old_summary.into(),
             tool_calls: None,
             tool_call_id: None,
             tool_call_name: None,
@@ -593,7 +594,7 @@ fn calculate_adaptive_context_adjustment(messages: &[AgentMessage]) -> f64 {
 
     // 5. Repetitive content penalty: -5%
     let unique_contents: std::collections::HashSet<_> =
-        recent.iter().map(|m| m.content.as_str()).collect();
+        recent.iter().map(|m| m.content.as_ref()).collect();
     if recent.len() > 3 && unique_contents.len() < recent.len() / 2 {
         adjustment -= 0.05;
         tracing::debug!("Adaptive context: -5% for repetitive content");
@@ -734,6 +735,15 @@ fn is_write_action(arguments: &serde_json::Value) -> bool {
 }
 
 /// AI Agent that orchestrates components.
+/// Shared conversation state — merged from 3 independent locks into one.
+/// This reduces lock contention: conversation_context, smart_followup, and
+/// last_injected_context_hash are always used together.
+struct AgentSharedState {
+    conversation_context: ConversationContext,
+    smart_followup: SmartFollowUpManager,
+    last_injected_context_hash: u64,
+}
+
 pub struct Agent {
     /// Configuration
     config: AgentConfig,
@@ -755,18 +765,14 @@ pub struct Agent {
         Arc<tokio::sync::RwLock<crate::smart_conversation::SmartConversationManager>>,
     /// Semantic mapper - converts natural language to technical IDs
     semantic_mapper: Arc<semantic_mapper::SemanticToolMapper>,
-    /// Conversation context - enables continuous dialogue with entity references
-    conversation_context: Arc<tokio::sync::RwLock<ConversationContext>>,
-    /// Smart followup manager - intelligent question generation when input is incomplete
-    smart_followup: Arc<tokio::sync::RwLock<SmartFollowUpManager>>,
+    /// Shared conversation state (merged: context + followup + hash)
+    shared_state: Arc<tokio::sync::RwLock<AgentSharedState>>,
     /// Context selector - intelligent context selection based on intent analysis
     context_selector: Arc<tokio::sync::RwLock<crate::context_selector::ContextSelector>>,
-    /// Last injected context summary hash (for deduplication)
-    last_injected_context_hash: Arc<tokio::sync::RwLock<u64>>,
     /// Tool result cache - caches recent tool executions to avoid redundant calls
     tool_result_cache: Arc<tokio::sync::RwLock<ToolResultCache>>,
-    /// Frozen memory snapshot for this session (loaded once when memory is enabled)
-    memory_snapshot: Arc<tokio::sync::RwLock<Option<crate::memory::MemorySnapshot>>>,
+    /// Frozen memory snapshot for this session (loaded once, never changes)
+    memory_snapshot: std::sync::OnceLock<Option<crate::memory::MemorySnapshot>>,
     /// Semaphore limiting parallel tool executions within a single agent step
     tool_concurrency_limit: Arc<Semaphore>,
 }
@@ -799,11 +805,6 @@ impl Agent {
             resource_index.clone(),
         ));
 
-        // Create smart followup manager with resource index for device-aware followups
-        let smart_followup = Arc::new(tokio::sync::RwLock::new(
-            SmartFollowUpManager::with_resource_index(resource_index.clone()),
-        ));
-
         Self {
             config,
             session_id,
@@ -818,14 +819,16 @@ impl Agent {
                 crate::smart_conversation::SmartConversationManager::new(),
             )),
             semantic_mapper,
-            conversation_context: Arc::new(tokio::sync::RwLock::new(ConversationContext::new())),
-            smart_followup,
+            shared_state: Arc::new(tokio::sync::RwLock::new(AgentSharedState {
+                conversation_context: ConversationContext::new(),
+                smart_followup: SmartFollowUpManager::with_resource_index(resource_index.clone()),
+                last_injected_context_hash: 0,
+            })),
             context_selector: Arc::new(tokio::sync::RwLock::new(
                 crate::context_selector::ContextSelector::new(),
             )),
-            last_injected_context_hash: Arc::new(tokio::sync::RwLock::new(0)),
             tool_result_cache: Arc::new(tokio::sync::RwLock::new(ToolResultCache::new())),
-            memory_snapshot: Arc::new(tokio::sync::RwLock::new(None)),
+            memory_snapshot: std::sync::OnceLock::new(),
             tool_concurrency_limit: Arc::new(Semaphore::new(5)),
         }
     }
@@ -1320,7 +1323,7 @@ impl Agent {
         }
 
         // === Memory snapshot injection (frozen, loaded once per session) ===
-        if let Some(snapshot) = self.memory_snapshot.read().await.as_ref() {
+        if let Some(snapshot) = self.memory_snapshot.get().and_then(|opt| opt.as_ref()) {
             let section = snapshot.to_prompt_section();
             if !section.is_empty() {
                 prompt.push_str(&section);
@@ -1422,13 +1425,13 @@ impl Agent {
 
     /// Set the frozen memory snapshot for this session.
     /// Called once when memory is enabled for the session.
-    pub async fn set_memory_snapshot(&self, snapshot: crate::memory::MemorySnapshot) {
-        *self.memory_snapshot.write().await = Some(snapshot);
+    pub fn set_memory_snapshot(&self, snapshot: crate::memory::MemorySnapshot) {
+        let _ = self.memory_snapshot.set(Some(snapshot));
     }
 
     /// Check if a memory snapshot has been loaded.
-    pub async fn has_memory_snapshot(&self) -> bool {
-        self.memory_snapshot.read().await.is_some()
+    pub fn has_memory_snapshot(&self) -> bool {
+        self.memory_snapshot.get().is_some_and(|opt| opt.is_some())
     }
 
     /// Get the session state.
@@ -1483,14 +1486,14 @@ impl Agent {
     /// Update smart followup manager with current devices.
     /// This enables intelligent followup questions based on available devices.
     pub async fn update_followup_devices(&self, devices: Vec<AvailableDevice>) {
-        let mut followup = self.smart_followup.write().await;
-        followup.set_available_devices(devices);
+        let mut state = self.shared_state.write().await;
+        state.smart_followup.set_available_devices(devices);
     }
 
     /// Refresh smart followup devices from resource index.
     pub async fn refresh_followup_devices(&self) {
-        let mut followup = self.smart_followup.write().await;
-        followup.refresh_devices().await;
+        let mut state = self.shared_state.write().await;
+        state.smart_followup.refresh_devices().await;
     }
 
     // === CONTEXT SELECTOR METHODS ===
@@ -1767,11 +1770,11 @@ impl Agent {
         let start = std::time::Instant::now();
 
         // === SMART FOLLOWUP INTERCEPTION (Context-Aware) ===
-        // More advanced interception with conversation context awareness
+        // Single lock acquisition for both context and followup
         let followup_analysis = {
-            let ctx = self.conversation_context.read().await;
-            let mut followup = self.smart_followup.write().await;
-            followup.analyze_input(user_message, &ctx)
+            let mut shared = self.shared_state.write().await;
+            let ctx_snapshot = shared.conversation_context.clone();
+            shared.smart_followup.analyze_input(user_message, &ctx_snapshot)
         };
 
         // Handle smart followup cases
@@ -1856,8 +1859,18 @@ impl Agent {
             });
         }
 
-        // === INTENT ANALYSIS: Use ContextSelector to analyze user intent ===
-        let (intent_analysis, _context_bundle) = self.analyze_intent(user_message).await;
+        // === INTENT ANALYSIS + CONVERSATION CONTEXT: Run in parallel ===
+        let ((intent_analysis, _context_bundle), enhanced_input) = tokio::join!(
+            self.analyze_intent(user_message),
+            async {
+                let shared = self.shared_state.read().await;
+                if let Some(resolved) = shared.conversation_context.resolve_ambiguous_command(user_message) {
+                    resolved
+                } else {
+                    shared.conversation_context.enhance_input(user_message)
+                }
+            }
+        );
         tracing::debug!(
             intent = ?intent_analysis.intent_type,
             confidence = intent_analysis.confidence,
@@ -1865,20 +1878,6 @@ impl Agent {
             scope = ?intent_analysis.context_scope,
             "Intent analysis completed"
         );
-
-        // === PROCEED WITH NORMAL PROCESSING ===
-        // === CONVERSATION CONTEXT: Enhance input with context ===
-        // Try to resolve ambiguous commands and enhance with previous context
-        let enhanced_input = {
-            let ctx = self.conversation_context.read().await;
-            // First, try to resolve ambiguous commands like "打开" -> "打开客厅的灯"
-            if let Some(resolved) = ctx.resolve_ambiguous_command(user_message) {
-                resolved
-            } else {
-                // Then enhance pronouns and add context
-                ctx.enhance_input(user_message)
-            }
-        };
 
         // Add user message to history (use enhanced version for processing, but save original)
         let user_msg = AgentMessage::user(user_message);
@@ -1928,8 +1927,8 @@ impl Agent {
                             })
                         })
                         .collect();
-                    let mut ctx = self.conversation_context.write().await;
-                    ctx.update(user_message, &tool_results);
+                    let mut shared = self.shared_state.write().await;
+                    shared.conversation_context.update(user_message, &tool_results);
                 }
 
                 let processing_time = start.elapsed().as_millis() as u64;
@@ -2231,7 +2230,41 @@ impl Agent {
 
         // === ANTHROPIC-STYLE IMPROVEMENT: Apply context window with tool result clearing ===
         // This prevents context bloat from old tool calls while maintaining conversation continuity
-        let compacted_history = build_context_window(&history_without_last, effective_max);
+        // Uses compaction cache for incremental updates when only a few messages changed
+        let compacted_history = {
+            let mut state = self.internal_state.write().await;
+            let current_count = state.memory.len().saturating_sub(1); // without last
+
+            // Check cache validity: same max_tokens and small message delta
+            let cached = state.compaction_cache.take();
+            let compacted = if let Some((cached_count, cached_max, ref cached_msgs)) = cached {
+                if cached_max == effective_max && current_count > cached_count && current_count <= cached_count + 4 {
+                    // Incremental: only compact the new messages and append
+                    let new_msgs: Vec<AgentMessage> = history_without_last.iter()
+                        .skip(cached_count)
+                        .cloned()
+                        .collect();
+                    let mut base = cached_msgs.clone();
+                    if !new_msgs.is_empty() {
+                        // Re-compact the tail with existing context
+                        // For small deltas, just append (tool compaction will handle on next full run)
+                        base.extend(new_msgs);
+                        build_context_window(&base, effective_max)
+                    } else {
+                        base
+                    }
+                } else {
+                    // Full recompaction needed
+                    build_context_window(&history_without_last, effective_max)
+                }
+            } else {
+                build_context_window(&history_without_last, effective_max)
+            };
+
+            // Update cache
+            state.compaction_cache = Some((current_count, effective_max, compacted.clone()));
+            compacted
+        };
 
         tracing::debug!(
             "Context: {} messages -> {} messages (after compaction)",
@@ -2247,8 +2280,8 @@ impl Agent {
         // This prevents repeatedly injecting the same context which can cause
         // the LLM to generate repetitive responses
         let context_summary = {
-            let ctx = self.conversation_context.read().await;
-            let summary = ctx.get_context_summary();
+            let shared = self.shared_state.read().await;
+            let summary = shared.conversation_context.get_context_summary();
             if !summary.is_empty() {
                 Some(format!("Current conversation context:\n{}", summary))
             } else {
@@ -2268,11 +2301,11 @@ impl Agent {
                 h.finish()
             };
 
-            let mut last_hash = self.last_injected_context_hash.write().await;
-            if *last_hash != summary_hash {
+            let mut shared = self.shared_state.write().await;
+            if shared.last_injected_context_hash != summary_hash {
                 // Context has changed, inject it
-                *last_hash = summary_hash;
-                drop(last_hash); // Release lock before proceeding
+                shared.last_injected_context_hash = summary_hash;
+                drop(shared); // Release lock before proceeding
 
                 use neomind_core::message::{Content, MessageRole};
                 core_history.push(Message::new(MessageRole::System, Content::text(&summary)));
@@ -2280,7 +2313,7 @@ impl Agent {
                     "Injected conversation context into LLM history (changed from previous)"
                 );
             } else {
-                drop(last_hash); // Release lock
+                drop(shared); // Release lock
                 tracing::debug!("Skipping context injection - unchanged from previous");
             }
         }
@@ -2477,70 +2510,10 @@ impl Agent {
             }
         }
 
-        tracing::debug!(tools_used = ?tools_used, "Before Phase 2 summarization");
+        tracing::debug!(tools_used = ?tools_used, "Formatting tool results");
 
-        // === PHASE 2: Summarize tool results with LLM ===
-        // Instead of directly returning formatted tool results, ask the LLM to
-        // analyze the results and generate a natural language response.
-        // This matches the streaming path behavior.
-        let final_text = {
-            // Build Phase 2 prompt with tool results
-            let original_question = {
-                let state = self.internal_state.read().await;
-                state
-                    .memory
-                    .iter()
-                    .rev()
-                    .find(|msg| msg.role == "user" && !msg.content.starts_with("[Tool:"))
-                    .map(|msg| msg.content.clone())
-            };
-
-            let phase2_prompt = crate::agent::streaming::build_phase2_prompt_with_tool_results(
-                original_question,
-                &tool_results,
-            );
-
-            // Get history for context
-            let history_messages: Vec<neomind_core::Message> = {
-                let state = self.internal_state.read().await;
-                let max_context = self.llm_interface.max_context_length().await;
-                let max_history_tokens = (max_context * 70) / 100;
-                let trimmed = crate::agent::streaming::build_context_window(
-                    &state.memory,
-                    max_history_tokens,
-                );
-                trimmed.iter().map(|msg| msg.to_core()).collect()
-            };
-
-            // Call LLM to summarize (no tools, no thinking)
-            match self
-                .llm_interface
-                .chat_without_tools_with_history(&phase2_prompt, &history_messages)
-                .await
-            {
-                Ok(response) => {
-                    let mut text = response.text.trim().to_string();
-                    if text.is_empty() {
-                        // Fallback to formatted results if LLM returns empty
-                        tracing::warn!("Phase 2 returned empty, using formatted tool results");
-                        crate::agent::streaming::format_tool_results(&tool_results)
-                    } else {
-                        // Clean any embedded tool call JSON from Phase 2 response
-                        // (LLM may output tool call syntax as text even though tools are disabled)
-                        text = crate::agent::tool_parser::remove_tool_calls_from_response(&text);
-                        text
-                    }
-                }
-                Err(e) => {
-                    // Fallback to formatted results on LLM error
-                    tracing::warn!(
-                        "Phase 2 LLM call failed: {}, using formatted tool results",
-                        e
-                    );
-                    crate::agent::streaming::format_tool_results(&tool_results)
-                }
-            }
-        };
+        // Format tool results directly (unified ReAct loop — no Phase 2)
+        let final_text = crate::agent::streaming::format_tool_results(&tool_results);
 
         // Save a complete message with tool_calls, results, and optionally thinking
         let final_message = if let Some(thinking_content) = thinking {

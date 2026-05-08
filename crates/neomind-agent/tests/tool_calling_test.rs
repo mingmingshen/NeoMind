@@ -103,7 +103,7 @@ impl ToolCallingTestContext {
             }
         }
 
-        Ok(response.message.content.clone())
+        Ok(response.message.content.to_string())
     }
 
     async fn get_history(&self) -> anyhow::Result<Vec<String>> {

@@ -1140,21 +1140,12 @@ impl LlmInterface {
     }
 
     /// Send a chat message without tools and get a response.
-    /// This is useful for Phase 2 where tools have already been executed.
+    /// Used for intent detection, planning, and other non-tool queries.
     pub async fn chat_without_tools(
         &self,
         user_message: impl Into<String>,
     ) -> AgentResult<ChatResponse> {
         self.chat_internal(user_message, None).await
-    }
-
-    /// Send a chat message without tools, with conversation history.
-    pub async fn chat_without_tools_with_history(
-        &self,
-        user_message: impl Into<String>,
-        history: &[Message],
-    ) -> AgentResult<ChatResponse> {
-        self.chat_internal(user_message, Some(history)).await
     }
 
     /// Send a multimodal message (with images) with conversation history.
@@ -1607,7 +1598,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
-        self.chat_stream_internal(user_message, None, true).await
+        self.chat_stream_internal(user_message, None, true, None).await
     }
 
     /// Send a chat message with streaming response, with conversation history.
@@ -1617,45 +1608,36 @@ impl LlmInterface {
         user_message: impl Into<String>,
         history: &[Message],
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
-        self.chat_stream_internal(user_message, Some(history), true)
+        self.chat_stream_internal(user_message, Some(history), true, None)
             .await
     }
 
-    /// Send a chat message with streaming response, without tools.
-    /// This is for Phase 2 where tools have already been executed.
-    pub async fn chat_stream_without_tools(
+    /// Same as `chat_stream_with_history` but with an explicit thinking override.
+    ///
+    /// Pass `Some(false)` to disable thinking (useful for post-tool-execution rounds
+    /// where thinking models waste generation budget on reasoning instead of content).
+    /// Pass `None` to use the default thinking setting.
+    pub async fn chat_stream_with_history_thinking(
         &self,
         user_message: impl Into<String>,
+        history: &[Message],
+        thinking_override: Option<bool>,
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
-        self.chat_stream_internal(user_message, None, false).await
+        self.chat_stream_internal(user_message, Some(history), true, thinking_override)
+            .await
     }
 
-    /// Send a chat message with streaming response, without tools, with conversation history.
-    /// This is for Phase 2 where tools have already been executed.
-    pub async fn chat_stream_without_tools_with_history(
+    /// Lightweight summary call: no tools, no thinking.
+    /// Used as fallback when the ReAct loop ends without the model producing
+    /// its own summary content. Without tool definitions, the model must
+    /// output text instead of more tool calls.
+    pub async fn chat_stream_summary(
         &self,
         user_message: impl Into<String>,
         history: &[Message],
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
-        self.chat_stream_internal(user_message, Some(history), false)
+        self.chat_stream_internal(user_message, Some(history), false, Some(false))
             .await
-    }
-
-    /// Send a chat message with streaming response, without tools, without thinking.
-    /// This is for Phase 2 follow-up where we want a quick response based on tool results.
-    pub async fn chat_stream_no_tools_no_thinking_with_history(
-        &self,
-        user_message: impl Into<String>,
-        history: &[Message],
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
-        // Temporarily disable thinking for this call
-        let old_value = *self.thinking_enabled.read().await;
-        *self.thinking_enabled.write().await = Some(false);
-        let result = self
-            .chat_stream_internal(user_message, Some(history), false)
-            .await;
-        *self.thinking_enabled.write().await = old_value;
-        result
     }
 
     /// Send a multimodal chat message (with images) with streaming response.
@@ -1685,48 +1667,8 @@ impl LlmInterface {
         let system_prompt = if include_tools {
             self.build_system_prompt_with_tools(None).await
         } else {
-            // Phase 2 system prompt - NO tool calling, just generate response based on tool results
-            // Tool execution is already complete, this phase is for summarizing results
-            "你是NeoMind物联网助手。
-
-## 当前阶段：工具执行完成，需要生成最终回复
-
-对话历史包含：
-1. 用户的原始问题
-2. 助手的思考过程（如果有）
-3. 工具调用信息（调用了哪些工具、传入了什么参数）
-4. 工具执行结果（每个工具返回的数据）
-
-## 你的任务
-
-根据**工具执行结果**和**用户的原始问题**，给出一个完整、有用的回复。
-
-## 回复要求
-
-1. **直接回答用户的问题** - 不要说「工具已执行」这类废话
-2. **总结关键信息** - 提取工具结果中的关键数据
-3. **结构清晰** - 如果有多个设备/规则，用列表或分组展示
-4. **友好的语气** - 自然对话，不要机械
-5. **内容不要重复** - 每条信息只说一次，不要把相同的内容说两遍
-
-## 示例
-
-用户: \"列出所有设备\"
-工具返回: {\"devices\": [{\"id\": \"1\", \"name\": \"温度传感器\", ...}]}
-你的回复: \"共找到 5 个设备：\\n1. 温度传感器 (ID: 1)\\n2. 湿度传感器 (ID: 2)\\n...\"
-
-用户: \"查看 ne101 详情\"
-工具返回: {\"device\": {\"name\": \"ne101\", \"temperature\": 25, ...}}
-你的回复: \"ne101 设备详情：\\n- 名称: ne101\\n- 当前温度: 25°C\\n- 状态: 在线\\n...\"
-
-## 注意事项
-
-- 不要调用工具（此阶段禁用工具调用）
-- 不要重复显示原始 JSON 数据
-- **关键：每条信息只说一次，不要重复相同的内容**
-- 如果工具执行失败，解释原因并提供替代方案
-- 如果工具返回的数据不完整，诚实地说明"
-                .to_string()
+            // Simple system prompt for non-tool calls
+            "You are NeoMind, a helpful IoT assistant. Answer questions concisely and accurately.".to_string()
         };
 
         // Build input outside the lock
@@ -1919,6 +1861,7 @@ impl LlmInterface {
         user_message: impl Into<String>,
         history: Option<&[Message]>,
         include_tools: bool,
+        thinking_override: Option<bool>,
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         let user_message = user_message.into();
 
@@ -1961,48 +1904,8 @@ impl LlmInterface {
                     .await
             }
         } else {
-            // Phase 2 system prompt - NO tool calling, just generate response based on tool results
-            // Tool execution is already complete, this phase is for summarizing results
-            "你是NeoMind物联网助手。
-
-## 当前阶段：工具执行完成，需要生成最终回复
-
-对话历史包含：
-1. 用户的原始问题
-2. 助手的思考过程（如果有）
-3. 工具调用信息（调用了哪些工具、传入了什么参数）
-4. 工具执行结果（每个工具返回的数据）
-
-## 你的任务
-
-根据**工具执行结果**和**用户的原始问题**，给出一个完整、有用的回复。
-
-## 回复要求
-
-1. **直接回答用户的问题** - 不要说「工具已执行」这类废话
-2. **总结关键信息** - 提取工具结果中的关键数据
-3. **结构清晰** - 如果有多个设备/规则，用列表或分组展示
-4. **友好的语气** - 自然对话，不要机械
-5. **内容不要重复** - 每条信息只说一次，不要把相同的内容说两遍
-
-## 示例
-
-用户: \"列出所有设备\"
-工具返回: {\"devices\": [{\"id\": \"1\", \"name\": \"温度传感器\", ...}]}
-你的回复: \"共找到 5 个设备：\\n1. 温度传感器 (ID: 1)\\n2. 湿度传感器 (ID: 2)\\n...\"
-
-用户: \"查看 ne101 详情\"
-工具返回: {\"device\": {\"name\": \"ne101\", \"temperature\": 25, ...}}
-你的回复: \"ne101 设备详情：\\n- 名称: ne101\\n- 当前温度: 25°C\\n- 状态: 在线\\n...\"
-
-## 注意事项
-
-- 不要调用工具（此阶段禁用工具调用）
-- 不要重复显示原始 JSON 数据
-- **关键：每条信息只说一次，不要重复相同的内容**
-- 如果工具执行失败，解释原因并提供替代方案
-- 如果工具返回的数据不完整，诚实地说明"
-                .to_string()
+            // Simple system prompt for non-tool calls
+            "You are NeoMind, a helpful IoT assistant. Answer questions concisely and accurately.".to_string()
         };
 
         // Build input outside the lock
@@ -2024,24 +1927,26 @@ impl LlmInterface {
             }
         };
 
-        // Get thinking_enabled - priority: local setting > instance setting
-        // This allows per-request override (e.g., disable thinking for multimodal)
-        let local_thinking = *self.thinking_enabled.read().await;
-        let thinking_enabled = if local_thinking.is_some() {
-            // Local override takes precedence
-            local_thinking
-        } else if self.uses_instance_manager() {
-            // Fall back to instance setting
-            if let Some(manager) = &self.instance_manager {
-                manager
-                    .get_active_instance()
-                    .map(|inst| inst.thinking_enabled)
+        // Get thinking_enabled - priority: thinking_override > local setting > instance setting
+        // This allows per-request override (e.g., disable thinking for post-tool rounds)
+        let thinking_enabled = if thinking_override.is_some() {
+            // Explicit per-call override takes highest priority
+            thinking_override
+        } else {
+            let local_thinking = *self.thinking_enabled.read().await;
+            if local_thinking.is_some() {
+                local_thinking
+            } else if self.uses_instance_manager() {
+                if let Some(manager) = &self.instance_manager {
+                    manager
+                        .get_active_instance()
+                        .map(|inst| inst.thinking_enabled)
+                } else {
+                    None
+                }
             } else {
                 None
             }
-        } else {
-            // Direct mode with no local override
-            None
         };
 
         tracing::debug!(
@@ -2049,6 +1954,35 @@ impl LlmInterface {
             uses_instance_manager = self.uses_instance_manager(),
             "LlmInterface chat_stream_internal"
         );
+
+        // Safety: auto-disable thinking for very large prompts.
+        // Small thinking models (2B) with large prompts (20k+ tokens) tend to
+        // consume all num_predict tokens on thinking alone, producing no content.
+        // Observed: qwen3.5:2b with prompt_eval=32259, eval=32768, content=0.
+        let thinking_enabled = if thinking_enabled == Some(true) {
+            let hist_chars: usize = history.map(|h| {
+                h.iter().map(|m| match &m.content {
+                    neomind_core::Content::Text(s) => s.len(),
+                    neomind_core::Content::Parts(parts) => parts.iter().map(|p| format!("{:?}", p).len()).sum(),
+                }).sum()
+            }).unwrap_or(0);
+            let total_chars = hist_chars + system_prompt.len() + user_message.len();
+            // Rough estimate: mixed Chinese/English ≈ 0.8 tokens/char
+            let estimated_tokens = (total_chars as f64 * 0.8) as usize;
+
+            if estimated_tokens > 18000 {
+                tracing::info!(
+                    estimated_tokens,
+                    hist_messages = history.map(|h| h.len()).unwrap_or(0),
+                    "Auto-disabling thinking for large prompt to prevent thinking loop hang"
+                );
+                Some(false)
+            } else {
+                thinking_enabled
+            }
+        } else {
+            thinking_enabled
+        };
 
         // Get effective parameters from backend instance or local config
         let (eff_temp, eff_top_p, eff_top_k, eff_max_tokens) = self.get_effective_params().await;

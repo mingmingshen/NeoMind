@@ -97,8 +97,9 @@ impl Tool for DeviceTool {
 
 Actions:
 - list: List all devices with their available metrics and commands.
-- latest: Device overview with ALL current (latest) metric values (name, value, unit, timestamp).
-  Returns every metric's latest reading in one call. Use when user asks "latest data", "current status", "how is device now".
+- latest: Device overview with ALL current (latest) metric values.
+  WITHOUT device_id: returns latest data for ALL devices in one call (batch mode). PREFERRED when user asks about multiple/all devices ("查看设备电量", "所有设备状态", "how are devices").
+  WITH device_id: returns one device's metrics. Use for single device queries.
 - history: Historical time-series data for a specific metric over a time range.
   Requires device_id and metric. Returns time-ordered data points. Defaults to last 24 hours.
   Use when user asks about trends, changes over time, or past data with a time range.
@@ -115,7 +116,8 @@ When querying history for MULTIPLE devices, you MUST output ALL history calls in
 JSON array in a single response. Do NOT call one device at a time.
 
 Important:
-- latest = current snapshot (all metrics, latest values). Use for "how is device X?", "latest data", "current status" queries.
+- latest without device_id = ALL devices latest snapshot. USE THIS when user asks about all/multiple devices ("查看设备状态", "电量怎么样"). Do NOT call latest for each device individually.
+- latest with device_id = single device snapshot. Use for "how is device X?", "latest data for ne101" queries.
 - history = historical trend (one metric, time range). Use for "show battery trend", "temperature over time" queries.
 - Always confirm user intent before using control action
 - Supports fuzzy matching on device names (partial name works)"#
@@ -131,7 +133,7 @@ Important:
                 },
                 "device_id": {
                     "type": "string",
-                    "description": "Device ID or name. Required for get/history/control. Supports fuzzy matching. Use the ID returned by list action."
+                    "description": "Device ID or name. Required for history/control/write_metric. For 'latest' action: omit to get ALL devices at once (recommended), or specify for a single device. Supports fuzzy matching."
                 },
                 "metric": {
                     "type": "string",
@@ -339,6 +341,11 @@ impl DeviceTool {
     }
 
     async fn execute_get(&self, args: &Value) -> Result<ToolOutput> {
+        // Batch mode: no device_id → return latest for ALL devices
+        if args["device_id"].is_null() || args["device_id"].as_str().is_none() {
+            return self.execute_get_batch(args).await;
+        }
+
         let device_id_input = args["device_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("device_id is required".into()))?;
@@ -351,6 +358,44 @@ impl DeviceTool {
             .ok_or_else(|| ToolError::Execution(format!("Device not found: {}", device_id)))?;
 
         let detailed = Self::is_detailed(args);
+
+        let device_json = self
+            .build_device_latest_json(&device, detailed)
+            .await;
+
+        Ok(ToolOutput::success(device_json))
+    }
+
+    /// Batch latest: return latest metrics for ALL devices in one call.
+    async fn execute_get_batch(&self, args: &Value) -> Result<ToolOutput> {
+        let detailed = Self::is_detailed(args);
+        let devices = self.device_service.list_devices();
+
+        if devices.is_empty() {
+            return Ok(ToolOutput::success(serde_json::json!({
+                "count": 0,
+                "devices": []
+            })));
+        }
+
+        let mut results = Vec::with_capacity(devices.len());
+        for device in &devices {
+            let device_json = self.build_device_latest_json(device, detailed).await;
+            results.push(device_json);
+        }
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "count": results.len(),
+            "devices": results
+        })))
+    }
+
+    /// Build latest-metrics JSON for a single device (shared by single and batch modes).
+    async fn build_device_latest_json(
+        &self,
+        device: &neomind_devices::DeviceConfig,
+        detailed: bool,
+    ) -> Value {
 
         let mut device_json = if detailed {
             serde_json::json!({
@@ -392,7 +437,7 @@ impl DeviceTool {
                 let latest_values: std::collections::HashMap<String, neomind_devices::DataPoint> =
                     if let Some(store) = storage {
                         let names: Vec<&str> = visible_metrics.iter().map(|m| m.name.as_str()).collect();
-                        store.latest_batch(&device_id, &names).await.unwrap_or_default()
+                        store.latest_batch(&device.device_id, &names).await.unwrap_or_default()
                     } else {
                         std::collections::HashMap::new()
                     };
@@ -454,7 +499,7 @@ impl DeviceTool {
 
             // Append virtual metrics (not in device template) with latest values
             if let Some(storage) = &self.storage {
-                if let Ok(all_stored) = storage.list_metrics(&device_id).await {
+                if let Ok(all_stored) = storage.list_metrics(&device.device_id).await {
                     let template_set: std::collections::HashSet<&str> = device_json
                         .get("metrics")
                         .and_then(|m| m.as_array())
@@ -470,7 +515,7 @@ impl DeviceTool {
 
                     if !virtual_names.is_empty() {
                         // Batch-fetch latest values for all virtual metrics
-                        let virtual_latest = storage.latest_batch(&device_id, &virtual_names).await.unwrap_or_default();
+                        let virtual_latest = storage.latest_batch(&device.device_id, &virtual_names).await.unwrap_or_default();
 
                         let virtual_metrics: Vec<Value> = virtual_names
                             .iter()
@@ -526,7 +571,7 @@ impl DeviceTool {
             }
         }
 
-        Ok(ToolOutput::success(device_json))
+        device_json
     }
 
     async fn execute_query(&self, args: &Value) -> Result<ToolOutput> {

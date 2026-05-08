@@ -282,7 +282,7 @@ async fn run_test_case(
     Ok(TestResult {
         test_name: test_case.name.clone(),
         query: test_case.query.clone(),
-        response_content: response.message.content.clone(),
+        response_content: response.message.content.to_string(),
         tool_calls: called_tool_names.clone(),
         expected_tools: test_case.expected_tools.clone(),
         min_tools: test_case.min_tools,

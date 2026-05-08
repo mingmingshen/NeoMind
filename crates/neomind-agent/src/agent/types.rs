@@ -131,9 +131,9 @@ impl AgentEvent {
     }
 
     /// Create a content chunk event.
-    pub fn content(content: impl Into<String>) -> Self {
+    pub fn content(content: impl AsRef<str>) -> Self {
         Self::Content {
-            content: content.into(),
+            content: content.as_ref().to_string(),
         }
     }
 
@@ -378,8 +378,8 @@ impl Default for AgentConfig {
 pub struct AgentMessage {
     /// Role (user, assistant, system, tool)
     pub role: String,
-    /// Content
-    pub content: String,
+    /// Content — Arc<str> for cheap cloning across context windows
+    pub content: std::sync::Arc<str>,
     /// Tool calls (if any)
     pub tool_calls: Option<Vec<ToolCall>>,
     /// Tool call ID (for tool responses)
@@ -418,7 +418,7 @@ impl AgentMessage {
     pub fn user(content: impl Into<String>) -> Self {
         Self {
             role: "user".to_string(),
-            content: content.into(),
+            content: content.into().into(),
             tool_calls: None,
             tool_call_id: None,
             tool_call_name: None,
@@ -434,7 +434,7 @@ impl AgentMessage {
     pub fn user_with_images(content: impl Into<String>, images: Vec<AgentMessageImage>) -> Self {
         Self {
             role: "user".to_string(),
-            content: content.into(),
+            content: content.into().into(),
             tool_calls: None,
             tool_call_id: None,
             tool_call_name: None,
@@ -450,7 +450,7 @@ impl AgentMessage {
     pub fn assistant(content: impl Into<String>) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: content.into(),
+            content: content.into().into(),
             tool_calls: None,
             tool_call_id: None,
             tool_call_name: None,
@@ -469,7 +469,7 @@ impl AgentMessage {
     ) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: content.into(),
+            content: content.into().into(),
             tool_calls: None,
             tool_call_id: None,
             tool_call_name: None,
@@ -485,7 +485,7 @@ impl AgentMessage {
     pub fn system(content: impl Into<String>) -> Self {
         Self {
             role: "system".to_string(),
-            content: content.into(),
+            content: content.into().into(),
             tool_calls: None,
             tool_call_id: None,
             tool_call_name: None,
@@ -501,7 +501,7 @@ impl AgentMessage {
     pub fn tool_result(tool_name: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: "tool".to_string(),
-            content: content.into(),
+            content: content.into().into(),
             tool_calls: None,
             tool_call_id: None,
             tool_call_name: Some(tool_name.into()),
@@ -517,7 +517,7 @@ impl AgentMessage {
     pub fn assistant_with_tools(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: content.into(),
+            content: content.into().into(),
             tool_calls: Some(tool_calls),
             tool_call_id: None,
             tool_call_name: None,
@@ -537,7 +537,7 @@ impl AgentMessage {
     ) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: content.into(),
+            content: content.into().into(),
             tool_calls: Some(tool_calls),
             tool_call_id: None,
             tool_call_name: None,
@@ -562,10 +562,10 @@ impl AgentMessage {
                         return self.to_core_multimodal();
                     }
                 }
-                Message::user(&self.content)
+                Message::user(self.content.as_ref())
             }
             "assistant" => {
-                let mut content = self.content.clone();
+                let mut content = self.content.to_string();
                 // When tool_calls exist and content is empty, inject a concise summary
                 // so the LLM knows what tools were called in previous turns.
                 if let Some(ref tool_calls) = self.tool_calls {
@@ -601,17 +601,17 @@ impl AgentMessage {
                 }
                 Message::assistant(&content)
             }
-            "system" => Message::system(&self.content),
+            "system" => Message::system(self.content.as_ref()),
             "tool" => {
                 // Tool result messages - include which tool was called
                 if let Some(ref tool_name) = self.tool_call_name {
                     let tool_content = format!("[Tool: {} returned]\n{}", tool_name, self.content);
                     Message::user(&tool_content)
                 } else {
-                    Message::user(&self.content)
+                    Message::user(self.content.as_ref())
                 }
             }
-            _ => Message::user(&self.content),
+            _ => Message::user(self.content.as_ref()),
         }
     }
 
@@ -622,11 +622,11 @@ impl AgentMessage {
 
         let images = match &self.images {
             Some(imgs) if !imgs.is_empty() => imgs,
-            _ => return Message::user(&self.content),
+            _ => return Message::user(self.content.as_ref()),
         };
 
         // Build content parts: text + images
-        let mut parts = vec![ContentPart::text(self.content.clone())];
+        let mut parts = vec![ContentPart::text(self.content.to_string())];
 
         for image in images {
             // Parse data URL (format: "data:image/png;base64,iVBOR...")
@@ -660,7 +660,7 @@ impl AgentMessage {
     pub fn from_core(msg: &Message) -> Self {
         Self {
             role: msg.role.to_string(),
-            content: msg.content.as_text(),
+            content: msg.content.as_text().into(),
             tool_calls: None,
             tool_call_id: None,
             tool_call_name: None,
@@ -1359,6 +1359,9 @@ pub struct AgentInternalState {
     /// Session-level tool result cache for deduplication across turns.
     /// Shared via Arc<RwLock<>> so streaming code can access it concurrently.
     pub tool_result_cache: std::sync::Arc<tokio::sync::RwLock<super::streaming::ToolResultCache>>,
+    /// Cached compaction: (message_count_at_cache_time, max_tokens, compacted_messages)
+    /// Invalidated when messages change or max_tokens differs.
+    pub compaction_cache: Option<(usize, usize, Vec<AgentMessage>)>,
 }
 
 impl AgentInternalState {
@@ -1375,6 +1378,7 @@ impl AgentInternalState {
             tool_result_cache: std::sync::Arc::new(tokio::sync::RwLock::new(
                 super::streaming::ToolResultCache::new(std::time::Duration::from_secs(300)),
             )),
+            compaction_cache: None,
         }
     }
 
@@ -1545,7 +1549,7 @@ mod tests {
     fn test_agent_message_creation() {
         let user_msg = AgentMessage::user("Hello");
         assert_eq!(user_msg.role, "user");
-        assert_eq!(user_msg.content, "Hello");
+        assert_eq!(&*user_msg.content, "Hello");
 
         let assistant_msg = AgentMessage::assistant("Hi there!");
         assert_eq!(assistant_msg.role, "assistant");

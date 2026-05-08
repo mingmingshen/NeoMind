@@ -164,32 +164,27 @@ pub fn cleanup_thinking_content(thinking: &str) -> String {
     }
 
     let mut result = thinking.to_string();
-    let mut reduced = true;
 
-    // Pass 1: Remove immediate repetitions of the same phrase
-    // This handles cases like "可能可能可能可能" -> "可能"
-    while reduced {
-        reduced = false;
-        let original = result.clone();
+    // Pass 1: Remove immediate repetitions — bounded to max 4 iterations
+    // (handles patterns like "可能可能可能可能" -> "可能" in O(4*N) instead of unbounded)
+    let patterns = [
+        ("可能可能", "可能"),
+        ("或者或者", "或者"),
+        ("也许也许", "也许"),
+        ("温度温度", "温度"),
+        ("。。", "。"),
+        ("，，", "，"),
+        ("??", "?"),
+        ("  ", " "),
+    ];
 
-        // Common repetitive patterns in qwen3-vl:2b thinking
-        let patterns = [
-            ("可能可能", "可能"),
-            ("或者或者", "或者"),
-            ("也许也许", "也许"),
-            ("温度温度", "温度"),
-            ("。。", "。"),
-            ("，，", "，"),
-            ("??", "?"),
-            ("  ", " "),
-        ];
-
-        for (pattern, replacement) in patterns {
+    for _ in 0..4 {
+        let before = result.len();
+        for (pattern, replacement) in &patterns {
             result = result.replace(pattern, replacement);
         }
-
-        if result != original {
-            reduced = true;
+        if result.len() == before {
+            break; // No more reductions possible
         }
     }
 
@@ -419,27 +414,18 @@ const NON_CACHEABLE_TOOLS: &[&str] = &[
     "delete_device",
 ];
 
-/// Check if tool results should bypass LLM and return directly.
-/// Always returns false — all results go through LLM Phase 2.
-fn should_return_directly(_tool_results: &[(String, String)]) -> bool {
-    false
-}
-
 fn is_tool_cacheable(name: &str) -> bool {
     !NON_CACHEABLE_TOOLS.contains(&name)
 }
-
-/// Max length of tool result text to inject into Phase 2 prompt (avoid context overflow).
-const PHASE2_TOOL_RESULT_MAX_LEN: usize = 8000;
 
 /// Minimum size (bytes) for a result to be considered large enough to strip base64 from.
 const BASE64_STRIP_THRESHOLD: usize = 4096;
 
 // ---------------------------------------------------------------------------
-// Base64 / image stripping for Phase 2 prompts
+// Base64 / image stripping for tool result display
 // ---------------------------------------------------------------------------
 
-/// Strip base64/image data from a tool result for safe inclusion in Phase 2 LLM prompts.
+/// Strip base64/image data from a tool result for safe display and LLM prompts.
 ///
 /// Base64 image data wastes LLM context tokens and causes the model to reproduce
 /// raw data in its response. This function:
@@ -659,174 +645,6 @@ fn make_result_dedup_key(name: &str, result: &str) -> String {
         .chars()
         .fold(0u64, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u64));
     format!("{}|{:016x}", name, hash)
-}
-
-/// Build Phase 2 user prompt with tool results explicitly included so the second LLM always sees them.
-pub(crate) fn build_phase2_prompt_with_tool_results(
-    original_question: Option<String>,
-    tool_call_results: &[(String, String)],
-) -> String {
-    let question =
-        original_question.unwrap_or_else(|| "请总结以上工具执行结果，给出完整的回复。".to_string());
-    if tool_call_results.is_empty() {
-        return question;
-    }
-
-    // Count tools to provide contextual guidance
-    let tool_count = tool_call_results.len();
-
-    // 检查是否有错误结果
-    let has_errors = tool_call_results.iter().any(|(_, result)| {
-        result.contains("failed")
-            || result.contains("error")
-            || result.contains("失败")
-            || result.contains("错误")
-    });
-
-    let mut block = if tool_count > 1 {
-        format!(
-            "\n\n[Executed {} tools, please consolidate all results to answer the user's question]\n",
-            tool_count
-        )
-    } else {
-        String::from(
-            "\n\n[Tool Execution Results - You MUST analyze and provide a complete response]\n",
-        )
-    };
-
-    // Add mandatory response instruction
-    block.push_str("IMPORTANT: You must analyze the tool results and provide a user-friendly complete response. Don't just say \"execution completed\".\n\n");
-
-    // If there are errors, add special instructions
-    if has_errors {
-        block.push_str("Note: Tool execution failed.\n\n");
-        block.push_str("Handling Strategy:\n");
-        block.push_str(
-            "1. First check if the user's original request already contains all necessary information (device, metric, condition, action)\n",
-        );
-        block.push_str("2. If the user has provided enough information, it's a DSL format issue. You should tell the user \"I understand, let me regenerate\" and then inform them the rule was created successfully\n");
-        block.push_str("3. Only ask follow-up questions when the user is actually missing key information, and ask everything at once\n");
-        block.push_str("4. Don't show technical error messages to the user\n");
-        block.push_str(
-            "5. Respond in a friendly manner, don't mechanically repeat the question list\n\n",
-        );
-    }
-
-    for (name, result) in tool_call_results {
-        // Sanitize base64/image data before including in LLM prompt
-        let sanitized = sanitize_tool_result_for_prompt(result);
-        let r = if sanitized.len() > PHASE2_TOOL_RESULT_MAX_LEN {
-            truncate_result_utf8(&sanitized, PHASE2_TOOL_RESULT_MAX_LEN)
-        } else {
-            sanitized
-        };
-        block.push_str(&format!("[{}]\n{}\n\n", name, r));
-    }
-
-    // Add explicit instruction for multi-tool scenarios
-    if tool_count > 1 {
-        block.push_str("IMPORTANT: Please extract the most relevant information from the above tool results based on the user's original question. ");
-        block.push_str("If the user asks for specific device data, prioritize showing that device's detailed data rather than a device list.");
-    }
-
-    question + &block
-}
-
-/// Build Phase 2 prompt with accumulated multi-round tool results.
-///
-/// This is used when the multi-round loop ends (iteration limit, consecutive
-/// duplicates, or non-complex intent) to generate a comprehensive summary
-/// covering ALL collected data, not just the last round.
-fn build_phase2_summary_prompt(
-    original_question: Option<String>,
-    all_results: &[(String, String)],
-    total_rounds: usize,
-    end_reason: &str,
-) -> String {
-    let question =
-        original_question.unwrap_or_else(|| "请总结以上工具执行结果，给出完整的回复。".to_string());
-
-    if all_results.is_empty() {
-        return question;
-    }
-
-    let mut block = format!(
-        "\n\n[Completed {} rounds of tool execution (ended: {}), {} tool results collected]\n",
-        total_rounds,
-        end_reason,
-        all_results.len()
-    );
-
-    block.push_str(
-        "IMPORTANT: You MUST provide a COMPLETE summary of ALL tool results below. \
-         Do NOT mention that tools were called or that execution ended - just present the data naturally.\n\n"
-    );
-
-    for (name, result) in all_results {
-        // Sanitize base64/image data before including in LLM prompt
-        let sanitized = sanitize_tool_result_for_prompt(result);
-        let r = if sanitized.len() > PHASE2_TOOL_RESULT_MAX_LEN {
-            truncate_result_utf8(&sanitized, PHASE2_TOOL_RESULT_MAX_LEN)
-        } else {
-            sanitized
-        };
-        block.push_str(&format!("[{}]\n{}\n\n", name, r));
-    }
-
-    block.push_str(&format!(
-        "\nPlease organize the above data to answer: {}",
-        question
-    ));
-
-    question + &block
-}
-
-/// Detect if Phase 2 LLM response is hallucinated (doesn't match actual tool results)
-/// Returns true if hallucination is detected, indicating we should use fallback formatter
-fn detect_hallucination(phase2_response: &str, tool_results: &[(String, String)]) -> bool {
-    if tool_results.len() != 1 {
-        return false; // Only detect for single-tool results
-    }
-
-    let (tool_name, tool_result) = &tool_results[0];
-
-    match tool_name.as_str() {
-        "list_agents" => {
-            // Parse actual agent names from tool result
-            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(tool_result) {
-                if let Some(agents) = json_value.get("agents").and_then(|a| a.as_array()) {
-                    // Extract actual agent names
-                    let actual_names: Vec<&str> = agents
-                        .iter()
-                        .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
-                        .collect();
-
-                    // If response doesn't contain any actual agent names, it's hallucinated
-                    if actual_names.is_empty() {
-                        return false; // Can't determine
-                    }
-
-                    // Check if any actual agent name appears in the response
-                    let has_match = actual_names.iter().any(|name| {
-                        phase2_response.contains(name)
-                            || phase2_response.contains(&format!("**{}**", name))
-                    });
-
-                    // Also check for common hallucination patterns
-                    let has_hallucination_pattern = phase2_response.contains("agent_1")
-                        || phase2_response.contains("agent_2")
-                        || (phase2_response.contains("Agent ID") && !has_match);
-
-                    !has_match || has_hallucination_pattern
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        }
-        _ => false,
-    }
 }
 
 /// Helper function to extract an array from a JSON value, handling both direct arrays
@@ -1383,532 +1201,6 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
         // Try to parse the result as JSON for better formatting
         if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(result) {
             match tool_name.as_str() {
-                "device_discover" => {
-                    // Format device_discover result with summary and device list
-                    if let Some(summary) = json_value.get("summary") {
-                        // Extract summary statistics
-                        let total = summary.get("total").and_then(|t| t.as_u64()).unwrap_or(0);
-                        let online = summary.get("online").and_then(|o| o.as_u64()).unwrap_or(0);
-                        let offline = summary.get("offline").and_then(|o| o.as_u64()).unwrap_or(0);
-
-                        response.push_str(&format!("Device Overview ({} total)\n\n", total));
-                        response
-                            .push_str(&format!("- Online: {} | Offline: {}\n\n", online, offline));
-
-                        // Show device types
-                        if let Some(by_type) = summary.get("by_type").and_then(|b| b.as_object()) {
-                            response.push_str("**By Type**:\n");
-                            for (device_type, count) in by_type.iter() {
-                                if let Some(count) = count.as_u64() {
-                                    response
-                                        .push_str(&format!("- {}: {} units\n", device_type, count));
-                                }
-                            }
-                            response.push('\n');
-                        }
-                    }
-
-                    // List devices (handle both direct array and truncated nested structure)
-                    if let Some(devices) = extract_array(&json_value, "devices") {
-                        response.push_str("**Device List**:\n\n");
-                        for device in devices {
-                            let id = device
-                                .get("id")
-                                .and_then(|i| i.as_str())
-                                .unwrap_or("unknown");
-                            let name = device
-                                .get("name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("unknown");
-                            let device_type = device
-                                .get("device_type")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("unknown");
-                            let status = device
-                                .get("status")
-                                .and_then(|s| s.as_str())
-                                .unwrap_or("unknown");
-
-                            response.push_str(&format!(
-                                "- **{}** ({}) - {} - {}\n",
-                                name, id, device_type, status
-                            ));
-                        }
-                    }
-                }
-                "list_devices" => {
-                    // Format device list as a table (legacy format)
-                    // Handle both direct array and truncated nested structure
-                    if let Some(devices) = extract_array(&json_value, "devices") {
-                        response.push_str(&format!("## Device List ({} total)\n\n", devices.len()));
-                        response.push_str("| Device Name | Status | Type |\n");
-                        response.push_str("|-------------|--------|------|\n");
-                        for device in devices {
-                            let name = device
-                                .get("name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("unknown");
-                            let status = device
-                                .get("status")
-                                .and_then(|s| s.as_str())
-                                .unwrap_or("unknown");
-                            let device_type = device
-                                .get("type")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("unknown");
-                            response.push_str(&format!(
-                                "| {} | {} | {} |\n",
-                                name, status, device_type
-                            ));
-                        }
-                    } else {
-                        response.push_str("No devices found.\n");
-                    }
-                }
-                "list_rules" => {
-                    // Format rule list (handle both direct array and truncated nested structure)
-                    if let Some(rules) = extract_array(&json_value, "rules") {
-                        response
-                            .push_str(&format!("## Automation Rules ({} total)\n\n", rules.len()));
-                        for rule in rules {
-                            let name = rule
-                                .get("name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("unknown");
-                            let enabled = rule
-                                .get("enabled")
-                                .and_then(|e| e.as_bool())
-                                .unwrap_or(false);
-                            let status = if enabled { "[Enabled]" } else { "!! Disabled" };
-                            response.push_str(&format!("- **{}** {}\n", name, status));
-                        }
-                    } else if let Some(count) = json_value.get("count").and_then(|c| c.as_u64()) {
-                        response.push_str(&format!("## Automation Rules ({} total)\n", count));
-                    } else {
-                        response.push_str("No automation rules found.\n");
-                    }
-                }
-                "list_scenarios" => {
-                    // Handle both direct array and truncated nested structure
-                    if let Some(scenarios) = extract_array(&json_value, "scenarios") {
-                        response
-                            .push_str(&format!("## Scenario List ({} total)\n\n", scenarios.len()));
-                        for scenario in scenarios {
-                            let name = scenario
-                                .get("name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("unknown");
-                            response.push_str(&format!("- {}\n", name));
-                        }
-                    } else {
-                        response.push_str("No scenarios found.\n");
-                    }
-                }
-                "list_workflows" => {
-                    // Handle both direct array and truncated nested structure
-                    if let Some(workflows) = extract_array(&json_value, "workflows") {
-                        response
-                            .push_str(&format!("## Workflow List ({} total)\n\n", workflows.len()));
-                        for workflow in workflows {
-                            let name = workflow
-                                .get("name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("unknown");
-                            let status = workflow
-                                .get("status")
-                                .and_then(|s| s.as_str())
-                                .unwrap_or("unknown");
-                            response.push_str(&format!("- **{}** ({})\n", name, status));
-                        }
-                    } else {
-                        response.push_str("No workflows found.\n");
-                    }
-                }
-                "query_rule_history" => {
-                    // Handle both direct array and truncated nested structure
-                    if let Some(history) = extract_array(&json_value, "history") {
-                        response.push_str(&format!(
-                            "## Rule Execution History ({} entries)\n\n",
-                            history.len()
-                        ));
-                        for (i, entry) in history.iter().enumerate().take(10) {
-                            // Limit to 10 entries
-                            let name = entry
-                                .get("rule_name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("unknown");
-                            let success = entry
-                                .get("success")
-                                .and_then(|s| s.as_bool())
-                                .unwrap_or(false);
-                            let status = if success { "[OK]" } else { "!! Failed" };
-                            response.push_str(&format!("- **{}** {}\n", name, status));
-                            if i == 9 {
-                                response.push_str(&format!(
-                                    "\n... ({} more entries)\n",
-                                    history.len().saturating_sub(10)
-                                ));
-                                break;
-                            }
-                        }
-                    } else {
-                        response.push_str("No execution history found.\n");
-                    }
-                }
-                "query_workflow_status" => {
-                    // Handle both direct array and truncated nested structure
-                    if let Some(executions) = extract_array(&json_value, "executions") {
-                        response.push_str(&format!(
-                            "## Workflow Execution Status ({} entries)\n\n",
-                            executions.len()
-                        ));
-                        for (i, exec) in executions.iter().enumerate().take(10) {
-                            let wf_id = exec
-                                .get("workflow_id")
-                                .and_then(|w| w.as_str())
-                                .unwrap_or("unknown");
-                            let status = exec
-                                .get("status")
-                                .and_then(|s| s.as_str())
-                                .unwrap_or("unknown");
-                            response.push_str(&format!("- **{}** - {}\n", wf_id, status));
-                            if i == 9 {
-                                response.push_str(&format!(
-                                    "\n... ({} more entries)\n",
-                                    executions.len().saturating_sub(10)
-                                ));
-                                break;
-                            }
-                        }
-                    } else {
-                        response.push_str("No execution records found.\n");
-                    }
-                }
-                "get_device_metrics" => {
-                    // Handle both direct array and truncated nested structure
-                    if let Some(metrics) = extract_array(&json_value, "metrics") {
-                        response.push_str("## Device Metrics\n\n");
-                        for metric in metrics {
-                            let name = metric
-                                .get("name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("unknown");
-                            let value = metric
-                                .get("value")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown");
-                            response.push_str(&format!("- **{}**: {}\n", name, value));
-                        }
-                    } else {
-                        response.push_str("No device metrics found.\n");
-                    }
-                }
-                "get_device_data" => {
-                    // Format get_device_data result with device info and metrics
-                    let device_name = json_value
-                        .get("device_name")
-                        .and_then(|n| n.as_str())
-                        .or_else(|| json_value.get("device_id").and_then(|d| d.as_str()))
-                        .unwrap_or("Unknown Device");
-
-                    let device_type = json_value
-                        .get("device_type")
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("unknown");
-
-                    response.push_str(&format!("## {} ({})\n\n", device_name, device_type));
-
-                    if let Some(metrics) = json_value.get("metrics").and_then(|m| m.as_object()) {
-                        for (metric_name, metric_data) in metrics {
-                            let display_name = metric_data
-                                .get("display_name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or(metric_name);
-
-                            let value = metric_data
-                                .get("value")
-                                .map(|v| {
-                                    if v.is_null() {
-                                        "无数据".to_string()
-                                    } else {
-                                        v.to_string().replace("\"", "")
-                                    }
-                                })
-                                .unwrap_or("未知".to_string());
-
-                            let unit = metric_data
-                                .get("unit")
-                                .and_then(|u| u.as_str())
-                                .unwrap_or("");
-
-                            if !unit.is_empty() {
-                                response.push_str(&format!(
-                                    "- **{}**: {} {}\n",
-                                    display_name, value, unit
-                                ));
-                            } else {
-                                response.push_str(&format!("- **{}**: {}\n", display_name, value));
-                            }
-
-                            // Show timestamp if available
-                            if let Some(ts) = metric_data.get("timestamp").and_then(|t| t.as_i64())
-                            {
-                                if ts > 0 {
-                                    use chrono::{DateTime, Utc};
-                                    if let Some(dt) = DateTime::from_timestamp(ts, 0) {
-                                        let time_ago = (Utc::now() - dt).num_seconds();
-                                        if time_ago < 3600 {
-                                            response.push_str(&format!(
-                                                "  _{} seconds ago_\n",
-                                                time_ago
-                                            ));
-                                        } else if time_ago < 86400 {
-                                            response.push_str(&format!(
-                                                "  _{} minutes ago_\n",
-                                                time_ago / 60
-                                            ));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        response.push_str("No data available.\n");
-                    }
-                }
-                "query_data" => {
-                    // Format query result
-                    if let Some(data) = json_value.get("data") {
-                        response.push_str(&format!(
-                            "## Query Result\n\n```\n{}\n```\n",
-                            serde_json::to_string_pretty(data).unwrap_or_default()
-                        ));
-                    } else {
-                        response.push_str("Query completed.\n");
-                    }
-                }
-                "control_device" | "send_command" => {
-                    response.push_str("**[OK]** command sent\n");
-                }
-                "list_agents" => {
-                    // Format agent list with statistics
-                    // Tool result structure: {"agents": {"items": [...], "_total_count": N}, "count": N}
-                    let agents_array = if let Some(agents_obj) =
-                        json_value.get("agents").and_then(|a| a.as_object())
-                    {
-                        // New structure: agents is an object with "items" array
-                        agents_obj.get("items").and_then(|i| i.as_array())
-                    } else {
-                        // Old structure: agents is directly an array
-                        json_value.get("agents").and_then(|a| a.as_array())
-                    };
-
-                    if let Some(agents) = agents_array {
-                        if agents.is_empty() {
-                            response.push_str("**AI Agent List**\n\n");
-                            response.push_str("No AI Agents configured in the system.");
-                        } else {
-                            response.push_str(&format!(
-                                "**AI Agent List** ({} total)\n\n",
-                                agents.len()
-                            ));
-                            for agent in agents {
-                                let name = agent
-                                    .get("name")
-                                    .and_then(|n| n.as_str())
-                                    .unwrap_or("unknown");
-                                let id = agent.get("id").and_then(|i| i.as_str()).unwrap_or("");
-                                let status = agent
-                                    .get("status")
-                                    .and_then(|s| s.as_str())
-                                    .unwrap_or("unknown");
-
-                                // Get execution stats - try multiple paths
-                                let exec_count_str = agent
-                                    .get("execution_count")
-                                    .and_then(|e| e.as_u64())
-                                    .or_else(|| {
-                                        agent
-                                            .get("stats")
-                                            .and_then(|s| s.get("total_executions"))
-                                            .and_then(|e| e.as_u64())
-                                    })
-                                    .map(|c| c.to_string())
-                                    .or_else(|| {
-                                        agent
-                                            .get("stats")
-                                            .and_then(|s| s.get("total_executions"))
-                                            .and_then(|e| e.as_str())
-                                            .map(String::from)
-                                    })
-                                    .unwrap_or_else(|| "0".to_string());
-
-                                let last_exec = agent
-                                    .get("last_execution_at")
-                                    .and_then(|l| l.as_str())
-                                    .unwrap_or("Not executed");
-
-                                let status_icon = match status {
-                                    "active" | "Active" => "[on]",
-                                    _ => "[off]",
-                                };
-
-                                response.push_str(&format!(
-                                    "- {} **{}** ({})\n",
-                                    status_icon, name, status
-                                ));
-
-                                // Add ID for reference
-                                if !id.is_empty() && id.len() < 30 {
-                                    response.push_str(&format!("  ID: `{}`\n", id));
-                                }
-
-                                // Add execution info
-                                if exec_count_str != "0" {
-                                    response.push_str(&format!(
-                                        "  Executions: {}, Last: {}\n",
-                                        exec_count_str,
-                                        if last_exec == "Not executed" || last_exec.contains("null")
-                                        {
-                                            "N/A"
-                                        } else {
-                                            last_exec
-                                        }
-                                    ));
-                                }
-
-                                // Add description if available
-                                if let Some(desc) =
-                                    agent.get("description").and_then(|d| d.as_str())
-                                {
-                                    if !desc.is_empty() && desc != "null" {
-                                        response.push_str(&format!("  Description: {}\n", desc));
-                                    }
-                                }
-                            }
-                        }
-                    } else if let Some(count) = json_value.get("count").and_then(|c| c.as_u64()) {
-                        if count == 0 {
-                            response.push_str("**AI Agent List**\n\n");
-                            response.push_str("No AI Agents configured in the system.");
-                        } else {
-                            response.push_str(&format!("**AI Agent List** ({} total)\n", count));
-                        }
-                    } else {
-                        response.push_str("**AI Agent List**\n\n");
-                        response.push_str("No AI Agents configured in the system.");
-                    }
-                }
-                "get_agent" => {
-                    // Format single agent details
-                    let name = json_value
-                        .get("name")
-                        .and_then(|n| n.as_str())
-                        .unwrap_or("unknown");
-                    let status = json_value
-                        .get("status")
-                        .and_then(|s| s.as_str())
-                        .unwrap_or("unknown");
-                    let agent_type = json_value
-                        .get("type")
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("unknown");
-
-                    response.push_str(&format!("## Agent: {} ({})\n\n", name, agent_type));
-                    response.push_str(&format!("**Status**: {}\n", status));
-
-                    // Execution stats
-                    if let Some(stats) = json_value.get("stats") {
-                        if let Some(total) = stats.get("total_executions").and_then(|t| t.as_u64())
-                        {
-                            let success = stats
-                                .get("successful_executions")
-                                .and_then(|s| s.as_u64())
-                                .unwrap_or(0);
-                            let failed = stats
-                                .get("failed_executions")
-                                .and_then(|f| f.as_u64())
-                                .unwrap_or(0);
-                            response.push_str(&format!(
-                                "**Execution Stats**: Total {} times, Success {} times, Failed {} times\n",
-                                total, success, failed
-                            ));
-                        }
-                    }
-
-                    // Last execution
-                    if let Some(last) = json_value.get("last_execution_at").and_then(|l| l.as_str())
-                    {
-                        if !last.is_empty() && last != "null" {
-                            response.push_str(&format!("**Last Execution**: {}\n", last));
-                        }
-                    }
-
-                    // Schedule
-                    if let Some(schedule) = json_value.get("schedule_type").and_then(|s| s.as_str())
-                    {
-                        response.push_str(&format!("**Schedule Type**: {}\n", schedule));
-                    }
-                }
-                "create_rule" => {
-                    if let Some(rule_id) = json_value.get("rule_id").and_then(|r| r.as_str()) {
-                        response.push_str(&format!(
-                            "[OK] Rule created successfully (ID: {})\n",
-                            rule_id
-                        ));
-                    } else {
-                        response.push_str("[OK] Rule created successfully.\n");
-                    }
-                }
-                "trigger_workflow" => {
-                    if let Some(execution_id) =
-                        json_value.get("execution_id").and_then(|e| e.as_str())
-                    {
-                        response.push_str(&format!(
-                            "[OK] Workflow triggered (Execution ID: {})\n",
-                            execution_id
-                        ));
-                    } else {
-                        response.push_str("[OK] Workflow triggered.\n");
-                    }
-                }
-                "create_agent" => {
-                    if let Some(agent_id) = json_value.get("agent_id").and_then(|a| a.as_str()) {
-                        response.push_str(&format!(
-                            "[OK] Agent created successfully (ID: {})\n",
-                            agent_id
-                        ));
-                    } else if let Some(id) = json_value.get("id").and_then(|i| i.as_str()) {
-                        response
-                            .push_str(&format!("[OK] Agent created successfully (ID: {})\n", id));
-                    } else {
-                        response.push_str("[OK] Agent created successfully.\n");
-                    }
-                }
-                "execute_agent" => {
-                    if let Some(execution_id) =
-                        json_value.get("execution_id").and_then(|e| e.as_str())
-                    {
-                        response.push_str(&format!(
-                            "[OK] Agent execution triggered (ID: {})\n",
-                            execution_id
-                        ));
-                    } else if let Some(result) = json_value.get("result").and_then(|r| r.as_str()) {
-                        response.push_str(&format!("[OK] Agent execution completed: {}\n", result));
-                    } else {
-                        response.push_str("[OK] Agent execution completed.\n");
-                    }
-                }
-                "control_agent" => {
-                    if let Some(new_status) = json_value.get("status").and_then(|s| s.as_str()) {
-                        response.push_str(&format!("[OK] Agent status updated: {}\n", new_status));
-                    } else {
-                        response.push_str("[OK] Agent control command executed.\n");
-                    }
-                }
-                "delete_rule" => {
-                    response.push_str("[OK] Rule deleted.\n");
-                }
                 "shell" => {
                     let cmd = json_value
                         .get("command")
@@ -2012,86 +1304,6 @@ fn estimate_tokens(text: &str) -> usize {
 /// Compacts old tool result messages into concise summaries.
 /// This follows Anthropic's guidance for context engineering.
 #[allow(dead_code)]
-fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
-    let mut result = Vec::new();
-    let mut tool_result_count = 0;
-    const KEEP_RECENT_TOOL_RESULTS: usize = 2;
-
-    for msg in messages.iter().rev() {
-        if msg.role == "user" || msg.role == "system" {
-            result.push(msg.clone());
-            continue;
-        }
-
-        if msg.tool_calls.is_some() && msg.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
-            tool_result_count += 1;
-
-            if tool_result_count <= KEEP_RECENT_TOOL_RESULTS {
-                result.push(msg.clone());
-            } else {
-                // Compress old tool results with descriptive summary
-                let summaries: Vec<String> = msg
-                    .tool_calls
-                    .as_ref()
-                    .iter()
-                    .flat_map(|calls| calls.iter())
-                    .map(|tc| {
-                        let args_summary =
-                            super::types::summarize_tool_args(&tc.name, &tc.arguments);
-                        let result_preview = tc
-                            .result
-                            .as_ref()
-                            .and_then(|r| {
-                                let s = if let Some(s) = r.as_str() {
-                                    s.to_string()
-                                } else {
-                                    r.to_string()
-                                };
-                                // Read actions need more preview to preserve data
-                                let is_data_action = args_summary.contains("list")
-                                    || args_summary.contains("get")
-                                    || args_summary.contains("history");
-                                let preview_len = if is_data_action { 300 } else { 80 };
-                                Some(s.chars().take(preview_len).collect::<String>())
-                            })
-                            .unwrap_or_default();
-                        if result_preview.is_empty() {
-                            format!("the {} tool with {}", tc.name, args_summary)
-                        } else {
-                            format!(
-                                "the {} tool with {} and received: {}",
-                                tc.name, args_summary, result_preview
-                            )
-                        }
-                    })
-                    .collect();
-
-                let summary = format!(
-                    "Previously called {}. These are past results, do not repeat.",
-                    summaries.join(", then ")
-                );
-
-                result.push(AgentMessage {
-                    role: msg.role.clone(),
-                    content: summary,
-                    tool_calls: None,
-                    tool_call_id: None,
-                    tool_call_name: None,
-                    thinking: None,
-                    images: None,
-                    round_contents: None,
-                    round_thinking: None,
-                    timestamp: msg.timestamp,
-                });
-            }
-        } else {
-            result.push(msg.clone());
-        }
-    }
-
-    result.reverse();
-    result
-}
 
 /// === IMPROVED: Context Window with CompactionConfig ===
 ///
@@ -2250,13 +1462,14 @@ fn truncate_agent_message(msg: &AgentMessage, max_len: usize) -> AgentMessage {
     let mut truncated = msg.clone();
 
     if msg.content.len() > max_len {
-        // Truncate at word boundary
-        let truncated_content = if let Some(last_space) = msg.content[..max_len].rfind(' ') {
-            format!("{}...", &msg.content[..last_space])
+        // Truncate at character boundary
+        let prefix: String = msg.content.chars().take(max_len).collect();
+        let truncated_content = if let Some(last_space) = prefix.rfind(' ') {
+            format!("{}...", &prefix[..last_space])
         } else {
-            format!("{}...", &msg.content[..max_len])
+            format!("{}...", prefix)
         };
-        truncated.content = truncated_content;
+        truncated.content = truncated_content.into();
     }
 
     // Also truncate thinking if present
@@ -2348,7 +1561,7 @@ fn compact_tool_results_stream_with_config(
 
                 let summary_msg = AgentMessage {
                     role: "assistant".to_string(),
-                    content: summary_content,
+                    content: summary_content.into(),
                     tool_calls: None,
                     tool_call_id: None,
                     tool_call_name: None,
@@ -2416,55 +1629,6 @@ pub async fn process_stream_events_with_safeguards(
 ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
     let user_message = user_message.to_string();
 
-    // === FAST PATH: Simple greetings and common patterns ===
-    // Bypass LLM for simple, common interactions to improve speed and reliability
-    let trimmed = user_message.trim();
-    let lower = trimmed.to_lowercase();
-
-    // Greeting patterns
-    let greeting_patterns = [
-        "你好",
-        "您好",
-        "hi",
-        "hello",
-        "嗨",
-        "在吗",
-        "早上好",
-        "下午好",
-        "晚上好",
-    ];
-
-    // Device list query patterns - fast path for common device queries
-    let device_list_patterns = [
-        "有哪些设备",
-        "有什么设备",
-        "设备列表",
-        "查看设备",
-        "所有设备",
-        "列出设备",
-        "系统设备",
-        "显示设备",
-        "devices",
-        "list devices",
-    ];
-
-    // Temperature query patterns - fast path for temperature queries
-    let temp_query_patterns = ["温度", "temperature"];
-
-    let _is_greeting = greeting_patterns
-        .iter()
-        .any(|&pat| trimmed.eq_ignore_ascii_case(pat) || trimmed.starts_with(pat));
-
-    // Check for device list query
-    let _is_device_query = device_list_patterns
-        .iter()
-        .any(|&pat| lower.contains(&pat.to_lowercase()) && lower.len() < 30);
-
-    // Check for temperature query (simple single-word queries)
-    let _is_temp_query = temp_query_patterns.iter().any(|&pat| {
-        lower == pat || lower.ends_with(pat) || lower.starts_with("当前") && lower.contains("温度")
-    });
-
     // === INTENT RECOGNITION: Understand user intent before LLM call ===
     // This helps reduce cognitive load and provides better visualization
     let classifier = IntentClassifier::default();
@@ -2520,17 +1684,6 @@ pub async fn process_stream_events_with_safeguards(
         IntentCategory::Help => vec![("识别帮助请求意图", "Intent"), ("提供使用说明", "Response")],
         IntentCategory::General => vec![("理解用户问题", "Intent"), ("生成回复", "Response")],
     };
-
-    // === COMPLEX INTENT DETECTION FOR MULTI-ROUND TOOL CALLING ===
-    // Use keyword-based detection for fast response (removed LLM call to prevent blocking)
-    // The fallback function provides reliable detection for common patterns
-    let is_complex_intent = is_complex_multi_step_intent_fallback(&user_message);
-
-    tracing::info!(
-        "Complex intent detection (keyword-based): is_complex={}, message={}",
-        is_complex_intent,
-        user_message.chars().take(50).collect::<String>()
-    );
 
     // === Get conversation history and pass to LLM ===
     // This prevents the LLM from repeating actions or calling tools again
@@ -2636,6 +1789,9 @@ pub async fn process_stream_events_with_safeguards(
         // Track tool signatures to detect consecutive duplicate rounds
         let mut prev_round_signatures: Vec<Vec<String>> = Vec::new();
         let mut consecutive_duplicate_rounds: usize = 0;
+        // Track ALL tool signatures ever executed to detect repeated tool calls
+        // (2B models often re-call already-executed tools despite prompt instructions)
+        let mut all_executed_signatures: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // === SAFEGUARD: Track multi-round tool calling iterations ===
         let mut tool_iteration_count = 0usize;
@@ -2704,10 +1860,26 @@ pub async fn process_stream_events_with_safeguards(
 
                 tracing::debug!("Multi-round context: {}", context_msg);
 
-                // Use tools enabled for subsequent rounds (thinking follows instance setting)
-                let round_stream_result = llm_interface.chat_stream_with_history(
+                // Disable thinking for post-tool-execution rounds to preserve generation
+                // budget for content output. Small thinking models (qwen3.5:2b) often
+                // consume all num_predict tokens on thinking, leaving content=0.
+                let thinking_override = {
+                    let current_thinking = llm_interface.get_thinking_enabled().await;
+                    if current_thinking == Some(true) {
+                        tracing::info!(
+                            round = tool_iteration_count + 1,
+                            "Disabling thinking for post-tool round to preserve content budget"
+                        );
+                        Some(false)
+                    } else {
+                        None
+                    }
+                };
+
+                let round_stream_result = llm_interface.chat_stream_with_history_thinking(
                     &context_msg,
-                    &history_for_llm
+                    &history_for_llm,
+                    thinking_override
                 ).await;
 
                 let round_stream = match round_stream_result {
@@ -3049,7 +2221,7 @@ pub async fn process_stream_events_with_safeguards(
                 yielded_up_to = buffer.len();
             }
 
-            // === PHASE 2: Handle tool calls if detected ===
+            // === Handle tool calls if detected ===
             if tool_calls_detected {
                 tracing::debug!("Starting tool execution round {}", tool_iteration_count + 1);
 
@@ -3173,139 +2345,92 @@ pub async fn process_stream_events_with_safeguards(
                     }
                 }
 
-                // === PHASE 3: Generate follow-up response ===
-                // For complex intents, check if we need more tool calls
-                if is_complex_intent && tool_iteration_count < MAX_TOOL_ITERATIONS - 1 {
-                    tracing::debug!("Complex intent: Checking if more tool calls needed (iteration {}/{})",
-                        tool_iteration_count + 1, MAX_TOOL_ITERATIONS);
+                // === UNIFIED ReAct LOOP: Save results and continue ===
+                // Always save assistant+tool_calls and tool results to history,
+                // then let the LLM decide in the next round whether to call more tools
+                // or give the final answer.
 
-                    // === DUPLICATE DETECTION ===
-                    // Detect consecutive duplicate rounds (same tool calls repeated).
-                    // Allow 1 retry but stop after 2+ consecutive duplicates to prevent loops.
-                    // Different-entity calls (different device_id/metric) are never duplicates.
-                    {
-                        let mut new_tool_signatures: Vec<Vec<String>> = Vec::new();
-                        for tc in &tool_calls_to_execute {
-                            let action_key = tc.arguments.get("action")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
-                            let mut sig = vec![tc.name.clone(), action_key];
-                            for param in &["device_id", "metric", "agent_id", "rule_id", "alert_id"] {
-                                if let Some(val) = tc.arguments.get(*param).and_then(|v| v.as_str()) {
-                                    sig.push(val.to_string());
-                                }
-                            }
-                            new_tool_signatures.push(sig);
-                        }
+                // Check iteration limit and duplicate detection
+                let should_continue = tool_iteration_count < MAX_TOOL_ITERATIONS - 1;
 
-                        // Check if this round is identical to the PREVIOUS round (consecutive duplicate)
-                        let is_consecutive_dup = !prev_round_signatures.is_empty()
-                            && new_tool_signatures.len() == prev_round_signatures.len()
-                            && new_tool_signatures.iter().all(|sig| {
-                                prev_round_signatures.iter().any(|prev| {
-                                    prev.len() == sig.len()
-                                        && prev.iter().zip(sig.iter()).all(|(a, b)| a == b)
-                                })
-                            });
-
-                        if is_consecutive_dup {
-                            consecutive_duplicate_rounds += 1;
-                            tracing::warn!(
-                                "Consecutive duplicate round detected (count={}/2). Tools: {:?}",
-                                consecutive_duplicate_rounds,
-                                tool_call_results.iter().map(|(n, _)| n).collect::<Vec<_>>()
-                            );
-                        } else {
-                            consecutive_duplicate_rounds = 0;
-                        }
-
-                        prev_round_signatures = new_tool_signatures;
-
-                        // Stop after 2 consecutive identical rounds — the LLM is stuck
-                        if consecutive_duplicate_rounds >= 2 {
-                            tracing::warn!(
-                                "LLM stuck in loop (2+ consecutive duplicate rounds). Stopping multi-round loop."
-                            );
-                            // Fall through to final response
-                        } else {
-                    // === Continue the loop (save state + loop back) ===
-                        // === CRITICAL: Save assistant message with tool_calls BEFORE tool results ===
-                        // Without this, tool_calls are lost when switching sessions because
-                        // the assistant message is never persisted in the multi-round path.
-                        let response_to_save = if content_before_tools.is_empty() {
-                            String::new()
-                        } else {
-                            remove_tool_calls_from_response(&content_before_tools)
-                        };
-                        let initial_msg = if !thinking_content.is_empty() {
-                            let cleaned_thinking = cleanup_thinking_content(&thinking_content);
-                            AgentMessage::assistant_with_tools_and_thinking(
-                                &response_to_save,
-                                tool_calls_with_results.clone(),
-                                &cleaned_thinking,
-                            )
-                        } else {
-                            AgentMessage::assistant_with_tools(&response_to_save, tool_calls_with_results.clone())
-                        };
-                        internal_state.write().await.push_message(initial_msg);
-
-                        // Save tool results to memory (large results go through cache → summary)
-                        // Skill tool results go to transient skill_context instead of history
-                        for (tool_name, result_str) in &tool_call_results {
-                            if tool_name == "skill" {
-                                llm_interface.set_skill_context(result_str.clone()).await;
-                            } else {
-                                let mut state = internal_state.write().await;
-                                let history_content = state.large_data_cache.store(tool_name, result_str);
-                                let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
-                                state.push_message(tool_result_msg);
+                // === DUPLICATE DETECTION ===
+                // Detect consecutive duplicate rounds (same tool calls repeated).
+                let mut should_break_for_duplicate = false;
+                {
+                    let mut new_tool_signatures: Vec<Vec<String>> = Vec::new();
+                    let mut already_executed_count = 0usize;
+                    for tc in &tool_calls_to_execute {
+                        let action_key = tc.arguments.get("action")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let mut sig = vec![tc.name.clone(), action_key];
+                        for param in &["device_id", "metric", "agent_id", "rule_id", "alert_id"] {
+                            if let Some(val) = tc.arguments.get(*param).and_then(|v| v.as_str()) {
+                                sig.push(val.to_string());
                             }
                         }
-
-                        // Increment iteration count and loop back
-                        tool_iteration_count += 1;
-
-                        // Save per-round thinking and content for persistence
-                        let round_num = tool_iteration_count as u32; // current round that just ended
-                        if !thinking_content.is_empty() {
-                            round_thinking_map.insert(round_num, thinking_content.clone());
-                            all_rounds_thinking.push_str(&thinking_content);
+                        // Check against all previously executed signatures
+                        let sig_key = sig.join("|");
+                        if all_executed_signatures.contains(&sig_key) {
+                            already_executed_count += 1;
+                        } else {
+                            all_executed_signatures.insert(sig_key);
                         }
-                        if !content_before_tools.is_empty() {
-                            // Clean any JSON/markdown artifacts from content before storing
-                            let cleaned = remove_tool_calls_from_response(&content_before_tools);
-                            // Also strip markdown code block prefixes that small models emit
-                            let cleaned = cleaned.trim()
-                                .trim_start_matches("```json").trim_start_matches("```")
-                                .trim();
-                            if !cleaned.is_empty() {
-                                round_contents_map.insert(round_num, cleaned.to_string());
-                            }
-                        }
+                        new_tool_signatures.push(sig);
+                    }
 
-                        tool_calls_detected = false;
-                        tool_calls.clear();
-                        content_before_tools.clear();
+                    // Check if this round is identical to the PREVIOUS round
+                    let is_consecutive_dup = !prev_round_signatures.is_empty()
+                        && new_tool_signatures.len() == prev_round_signatures.len()
+                        && new_tool_signatures.iter().all(|sig| {
+                            prev_round_signatures.iter().any(|prev| {
+                                prev.len() == sig.len()
+                                    && prev.iter().zip(sig.iter()).all(|(a, b)| a == b)
+                            })
+                        });
 
-                        // Signal end of current round before continuing
-                        yield AgentEvent::IntermediateEnd;
+                    if is_consecutive_dup {
+                        consecutive_duplicate_rounds += 1;
+                        tracing::warn!(
+                            "Consecutive duplicate round detected (count={}/2). Tools: {:?}",
+                            consecutive_duplicate_rounds,
+                            tool_call_results.iter().map(|(n, _)| n).collect::<Vec<_>>()
+                        );
+                    } else {
+                        consecutive_duplicate_rounds = 0;
+                    }
 
-                        // Continue the loop to make another LLM call with tools
-                        continue 'multi_round_loop;
-                        } // end else (not consecutive duplicate)
-                    } // end duplicate detection block
-                } // end if is_complex_intent
+                    // Also detect when most tools in this round were already executed before.
+                    // 2B models often re-call already-executed tools despite prompt instructions.
+                    let total_tools = tool_calls_to_execute.len();
+                    if total_tools > 0 && already_executed_count * 100 / total_tools > 60 && tool_iteration_count >= 2 {
+                        tracing::warn!(
+                            already_executed = already_executed_count,
+                            total = total_tools,
+                            "Stopping ReAct loop: {}% of tool calls were already executed in previous rounds",
+                            already_executed_count * 100 / total_tools
+                        );
+                        should_break_for_duplicate = true;
+                    }
 
-                // === MAX ITERATIONS REACHED, CONSECUTIVE DUPLICATES, or NON-COMPLEX INTENT: Final response ===
-                // Save the initial message with thinking and tool calls
+                    prev_round_signatures = new_tool_signatures;
+
+                    // Stop after 2 consecutive identical rounds — the LLM is stuck
+                    if consecutive_duplicate_rounds >= 2 {
+                        tracing::warn!(
+                            "LLM stuck in loop (2+ consecutive duplicate rounds). Stopping ReAct loop."
+                        );
+                        should_break_for_duplicate = true;
+                    }
+                }
+
+                // === Save assistant message with tool_calls BEFORE tool results ===
                 let response_to_save = if content_before_tools.is_empty() {
-                    // No content before tools - use empty string, don't show meaningless fallback
                     String::new()
                 } else {
-                    content_before_tools.clone()
+                    remove_tool_calls_from_response(&content_before_tools)
                 };
-
                 let initial_msg = if !thinking_content.is_empty() {
                     let cleaned_thinking = cleanup_thinking_content(&thinking_content);
                     AgentMessage::assistant_with_tools_and_thinking(
@@ -3316,11 +2441,11 @@ pub async fn process_stream_events_with_safeguards(
                 } else {
                     AgentMessage::assistant_with_tools(&response_to_save, tool_calls_with_results.clone())
                 };
-                tracing::debug!("[streaming] Saving initial assistant message with {} tool_calls", initial_msg.tool_calls.as_ref().map_or(0, |c| c.len()));
+                tracing::debug!("[streaming] Saving assistant message with {} tool_calls (round {})",
+                    initial_msg.tool_calls.as_ref().map_or(0, |c| c.len()), tool_iteration_count + 1);
                 internal_state.write().await.push_message(initial_msg);
 
-                // Add tool result messages to history (large results go through cache → summary)
-                // Skill tool results go to transient skill_context instead of history
+                // Save tool results to memory (large results go through cache → summary)
                 for (tool_name, result_str) in &tool_call_results {
                     if tool_name == "skill" {
                         llm_interface.set_skill_context(result_str.clone()).await;
@@ -3332,280 +2457,44 @@ pub async fn process_stream_events_with_safeguards(
                     }
                 }
 
-                // Trim history
-                let state_guard = internal_state.read().await;
-                let history_agent_messages = &state_guard.memory;
+                // If we should continue the ReAct loop, save round state and loop back
+                if should_continue && !should_break_for_duplicate {
+                    tool_iteration_count += 1;
 
-                // Extract the user question that triggered this round (most recent real user message).
-                // Skip tool-result messages (they are converted to User with content "[Tool: ... returned]\n...").
-                let original_user_question = history_agent_messages.iter()
-                    .rev()
-                    .find(|msg| {
-                        if msg.role != "user" {
-                            return false;
-                        }
-                        !msg.content.starts_with("[Tool:")
-                    })
-                    .map(|msg| msg.content.clone());
-
-                // === DYNAMIC HISTORY TRIMMING: Use token-based windowing ===
-                // Instead of hardcoded 6 messages, use the model's context capacity
-                // Reserve 30% for Phase 2 response generation
-                let max_context = llm_interface.max_context_length().await;
-                let max_history_tokens = (max_context * 70) / 100;
-
-                tracing::debug!(
-                    "Phase 2 history: {} messages, max_tokens={} (70% of {})",
-                    history_agent_messages.len(),
-                    max_history_tokens,
-                    max_context
-                );
-
-                // Use intelligent context window building with token limits
-                let trimmed_agent_messages = build_context_window(history_agent_messages, max_history_tokens);
-
-                // Convert to core Message format for LLM
-                let history_messages: Vec<neomind_core::Message> = trimmed_agent_messages
-                    .iter()
-                    .map(|msg| msg.to_core())
-                    .collect();
-
-                drop(state_guard);
-
-                // === SIMPLE QUERY FAST PATH: Skip Phase 2 for simple queries ===
-                // This follows mainstream agent design patterns:
-                // - AutoGen: reflect_on_tool_use=False returns tool results directly
-                // - LangChain: return_direct=True stops agent loop after tool execution
-                //
-                // For simple list/query operations, the formatted tool result is the final answer.
-                // No need for another LLM call to "interpret" the data.
-                if should_return_directly(&tool_call_results) {
-                    tracing::debug!(
-                        "Simple query detected (tools: {:?}), skipping Phase 2 LLM call",
-                        tool_call_results.iter().map(|(n, _)| n).collect::<Vec<_>>()
-                    );
-
-                    // Format tool results directly for user display
-                    let formatted_response = format_tool_results(&tool_call_results);
-                    tracing::debug!("Direct response length: {} chars", formatted_response.len());
-
-                    // Stream the formatted response
-                    for chunk in formatted_response.chars().collect::<Vec<_>>().chunks(30) {
-                        let chunk_str: String = chunk.iter().collect();
-                        if !chunk_str.is_empty() {
-                            yield AgentEvent::content(chunk_str);
+                    // Save per-round thinking and content for persistence
+                    let round_num = tool_iteration_count as u32;
+                    if !thinking_content.is_empty() {
+                        round_thinking_map.insert(round_num, thinking_content.clone());
+                        all_rounds_thinking.push_str(&thinking_content);
+                    }
+                    if !content_before_tools.is_empty() {
+                        let cleaned = remove_tool_calls_from_response(&content_before_tools);
+                        let cleaned = cleaned.trim()
+                            .trim_start_matches("```json").trim_start_matches("```")
+                            .trim();
+                        if !cleaned.is_empty() {
+                            round_contents_map.insert(round_num, cleaned.to_string());
                         }
                     }
 
-                    // Save the response to memory
-                    let response_msg = AgentMessage::assistant(formatted_response.clone());
-                    internal_state.write().await.push_message(response_msg);
-                    internal_state.write().await.register_response(&formatted_response);
+                    tool_calls_detected = false;
+                    tool_calls.clear();
+                    content_before_tools.clear();
 
-                    let pt = llm_interface.take_last_prompt_tokens().await;
-                    match pt {
-                        Some(t) => yield AgentEvent::end_with_tokens(t),
-                        None => yield AgentEvent::end(),
-                    }
-                    return;
+                    yield AgentEvent::IntermediateEnd;
+                    continue 'multi_round_loop;
                 }
 
-                // === PHASE 2: Generate follow-up response ===
-                // For complex queries that need LLM analysis/summarization
-                tracing::debug!("Phase 2: Generating follow-up response (complex query)");
-
-                // Deduplicate accumulated tool results across all rounds.
-                // Keep the latest result for each (tool_name, key_params) combination.
-                let deduped_results = deduplicate_tool_results(&all_round_tool_results);
-                tracing::debug!(
-                    "Phase 2: {} accumulated results → {} deduplicated",
-                    all_round_tool_results.len(),
-                    deduped_results.len()
-                );
-
-                // Build Phase 2 prompt with ALL accumulated tool results so the LLM
-                // can produce a comprehensive summary even after multiple rounds.
-                // Use the summary prompt builder for multi-round scenarios to ensure
-                // the LLM summarizes everything, not just the last round.
-                let phase2_prompt = if tool_iteration_count > 0 || all_round_tool_results.len() > tool_call_results.len() {
-                    let end_reason = if consecutive_duplicate_rounds >= 2 {
-                        "loop detected"
-                    } else if tool_iteration_count >= MAX_TOOL_ITERATIONS - 1 {
-                        "iteration limit reached"
-                    } else {
-                        "completed"
-                    };
-                    build_phase2_summary_prompt(
-                        original_user_question.clone(),
-                        &deduped_results,
-                        tool_iteration_count + 1,
-                        end_reason,
-                    )
-                } else {
-                    build_phase2_prompt_with_tool_results(
-                        original_user_question.clone(),
-                        &deduped_results,
-                    )
-                };
-                tracing::debug!("Phase 2 prompt length: {} chars (with tool results)", phase2_prompt.len());
-
-                let followup_stream_result = llm_interface.chat_stream_no_tools_no_thinking_with_history(
-                    &phase2_prompt, &history_messages
-                ).await;
-
-                let followup_stream = match followup_stream_result {
-                    Ok(stream) => stream,
-                    Err(e) => {
-                        tracing::error!("Phase 2 LLM call failed: {}", e);
-                        let fallback_text = format_tool_results(&deduped_results);
-                        for chunk in fallback_text.chars().collect::<Vec<_>>().chunks(20) {
-                            let chunk_str: String = chunk.iter().collect();
-                            if !chunk_str.is_empty() {
-                                yield AgentEvent::content(chunk_str);
-                            }
-                        }
-                        let pt = llm_interface.take_last_prompt_tokens().await;
-                        match pt {
-                            Some(t) => yield AgentEvent::end_with_tokens(t),
-                            None => yield AgentEvent::end(),
-                        }
-                        return;
-                    }
-                };
-
-                let mut followup_stream = Box::pin(followup_stream);
-                let mut final_response_content = String::new();
-                let followup_start = Instant::now();
-
-                let mut chunk_count = 0usize;
-                while let Some(result) = StreamExt::next(&mut followup_stream).await {
-                    if followup_start.elapsed() > Duration::from_secs(30) {
-                        tracing::warn!("Phase 2 timeout (>30s), forcing completion");
-                        break;
-                    }
-
-                    chunk_count += 1;
-                    match result {
-                        Ok((chunk, is_thinking)) => {
-                            if chunk.is_empty() {
-                                tracing::trace!("Phase 2: Received empty chunk #{}, skipping", chunk_count);
-                                continue;
-                            }
-                            if !is_thinking {
-                                // Skip duplicate chunks (model repetition: same error/text sent twice)
-                                let ct = chunk.trim();
-                                if !ct.is_empty() {
-                                    if final_response_content.ends_with(ct) {
-                                        tracing::trace!("Phase 2: Skipping duplicate chunk");
-                                        continue;
-                                    }
-                                    if ct.len() > 30 && final_response_content.contains(ct) {
-                                        tracing::trace!("Phase 2: Skipping contained chunk");
-                                        continue;
-                                    }
-                                }
-                                tracing::trace!("Phase 2: Yielding content chunk #{}: {} chars", chunk_count, chunk.len());
-                                yield AgentEvent::content(chunk.clone());
-                                final_response_content.push_str(&chunk);
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("Phase 2 stream error: {}", e);
-                            break;
-                        }
-                    }
-                }
-                tracing::debug!("Phase 2 stream consumed: {} chunks, {} chars total", chunk_count, final_response_content.len());
-
-                // Check for empty response OR hallucination detection
-                let hallucination_detected = detect_hallucination(&final_response_content, &deduped_results);
-                tracing::debug!("Phase 2 fallback check: empty={}, hallucination={}, tools={}",
-                    final_response_content.is_empty(), hallucination_detected, tool_call_results.len());
-
-                if final_response_content.is_empty() || hallucination_detected {
-                    // Use rich formatter instead of simple fallback
-                    let fallback = format_tool_results(&deduped_results);
-                    tracing::debug!("Phase 2: Yielding fallback content: {} chars", fallback.len());
-                    yield AgentEvent::content(fallback.clone());
-                    final_response_content = fallback;
-                }
-
-                // === PHASE 2 TOOL CALL RECOVERY ===
-                // Phase 2 calls LLM without tools (no_tools), but the LLM may still
-                // output tool call JSON as text because the system prompt teaches this format.
-                // Detect and extract these embedded tool calls so they get executed
-                // instead of being shown as raw JSON to the user.
-                if let Ok((cleaned_text, embedded_tool_calls)) = parse_tool_calls(&final_response_content) {
-                    if !embedded_tool_calls.is_empty() {
-                        if tool_iteration_count < MAX_TOOL_ITERATIONS - 1 {
-                            tracing::debug!(
-                                "Phase 2: Recovered {} embedded tool calls from follow-up response, continuing execution",
-                                embedded_tool_calls.len()
-                            );
-
-                            // Replace final_response_content with cleaned text (JSON removed)
-                            final_response_content = cleaned_text;
-
-                            // IMPORTANT: Save the current state before continuing
-                            {
-                                let mut state = internal_state.write().await;
-                                state.register_response(&final_response_content);
-                                if let Some(last_msg) = state.memory.last_mut() {
-                                    if last_msg.role == "assistant" && last_msg.tool_calls.is_some() {
-                                        last_msg.content = final_response_content.clone();
-                                    } else {
-                                        let final_msg = AgentMessage::assistant(&final_response_content);
-                                        state.push_message(final_msg);
-                                    }
-                                } else {
-                                    let final_msg = AgentMessage::assistant(&final_response_content);
-                                    state.push_message(final_msg);
-                                }
-                            }
-
-                            // Set up for next round with the recovered tool calls
-                            tool_calls = embedded_tool_calls;
-                            tool_calls_detected = true;
-
-                            // Save per-round thinking and content for persistence
-                            let round_num = (tool_iteration_count + 1) as u32;
-                            if !thinking_content.is_empty() {
-                                round_thinking_map.insert(round_num, thinking_content.clone());
-                                all_rounds_thinking.push_str(&thinking_content);
-                            }
-
-                            tool_iteration_count += 1;
-                            content_before_tools.clear();
-                            thinking_content.clear();
-
-                            yield AgentEvent::IntermediateEnd;
-                            continue 'multi_round_loop;
-                        } else {
-                            // Max iterations reached - can't execute more rounds
-                            // But still clean the raw JSON from content to avoid showing it to user
-                            tracing::debug!(
-                                "Phase 2: Found {} embedded tool calls but max iterations reached, cleaning JSON from content",
-                                embedded_tool_calls.len()
-                            );
-                            final_response_content = cleaned_text;
-                        }
-                    }
-                }
-
-                // IMPORTANT: Update the initial message with the follow-up content
-                // instead of saving a separate message. This ensures the message
-                // has both tool_calls and content in one place.
-
-                // Save last round's thinking for persistence
+                // === LOOP END: iteration limit or duplicate detected ===
+                // The LLM will see tool results in history on the next turn.
+                // Save final round thinking for persistence.
                 let last_round = (tool_iteration_count + 1) as u32;
                 if !thinking_content.is_empty() {
                     let cleaned = cleanup_thinking_content(&thinking_content);
                     round_thinking_map.insert(last_round, cleaned.clone());
                     all_rounds_thinking.push_str(&cleaned);
                 }
-                // NOTE: Do NOT store final_response_content in round_contents_map for the last round.
-                // It is already the message content (merged.content) — storing it here causes
-                // the frontend to display it twice (once in tool round, once as final message).
+
                 // Convert round maps to serde_json::Value for AgentMessage
                 let round_thinking_val = if !round_thinking_map.is_empty() {
                     Some(serde_json::to_value(&round_thinking_map).unwrap_or(serde_json::Value::Null))
@@ -3618,49 +2507,176 @@ pub async fn process_stream_events_with_safeguards(
                     None
                 };
 
-                // Clean any embedded tool call JSON from the final response content
-                // Some models echo tool call JSON in their text response, which should not
-                // be stored in message.content as it's already tracked in tool_calls
-                let cleaned_response_content = remove_tool_calls_from_response(&final_response_content);
+                // Fallback: if LLM didn't produce content before tools, try a summary call.
+                // Without tool definitions, the model must output text instead of more tool calls.
+                if content_before_tools.is_empty() {
+                    let deduped_results = deduplicate_tool_results(&all_round_tool_results);
 
-                {
-                    let mut state = internal_state.write().await;
-                    // Register response for cross-turn repetition detection
-                    state.register_response(&cleaned_response_content);
-                    if let Some(last_msg) = state.memory.last_mut() {
-                        if last_msg.role == "assistant" && last_msg.tool_calls.is_some() {
-                            // Update the last assistant message (which has tool_calls) with the content
-                            last_msg.content = cleaned_response_content.clone();
-                            last_msg.thinking = if all_rounds_thinking.is_empty() { None } else { Some(all_rounds_thinking.clone()) };
-                            last_msg.round_thinking = round_thinking_val.clone();
-                            last_msg.round_contents = round_contents_val.clone();
-                        } else {
-                            // Fallback: push a new message if the last one isn't what we expect
-                            let mut final_msg = AgentMessage::assistant(&cleaned_response_content);
-                            final_msg.thinking = if all_rounds_thinking.is_empty() { None } else { Some(all_rounds_thinking.clone()) };
-                            final_msg.round_thinking = round_thinking_val.clone();
-                            final_msg.round_contents = round_contents_val.clone();
-                            state.memory.push(final_msg);
+                    // Build compact history for the summary call
+                    let summary_history: Vec<neomind_core::Message> = {
+                        let state_guard = internal_state.read().await;
+                        let compacted = super::compact_tool_results(&state_guard.memory, 2);
+                        compacted.iter().map(|msg| msg.to_core()).collect()
+                    };
+
+                    let summary_prompt = "Based on the tool execution results in the conversation above, \
+                        provide a concise analysis and summary. Do NOT output any tool calls — \
+                        give a direct text response to the user's question.";
+
+                    let summary_result = llm_interface.chat_stream_summary(
+                        summary_prompt,
+                        &summary_history,
+                    ).await;
+
+                    let mut final_content = String::new();
+                    match summary_result {
+                        Ok(stream) => {
+                            let mut pin = Box::pin(stream);
+                            while let Some(chunk) = pin.next().await {
+                                match chunk {
+                                    Ok((text, _)) => {
+                                        final_content.push_str(&text);
+                                        yield AgentEvent::content(text);
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Summary stream error: {}", e);
+                                        break;
+                                    }
+                                }
+                            }
                         }
-                    } else {
-                        let mut final_msg = AgentMessage::assistant(&cleaned_response_content);
-                        final_msg.thinking = if all_rounds_thinking.is_empty() { None } else { Some(all_rounds_thinking.clone()) };
-                        final_msg.round_thinking = round_thinking_val.clone();
-                        final_msg.round_contents = round_contents_val.clone();
-                        state.memory.push(final_msg);
+                        Err(e) => {
+                            tracing::error!("Summary call failed: {}", e);
+                        }
                     }
+
+                    // If summary also failed, fall back to formatted tool results
+                    if final_content.trim().is_empty() {
+                        final_content = format_tool_results(&deduped_results);
+                        tracing::info!(
+                            "Summary call produced empty content, using formatted tool results ({} chars)",
+                            final_content.len()
+                        );
+                        yield AgentEvent::content(final_content.clone());
+                    } else {
+                        tracing::info!(
+                            "Summary call succeeded ({} chars)",
+                            final_content.len()
+                        );
+                    }
+
+                    // Save as assistant message with round metadata
+                    let mut final_msg = AgentMessage::assistant(&final_content);
+                    final_msg.thinking = if all_rounds_thinking.is_empty() { None } else { Some(all_rounds_thinking.clone()) };
+                    final_msg.round_thinking = round_thinking_val;
+                    final_msg.round_contents = round_contents_val;
+                    let mut state = internal_state.write().await;
+                    state.register_response(&final_content);
+                    state.push_message(final_msg);
+                } else {
+                    // LLM produced some content before tools in this last round
+                    // Clean and save it as the final response
+                    let cleaned_content = remove_tool_calls_from_response(&content_before_tools);
+                    let mut final_msg = AgentMessage::assistant(&cleaned_content);
+                    final_msg.thinking = if all_rounds_thinking.is_empty() { None } else { Some(all_rounds_thinking.clone()) };
+                    final_msg.round_thinking = round_thinking_val;
+                    final_msg.round_contents = round_contents_val;
+                    let mut state = internal_state.write().await;
+                    state.register_response(&cleaned_content);
+                    state.push_message(final_msg);
                 }
 
-                tracing::debug!("Tool execution and Phase 2 response complete");
+                tracing::debug!("ReAct loop completed after {} tool iterations", tool_iteration_count + 1);
             } else {
                 // No tool calls - save response directly
                 // Use buffer if content_before_tools is empty (buffer contains all content chunks when no tools)
-                let raw_response = if content_before_tools.is_empty() {
-                    // When no tool calls were detected, buffer contains all the content
+                let mut raw_response = if content_before_tools.is_empty() {
                     buffer.clone()
                 } else {
                     content_before_tools.clone()
                 };
+
+                // === RECOVERY: Retry without thinking when content is empty ===
+                // This handles the case where thinking models consume all generation
+                // budget on thinking tokens, producing no content. Retry once with
+                // thinking forcefully disabled so the model outputs content directly.
+                if raw_response.trim().is_empty() && tool_iteration_count == 0 {
+                    let had_thinking = !thinking_content.is_empty();
+                    tracing::warn!(
+                        had_thinking = had_thinking,
+                        "Stream completed with empty content, attempting retry without thinking"
+                    );
+
+                    // Build a compact history for the retry (keep last few messages)
+                    let state_guard = internal_state.read().await;
+                    let retry_history: Vec<neomind_core::Message> = {
+                        let non_system: Vec<&AgentMessage> = state_guard.memory.iter()
+                            .filter(|m| m.role != "system")
+                            .collect();
+                        // Keep at most last 6 messages to reduce prompt size
+                        let keep = non_system.len().saturating_sub(6);
+                        non_system[keep..].iter().map(|m| m.to_core()).collect()
+                    };
+                    drop(state_guard);
+
+                    // Get original user message from the first message in history
+                    let retry_user_msg = retry_history.iter()
+                        .find(|m| m.role == neomind_core::MessageRole::User)
+                        .map(|m| m.content.as_text())
+                        .unwrap_or_default();
+
+                    let retry_prompt = if retry_user_msg.is_empty() {
+                        "Please provide a response.".to_string()
+                    } else {
+                        format!(
+                            "Please respond to the user's message directly and concisely.\n\nUser: {}",
+                            retry_user_msg
+                        )
+                    };
+
+                    let retry_result = llm_interface.chat_stream_with_history_thinking(
+                        &retry_prompt,
+                        &retry_history,
+                        Some(false), // Force disable thinking
+                    ).await;
+
+                    match retry_result {
+                        Ok(retry_stream) => {
+                            let mut retry_content = String::new();
+                            let mut pin = Box::pin(retry_stream);
+                            while let Some(chunk) = pin.next().await {
+                                match chunk {
+                                    Ok((text, _)) => {
+                                        retry_content.push_str(&text);
+                                        yield AgentEvent::content(text);
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Retry stream error: {}", e);
+                                        break;
+                                    }
+                                }
+                            }
+                            if !retry_content.trim().is_empty() {
+                                raw_response = retry_content;
+                                tracing::info!(
+                                    content_len = raw_response.len(),
+                                    "Retry without thinking succeeded"
+                                );
+                            } else {
+                                tracing::warn!("Retry also produced empty content");
+                                let fallback = "抱歉，模型暂时无法生成回复，请稍后重试。".to_string();
+                                raw_response = fallback.clone();
+                                yield AgentEvent::content(fallback);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Retry LLM call failed: {}", e);
+                            let fallback = "抱歉，模型暂时无法生成回复，请稍后重试。".to_string();
+                            raw_response = fallback.clone();
+                            yield AgentEvent::content(fallback);
+                        }
+                    }
+                }
 
                 // Clean any embedded tool call JSON from response
                 let response_to_save = remove_tool_calls_from_response(&raw_response);
@@ -4057,7 +3073,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 }
             }
 
-            // Save initial message with tool calls
+            // Save assistant message with tool calls
             let response_to_save = if content_before_tools.is_empty() {
                 String::new()
             } else {
@@ -4068,7 +3084,6 @@ pub async fn process_multimodal_stream_events_with_safeguards(
             internal_state.write().await.push_message(initial_msg);
 
             // Add tool result messages (large results go through cache → summary)
-            // Skill tool results go to transient skill_context instead of history
             for (tool_name, result_str) in &tool_call_results {
                 if tool_name == "skill" {
                     llm_interface.set_skill_context(result_str.clone()).await;
@@ -4080,153 +3095,71 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 }
             }
 
-            // Get updated history for Phase 2
-            let state_guard = internal_state.read().await;
-            let history_messages: Vec<neomind_core::Message> = state_guard.memory.iter()
-                .map(|msg| msg.to_core())
-                .collect::<Vec<_>>();
-            drop(state_guard);
-
-            // Extract the user question that triggered this round (most recent real user message).
-            // Skip tool-result messages (they are converted to User with content "[Tool: ... returned]\n...").
-            let original_user_question = history_messages.iter()
-                .rev()
-                .find(|msg| {
-                    if msg.role != neomind_core::MessageRole::User {
-                        return false;
-                    }
-                    let text = msg.content.as_text();
-                    !text.starts_with("[Tool:")
-                })
-                .and_then(|msg| {
-                    if let neomind_core::Content::Text(text) = &msg.content {
-                        Some(text.clone())
-                    } else if let neomind_core::Content::Parts(parts) = &msg.content {
-                        // For multimodal messages, extract the text part
-                        let text_parts: Vec<String> = parts.iter().filter_map(|p| {
-                            if let neomind_core::ContentPart::Text { text: t } = p {
-                                Some(t.clone())
-                            } else {
-                                None
-                            }
-                        }).collect();
-                        if text_parts.is_empty() {
-                            None
-                        } else {
-                            Some(text_parts.join(" "))
-                        }
-                    } else {
-                        None
-                    }
-                });
-
-            if history_messages.len() > 6 {
-                let keep_count = 6;
-                tracing::debug!("Trimming history from {} to {} messages", history_messages.len(), keep_count);
-            }
-
-            // Phase 2: Generate follow-up response (no tools, with thinking)
-            tracing::debug!("Phase 2: Generating follow-up response (multimodal)");
-
-            // Build Phase 2 prompt with tool results explicitly included so the second LLM
-            // always receives them (history alone can be dropped or mishandled by backends).
-            let phase2_prompt = build_phase2_prompt_with_tool_results(
-                original_user_question.clone(),
-                &tool_call_results,
-            );
-            tracing::debug!("Phase 2 prompt (multimodal) length: {} chars (with tool results)", phase2_prompt.len());
-
-            let followup_stream_result = llm_interface.chat_stream_no_tools_no_thinking_with_history(
-                &phase2_prompt, &history_messages
-            ).await;
-
-            let followup_stream = match followup_stream_result {
-                Ok(stream) => stream,
-                Err(e) => {
-                    tracing::error!("Phase 2 LLM call failed: {}", e);
-                    let fallback_text = format_tool_results(&tool_call_results);
-                    for chunk in fallback_text.chars().collect::<Vec<_>>().chunks(20) {
-                        let chunk_str: String = chunk.iter().collect();
-                        if !chunk_str.is_empty() {
-                            yield AgentEvent::content(chunk_str);
-                        }
-                    }
-                    let pt = llm_interface.take_last_prompt_tokens().await;
-                    match pt {
-                        Some(t) => yield AgentEvent::end_with_tokens(t),
-                        None => yield AgentEvent::end(),
-                    }
-                    return;
-                }
+            // Summary fallback: ask LLM to summarize tool results (no tools, no thinking)
+            // This avoids dumping raw tool JSON to the user
+            let summary_history: Vec<neomind_core::Message> = {
+                let state_guard = internal_state.read().await;
+                let compacted = super::compact_tool_results(&state_guard.memory, 2);
+                compacted.iter().map(|msg| msg.to_core()).collect()
             };
 
-            let mut followup_stream = Box::pin(followup_stream);
-            let mut final_response_content = String::new();
-            let followup_start = Instant::now();
+            let summary_prompt = "Based on the tool execution results in the conversation above, \
+                provide a concise analysis and summary. Do NOT output any tool calls — \
+                give a direct text response to the user's question.";
 
-            while let Some(result) = StreamExt::next(&mut followup_stream).await {
-                if followup_start.elapsed() > Duration::from_secs(30) {
-                    tracing::warn!("Phase 2 timeout (>30s), forcing completion");
-                    break;
-                }
+            let mut final_content = String::new();
+            let summary_result = llm_interface.chat_stream_summary(
+                summary_prompt,
+                &summary_history,
+            ).await;
 
-                match result {
-                    Ok((chunk, is_thinking)) => {
-                        if chunk.is_empty() {
-                            continue;
-                        }
-                        if !is_thinking {
-                            // Skip duplicate chunks (model repetition: same error/text sent twice)
-                            let ct = chunk.trim();
-                            if !ct.is_empty() {
-                                if final_response_content.ends_with(ct) {
-                                    continue;
-                                }
-                                if ct.len() > 30 && final_response_content.contains(ct) {
-                                    continue;
-                                }
+            match summary_result {
+                Ok(stream) => {
+                    let mut pin = Box::pin(stream);
+                    use futures::StreamExt;
+                    while let Some(chunk) = pin.next().await {
+                        match chunk {
+                            Ok((text, _)) => {
+                                final_content.push_str(&text);
+                                yield AgentEvent::content(text);
                             }
-                            yield AgentEvent::content(chunk.clone());
-                            final_response_content.push_str(&chunk);
+                            Err(e) => {
+                                tracing::error!("Multimodal summary stream error: {}", e);
+                                break;
+                            }
                         }
                     }
-                    Err(e) => {
-                        tracing::error!("Phase 2 stream error: {}", e);
-                        break;
-                    }
+                }
+                Err(e) => {
+                    tracing::error!("Multimodal summary call failed: {}", e);
                 }
             }
 
-            // Check for empty response OR hallucination detection
-            if final_response_content.is_empty()
-                || detect_hallucination(&final_response_content, &tool_call_results)
-            {
-                // Use rich formatter instead of simple fallback
-                let fallback = format_tool_results(&tool_call_results);
-                yield AgentEvent::content(fallback.clone());
-                final_response_content = fallback;
+            // Fallback to formatted tool results if summary is empty
+            if final_content.trim().is_empty() {
+                let deduped_results = deduplicate_tool_results(&tool_call_results);
+                let formatted = format_tool_results(&deduped_results);
+                final_content = formatted.clone();
+                yield AgentEvent::content(formatted);
             }
 
-            // Clean any embedded tool call JSON from the final response content
-            let cleaned_response_content = remove_tool_calls_from_response(&final_response_content);
-
-            // Update the initial message with follow-up content
+            // Save the final content
             {
                 let mut state = internal_state.write().await;
                 if let Some(last_msg) = state.memory.last_mut() {
                     if last_msg.role == "assistant" && last_msg.tool_calls.is_some() {
-                        last_msg.content = cleaned_response_content.clone();
+                        last_msg.content = final_content.into();
                     } else {
-                        let final_msg = AgentMessage::assistant(&cleaned_response_content);
+                        let final_msg = AgentMessage::assistant(&final_content);
                         state.memory.push(final_msg);
                     }
                 } else {
-                    let final_msg = AgentMessage::assistant(&cleaned_response_content);
+                    let final_msg = AgentMessage::assistant(&final_content);
                     state.memory.push(final_msg);
                 }
             }
 
-            tracing::debug!("Multimodal tool execution and Phase 2 response complete");
+            tracing::debug!("Multimodal tool execution complete with summary");
         } else {
             // No tool calls - save response directly
             let raw_response = if buffer.is_empty() {

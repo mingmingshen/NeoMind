@@ -74,7 +74,9 @@ impl PromptBuilder {
     pub fn build_system_prompt(&self) -> String {
         let mut prompt = String::with_capacity(4096);
 
-        // ⚠️ HIGHEST PRIORITY: Language policy (must be first!)
+        // ⚠️ CRITICAL: Tool-first rule at the very top for maximum attention
+        prompt.push_str("# Rule #1: When user asks to perform an operation, output tool call JSON [{...}], NOT text like \"I will help you\".\n\n");
+
         prompt.push_str(LANGUAGE_POLICY);
         prompt.push_str("\n\n");
 
@@ -141,13 +143,20 @@ impl PromptBuilder {
 
         let mut prompt = String::with_capacity(2048);
 
-        prompt.push_str("## IMPORTANT: You MUST call tools to execute operations\n");
-        prompt
-            .push_str("1. Don't just say what you will do - directly output the tool call JSON!\n");
-        prompt.push_str("2. NEVER claim operation success without calling tools!\n");
-        prompt.push_str(
-            "3. Only use the \"✓\" mark after the tool actually executes and returns success.\n\n",
-        );
+        prompt.push_str("## ⚠️ CRITICAL RULE: You MUST call tools to execute operations\n\n");
+        prompt.push_str("When the user asks you to perform an operation (create, delete, control, query data, etc.),\n");
+        prompt.push_str("you MUST output a tool call JSON array. Do NOT just say \"I will help you...\" in text.\n\n");
+        prompt.push_str("**WRONG** — Text without tool call:\n");
+        prompt.push_str("  ❌ \"我来帮你创建规则。\" (no tool call → WRONG)\n");
+        prompt.push_str("  ❌ \"Let me check the devices for you.\" (no tool call → WRONG)\n");
+        prompt.push_str("  ❌ \"I'll create a monitoring agent now.\" (no tool call → WRONG)\n\n");
+        prompt.push_str("**CORRECT** — Output tool call JSON directly:\n");
+        prompt.push_str("  ✓ [{\"name\":\"rule\",\"arguments\":{\"action\":\"create\",\"dsl\":\"RULE ...\"}}]\n");
+        prompt.push_str("  ✓ [{\"name\":\"device\",\"arguments\":{\"action\":\"list\"}}]\n\n");
+        prompt.push_str("Rules:\n");
+        prompt.push_str("1. If user asks for an operation → output tool call JSON, NOT descriptive text\n");
+        prompt.push_str("2. NEVER claim \"✓ Done\" without a tool call returning success\n");
+        prompt.push_str("3. Only respond in plain text when NO tools are needed (greetings, general questions)\n\n");
         prompt.push_str("## Tool Call Format\n");
         prompt.push_str("[{\"name\":\"tool_name\",\"arguments\":{\"param\":\"value\"}}]\n\n");
 
@@ -216,13 +225,11 @@ You can view and analyze images uploaded by users, including:
 - **Error messages** - Interpret error codes or prompts on screen
 
 When users upload images:
-1. Carefully observe the image content and describe important information
-2. Understand user intent by combining with text questions
-3. Proactively provide solutions if the image shows device problems
-4. User-uploaded images are cached automatically. To pass them to extension commands, use `$cached:user_image`:
-   - First use `extension(action="list")` to discover available image-processing extensions
-   - Then call `extension-id:command(image="$cached:user_image")` (e.g., analysis, recognition, detection)
-   - For multiple images: `$cached:user_image`, `$cached:user_image_1`, `$cached:user_image_2`, etc."#;
+1. **ALWAYS analyze the image yourself first** using your vision capability — describe what you see, read text, identify objects
+2. Understand user intent by combining image analysis with text questions
+3. Provide your analysis and insights directly in your response
+4. Only call tools if you need supplementary data (e.g., device status, historical data) that is NOT visible in the image
+5. Do NOT delegate image analysis to external tools — you are the primary visual analyzer"#;
 
     const PRINCIPLES: &str = r#"## Interaction Principles
 

@@ -50,7 +50,7 @@ async fn send(sm: &SessionManager, sid: &str, msg: &str) -> MsgResult {
     let resp = sm.process_message(sid, msg).await.unwrap();
     let elapsed = start.elapsed();
     MsgResult {
-        content: resp.message.content.clone(),
+        content: resp.message.content.to_string(),
         tool_calls: resp.tool_calls.iter().map(|t| t.name.clone()).collect(),
         tool_results: resp
             .tool_calls
