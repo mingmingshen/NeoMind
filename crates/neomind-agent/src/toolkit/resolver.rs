@@ -56,7 +56,7 @@ impl EntityResolver {
 
         match matched.len() {
             0 => Err(format!(
-                "未找到 {} '{}'。请先调用 {entity_type}(action: 'list') 查看可用项。",
+                "{} '{}' not found. Use {entity_type}(action='list') to see available items.",
                 entity_type, input
             )),
             1 => Ok(matched[0].0.clone()),
@@ -66,9 +66,9 @@ impl EntityResolver {
                     .map(|(id, name)| format!("{} ({})", name, id))
                     .collect();
                 Err(format!(
-                    "找到多个匹配 '{}' 的{}，请指定更明确的名称: {}",
-                    input,
+                    "Multiple {} match '{}', please be more specific: {}",
                     entity_type,
+                    input,
                     list.join(", ")
                 ))
             }
@@ -149,7 +149,7 @@ mod tests {
     fn test_ambiguous_returns_error_with_candidates() {
         let result = EntityResolver::resolve("Temp", &sample_candidates(), "agent");
         let err = result.unwrap_err();
-        assert!(err.contains("多个匹配"));
+        assert!(err.contains("Multiple"));
         assert!(err.contains("Temperature Monitor"));
         assert!(err.contains("Temp Alert Agent"));
     }
@@ -158,7 +158,7 @@ mod tests {
     fn test_no_match_returns_error_with_hint() {
         let result = EntityResolver::resolve("nonexistent", &sample_candidates(), "agent");
         let err = result.unwrap_err();
-        assert!(err.contains("未找到"));
+        assert!(err.contains("not found"));
         assert!(err.contains("list"));
     }
 
@@ -171,6 +171,6 @@ mod tests {
     #[test]
     fn test_empty_candidates() {
         let result = EntityResolver::resolve("anything", &[], "agent");
-        assert!(result.unwrap_err().contains("未找到"));
+        assert!(result.unwrap_err().contains("not found"));
     }
 }

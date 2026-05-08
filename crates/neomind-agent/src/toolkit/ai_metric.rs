@@ -381,10 +381,14 @@ impl AiMetricTool {
 
         // Use seconds-level timestamps to match telemetry system convention.
         let now = chrono::Utc::now().timestamp();
-        let start = args["start_time"]
-            .as_i64()
-            .map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts })
-            .unwrap_or(now - 86400); // default: 24h ago
+        let start = if let Some(tr) = args["time_range"].as_str() {
+            now - super::aggregated::parse_time_range(tr).unwrap_or(86400)
+        } else {
+            args["start_time"]
+                .as_i64()
+                .map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts })
+                .unwrap_or(now - 86400) // default: 24h ago
+        };
         let end = args["end_time"]
             .as_i64()
             .map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts })
@@ -493,6 +497,10 @@ Common use cases: analysis scores, predictions, derived indicators, computed sta
                     "type": "string",
                     "enum": ["list", "data"],
                     "description": "Read query type: 'list' returns all AI metrics with latest values, 'data' returns time-series for a specific metric"
+                },
+                "time_range": {
+                    "type": "string",
+                    "description": "Relative time range for data query. Examples: '30min', '1h', '1d', '3d', '1w'. Use this instead of start_time/end_time."
                 },
                 "start_time": {
                     "type": "number",

@@ -1847,12 +1847,12 @@ pub async fn process_stream_events_with_safeguards(
                         .join("\n");
                     format!(
                         "Round {} of processing.\n\n\
-                        Previously executed tools:\n{}\n\n\
-                        Rules:\n\
-                        1. Do NOT repeat tools that were already executed — use their results from context.\n\
-                        2. BATCH all new tool calls in ONE response using JSON array: [{{\"name\":\"tool\",\"arguments\":{{...}}}}, ...]\n\
-                        3. Example: querying battery for 3 devices → output 3 device(query) calls in ONE array, NOT one per round.\n\
-                        4. If you have enough data, give the final response now without calling any tools.",
+                        Previously executed tools (results are in context above):\n{}\n\n\
+                        STOP AND THINK: Do you need MORE tools, or can you answer from the results above?\n\
+                        - If tools above already returned the data you need → give the final response NOW. Do NOT call them again.\n\
+                        - If you need different tools → call them in ONE batch using JSON array: [{{\"name\":\"tool\",\"arguments\":{{...}}}}]\n\
+                        - NEVER call the same tool with the same arguments — results are already in context.\n\
+                        - Example: if you already called message(list) and got 7 messages, do NOT call message(list) again — analyze those results instead.",
                         tool_iteration_count + 1,
                         executed_summary
                     )
@@ -2365,7 +2365,7 @@ pub async fn process_stream_events_with_safeguards(
                             .unwrap_or("")
                             .to_string();
                         let mut sig = vec![tc.name.clone(), action_key];
-                        for param in &["device_id", "metric", "agent_id", "rule_id", "alert_id"] {
+                        for param in &["device_id", "metric", "agent_id", "rule_id", "alert_id", "message_id", "extension_id"] {
                             if let Some(val) = tc.arguments.get(*param).and_then(|v| v.as_str()) {
                                 sig.push(val.to_string());
                             }
@@ -2404,7 +2404,7 @@ pub async fn process_stream_events_with_safeguards(
                     // Also detect when most tools in this round were already executed before.
                     // 2B models often re-call already-executed tools despite prompt instructions.
                     let total_tools = tool_calls_to_execute.len();
-                    if total_tools > 0 && already_executed_count * 100 / total_tools > 60 && tool_iteration_count >= 2 {
+                    if total_tools > 0 && already_executed_count * 100 / total_tools > 50 && tool_iteration_count >= 1 {
                         tracing::warn!(
                             already_executed = already_executed_count,
                             total = total_tools,
@@ -2416,8 +2416,9 @@ pub async fn process_stream_events_with_safeguards(
 
                     prev_round_signatures = new_tool_signatures;
 
-                    // Stop after 2 consecutive identical rounds — the LLM is stuck
-                    if consecutive_duplicate_rounds >= 2 {
+                    // Stop after 1 consecutive identical round — the LLM is stuck
+                    // (changed from 2: small models waste rounds repeating the same call)
+                    if consecutive_duplicate_rounds >= 1 {
                         tracing::warn!(
                             "LLM stuck in loop (2+ consecutive duplicate rounds). Stopping ReAct loop."
                         );
@@ -2648,7 +2649,7 @@ pub async fn process_stream_events_with_safeguards(
                                 match chunk {
                                     Ok((text, _)) => {
                                         retry_content.push_str(&text);
-                                        yield AgentEvent::content(text);
+                                        // Don't yield yet — check for tool calls first
                                     }
                                     Err(e) => {
                                         tracing::error!("Retry stream error: {}", e);
@@ -2656,14 +2657,31 @@ pub async fn process_stream_events_with_safeguards(
                                     }
                                 }
                             }
-                            if !retry_content.trim().is_empty() {
-                                raw_response = retry_content;
+
+                            // Check for tool calls in retry content and strip them.
+                            // When the first stream is interrupted, the retry may produce
+                            // tool call JSON instead of plain content. We must not yield
+                            // raw JSON to the user.
+                            let cleaned = match parse_tool_calls(&retry_content) {
+                                Ok((content, calls)) if !calls.is_empty() => {
+                                    tracing::warn!(
+                                        calls_count = calls.len(),
+                                        "Retry produced tool calls instead of content, stripping them"
+                                    );
+                                    content
+                                }
+                                _ => retry_content.clone(),
+                            };
+
+                            if !cleaned.trim().is_empty() {
+                                raw_response = cleaned.clone();
+                                yield AgentEvent::content(cleaned);
                                 tracing::info!(
                                     content_len = raw_response.len(),
                                     "Retry without thinking succeeded"
                                 );
                             } else {
-                                tracing::warn!("Retry also produced empty content");
+                                tracing::warn!("Retry produced only tool calls, using fallback");
                                 let fallback = "抱歉，模型暂时无法生成回复，请稍后重试。".to_string();
                                 raw_response = fallback.clone();
                                 yield AgentEvent::content(fallback);

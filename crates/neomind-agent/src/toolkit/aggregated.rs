@@ -19,6 +19,60 @@
 
 use std::collections::HashMap;
 
+/// Parse relative time range string to seconds.
+/// Supports: "30min", "1h", "6h", "1d", "3d", "1w", "2w", "1m" (month), "3m"
+/// Also supports: "30m" as alias for "30min"
+pub(crate) fn parse_time_range(input: &str) -> Option<i64> {
+    let s = input.trim().to_lowercase();
+    let (num, unit) = if let Some(rest) = s.strip_suffix("min") {
+        (rest.parse::<i64>().ok()?, "min")
+    } else if let Some(rest) = s.strip_suffix('h') {
+        (rest.parse::<i64>().ok()?, "h")
+    } else if let Some(rest) = s.strip_suffix('d') {
+        (rest.parse::<i64>().ok()?, "d")
+    } else if let Some(rest) = s.strip_suffix('w') {
+        (rest.parse::<i64>().ok()?, "w")
+    } else if let Some(rest) = s.strip_suffix('m') {
+        (rest.parse::<i64>().ok()?, "m") // could be minutes or months
+    } else {
+        return None;
+    };
+    Some(match unit {
+        "min" => num * 60,
+        "h" => num * 3600,
+        "d" => num * 86400,
+        "w" => num * 7 * 86400,
+        "m" if num < 60 => num * 60,       // small number → minutes
+        "m" => num * 30 * 86400,            // large number → months (approx)
+        _ => return None,
+    })
+}
+
+/// Check response_format parameter for detailed output.
+fn is_detailed(args: &serde_json::Value) -> bool {
+    args["response_format"].as_str() == Some("detailed")
+}
+
+/// Generate a "not found" error with guidance on how to list available items.
+fn not_found_msg(entity_type: &str, id: &str, list_action: &str) -> String {
+    format!(
+        "{entity_type} '{id}' not found. Use {entity_type}(action=\"{list_action}\") to see available items.",
+        entity_type = entity_type,
+        id = id,
+        list_action = list_action
+    )
+}
+
+/// Generate an "unknown action" error listing valid actions.
+fn unknown_action_msg(tool: &str, action: &str, valid: &[&str]) -> String {
+    format!(
+        "Unknown action '{}' for {}. Available actions: {}",
+        action,
+        tool,
+        valid.join(", ")
+    )
+}
+
 /// Check if a metric should be skipped entirely in LLM tool output
 /// because it contains raw/large payloads (e.g. base64 images, full MQTT messages).
 fn is_raw_payload_metric(name: &str) -> bool {
@@ -96,29 +150,32 @@ impl Tool for DeviceTool {
         r#"Device management tool for querying and controlling IoT devices.
 
 Actions:
-- list: List all devices with their available metrics and commands.
+- list: List all devices with their available metrics and commands. Use ONLY to discover device IDs and metric names.
 - latest: Device overview with ALL current (latest) metric values.
-  WITHOUT device_id: returns latest data for ALL devices in one call (batch mode). PREFERRED when user asks about multiple/all devices ("查看设备电量", "所有设备状态", "how are devices").
+  WITHOUT device_id: returns latest data for ALL devices in one call (batch mode). PREFERRED when user asks about multiple/all devices ("battery status", "all device status", "how are devices").
   WITH device_id: returns one device's metrics. Use for single device queries.
 - history: Historical time-series data for a specific metric over a time range.
   Requires device_id and metric. Returns time-ordered data points. Defaults to last 24 hours.
-  Use when user asks about trends, changes over time, or past data with a time range.
+  USE THIS when user mentions time range ("近一周", "past week", "last 3 days", "yesterday", "trend", "历史", "over time", "changes").
+  MUST pass time_range for relative time queries (e.g., time_range="1w" for "past week").
+  Do NOT use 'list' or 'latest' when the user clearly wants historical/trend data — use 'history' directly.
 - control: Send control commands to devices. Requires confirm=true to execute.
 - write_metric: Write a value to a device metric (virtual or existing). Use for calibration values, status flags,
   computed results, or any data the AI wants to persist on a device. Requires device_id, metric, value.
   Cannot overwrite physical device template metrics — use control action for that.
 
 CRITICAL: For control action, first call WITHOUT confirm=true to get a preview, then call again WITH confirm=true after user confirms.
-  Exception: if user explicitly says "yes"/"确认"/"执行" or intent is unambiguous, go directly with confirm=true.
+  Exception: if user explicitly says "yes"/"confirm"/"execute" or intent is unambiguous, go directly with confirm=true.
 
 IMPORTANT - Batch Tool Calls:
 When querying history for MULTIPLE devices, you MUST output ALL history calls in ONE
 JSON array in a single response. Do NOT call one device at a time.
 
 Important:
-- latest without device_id = ALL devices latest snapshot. USE THIS when user asks about all/multiple devices ("查看设备状态", "电量怎么样"). Do NOT call latest for each device individually.
+- When user says "近一周/过去一周/past week" → use time_range="1w". "近两天/last 2 days" → time_range="2d". "一个月/a month" → time_range="1m".
+- latest without device_id = ALL devices latest snapshot. USE THIS when user asks about all/multiple devices ("device status", "how's battery"). Do NOT call latest for each device individually.
 - latest with device_id = single device snapshot. Use for "how is device X?", "latest data for ne101" queries.
-- history = historical trend (one metric, time range). Use for "show battery trend", "temperature over time" queries.
+- history = historical trend (one metric, time range). Use time_range for relative time. Use for "show battery trend", "temperature over time" queries.
 - Always confirm user intent before using control action
 - Supports fuzzy matching on device names (partial name works)"#
     }
@@ -128,7 +185,7 @@ Important:
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["list", "latest", "history", "control", "write_metric"],
+                    "enum": ["list", "latest", "history", "query", "control", "write_metric"],
                     "description": "Operation type: 'list' (list devices), 'latest' (all current metric values), 'history' (historical time-series for one metric), 'control' (send command), 'write_metric' (write a value to a device metric)"
                 },
                 "device_id": {
@@ -154,6 +211,10 @@ Important:
                 "include_details": {
                     "type": "boolean",
                     "description": "Include metrics and commands info in list output (list action, default: true)"
+                },
+                "time_range": {
+                    "type": "string",
+                    "description": "Relative time range for history query. Examples: '30min', '1h', '6h', '1d', '3d', '1w', '2w'. Default: '24h'. Use this instead of start_time/end_time."
                 },
                 "start_time": {
                     "type": "number",
@@ -200,19 +261,12 @@ Important:
             "history" | "query" => self.execute_query(&args).await,
             "control" => self.execute_control(&args).await,
             "write_metric" => self.execute_write(&args).await,
-            _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action: '{}'. Valid actions: list, latest, history, control, write_metric",
-                action
-            ))),
+            _ => Err(ToolError::InvalidArguments(unknown_action_msg("device", action, &["list", "latest", "history", "query", "control", "write_metric"]))),
         }
     }
 }
 
 impl DeviceTool {
-    /// Check if response_format is "detailed".
-    fn is_detailed(args: &Value) -> bool {
-        args["response_format"].as_str() == Some("detailed")
-    }
 
     /// Resolve device_id with fuzzy matching support using the generic EntityResolver.
     async fn resolve_device_id(&self, device_id: &str) -> Result<String> {
@@ -228,14 +282,14 @@ impl DeviceTool {
             .map(|d| (d.device_id.clone(), d.name.clone()))
             .collect();
 
-        super::resolver::EntityResolver::resolve(device_id, &candidates, "设备")
+        super::resolver::EntityResolver::resolve(device_id, &candidates, "device")
             .map_err(ToolError::Execution)
     }
 
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
         let devices = self.device_service.list_devices();
         let device_type_filter = args["device_type"].as_str();
-        let detailed = Self::is_detailed(args);
+        let detailed = is_detailed(args);
 
         let mut result = Vec::new();
 
@@ -355,9 +409,9 @@ impl DeviceTool {
         let device = self
             .device_service
             .get_device(&device_id)
-            .ok_or_else(|| ToolError::Execution(format!("Device not found: {}", device_id)))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Device", &device_id, "list")))?;
 
-        let detailed = Self::is_detailed(args);
+        let detailed = is_detailed(args);
 
         let device_json = self
             .build_device_latest_json(&device, detailed)
@@ -368,7 +422,7 @@ impl DeviceTool {
 
     /// Batch latest: return latest metrics for ALL devices in one call.
     async fn execute_get_batch(&self, args: &Value) -> Result<ToolOutput> {
-        let detailed = Self::is_detailed(args);
+        let detailed = is_detailed(args);
         let devices = self.device_service.list_devices();
 
         if devices.is_empty() {
@@ -584,12 +638,9 @@ impl DeviceTool {
         let storage = self
             .storage
             .as_ref()
-            .ok_or_else(|| ToolError::Execution("Storage not configured".into()))?;
+            .ok_or_else(|| ToolError::Execution("Storage is not available. Data query requires storage to be configured.".into()))?;
 
         let metric = args["metric"].as_str();
-        let end_time = args["end_time"]
-            .as_i64()
-            .unwrap_or_else(|| chrono::Utc::now().timestamp());
         let metric_str = metric.unwrap_or("");
         // Image/snapshot metrics use a wider default time window (48h) because devices
         // may capture images infrequently. Regular metrics default to 24h to ensure
@@ -603,9 +654,17 @@ impl DeviceTool {
         } else {
             24 * 3600 // 24 hours (was 1h - too short for infrequent metrics like battery)
         };
-        let start_time = args["start_time"]
-            .as_i64()
-            .unwrap_or(end_time - default_window);
+        let end_time = chrono::Utc::now().timestamp();
+        let start_time = if let Some(tr) = args["time_range"].as_str() {
+            // Prefer time_range for relative time
+            end_time - parse_time_range(tr).unwrap_or(default_window)
+        } else if let Some(st) = args["start_time"].as_i64() {
+            st
+        } else if let Some(et) = args["end_time"].as_i64() {
+            et - default_window
+        } else {
+            end_time - default_window
+        };
         // When the user specifies an explicit limit, respect it.
         // Otherwise, return all points in the time range (up to a safety cap of 2000).
         // This lets the LLM query "past hour" and get all ~60 per-minute points
@@ -843,10 +902,7 @@ impl DeviceTool {
                 }
             }
         } else {
-            return Ok(ToolOutput::error(format!(
-                "Device not found: {}",
-                device_id
-            )));
+            return Ok(ToolOutput::error(not_found_msg("Device", &device_id, "list")));
         }
 
         // Confirmation check
@@ -914,7 +970,7 @@ impl DeviceTool {
         let storage = self
             .storage
             .as_ref()
-            .ok_or_else(|| ToolError::Execution("Storage not configured".into()))?;
+            .ok_or_else(|| ToolError::Execution("Storage is not available. Data query requires storage to be configured.".into()))?;
 
         let timestamp = args["timestamp"]
             .as_i64()
@@ -929,7 +985,7 @@ impl DeviceTool {
         storage
             .write(&device_id, metric, point)
             .await
-            .map_err(|e| ToolError::Execution(format!("Failed to write metric: {}", e)))?;
+            .map_err(|e| ToolError::Execution(format!("Failed to write metric to device. {}", e)))?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "device_id": device_id,
@@ -1073,7 +1129,7 @@ When to use send_message vs invoke:
                 },
                 "user_prompt": {
                     "type": "string",
-                    "description": "DETAILED requirements for the agent (create action). Write a structured, specific prompt describing: 1) What to monitor/check, 2) Thresholds/conditions, 3) Actions to take when conditions met, 4) Output format. Example: '检查所有温度传感器的最新读数。如果任何传感器温度超过30°C，立即发送紧急通知。同时每小时生成一份温度摘要报告。使用中文回复。' NOT just copying user input — expand into a proper agent instruction."
+                    "description": "DETAILED requirements for the agent (create action). Write a structured, specific prompt describing: 1) What to monitor/check, 2) Thresholds/conditions, 3) Actions to take when conditions met, 4) Output format. Example: 'Check all temperature sensors for latest readings. If any sensor exceeds 30C, send an urgent alert immediately. Also generate an hourly temperature summary report.' NOT just copying user input — expand into a proper agent instruction."
                 },
                 "schedule_type": {
                     "type": "string",
@@ -1146,19 +1202,12 @@ When to use send_message vs invoke:
             "executions" => self.execute_executions(&args).await,
             "conversation" => self.execute_conversation(&args).await,
             "latest_execution" => self.execute_latest_execution(&args).await,
-            _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action: {}",
-                action
-            ))),
+            _ => Err(ToolError::InvalidArguments(unknown_action_msg("agent", action, &["list", "get", "create", "update", "control", "memory", "send_message", "invoke", "executions", "conversation", "latest_execution"]))),
         }
     }
 }
 
 impl AgentTool {
-    fn is_detailed(args: &Value) -> bool {
-        args["response_format"].as_str() == Some("detailed")
-    }
-
     /// Resolve agent_id with fuzzy matching using EntityResolver.
     async fn resolve_agent_id(&self, input: &str) -> Result<String> {
         // Fast path: exact ID match
@@ -1215,7 +1264,7 @@ impl AgentTool {
         let list: Vec<Value> = agents
             .iter()
             .map(|a| {
-                if Self::is_detailed(args) {
+                if is_detailed(args) {
                     serde_json::json!({
                         "id": a.id,
                         "name": a.name,
@@ -1252,7 +1301,7 @@ impl AgentTool {
             .get_agent(&resolved_id)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", resolved_id)))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", &resolved_id, "list")))?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "id": agent.id,
@@ -1466,7 +1515,7 @@ impl AgentTool {
             .get_agent(&resolved_id)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", resolved_id)))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", &resolved_id, "list")))?;
 
         if let Some(name) = args["name"].as_str() {
             agent.name = name.to_string();
@@ -1548,7 +1597,7 @@ impl AgentTool {
             .get_agent(&agent_id)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", agent_id)))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", &agent_id, "list")))?;
 
         let memory_type = args["memory_type"].as_str().unwrap_or("patterns");
         let limit = args["limit"].as_u64().unwrap_or(20) as usize;
@@ -1598,7 +1647,7 @@ impl AgentTool {
 
     async fn execute_invoke(&self, args: &Value) -> Result<ToolOutput> {
         let invoker = self.agent_invoker.as_ref().ok_or_else(|| {
-            ToolError::Execution("Agent invocation is not available in this context".to_string())
+            ToolError::Execution("Agent invocation is not available. The agent executor is not configured in this session.".to_string())
         })?;
 
         let agent_id_input = args["agent_id"]
@@ -1618,10 +1667,13 @@ impl AgentTool {
             None
         };
 
-        let result = invoker
-            .invoke_agent(&agent_id, invocation_input)
-            .await
-            .map_err(|e| ToolError::Execution(e))?;
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(120),
+            invoker.invoke_agent(&agent_id, invocation_input),
+        )
+        .await
+        .map_err(|_| ToolError::Execution("Agent invocation timed out after 120 seconds. The agent may be stuck or the task is too complex. Try simplifying the request or check the agent's status.".into()))?
+        .map_err(|e| ToolError::Execution(e))?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "execution_id": result.execution_id,
@@ -1646,7 +1698,7 @@ impl AgentTool {
             .get_agent(agent_id)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", agent_id)))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", &agent_id, "list")))?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "agent_id": agent_id,
@@ -1664,12 +1716,12 @@ impl AgentTool {
                         || s.starts_with("/9j/")
                         || s.starts_with("iVBOR")
                     {
-                        serde_json::json!(format!("[图像数据: {:.1}MB, 已省略]", size_mb))
+                        serde_json::json!(format!("[image data: {:.1}MB, omitted]", size_mb))
                     } else if size_mb > 0.1 {
-                        serde_json::json!(format!("[大数据: {:.1}MB, 已省略]", size_mb))
+                        serde_json::json!(format!("[large data: {:.1}MB, omitted]", size_mb))
                     } else {
                         serde_json::json!(format!(
-                            "[{}...已省略{}字符]",
+                            "[{}...{} chars omitted]",
                             &s[..max_str_len.min(s.len())],
                             s.len() - max_str_len.min(s.len())
                         ))
@@ -1767,7 +1819,7 @@ impl AgentTool {
             .get_agent(agent_id)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", agent_id)))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", &agent_id, "list")))?;
 
         let conversation: Vec<Value> = agent
             .conversation_history
@@ -1803,7 +1855,7 @@ impl AgentTool {
             .get_agent(agent_id_input)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", agent_id_input)))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", &agent_id_input, "list")))?;
 
         let last_turn = agent.conversation_history.first();
 
@@ -2001,6 +2053,10 @@ RULE "Safety Check" WHEN (smoke_01.level > 50) AND (temp_01.temperature > 60) DO
                     "type": "number",
                     "description": "Max results to return. Default: 100"
                 },
+                "time_range": {
+                    "type": "string",
+                    "description": "Relative time range for history query. Examples: '30min', '1h', '1d', '1w', '2w'. Use this instead of start_time/end_time."
+                },
                 "start_time": {
                     "type": "number",
                     "description": "Start timestamp for history range (history action). Unix timestamp in seconds"
@@ -2040,19 +2096,12 @@ RULE "Safety Check" WHEN (smoke_01.level > 50) AND (temp_01.temperature > 60) DO
             "delete" => self.execute_delete(&args).await,
             "history" => self.execute_history(&args).await,
             "enable" => self.execute_enable(&args).await,
-            _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action: {}",
-                action
-            ))),
+            _ => Err(ToolError::InvalidArguments(unknown_action_msg("rule", action, &["list", "get", "create", "update", "delete", "history", "enable"]))),
         }
     }
 }
 
 impl RuleTool {
-    fn is_detailed(args: &Value) -> bool {
-        args["response_format"].as_str() == Some("detailed")
-    }
-
     /// Resolve rule_id with fuzzy matching using EntityResolver.
     async fn resolve_rule_id(&self, input: &str) -> Result<String> {
         // Try exact parse first
@@ -2069,7 +2118,7 @@ impl RuleTool {
             .map(|r| (r.id.to_string(), r.name.clone()))
             .collect();
 
-        super::resolver::EntityResolver::resolve(input, &candidates, "规则")
+        super::resolver::EntityResolver::resolve(input, &candidates, "rule")
             .map_err(ToolError::Execution)
     }
 
@@ -2078,7 +2127,7 @@ impl RuleTool {
 
         let name_filter = args["name_filter"].as_str();
         let limit = args["limit"].as_u64().unwrap_or(100) as usize;
-        let detailed = Self::is_detailed(args);
+        let detailed = is_detailed(args);
 
         let filtered: Vec<Value> = rules
             .iter()
@@ -2138,7 +2187,7 @@ impl RuleTool {
             .rule_engine
             .get_rule(&rule_id)
             .await
-            .ok_or_else(|| ToolError::Execution(format!("Rule not found: {}", resolved_id)))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Rule", &resolved_id, "list")))?;
 
         let status_str = match rule.status {
             neomind_rules::RuleStatus::Active => "active",
@@ -2199,12 +2248,12 @@ impl RuleTool {
             .rule_engine
             .add_rule_from_dsl(dsl)
             .await
-            .map_err(|e| ToolError::Execution(format!("Failed to create rule: {}", e)))?;
+            .map_err(|e| ToolError::Execution(format!("Failed to create rule. Check DSL syntax and try again. Error: {}", e)))?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "id": rule_id.to_string(),
             "status": "created",
-            "message": "规则创建成功"
+            "message": "Rule created successfully"
         })))
     }
 
@@ -2237,19 +2286,19 @@ impl RuleTool {
         self.rule_engine
             .remove_rule(&rule_id)
             .await
-            .map_err(|e| ToolError::Execution(format!("Failed to remove old rule: {}", e)))?;
+            .map_err(|e| ToolError::Execution(format!("Failed to replace rule during update. Error: {}", e)))?;
 
         // Parse and add the new rule
         let new_rule_id =
             self.rule_engine.add_rule_from_dsl(dsl).await.map_err(|e| {
-                ToolError::Execution(format!("Failed to create updated rule: {}", e))
+                ToolError::Execution(format!("Failed to create updated rule. Check DSL syntax and try again. Error: {}", e))
             })?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "id": new_rule_id.to_string(),
             "old_id": resolved_id,
             "status": "updated",
-            "message": "规则更新成功"
+            "message": "Rule updated successfully"
         })))
     }
 
@@ -2257,7 +2306,7 @@ impl RuleTool {
         let storage = self
             .history_storage
             .as_ref()
-            .ok_or_else(|| ToolError::Execution("History storage not configured".into()))?;
+            .ok_or_else(|| ToolError::Execution("History storage is not available. Rule history requires storage to be configured.".into()))?;
 
         use neomind_rules::HistoryFilter;
 
@@ -2266,11 +2315,18 @@ impl RuleTool {
         if let Some(rule_id) = args["rule_id"].as_str() {
             filter.rule_id = Some(rule_id.to_string());
         }
-        if let Some(start) = args["start_time"].as_i64() {
-            filter.start = Some(chrono::DateTime::from_timestamp(start, 0).unwrap_or_default());
-        }
-        if let Some(end) = args["end_time"].as_i64() {
-            filter.end = Some(chrono::DateTime::from_timestamp(end, 0).unwrap_or_default());
+        if let Some(tr) = args["time_range"].as_str() {
+            let now = chrono::Utc::now();
+            let seconds = parse_time_range(tr).unwrap_or(24 * 3600);
+            filter.start = Some(now - chrono::Duration::seconds(seconds));
+            filter.end = Some(now);
+        } else {
+            if let Some(start) = args["start_time"].as_i64() {
+                filter.start = Some(chrono::DateTime::from_timestamp(start, 0).unwrap_or_default());
+            }
+            if let Some(end) = args["end_time"].as_i64() {
+                filter.end = Some(chrono::DateTime::from_timestamp(end, 0).unwrap_or_default());
+            }
         }
         if let Some(limit) = args["limit"].as_u64() {
             filter.limit = Some(limit as usize);
@@ -2302,7 +2358,7 @@ impl RuleTool {
             self.rule_engine
                 .resume_rule(&rule_id)
                 .await
-                .map_err(|e| ToolError::Execution(format!("Failed to resume rule: {}", e)))?;
+                .map_err(|e| ToolError::Execution(format!("Failed to resume rule. The rule engine may be busy. Error: {}", e)))?;
 
             Ok(ToolOutput::success(serde_json::json!({
                 "id": resolved_id,
@@ -2314,7 +2370,7 @@ impl RuleTool {
             self.rule_engine
                 .pause_rule(&rule_id)
                 .await
-                .map_err(|e| ToolError::Execution(format!("Failed to pause rule: {}", e)))?;
+                .map_err(|e| ToolError::Execution(format!("Failed to pause rule. The rule engine may be busy. Error: {}", e)))?;
 
             Ok(ToolOutput::success(serde_json::json!({
                 "id": resolved_id,
@@ -2450,6 +2506,10 @@ Tips:
                     "type": "string",
                     "description": "Filter by priority level (list action): 'info', 'notice', 'important', 'urgent'"
                 },
+                "time_range": {
+                    "type": "string",
+                    "description": "Relative time range for listing messages. Examples: '30min', '1h', '1d', '3d', '1w'. Use when user asks about messages in a time period."
+                },
                 "limit": {
                     "type": "number",
                     "description": "Max messages to return (list action). Default: 50"
@@ -2478,19 +2538,12 @@ Tips:
             "get" => self.execute_get(&args).await,
             "send" | "create" => self.execute_send(&args).await,
             "read" | "acknowledge" => self.execute_read(&args).await,
-            _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action: '{}'. Valid actions: list, get, send, read",
-                action
-            ))),
+            _ => Err(ToolError::InvalidArguments(unknown_action_msg("message", action, &["list", "get", "send", "read"]))),
         }
     }
 }
 
 impl MessageTool {
-    fn is_detailed(args: &Value) -> bool {
-        args["response_format"].as_str() == Some("detailed")
-    }
-
     /// Map user-facing level string to internal MessageSeverity.
     fn level_to_severity(level: &str) -> neomind_messages::MessageSeverity {
         use neomind_messages::MessageSeverity;
@@ -2561,7 +2614,7 @@ impl MessageTool {
             .map(|m| (m.id.clone(), m.title.clone()))
             .collect();
 
-        super::resolver::EntityResolver::resolve(input, &candidates, "消息")
+        super::resolver::EntityResolver::resolve(input, &candidates, "message")
             .map_err(ToolError::Execution)
     }
 
@@ -2574,13 +2627,25 @@ impl MessageTool {
             .as_str()
             .or_else(|| args["severity_filter"].as_str());
         let limit = args["limit"].as_u64().unwrap_or(50) as usize;
-        let detailed = Self::is_detailed(args);
+        let detailed = is_detailed(args);
+
+        // Compute time range cutoff if specified
+        let cutoff = args["time_range"]
+            .as_str()
+            .and_then(parse_time_range)
+            .map(|secs| chrono::Utc::now() - chrono::Duration::seconds(secs));
 
         // Use message_manager if available, otherwise use in-memory storage
         if let Some(manager) = &self.message_manager {
             use neomind_messages::MessageType;
 
-            let msgs = manager.list_active_messages().await;
+            // When time_range is specified, we need all messages (not just active)
+            // to include recently acknowledged ones within the time window.
+            let msgs = if cutoff.is_some() {
+                manager.list_messages().await
+            } else {
+                manager.list_active_messages().await
+            };
 
             let filtered: Vec<Value> = msgs
                 .into_iter()
@@ -2589,6 +2654,13 @@ impl MessageTool {
                 .filter(|m| {
                     if let Some(lvl) = level_filter {
                         Self::level_matches(lvl, &m.severity)
+                    } else {
+                        true
+                    }
+                })
+                .filter(|m| {
+                    if let Some(ref c) = cutoff {
+                        m.timestamp >= *c
                     } else {
                         true
                     }
@@ -2634,10 +2706,22 @@ impl MessageTool {
                         true
                     }
                 })
+                .filter(|m| {
+                    if let Some(ref c) = cutoff {
+                        let msg_time = chrono::DateTime::from_timestamp(m.created_at, 0)
+                            .unwrap_or_default();
+                        msg_time >= *c
+                    } else {
+                        true
+                    }
+                })
                 .take(limit)
                 .map(|m| {
                     if detailed {
-                        serde_json::to_value(m).expect("skill metadata serialization should not fail")
+                        serde_json::to_value(m).unwrap_or_else(|_| serde_json::json!({
+                            "id": m.id,
+                            "title": m.title,
+                        }))
                     } else {
                         serde_json::json!({
                             "id": m.id,
@@ -2674,7 +2758,7 @@ impl MessageTool {
             let msg = manager
                 .get_message(&msg_id)
                 .await
-                .ok_or_else(|| ToolError::Execution("Message not found".into()))?;
+                .ok_or_else(|| ToolError::Execution(not_found_msg("Message", id_str, "list")))?;
 
             let level_str = Self::severity_to_level(msg.severity);
 
@@ -2692,7 +2776,7 @@ impl MessageTool {
             let msg = msgs
                 .iter()
                 .find(|m| m.id == resolved_id)
-                .ok_or_else(|| ToolError::Execution("Message not found".into()))?;
+                .ok_or_else(|| ToolError::Execution(not_found_msg("Message", id_str, "list")))?;
 
             Ok(ToolOutput::success(serde_json::json!({
                 "id": msg.id,
@@ -2796,7 +2880,7 @@ impl MessageTool {
             let msg = msgs
                 .iter_mut()
                 .find(|m| m.id == resolved_id)
-                .ok_or_else(|| ToolError::Execution("Message not found".into()))?;
+                .ok_or_else(|| ToolError::Execution(not_found_msg("Message", id_str, "list")))?;
 
             msg.read = true;
 
@@ -2890,9 +2974,9 @@ Tips:
             "get" => self.execute_get(&args).await,
             "status" => self.execute_status(&args).await,
             // Backward compat: execute still works but delegates to direct command execution
-            "execute" => self.execute_command_compat(&args).await,
+            "execute" => self.execute_command(&args).await,
             _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action: '{}'. Valid actions: list, get, status. To execute extension commands, call them directly: extension-id:command",
+                "Unknown action '{}' for extension. Available actions: list, get, status. To execute extension commands, call them directly: extension-id:command",
                 action
             ))),
         }
@@ -2900,10 +2984,6 @@ Tips:
 }
 
 impl ExtensionAggregatedTool {
-    fn is_detailed(args: &Value) -> bool {
-        args["response_format"].as_str() == Some("detailed")
-    }
-
     /// Resolve extension_id with fuzzy matching using EntityResolver.
     async fn resolve_extension_id(&self, input: &str) -> Result<String> {
         // Fast path: exact ID match
@@ -2918,12 +2998,12 @@ impl ExtensionAggregatedTool {
             .map(|e| (e.metadata.id.clone(), e.metadata.name.clone()))
             .collect();
 
-        super::resolver::EntityResolver::resolve(input, &candidates, "扩展")
+        super::resolver::EntityResolver::resolve(input, &candidates, "extension")
             .map_err(ToolError::Execution)
     }
 
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
-        let detailed = Self::is_detailed(args);
+        let detailed = is_detailed(args);
         let extensions = self.registry.list().await;
 
         let items: Vec<Value> = extensions
@@ -2963,7 +3043,7 @@ impl ExtensionAggregatedTool {
         let extension_id = self.resolve_extension_id(raw_id).await?;
 
         let info = self.registry.get_info(&extension_id).await.ok_or_else(|| {
-            ToolError::Execution(format!("Extension '{}' not found", extension_id))
+            ToolError::Execution(not_found_msg("Extension", &extension_id, "list"))
         })?;
 
         let commands: Vec<Value> = info
@@ -3009,7 +3089,7 @@ impl ExtensionAggregatedTool {
         let extension_id = self.resolve_extension_id(raw_id).await?;
 
         let info = self.registry.get_info(&extension_id).await.ok_or_else(|| {
-            ToolError::Execution(format!("Extension '{}' not found", extension_id))
+            ToolError::Execution(not_found_msg("Extension", &extension_id, "list"))
         })?;
 
         let healthy = self
@@ -3030,7 +3110,7 @@ impl ExtensionAggregatedTool {
 
     /// Backward-compatible execute action for legacy callers.
     /// Delegates to the registry's execute_command directly.
-    async fn execute_command_compat(&self, args: &Value) -> Result<ToolOutput> {
+    async fn execute_command(&self, args: &Value) -> Result<ToolOutput> {
         let raw_id = args["extension_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("extension_id is required".into()))?;
@@ -3044,7 +3124,7 @@ impl ExtensionAggregatedTool {
             .registry
             .execute_command(&extension_id, command, &params)
             .await
-            .map_err(|e| ToolError::Execution(format!("Extension command failed: {}", e)))?;
+            .map_err(|e| ToolError::Execution(format!("Extension command failed. Check extension status with extension(action=\"status\", extension_id=...). Error: {}", e)))?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "extension_id": extension_id,
@@ -3185,10 +3265,7 @@ Examples:
             "update" => self.execute_update(&args).await,
             "delete" => self.execute_delete(&args).await,
             "test" => self.execute_test(&args).await,
-            _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action: '{}'. Valid: list, get, create, update, delete, test",
-                action
-            ))),
+            _ => Err(ToolError::InvalidArguments(unknown_action_msg("transform", action, &["list", "get", "create", "update", "delete", "test"]))),
         }
     }
 }
@@ -3246,7 +3323,7 @@ impl TransformTool {
                 "last_executed": t["last_executed"],
                 "created_at": t["created_at"],
             }))),
-            None => Err(ToolError::Execution(format!("Transform not found: {}", id))),
+            None => Err(ToolError::Execution(not_found_msg("Transform", &id, "list"))),
         }
     }
 
@@ -3309,7 +3386,7 @@ impl TransformTool {
             .get_transform(id)
             .await
             .map_err(|e| ToolError::Execution(e))?
-            .ok_or_else(|| ToolError::Execution(format!("Transform not found: {}", id)))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Transform", &id, "list")))?;
 
         // Merge changed fields
         // Note: TransformAutomation uses #[serde(flatten)] for metadata,
@@ -3373,7 +3450,7 @@ impl TransformTool {
                 "status": "deleted"
             })))
         } else {
-            Err(ToolError::Execution(format!("Transform not found: {}", id)))
+            Err(ToolError::Execution(not_found_msg("Transform", &id, "list")))
         }
     }
 
@@ -3387,7 +3464,7 @@ impl TransformTool {
             .get_transform(id)
             .await
             .map_err(|e| ToolError::Execution(e))?
-            .ok_or_else(|| ToolError::Execution(format!("Transform not found: {}", id)))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Transform", &id, "list")))?;
 
         let js_code = transform["js_code"]
             .as_str()
@@ -3527,7 +3604,7 @@ Tips: Common pitfalls and best practices."#
                 },
                 "query": {
                     "type": "string",
-                    "description": "Search query for keyword matching (search action). Example: '删除规则', 'device control', 'create agent'"
+                    "description": "Search query for keyword matching (search action). Example: 'delete rule', 'device control', 'create agent'"
                 },
                 "id": {
                     "type": "string",
@@ -3637,7 +3714,8 @@ Tips: Common pitfalls and best practices."#
                 let mut registry_guard = self.registry.write().await;
                 match registry_guard.add_user_skill(content) {
                     Ok(id) => {
-                        let skill = registry_guard.get(&id).expect("skill was just added to registry");
+                        let skill = registry_guard.get(&id)
+                            .ok_or_else(|| ToolError::Execution("Skill created but not found in registry".into()))?;
                         self.persist(&id, content);
                         Ok(ToolOutput::success(serde_json::json!({
                             "id": skill.metadata.id,
@@ -3646,7 +3724,7 @@ Tips: Common pitfalls and best practices."#
                             "message": format!("Skill '{}' created successfully", id),
                         })))
                     }
-                    Err(e) => Ok(ToolOutput::error(format!("Failed to create skill: {}", e))),
+                    Err(e) => Ok(ToolOutput::error(format!("Failed to create skill. Check YAML frontmatter format and try again. Error: {}", e))),
                 }
             }
             "update" => {
@@ -3662,7 +3740,8 @@ Tips: Common pitfalls and best practices."#
                 let mut registry_guard = self.registry.write().await;
                 match registry_guard.update_user_skill(id, content) {
                     Ok(()) => {
-                        let skill = registry_guard.get(id).expect("skill was just updated in registry");
+                        let skill = registry_guard.get(id)
+                            .ok_or_else(|| ToolError::Execution("Skill updated but not found in registry".into()))?;
                         self.persist(id, content);
                         Ok(ToolOutput::success(serde_json::json!({
                             "id": skill.metadata.id,
@@ -3670,7 +3749,7 @@ Tips: Common pitfalls and best practices."#
                             "message": format!("Skill '{}' updated successfully", id),
                         })))
                     }
-                    Err(e) => Ok(ToolOutput::error(format!("Failed to update skill: {}", e))),
+                    Err(e) => Ok(ToolOutput::error(format!("Failed to update skill. Check YAML frontmatter format and try again. Error: {}", e))),
                 }
             }
             "delete" => {
@@ -3690,13 +3769,10 @@ Tips: Common pitfalls and best practices."#
                             "message": format!("Skill '{}' ('{}') deleted successfully", id, skill.metadata.name),
                         })))
                     }
-                    Err(e) => Ok(ToolOutput::error(format!("Failed to delete skill: {}", e))),
+                    Err(e) => Ok(ToolOutput::error(format!("Failed to delete skill. Error: {}", e))),
                 }
             }
-            _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action '{}'. Use: search, list, get, create, update, delete",
-                action
-            ))),
+            _ => Err(ToolError::InvalidArguments(unknown_action_msg("skill", action, &["search", "list", "get", "create", "update", "delete"]))),
         }
     }
 }
