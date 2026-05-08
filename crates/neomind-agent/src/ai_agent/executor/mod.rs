@@ -342,38 +342,38 @@ impl AgentExecutor {
     /// that are parsed from its text response, executed, and the results fed back
     /// for further reasoning.
     /// Filter tool definitions based on agent's allowed_tools config.
+    ///
+    /// Uses cached definitions directly — no JSON round-trip.
     fn filter_tools(
         registry: &crate::toolkit::registry::ToolRegistry,
         tool_config: &Option<AgentToolConfig>,
     ) -> Vec<neomind_core::llm::backend::ToolDefinition> {
-        let tool_defs_json = registry.definitions_json();
-        let tools_list = tool_defs_json
-            .get("tools")
-            .and_then(|t| t.as_array())
-            .cloned()
-            .unwrap_or_default();
+        let defs = registry.definitions();
 
         let to_tool_def =
-            |t: &serde_json::Value| -> Option<neomind_core::llm::backend::ToolDefinition> {
-                Some(neomind_core::llm::backend::ToolDefinition {
-                    name: t.get("name")?.as_str()?.to_string(),
-                    description: t.get("description")?.as_str()?.to_string(),
-                    parameters: t.get("parameters")?.clone(),
-                })
+            |d: &crate::toolkit::tool::ToolDefinition| -> neomind_core::llm::backend::ToolDefinition {
+                neomind_core::llm::backend::ToolDefinition {
+                    name: d.name.clone(),
+                    description: d.description.clone(),
+                    parameters: d.parameters.clone(),
+                }
             };
 
         match tool_config {
-            Some(config) if !config.allowed_tools.is_empty() => tools_list
-                .iter()
-                .filter(|t| {
-                    t.get("name")
-                        .and_then(|n| n.as_str())
-                        .map(|n| config.allowed_tools.contains(&n.to_string()))
-                        .unwrap_or(true)
-                })
-                .filter_map(|t| to_tool_def(t))
-                .collect(),
-            _ => tools_list.iter().filter_map(|t| to_tool_def(t)).collect(),
+            Some(config) if !config.allowed_tools.is_empty() => {
+                // Build a HashSet for O(1) lookup instead of Vec linear scan
+                let allowed: std::collections::HashSet<&str> = config
+                    .allowed_tools
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect();
+
+                defs.iter()
+                    .filter(|d| allowed.contains(d.name.as_str()))
+                    .map(to_tool_def)
+                    .collect()
+            }
+            _ => defs.iter().map(to_tool_def).collect(),
         }
     }
 
@@ -797,16 +797,12 @@ impl AgentExecutor {
                         // Sanitize base64/image data to prevent context bloat
                         let sanitized =
                             crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
-                        // UTF-8 safe truncation
+                        // UTF-8 safe truncation (has fast-path for short strings)
                         const MAX_TOOL_RESULT_IN_MSG: usize = 4000;
-                        if sanitized.chars().count() > MAX_TOOL_RESULT_IN_MSG {
-                            crate::agent::streaming::truncate_result_utf8(
-                                &sanitized,
-                                MAX_TOOL_RESULT_IN_MSG,
-                            )
-                        } else {
-                            sanitized
-                        }
+                        crate::agent::streaming::truncate_result_utf8(
+                            &sanitized,
+                            MAX_TOOL_RESULT_IN_MSG,
+                        )
                     }
                     Err(e) => format!("Error: {}", e),
                 };
@@ -883,14 +879,10 @@ impl AgentExecutor {
                         // Sanitize base64/image data to prevent context bloat
                         let sanitized =
                             crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
-                        if sanitized.chars().count() > TOOL_RESULT_MAX_LEN {
-                            crate::agent::streaming::truncate_result_utf8(
-                                &sanitized,
-                                TOOL_RESULT_MAX_LEN,
-                            )
-                        } else {
-                            sanitized
-                        }
+                        crate::agent::streaming::truncate_result_utf8(
+                            &sanitized,
+                            TOOL_RESULT_MAX_LEN,
+                        )
                     }
                     Err(e) => format!("Error: {}", e),
                 };

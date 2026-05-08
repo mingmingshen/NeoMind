@@ -507,8 +507,7 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                         // For Push mode: bridge runner PushOutput IPC into the websocket router.
                                         if cap.mode == StreamMode::Push {
                                             // Create per-session channel for push outputs
-                                            let (tx, rx) = mpsc::channel::<PushOutputMessage>(32);
-                                            push_rx = Some(rx);
+                                            let (tx, mut rx) = mpsc::channel::<PushOutputMessage>(32);
 
                                             // Register with router
                                             push_router.register(sid.clone(), tx).await;
@@ -522,7 +521,6 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                 )
                                                 .await;
                                                 push_router.unregister(&sid).await;
-                                                push_rx = None;
                                                 continue;
                                             };
 
@@ -564,9 +562,170 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                 )
                                                 .await;
                                                 push_router.unregister(&sid).await;
-                                                push_rx = None;
                                                 continue;
                                             }
+
+                                            drop(ext);
+
+                                            // Send session created (before moving socket)
+                                            send_message(
+                                                &mut socket,
+                                                &ServerMessage::SessionCreated {
+                                                    session_id: sid.clone(),
+                                                    server_time: chrono::Utc::now().timestamp_millis(),
+                                                },
+                                            )
+                                            .await;
+
+                                            tracing::info!(
+                                                "Push session {} entering non-blocking stream loop",
+                                                sid
+                                            );
+
+                                            // ── Non-blocking push mode ──────────────────────
+                                            // Spawn a dedicated WebSocket I/O task that owns the
+                                            // socket. Uses a watch channel so only the LATEST frame
+                                            // is kept — old frames are automatically replaced.
+                                            // This is ideal for video streaming where showing the
+                                            // most recent frame matters more than delivering every one.
+                                            let (ws_out_tx, mut ws_out_rx) =
+                                                tokio::sync::watch::channel(String::new());
+                                            let (ws_in_tx, mut ws_in_rx) = mpsc::channel::<String>(8);
+                                            // Done signal: avoids JoinHandle panic on re-poll
+                                            let (ws_done_tx, mut ws_done_rx) = mpsc::channel::<()>(1);
+
+                                            let ws_task = tokio::spawn(async move {
+                                                let mut frame_count: u64 = 0;
+                                                let result = async {
+                                                    loop {
+                                                        tokio::select! {
+                                                            msg = socket.recv() => {
+                                                                match msg {
+                                                                    Some(Ok(WsMessage::Text(text))) => {
+                                                                        let _ = ws_in_tx.send(text).await;
+                                                                    }
+                                                                    Some(Ok(WsMessage::Close(_))) | None => {
+                                                                        tracing::info!(
+                                                                            frames_sent = frame_count,
+                                                                            "WebSocket closed by client or EOF"
+                                                                        );
+                                                                        return;
+                                                                    }
+                                                                    Some(Ok(WsMessage::Ping(data))) => {
+                                                                        if socket.send(WsMessage::Pong(data)).await.is_err() {
+                                                                            tracing::info!(frames_sent = frame_count, "Pong send failed");
+                                                                            return;
+                                                                        }
+                                                                    }
+                                                                    _ => {}
+                                                                }
+                                                            }
+                                                            _ = ws_out_rx.changed() => {
+                                                                let json = ws_out_rx.borrow_and_update().clone();
+                                                                if socket.send(WsMessage::Text(json)).await.is_err() {
+                                                                    tracing::info!(
+                                                                        frames_sent = frame_count,
+                                                                        "WebSocket send error, connection lost"
+                                                                    );
+                                                                    return;
+                                                                }
+                                                                frame_count += 1;
+                                                            }
+                                                        }
+                                                    }
+                                                }.await;
+                                                let _ = ws_done_tx.send(()).await;
+                                                result
+                                            });
+
+                                            // Push output loop — never blocks on socket I/O
+                                            let mut frames_received: u64 = 0;
+                                            let mut frames_dropped: u64 = 0;
+                                            loop {
+                                                tokio::select! {
+                                                    output = rx.recv() => {
+                                                        match output {
+                                                            Some(output) => {
+                                                                frames_received += 1;
+                                                                let push_msg = ServerMessage::PushOutput {
+                                                                    session_id: output.session_id,
+                                                                    sequence: output.sequence,
+                                                                    data: BASE64_STANDARD.encode(&output.data),
+                                                                    data_type: output.data_type,
+                                                                    timestamp: output.timestamp,
+                                                                    metadata: output.metadata,
+                                                                };
+                                                                if let Ok(json) = serde_json::to_string(&push_msg) {
+                                                                    // watch::send replaces old value (latest frame wins)
+                                                                    let is_new = ws_out_tx.send(json).is_ok();
+                                                                    if !is_new {
+                                                                        frames_dropped += 1;
+                                                                    }
+                                                                }
+                                                                // Periodic diagnostics
+                                                                if frames_received % 500 == 0 {
+                                                                    tracing::info!(
+                                                                        received = frames_received,
+                                                                        dropped = frames_dropped,
+                                                                        "Push stream stats"
+                                                                    );
+                                                                    frames_dropped = 0;
+                                                                }
+                                                            }
+                                                            None => {
+                                                                tracing::debug!("Push output channel closed");
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                    text = ws_in_rx.recv() => {
+                                                        match text {
+                                                            Some(text) => {
+                                                                if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
+                                                                    if matches!(client_msg, ClientMessage::Close) {
+                                                                        break;
+                                                                    }
+                                                                }
+                                                            }
+                                                            None => break,
+                                                        }
+                                                    }
+                                                    _ = ws_done_rx.recv() => {
+                                                        tracing::warn!("WebSocket I/O task terminated — connection lost");
+                                                        break;
+                                                    }
+                                                }
+                                            }
+
+                                            // Cleanup: stop pushing
+                                            let ext = extension.read().await;
+                                            let _ = ext.stop_push(&sid).await;
+                                            drop(ext);
+                                            push_router.unregister(&sid).await;
+
+                                            // Close session (best-effort send stats)
+                                            let ext = extension.read().await;
+                                            if let Ok(stats) = ext.close_session(&sid).await {
+                                                let msg = ServerMessage::SessionClosed {
+                                                    session_id: sid.clone(),
+                                                    total_frames: stats.input_chunks,
+                                                    duration_ms: (chrono::Utc::now().timestamp_millis()
+                                                        - stats.last_activity) as u64,
+                                                    stats: SessionStatsDto::from(&stats),
+                                                };
+                                                if let Ok(json) = serde_json::to_string(&msg) {
+                                                    let _ = ws_out_tx.send(json);
+                                                }
+                                            }
+
+                                            drop(ws_out_tx); // Signal ws_task to stop
+                                            let _ = ws_task.await;
+
+                                            tracing::info!(
+                                                "Extension stream disconnected for: {}",
+                                                extension_id
+                                            );
+                                            return; // Exit handle_stream_socket entirely
                                         }
 
                                         drop(ext);

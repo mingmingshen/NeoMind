@@ -1334,6 +1334,16 @@ export function UnifiedDataSourceConfig({
       // Show extension metrics
       const metrics = extensionMetricsMap.get(selectedExtension.id) || []
 
+      // Show loading spinner while data sources are being fetched
+      if (metrics.length === 0 && extensionsLoading) {
+        return (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t('extensions:loading') || 'Loading...'}
+          </div>
+        )
+      }
+
       if (metrics.length === 0) {
         return (
           <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">

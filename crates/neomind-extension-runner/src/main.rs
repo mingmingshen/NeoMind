@@ -23,13 +23,14 @@
 //! The runner reads IPC messages from stdin and writes responses to stdout.
 //! All messages are framed with a 4-byte length prefix (little-endian).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::CStr;
 use std::io::{Read, Write};
 use std::os::raw::c_char;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use clap::Parser;
 use serde_json::json;
@@ -238,8 +239,68 @@ unsafe extern "C" fn runner_native_capability_free(ptr: *mut c_char) {
     }
 }
 
+// ============================================================================
+// Push output buffering — decouples FFI callback from blocking stdout I/O
+// ============================================================================
+
+/// Maximum queued frames before dropping the oldest.
+const PUSH_BUFFER_CAPACITY: usize = 16;
+
+/// Shared push-output buffer: newest frames survive, oldest get dropped.
+static PUSH_BUFFER: std::sync::OnceLock<
+    (std::sync::Mutex<VecDeque<Vec<u8>>>, std::sync::Condvar),
+> = std::sync::OnceLock::new();
+
+/// Counter for dropped push frames (diagnostics).
+static PUSH_DROPPED_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// Background thread that drains the push buffer and writes to stdout.
+fn push_stdout_writer_thread() {
+    let (lock, cvar) = PUSH_BUFFER.get().expect("PUSH_BUFFER not initialized");
+    let mut seq: u64 = 0;
+    loop {
+        let mut guard = lock.lock().unwrap();
+        // Wait until there's at least one frame
+        while guard.is_empty() {
+            guard = cvar.wait(guard).unwrap();
+        }
+        // Drain all available frames, keep only the latest
+        let batch: Vec<Vec<u8>> = guard.drain(..).collect();
+        drop(guard);
+
+        // Write each frame to stdout (under STDOUT_WRITE_MUTEX for inter-task safety)
+        for frame in batch {
+            let _write_guard = STDOUT_WRITE_MUTEX.lock().unwrap_or_else(|e| {
+                error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
+                e.into_inner()
+            });
+            let mut stdout = std::io::stdout();
+            if let Err(e) = stdout.write_all(&frame) {
+                error!("Push stdout writer: write error: {e}");
+                return;
+            }
+            if let Err(e) = stdout.flush() {
+                error!("Push stdout writer: flush error: {e}");
+                return;
+            }
+        }
+        seq += 1;
+
+        if seq % 100 == 0 {
+            let dropped = PUSH_DROPPED_COUNT.swap(0, AtomicOrdering::Relaxed);
+            if dropped > 0 {
+                debug!("Push buffer: dropped {} frames in last 100 batches", dropped);
+            }
+        }
+    }
+}
+
 /// Push-output writer callback — called by the extension via FFI to push data.
-/// Serialises a PushOutputMessage → IpcResponse::PushOutput → stdout frame.
+///
+/// Enqueues the encoded frame into a bounded buffer. If the buffer is full,
+/// the **oldest** frame is dropped so the newest data always gets through.
+/// A background thread drains the buffer to stdout, keeping this callback
+/// non-blocking regardless of downstream backpressure.
 unsafe extern "C" fn push_output_writer(data: *const u8, len: usize) -> i32 {
     if data.is_null() || len == 0 {
         warn!("PushOutputWriter: null/empty data");
@@ -296,19 +357,18 @@ unsafe extern "C" fn push_output_writer(data: *const u8, len: usize) -> i32 {
     let frame = IpcFrame::new(payload);
     let encoded = frame.encode();
 
-    let _guard = STDOUT_WRITE_MUTEX.lock().unwrap_or_else(|e| {
-        error!("STDOUT_WRITE_MUTEX poisoned: {}", e);
-        e.into_inner()
-    });
-    let mut stdout = std::io::stdout();
-    if let Err(e) = stdout.write_all(&encoded) {
-        error!("PushOutputWriter: write error: {e}");
-        return -4;
+    // Enqueue into bounded buffer (non-blocking).
+    // If full, drop the oldest frame so the newest always gets through.
+    let (lock, cvar) = PUSH_BUFFER.get().expect("PUSH_BUFFER not initialized");
+    let mut guard = lock.lock().unwrap();
+    if guard.len() >= PUSH_BUFFER_CAPACITY {
+        guard.pop_front();
+        PUSH_DROPPED_COUNT.fetch_add(1, AtomicOrdering::Relaxed);
     }
-    if let Err(e) = stdout.flush() {
-        error!("PushOutputWriter: flush error: {e}");
-        return -5;
-    }
+    guard.push_back(encoded);
+    drop(guard);
+    cvar.notify_one();
+
     0
 }
 
@@ -2271,6 +2331,16 @@ impl Runner {
 
         // Start stdin reader thread (reads all stdin messages and routes them)
         let _stdin_reader_handle = start_stdin_reader();
+
+        // Start push-output stdout writer thread (drains buffer → stdout)
+        PUSH_BUFFER
+            .set((std::sync::Mutex::new(VecDeque::with_capacity(PUSH_BUFFER_CAPACITY)), std::sync::Condvar::new()))
+            .expect("PUSH_BUFFER already initialized");
+        std::thread::Builder::new()
+            .name("push-stdout-writer".into())
+            .spawn(push_stdout_writer_thread)
+            .expect("Failed to spawn push stdout writer thread");
+        debug!("Push stdout writer thread started");
         debug!("Stdin reader thread started");
 
         // Create event channel for efficient notification (replaces polling)

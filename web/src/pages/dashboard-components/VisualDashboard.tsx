@@ -5064,7 +5064,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 props: {
                   dataSource: config.dataSource,
                   onChange: updateDataSource,
-                  allowedTypes: ['extension', 'extension-command'],
+                  allowedTypes: ['device-metric', 'extension', 'extension-command'],
                 },
               },
             ]
