@@ -209,6 +209,9 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 # 跳过服务安装
 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | NO_SERVICE=true sh
 
+# 仅安装后端（远程后端 + 本地桌面应用场景）
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | NO_WEB=true sh
+
 # 使用 nginx 进行前后端分离（端口 80）
 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | USE_NGINX=true sh
 ```
@@ -339,6 +342,7 @@ npm run tauri:build
 | **桌面应用** | 终端用户桌面应用（一体化） | macOS, Windows, Linux |
 | **服务器二进制** | 服务器/无头部署（一体化，无需 nginx） | Linux (amd64/arm64), macOS |
 | **一键安装** | 快速服务器部署 — 服务器自带 Web UI | `curl -fsSL ... \| sh` |
+| **仅后端** | 远程后端部署，用户通过本地桌面应用连接 | `NO_WEB=true curl ... \| sh` |
 
 ---
 

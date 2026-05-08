@@ -209,6 +209,9 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 # Skip service installation
 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | NO_SERVICE=true sh
 
+# Backend only (for remote backend + local desktop app setup)
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | NO_WEB=true sh
+
 # Use nginx for frontend-backend separation (port 80)
 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | USE_NGINX=true sh
 ```
@@ -339,6 +342,7 @@ The installer will be in `web/src-tauri/target/release/bundle/`
 | **Desktop App** | End-user desktop application (all-in-one) | macOS, Windows, Linux |
 | **Server Binary** | Server/headless deployment (all-in-one, no nginx needed) | Linux (amd64/arm64), macOS |
 | **One-line Install** | Quick server setup — Web UI served by the server itself | `curl -fsSL ... \| sh` |
+| **Backend Only** | Remote backend deployment, users connect via local desktop app | `NO_WEB=true curl ... \| sh` |
 
 ---
 
