@@ -7,6 +7,7 @@
 #   INSTALL_DIR    - Installation directory (default: /usr/local/bin)
 #   DATA_DIR       - Data directory (default: /var/lib/neomind)
 #   WEB_DIR        - Frontend static files directory (default: /var/www/neomind)
+#   NO_WEB        - Skip frontend installation, backend only (default: false)
 #   NO_SERVICE     - Skip service installation (default: false)
 #   USE_NGINX      - Configure nginx reverse proxy (default: false)
 #   PORT           - Backend API port (default: 9375)
@@ -27,6 +28,7 @@ VERSION="${VERSION:-}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 DATA_DIR="${DATA_DIR:-/var/lib/neomind}"
 WEB_DIR="${WEB_DIR:-/var/www/neomind}"
+NO_WEB="${NO_WEB:-false}"
 NO_SERVICE="${NO_SERVICE:-false}"
 USE_NGINX="${USE_NGINX:-false}"
 PORT="${PORT:-9375}"
@@ -136,7 +138,10 @@ install_linux() {
     fi
 
     # Download and extract frontend
-    WEB_FILE="neomind-web-${VERSION}.tar.gz"
+    if [ "$NO_WEB" = "true" ]; then
+        status "Skipping frontend (NO_WEB=true). Backend-only deployment."
+    else
+        WEB_FILE="neomind-web-${VERSION}.tar.gz"
     WEB_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${WEB_FILE}"
 
     status "Downloading frontend..."
@@ -149,6 +154,7 @@ install_linux() {
     else
         warning "Frontend package not found. Web UI will show a placeholder page."
         warning "You can manually download it from the release page."
+        fi
     fi
 
     # Install systemd service
@@ -347,16 +353,21 @@ install_darwin() {
     fi
 
     # Download frontend for macOS
-    WEB_FILE="neomind-web-${VERSION}.tar.gz"
-    WEB_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${WEB_FILE}"
-
-    status "Downloading frontend..."
-    if curl -fSL --progress-bar "$WEB_URL" -o "$TEMP_DIR/neomind-web.tar.gz" 2>/dev/null; then
-        mkdir -p "$WEB_DIR"
-        tar xzf "$TEMP_DIR/neomind-web.tar.gz" -C "$WEB_DIR"
-        success "Frontend installed to $WEB_DIR"
+    if [ "$NO_WEB" = "true" ]; then
+        status "Skipping frontend (NO_WEB=true). Backend-only deployment."
     else
-        warning "Frontend package not found."
+        WEB_FILE="neomind-web-${VERSION}.tar.gz"
+        WEB_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${WEB_FILE}"
+
+        status "Downloading frontend..."
+        if curl -fSL --progress-bar "$WEB_URL" -o "$TEMP_DIR/neomind-web.tar.gz" 2>/dev/null; then
+            mkdir -p "$WEB_DIR"
+            tar xzf "$TEMP_DIR/neomind-web.tar.gz" -C "$WEB_DIR"
+            success "Frontend installed to $WEB_DIR"
+        else
+            warning "Frontend package not found. Web UI will show a placeholder page."
+            warning "You can manually download it from the release page."
+        fi
     fi
 
     # Create launchd plist for macOS
@@ -413,7 +424,11 @@ print_post_install() {
     echo ""
     echo "Binary location: ${INSTALL_DIR}/neomind"
     echo "Data directory:  ${DATA_DIR}"
-    echo "Frontend:        ${WEB_DIR}"
+    if [ "$NO_WEB" != "true" ]; then
+        echo "Frontend:        ${WEB_DIR}"
+    else
+        echo "Frontend:        skipped (backend-only)"
+    fi
     echo ""
 
     if [ "$OS" = "linux" ]; then
