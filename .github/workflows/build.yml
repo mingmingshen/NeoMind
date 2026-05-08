@@ -554,6 +554,9 @@ jobs:
           # All-in-one (default)
           curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | sh
 
+          # Backend only (users connect via local desktop app)
+          curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | NO_WEB=true sh
+
           # With nginx for frontend-backend separation
           curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | USE_NGINX=true sh
           ```
