@@ -1014,6 +1014,20 @@ async fn handle_ws_socket(
                                     // Check for cancel request
                                     if chat_req.message == "__CANCEL__" {
                                         tracing::info!("Received cancel request from client");
+
+                                        // Determine which session to cancel
+                                        let cancel_session_id = if let Some(ref sid) = chat_req.session_id {
+                                            sid.clone()
+                                        } else {
+                                            let guard = current_session_id.read().await;
+                                            guard.clone().unwrap_or_default()
+                                        };
+
+                                        // Send interrupt signal to the active stream
+                                        if !cancel_session_id.is_empty() {
+                                            state.agents.session_manager.cancel_session(&cancel_session_id).await;
+                                        }
+
                                         // Send acknowledgment
                                         let cancel_msg = json!({
                                             "type": "cancelled",

@@ -121,7 +121,7 @@ export function MergedMessageList({
 
                   {/* Thinking */}
                   {streamingThinking && (
-                    <ThinkingBlock thinking={streamingThinking} />
+                    <ThinkingBlock thinking={streamingThinking} isStreaming={true} />
                   )}
 
                   {/* Tool calls with per-round intermediate text */}

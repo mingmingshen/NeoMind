@@ -55,12 +55,9 @@ export function ThinkingBlock({
         >
           <BrainCircuit className={cn(
             "h-4 w-4",
-            isStreaming ? "text-info animate-pulse" : "text-muted-foreground"
+            isStreaming ? "text-info" : "text-muted-foreground"
           )} />
           <span className={cn(textBody, "font-medium")}>{t("thinking.title")}</span>
-          {isStreaming && (
-            <span className={cn(textNano, "text-muted-foreground")}>{t("thinking.thinking")}</span>
-          )}
           <div className="flex-1" />
           <ChevronDown className={cn(
             "h-4 w-4 text-muted-foreground transition-transform duration-200",
@@ -92,14 +89,10 @@ export function ThinkingBlock({
       >
         <BrainCircuit className={cn(
           "h-4 w-4",
-          isStreaming ? "text-info animate-pulse" : "text-muted-foreground"
+          isStreaming ? "text-info" : "text-muted-foreground"
         )} />
 
         <span className="text-sm font-medium">{t("thinking.title")}</span>
-
-        {isStreaming && (
-          <span className="text-xs text-muted-foreground">{t("thinking.thinking")}</span>
-        )}
 
         {roundCount > 1 && (
           <span className="text-xs text-muted-foreground">
@@ -109,7 +102,7 @@ export function ThinkingBlock({
 
         <div className="flex-1" />
 
-        <span className="text-xs text-muted-foreground mr-2">
+        <span className="text-xs text-muted-foreground mr-2 tabular-nums min-w-[4rem] text-right inline-block">
           {totalLength} {t("thinking.characters")}
         </span>
 
@@ -181,13 +174,6 @@ function PerRoundThinking({
             )}>
               R{round}
             </span>
-            {idx === sortedRounds.length - 1 && isStreaming && (
-              <span className={cn(
-                "text-muted-foreground animate-pulse", textMini,
-              )}>
-                {compact ? "" : "thinking..."}
-              </span>
-            )}
           </div>
           {/* Round thinking text */}
           <div className={cn(

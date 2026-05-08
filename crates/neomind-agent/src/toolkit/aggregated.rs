@@ -155,7 +155,7 @@ Important:
                 },
                 "start_time": {
                     "type": "number",
-                    "description": "Start timestamp in seconds for history time range (history action, default: 24 hours ago). Example: 1712000000"
+                    "description": "Start timestamp in seconds for history time range (history action, default: 24 hours ago). Specify this to narrow the query window. Example: 1712000000"
                 },
                 "end_time": {
                     "type": "number",
@@ -163,7 +163,7 @@ Important:
                 },
                 "limit": {
                     "type": "number",
-                    "description": "Max number of data points to return (default: 10 for history, unlimited for list)"
+                    "description": "Max data points to return. Optional — by default ALL points in the time range are returned (up to 2000). Set only when you need fewer points, e.g. sampling or quick preview."
                 },
                 "response_format": {
                     "type": "string",
@@ -372,21 +372,33 @@ impl DeviceTool {
         if let Some(template) = self.device_service.get_template(&device.device_type) {
             if !template.metrics.is_empty() {
                 let storage = self.storage.as_ref();
-                let mut metrics_info: Vec<Value> = Vec::new();
-                for m in &template.metrics {
-                    // Concise mode: skip infrastructure/noise metrics (metadata.*, ai_result.*, encoding)
-                    // These are available via device(action="query", metric=<name>) when needed.
-                    if !detailed {
-                        let name = m.name.as_str();
-                        if name.starts_with("metadata.")
-                            || name.starts_with("ai_result.")
-                            || name == "encoding"
-                            || name == "image_data"
-                        {
-                            continue;
-                        }
-                    }
 
+                // Collect metric names for batch latest query (single read transaction)
+                let visible_metrics: Vec<_> = template
+                    .metrics
+                    .iter()
+                    .filter(|m| {
+                        detailed || {
+                            let name = m.name.as_str();
+                            !name.starts_with("metadata.")
+                                && !name.starts_with("ai_result.")
+                                && name != "encoding"
+                                && name != "image_data"
+                        }
+                    })
+                    .collect();
+
+                // Batch-fetch latest values for all visible metrics at once
+                let latest_values: std::collections::HashMap<String, neomind_devices::DataPoint> =
+                    if let Some(store) = storage {
+                        let names: Vec<&str> = visible_metrics.iter().map(|m| m.name.as_str()).collect();
+                        store.latest_batch(&device_id, &names).await.unwrap_or_default()
+                    } else {
+                        std::collections::HashMap::new()
+                    };
+
+                let mut metrics_info: Vec<Value> = Vec::new();
+                for m in &visible_metrics {
                     let mut metric_json = serde_json::json!({
                         "name": m.name,
                         "display_name": m.display_name,
@@ -395,46 +407,44 @@ impl DeviceTool {
                         metric_json["unit"] = serde_json::json!(m.unit);
                         metric_json["data_type"] = serde_json::json!(format!("{:?}", m.data_type));
                     }
-                    // Fetch latest value for this metric
-                    if let Some(store) = storage {
-                        if let Ok(Some(latest)) = store.latest(&device_id, &m.name).await {
-                            // Binary metrics (images) are too large to include inline.
-                            // Return metadata only; use device(action="query", metric=<name>)
-                            // to fetch the actual binary data when needed.
-                            if m.data_type == neomind_devices::mdl::MetricDataType::Binary {
-                                if let Some(s) = latest.value.as_str() {
-                                    let size_bytes = s.len();
-                                    metric_json["value"] = serde_json::json!(format!(
-                                        "[binary data, {}]",
-                                        if size_bytes > 1024 * 1024 {
-                                            format!(
-                                                "{:.1}MB",
-                                                size_bytes as f64 / (1024.0 * 1024.0)
-                                            )
-                                        } else {
-                                            format!("{:.1}KB", size_bytes as f64 / 1024.0)
-                                        }
-                                    ));
-                                }
-                            } else if is_raw_payload_metric(&m.name) {
-                                // Skip raw payload metrics - contain large base64/JSON blobs useless to LLM
-                                let size = if let Some(s) = latest.value.as_str() {
-                                    if s.len() > 1024 {
-                                        format!("{:.1}KB", s.len() as f64 / 1024.0)
+                    // Look up batch-fetched latest value
+                    if let Some(latest) = latest_values.get(&m.name) {
+                        // Binary metrics (images) are too large to include inline.
+                        // Return metadata only; use device(action="query", metric=<name>)
+                        // to fetch the actual binary data when needed.
+                        if m.data_type == neomind_devices::mdl::MetricDataType::Binary {
+                            if let Some(s) = latest.value.as_str() {
+                                let size_bytes = s.len();
+                                metric_json["value"] = serde_json::json!(format!(
+                                    "[binary data, {}]",
+                                    if size_bytes > 1024 * 1024 {
+                                        format!(
+                                            "{:.1}MB",
+                                            size_bytes as f64 / (1024.0 * 1024.0)
+                                        )
                                     } else {
-                                        format!("{}B", s.len())
+                                        format!("{:.1}KB", size_bytes as f64 / 1024.0)
                                     }
+                                ));
+                            }
+                        } else if is_raw_payload_metric(&m.name) {
+                            // Skip raw payload metrics - contain large base64/JSON blobs useless to LLM
+                            let size = if let Some(s) = latest.value.as_str() {
+                                if s.len() > 1024 {
+                                    format!("{:.1}KB", s.len() as f64 / 1024.0)
                                 } else {
-                                    "N/A".to_string()
-                                };
-                                metric_json["value"] =
-                                    serde_json::json!(format!("[raw payload, {}]", size));
+                                    format!("{}B", s.len())
+                                }
                             } else {
-                                metric_json["value"] = latest.value.to_json_value();
-                            }
-                            if detailed {
-                                metric_json["timestamp"] = serde_json::json!(latest.timestamp);
-                            }
+                                "N/A".to_string()
+                            };
+                            metric_json["value"] =
+                                serde_json::json!(format!("[raw payload, {}]", size));
+                        } else {
+                            metric_json["value"] = latest.value.to_json_value();
+                        }
+                        if detailed {
+                            metric_json["timestamp"] = serde_json::json!(latest.timestamp);
                         }
                     }
                     metrics_info.push(metric_json);
@@ -451,28 +461,34 @@ impl DeviceTool {
                         .map(|arr| arr.iter().filter_map(|v| v.get("name")?.as_str()).collect())
                         .unwrap_or_default();
 
-                    let virtual_names: Vec<&String> = all_stored
+                    let virtual_names: Vec<&str> = all_stored
                         .iter()
                         .filter(|m| !template_set.contains(m.as_str()))
                         .filter(|m| !is_raw_payload_metric(m.as_str()))
+                        .map(|m| m.as_str())
                         .collect();
 
-                    let mut virtual_metrics: Vec<Value> = Vec::new();
-                    for m in &virtual_names {
-                        let mut mj = serde_json::json!({
-                            "name": m,
-                            "display_name": m,
-                        });
-                        if let Ok(Some(latest)) = storage.latest(&device_id, m).await {
-                            mj["value"] = latest.value.to_json_value();
-                            if detailed {
-                                mj["timestamp"] = serde_json::json!(latest.timestamp);
-                            }
-                        }
-                        virtual_metrics.push(mj);
-                    }
+                    if !virtual_names.is_empty() {
+                        // Batch-fetch latest values for all virtual metrics
+                        let virtual_latest = storage.latest_batch(&device_id, &virtual_names).await.unwrap_or_default();
 
-                    if !virtual_metrics.is_empty() {
+                        let virtual_metrics: Vec<Value> = virtual_names
+                            .iter()
+                            .map(|&name| {
+                                let mut mj = serde_json::json!({
+                                    "name": name,
+                                    "display_name": name,
+                                });
+                                if let Some(latest) = virtual_latest.get(name) {
+                                    mj["value"] = latest.value.to_json_value();
+                                    if detailed {
+                                        mj["timestamp"] = serde_json::json!(latest.timestamp);
+                                    }
+                                }
+                                mj
+                            })
+                            .collect();
+
                         // Merge into existing metrics array or create it
                         if let Some(arr) = device_json
                             .get_mut("metrics")
@@ -545,11 +561,20 @@ impl DeviceTool {
         let start_time = args["start_time"]
             .as_i64()
             .unwrap_or(end_time - default_window);
-        let limit = args["limit"].as_u64().unwrap_or(10) as usize;
+        // When the user specifies an explicit limit, respect it.
+        // Otherwise, return all points in the time range (up to a safety cap of 2000).
+        // This lets the LLM query "past hour" and get all ~60 per-minute points
+        // without needing to guess a limit value.
+        let has_explicit_limit = args.get("limit").is_some();
+        let limit = if has_explicit_limit {
+            args["limit"].as_u64().unwrap_or(200) as usize
+        } else {
+            2000 // safety cap — time range already constrains the result set
+        };
 
         if let Some(m) = metric {
             let mut data = storage
-                .query(&device_id, m, start_time, end_time)
+                .query_limited(&device_id, m, start_time, end_time, Some(limit))
                 .await
                 .map_err(|e| ToolError::Execution(e.to_string()))?;
 
@@ -572,7 +597,7 @@ impl DeviceTool {
                         }) {
                             let resolved = matched_def.name.clone();
                             if let Ok(d) = storage
-                                .query(&device_id, &resolved, start_time, end_time)
+                                .query_limited(&device_id, &resolved, start_time, end_time, Some(limit))
                                 .await
                             {
                                 data = d;
@@ -661,7 +686,6 @@ impl DeviceTool {
                 // image analysis extensions, while also preserving the mime_type for content handling.
                 let points: Vec<Value> = data
                     .iter()
-                    .take(limit)
                     .map(|p| {
                         if let Some(s) = p.value.as_str() {
                             if s.starts_with("data:image/") {
@@ -702,7 +726,7 @@ impl DeviceTool {
                 Ok(ToolOutput::success(serde_json::json!({
                     "device_id": device_id,
                     "metric": resolved_metric,
-                    "points": data.iter().take(limit).map(|p| serde_json::json!({
+                    "points": data.iter().map(|p| serde_json::json!({
                         "timestamp": p.timestamp,
                         "value": p.value.to_json_value()
                     })).collect::<Vec<_>>()

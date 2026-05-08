@@ -576,15 +576,24 @@ fn humanize_bytes(bytes: usize) -> String {
 
 /// UTF-8 safe truncation for tool result text.
 /// Returns the truncated string with an ellipsis suffix if truncated.
+///
+/// Uses byte length as a fast-path: if byte length <= max_chars, char count
+/// is guaranteed to be within limit too (each char is at least 1 byte).
 pub(crate) fn truncate_result_utf8(result: &str, max_chars: usize) -> String {
-    if result.chars().count() <= max_chars {
+    // Fast path: byte length <= max_chars means char count <= max_chars
+    if result.len() <= max_chars {
+        return result.to_string();
+    }
+    // Slow path: need actual char count
+    let char_count = result.chars().count();
+    if char_count <= max_chars {
         return result.to_string();
     }
     let truncated: String = result.chars().take(max_chars).collect();
     format!(
         "{}... (truncated, total {} chars)",
         truncated,
-        result.chars().count()
+        char_count
     )
 }
 

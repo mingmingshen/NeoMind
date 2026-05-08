@@ -2247,6 +2247,7 @@ export function useDataSource<T = unknown>(
         if (ds.extensionId !== eventExtensionId) return false
 
         // Parse extensionMetric format (produce:metric or just metric)
+        if (!ds.extensionMetric) return false
         const parts = ds.extensionMetric.split(':')
         const metricName = parts.length > 1 ? parts[1] : parts[0]
 

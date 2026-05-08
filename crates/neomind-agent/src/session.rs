@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -229,6 +229,8 @@ pub struct SessionManager {
     cleanup_running: Arc<RwLock<bool>>,
     /// Skill registry for scenario-driven prompt injection
     skill_registry: crate::skills::SharedSkillRegistry,
+    /// Cancel signal senders for active streaming sessions (session_id → watch::Sender)
+    cancel_senders: Arc<RwLock<HashMap<String, tokio::sync::watch::Sender<bool>>>>,
 }
 
 impl SessionManager {
@@ -259,6 +261,7 @@ impl SessionManager {
             cleanup_config: SessionCleanupConfig::default(),
             cleanup_running: Arc::new(RwLock::new(false)),
             skill_registry: crate::skills::create_shared_registry(None),
+            cancel_senders: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -279,6 +282,7 @@ impl SessionManager {
             cleanup_config: SessionCleanupConfig::default(),
             cleanup_running: Arc::new(RwLock::new(false)),
             skill_registry: crate::skills::create_shared_registry(Some(data_dir)),
+            cancel_senders: Arc::new(RwLock::new(HashMap::new())),
         };
 
         // Restore sessions from database on startup
@@ -584,6 +588,36 @@ impl SessionManager {
     /// P0.3: Get the session store for direct access (for pending stream state management).
     pub fn session_store(&self) -> Arc<SessionStore> {
         self.store.clone()
+    }
+
+    /// Register a cancel signal sender for an active streaming session.
+    /// The sender is stored so that `cancel_session` can interrupt the stream.
+    pub async fn register_cancel_sender(
+        &self,
+        session_id: &str,
+        sender: tokio::sync::watch::Sender<bool>,
+    ) {
+        self.cancel_senders.write().await.insert(session_id.to_string(), sender);
+    }
+
+    /// Remove a cancel sender (called when streaming ends naturally).
+    pub async fn remove_cancel_sender(&self, session_id: &str) {
+        self.cancel_senders.write().await.remove(session_id);
+    }
+
+    /// Cancel an active streaming session by session ID.
+    /// Returns true if a stream was active and interrupted.
+    pub async fn cancel_session(&self, session_id: &str) -> bool {
+        let mut senders = self.cancel_senders.write().await;
+        if let Some(sender) = senders.remove(session_id) {
+            // Send the interrupt signal
+            let _ = sender.send(true);
+            tracing::info!(session_id = %session_id, "Sent interrupt signal to streaming session");
+            true
+        } else {
+            tracing::debug!(session_id = %session_id, "No active stream to cancel");
+            false
+        }
     }
 
     /// Get the LLM interface for a session's agent (for background tasks like summarization).
@@ -1104,9 +1138,36 @@ impl SessionManager {
             .map(|m| (m.conversation_summary, m.summary_up_to_index))
             .unwrap_or((None, None));
 
-        agent
-            .process_stream_events(message, conversation_summary, summary_up_to_index)
-            .await
+        // Create a cancel signal channel so the stream can be interrupted
+        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        self.register_cancel_sender(session_id, cancel_tx).await;
+
+        let safeguards = super::agent::StreamSafeguards::default()
+            .with_interrupt_signal(cancel_rx);
+
+        let session_id_owned = session_id.to_string();
+        let cancel_senders = self.cancel_senders.clone();
+
+        let stream = agent
+            .process_stream_events_with_safeguards(
+                message,
+                conversation_summary,
+                summary_up_to_index,
+                safeguards,
+            )
+            .await?;
+
+        // Wrap the stream to clean up the cancel sender when streaming ends
+        let cleanup_stream = Box::pin(async_stream::stream! {
+            let mut stream = stream;
+            while let Some(event) = stream.next().await {
+                yield event;
+            }
+            // Stream ended — remove the cancel sender
+            cancel_senders.write().await.remove(&session_id_owned);
+        });
+
+        Ok(cleanup_stream)
     }
 
     /// Process a message in a session with event streaming and optional LLM backend override.
@@ -1267,9 +1328,31 @@ impl SessionManager {
             }
         }
         let agent = self.get_session(session_id).await?;
-        agent
-            .process_multimodal_stream_events(message, images)
-            .await
+
+        // Create a cancel signal channel
+        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        self.register_cancel_sender(session_id, cancel_tx).await;
+
+        let safeguards = super::agent::StreamSafeguards::default()
+            .with_interrupt_signal(cancel_rx);
+
+        let session_id_owned = session_id.to_string();
+        let cancel_senders = self.cancel_senders.clone();
+
+        let stream = agent
+            .process_multimodal_stream_events_with_safeguards(message, images, safeguards)
+            .await?;
+
+        // Wrap to clean up cancel sender on stream end
+        let cleanup_stream = Box::pin(async_stream::stream! {
+            let mut stream = stream;
+            while let Some(event) = stream.next().await {
+                yield event;
+            }
+            cancel_senders.write().await.remove(&session_id_owned);
+        });
+
+        Ok(cleanup_stream)
     }
 
     /// Get conversation history for a session.
@@ -1609,6 +1692,7 @@ impl Default for SessionManager {
                 cleanup_config: SessionCleanupConfig::default(),
                 cleanup_running: Arc::new(RwLock::new(false)),
                 skill_registry: crate::skills::create_shared_registry(None),
+                cancel_senders: Arc::new(RwLock::new(HashMap::new())),
             }
         })
     }
@@ -1758,5 +1842,54 @@ mod tests {
         let last_msg2 = &history2[history2.len() - 1];
 
         assert_ne!(last_msg1.content, last_msg2.content);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_session_mechanism() {
+        let manager = create_temp_manager();
+
+        // 1. No active stream → cancel returns false
+        let cancelled = manager.cancel_session("nonexistent").await;
+        assert!(!cancelled, "Canceling nonexistent session should return false");
+
+        // 2. Register a cancel sender, then cancel it
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        manager.register_cancel_sender("test-session", tx).await;
+
+        // Receiver should initially be false
+        assert!(!*rx.borrow(), "Initial value should be false");
+
+        // Cancel the session
+        let cancelled = manager.cancel_session("test-session").await;
+        assert!(cancelled, "Canceling registered session should return true");
+
+        // Receiver should now be true
+        assert!(*rx.borrow(), "After cancel, receiver should be true");
+
+        // 3. Second cancel should return false (sender was removed)
+        let cancelled = manager.cancel_session("test-session").await;
+        assert!(!cancelled, "Second cancel should return false (sender removed)");
+    }
+
+    #[tokio::test]
+    async fn test_cancel_sender_cleanup_on_stream_end() {
+        let manager = create_temp_manager();
+
+        // Simulate: register sender, then remove it (as stream cleanup would do)
+        let (tx, _rx) = tokio::sync::watch::channel(false);
+        manager.register_cancel_sender("stream-session", tx).await;
+
+        // Verify registered
+        let cancelled = manager.cancel_session("stream-session").await;
+        assert!(cancelled, "Should be able to cancel registered session");
+
+        // Re-register and remove manually (simulating stream end)
+        let (tx2, _rx2) = tokio::sync::watch::channel(false);
+        manager.register_cancel_sender("stream-session", tx2).await;
+        manager.remove_cancel_sender("stream-session").await;
+
+        // Now cancel should return false
+        let cancelled = manager.cancel_session("stream-session").await;
+        assert!(!cancelled, "After removal, cancel should return false");
     }
 }

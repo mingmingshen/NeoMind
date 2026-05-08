@@ -9,8 +9,16 @@ use super::error::{Result, ToolError};
 use super::tool::{DynTool, ToolDefinition, ToolOutput};
 
 /// Tool registry for managing available tools.
+///
+/// Caches serialized tool definitions to avoid redundant JSON serialization
+/// on every LLM call. The cache is invalidated when tools are registered or
+/// unregistered.
 pub struct ToolRegistry {
     tools: HashMap<String, DynTool>,
+    /// Cached tool definitions (rebuilt on register/unregister).
+    cached_definitions: std::sync::RwLock<Option<Vec<ToolDefinition>>>,
+    /// Cached JSON serialization of tool definitions (rebuilt on register/unregister).
+    cached_definitions_json: std::sync::RwLock<Option<Value>>,
 }
 
 impl ToolRegistry {
@@ -18,25 +26,40 @@ impl ToolRegistry {
     pub fn new() -> Self {
         Self {
             tools: HashMap::new(),
+            cached_definitions: std::sync::RwLock::new(None),
+            cached_definitions_json: std::sync::RwLock::new(None),
         }
+    }
+
+    /// Invalidate cached definitions (call after any mutation).
+    fn invalidate_cache(&self) {
+        *self.cached_definitions.write().unwrap() = None;
+        *self.cached_definitions_json.write().unwrap() = None;
     }
 
     /// Register a tool.
     pub fn register(&mut self, tool: DynTool) {
         let name = tool.name().to_string();
         self.tools.insert(name, tool);
+        self.invalidate_cache();
     }
 
     /// Register multiple tools.
     pub fn register_all(&mut self, tools: Vec<DynTool>) {
         for tool in tools {
-            self.register(tool);
+            let name = tool.name().to_string();
+            self.tools.insert(name, tool);
         }
+        self.invalidate_cache();
     }
 
     /// Unregister a tool by name.
     pub fn unregister(&mut self, name: &str) -> bool {
-        self.tools.remove(name).is_some()
+        let removed = self.tools.remove(name).is_some();
+        if removed {
+            self.invalidate_cache();
+        }
+        removed
     }
 
     /// Get a tool by name.
@@ -54,19 +77,31 @@ impl ToolRegistry {
         self.tools.keys().cloned().collect()
     }
 
-    /// Get all tool definitions.
+    /// Get all tool definitions (cached).
     pub fn definitions(&self) -> Vec<ToolDefinition> {
-        self.tools.values().map(|t| t.definition()).collect()
+        if let Some(ref defs) = *self.cached_definitions.read().unwrap() {
+            return defs.clone();
+        }
+        let defs: Vec<ToolDefinition> = self.tools.values().map(|t| t.definition()).collect();
+        *self.cached_definitions.write().unwrap() = Some(defs.clone());
+        defs
     }
 
-    /// Get tool definitions as JSON (for LLM).
+    /// Get tool definitions as JSON (cached).
+    ///
+    /// The result is cached and only rebuilt when tools are registered/unregistered.
     pub fn definitions_json(&self) -> Value {
-        let defs: Vec<Value> = self
-            .definitions()
+        if let Some(ref json) = *self.cached_definitions_json.read().unwrap() {
+            return json.clone();
+        }
+        let defs = self.definitions();
+        let json_defs: Vec<Value> = defs
             .into_iter()
             .map(|d| serde_json::to_value(d).unwrap())
             .collect();
-        serde_json::json!({ "tools": defs })
+        let json = serde_json::json!({ "tools": json_defs });
+        *self.cached_definitions_json.write().unwrap() = Some(json.clone());
+        json
     }
 
     /// Execute a tool by name.
@@ -77,37 +112,52 @@ impl ToolRegistry {
         tool.execute(args).await
     }
 
-    /// Execute multiple tools in parallel.
+    /// Execute multiple tools in parallel using `JoinSet` for lower overhead
+    /// than spawning individual tasks.
     pub async fn execute_parallel(&self, calls: Vec<ToolCall>) -> Vec<ToolResult> {
-        let mut tasks = Vec::new();
+        use tokio::task::JoinSet;
+
+        if calls.is_empty() {
+            return Vec::new();
+        }
+
+        let mut join_set = JoinSet::new();
 
         for call in calls {
             if let Some(tool) = self.get(&call.name) {
                 let tool_clone = tool.clone();
                 let args = call.args;
-                let name = call.name.clone();
+                let name = call.name;
 
-                tasks.push(tokio::spawn(async move {
+                join_set.spawn(async move {
                     ToolResult {
                         name,
                         result: tool_clone.execute(args).await,
                     }
-                }));
+                });
             } else {
-                let name = call.name.clone();
-                let name_clone = name.clone();
-                tasks.push(tokio::spawn(async move {
+                let name = call.name;
+                join_set.spawn(async move {
                     ToolResult {
-                        name: name_clone,
+                        name: name.clone(),
                         result: Err(ToolError::NotFound(name)),
                     }
-                }));
+                });
             }
         }
 
-        let mut results = Vec::new();
-        for task in tasks {
-            results.push(task.await.unwrap());
+        let mut results = Vec::with_capacity(join_set.len());
+        while let Some(res) = join_set.join_next().await {
+            match res {
+                Ok(tool_result) => results.push(tool_result),
+                Err(e) => {
+                    tracing::error!("Tool task panicked: {}", e);
+                    results.push(ToolResult {
+                        name: String::new(),
+                        result: Err(ToolError::Execution(format!("Tool task panicked: {}", e))),
+                    });
+                }
+            }
         }
         results
     }

@@ -646,6 +646,10 @@ a {
   }
 }
 
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
 /* Scale in animation */
 @keyframes scale-in {
   from {

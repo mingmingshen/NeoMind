@@ -2105,6 +2105,20 @@ impl Agent {
         user_message: &str,
         images: Vec<String>, // Base64 data URLs
     ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
+        self.process_multimodal_stream_events_with_safeguards(
+            user_message,
+            images,
+            StreamSafeguards::default(),
+        ).await
+    }
+
+    /// Process a multimodal user message with streaming response and custom safeguards.
+    pub async fn process_multimodal_stream_events_with_safeguards(
+        &self,
+        user_message: &str,
+        images: Vec<String>, // Base64 data URLs
+        safeguards: StreamSafeguards,
+    ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
         tracing::debug!(
             message = %user_message,
             image_count = images.len(),
@@ -2129,12 +2143,15 @@ impl Agent {
             }));
         }
 
-        match process_multimodal_stream_events(
+        match process_multimodal_stream_events_with_safeguards(
             self.llm_interface.clone(),
             self.internal_state.clone(),
             self.tools.clone(),
             user_message,
             images,
+            safeguards,
+            None,
+            None,
         )
         .await
         {
@@ -3249,6 +3266,22 @@ END"#
         conversation_summary: Option<String>,
         summary_up_to_index: Option<u64>,
     ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
+        self.process_stream_events_with_safeguards(
+            user_message,
+            conversation_summary,
+            summary_up_to_index,
+            StreamSafeguards::default(),
+        ).await
+    }
+
+    /// Process a user message with streaming response and custom safeguards (e.g., interrupt signal).
+    pub async fn process_stream_events_with_safeguards(
+        &self,
+        user_message: &str,
+        conversation_summary: Option<String>,
+        summary_up_to_index: Option<u64>,
+        safeguards: StreamSafeguards,
+    ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
         // Add user message to history
         let user_msg = AgentMessage::user(user_message);
         self.internal_state.write().await.push_message(user_msg);
@@ -3271,11 +3304,12 @@ END"#
             }));
         }
 
-        match process_stream_events(
+        match process_stream_events_with_safeguards(
             self.llm_interface.clone(),
             self.internal_state.clone(),
             self.tools.clone(),
             user_message,
+            safeguards,
             conversation_summary,
             summary_up_to_index,
         )

@@ -1022,6 +1022,83 @@ impl TimeSeriesStore {
         Ok(latest)
     }
 
+    /// Batch query the latest data point for multiple metrics of a source.
+    ///
+    /// Shares a single read transaction across all metrics, avoiding N separate
+    /// transaction overhead. Results are returned as a `HashMap<metric_name, DataPoint>`.
+    pub async fn query_latest_batch(
+        &self,
+        source_id: &str,
+        metrics: &[&str],
+    ) -> Result<std::collections::HashMap<String, DataPoint>, Error> {
+        if metrics.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let start = Instant::now();
+
+        // Partition into cache hits and cache misses
+        let mut results = std::collections::HashMap::with_capacity(metrics.len());
+        let mut misses: Vec<&str> = Vec::new();
+
+        for &metric in metrics {
+            let cache_key = (source_id.to_string(), metric.to_string());
+            if let Some(entry) = self.latest_cache.get(&cache_key) {
+                if entry.cached_at.elapsed() < self.cache_ttl {
+                    results.insert(metric.to_string(), entry.point.clone());
+                    continue;
+                }
+            }
+            misses.push(metric);
+        }
+
+        let cache_hits = results.len();
+
+        // Batch query cache misses with a single read transaction
+        if !misses.is_empty() {
+            let read_txn = self.db.begin_read()?;
+
+            let table = match read_txn.open_table(TIMESERIES_TABLE) {
+                Ok(t) => t,
+                Err(redb::TableError::TableDoesNotExist(_)) => {
+                    // No table — return whatever we got from cache
+                    return Ok(results);
+                }
+                Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
+            };
+
+            for metric in &misses {
+                let start_key = (source_id, *metric, i64::MIN);
+                let end_key = (source_id, *metric, i64::MAX);
+
+                if let Some(latest) = table
+                    .range(start_key..=end_key)?
+                    .next_back()
+                    .map(|result| -> Result<DataPoint, Error> {
+                        let (_key, value) = result?;
+                        Ok(serde_json::from_slice(value.value())?)
+                    })
+                    .transpose()?
+                {
+                    self.update_cache(source_id, metric, latest.clone()).await;
+                    results.insert(metric.to_string(), latest);
+                }
+            }
+        }
+
+        // Record stats
+        let mut stats = self.stats.write().await;
+        for _ in 0..cache_hits {
+            stats.record_cache_hit();
+        }
+        for _ in 0..misses.len() {
+            stats.record_cache_miss();
+        }
+        stats.record_read(start.elapsed());
+
+        Ok(results)
+    }
+
     /// Query data points aggregated into time buckets.
     pub async fn query_aggregated(
         &self,

@@ -211,17 +211,30 @@ impl TimeSeriesStorage {
         start_timestamp: i64,
         end_timestamp: i64,
     ) -> Result<Vec<DataPoint>, DeviceError> {
+        self.query_limited(source_id, metric, start_timestamp, end_timestamp, None).await
+    }
+
+    /// Query data points with optional limit pushed down to storage.
+    pub async fn query_limited(
+        &self,
+        source_id: &str,
+        metric: &str,
+        start_timestamp: i64,
+        end_timestamp: i64,
+        limit: Option<usize>,
+    ) -> Result<Vec<DataPoint>, DeviceError> {
         // Debug log for troubleshooting, not needed in production
         tracing::debug!(
-            "TimeSeriesStorage::query: source_id={}, metric={}, start={}, end={}",
+            "TimeSeriesStorage::query: source_id={}, metric={}, start={}, end={}, limit={:?}",
             source_id,
             metric,
             start_timestamp,
-            end_timestamp
+            end_timestamp,
+            limit,
         );
 
         let result = self.store()
-            .query_range(source_id, metric, start_timestamp, end_timestamp, None)
+            .query_range(source_id, metric, start_timestamp, end_timestamp, limit)
             .await
             .map_err(|e| {
                 tracing::error!("query_range failed for {}/{}: {}", source_id, metric, e);
@@ -315,6 +328,26 @@ impl TimeSeriesStorage {
             .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
 
         Ok(result.and_then(DataPoint::from_storage))
+    }
+
+    /// Batch query latest data points for multiple metrics of a source.
+    ///
+    /// Uses a single read transaction, avoiding N+1 query overhead.
+    pub async fn latest_batch(
+        &self,
+        source_id: &str,
+        metrics: &[&str],
+    ) -> Result<std::collections::HashMap<String, DataPoint>, DeviceError> {
+        let results = self.store()
+            .query_latest_batch(source_id, metrics)
+            .await
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
+
+        // Convert storage DataPoints to device DataPoints
+        Ok(results
+            .into_iter()
+            .filter_map(|(k, v)| DataPoint::from_storage(v).map(|dp| (k, dp)))
+            .collect())
     }
 
     /// Aggregate data over a time range using streaming fold (no Vec materialization).
