@@ -20,7 +20,7 @@ fn test_agent_message_with_images() {
 
     // Verify the message was created correctly
     assert_eq!(msg.role, "user");
-    assert_eq!(msg.content, "What color is this image?");
+    assert_eq!(&*msg.content, "What color is this image?");
     assert!(msg.images.is_some());
     assert_eq!(msg.images.as_ref().unwrap().len(), 1);
 }

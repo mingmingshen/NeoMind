@@ -779,7 +779,7 @@ pub async fn chat_handler(
     };
 
     Ok(Json(ChatResponse {
-        response: response.message.content.clone(),
+        response: response.message.content.to_string(),
         session_id: id,
         tools_used: response.tools_used.clone(),
         processing_time_ms: response.processing_time_ms,

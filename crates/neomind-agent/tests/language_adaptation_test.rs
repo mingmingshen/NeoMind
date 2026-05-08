@@ -66,7 +66,7 @@ impl TestContext {
             .session_manager
             .process_message(&self.session_id, message)
             .await?;
-        Ok(response.message.content)
+        Ok(response.message.content.to_string())
     }
 }
 

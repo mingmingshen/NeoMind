@@ -75,57 +75,57 @@ pub struct ErrorMessages;
 impl ErrorMessages {
     /// Device not found error with helpful suggestions.
     pub fn device_not_found(device_id: &str) -> FriendlyError {
-        FriendlyError::new(format!("找不到设备 '{}'", device_id))
-            .with_suggestion("使用 'device_discover' 查看所有可用设备".to_string())
-            .with_suggestion("检查设备ID是否正确".to_string())
-            .with_suggestion(format!("可能是设备 '{}' 尚未添加到系统", device_id))
+        FriendlyError::new(format!("Device '{}' not found", device_id))
+            .with_suggestion("Use 'device(action=\"list\")' to see all available devices".to_string())
+            .with_suggestion("Check if the device ID is correct".to_string())
+            .with_suggestion(format!("Device '{}' may not have been added to the system yet", device_id))
     }
 
     /// Parameter missing error with usage hint.
     pub fn parameter_missing(param_name: &str, usage_hint: &str) -> FriendlyError {
-        FriendlyError::new(format!("缺少必要参数: {}", param_name))
-            .with_suggestion(format!("用法: {}", usage_hint))
+        FriendlyError::new(format!("Missing required parameter: {}", param_name))
+            .with_suggestion(format!("Usage: {}", usage_hint))
     }
 
     /// No data available error.
     pub fn no_data_available(device_id: &str) -> FriendlyError {
-        FriendlyError::new(format!("设备 '{}' 暂无数据", device_id))
-            .with_suggestion("设备可能刚添加，需要等待数据采集".to_string())
-            .with_suggestion("检查设备是否在线".to_string())
+        FriendlyError::new(format!("Device '{}' has no data yet", device_id))
+            .with_suggestion("The device may have been recently added, wait for data collection".to_string())
+            .with_suggestion("Check if the device is online".to_string())
             .as_warning()
     }
 
     /// Device offline error.
     pub fn device_offline(device_id: &str) -> FriendlyError {
-        FriendlyError::new(format!("设备 '{}' 当前离线", device_id))
-            .with_suggestion("检查设备电源连接".to_string())
-            .with_suggestion("查看网络连接状态".to_string())
+        FriendlyError::new(format!("Device '{}' is currently offline", device_id))
+            .with_suggestion("Check the device power connection".to_string())
+            .with_suggestion("Check the network connection status".to_string())
     }
 
     /// Rule not found error.
     pub fn rule_not_found(rule_name: &str) -> FriendlyError {
-        FriendlyError::new(format!("找不到规则 '{}'", rule_name))
-            .with_suggestion("使用 'list_rules' 查看所有可用规则".to_string())
-            .with_suggestion("规则名称可能输入错误".to_string())
+        FriendlyError::new(format!("Rule '{}' not found", rule_name))
+            .with_suggestion("Use rule(action=\"list\") to see all available rules".to_string())
+            .with_suggestion("The rule name may be misspelled".to_string())
     }
 
     /// Invalid command error with valid commands.
     pub fn invalid_command(device_id: &str, valid_commands: &[String]) -> FriendlyError {
-        FriendlyError::new(format!("设备 '{}' 不支持此命令", device_id))
-            .with_suggestion(format!("支持的命令: {}", valid_commands.join(", ")))
+        FriendlyError::new(format!("Device '{}' does not support this command", device_id))
+            .with_suggestion(format!("Supported commands: {}", valid_commands.join(", ")))
     }
 
     /// Permission denied error.
     pub fn permission_denied(resource: &str) -> FriendlyError {
-        FriendlyError::new(format!("没有权限访问: {}", resource))
-            .with_suggestion("请联系管理员获取权限".to_string())
+        FriendlyError::new(format!("No permission to access: {}", resource))
+            .with_suggestion("Contact the administrator for access".to_string())
     }
 
     /// General error with context.
     pub fn general(context: &str, details: &str) -> FriendlyError {
         FriendlyError::new(format!("{}: {}", context, details))
-            .with_suggestion("请稍后重试".to_string())
-            .with_suggestion("如果问题持续，请联系技术支持".to_string())
+            .with_suggestion("Please try again later".to_string())
+            .with_suggestion("If the problem persists, contact support".to_string())
     }
 }
 
@@ -285,6 +285,11 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     description: "Control parameters as JSON object (control action, optional). Example: {\"value\": 26}".to_string(),
                     default: serde_json::json!({}),
                     examples: vec![r#"{"value": 26}"#.to_string(), r#"{"brightness": 80}"#.to_string()],
+                }),
+                ("time_range".to_string(), ParameterInfo {
+                    description: "Relative time range for history (e.g., '30min', '1h', '1d', '2w'). Prefer this over start_time/end_time.".to_string(),
+                    default: serde_json::json!("24h"),
+                    examples: vec!["30min".to_string(), "1h".to_string(), "1d".to_string(), "2w".to_string()],
                 }),
                 ("start_time".to_string(), ParameterInfo {
                     description: "Start timestamp for history time range (history action). Unix timestamp in seconds. Default: 1 hour ago".to_string(),
@@ -479,8 +484,8 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     explanation: "Immediately execute an agent and return its analysis results".to_string(),
                 },
                 Example {
-                    user_query: "用安全监控agent分析一下最新的摄像头数据".to_string(),
-                    tool_call: r#"agent(action="invoke", agent_id="Security Monitor", input="分析最新的摄像头检测数据，报告是否有异常")"#.to_string(),
+                    user_query: "Use the security monitor agent to analyze the latest camera data".to_string(),
+                    tool_call: r#"agent(action="invoke", agent_id="Security Monitor", input="Analyze latest camera detection data, report any anomalies")"#.to_string(),
                     explanation: "Invoke a specialized agent and use its analysis result in the conversation".to_string(),
                 },
             ],
@@ -530,6 +535,11 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     description: "Filter rules by name substring (list action)".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["battery".to_string(), "temperature".to_string()],
+                }),
+                ("time_range".to_string(), ParameterInfo {
+                    description: "Relative time range for history (e.g., '30min', '1h', '1d', '2w'). Prefer this over start_time/end_time.".to_string(),
+                    default: serde_json::json!("24h"),
+                    examples: vec!["30min".to_string(), "1h".to_string(), "1d".to_string(), "2w".to_string()],
                 }),
                 ("start_time".to_string(), ParameterInfo {
                     description: "Start timestamp for history range (history action)".to_string(),
@@ -622,6 +632,11 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     default: serde_json::json!(false),
                     examples: vec!["true".to_string()],
                 }),
+                ("time_range".to_string(), ParameterInfo {
+                    description: "Relative time range for listing messages (e.g., '30min', '1h', '1d', '3d', '1w'). Use when user asks about messages in a time period.".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["1h".to_string(), "1d".to_string(), "3d".to_string(), "1w".to_string()],
+                }),
                 ("response_format".to_string(), ParameterInfo {
                     description: "Output verbosity: 'concise' (title/severity only) or 'detailed' (full info with timestamps)".to_string(),
                     default: serde_json::json!("concise"),
@@ -699,7 +714,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         LlmToolDefinition {
             name: "transform".to_string(),
             description: "Data transformation tool. Creates JavaScript-based transforms that process raw device data into new metrics. Actions: list, get, create, update, delete, test. JS code receives `input` (device data) and can use `extensions.invoke()` for external API data. Return object → metrics named {prefix}.{key}. Scope: global, device_type:Type, device:DeviceId".to_string(),
-            aliases: vec!["transform".to_string(), "数据转换".to_string()],
+            aliases: vec!["transform".to_string(), "data-transform".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
                 ("id".to_string(), ParameterInfo {
@@ -800,13 +815,13 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         LlmToolDefinition {
             name: "skill".to_string(),
             description: "Query and manage operation guides (skills). Search for relevant step-by-step guides before complex operations, or create/update/delete user-defined skills. Skills contain best practices and tool call examples for specific scenarios.".to_string(),
-            aliases: vec!["skill".to_string(), "skills".to_string(), "guide".to_string(), "指南".to_string(), "技能".to_string()],
+            aliases: vec!["skill".to_string(), "skills".to_string(), "guide".to_string(), "operation-guide".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
                 ("query".to_string(), ParameterInfo {
                     description: "Search query for keyword matching (search action). Example: 'delete rule', 'device control'".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["删除规则".to_string(), "device control".to_string(), "create agent".to_string()],
+                    examples: vec!["delete rule".to_string(), "device control".to_string(), "create agent".to_string()],
                 }),
                 ("id".to_string(), ParameterInfo {
                     description: "Skill ID for exact lookup, update, or delete".to_string(),
@@ -858,7 +873,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         LlmToolDefinition {
             name: "shell".to_string(),
             description: "Execute shell commands on the host system. Network diagnostics, system monitoring, file inspection, device discovery, container management.".to_string(),
-            aliases: vec!["shell".to_string(), "cli".to_string(), "command".to_string(), "终端".to_string(), "命令行".to_string()],
+            aliases: vec!["shell".to_string(), "cli".to_string(), "command".to_string(), "terminal".to_string()],
             required: vec!["command".to_string()],
             optional: HashMap::from_iter(vec![
                 ("timeout".to_string(), ParameterInfo {
@@ -984,7 +999,7 @@ pub fn format_tools_as_json() -> Vec<Value> {
                     param.clone(),
                     serde_json::json!({
                         "type": "string",
-                        "description": format!("{} (必需)", param)
+                        "description": format!("{} (required)", param)
                     }),
                 );
             }
@@ -1050,7 +1065,7 @@ mod tests {
     #[test]
     fn test_friendly_error() {
         let err = ErrorMessages::device_not_found("sensor_1");
-        assert_eq!(err.message, "找不到设备 'sensor_1'");
+        assert_eq!(err.message, "Device 'sensor_1' not found");
         assert_eq!(err.suggestions.len(), 3);
         assert!(!err.is_warning);
     }
@@ -1065,7 +1080,7 @@ mod tests {
     fn test_simplified_config() {
         let config = SimplifiedConfig::new("test_tool")
             .with_description("A test tool")
-            .with_alias("测试工具")
+            .with_alias("test-tool-alias")
             .with_required_param("input")
             .with_example("test_tool(input='hello')");
 

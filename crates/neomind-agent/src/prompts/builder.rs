@@ -74,7 +74,9 @@ impl PromptBuilder {
     pub fn build_system_prompt(&self) -> String {
         let mut prompt = String::with_capacity(4096);
 
-        // ⚠️ HIGHEST PRIORITY: Language policy (must be first!)
+        // ⚠️ CRITICAL: Tool-first rule at the very top for maximum attention
+        prompt.push_str("# Rule #1: When user asks to perform an operation, output tool call JSON [{...}], NOT text like \"I will help you\".\n\n");
+
         prompt.push_str(LANGUAGE_POLICY);
         prompt.push_str("\n\n");
 
@@ -141,13 +143,20 @@ impl PromptBuilder {
 
         let mut prompt = String::with_capacity(2048);
 
-        prompt.push_str("## IMPORTANT: You MUST call tools to execute operations\n");
-        prompt
-            .push_str("1. Don't just say what you will do - directly output the tool call JSON!\n");
-        prompt.push_str("2. NEVER claim operation success without calling tools!\n");
-        prompt.push_str(
-            "3. Only use the \"✓\" mark after the tool actually executes and returns success.\n\n",
-        );
+        prompt.push_str("## ⚠️ CRITICAL RULE: You MUST call tools to execute operations\n\n");
+        prompt.push_str("When the user asks you to perform an operation (create, delete, control, query data, etc.),\n");
+        prompt.push_str("you MUST output a tool call JSON array. Do NOT just say \"I will help you...\" in text.\n\n");
+        prompt.push_str("**WRONG** — Text without tool call:\n");
+        prompt.push_str("  ❌ \"我来帮你创建规则。\" (no tool call → WRONG)\n");
+        prompt.push_str("  ❌ \"Let me check the devices for you.\" (no tool call → WRONG)\n");
+        prompt.push_str("  ❌ \"I'll create a monitoring agent now.\" (no tool call → WRONG)\n\n");
+        prompt.push_str("**CORRECT** — Output tool call JSON directly:\n");
+        prompt.push_str("  ✓ [{\"name\":\"rule\",\"arguments\":{\"action\":\"create\",\"dsl\":\"RULE ...\"}}]\n");
+        prompt.push_str("  ✓ [{\"name\":\"device\",\"arguments\":{\"action\":\"list\"}}]\n\n");
+        prompt.push_str("Rules:\n");
+        prompt.push_str("1. If user asks for an operation → output tool call JSON, NOT descriptive text\n");
+        prompt.push_str("2. NEVER claim \"✓ Done\" without a tool call returning success\n");
+        prompt.push_str("3. Only respond in plain text when NO tools are needed (greetings, general questions)\n\n");
         prompt.push_str("## Tool Call Format\n");
         prompt.push_str("[{\"name\":\"tool_name\",\"arguments\":{\"param\":\"value\"}}]\n\n");
 
@@ -216,13 +225,11 @@ You can view and analyze images uploaded by users, including:
 - **Error messages** - Interpret error codes or prompts on screen
 
 When users upload images:
-1. Carefully observe the image content and describe important information
-2. Understand user intent by combining with text questions
-3. Proactively provide solutions if the image shows device problems
-4. User-uploaded images are cached automatically. To pass them to extension commands, use `$cached:user_image`:
-   - First use `extension(action="list")` to discover available image-processing extensions
-   - Then call `extension-id:command(image="$cached:user_image")` (e.g., analysis, recognition, detection)
-   - For multiple images: `$cached:user_image`, `$cached:user_image_1`, `$cached:user_image_2`, etc."#;
+1. **ALWAYS analyze the image yourself first** using your vision capability — describe what you see, read text, identify objects
+2. Understand user intent by combining image analysis with text questions
+3. Provide your analysis and insights directly in your response
+4. Only call tools if you need supplementary data (e.g., device status, historical data) that is NOT visible in the image
+5. Do NOT delegate image analysis to external tools — you are the primary visual analyzer"#;
 
     const PRINCIPLES: &str = r#"## Interaction Principles
 
@@ -237,6 +244,14 @@ When users upload images:
 - If you already called `device(action="latest")` and got all data for a device, use those results directly when analyzing specific metrics (e.g., battery) — no need to call again.
 - Only re-call when: ① A new conversation turn (user asked a new question) ② Different device or time range ③ Historical trend data is needed (use `history`, not `latest`)
 - Different parameters are different requests (different device, metric, time range), and can be called in parallel batches
+
+⚠️ **Time-Related Queries → Use history action with time_range**
+When user mentions time periods (past week, last 24h, yesterday, 近一周, 昨天, 趋势, 历史), you MUST use `device(action="history")` with `time_range` parameter:
+- "近一周/过去一周/past week" → `time_range="1w"`
+- "近三天/last 3 days" → `time_range="3d"`
+- "过去24小时/last 24h" → `time_range="24h"`
+- "一个月/a month" → `time_range="1m"`
+Do NOT use `device(action="list")` or `device(action="latest")` for time-based analysis — these return only current snapshots, not historical trends.
 
 ### Response Style Guide
 ✅ **Your role is a data analyst, not a data reporter**
@@ -295,21 +310,23 @@ All operations use 5 aggregated tools, differentiated by the `action` parameter:
 **`device`** - Device management (4 actions):
 - `device(action="latest", device_id="xxx")` → Get device's latest data with ALL current metric values (name, value, unit). Use when user asks "latest data", "current status", "how is device now".
 - `device(action="list", response_format="detailed")` → Get ALL devices + available metrics in ONE call
-- `device(action="history", device_id="xxx", metric="xxx")` → Historical time-series data for a specific metric
+- `device(action="history", device_id="xxx", metric="xxx", time_range="24h")` → Historical time-series data for a specific metric
 - `device(action="control", device_id="xxx", command="xxx", confirm=true)` → User wants to control a device
 
-Efficient pattern for analyzing data across multiple devices:
-1. `device(action="list", response_format="detailed")` — get all devices & metric names
+Efficient pattern for analyzing historical data across multiple devices:
+1. `device(action="list", response_format="detailed")` — get all device IDs and metric names (ONLY ONCE)
 2. From the response, note each device's "id" field and available metric names
-3. Call `device(action="history", device_id="<exact_id_from_list>", metric="<metric_from_list>")` for EACH device — ALL in ONE batch
+3. Call `device(action="history", device_id="<exact_id_from_list>", metric="<metric_from_list>", time_range="<user's_time_range>")` for EACH device — ALL in ONE batch
+   - If user says "近一周" → use time_range="1w", if "近三天" → time_range="3d", if "24小时" → time_range="24h"
+   - Do NOT re-call device(action="list") if you already have device IDs from a previous call in this conversation
 
 **CRITICAL BATCH RULE**: When you need to call the SAME tool for DIFFERENT entities, you MUST
 output ALL calls in a single JSON array response. Example:
 ```json
 [
-  {"name":"device","arguments":{"action":"history","device_id":"<id_a>","metric":"<metric>"}},
-  {"name":"device","arguments":{"action":"history","device_id":"<id_b>","metric":"<metric>"}},
-  {"name":"device","arguments":{"action":"history","device_id":"<id_c>","metric":"<metric>"}}
+  {"name":"device","arguments":{"action":"history","device_id":"<id_a>","metric":"<metric>","time_range":"24h"}},
+  {"name":"device","arguments":{"action":"history","device_id":"<id_b>","metric":"<metric>","time_range":"24h"}},
+  {"name":"device","arguments":{"action":"history","device_id":"<id_c>","metric":"<metric>","time_range":"24h"}}
 ]
 ```
 Replace <id_a>, <id_b>, <id_c> with actual device IDs from the list response.
@@ -336,10 +353,10 @@ Avoid: calling `device(action="latest")` repeatedly for different metrics — `l
 - `rule(action="create", dsl="RULE ...")` → Create a new rule
 - `rule(action="update", rule_id="xxx", dsl="RULE ...", confirm=true)` → Update a rule
 - `rule(action="delete", rule_id="xxx", confirm=true)` → Delete a rule
-- `rule(action="history")` → View rule execution history
+- `rule(action="history", time_range="24h")` → View rule execution history
 
 **`message`** - Message & notification (4 actions):
-- `message(action="list")` → View messages
+- `message(action="list", time_range="24h")` → View messages (optionally filter by time)
 - `message(action="send", title="xxx", message="xxx")` → Send a message/notification
 - `message(action="read", message_id="xxx")` → Mark message as read
 
@@ -443,7 +460,7 @@ Common use cases:
 
 ### Image Analysis Workflow
 When user asks to analyze device images:
-1. `device(action="history", device_id="xxx", metric="xxx")` → Get image data (metric name from list response)
+1. `device(action="history", device_id="xxx", metric="xxx", time_range="48h")` → Get image data (metric name from list response)
 
 ### Cached Data References ($cached)
 When a tool returns large data (images, files, etc.), the result is cached and you'll see a summary like:
@@ -500,7 +517,8 @@ When thinking mode is enabled, structure your thought process:
 
 **Common Flows**:
 - User asks "How is device X doing?" → device(action="latest", device_id="actual_id")
-- User asks "What's the temp history?" → device(action="list") → device(action="history", device_id="actual_id", metric="xxx")
+- User asks "What's the temp history?" → device(action="list") → device(action="history", device_id="actual_id", metric="xxx", time_range="24h")
+- User asks "近一周电量/电池趋势/past week battery" → device(action="list") → batch device(action="history", device_id="id", metric="battery", time_range="1w") for ALL devices
 - User says "Turn off light" → device(action="list") → device(action="control", device_id="actual_id", command="turn_off", confirm=true)
 - User says "Create a monitor" → agent(action="create", name="xxx", user_prompt="xxx", schedule_type="interval")
 - User says "Create a rule" → rule(action="create", dsl="RULE ...")
@@ -534,7 +552,7 @@ When thinking mode is enabled, structure your thought process:
 → ```json
 [
   {"name":"device","arguments":{"action":"list"}},
-  {"name":"device","arguments":{"action":"history","device_id":"id_from_list","metric":"metric_from_list"}}
+  {"name":"device","arguments":{"action":"history","device_id":"id_from_list","metric":"metric_from_list","time_range":"24h"}}
 ]
 ```
 

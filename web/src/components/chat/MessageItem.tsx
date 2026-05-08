@@ -18,27 +18,19 @@ interface MessageItemProps {
  */
 export const MessageItem = React.memo<MessageItemProps>(
   ({ message, user, getUserInitials }) => {
+    const isAssistant = message.role === "assistant"
+
     return (
       <div
-        className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
+        className={`flex gap-3 ${isAssistant ? "justify-start" : "justify-end"}`}
       >
-        {message.role === "assistant" && (
-          <img src="/logo-square.png" alt="NeoMind" width={32} height={32} className="flex-shrink-0 w-8 h-8 rounded-lg" />
+        {isAssistant && (
+          <img src="/logo-square.png" alt="NeoMind" width={32} height={32} className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5" />
         )}
 
-        <div className={`max-w-[80%] ${message.role === "user" ? "order-1" : ""}`}>
-          <div
-            className={`rounded-2xl px-4 py-3 overflow-hidden ${
-              message.role === "user"
-                ? "bg-[var(--msg-user-bg)] text-[var(--msg-user-text)]"
-                : "bg-[var(--msg-ai-bg)] text-[var(--msg-ai-text)]"
-            }`}
-          >
-            {/* Images for user messages */}
-            {message.role === "user" && message.images && message.images.length > 0 && (
-              <MessageImages images={message.images} />
-            )}
-
+        {isAssistant ? (
+          /* Assistant: no bubble, content flows naturally — width is stable */
+          <div className="flex-1 min-w-0">
             {/* Thinking block */}
             {message.thinking && (
               <ThinkingBlock thinking={message.thinking} />
@@ -54,15 +46,30 @@ export const MessageItem = React.memo<MessageItemProps>(
 
             {/* Content */}
             {message.content && (
-              <MarkdownMessage content={message.content} variant={message.role as 'user' | 'assistant'} />
+              <MarkdownMessage content={message.content} variant="assistant" />
             )}
-          </div>
 
-          {/* Timestamp */}
-          <p className="text-xs text-muted-foreground mt-1 px-1">
-            {formatTimestamp(message.timestamp, false)}
-          </p>
-        </div>
+            {/* Timestamp */}
+            <p className="text-xs text-muted-foreground mt-1.5 px-1">
+              {formatTimestamp(message.timestamp, false)}
+            </p>
+          </div>
+        ) : (
+          /* User: keep bubble with natural width */
+          <div className="max-w-[80%] order-1">
+            <div className="rounded-2xl px-4 py-3 overflow-hidden bg-[var(--msg-user-bg)] text-[var(--msg-user-text)]">
+              {message.images && message.images.length > 0 && (
+                <MessageImages images={message.images} />
+              )}
+              {message.content && (
+                <MarkdownMessage content={message.content} variant="user" />
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1 px-1">
+              {formatTimestamp(message.timestamp, false)}
+            </p>
+          </div>
+        )}
 
         {message.role === "user" && user && (
           <Avatar className="h-8 w-8 order-2">

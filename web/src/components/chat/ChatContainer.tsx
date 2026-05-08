@@ -3,7 +3,7 @@
  * A simplified, chat-centric UI with minimal navigation
  */
 
-import { useState, useRef, useEffect, useCallback, useReducer } from "react"
+import { useState, useRef, useEffect, useCallback, useReducer, useMemo, memo, useImperativeHandle, forwardRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
@@ -234,6 +234,115 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
   }
 }
 
+// Isolated input field — owns its own `input` state so keystrokes
+// only re-render this small component, NOT the entire ChatContainer.
+export interface ChatInputFieldHandle {
+  setText: (text: string) => void
+  focus: () => void
+}
+
+const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
+  isStreaming: boolean
+  onSend: (text: string) => void
+  onSlash: () => void
+  onEscape: () => void
+  showSuggestions: boolean
+}>(function ChatInputFieldInner({
+  isStreaming,
+  onSend,
+  onSlash,
+  onEscape,
+  showSuggestions,
+}, ref) {
+  const { t } = useTranslation("chat")
+  const [input, setInput] = useState("")
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  useImperativeHandle(ref, () => ({
+    setText: (text: string) => {
+      setInput(text)
+      inputRef.current?.focus()
+    },
+    focus: () => inputRef.current?.focus(),
+  }), [])
+
+  const handleSend = useCallback(() => {
+    const trimmed = input.trim()
+    if (!trimmed || isStreaming) return
+    onSend(trimmed)
+    setInput("")
+    if (inputRef.current) inputRef.current.style.height = "auto"
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [input, isStreaming, onSend])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      if (!showSuggestions) handleSend()
+    }
+    if (e.key === "/" && input.length === 0) onSlash()
+    if (e.key === "Escape") onEscape()
+  }, [handleSend, showSuggestions, input.length, onSlash, onEscape])
+
+  const canSend = !!input.trim() && !isStreaming
+
+  return (
+    <div className="flex items-end gap-2">
+      <div className="flex-1 relative">
+        {isStreaming && (
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1.5 pointer-events-none">
+            <span className="w-1.5 h-1.5 rounded-full bg-info animate-ping" />
+            <span className="text-xs text-muted-foreground">{t("status.typing", "正在输入...")}</span>
+          </div>
+        )}
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={isStreaming ? t("status.wait", "请等待...") : t("input.placeholder")}
+          rows={1}
+          disabled={isStreaming}
+          className={cn(
+            "w-full px-3 sm:px-4 py-3 rounded-2xl resize-none text-base",
+            "border border-input bg-background text-foreground placeholder:text-muted-foreground",
+            "focus-visible:outline-none",
+            "transition-all duration-200",
+            "max-h-32 scroll-mb-32",
+            isStreaming && "opacity-60 cursor-wait"
+          )}
+          style={{ minHeight: "44px", height: "auto" }}
+          onInput={(e) => {
+            const target = e.target as HTMLTextAreaElement
+            target.style.height = "auto"
+            target.style.height = Math.min(target.scrollHeight, 128) + "px"
+          }}
+        />
+      </div>
+      <Button
+        onClick={handleSend}
+        disabled={!canSend}
+        className={cn(
+          "h-12 w-12 rounded-full flex-shrink-0",
+          "bg-info hover:bg-info/90 text-primary-foreground",
+          "transition-all duration-200",
+          "disabled:opacity-50 disabled:cursor-not-allowed",
+          isStreaming && "relative overflow-hidden"
+        )}
+      >
+        {isStreaming ? (
+          <>
+            <span className="absolute inset-0 bg-info/20 animate-ping" />
+            <Send className="h-5 w-5 relative" />
+          </>
+        ) : (
+          <Send className="h-5 w-5" />
+        )}
+      </Button>
+    </div>
+  )
+}))
+
 export function ChatContainer({ className = "" }: ChatContainerProps) {
   const { t } = useTranslation("chat")
   const navigate = useNavigate()
@@ -268,12 +377,14 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   const [streamState, dispatch] = useReducer(streamReducer, initialStreamState)
 
   // Local state
-  const [input, setInput] = useState("")
   const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedSkills, setSelectedSkills] = useState<string[]>([])
   const [availableSkills, setAvailableSkills] = useState<SkillSummary[]>([])
   const [skillPopoverOpen, setSkillPopoverOpen] = useState(false)
+
+  // Ref to the isolated input field (avoids re-rendering ChatContainer on keystrokes)
+  const inputFieldRef = useRef<ChatInputFieldHandle>(null)
 
   // Track the ID of the current streaming message (generated once per stream)
   const [currentStreamMessageId, setCurrentStreamMessageId] = useState<string | null>(null)
@@ -290,9 +401,11 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [])
 
-  // Ref for messages end and input
+  // Ref for messages end
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Ref for the scroll container (passed to MergedMessageList for virtual scrolling)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     scrollToBottom()
@@ -432,14 +545,9 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           break
 
         case "end":
-          // IMPORTANT: Clear streaming state FIRST to prevent duplicate display.
-          // isStreamingRef updates synchronously, preventing the intermediate render
-          // where both stored message and streaming preview are visible.
-          isStreamingRef.current = false
-          setCurrentStreamMessageId(null)
-          dispatch({ type: 'END_STREAM' })
-
-          // Now save the complete message to store
+          // Save the complete message to store FIRST, then clear streaming state.
+          // This ensures the message appears in the virtualizer before the streaming
+          // block disappears, preventing the "flash" on message completion.
           if (streamingContentAccumulator || streamingThinkingAccumulator || streamingToolCallsAccumulator.length > 0) {
             const messageId = currentStreamMessageId || generateId()
             // Save last round's content to roundContents
@@ -460,6 +568,14 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
             addMessage(completeMessage)
             setLastAssistantMessageId(messageId)
           }
+
+          // NOW clear streaming state — the deduplication check in MergedMessageList
+          // (isStreaming prop) ensures the streaming block is hidden because the
+          // message is already in filteredMessages with matching currentStreamMessageId.
+          isStreamingRef.current = false
+          dispatch({ type: 'END_STREAM' })
+          setCurrentStreamMessageId(null)
+
           // Reset local accumulators
           streamingContentAccumulator = ""
           streamingThinkingAccumulator = ""
@@ -505,46 +621,31 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     }
   }, [sessionId, createSession, navigate])
 
-  // Send message
-  const handleSend = async () => {
-    const trimmedInput = input.trim()
-    if (!trimmedInput || streamState.isStreaming) return
+  // Send message — receives text from the isolated ChatInputField
+  const handleSend = useCallback(async (text: string) => {
+    if (!text || streamState.isStreaming) return
 
     // Add user message directly to current session
-    // Backend handles session continuity - no need to create new session
     const userMessage: Message = {
       id: generateId(),
       role: "user",
-      content: trimmedInput,
-      timestamp: Math.floor(Date.now() / 1000), // Use seconds (matches backend)
+      content: text,
+      timestamp: Math.floor(Date.now() / 1000),
     }
     addMessage(userMessage)
 
-    // Clear input and reset textarea height
-    setInput("")
     setShowSuggestions(false)
 
-    // Reset textarea height to initial state
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto"
-    }
-
-    // Start streaming - generate message ID once for the entire stream
+    // Start streaming
     dispatch({ type: 'START_STREAM' })
     const newMessageId = generateId()
     setCurrentStreamMessageId(newMessageId)
-    streamStartRef.current = Date.now()  // Reset stream start time
-    // Reset last assistant message ID (new response incoming)
+    streamStartRef.current = Date.now()
     setLastAssistantMessageId(null)
 
     // Send via WebSocket
-    ws.sendMessage(trimmedInput, undefined, selectedSkills.length > 0 ? selectedSkills : undefined)
-
-    // Focus input after sending
-    requestAnimationFrame(() => {
-      inputRef.current?.focus()
-    })
-  }
+    ws.sendMessage(text, undefined, selectedSkills.length > 0 ? selectedSkills : undefined)
+  }, [streamState.isStreaming, addMessage, selectedSkills])
 
   // Toggle skill selection
   const toggleSkill = useCallback((skillId: string) => {
@@ -555,30 +656,15 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     )
   }, [])
 
-  // Handle suggestion select
-  const handleSuggestionSelect = (prompt: string) => {
-    setInput(prompt)
+  // Handle suggestion select — delegates to isolated input
+  const handleSuggestionSelect = useCallback((prompt: string) => {
+    inputFieldRef.current?.setText(prompt)
     setShowSuggestions(false)
-    inputRef.current?.focus()
-  }
+  }, [])
 
-  // Handle keyboard shortcuts
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      if (!showSuggestions) {
-        handleSend()
-      }
-    }
-    // Show suggestions on slash
-    if (e.key === "/" && input.length === 0) {
-      setShowSuggestions(true)
-    }
-    // Escape to hide suggestions
-    if (e.key === "Escape") {
-      setShowSuggestions(false)
-    }
-  }
+  // Slash and escape callbacks for input field
+  const handleSlash = useCallback(() => setShowSuggestions(true), [])
+  const handleEscape = useCallback(() => setShowSuggestions(false), [])
 
   // Handle tap outside to dismiss keyboard (mobile)
   const handleBackdropClick = () => {
@@ -594,8 +680,8 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   }
 
   // Filter out partial messages - they're handled separately during streaming
-  // Use shared utility for consistency
-  const filteredMessages = filterPartialMessages(messages)
+  // Memoized to prevent recalculation on every keystroke (input state change)
+  const filteredMessages = useMemo(() => filterPartialMessages(messages), [messages])
 
   return (
     <div className={`flex flex-col h-full bg-[var(--background)] ${className}`}>
@@ -635,6 +721,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
 
       {/* Messages area */}
       <div
+        ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-4 py-6 min-h-0"
         onClick={(e) => {
           // If clicking outside interactive elements, dismiss keyboard
@@ -661,7 +748,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                 ].map((suggestion) => (
                   <button
                     key={suggestion}
-                    onClick={() => setInput(suggestion)}
+                    onClick={() => inputFieldRef.current?.setText(suggestion)}
                     className="px-4 py-2 rounded-lg bg-[var(--card-hover-bg)] hover:bg-[var(--session-item-active)] text-sm text-foreground transition-colors border border-[var(--border)]"
                   >
                     {suggestion}
@@ -674,6 +761,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           {/* Messages - with automatic merging at render time */}
           <MergedMessageList
             messages={filteredMessages}
+            scrollElementRef={scrollContainerRef}
             isStreaming={streamState.isStreaming && !(currentStreamMessageId && filteredMessages.some(m => m.id === currentStreamMessageId))}
             streamingContent={streamState.streamingContent}
             streamingThinking={streamState.streamingThinking}
@@ -706,7 +794,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
             {/* Suggestions */}
             {showSuggestions && (
               <InputSuggestions
-                input={input}
+                input=""
                 onSelect={handleSuggestionSelect}
                 visible={showSuggestions}
               />
@@ -872,66 +960,15 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
               </div>
             )}
 
-            {/* Input */}
-            <div className="flex items-end gap-2">
-              <div className="flex-1 relative">
-                {/* Streaming indicator overlay */}
-                {streamState.isStreaming && (
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1.5 pointer-events-none">
-                    <span className="w-1.5 h-1.5 rounded-full bg-info animate-ping" />
-                    <span className="text-xs text-muted-foreground">{t("status.typing", "正在输入...")}</span>
-                  </div>
-                )}
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={streamState.isStreaming ? t("status.wait", "请等待...") : t("input.placeholder")}
-                  rows={1}
-                  disabled={streamState.isStreaming}
-                  className={cn(
-                    "w-full px-3 sm:px-4 py-3 rounded-2xl resize-none text-base",
-                    "border border-input bg-background text-foreground placeholder:text-muted-foreground",
-                    "focus-visible:outline-none",
-                    "transition-all duration-200",
-                    "max-h-32 scroll-mb-32",
-                    streamState.isStreaming && "opacity-60 cursor-wait"
-                  )}
-                  style={{
-                    minHeight: "44px",
-                    height: "auto"
-                  }}
-                  onInput={(e) => {
-                    const target = e.target as HTMLTextAreaElement
-                    target.style.height = "auto"
-                    target.style.height = Math.min(target.scrollHeight, 128) + "px"
-                  }}
-                />
-              </div>
-
-              {/* Send button - shows loading spinner when streaming */}
-              <Button
-                onClick={handleSend}
-                disabled={!input.trim() || streamState.isStreaming}
-                className={cn(
-                  "h-12 w-12 rounded-full flex-shrink-0",
-                  "bg-info hover:bg-info/90 text-primary-foreground",
-                  "transition-all duration-200",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                  streamState.isStreaming && "relative overflow-hidden"
-                )}
-              >
-                {streamState.isStreaming ? (
-                  <>
-                    <span className="absolute inset-0 bg-info/20 animate-ping" />
-                    <Send className="h-5 w-5 relative" />
-                  </>
-                ) : (
-                  <Send className="h-5 w-5" />
-                )}
-              </Button>
-            </div>
+            {/* Input — isolated component so keystrokes don't re-render ChatContainer */}
+            <ChatInputField
+              ref={inputFieldRef}
+              isStreaming={streamState.isStreaming}
+              onSend={handleSend}
+              onSlash={handleSlash}
+              onEscape={handleEscape}
+              showSuggestions={showSuggestions}
+            />
 
             {/* Footer hint */}
             <p className="text-xs text-muted-foreground text-center mt-2">

@@ -55,16 +55,6 @@ impl ToolOutput {
         }
     }
 
-    /// Create a failed output with data.
-    pub fn error_with_data(error: impl Into<String>, data: Value) -> Self {
-        Self {
-            success: false,
-            data,
-            error: Some(error.into()),
-            metadata: None,
-        }
-    }
-
     /// Create a failed output with metadata.
     pub fn error_with_metadata(error: impl Into<String>, metadata: Value) -> Self {
         Self {

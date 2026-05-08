@@ -364,7 +364,7 @@ impl SessionManager {
 
                 neomind_storage::SessionMessage {
                     role: msg.role.clone(),
-                    content: msg.content.clone(),
+                    content: msg.content.to_string(),
                     tool_calls,
                     tool_call_id: msg.tool_call_id.clone(),
                     tool_call_name: msg.tool_call_name.clone(),
@@ -453,7 +453,7 @@ impl SessionManager {
 
                 AgentMessage {
                     role: sm.role,
-                    content: sm.content,
+                    content: sm.content.into(),
                     tool_calls,
                     tool_call_id: sm.tool_call_id,
                     tool_call_name: sm.tool_call_name,
@@ -1119,7 +1119,7 @@ impl SessionManager {
         let agent = self.get_session(session_id).await?;
 
         // Load memory snapshot if enabled and not yet loaded
-        if self.is_memory_enabled(session_id).await && !agent.has_memory_snapshot().await {
+        if self.is_memory_enabled(session_id).await && !agent.has_memory_snapshot() {
             let memory_store = neomind_storage::MarkdownMemoryStore::new("data/memory");
             let snapshot = crate::memory::MemorySnapshot::load(&memory_store);
             if !snapshot.is_empty() {
@@ -1127,7 +1127,7 @@ impl SessionManager {
                     session_id = %session_id,
                     "Loaded memory snapshot for session"
                 );
-                agent.set_memory_snapshot(snapshot).await;
+                agent.set_memory_snapshot(snapshot);
             }
         }
 

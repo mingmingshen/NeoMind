@@ -488,7 +488,7 @@ pub fn format_for_llm(definitions: &[ToolDefinition]) -> String {
                     result.push_str("**Usage Scenarios**:\n");
                     for (i, scenario) in def.scenarios.iter().enumerate() {
                         result.push_str(&format!(
-                            "  {}. {} - 示例: \"{}\"\n",
+                            "  {}. {} - Example: \"{}\"\n",
                             i + 1,
                             scenario.description,
                             scenario.example_query

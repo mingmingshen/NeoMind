@@ -358,7 +358,7 @@ mod tests {
     fn make_message(role: &str, content: &str, timestamp: i64) -> AgentMessage {
         AgentMessage {
             role: role.to_string(),
-            content: content.to_string(),
+            content: content.to_string().into(),
             tool_calls: None,
             tool_call_id: None,
             tool_call_name: None,
