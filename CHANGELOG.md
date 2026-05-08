@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.7.3] - 2026-05-08
+
+### Added
+
+- **Relative Time Range for Tool Queries** — New `time_range` parameter for device, rule, message, and ai_metric tools. Supports human-readable strings like `"30min"`, `"1h"`, `"1d"`, `"1w"`, `"2w"` instead of Unix timestamps, solving small model timestamp calculation errors
+- **Guided Error Messages** — All tool errors now include natural language guidance (e.g., entity not found → suggest list action, unknown action → show valid actions, operation failures → suggest next steps)
+- **Time-Range Query Prompt** — Prompt builder now includes explicit time-range guidance to help small models correctly choose `history` action with `time_range` for time-based queries
+
+### Changed
+
+- **Tighter ReAct Loop Duplicate Detection** — Stop after 1 consecutive duplicate round (was 2), lower already-executed threshold to 50% (was 60%), add message_id/extension_id to signature checks
+- **Stronger Inter-Round Context** — Multi-round context prompt now uses "STOP AND THINK" pattern to prevent small models from re-calling same tools with identical arguments
+- **Device Tool Description** — Enhanced with stronger time-range keywords and examples to improve small model action selection accuracy
+
+### Fixed
+
+- **Repeated Tool Calls** — Fixed small models repeatedly calling same tool (e.g., `message(list)` 3 times in a row) by tightening loop detection and improving inter-round prompts
+- **Wrong Action for Time Queries** — Fixed models using `device(list)` instead of `device(history)` when user asks about trends or time ranges
+
+### Removed
+
+- **Dead Code** — Removed unused `ToolOutput::error_with_data()` method
+- **Chinese Hardcoding** — Replaced all hardcoded Chinese text in code with English (aliases, error messages, examples, test assertions)
+
+---
+
 ## [v0.7.2] - 2026-05-06
 
 ### Added
