@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.7.4] - 2026-05-09
+
+### Changed
+
+- **Migrate to parking_lot locks** — Replaced `std::sync::RwLock`/`Mutex` with `parking_lot` equivalents across all backend crates (~80 lock `.unwrap()` calls eliminated). parking_lot locks never poison, removing a class of potential panics
+- **Fix unsafe error handling** — `shell.rs` now checks return values of `killpg` (Unix) and `TerminateProcess` (Windows) with logging on failure
+- **Fix business logic unwrap()** — Replaced ~25 `unwrap()` calls in production code with `expect()`, `unwrap_or()`, or proper error propagation
+- **Fix agent semaphore panic** — Tool concurrency semaphore closure now returns an error instead of panicking
+- **Fix clippy -D warnings** — Resolved `is_multiple_of`, `Default` impl, `or_insert_with`, `map_or`, wildcard pattern, and `from_str` naming issues
+- **Fix broken test** — `test_cursor_decode_invalid_utf8` assertion corrected
+- **Fix extension uninstall dialog** — Uninstall confirmation now correctly shows the extension name instead of literal `{{name}}`
+- **Fix extension grid props** — Corrected `onConfigure` → `onDetails` prop name to match `ExtensionGrid` API
+
 ## [v0.7.3] - 2026-05-08
 
 ### Added

@@ -157,7 +157,7 @@ export function ExtensionsPage() {
           extensions={extensions}
           loading={extensionsLoading}
           onUninstall={handleUninstall}
-          onConfigure={handleConfigure}
+          onDetails={handleConfigure}
           onReload={handleReload}
         />
       </PageLayout>
@@ -218,6 +218,7 @@ export function ExtensionsPage() {
             <AlertDialogTitle>{t("extensions:confirmUninstall", { defaultValue: "Completely Uninstall Extension" })}</AlertDialogTitle>
             <AlertDialogDescription>
               {t("extensions:confirmUninstallDescription", {
+                name: pendingActionExtension?.name,
                 defaultValue: `Are you sure you want to completely uninstall "${pendingActionExtension?.name}"? This will remove ALL extension files including source code, and this action CANNOT be undone.`,
               })}
             </AlertDialogDescription>
