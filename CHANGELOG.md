@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Extension config_parameters support** — Extension runner now parses `config_parameters` from metadata JSON, enabling extensions to declare their configuration schema
 - **Device metric update sets last_seen** — Reporting metrics from an extension now updates the device's `last_seen` timestamp, preventing "Never Connected" false status
 - **Extension details full-screen dialog** — `ExtensionDetailsDialog` redesigned as `FullScreenDialog` with sidebar navigation: Overview, Configuration, Logs, Metrics, Commands — replacing the old tabbed modal
-- **Extension SDK v0.7.0** — New `register_template()`, `register_device()`, `unregister_device()` functions for device management from extensions
+- **Extension SDK v0.6.3** — New `register_template()`, `register_device()`, `unregister_device()` functions for device management from extensions
 
 ### Changed
 
