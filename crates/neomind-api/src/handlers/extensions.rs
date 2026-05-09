@@ -154,19 +154,6 @@ fn build_parameters_schema(parameters: &[ParameterDefinition]) -> serde_json::Va
     })
 }
 
-/// Extension statistics DTO.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExtensionStatsDto {
-    /// Start count
-    pub start_count: u64,
-    /// Stop count
-    pub stop_count: u64,
-    /// Error count
-    pub error_count: u64,
-    /// Last error
-    pub last_error: Option<String>,
-}
-
 /// Extension type DTO.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtensionTypeDto {
@@ -510,43 +497,6 @@ pub async fn get_extension_handler(
     })
 }
 
-/// GET /api/extensions/:id/stats
-/// Get extension statistics.
-pub async fn get_extension_stats_handler(
-    State(state): State<ServerState>,
-    Path(id): Path<String>,
-) -> HandlerResult<ExtensionStatsDto> {
-    // Check if extension exists using unified service
-    let exists = state.extensions.runtime.contains(&id).await;
-    if !exists {
-        return Err(ErrorResponse::not_found(format!("Extension {}", id)));
-    }
-
-    // Get stats from unified service (supports both in-process and isolated extensions)
-    match state.extensions.runtime.get_stats(&id).await {
-        Ok(stats) => ok(ExtensionStatsDto {
-            start_count: stats.start_count,
-            stop_count: stats.stop_count,
-            error_count: stats.error_count,
-            last_error: stats.last_error,
-        }),
-        Err(e) => {
-            tracing::warn!(
-                extension_id = %id,
-                error = %e,
-                "Failed to get extension stats"
-            );
-            // Return default stats on error
-            ok(ExtensionStatsDto {
-                start_count: 0,
-                stop_count: 0,
-                error_count: 0,
-                last_error: Some(format!("Failed to get stats: {}", e)),
-            })
-        }
-    }
-}
-
 /// GET /api/extensions/types
 /// List available extension types.
 pub async fn list_extension_types_handler() -> HandlerResult<Vec<ExtensionTypeDto>> {
@@ -776,6 +726,58 @@ pub async fn extension_health_handler(
         "extension_id": id,
         "healthy": healthy
     }))
+}
+
+/// Extension log entry DTO.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtensionLogEntryDto {
+    /// Timestamp (milliseconds since epoch)
+    pub timestamp: i64,
+    /// Log level (trace/debug/info/warn/error)
+    pub level: String,
+    /// Log message
+    pub message: String,
+}
+
+/// GET /api/extensions/:id/logs
+/// Get extension log entries.
+pub async fn get_extension_logs_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<Vec<ExtensionLogEntryDto>> {
+    let runtime = &state.extensions.runtime;
+
+    let logs = runtime
+        .get_logs(&id)
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get logs: {}", e)))?;
+
+    let dtos: Vec<ExtensionLogEntryDto> = logs
+        .into_iter()
+        .map(|entry| ExtensionLogEntryDto {
+            timestamp: entry.timestamp,
+            level: entry.level,
+            message: entry.message,
+        })
+        .collect();
+
+    ok(dtos)
+}
+
+/// DELETE /api/extensions/:id/logs
+/// Clear extension log entries.
+pub async fn clear_extension_logs_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<serde_json::Value> {
+    let runtime = &state.extensions.runtime;
+
+    runtime
+        .clear_logs(&id)
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("Failed to clear logs: {}", e)))?;
+
+    ok(serde_json::json!({ "message": "Logs cleared" }))
 }
 
 /// Publish ExtensionOutput events for extension command results.
@@ -2793,8 +2795,9 @@ pub async fn reload_extension_handler(
 fn build_config_schema_dto(parameters: &[ParameterDefinition]) -> serde_json::Value {
     use neomind_core::extension::system::ParamMetricValue;
 
-    let mut properties = HashMap::new();
+    let mut properties = serde_json::Map::new();
     let mut required = Vec::new();
+    let mut property_order = Vec::new();
 
     for param in parameters {
         let param_type = match param.param_type {
@@ -2836,6 +2839,7 @@ fn build_config_schema_dto(parameters: &[ParameterDefinition]) -> serde_json::Va
             param_schema["maximum"] = serde_json::json!(max);
         }
 
+        property_order.push(param.name.clone());
         properties.insert(param.name.clone(), param_schema);
 
         if param.required {
@@ -2847,6 +2851,7 @@ fn build_config_schema_dto(parameters: &[ParameterDefinition]) -> serde_json::Va
         "type": "object",
         "properties": properties,
         "required": required,
+        "propertyOrder": property_order,
     })
 }
 

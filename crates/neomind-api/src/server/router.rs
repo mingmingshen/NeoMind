@@ -149,8 +149,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             get(extensions::extension_health_handler),
         )
         .route(
-            "/api/extensions/:id/stats",
-            get(extensions::get_extension_stats_handler),
+            "/api/extensions/:id/logs",
+            get(extensions::get_extension_logs_handler).delete(extensions::clear_extension_logs_handler),
         )
         .route(
             "/api/extensions/:id/commands",

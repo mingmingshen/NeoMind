@@ -237,7 +237,7 @@ pub struct AgentExecutor {
     /// Phase 3.3: Extension registry for dynamic tool loading
     extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
     /// Tool registry for function calling mode (wrapped for late initialization)
-    tool_registry: std::sync::RwLock<Option<Arc<crate::toolkit::ToolRegistry>>>,
+    tool_registry: parking_lot::RwLock<Option<Arc<crate::toolkit::ToolRegistry>>>,
     /// Memory store for extracting learned patterns
     memory_store: Option<Arc<MarkdownMemoryStore>>,
     /// Per-LLM-backend semaphores for concurrency limiting (shared with scheduler)
@@ -286,7 +286,7 @@ impl AgentExecutor {
             recent_executions: Arc::new(RwLock::new(HashMap::new())),
             llm_runtime_cache: Arc::new(RwLock::new(HashMap::new())),
             extension_registry,
-            tool_registry: std::sync::RwLock::new(config.tool_registry.clone()),
+            tool_registry: parking_lot::RwLock::new(config.tool_registry.clone()),
             memory_store: config.memory_store.clone(),
             backend_semaphores: config.backend_semaphores.clone(),
         })
@@ -322,7 +322,6 @@ impl AgentExecutor {
         let registry_available = self
             .tool_registry
             .read()
-            .unwrap_or_else(|e| e.into_inner())
             .is_some();
         let result = llm_supports_tools && registry_available;
         if !result {
@@ -1206,10 +1205,6 @@ impl AgentExecutor {
         let registry = self
             .tool_registry
             .read()
-            .unwrap_or_else(|e| {
-                tracing::error!("Tool registry lock poisoned, recovering: {}", e);
-                e.into_inner()
-            })
             .clone()
             .ok_or_else(|| NeoMindError::Tool("Tool registry not available".to_string()))?;
 
@@ -1243,8 +1238,7 @@ impl AgentExecutor {
     pub fn set_tool_registry(&self, registry: Arc<crate::toolkit::ToolRegistry>) {
         *self
             .tool_registry
-            .write()
-            .unwrap_or_else(|e| e.into_inner()) = Some(registry);
+            .write() = Some(registry);
     }
 
     // ========================================================================
@@ -1737,7 +1731,6 @@ impl AgentExecutor {
                     let executor_tool_registry = self
                         .tool_registry
                         .read()
-                        .unwrap_or_else(|e| e.into_inner())
                         .clone();
                     let executor_extension_registry = self.extension_registry.clone();
                     let executor_memory_store = self.memory_store.clone();
@@ -1952,13 +1945,6 @@ impl AgentExecutor {
             let executor_tool_registry = self
                 .tool_registry
                 .read()
-                .unwrap_or_else(|e| {
-                    tracing::error!(
-                        "Tool registry lock poisoned in data event spawn, recovering: {}",
-                        e
-                    );
-                    e.into_inner()
-                })
                 .clone();
             let executor_extension_registry = self.extension_registry.clone();
             let executor_memory_store = self.memory_store.clone();

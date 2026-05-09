@@ -12,7 +12,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
+use parking_lot::Mutex;
 
 use dashmap::DashMap;
 use rand::random;
@@ -552,7 +552,7 @@ pub struct PersistentVectorStore {
 }
 
 /// Global vector store singleton (thread-safe).
-static VECTOR_STORE_SINGLETON: StdMutex<Option<Arc<PersistentVectorStore>>> = StdMutex::new(None);
+static VECTOR_STORE_SINGLETON: Mutex<Option<Arc<PersistentVectorStore>>> = Mutex::new(None);
 
 impl PersistentVectorStore {
     /// Open or create a persistent vector store.
@@ -562,7 +562,7 @@ impl PersistentVectorStore {
 
         // Check if we already have a store for this path
         {
-            let singleton = VECTOR_STORE_SINGLETON.lock().unwrap();
+            let singleton = VECTOR_STORE_SINGLETON.lock();
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
                     return Ok(store.clone());
@@ -585,7 +585,7 @@ impl PersistentVectorStore {
             path: path_str,
         });
 
-        *VECTOR_STORE_SINGLETON.lock().unwrap() = Some(store.clone());
+        *VECTOR_STORE_SINGLETON.lock() = Some(store.clone());
         Ok(store)
     }
 

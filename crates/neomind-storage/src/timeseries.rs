@@ -11,7 +11,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
+use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
@@ -410,7 +410,7 @@ pub struct TimeSeriesStore {
 }
 
 /// Global time series store singleton (thread-safe).
-static TIMESERIES_STORE_SINGLETON: StdMutex<Option<Arc<TimeSeriesStore>>> = StdMutex::new(None);
+static TIMESERIES_STORE_SINGLETON: Mutex<Option<Arc<TimeSeriesStore>>> = Mutex::new(None);
 
 impl TimeSeriesStore {
     /// Open or create a time series store at the given path.
@@ -428,10 +428,7 @@ impl TimeSeriesStore {
 
         // Check if we already have a store for this path
         {
-            let singleton = TIMESERIES_STORE_SINGLETON.lock().unwrap_or_else(|e| {
-                tracing::error!("Timeseries store singleton mutex poisoned: {}", e);
-                e.into_inner()
-            });
+            let singleton = TIMESERIES_STORE_SINGLETON.lock();
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
                     return Ok(store.clone());
@@ -460,10 +457,7 @@ impl TimeSeriesStore {
             path: path_str,
         });
 
-        *TIMESERIES_STORE_SINGLETON.lock().unwrap_or_else(|e| {
-            tracing::error!("Timeseries store singleton mutex poisoned: {}", e);
-            e.into_inner()
-        }) = Some(store.clone());
+        *TIMESERIES_STORE_SINGLETON.lock() = Some(store.clone());
         Ok(store)
     }
 

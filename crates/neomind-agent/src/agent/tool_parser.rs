@@ -316,14 +316,14 @@ pub fn remove_tool_calls_from_response(response: &str) -> String {
     // Match ```json or ``` followed by content containing "name" and "arguments"
     let code_block_re =
         Regex::new(r#"```(?:json)?\s*\n?\s*(\[\s*\{[\s\S]*?"name"[\s\S]*?\}\s*\])\s*\n?\s*```"#)
-            .unwrap();
+            .expect("code block tool call regex is a compile-time constant");
     result = code_block_re.replace_all(&result, "").to_string();
 
     // Also remove ```json ... ``` with single object tool calls
     let code_block_obj_re = Regex::new(
         r#"```(?:json)?\s*\n?\s*(\{\s*"name"[\s\S]*?"arguments"[\s\S]*?\})\s*\n?\s*```"#,
     )
-    .unwrap();
+    .expect("code block single tool call regex is a compile-time constant");
     result = code_block_obj_re.replace_all(&result, "").to_string();
 
     // Remove JSON array format

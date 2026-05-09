@@ -414,9 +414,37 @@ impl ServerState {
         ));
 
         // Create the extension state with registry and storage
-        let extensions = ExtensionState::new(extension_registry, extension_metrics_storage);
+        let extensions = ExtensionState::new(extension_registry.clone(), extension_metrics_storage);
 
         tracing::info!("Extension state initialized");
+
+        // Set up extension command router so DeviceService can route commands to extensions
+        {
+            let ext_registry = extension_registry.clone();
+            let router: neomind_devices::ExtensionCommandRouterFn = Arc::new(
+                move |extension_id: String,
+                      device_id: String,
+                      command_name: String,
+                      params: std::collections::HashMap<String, serde_json::Value>| {
+                    let ext_registry = ext_registry.clone();
+                    Box::pin(async move {
+                        // Flatten params into top-level args so extension handlers can find them directly
+                        let mut args_map = serde_json::Map::new();
+                        args_map.insert("device_id".into(), serde_json::json!(device_id));
+                        for (k, v) in params {
+                            args_map.insert(k, v);
+                        }
+                        let args = serde_json::Value::Object(args_map);
+                        ext_registry
+                            .execute_command(&extension_id, &command_name, &args)
+                            .await
+                            .map_err(|e| format!("Extension command failed: {}", e))?;
+                        Ok(())
+                    })
+                },
+            );
+            devices.service.set_extension_command_router(router).await;
+        }
 
         // ========== Build AUTOMATION STATE ==========
         let rule_engine = Arc::new(RuleEngine::new(value_provider.clone()));
@@ -1362,7 +1390,10 @@ impl ServerState {
         // Start the service
         let running = {
             let cached_service = self.extension_event_subscription_service.lock().await;
-            cached_service.as_ref().unwrap().start()
+            cached_service
+                .as_ref()
+                .expect("extension event subscription service should be initialized")
+                .start()
         };
 
         if running.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1426,7 +1457,10 @@ impl ServerState {
         // Start the service (compare_exchange inside prevents duplicate tasks)
         let running = {
             let cached_service = self.rule_engine_event_service.lock().await;
-            cached_service.as_ref().unwrap().start()
+            cached_service
+                .as_ref()
+                .expect("rule engine event service should be initialized")
+                .start()
         };
 
         if running.load(std::sync::atomic::Ordering::Relaxed) {

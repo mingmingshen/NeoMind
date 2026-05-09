@@ -19,7 +19,7 @@ import type { Extension } from "@/types"
 interface ExtensionGridProps {
   extensions: Extension[]
   loading?: boolean
-  onConfigure?: (id: string) => void
+  onDetails?: (id: string) => void
   onUninstall?: (id: string) => void
   onReload?: (id: string) => Promise<boolean>
 }
@@ -35,7 +35,7 @@ interface StatusOption {
 export function ExtensionGrid({
   extensions,
   loading = false,
-  onConfigure,
+  onDetails,
   onUninstall,
   onReload,
 }: ExtensionGridProps) {
@@ -194,7 +194,7 @@ export function ExtensionGrid({
                 key={option.value}
                 onClick={() => setStatusFilter(option.value)}
                 className={cn(
-                  "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
+                  "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium transition-all",
                   isSelected
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "bg-muted-50 hover:bg-muted text-muted-foreground"
@@ -203,7 +203,7 @@ export function ExtensionGrid({
                 {option.icon}
                 <span>{option.label}</span>
                 <Badge variant={isSelected ? "secondary" : "outline"} className={cn(
-                  "h-5 px-1.5 text-xs",
+                  "h-4 px-1 text-[10px]",
                   isSelected && "bg-primary-foreground/20 text-primary-foreground"
                 )}>
                   {count}
@@ -243,7 +243,7 @@ export function ExtensionGrid({
           <ExtensionCard
             key={extension.id}
             extension={extension}
-            onConfigure={() => onConfigure?.(extension.id)}
+            onDetails={() => onDetails?.(extension.id)}
             onUninstall={() => onUninstall?.(extension.id)}
             onReload={() => onReload?.(extension.id)}
           />

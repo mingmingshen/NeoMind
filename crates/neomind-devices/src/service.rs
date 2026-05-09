@@ -18,6 +18,22 @@ use super::telemetry::TimeSeriesStorage;
 use neomind_core::EventBus;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Callback type for routing commands to extensions.
+/// Receives (extension_id, device_id, command_name, params) and returns Ok(()) on success.
+pub type ExtensionCommandRouter = dyn Fn(
+    String, // extension_id
+    String, // device_id
+    String, // command_name
+    HashMap<String, serde_json::Value>, // params
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>;
+
+/// Callback type for routing commands to extensions, Send + Sync version.
+pub type ExtensionCommandRouterFn = Arc<
+    dyn Fn(String, String, String, HashMap<String, serde_json::Value>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
+        + Send
+        + Sync,
+>;
+
 // Import storage types for command history persistence
 use neomind_storage::device_registry::{
     CommandHistoryRecord as StorageCommandRecord, CommandStatus as StorageCommandStatus,
@@ -274,6 +290,9 @@ pub struct DeviceService {
     heartbeat_config: HeartbeatConfig,
     /// Whether heartbeat monitoring is running
     heartbeat_running: Arc<RwLock<bool>>,
+    /// Extension command router for extension-registered devices
+    /// When set, commands for devices with adapter_type="extension" are routed through this callback
+    extension_command_router: Arc<RwLock<Option<ExtensionCommandRouterFn>>>,
 }
 
 impl DeviceService {
@@ -290,6 +309,7 @@ impl DeviceService {
             max_history_entries: 100, // Keep last 100 commands per device
             heartbeat_config: HeartbeatConfig::default(),
             heartbeat_running: Arc::new(RwLock::new(false)),
+            extension_command_router: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -310,7 +330,14 @@ impl DeviceService {
             max_history_entries: 100,
             heartbeat_config,
             heartbeat_running: Arc::new(RwLock::new(false)),
+            extension_command_router: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Set the extension command router for routing commands to extensions
+    pub async fn set_extension_command_router(&self, router: ExtensionCommandRouterFn) {
+        let mut r = self.extension_command_router.write().await;
+        *r = Some(router);
     }
 
     /// Set heartbeat configuration
@@ -905,37 +932,45 @@ impl DeviceService {
         }
 
         // Then notify the adapter to subscribe to this device's telemetry topic
-        // Find the adapter that handles this device type
-        let adapters = self.adapters.read().await;
-        let mut adapter_found = false;
-        for (adapter_id, adapter) in adapters.iter() {
-            // Check if this adapter can handle the device type
-            // If adapter_id is specified in config, also check for exact match
-            let adapter_match = if let Some(ref target_id) = target_adapter_id {
-                adapter.adapter_type() == adapter_type && adapter_id == target_id
-            } else {
-                adapter.adapter_type() == adapter_type
-            };
+        // Skip adapter subscription for extension-managed devices - the extension
+        // handles data collection itself via produce_metrics
+        if adapter_type != "extension" {
+            let adapters = self.adapters.read().await;
+            let mut adapter_found = false;
+            for (adapter_id, adapter) in adapters.iter() {
+                // Check if this adapter can handle the device type
+                // If adapter_id is specified in config, also check for exact match
+                let adapter_match = if let Some(ref target_id) = target_adapter_id {
+                    adapter.adapter_type() == adapter_type && adapter_id == target_id
+                } else {
+                    adapter.adapter_type() == adapter_type
+                };
 
-            if adapter_match {
-                tracing::info!(
-                    "Notifying adapter '{}' to subscribe to device '{}'",
-                    adapter_id,
-                    device_id
-                );
-                // Subscribe the adapter to this device
-                let _ = adapter.subscribe_device(&device_id).await;
-                adapter_found = true;
-                break;
+                if adapter_match {
+                    tracing::info!(
+                        "Notifying adapter '{}' to subscribe to device '{}'",
+                        adapter_id,
+                        device_id
+                    );
+                    // Subscribe the adapter to this device
+                    let _ = adapter.subscribe_device(&device_id).await;
+                    adapter_found = true;
+                    break;
+                }
             }
-        }
 
-        if !adapter_found {
-            tracing::warn!(
-                "No adapter found for device '{}' (type: {}, adapter_id: {:?})",
-                device_id,
-                adapter_type,
-                target_adapter_id
+            if !adapter_found {
+                tracing::warn!(
+                    "No adapter found for device '{}' (type: {}, adapter_id: {:?})",
+                    device_id,
+                    adapter_type,
+                    target_adapter_id
+                );
+            }
+        } else {
+            tracing::info!(
+                "Extension-managed device '{}' registered (skipping adapter subscription)",
+                device_id
             );
         }
 
@@ -1085,14 +1120,74 @@ impl DeviceService {
         // Validate and convert parameters
         let validated_params = self.validate_command_params(command_def, params.clone())?;
 
-        // Build command payload from template
-        let payload = self.build_command_payload(command_def, &validated_params)?;
+        // Record in command history
+        let command_id = self
+            .add_command_to_history(device_id, command_name, params.clone())
+            .await;
 
-        // Get adapter for sending command
+        // Route extension devices through the extension command router
+        // (skip payload building — extensions receive raw params, not MQTT payloads)
+        if config.adapter_type == "extension" {
+            let extension_id = config
+                .adapter_id
+                .as_deref()
+                .ok_or_else(|| DeviceError::InvalidParameter(
+                    "Device has no adapter_id set. Re-install the extension to fix this.".into(),
+                ))?;
+
+            let router = {
+                let r = self.extension_command_router.read().await;
+                r.clone()
+            };
+
+            if let Some(router) = router {
+                match router(extension_id.to_string(), device_id.to_string(), command_name.to_string(), params).await {
+                    Ok(()) => {
+                        self.update_command_status(
+                            device_id,
+                            &command_id,
+                            CommandStatus::Success,
+                            Some("Command sent to extension successfully".into()),
+                            None,
+                        )
+                        .await;
+                        return Ok(None);
+                    }
+                    Err(e) => {
+                        self.update_command_status(
+                            device_id,
+                            &command_id,
+                            CommandStatus::Failed,
+                            None,
+                            Some(e.clone()),
+                        )
+                        .await;
+                        return Err(DeviceError::InvalidParameter(e));
+                    }
+                }
+            } else {
+                self.update_command_status(
+                    device_id,
+                    &command_id,
+                    CommandStatus::Failed,
+                    None,
+                    Some("No extension command router configured".into()),
+                )
+                .await;
+                return Err(DeviceError::InvalidParameter(
+                    "No extension command router configured for extension devices".into(),
+                ));
+            }
+        }
+
+        // Get adapter for sending command (non-extension devices)
         let adapter_id = config
             .adapter_id
             .as_deref()
             .ok_or_else(|| DeviceError::InvalidParameter("Device has no adapter_id set".into()))?;
+
+        // Build command payload from template (MQTT/adapter devices only)
+        let payload = self.build_command_payload(command_def, &validated_params)?;
 
         let adapter = {
             let adapters = self.adapters.read().await;
@@ -1103,11 +1198,6 @@ impl DeviceService {
 
         // Determine command topic from device connection config
         let command_topic = config.connection_config.command_topic.clone();
-
-        // Record in command history and update status based on send result
-        let command_id = self
-            .add_command_to_history(device_id, command_name, params)
-            .await;
 
         match adapter
             .send_command(device_id, command_name, payload, command_topic)
@@ -1490,6 +1580,11 @@ impl DeviceService {
         let mut status_map = self.device_status.write().await;
         let entry = status_map.entry(device_id.to_string()).or_default();
         entry.update(status);
+    }
+
+    /// Update last_seen timestamp for a device (called when metrics are written by extensions)
+    pub async fn update_last_seen(&self, device_id: &str, last_seen_ms: i64) {
+        self.registry.update_last_seen(device_id, last_seen_ms).await;
     }
 
     /// Get all device statuses

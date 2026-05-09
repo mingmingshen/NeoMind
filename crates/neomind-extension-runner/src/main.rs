@@ -153,6 +153,9 @@ const ALLOWED_CAPABILITIES: &[&str] = &[
     cap::DEVICE_METRICS_READ,
     cap::DEVICE_METRICS_WRITE,
     cap::DEVICE_CONTROL,
+    cap::DEVICE_TEMPLATE_REGISTER,
+    cap::DEVICE_REGISTER,
+    cap::DEVICE_UNREGISTER,
     cap::STORAGE_QUERY,
     cap::EVENT_PUBLISH,
     cap::EVENT_SUBSCRIBE,
@@ -286,7 +289,7 @@ fn push_stdout_writer_thread() {
         }
         seq += 1;
 
-        if seq % 100 == 0 {
+        if seq.is_multiple_of(100) {
             let dropped = PUSH_DROPPED_COUNT.swap(0, AtomicOrdering::Relaxed);
             if dropped > 0 {
                 debug!("Push buffer: dropped {} frames in last 100 batches", dropped);
@@ -1001,6 +1004,15 @@ impl WasmRuntime {
         metadata.description = description;
         metadata.author = author;
 
+        // Parse config_parameters from metadata JSON
+        if let Some(config_params_json) = metadata_json.get("config_parameters") {
+            if let Ok(config_params) = serde_json::from_value::<Vec<ParameterDefinition>>(
+                config_params_json.clone(),
+            ) {
+                metadata.config_parameters = Some(config_params);
+            }
+        }
+
         // Parse metrics
         let metrics: Vec<MetricDescriptor> = json
             .get("metrics")
@@ -1464,6 +1476,12 @@ struct HostState {
 /// This client sends CapabilityRequest messages via stdout and waits for
 /// CapabilityResult responses via the pending requests queue (routed by main loop).
 pub struct SyncIpcClient {}
+
+impl Default for SyncIpcClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SyncIpcClient {
     /// Create a new sync IPC client

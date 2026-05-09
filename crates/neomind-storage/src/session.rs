@@ -7,7 +7,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
+use parking_lot::Mutex;
 
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
@@ -310,7 +310,7 @@ pub struct SessionStore {
 }
 
 /// Global session store singleton (thread-safe).
-static SESSION_STORE_SINGLETON: StdMutex<Option<Arc<SessionStore>>> = StdMutex::new(None);
+static SESSION_STORE_SINGLETON: Mutex<Option<Arc<SessionStore>>> = Mutex::new(None);
 
 impl SessionStore {
     /// Open or create a session store at the given path.
@@ -320,11 +320,7 @@ impl SessionStore {
 
         // Check if we already have a store for this path
         {
-            let Ok(singleton) = SESSION_STORE_SINGLETON.lock() else {
-                return Err(Error::Storage(
-                    "Failed to acquire session store lock".to_string(),
-                ));
-            };
+            let singleton = SESSION_STORE_SINGLETON.lock();
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
                     return Ok(store.clone());
@@ -346,11 +342,7 @@ impl SessionStore {
         });
 
         {
-            let Ok(mut singleton) = SESSION_STORE_SINGLETON.lock() else {
-                return Err(Error::Storage(
-                    "Failed to acquire session store lock".to_string(),
-                ));
-            };
+            let mut singleton = SESSION_STORE_SINGLETON.lock();
             *singleton = Some(store.clone());
         }
         tracing::debug!("[SessionStore] Opened session store at: {}", store.path);

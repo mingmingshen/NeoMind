@@ -475,7 +475,9 @@ export function DevicesPage() {
         }
       }
       const success = await sendCommand(deviceDetailView, commandName, params)
-      if (!success) {
+      if (success) {
+        toast({ title: t('devices:commandSent') })
+      } else {
         toast({ title: t('devices:sendCommandFailed'), variant: "destructive" })
       }
     } catch {

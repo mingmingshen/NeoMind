@@ -1012,7 +1012,7 @@ export interface Event {
 
 // ========== Extension Types ==========
 //
-// Matches backend ExtensionDto, ExtensionStatsDto, ExtensionTypeDto
+// Matches backend ExtensionDto, ExtensionTypeDto
 // Backend: crates/api/src/handlers/extensions.rs
 // And ExtensionType in crates/core/src/extension/types.rs
 
@@ -1030,15 +1030,14 @@ export enum ExtensionStateEnum {
 }
 
 /**
- * Extension statistics DTO - matches backend ExtensionStatsDto exactly
+ * Extension log entry - matches backend ExtensionLogEntryDto
  *
- * Backend: crates/api/src/handlers/extensions.rs:42-52
+ * Backend: crates/api/src/handlers/extensions.rs
  */
-export interface ExtensionStatsDto {
-  start_count: number
-  stop_count: number
-  error_count: number
-  last_error?: string
+export interface ExtensionLogEntry {
+  timestamp: number
+  level: string
+  message: string
 }
 
 /**
@@ -1278,6 +1277,7 @@ export interface ExtensionConfigSchema {
   type: 'object'
   properties: Record<string, ExtensionConfigParameter>
   required: string[]
+  propertyOrder?: string[]
 }
 
 /**

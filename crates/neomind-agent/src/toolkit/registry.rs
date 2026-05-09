@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use parking_lot::RwLock;
 use serde_json::Value;
 
 use super::error::{Result, ToolError};
@@ -16,9 +17,9 @@ use super::tool::{DynTool, ToolDefinition, ToolOutput};
 pub struct ToolRegistry {
     tools: HashMap<String, DynTool>,
     /// Cached tool definitions (rebuilt on register/unregister).
-    cached_definitions: std::sync::RwLock<Option<Vec<ToolDefinition>>>,
+    cached_definitions: RwLock<Option<Vec<ToolDefinition>>>,
     /// Cached JSON serialization of tool definitions (rebuilt on register/unregister).
-    cached_definitions_json: std::sync::RwLock<Option<Value>>,
+    cached_definitions_json: RwLock<Option<Value>>,
 }
 
 impl ToolRegistry {
@@ -26,15 +27,15 @@ impl ToolRegistry {
     pub fn new() -> Self {
         Self {
             tools: HashMap::new(),
-            cached_definitions: std::sync::RwLock::new(None),
-            cached_definitions_json: std::sync::RwLock::new(None),
+            cached_definitions: RwLock::new(None),
+            cached_definitions_json: RwLock::new(None),
         }
     }
 
     /// Invalidate cached definitions (call after any mutation).
     fn invalidate_cache(&self) {
-        *self.cached_definitions.write().unwrap() = None;
-        *self.cached_definitions_json.write().unwrap() = None;
+        *self.cached_definitions.write() = None;
+        *self.cached_definitions_json.write() = None;
     }
 
     /// Register a tool.
@@ -79,11 +80,11 @@ impl ToolRegistry {
 
     /// Get all tool definitions (cached).
     pub fn definitions(&self) -> Vec<ToolDefinition> {
-        if let Some(ref defs) = *self.cached_definitions.read().unwrap() {
+        if let Some(ref defs) = *self.cached_definitions.read() {
             return defs.clone();
         }
         let defs: Vec<ToolDefinition> = self.tools.values().map(|t| t.definition()).collect();
-        *self.cached_definitions.write().unwrap() = Some(defs.clone());
+        *self.cached_definitions.write() = Some(defs.clone());
         defs
     }
 
@@ -91,16 +92,16 @@ impl ToolRegistry {
     ///
     /// The result is cached and only rebuilt when tools are registered/unregistered.
     pub fn definitions_json(&self) -> Value {
-        if let Some(ref json) = *self.cached_definitions_json.read().unwrap() {
+        if let Some(ref json) = *self.cached_definitions_json.read() {
             return json.clone();
         }
         let defs = self.definitions();
         let json_defs: Vec<Value> = defs
             .into_iter()
-            .map(|d| serde_json::to_value(d).unwrap())
+            .map(|d| serde_json::to_value(d).expect("ToolDefinition serialization should never fail"))
             .collect();
         let json = serde_json::json!({ "tools": json_defs });
-        *self.cached_definitions_json.write().unwrap() = Some(json.clone());
+        *self.cached_definitions_json.write() = Some(json.clone());
         json
     }
 

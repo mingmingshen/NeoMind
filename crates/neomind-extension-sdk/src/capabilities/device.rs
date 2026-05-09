@@ -589,6 +589,90 @@ pub fn aggregate_count(
 }
 
 // ============================================================================
+// Device Template Registration
+// ============================================================================
+
+/// Register a device type template
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn register_template(
+    context: &Context,
+    template: &Value,
+) -> Result<Value, CapabilityError> {
+    context
+        .invoke_capability(ExtensionCapability::DeviceTemplateRegister, template)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn register_template(
+    context: &Context,
+    template: &Value,
+) -> Result<Value, CapabilityError> {
+    context.invoke_capability(
+        capabilities::DEVICE_TEMPLATE_REGISTER,
+        template,
+    )
+}
+
+// ============================================================================
+// Device Registration
+// ============================================================================
+
+/// Register a device instance
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn register_device(
+    context: &Context,
+    device: &Value,
+) -> Result<Value, CapabilityError> {
+    context
+        .invoke_capability(ExtensionCapability::DeviceRegister, device)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn register_device(
+    context: &Context,
+    device: &Value,
+) -> Result<Value, CapabilityError> {
+    context.invoke_capability(
+        capabilities::DEVICE_REGISTER,
+        device,
+    )
+}
+
+// ============================================================================
+// Device Unregistration
+// ============================================================================
+
+/// Unregister a device instance
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn unregister_device(
+    context: &Context,
+    device_id: &str,
+) -> Result<Value, CapabilityError> {
+    context
+        .invoke_capability(
+            ExtensionCapability::DeviceUnregister,
+            &json!({"device_id": device_id}),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn unregister_device(
+    context: &Context,
+    device_id: &str,
+) -> Result<Value, CapabilityError> {
+    context.invoke_capability(
+        capabilities::DEVICE_UNREGISTER,
+        &json!({"device_id": device_id}),
+    )
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 

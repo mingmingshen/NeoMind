@@ -8,8 +8,9 @@ use crate::{Error, Result};
 use redb::Database;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::OnceLock;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock};
+
+use parking_lot::RwLock;
 
 /// Global cache of open databases.
 ///
@@ -57,7 +58,7 @@ pub fn get_or_open_db<P: AsRef<Path>>(path: P) -> Result<Arc<Database>> {
 
     // Check cache first (read lock)
     {
-        let cache = db_cache().read().unwrap();
+        let cache = db_cache().read();
         if let Some(db) = cache.get(&path_str) {
             return Ok(db.clone());
         }
@@ -66,7 +67,7 @@ pub fn get_or_open_db<P: AsRef<Path>>(path: P) -> Result<Arc<Database>> {
     // Not in cache - need to open (drop read lock before acquiring write lock)
     // But first check again with write lock in case another thread opened it
     let db: Arc<Database> = {
-        let mut cache = db_cache().write().unwrap();
+        let mut cache = db_cache().write();
 
         // Double-check after acquiring write lock
         if let Some(db) = cache.get(&path_str) {
@@ -109,7 +110,7 @@ pub fn get_or_open_db<P: AsRef<Path>>(path: P) -> Result<Arc<Database>> {
 /// - `None` if the database was not cached
 pub fn close_db<P: AsRef<Path>>(path: P) -> Option<Arc<Database>> {
     let path_str = path.as_ref().to_string_lossy().to_string();
-    let mut cache = db_cache().write().ok()?;
+    let mut cache = db_cache().write();
     cache.remove(&path_str)
 }
 
@@ -123,7 +124,7 @@ pub fn close_db<P: AsRef<Path>>(path: P) -> Option<Arc<Database>> {
 ///
 /// The number of databases that were removed from the cache.
 pub fn clear_cache() -> usize {
-    let mut cache = db_cache().write().unwrap();
+    let mut cache = db_cache().write();
     let count = cache.len();
     cache.clear();
     count
@@ -131,14 +132,14 @@ pub fn clear_cache() -> usize {
 
 /// Get the number of cached database connections.
 pub fn cache_size() -> usize {
-    let cache = db_cache().read().unwrap();
+    let cache = db_cache().read();
     cache.len()
 }
 
 /// Check if a specific database is currently cached.
 pub fn is_cached<P: AsRef<Path>>(path: P) -> bool {
     let path_str = path.as_ref().to_string_lossy().to_string();
-    let cache = db_cache().read().unwrap();
+    let cache = db_cache().read();
     cache.contains_key(&path_str)
 }
 

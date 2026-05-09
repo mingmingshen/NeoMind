@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::RwLock as StdRwLock;
+use parking_lot::RwLock as StdRwLock;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
@@ -435,10 +435,7 @@ impl RuleEngine {
 
     /// Set the rule store for persistent storage.
     pub fn set_rule_store(&self, store: Arc<RuleStore>) {
-        let mut rule_store = self.rule_store.write().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire rule_store write lock: {}", e);
-            e.into_inner()
-        });
+        let mut rule_store = self.rule_store.write();
         *rule_store = Some(store);
     }
 
@@ -492,10 +489,7 @@ impl RuleEngine {
     pub fn start_scheduler(&self) -> Result<(), RuleError> {
         // Check if already running
         {
-            let mut running = self.scheduler_running.write().unwrap_or_else(|e| {
-                tracing::error!("Failed to acquire scheduler_running write lock: {}", e);
-                e.into_inner()
-            });
+            let mut running = self.scheduler_running.write();
             if *running {
                 return Err(RuleError::Validation(
                     "Scheduler is already running".to_string(),
@@ -506,10 +500,7 @@ impl RuleEngine {
 
         // Get the interval
         let interval = {
-            let interval_guard = self.scheduler_interval.read().unwrap_or_else(|e| {
-                tracing::error!("Failed to acquire scheduler_interval read lock: {}", e);
-                e.into_inner()
-            });
+            let interval_guard = self.scheduler_interval.read();
             *interval_guard
         };
 
@@ -530,13 +521,7 @@ impl RuleEngine {
 
                 // Check if we should stop
                 {
-                    let running = scheduler_running.read().unwrap_or_else(|e| {
-                        tracing::error!(
-                            "Failed to acquire scheduler_running read lock in scheduler: {}",
-                            e
-                        );
-                        e.into_inner()
-                    });
+                    let running = scheduler_running.read();
                     if !*running {
                         break;
                     }
@@ -590,13 +575,11 @@ impl RuleEngine {
 
                     // Persist rule state if store is available
                     if let Some(ref rule) = rule_to_save {
-                        if let Ok(store_guard) = rule_store.read() {
-                            if let Some(ref store) = *store_guard {
-                                if let Err(e) = store.save(rule) {
-                                    tracing::warn!(rule_id = %id, error = %e, "Failed to save rule state after trigger");
-                                } else {
-                                    tracing::debug!(rule_id = %id, trigger_count = rule.state.trigger_count, "Saved rule state after trigger");
-                                }
+                        if let Some(ref store) = *rule_store.read() {
+                            if let Err(e) = store.save(rule) {
+                                tracing::warn!(rule_id = %id, error = %e, "Failed to save rule state after trigger");
+                            } else {
+                                tracing::debug!(rule_id = %id, trigger_count = rule.state.trigger_count, "Saved rule state after trigger");
                             }
                         }
                     }
@@ -633,10 +616,7 @@ impl RuleEngine {
         });
 
         // Store the handle
-        let mut handle_guard = self.scheduler_handle.write().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire scheduler_handle write lock: {}", e);
-            e.into_inner()
-        });
+        let mut handle_guard = self.scheduler_handle.write();
         *handle_guard = Some(handle);
 
         tracing::info!(interval_sec = interval.as_secs(), "Rule scheduler started");
@@ -649,13 +629,7 @@ impl RuleEngine {
     pub fn stop_scheduler(&self) -> Result<(), RuleError> {
         // Check if running
         {
-            let running = self.scheduler_running.read().unwrap_or_else(|e| {
-                tracing::error!(
-                    "Failed to acquire scheduler_running read lock in stop: {}",
-                    e
-                );
-                e.into_inner()
-            });
+            let running = self.scheduler_running.read();
             if !*running {
                 return Err(RuleError::Validation(
                     "Scheduler is not running".to_string(),
@@ -665,25 +639,13 @@ impl RuleEngine {
 
         // Signal the task to stop
         {
-            let mut running = self.scheduler_running.write().unwrap_or_else(|e| {
-                tracing::error!(
-                    "Failed to acquire scheduler_running write lock in stop: {}",
-                    e
-                );
-                e.into_inner()
-            });
+            let mut running = self.scheduler_running.write();
             *running = false;
         }
 
         // Abort the task if it exists
         {
-            let mut handle_guard = self.scheduler_handle.write().unwrap_or_else(|e| {
-                tracing::error!(
-                    "Failed to acquire scheduler_handle write lock in stop: {}",
-                    e
-                );
-                e.into_inner()
-            });
+            let mut handle_guard = self.scheduler_handle.write();
             if let Some(handle) = handle_guard.take() {
                 handle.abort();
             }
@@ -695,32 +657,20 @@ impl RuleEngine {
 
     /// Check if the scheduler is currently running.
     pub fn is_scheduler_running(&self) -> bool {
-        let running = self.scheduler_running.read().unwrap_or_else(|e| {
-            tracing::error!(
-                "Failed to acquire scheduler_running read lock in is_running: {}",
-                e
-            );
-            e.into_inner()
-        });
+        let running = self.scheduler_running.read();
         *running
     }
 
     /// Set the scheduler interval.
     /// This will not affect a running scheduler; it must be restarted for the new interval to take effect.
     pub fn set_scheduler_interval(&self, interval: Duration) {
-        let mut interval_guard = self.scheduler_interval.write().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire scheduler_interval write lock: {}", e);
-            e.into_inner()
-        });
+        let mut interval_guard = self.scheduler_interval.write();
         *interval_guard = interval;
     }
 
     /// Get the current scheduler interval.
     pub fn get_scheduler_interval(&self) -> Duration {
-        let interval_guard = self.scheduler_interval.read().unwrap_or_else(|e| {
-            tracing::error!("Failed to acquire scheduler_interval read lock: {}", e);
-            e.into_inner()
-        });
+        let interval_guard = self.scheduler_interval.read();
         *interval_guard
     }
 
@@ -750,13 +700,7 @@ impl RuleEngine {
     pub async fn remove_rule(&self, id: &RuleId) -> Result<bool, RuleError> {
         // Remove from dependency manager first
         {
-            let mut dep_manager = self.dependency_manager.write().unwrap_or_else(|e| {
-                tracing::error!(
-                    "Failed to acquire dependency_manager write lock in remove_rule: {}",
-                    e
-                );
-                e.into_inner()
-            });
+            let mut dep_manager = self.dependency_manager.write();
             dep_manager.remove_rule(id);
         }
 
@@ -769,13 +713,7 @@ impl RuleEngine {
     ///
     /// After calling this, `dependent` will only execute after `dependency` has completed.
     pub fn add_dependency(&self, dependent: RuleId, dependency: RuleId) -> Result<(), RuleError> {
-        let mut dep_manager = self.dependency_manager.write().unwrap_or_else(|e| {
-            tracing::error!(
-                "Failed to acquire dependency_manager write lock in add_dependency: {}",
-                e
-            );
-            e.into_inner()
-        });
+        let mut dep_manager = self.dependency_manager.write();
         dep_manager.add_dependency(dependent, dependency);
         Ok(())
     }
@@ -786,38 +724,20 @@ impl RuleEngine {
         dependent: &RuleId,
         dependency: &RuleId,
     ) -> Result<(), RuleError> {
-        let mut dep_manager = self.dependency_manager.write().unwrap_or_else(|e| {
-            tracing::error!(
-                "Failed to acquire dependency_manager write lock in remove_dependency: {}",
-                e
-            );
-            e.into_inner()
-        });
+        let mut dep_manager = self.dependency_manager.write();
         dep_manager.remove_dependency(dependent, dependency);
         Ok(())
     }
 
     /// Get all dependencies for a rule.
     pub fn get_dependencies(&self, rule_id: &RuleId) -> Vec<RuleId> {
-        let dep_manager = self.dependency_manager.read().unwrap_or_else(|e| {
-            tracing::error!(
-                "Failed to acquire dependency_manager read lock in get_dependencies: {}",
-                e
-            );
-            e.into_inner()
-        });
+        let dep_manager = self.dependency_manager.read();
         dep_manager.get_dependencies(rule_id)
     }
 
     /// Get all rules that depend on this rule.
     pub fn get_dependents(&self, rule_id: &RuleId) -> Vec<RuleId> {
-        let dep_manager = self.dependency_manager.read().unwrap_or_else(|e| {
-            tracing::error!(
-                "Failed to acquire dependency_manager read lock in get_dependents: {}",
-                e
-            );
-            e.into_inner()
-        });
+        let dep_manager = self.dependency_manager.read();
         dep_manager.get_dependents(rule_id)
     }
 
@@ -834,7 +754,7 @@ impl RuleEngine {
             rules.keys().cloned().collect()
         };
 
-        let dep_manager = self.dependency_manager.read().unwrap();
+        let dep_manager = self.dependency_manager.read();
         let result = dep_manager.validate_and_order(&existing_rules);
 
         if result.is_valid {
@@ -852,7 +772,7 @@ impl RuleEngine {
         let existing_rules: std::collections::HashSet<RuleId> = rules.keys().cloned().collect();
         drop(rules);
 
-        let dep_manager = self.dependency_manager.read().unwrap();
+        let dep_manager = self.dependency_manager.read();
         dep_manager.get_ready_rules(&existing_rules, completed)
     }
 
@@ -1007,13 +927,11 @@ impl RuleEngine {
 
         // Persist rule state if store is available
         if let Some(ref rule) = rule_to_save {
-            if let Ok(store_guard) = self.rule_store.read() {
-                if let Some(ref store) = *store_guard {
-                    if let Err(e) = store.save(rule) {
-                        tracing::warn!(rule_id = %id, error = %e, "Failed to save rule state after manual trigger");
-                    } else {
-                        tracing::debug!(rule_id = %id, trigger_count = rule.state.trigger_count, "Saved rule state after manual trigger");
-                    }
+            if let Some(ref store) = *self.rule_store.read() {
+                if let Err(e) = store.save(rule) {
+                    tracing::warn!(rule_id = %id, error = %e, "Failed to save rule state after manual trigger");
+                } else {
+                    tracing::debug!(rule_id = %id, trigger_count = rule.state.trigger_count, "Saved rule state after manual trigger");
                 }
             }
         }
@@ -1478,13 +1396,7 @@ impl InMemoryValueProvider {
 
     /// Set a value for a device metric.
     pub fn set_value(&self, device_id: &str, metric: &str, value: f64) {
-        let mut values = self.values.write().unwrap_or_else(|e| {
-            tracing::error!(
-                "Failed to acquire InMemoryValueProvider values write lock: {}",
-                e
-            );
-            e.into_inner()
-        });
+        let mut values = self.values.write();
         let key = format!("{}:{}", device_id, metric);
         values.insert(key, value);
     }
@@ -1499,13 +1411,7 @@ impl Default for InMemoryValueProvider {
 impl ValueProvider for InMemoryValueProvider {
     fn get_value(&self, device_id: &str, metric: &str) -> Option<f64> {
         let key = format!("{}:{}", device_id, metric);
-        let values = self.values.read().unwrap_or_else(|e| {
-            tracing::error!(
-                "Failed to acquire InMemoryValueProvider values read lock: {}",
-                e
-            );
-            e.into_inner()
-        });
+        let values = self.values.read();
         values.get(&key).copied()
     }
 

@@ -9,16 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v0.7.4] - 2026-05-09
 
+### Added
+
+- **Extension device management API** — Extensions can now register device type templates and device instances via new capabilities `DeviceTemplateRegister`, `DeviceRegister`, `DeviceUnregister`. Enables extensions to act as virtual device adapters
+- **Extension command routing** — `DeviceService` now routes commands for extension-registered devices (adapter_type="extension") back to the owning extension via an `ExtensionCommandRouter` callback
+- **Extension log viewer** — New `GET/DELETE /api/extensions/:id/logs` endpoints. Extensions capture stderr into a ring buffer (500 lines) with structured log entries (timestamp, level, message), viewable from the frontend details dialog
+- **Extension crash recovery with config restore** — After crash recovery restart, the system automatically re-applies the extension's saved configuration from the extension store
+- **Extension config_parameters support** — Extension runner now parses `config_parameters` from metadata JSON, enabling extensions to declare their configuration schema
+- **Device metric update sets last_seen** — Reporting metrics from an extension now updates the device's `last_seen` timestamp, preventing "Never Connected" false status
+- **Extension details full-screen dialog** — `ExtensionDetailsDialog` redesigned as `FullScreenDialog` with sidebar navigation: Overview, Configuration, Logs, Metrics, Commands — replacing the old tabbed modal
+- **Extension SDK v0.7.0** — New `register_template()`, `register_device()`, `unregister_device()` functions for device management from extensions
+
 ### Changed
 
 - **Migrate to parking_lot locks** — Replaced `std::sync::RwLock`/`Mutex` with `parking_lot` equivalents across all backend crates (~80 lock `.unwrap()` calls eliminated). parking_lot locks never poison, removing a class of potential panics
+- **Replace ExtensionStats API with ExtensionLogs API** — Removed `GET /api/extensions/:id/stats` and `ExtensionStatsDto`. Replaced with the new log viewer endpoints. Frontend store updated accordingly
+- **ExtensionCard redesign** — Simplified from 570-line component to 148 lines by extracting details into `ExtensionDetailsDialog`
 - **Fix unsafe error handling** — `shell.rs` now checks return values of `killpg` (Unix) and `TerminateProcess` (Windows) with logging on failure
 - **Fix business logic unwrap()** — Replaced ~25 `unwrap()` calls in production code with `expect()`, `unwrap_or()`, or proper error propagation
 - **Fix agent semaphore panic** — Tool concurrency semaphore closure now returns an error instead of panicking
-- **Fix clippy -D warnings** — Resolved `is_multiple_of`, `Default` impl, `or_insert_with`, `map_or`, wildcard pattern, and `from_str` naming issues
+- **Fix clippy -D warnings** — Resolved `is_multiple_of`, `Default` impl, `or_insert_with`, `map_or`, wildcard pattern, and `from_str` → `parse_category` naming issues
 - **Fix broken test** — `test_cursor_decode_invalid_utf8` assertion corrected
 - **Fix extension uninstall dialog** — Uninstall confirmation now correctly shows the extension name instead of literal `{{name}}`
 - **Fix extension grid props** — Corrected `onConfigure` → `onDetails` prop name to match `ExtensionGrid` API
+- **Bump version to 0.7.4** — Updated workspace, extension-runner, web, Tauri versions. Bumped extension-sdk to 0.7.0
 
 ## [v0.7.3] - 2026-05-08
 

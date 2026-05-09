@@ -115,6 +115,10 @@ pub struct IsolatedExtensionManager {
         AsyncRwLock<Option<Arc<dyn super::super::context::ExtensionCapabilityProvider>>>,
     /// Death notification channel for monitoring extension crashes
     death_channel: (broadcast::Sender<()>, AsyncRwLock<broadcast::Receiver<()>>),
+    /// Optional callback invoked after crash recovery restart, to apply saved config etc.
+    /// Parameters: (extension_id, extension_path)
+    on_crash_recovery_restart:
+        std::sync::RwLock<Option<Arc<dyn Fn(&str, &std::path::Path) + Send + Sync>>>,
     /// Per-extension loading locks to prevent race conditions during concurrent loads
     /// Maps extension ID to a mutex that must be held during loading
     loading_locks: AsyncRwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -145,12 +149,24 @@ impl IsolatedExtensionManager {
             capability_provider: AsyncRwLock::new(None),
             death_channel,
             loading_locks: AsyncRwLock::new(HashMap::new()),
+            on_crash_recovery_restart: std::sync::RwLock::new(None),
         }
     }
 
     /// Create with default configuration
     pub fn with_defaults() -> Self {
         Self::new(IsolatedManagerConfig::default())
+    }
+
+    /// Set a callback to be invoked after crash recovery restart.
+    /// The callback receives (extension_id, extension_path) and can apply saved config, etc.
+    pub fn set_on_crash_recovery_restart(
+        &self,
+        callback: Arc<dyn Fn(&str, &std::path::Path) + Send + Sync>,
+    ) {
+        if let Ok(mut guard) = self.on_crash_recovery_restart.write() {
+            *guard = Some(callback);
+        }
     }
 
     /// Kill orphaned extension runner processes left over from a previous session.
@@ -352,6 +368,13 @@ impl IsolatedExtensionManager {
                                             restart_count,
                                             "Successfully restarted extension after crash"
                                         );
+
+                                        // Invoke crash recovery callback (e.g., apply saved config)
+                                        if let Ok(guard) = self.on_crash_recovery_restart.read() {
+                                            if let Some(ref callback) = *guard {
+                                                callback(&ext_id, &path);
+                                            }
+                                        }
                                     }
                                     Err(e) => {
                                         tracing::error!(extension_id = %ext_id, error = %e, "Failed to restart extension after crash");
@@ -702,6 +725,29 @@ impl IsolatedExtensionManager {
         })?;
 
         isolated.get_stats().await
+    }
+
+    /// Get log entries from an isolated extension
+    pub async fn get_logs(&self, id: &str) -> IsolatedResult<Vec<super::process::ExtensionLogEntry>> {
+        let extensions = self.extensions.read().await;
+
+        let isolated = extensions.get(id).ok_or_else(|| {
+            IsolatedExtensionError::IpcError(format!("Extension {} not found", id))
+        })?;
+
+        Ok(isolated.get_logs())
+    }
+
+    /// Clear log entries for an isolated extension
+    pub async fn clear_logs(&self, id: &str) -> IsolatedResult<()> {
+        let extensions = self.extensions.read().await;
+
+        let isolated = extensions.get(id).ok_or_else(|| {
+            IsolatedExtensionError::IpcError(format!("Extension {} not found", id))
+        })?;
+
+        isolated.clear_logs();
+        Ok(())
     }
 
     /// Get active stream sessions for an extension

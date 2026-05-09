@@ -72,7 +72,7 @@ pub use registry::{
 };
 pub use service::{
     AdapterInfo, AdapterStats, CommandHistoryRecord, CommandStatus, DeviceHealth, DeviceService,
-    DeviceStatus, HeartbeatConfig,
+    DeviceStatus, ExtensionCommandRouterFn, HeartbeatConfig,
 };
 pub use telemetry::{AggregatedData, DataPoint, MetricCache, TimeSeriesStorage};
 

@@ -192,7 +192,13 @@ fn kill_process_by_pid(pid: Option<u32>) {
     if let Some(pid) = pid {
         // PID of child is also the PGID since we used process_group(0)
         unsafe {
-            libc::killpg(pid as i32, libc::SIGKILL);
+            if libc::killpg(pid as i32, libc::SIGKILL) != 0 {
+                tracing::warn!(
+                    "Failed to kill process group {}: {}",
+                    pid,
+                    std::io::Error::last_os_error()
+                );
+            }
         }
     }
 }
@@ -203,7 +209,13 @@ fn kill_process_by_pid(pid: Option<u32>) {
         // Use Windows API to terminate the process.
         // On Windows, TerminateProcess is the most reliable way to kill a process.
         unsafe {
-            windows_sys::Win32::System::Threading::TerminateProcess(pid as *mut _, 1);
+            if windows_sys::Win32::System::Threading::TerminateProcess(pid as *mut _, 1) == 0 {
+                tracing::warn!(
+                    "Failed to terminate process {}: {}",
+                    pid,
+                    std::io::Error::last_os_error()
+                );
+            }
         }
     }
 }

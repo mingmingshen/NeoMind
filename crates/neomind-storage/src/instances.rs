@@ -4,7 +4,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
+use parking_lot::Mutex;
 
 use chrono::Utc;
 use redb::{Database, ReadableTable, TableDefinition};
@@ -16,7 +16,7 @@ use crate::Error;
 const INSTANCES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("instances");
 
 /// Singleton for instance storage
-static INSTANCE_STORE_SINGLETON: StdMutex<Option<Arc<InstanceStore>>> = StdMutex::new(None);
+static INSTANCE_STORE_SINGLETON: Mutex<Option<Arc<InstanceStore>>> = Mutex::new(None);
 
 /// A remote NeoMind backend instance
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,7 +195,7 @@ impl InstanceStore {
 
         // Check if we already have a store for this path
         {
-            let singleton = INSTANCE_STORE_SINGLETON.lock().unwrap();
+            let singleton = INSTANCE_STORE_SINGLETON.lock();
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
                     return Ok(store.clone());
@@ -219,7 +219,7 @@ impl InstanceStore {
         // Ensure the local default instance exists
         store.ensure_local_default()?;
 
-        *INSTANCE_STORE_SINGLETON.lock().unwrap() = Some(store.clone());
+        *INSTANCE_STORE_SINGLETON.lock() = Some(store.clone());
 
         Ok(store)
     }

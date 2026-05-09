@@ -27,7 +27,10 @@ pub use state::DeviceStatusUpdate;
 pub use types::{ServerState, MAX_REQUEST_BODY_SIZE};
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
+
+use neomind_storage::ExtensionStore;
 
 /// Start the web server on a specific address.
 /// This is the main entry point for running the server.
@@ -102,6 +105,40 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     state.refresh_extension_tools().await;
 
     // Start extension death monitoring for auto-restart
+    // Set up crash recovery callback to apply saved config after restart
+    {
+        let runtime = state.extensions.runtime.clone();
+        state.extensions.runtime.set_on_crash_recovery_restart(Arc::new(
+            move |extension_id: &str, _path: &std::path::Path| {
+                let ext_id = extension_id.to_string();
+                let rt = runtime.clone();
+                // Use tokio spawn to apply config asynchronously
+                tokio::spawn(async move {
+                    // Load saved config from extension store
+                    if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+                        if let Ok(Some(record)) = store.load(&ext_id) {
+                            if let Some(ref config) = record.config {
+                                tracing::info!(
+                                    extension_id = %ext_id,
+                                    "Applying saved config to extension after crash recovery"
+                                );
+                                if let Err(e) = rt
+                                    .execute_command(&ext_id, "configure", config)
+                                    .await
+                                {
+                                    tracing::warn!(
+                                        extension_id = %ext_id,
+                                        error = %e,
+                                        "Failed to apply saved config after crash recovery"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+        ));
+    }
     state.extensions.runtime.clone().start_death_monitoring();
     startup.service("Extension death monitoring", ServiceStatus::Started);
 

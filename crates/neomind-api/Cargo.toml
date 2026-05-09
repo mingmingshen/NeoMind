@@ -59,6 +59,7 @@ tempfile = { workspace = true }
 
 # Concurrent data structures
 dashmap = { workspace = true }
+parking_lot = { workspace = true }
 
 # Encryption
 aes-gcm = { workspace = true }

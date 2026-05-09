@@ -5,7 +5,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
+use parking_lot::Mutex;
 
 use chrono::Utc;
 use redb::{Database, ReadableTable, TableDefinition};
@@ -21,7 +21,7 @@ const ACTIVE_BACKEND_TABLE: TableDefinition<&str, &str> =
     TableDefinition::new("active_llm_backend");
 
 /// Singleton for LLM backend storage
-static LLM_BACKEND_STORE_SINGLETON: StdMutex<Option<Arc<LlmBackendStore>>> = StdMutex::new(None);
+static LLM_BACKEND_STORE_SINGLETON: Mutex<Option<Arc<LlmBackendStore>>> = Mutex::new(None);
 
 /// LLM backend instance configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -483,7 +483,7 @@ impl LlmBackendStore {
 
         // Check if we already have a store for this path
         {
-            let singleton = LLM_BACKEND_STORE_SINGLETON.lock().unwrap();
+            let singleton = LLM_BACKEND_STORE_SINGLETON.lock();
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
                     return Ok(store.clone());
@@ -507,7 +507,7 @@ impl LlmBackendStore {
         store.ensure_tables()?;
 
         // Update the singleton
-        *LLM_BACKEND_STORE_SINGLETON.lock().unwrap() = Some(store.clone());
+        *LLM_BACKEND_STORE_SINGLETON.lock() = Some(store.clone());
 
         Ok(store)
     }

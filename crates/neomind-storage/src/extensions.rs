@@ -5,7 +5,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
+use parking_lot::Mutex;
 
 use chrono::Utc;
 use redb::{Database, ReadableTable, TableDefinition};
@@ -17,7 +17,7 @@ use crate::Error;
 const EXTENSIONS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("extensions");
 
 /// Singleton for extension storage
-static EXTENSION_STORE_SINGLETON: StdMutex<Option<Arc<ExtensionStore>>> = StdMutex::new(None);
+static EXTENSION_STORE_SINGLETON: Mutex<Option<Arc<ExtensionStore>>> = Mutex::new(None);
 
 /// Extension record for storage
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,7 +210,7 @@ impl ExtensionStore {
 
         // Check if we already have a store for this path
         {
-            let singleton = EXTENSION_STORE_SINGLETON.lock().unwrap();
+            let singleton = EXTENSION_STORE_SINGLETON.lock();
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
                     return Ok(store.clone());
@@ -234,7 +234,7 @@ impl ExtensionStore {
         store.ensure_tables()?;
 
         // Update the singleton
-        *EXTENSION_STORE_SINGLETON.lock().unwrap() = Some(store.clone());
+        *EXTENSION_STORE_SINGLETON.lock() = Some(store.clone());
 
         Ok(store)
     }
@@ -335,8 +335,13 @@ impl ExtensionStore {
         {
             let mut table = write_txn.open_table(EXTENSIONS_TABLE)?;
             let mut record: ExtensionRecord =
-                serde_json::from_slice(table.get(id)?.unwrap().value())
-                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                serde_json::from_slice(
+                    table
+                        .get(id)?
+                        .expect("extension record should exist (checked above)")
+                        .value(),
+                )
+                .map_err(|e| Error::Serialization(e.to_string()))?;
             record.last_error = Some(error.to_string());
             record.last_error_at = Some(Utc::now().timestamp());
             record.health_status = "error".to_string();
@@ -363,8 +368,13 @@ impl ExtensionStore {
         {
             let mut table = write_txn.open_table(EXTENSIONS_TABLE)?;
             let mut record: ExtensionRecord =
-                serde_json::from_slice(table.get(id)?.unwrap().value())
-                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                serde_json::from_slice(
+                    table
+                        .get(id)?
+                        .expect("extension record should exist (checked above)")
+                        .value(),
+                )
+                .map_err(|e| Error::Serialization(e.to_string()))?;
             record.health_status = status.to_string();
             if status == "ok" {
                 // Clear error if status is ok

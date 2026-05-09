@@ -395,7 +395,7 @@ fn test_llm_timeout_defaults() {
     assert_eq!(agent_env_vars::llm_timeout_secs(), None);
 
     // But specific getters should return defaults
-    assert_eq!(agent_env_vars::ollama_timeout_secs(), 180);
+    assert_eq!(agent_env_vars::ollama_timeout_secs(), 300);
     assert_eq!(agent_env_vars::cloud_timeout_secs(), 60);
 
     // Restore

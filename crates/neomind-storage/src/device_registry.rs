@@ -4,7 +4,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
+use parking_lot::Mutex;
 
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
@@ -274,7 +274,7 @@ pub struct DeviceRegistryStore {
 }
 
 /// Global device registry store singleton (thread-safe).
-static REGISTRY_STORE_SINGLETON: StdMutex<Option<Arc<DeviceRegistryStore>>> = StdMutex::new(None);
+static REGISTRY_STORE_SINGLETON: Mutex<Option<Arc<DeviceRegistryStore>>> = Mutex::new(None);
 
 impl DeviceRegistryStore {
     /// Open or create a device registry store at the given path.
@@ -284,7 +284,7 @@ impl DeviceRegistryStore {
 
         // Check if we already have a store for this path
         {
-            let singleton = REGISTRY_STORE_SINGLETON.lock().unwrap();
+            let singleton = REGISTRY_STORE_SINGLETON.lock();
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
                     return Ok(store.clone());
@@ -349,7 +349,7 @@ impl DeviceRegistryStore {
             path: path_str,
         });
 
-        *REGISTRY_STORE_SINGLETON.lock().unwrap() = Some(store.clone());
+        *REGISTRY_STORE_SINGLETON.lock() = Some(store.clone());
         Ok(store)
     }
 

@@ -48,6 +48,7 @@ cron = "0.12"
 reqwest = { workspace = true }
 lru = { workspace = true }
 dashmap = { workspace = true }
+parking_lot = { workspace = true }
 anyhow = { workspace = true }
 
 # Platform-specific dependencies for shell tool

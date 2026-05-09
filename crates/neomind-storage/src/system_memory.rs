@@ -39,7 +39,9 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+
+use parking_lot::RwLock;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -105,7 +107,7 @@ impl MemoryCategory {
     }
 
     /// Parse from string
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_category(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             // English names
             "user_profile" | "user profile" | "userprofile" => Some(Self::UserProfile),
@@ -519,7 +521,7 @@ impl MarkdownMemoryStore {
         // Check cache first
         let cache_key = self.cache_key(source);
         {
-            let cache = self.cache.read().unwrap();
+            let cache = self.cache.read();
             if let Some(entries) = cache.get(&cache_key) {
                 return Ok(entries.clone());
             }
@@ -537,7 +539,7 @@ impl MarkdownMemoryStore {
 
         // Update cache
         {
-            let mut cache = self.cache.write().unwrap();
+            let mut cache = self.cache.write();
             cache.insert(cache_key, entries.clone());
         }
 
@@ -592,7 +594,7 @@ impl MarkdownMemoryStore {
 
         // Invalidate cache
         {
-            let mut cache = self.cache.write().unwrap();
+            let mut cache = self.cache.write();
             cache.remove(&self.cache_key(source));
         }
 
@@ -651,7 +653,7 @@ impl MarkdownMemoryStore {
 
         // Invalidate cache
         {
-            let mut cache = self.cache.write().unwrap();
+            let mut cache = self.cache.write();
             cache.remove(&self.cache_key(source));
         }
 
@@ -783,7 +785,7 @@ impl MarkdownMemoryStore {
 
         // Invalidate cache
         {
-            let mut cache = self.cache.write().unwrap();
+            let mut cache = self.cache.write();
             cache.remove(&self.cache_key(source));
         }
 
@@ -927,7 +929,7 @@ impl MarkdownMemoryStore {
         let path = match source_type {
             "agent" => self.base_path.join("agents").join(format!("{}.md", id)),
             "chat" => self.base_path.join("chat").join(format!("{}.md", id)),
-            "system" | _ => self.base_path.join("system.md"),
+            _ => self.base_path.join("system.md"),
         };
 
         if !path.exists() {
@@ -943,7 +945,7 @@ impl MarkdownMemoryStore {
         let path = match source_type {
             "agent" => self.base_path.join("agents").join(format!("{}.md", id)),
             "chat" => self.base_path.join("chat").join(format!("{}.md", id)),
-            "system" | _ => self.base_path.join("system.md"),
+            _ => self.base_path.join("system.md"),
         };
 
         // Ensure parent directory exists
@@ -965,7 +967,7 @@ impl MarkdownMemoryStore {
             _ => MemorySource::System,
         };
         {
-            let mut cache = self.cache.write().unwrap();
+            let mut cache = self.cache.write();
             cache.remove(&self.cache_key(&source));
         }
 
@@ -977,7 +979,7 @@ impl MarkdownMemoryStore {
         let path = match source_type {
             "agent" => self.base_path.join("agents").join(format!("{}.md", id)),
             "chat" => self.base_path.join("chat").join(format!("{}.md", id)),
-            "system" | _ => return Err(Error::Storage("Cannot delete system memory".to_string())),
+            _ => return Err(Error::Storage("Cannot delete system memory".to_string())),
         };
 
         if !path.exists() {
@@ -998,7 +1000,7 @@ impl MarkdownMemoryStore {
             _ => MemorySource::System,
         };
         {
-            let mut cache = self.cache.write().unwrap();
+            let mut cache = self.cache.write();
             cache.remove(&self.cache_key(&source));
         }
 
@@ -1042,7 +1044,7 @@ impl MarkdownMemoryStore {
             // Check for section headers
             if let Some(section) = line.strip_prefix("## ") {
                 let section = section.trim();
-                current_category = MemoryCategory::from_str(section);
+                current_category = MemoryCategory::parse_category(section);
                 continue;
             }
 
@@ -1104,23 +1106,23 @@ mod tests {
     fn test_memory_category_parsing() {
         // New names
         assert_eq!(
-            MemoryCategory::from_str("user_profile"),
+            MemoryCategory::parse_category("user_profile"),
             Some(MemoryCategory::UserProfile)
         );
         assert_eq!(
-            MemoryCategory::from_str("domain_knowledge"),
+            MemoryCategory::parse_category("domain_knowledge"),
             Some(MemoryCategory::DomainKnowledge)
         );
         // Legacy aliases
         assert_eq!(
-            MemoryCategory::from_str("pattern"),
+            MemoryCategory::parse_category("pattern"),
             Some(MemoryCategory::TaskPatterns)
         );
         assert_eq!(
-            MemoryCategory::from_str("PREFERENCES"),
+            MemoryCategory::parse_category("PREFERENCES"),
             Some(MemoryCategory::UserProfile)
         );
-        assert_eq!(MemoryCategory::from_str("invalid"), None);
+        assert_eq!(MemoryCategory::parse_category("invalid"), None);
     }
 
     #[test]

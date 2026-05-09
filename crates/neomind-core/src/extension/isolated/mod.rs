@@ -16,7 +16,7 @@ pub use super::system::{
     PushOutputData, StreamClientInfo, StreamDataChunk,
 };
 pub use manager::{IsolatedExtensionInfo, IsolatedExtensionManager, IsolatedManagerConfig};
-pub use process::{IsolatedExtension, IsolatedExtensionConfig};
+pub use process::{IsolatedExtension, IsolatedExtensionConfig, ExtensionLogEntry};
 
 /// Result type for isolated extension operations
 pub type IsolatedResult<T> = std::result::Result<T, IsolatedExtensionError>;

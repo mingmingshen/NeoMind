@@ -144,6 +144,13 @@ impl DeviceCapabilityProvider {
             .await
             .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 
+        // Update last_seen so the device doesn't show "Never Connected"
+        if let Some(device_service) = self.services.get::<DeviceService>(keys::DEVICE_SERVICE) {
+            device_service
+                .update_last_seen(device_id, timestamp_ms)
+                .await;
+        }
+
         // Publish DeviceMetric event to EventBus so frontend receives real-time updates.
         // The is_virtual flag prevents feedback loops: ExtensionEventSubscriptionService
         // skips re-dispatching virtual DeviceMetric events to extensions, breaking the
@@ -228,6 +235,171 @@ impl DeviceCapabilityProvider {
             })
             .map_err(|e| CapabilityError::ProviderError(e.to_string()))
     }
+
+    async fn handle_template_register(&self, params: &Value) -> Result<Value, CapabilityError> {
+        let device_type = params
+            .get("device_type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                CapabilityError::InvalidParameters("Missing device_type".to_string())
+            })?;
+
+        let name = params
+            .get("name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| CapabilityError::InvalidParameters("Missing name".to_string()))?;
+
+        let description = params
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let categories = params
+            .get("categories")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let metrics = params
+            .get("metrics")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| parse_metric_from_json(v))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let commands = params
+            .get("commands")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| parse_command_from_json(v))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let device_service: Arc<DeviceService> = self
+            .services
+            .get::<DeviceService>(keys::DEVICE_SERVICE)
+            .ok_or(CapabilityError::NotAvailable(
+                ExtensionCapability::DeviceTemplateRegister,
+            ))?;
+
+        let template = neomind_devices::DeviceTypeTemplate {
+            device_type: device_type.to_string(),
+            name: name.to_string(),
+            description,
+            categories,
+            mode: neomind_devices::DeviceTypeMode::Full,
+            metrics,
+            uplink_samples: vec![],
+            commands,
+        };
+
+        device_service
+            .register_template(template)
+            .await
+            .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
+
+        Ok(json!({
+            "success": true,
+            "device_type": device_type,
+        }))
+    }
+
+    async fn handle_device_register(&self, params: &Value) -> Result<Value, CapabilityError> {
+        let device_id = params
+            .get("device_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
+
+        let name = params
+            .get("name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| CapabilityError::InvalidParameters("Missing name".to_string()))?;
+
+        let device_type = params
+            .get("device_type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                CapabilityError::InvalidParameters("Missing device_type".to_string())
+            })?;
+
+        let connection_config: neomind_devices::ConnectionConfig = params
+            .get("connection_config")
+            .map(|v| serde_json::from_value(v.clone()).unwrap_or_default())
+            .unwrap_or_default();
+
+        let device_service: Arc<DeviceService> = self
+            .services
+            .get::<DeviceService>(keys::DEVICE_SERVICE)
+            .ok_or(CapabilityError::NotAvailable(
+                ExtensionCapability::DeviceRegister,
+            ))?;
+
+        let now_ms = chrono::Utc::now().timestamp_millis();
+
+        // Extract extension_id injected by the IPC layer for routing commands back
+        let adapter_id = params
+            .get("_extension_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let config = neomind_devices::DeviceConfig {
+            device_id: device_id.to_string(),
+            name: name.to_string(),
+            device_type: device_type.to_string(),
+            adapter_type: "extension".to_string(),
+            connection_config,
+            adapter_id,
+            last_seen: now_ms,
+        };
+
+        device_service
+            .register_device(config)
+            .await
+            .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
+
+        // Mark extension-registered devices as connected immediately
+        device_service
+            .update_device_status(device_id, neomind_devices::ConnectionStatus::Connected)
+            .await;
+
+        Ok(json!({
+            "success": true,
+            "device_id": device_id,
+        }))
+    }
+
+    async fn handle_device_unregister(&self, params: &Value) -> Result<Value, CapabilityError> {
+        let device_id = params
+            .get("device_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
+
+        let device_service: Arc<DeviceService> = self
+            .services
+            .get::<DeviceService>(keys::DEVICE_SERVICE)
+            .ok_or(CapabilityError::NotAvailable(
+                ExtensionCapability::DeviceUnregister,
+            ))?;
+
+        device_service
+            .unregister_device(device_id)
+            .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
+
+        Ok(json!({
+            "success": true,
+            "device_id": device_id,
+        }))
+    }
 }
 
 #[async_trait]
@@ -238,6 +410,9 @@ impl ExtensionCapabilityProvider for DeviceCapabilityProvider {
                 ExtensionCapability::DeviceMetricsRead,
                 ExtensionCapability::DeviceMetricsWrite,
                 ExtensionCapability::DeviceControl,
+                ExtensionCapability::DeviceTemplateRegister,
+                ExtensionCapability::DeviceRegister,
+                ExtensionCapability::DeviceUnregister,
             ],
             api_version: "v1".to_string(),
             min_core_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -254,6 +429,11 @@ impl ExtensionCapabilityProvider for DeviceCapabilityProvider {
             ExtensionCapability::DeviceMetricsRead => self.handle_metrics_read(params).await,
             ExtensionCapability::DeviceMetricsWrite => self.handle_metrics_write(params).await,
             ExtensionCapability::DeviceControl => self.handle_device_control(params).await,
+            ExtensionCapability::DeviceTemplateRegister => {
+                self.handle_template_register(params).await
+            }
+            ExtensionCapability::DeviceRegister => self.handle_device_register(params).await,
+            ExtensionCapability::DeviceUnregister => self.handle_device_unregister(params).await,
             _ => Err(CapabilityError::NotAvailable(capability)),
         }
     }
@@ -267,7 +447,7 @@ impl ExtensionCapabilityProvider for DeviceCapabilityProvider {
 pub struct EventCapabilityProvider {
     event_bus: Arc<EventBus>,
     subscriptions:
-        std::sync::Arc<std::sync::RwLock<std::collections::HashMap<String, EventSubscriptionInfo>>>,
+        std::sync::Arc<parking_lot::RwLock<std::collections::HashMap<String, EventSubscriptionInfo>>>,
     /// Event dispatcher for registering dynamic subscriptions
     event_dispatcher: Option<std::sync::Arc<neomind_core::extension::EventDispatcher>>,
 }
@@ -285,7 +465,7 @@ impl EventCapabilityProvider {
     pub fn new(event_bus: Arc<EventBus>) -> Self {
         Self {
             event_bus,
-            subscriptions: std::sync::Arc::new(std::sync::RwLock::new(
+            subscriptions: std::sync::Arc::new(parking_lot::RwLock::new(
                 std::collections::HashMap::new(),
             )),
             event_dispatcher: None,
@@ -299,7 +479,7 @@ impl EventCapabilityProvider {
     ) -> Self {
         Self {
             event_bus,
-            subscriptions: std::sync::Arc::new(std::sync::RwLock::new(
+            subscriptions: std::sync::Arc::new(parking_lot::RwLock::new(
                 std::collections::HashMap::new(),
             )),
             event_dispatcher: Some(event_dispatcher),
@@ -367,7 +547,6 @@ impl EventCapabilityProvider {
         // Store subscription info
         self.subscriptions
             .write()
-            .unwrap()
             .insert(subscription_id.clone(), subscription_info);
 
         // Register with EventDispatcher if available
@@ -408,7 +587,7 @@ impl EventCapabilityProvider {
                 CapabilityError::InvalidParameters("Missing subscription_id".to_string())
             })?;
 
-        self.subscriptions.write().expect("subscriptions lock poisoned").remove(subscription_id);
+        self.subscriptions.write().remove(subscription_id);
 
         Ok(json!({
             "success": true,
@@ -419,14 +598,13 @@ impl EventCapabilityProvider {
     pub fn get_subscriptions(&self) -> Vec<EventSubscriptionInfo> {
         self.subscriptions
             .read()
-            .expect("subscriptions lock poisoned")
             .values()
             .cloned()
             .collect()
     }
 
     pub fn remove_extension_subscriptions(&self, extension_id: &str) {
-        let mut subs = self.subscriptions.write().expect("subscriptions lock poisoned");
+        let mut subs = self.subscriptions.write();
         subs.retain(|_, sub| sub.extension_id.as_deref() != Some(extension_id));
     }
 }
@@ -1391,7 +1569,10 @@ fn capability_to_provider(capability: &ExtensionCapability) -> &'static str {
     match capability {
         ExtensionCapability::DeviceMetricsRead
         | ExtensionCapability::DeviceMetricsWrite
-        | ExtensionCapability::DeviceControl => "neomind-api::device",
+        | ExtensionCapability::DeviceControl
+        | ExtensionCapability::DeviceTemplateRegister
+        | ExtensionCapability::DeviceRegister
+        | ExtensionCapability::DeviceUnregister => "neomind-api::device",
 
         ExtensionCapability::EventPublish | ExtensionCapability::EventSubscribe => {
             "neomind-api::event"
@@ -1411,6 +1592,20 @@ fn capability_to_provider(capability: &ExtensionCapability) -> &'static str {
 
         ExtensionCapability::Custom(_) => "neomind-api::custom",
     }
+}
+
+// ============================================================================
+// Helper functions for JSON → Registry type conversions
+// ============================================================================
+
+/// Parse a MetricDefinition from a JSON object
+fn parse_metric_from_json(v: &Value) -> Option<neomind_devices::MdlMetricDefinition> {
+    serde_json::from_value(v.clone()).ok()
+}
+
+/// Parse a CommandDefinition from a JSON object
+fn parse_command_from_json(v: &Value) -> Option<neomind_devices::CommandDefinition> {
+    serde_json::from_value(v.clone()).ok()
 }
 
 // ============================================================================

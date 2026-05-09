@@ -4,7 +4,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
+use parking_lot::Mutex;
 
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
@@ -71,7 +71,7 @@ impl ConfigChangeEntry {
 
 /// Global settings store singleton (thread-safe).
 /// Keeps the database open across all calls to avoid lock conflicts.
-static SETTINGS_STORE_SINGLETON: StdMutex<Option<Arc<SettingsStore>>> = StdMutex::new(None);
+static SETTINGS_STORE_SINGLETON: Mutex<Option<Arc<SettingsStore>>> = Mutex::new(None);
 
 /// LLM backend type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -580,7 +580,7 @@ impl SettingsStore {
 
         // Check if we already have a store for this path
         {
-            let singleton = SETTINGS_STORE_SINGLETON.lock().unwrap();
+            let singleton = SETTINGS_STORE_SINGLETON.lock();
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
                     return Ok(store.clone());
@@ -603,7 +603,7 @@ impl SettingsStore {
         store.ensure_tables()?;
 
         // Update the singleton
-        *SETTINGS_STORE_SINGLETON.lock().unwrap() = Some(store.clone());
+        *SETTINGS_STORE_SINGLETON.lock() = Some(store.clone());
 
         Ok(store)
     }

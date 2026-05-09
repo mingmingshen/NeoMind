@@ -129,7 +129,7 @@ pub async fn get_category(
     State(state): State<ServerState>,
     Path(category): Path<String>,
 ) -> Response {
-    let cat = match MemoryCategory::from_str(&category) {
+    let cat = match MemoryCategory::parse_category(&category) {
         Some(c) => c,
         None => {
             return error_response(
@@ -170,7 +170,7 @@ pub async fn update_category(
     Path(category): Path<String>,
     Json(req): Json<UpdateMemoryRequest>,
 ) -> Response {
-    let cat = match MemoryCategory::from_str(&category) {
+    let cat = match MemoryCategory::parse_category(&category) {
         Some(c) => c,
         None => {
             return error_response(
@@ -452,7 +452,7 @@ pub async fn add_memory_entry(
     Json(req): Json<AddMemoryRequest>,
 ) -> Response {
     // Parse category
-    let category = match MemoryCategory::from_str(&req.category) {
+    let category = match MemoryCategory::parse_category(&req.category) {
         Some(c) => c,
         None => {
             return error_response(

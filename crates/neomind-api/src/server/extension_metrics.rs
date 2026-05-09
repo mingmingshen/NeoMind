@@ -101,15 +101,15 @@ impl ExtensionMetricsCollector {
     /// Each extension can have its own collection interval via config_parameters.collect_interval.
     pub async fn run(self) {
         // Wait for server to fully initialize before starting
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(3)).await;
 
         info!(
             category = "extensions",
             "Extension metrics collector started (default interval: {:?})", self.default_interval
         );
 
-        // First loop iteration - wait before collecting
-        tokio::time::sleep(self.default_interval).await;
+        // First collection after a short delay (no need to wait full interval)
+        tokio::time::sleep(Duration::from_secs(2)).await;
         debug!(
             category = "extensions",
             "About to collect metrics for first time"

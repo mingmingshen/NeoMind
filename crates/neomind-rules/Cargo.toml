@@ -27,6 +27,9 @@ reqwest = { workspace = true }
 # Storage
 redb = { workspace = true }
 
+# Concurrency
+parking_lot = { workspace = true }
+
 [features]
 default = []
 

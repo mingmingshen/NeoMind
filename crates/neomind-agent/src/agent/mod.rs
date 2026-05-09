@@ -2463,11 +2463,15 @@ impl Agent {
                     let sem = semaphore.clone();
 
                     async move {
-                        let _permit = sem.acquire().await.unwrap_or_else(|e| {
-                            tracing::warn!("tool concurrency semaphore closed: {}", e);
-                            // Use a fake permit that drops immediately
-                            panic!("tool concurrency semaphore closed")
-                        });
+                        let _permit = match sem.acquire().await {
+                            Ok(p) => p,
+                            Err(e) => {
+                                tracing::warn!("tool concurrency semaphore closed: {}", e);
+                                return (name, id, arguments, Err(NeoMindError::Tool(
+                                    "tool concurrency semaphore closed".to_string(),
+                                )));
+                            }
+                        };
                         let result = self.execute_tool(&name, &arguments).await;
                         (name, id, arguments, result)
                     }

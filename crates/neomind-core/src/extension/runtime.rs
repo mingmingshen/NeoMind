@@ -77,6 +77,15 @@ impl ExtensionRuntime {
         self.isolated_manager.clone().start_death_monitoring();
     }
 
+    /// Set a callback to be invoked after crash recovery restart.
+    /// The callback receives (extension_id, extension_path) and can apply saved config, etc.
+    pub fn set_on_crash_recovery_restart(
+        &self,
+        callback: Arc<dyn Fn(&str, &std::path::Path) + Send + Sync>,
+    ) {
+        self.isolated_manager.set_on_crash_recovery_restart(callback);
+    }
+
     /// Get the event dispatcher used for extension event delivery.
     pub fn get_event_dispatcher(&self) -> Arc<crate::extension::EventDispatcher> {
         self.isolated_manager.event_dispatcher()
@@ -139,10 +148,17 @@ impl ExtensionRuntime {
 
     /// Get metrics from an extension.
     pub async fn get_metrics(&self, id: &str) -> Vec<ExtensionMetricValue> {
-        self.isolated_manager
-            .get_metrics(id)
-            .await
-            .unwrap_or_default()
+        match self.isolated_manager.get_metrics(id).await {
+            Ok(metrics) => metrics,
+            Err(e) => {
+                tracing::warn!(
+                    extension_id = %id,
+                    error = %e,
+                    "Failed to get extension metrics"
+                );
+                vec![]
+            }
+        }
     }
 
     /// Check extension health.
@@ -172,6 +188,25 @@ impl ExtensionRuntime {
     ) -> Result<crate::extension::system::ExtensionStats, ExtensionError> {
         self.isolated_manager
             .get_stats(id)
+            .await
+            .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
+    }
+
+    /// Get extension log entries.
+    pub async fn get_logs(
+        &self,
+        id: &str,
+    ) -> Result<Vec<crate::extension::isolated::ExtensionLogEntry>, ExtensionError> {
+        self.isolated_manager
+            .get_logs(id)
+            .await
+            .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
+    }
+
+    /// Clear extension log entries.
+    pub async fn clear_logs(&self, id: &str) -> Result<(), ExtensionError> {
+        self.isolated_manager
+            .clear_logs(id)
             .await
             .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
     }

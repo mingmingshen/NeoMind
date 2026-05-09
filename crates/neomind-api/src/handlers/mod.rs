@@ -70,7 +70,8 @@ pub use extensions::{
     execute_extension_command_handler,
     extension_health_handler,
     get_extension_handler,
-    get_extension_stats_handler,
+    get_extension_logs_handler,
+    clear_extension_logs_handler,
     // Command-based extension handlers
     list_extension_commands_handler,
     list_extension_data_sources_handler,

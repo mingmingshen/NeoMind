@@ -859,13 +859,15 @@ impl DeviceTool {
         if let Some(device) = self.device_service.get_device(&device_id) {
             if let Some(template) = self.device_service.get_template(&device.device_type) {
                 if let Some(cmd_def) = template.commands.iter().find(|c| c.name == command) {
+                    // Support both nested params ({params: {image_url: ...}}) and flat args ({image_url: ...})
                     let params_obj = args.get("params").and_then(|p| p.as_object());
                     let mut missing: Vec<String> = Vec::new();
                     for p in &cmd_def.parameters {
                         if p.required {
                             let has_param = params_obj
                                 .map(|obj| obj.contains_key(&p.name))
-                                .unwrap_or(false);
+                                .unwrap_or(false)
+                                || args.get(&p.name).is_some();
                             if !has_param {
                                 let type_str = format!("{:?}", p.data_type).to_lowercase();
                                 missing.push(format!("{} ({})", p.name, type_str));
@@ -905,6 +907,20 @@ impl DeviceTool {
             return Ok(ToolOutput::error(not_found_msg("Device", &device_id, "list")));
         }
 
+        // Collect params from both nested "params" object and flat top-level args
+        let reserved_keys = ["action", "device_id", "command", "confirm", "params"];
+        let mut params: HashMap<String, Value> = args
+            .get("params")
+            .and_then(|p| p.as_object())
+            .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+            .unwrap_or_default();
+        // Also include top-level args that aren't reserved keys
+        for (k, v) in args.as_object().unwrap_or(&serde_json::Map::new()) {
+            if !reserved_keys.contains(&k.as_str()) && !params.contains_key(k) {
+                params.insert(k.clone(), v.clone());
+            }
+        }
+
         // Confirmation check
         let confirm = args["confirm"].as_bool().unwrap_or(false);
         if !confirm {
@@ -912,16 +928,10 @@ impl DeviceTool {
                 "preview": true,
                 "device_id": device_id,
                 "command": command,
-                "params": args.get("params").cloned().unwrap_or(serde_json::json!({})),
+                "params": serde_json::json!(params),
                 "message": "This will change device state. Set confirm=true to execute."
             })));
         }
-
-        let params: HashMap<String, Value> = args
-            .get("params")
-            .and_then(|p| p.as_object())
-            .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
-            .unwrap_or_default();
 
         self.device_service
             .send_command(&device_id, command, params)

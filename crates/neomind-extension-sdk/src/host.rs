@@ -79,6 +79,9 @@ define_capabilities! {
     ExtensionCall => EXTENSION_CALL => "extension_call" => "Access to call other extensions",
     AgentTrigger => AGENT_TRIGGER => "agent_trigger" => "Access to trigger agents",
     RuleTrigger => RULE_TRIGGER => "rule_trigger" => "Access to trigger rules",
+    DeviceTemplateRegister => DEVICE_TEMPLATE_REGISTER => "device_template_register" => "Register device type templates",
+    DeviceRegister => DEVICE_REGISTER => "device_register" => "Register device instances",
+    DeviceUnregister => DEVICE_UNREGISTER => "device_unregister" => "Unregister device instances",
 }
 
 impl ExtensionCapability {
@@ -95,6 +98,9 @@ impl ExtensionCapability {
             ExtensionCapability::ExtensionCall => "Extension Call".to_string(),
             ExtensionCapability::AgentTrigger => "Agent Trigger".to_string(),
             ExtensionCapability::RuleTrigger => "Rule Trigger".to_string(),
+            ExtensionCapability::DeviceTemplateRegister => "Device Template Register".to_string(),
+            ExtensionCapability::DeviceRegister => "Device Register".to_string(),
+            ExtensionCapability::DeviceUnregister => "Device Unregister".to_string(),
             ExtensionCapability::Custom(name) => format!("Custom: {}", name),
         }
     }
@@ -120,6 +126,11 @@ impl ExtensionCapability {
             ExtensionCapability::ExtensionCall => "Call other extensions".to_string(),
             ExtensionCapability::AgentTrigger => "Trigger AI agent execution".to_string(),
             ExtensionCapability::RuleTrigger => "Trigger rule engine execution".to_string(),
+            ExtensionCapability::DeviceTemplateRegister => {
+                "Register device type templates".to_string()
+            }
+            ExtensionCapability::DeviceRegister => "Register device instances".to_string(),
+            ExtensionCapability::DeviceUnregister => "Unregister device instances".to_string(),
             ExtensionCapability::Custom(_) => "Custom capability".to_string(),
         }
     }
@@ -128,7 +139,10 @@ impl ExtensionCapability {
         match self {
             ExtensionCapability::DeviceMetricsRead
             | ExtensionCapability::DeviceMetricsWrite
-            | ExtensionCapability::DeviceControl => "device".to_string(),
+            | ExtensionCapability::DeviceControl
+            | ExtensionCapability::DeviceTemplateRegister
+            | ExtensionCapability::DeviceRegister
+            | ExtensionCapability::DeviceUnregister => "device".to_string(),
             ExtensionCapability::StorageQuery => "storage".to_string(),
             ExtensionCapability::EventPublish | ExtensionCapability::EventSubscribe => {
                 "event".to_string()
@@ -319,7 +333,16 @@ impl ExtensionContext {
             CapabilityError::ProviderError(format!("Provider '{}' not found", package_name))
         })?;
 
-        provider.invoke_capability(capability, params).await
+        // Inject extension_id into params for device_register
+        let params = match capability {
+            ExtensionCapability::DeviceRegister => {
+                let mut p = params.as_object().cloned().unwrap_or_default();
+                p.insert("_extension_id".to_string(), serde_json::json!(self.config.extension_id));
+                serde_json::Value::Object(p)
+            }
+            _ => params.clone(),
+        };
+        provider.invoke_capability(capability, &params).await
     }
 
     pub async fn has_capability(&self, capability: &ExtensionCapability) -> bool {

@@ -12,8 +12,8 @@
 import type { StateCreator } from 'zustand'
 import type {
   Extension,
-  ExtensionStatsDto,
   ExtensionTypeDto,
+  ExtensionLogEntry,
   ExtensionCommandDescriptor,
   ExtensionDataSourceInfo,
   ExtensionExecuteRequest,
@@ -33,7 +33,6 @@ export interface ExtensionState {
   selectedExtension: Extension | null
   extensionsLoading: boolean
   extensionDialogOpen: boolean
-  extensionStats: Record<string, ExtensionStatsDto>
   extensionTypes: ExtensionTypeDto[]
 
   // Commands and data sources (cached by extension_id)
@@ -53,9 +52,10 @@ export interface ExtensionSlice extends ExtensionState {
   startExtension: (id: string) => Promise<boolean>
   stopExtension: (id: string) => Promise<boolean>
   reloadExtension: (id: string) => Promise<boolean>
-  getExtensionStats: (id: string) => Promise<ExtensionStatsDto | null>
   getExtensionHealth: (id: string) => Promise<{ healthy: boolean } | null>
   fetchExtensionTypes: () => Promise<void>
+  getExtensionLogs: (id: string) => Promise<ExtensionLogEntry[]>
+  clearExtensionLogs: (id: string) => Promise<void>
   executeExtensionCommand: (id: string, command: string, args?: Record<string, unknown>) => Promise<{ success: boolean; result?: unknown; message?: string }>
 
   // Command and data source actions
@@ -84,7 +84,6 @@ export const createExtensionSlice: StateCreator<
   selectedExtension: null,
   extensionsLoading: false,
   extensionDialogOpen: false,
-  extensionStats: {},
   extensionTypes: [],
   commands: {},
   dataSources: {},
@@ -143,12 +142,9 @@ export const createExtensionSlice: StateCreator<
       // Close and clean up extension stream client to prevent memory leak
       const { closeExtensionStreamClient } = await import('@/lib/extension-stream')
       closeExtensionStreamClient(id)
-      // Remove from list and clear stats
+      // Remove from list and clear caches
       set((state) => ({
         extensions: state.extensions.filter((e) => e.id !== id),
-        extensionStats: Object.fromEntries(
-          Object.entries(state.extensionStats).filter(([key]) => key !== id)
-        ) as Record<string, ExtensionStatsDto>,
         commands: Object.fromEntries(
           Object.entries(state.commands).filter(([key]) => key !== id)
         ),
@@ -173,7 +169,6 @@ export const createExtensionSlice: StateCreator<
           e.id === id ? { ...e, state: 'Running' } : e
         ),
       }))
-      await get().getExtensionStats(id)
       return true
     } catch (error) {
       logError(error, { operation: 'Start extension' })
@@ -191,7 +186,6 @@ export const createExtensionSlice: StateCreator<
           e.id === id ? { ...e, state: 'Stopped' } : e
         ),
       }))
-      await get().getExtensionStats(id)
       return true
     } catch (error) {
       logError(error, { operation: 'Stop extension' })
@@ -211,21 +205,6 @@ export const createExtensionSlice: StateCreator<
     } catch (error) {
       logError(error, { operation: 'Reload extension' })
       return false
-    }
-  },
-
-  // Get extension stats
-  // Backend: GET /api/extensions/:id/stats -> ExtensionStatsDto
-  getExtensionStats: async (id) => {
-    try {
-      const stats = await api.getExtensionStats(id)
-      set((state) => ({
-        extensionStats: { ...state.extensionStats, [id]: stats },
-      }))
-      return stats
-    } catch (error) {
-      logError(error, { operation: 'Fetch extension stats' })
-      return null
     }
   },
 
@@ -257,13 +236,33 @@ export const createExtensionSlice: StateCreator<
     }
   },
 
+  // Get extension logs
+  // Backend: GET /api/extensions/:id/logs -> ExtensionLogEntry[]
+  getExtensionLogs: async (id) => {
+    try {
+      const logs = await api.getExtensionLogs(id)
+      return logs || []
+    } catch (error) {
+      logError(error, { operation: 'Fetch extension logs' })
+      return []
+    }
+  },
+
+  // Clear extension logs
+  // Backend: DELETE /api/extensions/:id/logs
+  clearExtensionLogs: async (id) => {
+    try {
+      await api.clearExtensionLogs(id)
+    } catch (error) {
+      logError(error, { operation: 'Clear extension logs' })
+    }
+  },
+
   // Execute extension command
   // Backend: POST /api/extensions/:id/command -> result
   executeExtensionCommand: async (id, command, args) => {
     try {
       const result = await api.executeExtensionCommand(id, command, args)
-      // Refresh stats after command execution
-      await get().getExtensionStats(id)
       return { success: true, result }
     } catch (error) {
       logError(error, { operation: 'Execute extension command' })

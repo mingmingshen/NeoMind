@@ -185,6 +185,9 @@ export function ExtensionUploadDialog({
         description: result.name || file.name.replace('.nep', ''),
       })
 
+      // Invalidate cache first to ensure fetch goes through
+      const { fetchCache } = await import('@/lib/utils/async')
+      fetchCache.invalidate('extensions')
       await fetchExtensions()
 
       // Clear old caches for this extension to ensure fresh bundle loading

@@ -7,7 +7,8 @@ use crate::history::RuleHistoryEntry;
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 // Table definitions
 const RULES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("rules");
@@ -129,7 +130,7 @@ pub struct RuleStore {
 }
 
 /// Global rule store singleton to prevent multiple opens.
-static RULE_STORE_SINGLETON: StdMutex<Option<Arc<RuleStore>>> = StdMutex::new(None);
+static RULE_STORE_SINGLETON: Mutex<Option<Arc<RuleStore>>> = Mutex::new(None);
 
 impl RuleStore {
     /// Open or create a rule store at the given path.
@@ -138,7 +139,7 @@ impl RuleStore {
 
         // Check singleton
         {
-            let singleton = RULE_STORE_SINGLETON.lock().unwrap();
+            let singleton = RULE_STORE_SINGLETON.lock();
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
                     return Ok(store.clone());
@@ -155,7 +156,7 @@ impl RuleStore {
             temp_path,
         });
 
-        *RULE_STORE_SINGLETON.lock().unwrap() = Some(store.clone());
+        *RULE_STORE_SINGLETON.lock() = Some(store.clone());
         Ok(store)
     }
 

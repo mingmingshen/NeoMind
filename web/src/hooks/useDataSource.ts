@@ -2975,12 +2975,7 @@ export function useDataSource<T = unknown>(
                 }
                 return { data: null, success: false }
               } else {
-                // V1 data source - try to get extension stats
-                const stats = await api.getExtensionStats(extensionId)
-                // Check if the metric exists in the stats
-                if (stats && typeof stats === 'object' && metric in (stats as unknown as Record<string, unknown>)) {
-                  return { data: (stats as unknown as Record<string, unknown>)[metric], success: true }
-                }
+                // V1 data source - no longer supported
                 return { data: null, success: false }
               }
             } catch {

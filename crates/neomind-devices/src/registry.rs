@@ -550,7 +550,7 @@ impl DeviceRegistry {
 
             self.type_index
                 .entry(device_type)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(device_id);
         }
 
@@ -946,7 +946,7 @@ impl DeviceRegistry {
         // Update type index
         self.type_index
             .entry(device_type)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(device_id);
 
         Ok(())
@@ -1027,7 +1027,7 @@ impl DeviceRegistry {
             type_entry.retain(|id| id != device_id);
         }
         // Clean up empty type index entries
-        if self.type_index.get(&device_type).map_or(false, |e| e.is_empty()) {
+        if self.type_index.get(&device_type).is_some_and(|e| e.is_empty()) {
             self.type_index.remove(&device_type);
         }
 
@@ -1100,14 +1100,14 @@ impl DeviceRegistry {
                 if let Some(mut type_entry) = self.type_index.get_mut(&old_type) {
                     type_entry.retain(|id| id != device_id);
                 }
-                if self.type_index.get(&old_type).map_or(false, |e| e.is_empty()) {
+                if self.type_index.get(&old_type).is_some_and(|e| e.is_empty()) {
                     self.type_index.remove(&old_type);
                 }
 
                 // Add to new type index
                 self.type_index
                     .entry(new_device_type)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(device_id.to_string());
             }
         }

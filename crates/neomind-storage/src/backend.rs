@@ -5,7 +5,9 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, RwLock as StdRwLock};
+use std::sync::Arc;
+
+use parking_lot::RwLock;
 
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
@@ -202,32 +204,32 @@ impl InternalStorageBackend for RedbBackend {
 /// In-memory storage backend for testing.
 pub struct MemoryBackend {
     /// In-memory data storage.
-    data: Arc<StdRwLock<HashMap<String, HashMap<String, Vec<u8>>>>>,
+    data: Arc<RwLock<HashMap<String, HashMap<String, Vec<u8>>>>>,
 }
 
 impl MemoryBackend {
     /// Create a new in-memory backend.
     pub fn new() -> Self {
         Self {
-            data: Arc::new(StdRwLock::new(HashMap::new())),
+            data: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     /// Get the number of entries in a table.
     pub fn count(&self, table: &str) -> usize {
-        let data = self.data.read().unwrap();
+        let data = self.data.read();
         data.get(table).map(|m| m.len()).unwrap_or(0)
     }
 
     /// Clear all data.
     pub fn clear(&self) {
-        let mut data = self.data.write().unwrap();
+        let mut data = self.data.write();
         data.clear();
     }
 
     /// Clear a specific table.
     pub fn clear_table(&self, table: &str) {
-        let mut data = self.data.write().unwrap();
+        let mut data = self.data.write();
         data.remove(table);
     }
 }
@@ -240,24 +242,24 @@ impl Default for MemoryBackend {
 
 impl InternalStorageBackend for MemoryBackend {
     fn write(&self, table: &str, key: &str, value: &[u8]) -> Result<()> {
-        let mut data = self.data.write().unwrap();
+        let mut data = self.data.write();
         let table_data = data.entry(table.to_string()).or_default();
         table_data.insert(key.to_string(), value.to_vec());
         Ok(())
     }
 
     fn read(&self, table: &str, key: &str) -> Result<Option<Vec<u8>>> {
-        let data = self.data.read().unwrap();
+        let data = self.data.read();
         Ok(data.get(table).and_then(|t| t.get(key)).cloned())
     }
 
     fn delete(&self, table: &str, key: &str) -> Result<bool> {
-        let mut data = self.data.write().unwrap();
+        let mut data = self.data.write();
         Ok(data.get_mut(table).and_then(|t| t.remove(key)).is_some())
     }
 
     fn scan(&self, table: &str, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
-        let data = self.data.read().unwrap();
+        let data = self.data.read();
         let mut results = Vec::new();
 
         if let Some(table_data) = data.get(table) {
@@ -272,7 +274,7 @@ impl InternalStorageBackend for MemoryBackend {
     }
 
     fn write_batch(&self, table: &str, items: Vec<(String, Vec<u8>)>) -> Result<()> {
-        let mut data = self.data.write().unwrap();
+        let mut data = self.data.write();
         let table_data = data.entry(table.to_string()).or_default();
 
         for (key, value) in items {

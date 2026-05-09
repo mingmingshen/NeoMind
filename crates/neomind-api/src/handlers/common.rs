@@ -364,10 +364,8 @@ mod tests {
             cursor: Some(base64::engine::general_purpose::STANDARD.encode([0xff, 0xfe])),
             limit: None,
         };
-        // Decodes base64 successfully but the bytes are not valid UTF-8
-        // Actually, [0xff, 0xfe] IS valid UTF-8 bytes... they decode to a string.
-        // Let's just verify it returns Some since these bytes happen to be valid.
-        assert!(query.decode_cursor().is_some());
+        // [0xff, 0xfe] is not valid UTF-8, so decode_cursor should return None
+        assert!(query.decode_cursor().is_none());
     }
 
     #[test]

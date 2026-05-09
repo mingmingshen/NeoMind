@@ -282,7 +282,12 @@ export function DeviceControl({
       if (success) {
         setSelectedCommand(null)
         setCommandParams({})
+        toast({ title: t('devices:commandSent') })
+      } else {
+        toast({ title: t('devices:sendCommandFailed'), variant: "destructive" })
       }
+    } catch {
+      toast({ title: t('devices:sendCommandFailed'), variant: "destructive" })
     } finally {
       setIsSending(false)
     }
@@ -293,12 +298,21 @@ export function DeviceControl({
     if (selectedDevicesForBatch.size === 0 || !selectedCommand || !onSendCommand) return
 
     setIsSending(true)
+    let allSuccess = true
     try {
       for (const deviceId of selectedDevicesForBatch) {
-        await onSendCommand(deviceId, selectedCommand, commandParams)
+        const success = await onSendCommand(deviceId, selectedCommand, commandParams)
+        if (!success) allSuccess = false
+      }
+      if (allSuccess) {
+        toast({ title: t('devices:commandSent') })
+      } else {
+        toast({ title: t('devices:sendCommandFailed'), variant: "destructive" })
       }
       setSelectedDevicesForBatch(new Set())
       setBatchMode(false)
+    } catch {
+      toast({ title: t('devices:sendCommandFailed'), variant: "destructive" })
     } finally {
       setIsSending(false)
     }
@@ -318,9 +332,16 @@ export function DeviceControl({
 
     setIsSending(true)
     try {
-      await onSendCommand(selectedDeviceId, "custom", payload)
-      setQuickCommandPayload("{}")
-      setQuickCommandOpen(false)
+      const success = await onSendCommand(selectedDeviceId, "custom", payload)
+      if (success) {
+        toast({ title: t('devices:commandSent') })
+        setQuickCommandPayload("{}")
+        setQuickCommandOpen(false)
+      } else {
+        toast({ title: t('devices:sendCommandFailed'), variant: "destructive" })
+      }
+    } catch {
+      toast({ title: t('devices:sendCommandFailed'), variant: "destructive" })
     } finally {
       setIsSending(false)
     }

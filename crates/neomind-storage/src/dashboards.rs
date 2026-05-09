@@ -4,7 +4,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
+use parking_lot::Mutex;
 use std::sync::OnceLock;
 
 use redb::{Database, ReadableTable, TableDefinition};
@@ -225,7 +225,7 @@ pub struct DashboardStore {
 }
 
 /// Global dashboard store singleton (thread-safe).
-static DASHBOARD_STORE_SINGLETON: StdMutex<Option<Arc<DashboardStore>>> = StdMutex::new(None);
+static DASHBOARD_STORE_SINGLETON: Mutex<Option<Arc<DashboardStore>>> = Mutex::new(None);
 
 impl DashboardStore {
     /// Open or create a dashboard store at the given path.
@@ -235,11 +235,7 @@ impl DashboardStore {
 
         // Check if we already have a store for this path
         {
-            let Ok(singleton) = DASHBOARD_STORE_SINGLETON.lock() else {
-                return Err(Error::Storage(
-                    "Failed to acquire dashboard store lock".to_string(),
-                ));
-            };
+            let singleton = DASHBOARD_STORE_SINGLETON.lock();
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
                     return Ok(store.clone());
@@ -265,11 +261,7 @@ impl DashboardStore {
         });
 
         {
-            let Ok(mut singleton) = DASHBOARD_STORE_SINGLETON.lock() else {
-                return Err(Error::Storage(
-                    "Failed to acquire dashboard store lock".to_string(),
-                ));
-            };
+            let mut singleton = DASHBOARD_STORE_SINGLETON.lock();
             *singleton = Some(store.clone());
         }
 

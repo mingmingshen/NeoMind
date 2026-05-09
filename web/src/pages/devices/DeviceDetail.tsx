@@ -2,8 +2,11 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Field, FieldLabel } from "@/components/ui/field"
+import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import {
   Dialog,
   DialogContent,
@@ -12,8 +15,6 @@ import {
   DialogTitle,
   DialogContentBody,
 } from "@/components/ui/dialog"
-import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Table,
   TableBody,
@@ -22,10 +23,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ChevronLeft, Send, Clock, Zap, Settings, Info, ChevronRight, X, Image as ImageIcon, Database, Download } from "lucide-react"
+import { ChevronLeft, Send, Clock, Zap, Settings, Info, ChevronRight, X, Image as ImageIcon, Database, Download, Loader2 } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { formatTimestamp } from "@/lib/utils/format"
-import type { Device, DeviceType, CommandDefinition, TelemetryDataResponse, DeviceCurrentStateResponse } from "@/types"
+import type { Device, DeviceType, CommandDefinition, ParameterDefinition, TelemetryDataResponse, DeviceCurrentStateResponse } from "@/types"
 import { isBase64Image } from "./utils"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/useMobile"
@@ -148,13 +149,15 @@ export function DeviceDetail({
 }: DeviceDetailProps) {
   const { t } = useTranslation(['common', 'devices'])
   const isMobile = useIsMobile()
-  const [commandDialogOpen, setCommandDialogOpen] = useState(false)
   const [metricHistoryOpen, setMetricHistoryOpen] = useState(false)
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
   const [previewImageSrc, setPreviewImageSrc] = useState<string | null>(null)
+  const [commandDialogOpen, setCommandDialogOpen] = useState(false)
   const [selectedCommandDef, setSelectedCommandDef] = useState<CommandDefinition | null>(null)
   const [dialogParams, setDialogParams] = useState<Record<string, unknown>>({})
-  
+  const [commandExecuting, setCommandExecuting] = useState(false)
+  const [commandResult, setCommandResult] = useState<{ success: boolean; data?: unknown; error?: string } | null>(null)
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
 
@@ -182,11 +185,23 @@ export function DeviceDetail({
 
   const handleCommandClick = (cmd: CommandDefinition) => {
     setSelectedCommandDef(cmd)
+    setCommandResult(null)
     const defaultParams: Record<string, unknown> = {}
     if (cmd.parameters) {
       cmd.parameters.forEach(param => {
-        defaultParams[param.name] = param.default_value ??
-          (param.data_type === 'boolean' ? false : param.data_type === 'integer' || param.data_type === 'float' ? 0 : '')
+        if (param.default_value !== undefined && param.default_value !== null) {
+          defaultParams[param.name] = param.default_value
+        } else if (typeof param.data_type === 'object' && 'enum' in param.data_type) {
+          defaultParams[param.name] = param.data_type.enum[0] ?? ''
+        } else if (param.data_type === 'boolean') {
+          defaultParams[param.name] = false
+        } else if (param.data_type === 'integer' || param.data_type === 'float') {
+          defaultParams[param.name] = 0
+        } else if (param.data_type === 'array') {
+          defaultParams[param.name] = []
+        } else {
+          defaultParams[param.name] = ''
+        }
       })
     }
     setDialogParams(defaultParams)
@@ -195,12 +210,165 @@ export function DeviceDetail({
 
   const handleSendCommand = async () => {
     if (!selectedCommandDef) return
-    onSendCommand(selectedCommandDef.name, JSON.stringify(dialogParams))
-    setCommandDialogOpen(false)
-    toast({
-      title: t('devices:commandSent'),
-      description: `${t('devices:command.dialog.sendCommand')}: ${selectedCommandDef.display_name || selectedCommandDef.name}`,
-    })
+    setCommandExecuting(true)
+    setCommandResult(null)
+    try {
+      await onSendCommand(selectedCommandDef.name, JSON.stringify(dialogParams))
+      setCommandResult({ success: true })
+    } catch (e: any) {
+      setCommandResult({ success: false, error: e?.message || String(e) })
+    } finally {
+      setCommandExecuting(false)
+    }
+  }
+
+  const handleCommandDialogClose = (open: boolean) => {
+    setCommandDialogOpen(open)
+    if (!open) {
+      setCommandResult(null)
+      setSelectedCommandDef(null)
+    }
+  }
+
+  /** Get enum options if data_type is an enum object */
+  const getEnumOptions = (data_type: ParameterDefinition['data_type']): string[] | null => {
+    if (typeof data_type === 'object' && data_type !== null && 'enum' in data_type) {
+      return data_type.enum
+    }
+    return null
+  }
+
+  /** Format data type for display */
+  const formatDataType = (dt: ParameterDefinition['data_type']): string => {
+    if (typeof dt === 'string') return dt
+    if (typeof dt === 'object' && 'enum' in dt) return `enum: ${dt.enum.join(', ')}`
+    return String(dt)
+  }
+
+  /** Render a single parameter input */
+  const renderParamInput = (param: ParameterDefinition) => {
+    const value = dialogParams[param.name]
+    const enumOptions = getEnumOptions(param.data_type)
+
+    // Enum type (from data_type object)
+    if (enumOptions) {
+      return (
+        <Select
+          value={String(value ?? '')}
+          onValueChange={(v) => setDialogParams(p => ({ ...p, [param.name]: v }))}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {enumOptions.map((opt) => (
+              <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )
+    }
+
+    // Allowed values (from allowed_values array)
+    if (param.allowed_values && param.allowed_values.length > 0) {
+      return (
+        <div className="flex flex-wrap gap-2">
+          {param.allowed_values.map((v) => (
+            <Button
+              key={String(v)}
+              type="button"
+              variant={value === v ? "default" : "outline"}
+              size="sm"
+              onClick={() => setDialogParams(p => ({ ...p, [param.name]: v }))}
+              className="rounded-full"
+            >
+              {String(v)}
+            </Button>
+          ))}
+        </div>
+      )
+    }
+
+    switch (param.data_type) {
+      case 'boolean':
+        return (
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant={value === true ? "default" : "outline"}
+              size="sm"
+              onClick={() => setDialogParams(p => ({ ...p, [param.name]: true }))}
+              className="rounded-full"
+            >
+              {t('devices:command.dialog.yes')}
+            </Button>
+            <Button
+              type="button"
+              variant={value === false ? "default" : "outline"}
+              size="sm"
+              onClick={() => setDialogParams(p => ({ ...p, [param.name]: false }))}
+              className="rounded-full"
+            >
+              {t('devices:command.dialog.no')}
+            </Button>
+          </div>
+        )
+
+      case 'integer':
+      case 'float':
+        return (
+          <Input
+            type="number"
+            value={typeof value === 'number' ? String(value) : ''}
+            onChange={(e) => {
+              const parsed = param.data_type === 'integer'
+                ? parseInt(e.target.value) || 0
+                : parseFloat(e.target.value) || 0
+              setDialogParams(p => ({ ...p, [param.name]: parsed }))
+            }}
+            min={param.min}
+            max={param.max}
+            step={param.data_type === 'float' ? 'any' : '1'}
+            placeholder={param.unit ? `${param.min ?? 0} ~ ${param.max ?? '∞'} ${param.unit}` : undefined}
+          />
+        )
+
+      case 'binary':
+        return (
+          <Textarea
+            value={typeof value === 'string' ? value : ''}
+            onChange={(e) => setDialogParams(p => ({ ...p, [param.name]: e.target.value }))}
+            placeholder={t('devices:detailPage.binaryPlaceholder', { defaultValue: 'Base64 encoded data...' })}
+            rows={3}
+          />
+        )
+
+      case 'array':
+        return (
+          <Textarea
+            value={typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
+            onChange={(e) => {
+              try {
+                const parsed = JSON.parse(e.target.value)
+                setDialogParams(p => ({ ...p, [param.name]: parsed }))
+              } catch {
+                setDialogParams(p => ({ ...p, [param.name]: e.target.value }))
+              }
+            }}
+            placeholder='[1, 2, 3]'
+            rows={3}
+          />
+        )
+
+      default: // string
+        return (
+          <Input
+            type="text"
+            value={typeof value === 'string' ? value : String(value ?? '')}
+            onChange={(e) => setDialogParams(p => ({ ...p, [param.name]: e.target.value }))}
+          />
+        )
+    }
   }
 
   const handleMetricCardClick = async (key: string) => {
@@ -672,81 +840,49 @@ export function DeviceDetail({
       {selectedCommandDef && (
         <UnifiedFormDialog
           open={commandDialogOpen}
-          onOpenChange={setCommandDialogOpen}
+          onOpenChange={handleCommandDialogClose}
           title={selectedCommandDef.display_name || selectedCommandDef.name}
-          width="sm"
+          icon={<Send className="h-5 w-5" />}
+          width="md"
+          isSubmitting={commandExecuting}
           onSubmit={handleSendCommand}
-          submitLabel={t('devices:command.dialog.sendCommand')}
+          submitLabel={commandExecuting
+            ? t('devices:command.dialog.executing', { defaultValue: 'Sending...' })
+            : t('devices:command.dialog.sendCommand')}
+          submitDisabled={commandExecuting}
         >
-          <div className="space-y-5">
-            {selectedCommandDef.parameters?.map((param) => {
-              const value = dialogParams[param.name]
-              const formatDataType = (dt: string | { enum: string[] }): string => {
-                if (typeof dt === 'string') return dt
-                if ('enum' in dt) return `enum: ${dt.enum.join(', ')}`
-                return String(dt)
-              }
-              return (
-                <div key={param.name} className="space-y-2">
-                  <Label className="text-sm font-medium">
-                    {param.display_name || param.name}
-                    <Badge variant="outline" className="ml-2 text-xs">{formatDataType(param.data_type)}</Badge>
-                  </Label>
-                  {param.data_type === 'boolean' ? (
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={value === true ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setDialogParams(p => ({ ...p, [param.name]: true }))}
-                        className="rounded-full"
-                      >
-                        {t('devices:command.dialog.yes')}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={value === false ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setDialogParams(p => ({ ...p, [param.name]: false }))}
-                        className="rounded-full"
-                      >
-                        {t('devices:command.dialog.no')}
-                      </Button>
-                    </div>
-                  ) : param.allowed_values ? (
-                    <div className="flex flex-wrap gap-2">
-                      {param.allowed_values.map((v) => (
-                        <Button
-                          key={String(v)}
-                          type="button"
-                          variant={value === v ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setDialogParams(p => ({ ...p, [param.name]: v }))}
-                          className="rounded-full"
-                        >
-                          {String(v)}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : (
-                    <Input
-                      type={param.data_type === 'integer' || param.data_type === 'float' ? 'number' : 'text'}
-                      value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
-                      onChange={(e) => {
-                        const parsed = param.data_type === 'integer'
-                          ? parseInt(e.target.value) || 0
-                          : param.data_type === 'float'
-                          ? parseFloat(e.target.value) || 0
-                          : e.target.value
-                        setDialogParams(p => ({ ...p, [param.name]: parsed }))
-                      }}
-                      className="rounded-md"
-                    />
-                  )}
-                </div>
-              )
-            })}
-          </div>
+          {(!selectedCommandDef.parameters || selectedCommandDef.parameters.length === 0) && (
+            <p className="text-sm text-muted-foreground py-2">
+              {t('devices:command.dialog.noParameters', { defaultValue: 'No parameters required' })}
+            </p>
+          )}
+          {selectedCommandDef.parameters?.map((param) => (
+            <Field key={param.name}>
+              <FieldLabel className="flex items-center gap-1.5">
+                {param.display_name || param.name}
+                {param.required && <span className="text-error">*</span>}
+                <Badge variant="outline" className="text-xs font-normal">
+                  {formatDataType(param.data_type)}
+                  {param.unit && ` (${param.unit})`}
+                </Badge>
+              </FieldLabel>
+              {renderParamInput(param)}
+            </Field>
+          ))}
+
+          {/* Execution Result */}
+          {commandResult && (
+            <div className={cn(
+              "rounded-lg p-3 text-xs font-mono overflow-auto max-h-48",
+              commandResult.success ? "bg-success-light" : "bg-error-light"
+            )}>
+              <pre className="whitespace-pre-wrap break-words">
+                {commandResult.success
+                  ? t('devices:commandSent')
+                  : commandResult.error}
+              </pre>
+            </div>
+          )}
         </UnifiedFormDialog>
       )}
     </>

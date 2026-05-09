@@ -144,7 +144,9 @@ impl MemoryCompressor {
         for entry in &mut entries {
             if let Ok(entry_date) = chrono::NaiveDate::parse_from_str(&entry.timestamp, "%Y-%m-%d")
             {
-                let entry_datetime = entry_date.and_hms_opt(0, 0, 0).unwrap();
+                let entry_datetime = entry_date
+                    .and_hms_opt(0, 0, 0)
+                    .expect("midnight (0,0,0) is always a valid time");
                 let days_since =
                     (now.date_naive() - entry_datetime.date()).num_days().max(0) as u64;
                 let original_importance = entry.importance;
@@ -364,7 +366,8 @@ impl MemoryCompressor {
         let mut entries = Vec::new();
 
         // Regex to parse: - [2026-04-02] Content [importance: 80]
-        let re = regex::Regex::new(r"- \[([^\]]+)\]\s*(.+?)\s*\[importance:\s*(\d+)\]").unwrap();
+        let re = regex::Regex::new(r"- \[([^\]]+)\]\s*(.+?)\s*\[importance:\s*(\d+)\]")
+            .expect("memory entry regex is a compile-time constant and must be valid");
 
         for line in content.lines() {
             let line = line.trim();
@@ -488,8 +491,10 @@ Now generate the JSON response:"#,
     /// Fallback extraction when JSON parsing fails
     fn extract_summaries_fallback(&self, response: &str) -> Vec<CompressionSummary> {
         let mut summaries = Vec::new();
-        let content_re = regex::Regex::new(r#""content"\s*:\s*"([^"]+)""#).unwrap();
-        let importance_re = regex::Regex::new(r#""importance"\s*:\s*(\d+)"#).unwrap();
+        let content_re =
+            regex::Regex::new(r#""content"\s*:\s*"([^"]+)""#).expect("fallback content regex is valid");
+        let importance_re =
+            regex::Regex::new(r#""importance"\s*:\s*(\d+)"#).expect("fallback importance regex is valid");
 
         let contents: Vec<&str> = content_re
             .captures_iter(response)

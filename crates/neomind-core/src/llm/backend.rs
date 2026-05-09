@@ -8,7 +8,8 @@ use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::pin::Pin;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use parking_lot::RwLock;
 use std::time::Duration;
 
 use super::modality::{ImageContent, ModalityContent};
@@ -616,7 +617,7 @@ pub fn global_registry() -> Arc<RwLock<BackendRegistry>> {
 
 /// Register a backend factory with the global registry.
 pub fn register_backend(factory: Box<dyn BackendFactory>) {
-    let mut registry = GLOBAL_REGISTRY.write().unwrap();
+    let mut registry = GLOBAL_REGISTRY.write();
     registry.register(factory);
 }
 

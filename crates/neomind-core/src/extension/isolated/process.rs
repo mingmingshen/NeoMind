@@ -15,6 +15,7 @@
 //!
 //! This design is based on patterns from mature RPC frameworks like tarpc.
 
+use std::collections::VecDeque;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
@@ -312,6 +313,51 @@ impl ExtensionHealthStatus {
     }
 }
 
+/// Maximum number of log lines retained per extension.
+const MAX_LOG_LINES: usize = 500;
+
+/// A single log line captured from extension stderr.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ExtensionLogEntry {
+    /// Timestamp when the log was captured (milliseconds since epoch)
+    pub timestamp: i64,
+    /// Log level inferred from the line content (trace/debug/info/warn/error)
+    pub level: String,
+    /// The raw log message
+    pub message: String,
+}
+
+/// Thread-safe ring buffer for extension logs.
+struct LogBuffer {
+    lines: std::sync::Mutex<VecDeque<ExtensionLogEntry>>,
+}
+
+impl LogBuffer {
+    fn new() -> Self {
+        Self {
+            lines: std::sync::Mutex::new(VecDeque::with_capacity(MAX_LOG_LINES)),
+        }
+    }
+
+    fn push(&self, entry: ExtensionLogEntry) {
+        let mut buf = self.lines.lock().unwrap_or_else(|e| e.into_inner());
+        if buf.len() >= MAX_LOG_LINES {
+            buf.pop_front();
+        }
+        buf.push_back(entry);
+    }
+
+    fn snapshot(&self) -> Vec<ExtensionLogEntry> {
+        let buf = self.lines.lock().unwrap_or_else(|e| e.into_inner());
+        buf.iter().cloned().collect()
+    }
+
+    fn clear(&self) {
+        let mut buf = self.lines.lock().unwrap_or_else(|e| e.into_inner());
+        buf.clear();
+    }
+}
+
 /// Process-isolated extension wrapper
 pub struct IsolatedExtension {
     /// Extension ID
@@ -361,6 +407,8 @@ pub struct IsolatedExtension {
     consecutive_crashes: AtomicU32,
     /// Crash loop detection: timestamp of last crash
     last_crash_time: Mutex<Option<Instant>>,
+    /// Ring buffer capturing stderr output as structured log entries
+    log_buffer: Arc<LogBuffer>,
 }
 
 impl IsolatedExtension {
@@ -397,6 +445,7 @@ impl IsolatedExtension {
             // Crash loop detection
             consecutive_crashes: AtomicU32::new(0),
             last_crash_time: Mutex::new(None),
+            log_buffer: Arc::new(LogBuffer::new()),
         }
     }
 
@@ -599,14 +648,21 @@ impl IsolatedExtension {
         let rt_handle = tokio::runtime::Handle::current();
         self.spawn_receiver_thread(stdout, shutdown_rx, rt_handle, pid);
 
-        // Spawn stderr reader to prevent pipe buffer from filling up
+        // Spawn stderr reader to prevent pipe buffer from filling up and capture logs
         let extension_id = self.extension_id.clone();
+        let log_buffer = self.log_buffer.clone();
         std::thread::spawn(move || {
             use std::io::{BufRead, BufReader};
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
-                // Use eprintln to output directly, or tracing::info for structured logging
                 trace!(extension_id = %extension_id, "{}", line);
+                let level = infer_log_level(&line);
+                let timestamp = chrono::Utc::now().timestamp_millis();
+                log_buffer.push(ExtensionLogEntry {
+                    timestamp,
+                    level: level.to_string(),
+                    message: line,
+                });
             }
         });
 
@@ -916,6 +972,16 @@ impl IsolatedExtension {
                             let stdin_clone = stdin.clone();
                             let ext_id = extension_id.clone();
                             rt_handle.spawn(async move {
+                                // Inject extension_id into params for device_register so the
+                                // capability provider can set adapter_id on the device config
+                                let params = match cap {
+                                    super::super::context::ExtensionCapability::DeviceRegister => {
+                                        let mut p = params.as_object().cloned().unwrap_or_default();
+                                        p.insert("_extension_id".to_string(), serde_json::json!(ext_id));
+                                        serde_json::Value::Object(p)
+                                    }
+                                    _ => params,
+                                };
                                 let result = provider.invoke_capability(cap, &params).await;
 
                                 let message = match result {
@@ -1197,10 +1263,17 @@ impl IsolatedExtension {
 
         let response = self
             .in_flight
-            .wait_with_timeout(request_id, rx, Duration::from_secs(5))
+            .wait_with_timeout(request_id, rx, Duration::from_secs(self.config.command_timeout_secs))
             .await
             .map_err(|e| match e {
-                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
+                super::in_flight::InFlightError::Timeout(ms) => {
+                    tracing::warn!(
+                        extension_id = %self.extension_id,
+                        timeout_ms = ms,
+                        "produce_metrics() timed out - extension may be doing slow network calls"
+                    );
+                    IsolatedExtensionError::Timeout(ms)
+                }
                 super::in_flight::InFlightError::ChannelClosed => {
                     IsolatedExtensionError::IpcError("Response channel closed".to_string())
                 }
@@ -1213,6 +1286,16 @@ impl IsolatedExtension {
                 "Expected Metrics response".to_string(),
             )),
         }
+    }
+
+    /// Get captured log entries from the ring buffer.
+    pub fn get_logs(&self) -> Vec<ExtensionLogEntry> {
+        self.log_buffer.snapshot()
+    }
+
+    /// Clear all captured log entries.
+    pub fn clear_logs(&self) {
+        self.log_buffer.clear();
     }
 
     /// Get extension statistics via IPC
@@ -2584,6 +2667,25 @@ impl IsolatedExtension {
             extension_id = %self.extension_id,
             "Extension started successfully, resetting crash loop counter"
         );
+    }
+}
+
+/// Infer log level from a log line by looking at common prefixes.
+fn infer_log_level(line: &str) -> &'static str {
+    let lower = line.to_ascii_lowercase();
+    // Match tracing/prefix patterns like "ERROR", "WARN ", "INFO ", "DEBUG", "TRACE"
+    if lower.starts_with("error") || lower.contains(" error ") || lower.contains("[error]") {
+        "error"
+    } else if lower.starts_with("warn") || lower.contains(" warn ") || lower.contains("[warn]") {
+        "warn"
+    } else if lower.starts_with("info") || lower.contains(" info ") || lower.contains("[info]") {
+        "info"
+    } else if lower.starts_with("debug") || lower.contains(" debug ") || lower.contains("[debug]") {
+        "debug"
+    } else if lower.starts_with("trace") {
+        "trace"
+    } else {
+        "info"
     }
 }
 

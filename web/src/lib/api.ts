@@ -31,8 +31,8 @@ import type {
   Rule,
   MemoryEntry,
   Extension,
-  ExtensionStatsDto,
   ExtensionTypeDto,
+  ExtensionLogEntry,
   ExtensionCapabilityDto,
   ExtensionHealthResponse,
   // Unified Extension Types
@@ -1281,18 +1281,25 @@ export const api = {
   // Extension system replaces the legacy Plugin system for dynamically loaded code.
 
   /**
-   * Get extension statistics
-   * GET /api/extensions/:id/stats
-   */
-  getExtensionStats: (id: string) =>
-    fetchAPI<ExtensionStatsDto>(`/extensions/${id}/stats`),
-
-  /**
    * List available extension types
    * GET /api/extensions/types
    */
   listExtensionTypes: () =>
     fetchAPI<ExtensionTypeDto[]>('/extensions/types'),
+
+  /**
+   * Get extension logs
+   * GET /api/extensions/:id/logs
+   */
+  getExtensionLogs: (id: string) =>
+    fetchAPI<ExtensionLogEntry[]>(`/extensions/${id}/logs`),
+
+  /**
+   * Clear extension logs
+   * DELETE /api/extensions/:id/logs
+   */
+  clearExtensionLogs: (id: string) =>
+    fetchAPI<{ message: string }>(`/extensions/${id}/logs`, { method: 'DELETE' }),
 
   /**
    * Unregister an extension
