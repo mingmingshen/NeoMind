@@ -92,6 +92,9 @@ import {
   // More icons
   FileText,
   Table,
+  Search,
+  ChevronDown,
+  LayoutGrid,
   List,
   Scroll,
   Play,
@@ -111,12 +114,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet'
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -124,6 +121,12 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
+import {
+  FullScreenDialog,
+  FullScreenDialogHeader,
+  FullScreenDialogContent,
+} from '@/components/automation/dialog'
 import { toast } from '@/components/ui/use-toast'
 
 // Config system
@@ -1209,6 +1212,22 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   // Memoize component library with refreshVersion dependency to trigger re-renders
   const componentLibrary = useMemo(() => getComponentLibrary(t), [t, refreshVersion])
+
+  // Component library search
+  const [librarySearch, setLibrarySearch] = useState('')
+  const filteredLibrary = useMemo(() => {
+    if (!librarySearch.trim()) return componentLibrary
+    const q = librarySearch.toLowerCase()
+    return componentLibrary
+      .map(cat => ({
+        ...cat,
+        items: cat.items.filter(item =>
+          item.name.toLowerCase().includes(q) ||
+          item.description.toLowerCase().includes(q)
+        ),
+      }))
+      .filter(cat => cat.items.length > 0)
+  }, [componentLibrary, librarySearch])
 
   const [configOpen, setConfigOpen] = useState(false)
   const [selectedComponent, setSelectedComponent] = useState<DashboardComponent | null>(null)
@@ -5234,60 +5253,95 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 )}
               </Button>
 
-              <Sheet open={componentLibraryOpen} onOpenChange={(open) => {
-                if (editMode) {
-                  setComponentLibraryOpen(open)
-                }
+              <Button
+                variant="default"
+                size="sm"
+                className="h-7 text-xs shadow-sm"
+                disabled={!editMode}
+                onClick={() => editMode && setComponentLibraryOpen(true)}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                <span className="hidden sm:inline">{t('visualDashboard.add')}</span>
+                <span className="sm:hidden">{t('visualDashboard.add')}</span>
+              </Button>
+
+              <FullScreenDialog open={componentLibraryOpen} onOpenChange={(open) => {
+                setComponentLibraryOpen(open)
+                if (!open) setLibrarySearch('')
               }}>
-                <SheetTrigger asChild>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="h-7 text-xs shadow-sm"
-                    disabled={!editMode}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    <span className="hidden sm:inline">{t('visualDashboard.add')}</span>
-                    <span className="sm:hidden">{t('visualDashboard.add')}</span>
-                  </Button>
-                </SheetTrigger>
-                <SheetContent
-                  side="right"
-                  className="w-80 sm:w-96 overflow-y-auto"
-                >
-                  <SheetTitle>{t('visualDashboard.componentLibrary')}</SheetTitle>
-                  <div className="mt-4 space-y-6 pb-6">
-                    {componentLibrary.map((category) => (
-                      <div key={category.category}>
-                        <div className="flex items-center gap-2 mb-3">
-                          <category.categoryIcon className="h-4 w-4 text-muted-foreground" />
-                          <h3 className="text-sm font-medium">{category.categoryLabel}</h3>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          {category.items.map((item) => {
-                            const Icon = item.icon
-                            return (
-                              <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => handleAddComponent(item.id)}
-                                className="h-auto w-full flex flex-col items-start p-3 text-left overflow-hidden rounded-lg border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors min-h-[88px] cursor-pointer active:scale-[0.98] transition-transform"
-                                style={{ touchAction: 'manipulation' }}
-                              >
-                                <Icon className="h-4 w-4 mb-2 text-muted-foreground shrink-0" />
-                                <span className="text-xs font-medium w-full text-left">{item.name}</span>
-                                <p className="text-xs text-muted-foreground mt-1 w-full text-left line-clamp-2 leading-snug break-words">
-                                  {item.description}
-                                </p>
-                              </button>
-                            )
-                          })}
-                        </div>
+                <FullScreenDialogHeader
+                  icon={<LayoutGrid className="h-5 w-5" />}
+                  iconBg="bg-info-light"
+                  iconColor="text-info"
+                  title={t('visualDashboard.componentLibrary')}
+                  onClose={() => {
+                    setComponentLibraryOpen(false)
+                    setLibrarySearch('')
+                  }}
+                />
+
+                <FullScreenDialogContent>
+                  <div className="flex-1 overflow-y-auto flex flex-col">
+                    {/* Search */}
+                    <div className="px-4 md:px-6 pt-4 pb-2 shrink-0">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          value={librarySearch}
+                          onChange={(e) => setLibrarySearch(e.target.value)}
+                          placeholder={t('componentLibrary.searchPlaceholder')}
+                          className="h-9 pl-8"
+                        />
                       </div>
-                    ))}
+                    </div>
+
+                    {/* Scrollable categories */}
+                    <div className="flex-1 overflow-y-auto px-4 md:px-6 pb-6 space-y-1">
+                      {filteredLibrary.length === 0 ? (
+                        <div className="text-center py-12 text-muted-foreground">
+                          <p className="text-sm">{t('componentLibrary.noResults')}</p>
+                          <p className="text-xs mt-1">{t('componentLibrary.noResultsHint')}</p>
+                        </div>
+                      ) : (
+                        filteredLibrary.map((category) => (
+                          <Collapsible
+                            key={category.category}
+                            defaultOpen={true}
+                          >
+                            <CollapsibleTrigger className="w-full flex items-center gap-2 py-2 px-1 hover:bg-muted-50 rounded-md transition-colors group">
+                              <category.categoryIcon className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm font-medium flex-1 text-left">{category.categoryLabel}</span>
+                              <span className="text-xs text-muted-foreground bg-muted rounded-full px-1.5 py-0.5 min-w-[24px] text-center">
+                                {category.items.length}
+                              </span>
+                              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                              <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 pb-3 px-1">
+                                {category.items.map((item) => {
+                                  const Icon = item.icon
+                                  return (
+                                    <button
+                                      key={item.id}
+                                      type="button"
+                                      onClick={() => handleAddComponent(item.id)}
+                                      className="h-auto w-full flex flex-col items-center p-3 text-center rounded-lg border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer active:scale-[0.98]"
+                                    >
+                                      <Icon className="h-5 w-5 mb-1.5 text-muted-foreground shrink-0" />
+                                      <span className="text-xs font-medium w-full truncate">{item.name}</span>
+                                      <p className="text-[10px] text-muted-foreground mt-0.5 w-full line-clamp-2 leading-tight">{item.description}</p>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        ))
+                      )}
+                    </div>
                   </div>
-                </SheetContent>
-              </Sheet>
+                </FullScreenDialogContent>
+              </FullScreenDialog>
 
               {/* Fullscreen toggle button */}
               <Button
