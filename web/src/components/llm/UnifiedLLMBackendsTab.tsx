@@ -209,14 +209,14 @@ export function UnifiedLLMBackendsTab({
   const loadData = async () => {
     setLoading(true)
     try {
-      const typesResponse = await fetchAPI<{ types: BackendTypeDefinition[] }>('/llm-backends/types', { skipAuth: true })
+      const typesResponse = await fetchAPI<{ types: BackendTypeDefinition[] }>('/llm-backends/types')
       setBackendTypes(typesResponse.types || [])
 
       const instancesResponse = await fetchAPI<{
         backends: LlmBackendInstance[]
         count: number
         active_id: string | null
-      }>('/llm-backends', { skipAuth: true })
+      }>('/llm-backends')
       setInstances(instancesResponse.backends || [])
       setActiveBackendId(instancesResponse.active_id || null)
     } catch (error) {
