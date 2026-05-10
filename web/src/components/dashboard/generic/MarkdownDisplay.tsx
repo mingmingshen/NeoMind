@@ -202,7 +202,7 @@ export function MarkdownDisplay({
     <div className={cn(dashboardCardBase, 'overflow-hidden flex flex-col', className)}>
       <div className={cn(
         'flex-1 min-h-0 overflow-auto',
-        sizeConfig.padding,
+        size === 'sm' ? 'p-2' : 'p-3',
         variantStyles[variant]
       )}>
         <MarkdownContent content={content} maxLines={maxLines} />
