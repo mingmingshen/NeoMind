@@ -29,6 +29,9 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     };
 
     // Public routes (no authentication required)
+    // SECURITY: Only truly safe endpoints belong here.
+    // - Health checks, auth, setup, and static metadata are safe.
+    // - Device telemetry, data sources, and write operations MUST be in protected_routes.
     let public_routes = Router::new()
         // Health check endpoints
         .route("/api/health", get(basic::health_handler))
@@ -54,7 +57,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/setup/llm-config",
             post(setup::save_llm_config_handler),
         )
-        // LLM Backends Types API (public - read-only metadata)
+        // LLM Backend Types API (public - static metadata schemas only)
         .route(
             "/api/llm-backends/types",
             get(llm_backends::list_backend_types_handler),
@@ -63,30 +66,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/llm-backends/types/:type/schema",
             get(llm_backends::get_backend_schema_handler),
         )
-        // LLM Backends (public - read-only for viewing)
-        .route(
-            "/api/llm-backends",
-            get(llm_backends::list_backends_handler),
-        )
-        .route(
-            "/api/llm-backends/:id",
-            get(llm_backends::get_backend_handler),
-        )
-        .route(
-            "/api/llm-backends/stats",
-            get(llm_backends::get_backend_stats_handler),
-        )
-        // Ollama models API (public - fetch available models with capabilities)
-        .route(
-            "/api/llm-backends/ollama/models",
-            get(llm_backends::list_ollama_models_handler),
-        )
-        // llama.cpp server info API (public - health check + server props)
-        .route(
-            "/api/llm-backends/llamacpp/server-info",
-            get(llm_backends::list_llamacpp_server_info_handler),
-        )
-        // Messages Channel Types API (public - read-only metadata)
+        // Messages Channel Types API (public - static metadata schemas only)
         .route(
             "/api/messages/channels/types",
             get(message_channels::list_channel_types_handler),
@@ -95,20 +75,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/messages/channels/types/:type/schema",
             get(message_channels::get_channel_type_schema_handler),
         )
-        // Messages Channels (public - read-only for viewing)
-        .route(
-            "/api/messages/channels",
-            get(message_channels::list_channels_handler),
-        )
-        .route(
-            "/api/messages/channels/:name",
-            get(message_channels::get_channel_handler),
-        )
-        .route(
-            "/api/messages/channels/stats",
-            get(message_channels::get_channel_stats_handler),
-        )
-        // Extensions API (public - read-only endpoints for viewing dynamic extensions)
+        // Extensions API (public - static metadata only)
         .route("/api/extensions", get(extensions::list_extensions_handler))
         .route(
             "/api/extensions/types",
@@ -123,7 +90,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions/capabilities",
             get(extensions::list_extension_capabilities_handler),
         )
-        // Capability API
+        // Capability API (public - static metadata)
         .route(
             "/api/capabilities",
             get(capabilities::list_capabilities_handler),
@@ -132,42 +99,21 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/capabilities/:name",
             get(capabilities::get_capability_handler),
         )
-        // Tools API (public - read-only metadata about available tools)
+        // Tools API (public - static metadata)
         .route("/api/tools", get(tools::list_tools_handler))
         .route("/api/tools/:name", get(tools::get_tool_handler))
-        // Skills API (public - read-only)
-        .route("/api/skills", get(skills::list_skills_handler))
-        .route("/api/skills/match", post(skills::match_skills_handler))
-        .route("/api/skills/:id", get(skills::get_skill_handler))
-        // Extension-specific routes ( :id must come after specific paths)
+        // Extension read-only routes (metadata, health, assets)
         .route(
             "/api/extensions/:id",
-            get(extensions::get_extension_handler).delete(extensions::unregister_extension_handler),
+            get(extensions::get_extension_handler),
         )
         .route(
             "/api/extensions/:id/health",
             get(extensions::extension_health_handler),
         )
         .route(
-            "/api/extensions/:id/logs",
-            get(extensions::get_extension_logs_handler).delete(extensions::clear_extension_logs_handler),
-        )
-        .route(
             "/api/extensions/:id/commands",
             get(extensions::list_extension_commands_handler),
-        )
-        .route(
-            "/api/extensions/:id/data-sources",
-            get(extensions::list_extension_data_sources_handler),
-        )
-        // Push metrics from external sources (device/extension-initiated, bypasses polling)
-        .route(
-            "/api/extensions/:id/push-metrics",
-            post(extensions::push_extension_metrics_handler),
-        )
-        .route(
-            "/api/extensions/:id/metrics/:metric/data",
-            get(extensions::query_extension_metric_data_handler),
         )
         .route(
             "/api/extensions/:id/components",
@@ -177,40 +123,19 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions/:id/assets/*asset_path",
             get(extensions::serve_extension_asset_handler),
         )
-        // Extension command execution (public - for dashboard components)
-        .route(
-            "/api/extensions/:id/command",
-            post(extensions::execute_extension_command_handler),
-        )
-        .route(
-            "/api/extensions/:id/invoke",
-            post(extensions::invoke_extension_handler),
-        )
-        // Extension reload (public - for hot reloading)
-        .route(
-            "/api/extensions/:id/reload",
-            post(extensions::reload_extension_handler),
-        )
-        // Extension event subscriptions
         .route(
             "/api/extensions/:id/event-subscriptions",
             get(extensions::get_event_subscriptions_handler),
         )
-        // Extension full descriptor
         .route(
-            "/api/extensions/:id/descriptor",
-            get(extensions::get_extension_descriptor_handler),
+            "/api/extensions/:id/stream/capability",
+            get(extension_stream::get_stream_capability_handler),
         )
-        // Stats API (public - system stats for dashboard components)
-        .route("/api/stats/system", get(stats::get_system_stats_handler))
-        // Unified Data Sources API (public - browse all data sources)
         .route(
-            "/api/data/sources",
-            get(data::list_all_data_sources_handler),
+            "/api/extensions/:id/stream/sessions",
+            get(extension_stream::list_stream_sessions_handler),
         )
-        // Generic Telemetry Query API (query any source type)
-        .route("/api/telemetry", get(data::query_telemetry_handler))
-        // Suggestions API (public - provides intelligent input suggestions)
+        // Suggestions API (public - input hints for UI)
         .route(
             "/api/suggestions",
             get(suggestions::get_suggestions_handler),
@@ -236,15 +161,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route(
             "/api/extensions/market/updates",
             get(extensions::check_marketplace_updates_handler),
-        )
-        // Extension streaming capability endpoints (public - read-only)
-        .route(
-            "/api/extensions/:id/stream/capability",
-            get(extension_stream::get_stream_capability_handler),
-        )
-        .route(
-            "/api/extensions/:id/stream/sessions",
-            get(extension_stream::list_stream_sessions_handler),
         )
         ;
 
@@ -284,8 +200,91 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         ));
 
     // Protected routes (require API key or JWT via Authorization header)
+    // SECURITY: Sensitive data and all write operations require authentication.
     let protected_routes = Router::new()
-        // Event publishing (requires auth)
+        // === Telemetry & Data (moved from public for security) ===
+        .route("/api/telemetry", get(data::query_telemetry_handler))
+        .route(
+            "/api/data/sources",
+            get(data::list_all_data_sources_handler),
+        )
+        .route("/api/stats/system", get(stats::get_system_stats_handler))
+        // === LLM Backends (moved from public - expose config/keys) ===
+        .route(
+            "/api/llm-backends",
+            get(llm_backends::list_backends_handler),
+        )
+        .route(
+            "/api/llm-backends/:id",
+            get(llm_backends::get_backend_handler),
+        )
+        .route(
+            "/api/llm-backends/stats",
+            get(llm_backends::get_backend_stats_handler),
+        )
+        .route(
+            "/api/llm-backends/ollama/models",
+            get(llm_backends::list_ollama_models_handler),
+        )
+        .route(
+            "/api/llm-backends/llamacpp/server-info",
+            get(llm_backends::list_llamacpp_server_info_handler),
+        )
+        // === Messages Channels (moved from public - expose config) ===
+        .route(
+            "/api/messages/channels",
+            get(message_channels::list_channels_handler),
+        )
+        .route(
+            "/api/messages/channels/:name",
+            get(message_channels::get_channel_handler),
+        )
+        .route(
+            "/api/messages/channels/stats",
+            get(message_channels::get_channel_stats_handler),
+        )
+        // === Skills (moved from public - expose skill configs) ===
+        .route("/api/skills", get(skills::list_skills_handler))
+        .route("/api/skills/match", post(skills::match_skills_handler))
+        .route("/api/skills/:id", get(skills::get_skill_handler))
+        // === Extension write operations (moved from public) ===
+        .route(
+            "/api/extensions/:id",
+            get(extensions::get_extension_handler).delete(extensions::unregister_extension_handler),
+        )
+        .route(
+            "/api/extensions/:id/logs",
+            get(extensions::get_extension_logs_handler).delete(extensions::clear_extension_logs_handler),
+        )
+        .route(
+            "/api/extensions/:id/descriptor",
+            get(extensions::get_extension_descriptor_handler),
+        )
+        .route(
+            "/api/extensions/:id/data-sources",
+            get(extensions::list_extension_data_sources_handler),
+        )
+        .route(
+            "/api/extensions/:id/metrics/:metric/data",
+            get(extensions::query_extension_metric_data_handler),
+        )
+        .route(
+            "/api/extensions/:id/push-metrics",
+            post(extensions::push_extension_metrics_handler),
+        )
+        .route(
+            "/api/extensions/:id/command",
+            post(extensions::execute_extension_command_handler),
+        )
+        .route(
+            "/api/extensions/:id/invoke",
+            post(extensions::invoke_extension_handler),
+        )
+        .route(
+            "/api/extensions/:id/reload",
+            post(extensions::reload_extension_handler),
+        )
+        // === Event publishing (requires auth) ===
         .route("/api/events", post(events::publish_event_handler))
         // Session management
         .route("/api/sessions", post(sessions::create_session_handler))
