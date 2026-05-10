@@ -1123,5 +1123,17 @@
     "noBindings": "No data sources bound",
     "confirm": "Confirm",
     "cancel": "Cancel"
+  },
+  "sidebar": {
+    "title": "Dashboards",
+    "deleteTitle": "Delete Dashboard",
+    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
+    "delete": "Delete",
+    "rename": "Rename",
+    "componentCount": "{{count}} components",
+    "namePlaceholder": "Dashboard name...",
+    "create": "Create",
+    "newDashboard": "New Dashboard",
+    "dashboardCount": "{{count}} dashboards"
   }
 }
