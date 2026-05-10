@@ -208,6 +208,29 @@ web/src/
 /visual-dashboard/:id    // Specific dashboard
 ```
 
+## Dashboard Components
+
+Dashboard components support two modes for specifying data: **manual input** (e.g., URL, text) and **data source binding** (linking to device metrics, extensions, etc.). This is handled by the `DualModeSourceField` component.
+
+### Component Data Source Types
+
+Each component specifies which data source types it accepts via `allowedTypes`:
+
+| Component | Allowed Types | Description |
+|-----------|---------------|-------------|
+| `video-display` | `device`, `device-info`, `device-metric` | Video streams — bind to device metrics that provide video URLs (e.g., RTSP/HLS addresses) |
+| `image-display` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | Images — bind to metrics or extensions providing image data |
+| `gauge-chart` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | Gauge values — bind to numeric metrics |
+| `stat-card` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | Stat values — bind to any numeric metric |
+
+### DataSourceId Format
+
+```
+{type}:{id}:{field}
+```
+
+Example: `extension:weather:temp` — the `temp` field from the `weather` extension.
+
 ## State Management (Zustand)
 
 ### Store Structure

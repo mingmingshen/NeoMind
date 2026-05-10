@@ -9,6 +9,10 @@
 export { UnifiedDataSourceConfig } from './UnifiedDataSourceConfig'
 export type { UnifiedDataSourceConfigProps } from './UnifiedDataSourceConfig'
 
+// Dual-mode source field (manual input + data source binding)
+export { DualModeSourceField } from './DualModeSourceField'
+export type { DualModeSourceFieldProps, DualModeInputType } from './DualModeSourceField'
+
 export { ConfigSection } from './ConfigSection'
 export { DataSourceConfigSection } from './DataSourceConfigSection'
 export {

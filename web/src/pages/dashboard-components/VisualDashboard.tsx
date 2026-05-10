@@ -78,6 +78,7 @@ import {
   Box,
   Cloud,
   Sparkles,
+  Database,
   // Agent icons
   Bot,
   ListTodo,
@@ -120,6 +121,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from '@/components/ui/use-toast'
@@ -133,6 +135,8 @@ import {
   createContentConfig,
   createChartConfig,
   ComponentConfigDialog,
+  DualModeSourceField,
+  UnifiedDataSourceConfig,
 } from '@/components/dashboard/config'
 import type { ComponentConfigSchema, ConfigSection } from '@/components/dashboard/config/ComponentConfigBuilder'
 import { ValueMapEditor } from '@/components/dashboard/config/ValueMapEditor'
@@ -184,7 +188,7 @@ import {
 import { DashboardListSidebar } from '@/components/dashboard/DashboardListSidebar'
 import { MobileEditBar } from '@/components/dashboard/MobileEditBar'
 import type { DashboardComponent, DataSourceOrList, DataSource, GenericComponent } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
+import { getSourceId, normalizeDataSource } from '@/types/dashboard'
 import type { Device, AiAgent } from '@/types'
 import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
 import { dynamicRegistry, dtoToComponentMeta } from '@/components/dashboard/registry/DynamicRegistry'
@@ -1043,6 +1047,109 @@ const ComponentWrapper = memo(function ComponentWrapper({
     </div>
   )
 })
+
+// ============================================================================
+// BindingDataSourceSelector — reusable inline data source picker for Display tab
+// ============================================================================
+
+function BindingDataSourceSelector({
+  dataSource,
+  onConfirm,
+  allowedTypes,
+  multiple = true,
+  maxSources,
+  title,
+}: {
+  dataSource?: DataSourceOrList
+  onConfirm: (ds: DataSourceOrList | undefined) => void
+  allowedTypes: string[]
+  multiple?: boolean
+  maxSources?: number
+  title: string
+}) {
+  const { t } = useTranslation('dashboardComponents')
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [stagedDataSource, setStagedDataSource] = useState<DataSourceOrList | undefined>(undefined)
+
+  const normalizedSources = dataSource ? normalizeDataSource(dataSource) : []
+  const isBound = normalizedSources.length > 0
+
+  const openPicker = useCallback(() => {
+    setStagedDataSource(dataSource)
+    setPickerOpen(true)
+  }, [dataSource])
+
+  const handleConfirm = useCallback(() => {
+    onConfirm(stagedDataSource)
+    setPickerOpen(false)
+  }, [onConfirm, stagedDataSource])
+
+  const handleCancel = useCallback(() => {
+    setPickerOpen(false)
+  }, [])
+
+  const stagedSources = stagedDataSource ? normalizeDataSource(stagedDataSource) : []
+  const stagedChanged = isBound
+    ? JSON.stringify(normalizedSources) !== JSON.stringify(stagedSources)
+    : stagedSources.length > 0
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-medium">{title}</Label>
+        {isBound && (
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+            <Database className="h-3 w-3" />
+            {t('bindingSelector.boundCount', { count: normalizedSources.length })}
+          </span>
+        )}
+      </div>
+
+      {isBound ? (
+        <Button variant="outline" onClick={openPicker} className="w-full h-9">
+          {t('bindingSelector.changeSource')}
+        </Button>
+      ) : (
+        <Button
+          variant="outline"
+          onClick={openPicker}
+          className="w-full h-10 border-dashed text-muted-foreground hover:text-primary"
+        >
+          <Plus className="h-4 w-4 mr-1.5" />
+          {t('bindingSelector.addSource')}
+        </Button>
+      )}
+
+      <Dialog open={pickerOpen} onOpenChange={(open) => { if (!open) handleCancel() }}>
+        <DialogContent className="z-[110] max-w-2xl !h-[70vh] flex flex-col !p-0 overflow-hidden">
+          <DialogHeader className="px-5 py-3 border-b shrink-0">
+            <DialogTitle className="text-base">{t('dualMode.selectDataSource')}</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <UnifiedDataSourceConfig
+              value={stagedDataSource}
+              onChange={setStagedDataSource}
+              allowedTypes={allowedTypes as any}
+              multiple={multiple}
+              maxSources={maxSources}
+              className="border-0 h-full"
+            />
+          </div>
+
+          <DialogFooter className="px-5 py-3 border-t shrink-0 bg-background">
+            <Button variant="outline" onClick={handleCancel}>
+              {t('bindingSelector.cancel')}
+            </Button>
+            <Button onClick={handleConfirm} disabled={!stagedChanged}>
+              {t('bindingSelector.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
 
 // ============================================================================
 // Main Component
@@ -3220,10 +3327,12 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="p-3 rounded-lg bg-info-light border border-info">
-                  <p className="text-sm text-info">
-                    {t('visualDashboard.commandButtonHint')}
-                  </p>
+                <div className="space-y-3">
+                  <div className="p-3 rounded-lg bg-info-light border border-info">
+                    <p className="text-sm text-info">
+                      {t('visualDashboard.commandButtonHint')}
+                    </p>
+                  </div>
                 </div>
               ),
             },
@@ -3258,12 +3367,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         return {
           dataSourceSections: [
             {
-              type: 'data-source' as const,
-              props: {
-                dataSource: config.dataSource,
-                onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
-              },
+              type: 'custom' as const,
+              render: () => (
+                <DualModeSourceField
+                  inputType="image"
+                  value={config.src || ''}
+                  onValueChange={updateConfig('src')}
+                  dataSource={config.dataSource}
+                  onDataSourceChange={updateDataSource}
+                  allowedTypes={['device-metric', 'system', 'extension', 'transform', 'ai-metric']}
+                  label={t('visualDashboard.imageSource')}
+                  placeholder={t('visualDashboard.urlPlaceholder')}
+                />
+              ),
             },
           ],
           styleSections: [
@@ -3271,10 +3387,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <ImageSourceField
-                    value={config.src || ''}
-                    onChange={updateConfig('src')}
-                  />
                   <SelectField
                     label={t('visualDashboard.fitMode')}
                     value={config.fit || 'contain'}
@@ -3526,12 +3638,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         return {
           dataSourceSections: [
             {
-              type: 'data-source' as const,
-              props: {
-                dataSource: config.dataSource,
-                onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
-              },
+              type: 'custom' as const,
+              render: () => (
+                <DualModeSourceField
+                  inputType="url"
+                  value={config.src || ''}
+                  onValueChange={updateConfig('src')}
+                  dataSource={config.dataSource}
+                  onDataSourceChange={updateDataSource}
+                  allowedTypes={['device-metric', 'system', 'extension', 'transform', 'ai-metric']}
+                  label={t('webDisplay.websiteUrl', 'Website URL')}
+                  placeholder={t('placeholders.urlExample')}
+                />
+              ),
             },
           ],
           styleSections: [
@@ -3539,15 +3658,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{t('webDisplay.websiteUrl', 'Website URL')}</label>
-                    <Input
-                      value={config.src || ''}
-                      onChange={(e) => updateConfig('src')(e.target.value)}
-                      placeholder={t('placeholders.urlExample')}
-                      className="h-10"
-                    />
-                  </div>
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2">
                       <Checkbox
@@ -3627,12 +3737,20 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         return {
           dataSourceSections: [
             {
-              type: 'data-source' as const,
-              props: {
-                dataSource: config.dataSource,
-                onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
-              },
+              type: 'custom' as const,
+              render: () => (
+                <DualModeSourceField
+                  inputType="text"
+                  value={config.content || ''}
+                  onValueChange={updateConfig('content')}
+                  dataSource={config.dataSource}
+                  onDataSourceChange={updateDataSource}
+                  allowedTypes={['device-metric', 'system', 'extension', 'transform', 'ai-metric']}
+                  label={t('visualDashboard.markdownContent')}
+                  placeholder={t('visualDashboard.markdownPlaceholder')}
+                  rows={6}
+                />
+              ),
             },
           ],
           styleSections: [
@@ -3640,16 +3758,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label>{t('visualDashboard.markdownContent')}</Label>
-                    <textarea
-                      value={config.content || ''}
-                      onChange={(e) => updateConfig('content')(e.target.value)}
-                      placeholder={t('visualDashboard.markdownPlaceholder')}
-                      rows={6}
-                      className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-                    />
-                  </Field>
                   <SelectField
                     label={t('visualDashboard.style')}
                     value={config.variant || 'default'}
@@ -3707,12 +3815,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         return {
           dataSourceSections: [
             {
-              type: 'data-source' as const,
-              props: {
-                dataSource: config.dataSource,
-                onChange: updateDataSource,
-                allowedTypes: ['device', 'device-info'],
-              },
+              type: 'custom' as const,
+              render: () => (
+                <DualModeSourceField
+                  inputType="url"
+                  value={config.src || ''}
+                  onValueChange={updateConfig('src')}
+                  dataSource={config.dataSource}
+                  onDataSourceChange={updateDataSource}
+                  allowedTypes={['device', 'device-info', 'device-metric']}
+                  label={t('visualDashboard.videoSource')}
+                  placeholder={t('visualDashboard.videoUrlPlaceholder')}
+                />
+              ),
             },
           ],
           styleSections: [
@@ -3720,20 +3835,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label htmlFor="video-display-src">{t('visualDashboard.videoSource')}</Label>
-                    <Input
-                      id="video-display-src"
-                      value={config.src || ''}
-                      onChange={(e) => updateConfig('src')(e.target.value)}
-                      placeholder={t('visualDashboard.videoUrlPlaceholder')}
-                      className="h-9"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t('visualDashboard.videoFormatHint')}
-                    </p>
-                  </Field>
-
                   <SelectField
                     label={t('visualDashboard.videoType')}
                     value={config.type || 'file'}
@@ -3911,96 +4012,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
       case 'map-display':
         return {
-          dataSourceSections: [
-            {
-              type: 'data-source' as const,
-              props: {
-                dataSource: config.dataSource,
-                onChange: (newSource: DataSourceOrList | DataSource | undefined) => {
-
-
-
-                  updateDataSource(newSource)
-                  // When data source changes, update bindings automatically
-                  if (Array.isArray(newSource) && newSource.length > 0) {
-                    const newBindings: MapBinding[] = newSource.map((ds, index) => {
-                      // Determine type based on dataSource type
-                      let bindingType: MapBindingType = 'device'
-                      if (ds.type === 'metric' || ds.type === 'telemetry') bindingType = 'metric'
-                      else if (ds.type === 'command') bindingType = 'command'
-
-                      
-                      // Use metricId for metrics/telemetry, deviceId for devices/commands
-                      const identifier = (ds.type === 'metric' || ds.type === 'telemetry')
-                        ? (ds.metricId || ds.property || 'unknown')
-                        : (getSourceId(ds) || ds.command || 'unknown')
-
-                      
-                      // Look for existing binding - match by dataSource content
-                      // We match regardless of type to allow type corrections
-                      const existingBinding = (config.bindings as MapBinding[])?.find(b => {
-                        if (!b.dataSource) return false
-                        const bDs = b.dataSource as any
-
-                        // Match by deviceId+metricId/property for metric/telemetry
-                        if (bindingType === 'metric' || ds.type === 'telemetry') {
-                          return (getSourceId(bDs) === getSourceId(ds)) && (
-                            bDs.metricId === ds.metricId ||
-                            bDs.property === ds.metricId ||
-                            bDs.property === ds.property
-                          )
-                        }
-                        // Match by deviceId+command for command
-                        if (bindingType === 'command') {
-                          return (getSourceId(bDs) === getSourceId(ds)) && (bDs.command === ds.command)
-                        }
-                        // Match by deviceId for device
-                        return getSourceId(bDs) === getSourceId(ds) && !ds.metricId && !ds.property && !ds.command
-                      })
-
-                      // Create or update binding - update type if changed
-                      // Generate unique ID: type-deviceId-metricId/command or type-deviceId-index
-                      const generateBindingId = () => {
-                        if (ds.type === 'metric' || ds.type === 'telemetry') {
-                          return `${bindingType}-${getSourceId(ds)}-${ds.metricId || ds.property || index}`
-                        } else if (ds.type === 'command') {
-                          return `${bindingType}-${getSourceId(ds)}-${ds.command}`
-                        } else {
-                          return `${bindingType}-${getSourceId(ds)}-${index}`
-                        }
-                      }
-
-                      const baseBinding = existingBinding || {
-                        id: generateBindingId(),
-                        position: { lat: 39.9042, lng: 116.4074 },
-                      }
-
-                      const newBinding = {
-                        ...baseBinding,
-                        id: existingBinding?.id || generateBindingId(), // Preserve existing ID if available
-                        type: bindingType,
-                        icon: bindingType,
-                        name: (ds.type === 'metric' || ds.type === 'telemetry')
-                          ? (ds.metricId || ds.property || t('visualDashboard.metricIndex', { index: index + 1 }))
-                          : ds.type === 'command'
-                            ? `${getSourceId(ds) || ''} → ${ds.command || ''}`
-                            : (getSourceId(ds) || t('visualDashboard.deviceIndex', { index: index + 1 })),
-                        dataSource: ds,
-                        // Preserve position if existing
-                        position: existingBinding?.position || baseBinding.position,
-                      }
-                      return newBinding
-                    })
-
-                    updateConfig('bindings')(newBindings)
-                  }
-                },
-                allowedTypes: ['device', 'metric', 'command', 'extension'],
-                multiple: true,
-                maxSources: 50,
-              },
-            },
-          ],
+          dataSourceSections: [],
           styleSections: [
             {
               type: 'custom' as const,
@@ -4174,6 +4186,70 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-4">
+                  {/* Data source selection — merged from Data Source tab */}
+                  <BindingDataSourceSelector
+                    dataSource={config.dataSource}
+                    onConfirm={(newSource) => {
+                      updateDataSource(newSource)
+                      if (Array.isArray(newSource) && newSource.length > 0) {
+                        const newBindings: MapBinding[] = newSource.map((ds, index) => {
+                          let bindingType: MapBindingType = 'device'
+                          if (ds.type === 'metric' || ds.type === 'telemetry') bindingType = 'metric'
+                          else if (ds.type === 'command') bindingType = 'command'
+
+                          const existingBinding = (config.bindings as MapBinding[])?.find(b => {
+                            if (!b.dataSource) return false
+                            const bDs = b.dataSource as any
+                            if (bindingType === 'metric' || ds.type === 'telemetry') {
+                              return (getSourceId(bDs) === getSourceId(ds)) && (
+                                bDs.metricId === ds.metricId ||
+                                bDs.property === ds.metricId ||
+                                bDs.property === ds.property
+                              )
+                            }
+                            if (bindingType === 'command') {
+                              return (getSourceId(bDs) === getSourceId(ds)) && (bDs.command === ds.command)
+                            }
+                            return getSourceId(bDs) === getSourceId(ds) && !ds.metricId && !ds.property && !ds.command
+                          })
+
+                          const generateBindingId = () => {
+                            if (ds.type === 'metric' || ds.type === 'telemetry') {
+                              return `${bindingType}-${getSourceId(ds)}-${ds.metricId || ds.property || index}`
+                            } else if (ds.type === 'command') {
+                              return `${bindingType}-${getSourceId(ds)}-${ds.command}`
+                            } else {
+                              return `${bindingType}-${getSourceId(ds)}-${index}`
+                            }
+                          }
+
+                          const baseBinding = existingBinding || {
+                            id: generateBindingId(),
+                            position: { lat: 39.9042, lng: 116.4074 },
+                          }
+
+                          return {
+                            ...baseBinding,
+                            id: existingBinding?.id || generateBindingId(),
+                            type: bindingType,
+                            icon: bindingType,
+                            name: (ds.type === 'metric' || ds.type === 'telemetry')
+                              ? (ds.metricId || ds.property || t('visualDashboard.metricIndex', { index: index + 1 }))
+                              : ds.type === 'command'
+                                ? `${getSourceId(ds) || ''} → ${ds.command || ''}`
+                                : (getSourceId(ds) || t('visualDashboard.deviceIndex', { index: index + 1 })),
+                            dataSource: ds,
+                            position: existingBinding?.position || baseBinding.position,
+                          }
+                        })
+                        updateConfig('bindings')(newBindings)
+                      }
+                    }}
+                    allowedTypes={['device', 'metric', 'command', 'extension']}
+                    maxSources={50}
+                    title={t('visualDashboard.markerBinding')}
+                  />
+
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-medium">{t('visualDashboard.markerBinding')}</h3>
@@ -4356,17 +4432,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                                 return (
                                   <div
                                     key={binding.id}
-                                    className={`flex items-center gap-3 p-3 hover:bg-muted-50 transition-colors cursor-pointer`}
-                                    onClick={() => {
-                                      // Different interactions based on type
-                                      if (type === 'device' && deviceId) {
-                                        handleDeviceClick(deviceId)
-                                      } else if (type === 'metric') {
-                                        handleMetricClick(metricId || '', deviceId)
-                                      } else if (type === 'command' && deviceId && command) {
-                                        handleCommandClick(deviceId, command)
-                                      }
-                                    }}
+                                    className="flex items-center gap-3 p-3"
                                   >
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center ${config.color}/20 ${config.textColor}`}>
                                       <Icon className="h-4 w-4" />
@@ -4379,11 +4445,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                                         {metricId && <span>• {metricId}</span>}
                                         {command && <span>• {command}</span>}
                                       </div>
-                                    </div>
-                                    <div className="text-xs text-muted-foreground">
-                                      {type === 'device' && <span className="text-info">{t('visualDashboard.viewDetails')}</span>}
-                                      {type === 'metric' && <span className="text-success">{t('visualDashboard.viewValue')}</span>}
-                                      {type === 'command' && <span className="text-accent-orange">{t('visualDashboard.execute')}</span>}
                                     </div>
                                   </div>
                                 )
@@ -4422,86 +4483,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
       case 'custom-layer':
         return {
-          dataSourceSections: [
-            {
-              type: 'data-source' as const,
-              props: {
-                dataSource: config.bindings as any,
-                onChange: (newDataSources: DataSourceOrList | undefined) => {
-                  // Convert dataSources to LayerBinding format
-                  // Handle both single object and array
-                  const sourcesArray = newDataSources
-                    ? Array.isArray(newDataSources)
-                      ? newDataSources
-                      : [newDataSources]
-                    : []
-
-                  const newBindings = sourcesArray.map((ds: any, index: number) => {
-                    // Determine type based on dataSource type
-                    let bindingType: LayerBindingType = 'device'
-                    if (ds.type === 'metric' || ds.type === 'telemetry') bindingType = 'metric'
-                    else if (ds.type === 'command') bindingType = 'command'
-
-                    // Look for existing binding
-                    const existingBinding = (config.bindings as LayerBinding[])?.find(b => {
-                      if (!b.dataSource) return false
-                      const bDs = b.dataSource as any
-                      return getSourceId(bDs) === getSourceId(ds) &&
-                        bDs.metricId === ds.metricId &&
-                        bDs.property === ds.property &&
-                        bDs.command === ds.command
-                    })
-
-                    // Generate unique ID
-                    const generateBindingId = () => {
-                      if (ds.type === 'metric' || ds.type === 'telemetry') {
-                        return `${bindingType}-${getSourceId(ds)}-${ds.metricId || ds.property || index}`
-                      } else if (ds.type === 'command') {
-                        return `${bindingType}-${getSourceId(ds)}-${ds.command}`
-                      } else {
-                        return `${bindingType}-${getSourceId(ds)}-${index}`
-                      }
-                    }
-
-                    const baseBinding = existingBinding || {
-                      id: generateBindingId(),
-                      position: { x: 50, y: 50 },
-                    }
-
-                    return {
-                      ...baseBinding,
-                      id: existingBinding?.id || generateBindingId(),
-                      type: bindingType,
-                      icon: bindingType,
-                      name: (ds.type === 'metric' || ds.type === 'telemetry')
-                        ? (ds.metricId || ds.property || t('visualDashboard.metricIndex', { index: index + 1 }))
-                        : ds.type === 'command'
-                          ? `${getSourceId(ds) || ''} → ${ds.command || ''}`
-                          : (getSourceId(ds) || t('visualDashboard.deviceIndex', { index: index + 1 })),
-                      dataSource: ds,
-                      position: existingBinding?.position || baseBinding.position,
-                    } as LayerBinding
-                  })
-
-                  // Preserve existing text/icon bindings that aren't in the data sources
-                  const existingTextIconBindings = (config.bindings as LayerBinding[])?.filter(b => {
-                    if (b.type === 'text' || b.type === 'icon') return true
-                    // Also check if this binding is from a dataSource that's no longer present
-                    const ds = b.dataSource as any
-                    if (ds && getSourceId(ds)) {
-                      return !sourcesArray.some((s: any) => getSourceId(s) === getSourceId(ds))
-                    }
-                    return false
-                  }) || []
-
-                  updateConfig('bindings')([...newBindings, ...existingTextIconBindings])
-                },
-                allowedTypes: ['device', 'metric', 'command', 'extension'],
-                multiple: true,
-                maxSources: 20,
-              },
-            },
-          ],
+          dataSourceSections: [],
           styleSections: [
             {
               type: 'custom' as const,
@@ -4639,6 +4621,76 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-4">
+                  {/* Data source selection — merged from Data Source tab */}
+                  <BindingDataSourceSelector
+                    dataSource={config.bindings as any}
+                    onConfirm={(newDataSources) => {
+                      const sourcesArray = newDataSources
+                        ? Array.isArray(newDataSources)
+                          ? newDataSources
+                          : [newDataSources]
+                        : []
+
+                      const newBindings = sourcesArray.map((ds: any, index: number) => {
+                        let bindingType: LayerBindingType = 'device'
+                        if (ds.type === 'metric' || ds.type === 'telemetry') bindingType = 'metric'
+                        else if (ds.type === 'command') bindingType = 'command'
+
+                        const existingBinding = (config.bindings as LayerBinding[])?.find(b => {
+                          if (!b.dataSource) return false
+                          const bDs = b.dataSource as any
+                          return getSourceId(bDs) === getSourceId(ds) &&
+                            bDs.metricId === ds.metricId &&
+                            bDs.property === ds.property &&
+                            bDs.command === ds.command
+                        })
+
+                        const generateBindingId = () => {
+                          if (ds.type === 'metric' || ds.type === 'telemetry') {
+                            return `${bindingType}-${getSourceId(ds)}-${ds.metricId || ds.property || index}`
+                          } else if (ds.type === 'command') {
+                            return `${bindingType}-${getSourceId(ds)}-${ds.command}`
+                          } else {
+                            return `${bindingType}-${getSourceId(ds)}-${index}`
+                          }
+                        }
+
+                        const baseBinding = existingBinding || {
+                          id: generateBindingId(),
+                          position: { x: 50, y: 50 },
+                        }
+
+                        return {
+                          ...baseBinding,
+                          id: existingBinding?.id || generateBindingId(),
+                          type: bindingType,
+                          icon: bindingType,
+                          name: (ds.type === 'metric' || ds.type === 'telemetry')
+                            ? (ds.metricId || ds.property || t('visualDashboard.metricIndex', { index: index + 1 }))
+                            : ds.type === 'command'
+                              ? `${getSourceId(ds) || ''} → ${ds.command || ''}`
+                              : (getSourceId(ds) || t('visualDashboard.deviceIndex', { index: index + 1 })),
+                          dataSource: ds,
+                          position: existingBinding?.position || baseBinding.position,
+                        } as LayerBinding
+                      })
+
+                      const existingTextIconBindings = (config.bindings as LayerBinding[])?.filter(b => {
+                        if (b.type === 'text' || b.type === 'icon') return true
+                        const ds = b.dataSource as any
+                        if (ds && getSourceId(ds)) {
+                          return !sourcesArray.some((s: any) => getSourceId(s) === getSourceId(ds))
+                        }
+                        return false
+                      }) || []
+
+                      updateConfig('bindings')([...newBindings, ...existingTextIconBindings])
+                    }}
+                    allowedTypes={['device', 'metric', 'command', 'extension']}
+                    maxSources={20}
+                    title={t('visualDashboard.layerItemBinding')}
+                  />
+
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-medium">{t('visualDashboard.layerItemBinding')}</h3>
@@ -5309,6 +5361,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         previewDataSource={componentConfig.dataSource}
         previewConfig={componentConfig}
         showTitleInDisplay={isTitleInDisplayComponent(selectedComponent?.type)}
+        position={selectedComponent?.position}
       />
 
       {/* Map Editor Dialog */}

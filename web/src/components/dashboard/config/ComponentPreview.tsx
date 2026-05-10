@@ -41,8 +41,14 @@ export interface ComponentPreviewProps {
   title?: string
   showHeader?: boolean
   className?: string
-  /** Maximum height for the preview content area (default: 200) */
+  /** Maximum height for the preview content area (default: 200). Ignored when fillContainer is true. */
   maxContentHeight?: number
+  /** When true, the preview content area fills the available container height instead of using maxContentHeight */
+  fillContainer?: boolean
+  /** Override grid width (in grid units) for aspect ratio calculation */
+  gridW?: number
+  /** Override grid height (in grid units) for aspect ratio calculation */
+  gridH?: number
 }
 
 // Grid dimensions (matching dashboard grid)
@@ -66,6 +72,9 @@ export const ComponentPreview = memo(function ComponentPreview({
   showHeader = true,
   className,
   maxContentHeight = 200,
+  fillContainer = false,
+  gridW: overrideGridW,
+  gridH: overrideGridH,
 }: ComponentPreviewProps) {
   const { t } = useTranslation('dashboardComponents')
   const meta = getComponentMeta(componentType as ImplementedComponentType)
@@ -153,19 +162,19 @@ export const ComponentPreview = memo(function ComponentPreview({
     }
   }, [data, loading, error])
 
-  // Use component's default size from registry (with variant-aware height)
-  const baseW = meta?.sizeConstraints.defaultW ?? 4
-  const baseH = meta?.sizeConstraints.defaultH ?? 3
+  // Use component's size from props or registry defaults (with variant-aware height)
+  const baseW = overrideGridW ?? meta?.sizeConstraints.defaultW ?? 4
+  const baseH = overrideGridH ?? meta?.sizeConstraints.defaultH ?? 3
   const defaultH = getVariantAwareHeight(componentType, config, baseH)
   const defaultW = baseW
 
-  // Build a mock component for rendering with actual default size
+  // Build a mock component for rendering with actual size
   const componentDisplayTitle = title || (config.label as string) || (config.title as string) || ''
 
   const mockComponent: DashboardComponent = {
     id: 'preview',
     type: componentType as ImplementedComponentType,
-    position: { x: 0, y: 0, w: baseW, h: defaultH },
+    position: { x: 0, y: 0, w: defaultW, h: defaultH },
     title: componentDisplayTitle,
     config: {
       ...config,
@@ -174,7 +183,7 @@ export const ComponentPreview = memo(function ComponentPreview({
     dataSource,
   }
 
-  // Calculate ideal aspect ratio from grid dimensions
+  // Calculate ideal pixel dimensions from grid
   const idealWidth = defaultW * GRID_CELL_WIDTH
   const idealHeight = defaultH * GRID_CELL_HEIGHT
   const aspectRatio = idealWidth / idealHeight
@@ -183,7 +192,7 @@ export const ComponentPreview = memo(function ComponentPreview({
   const updateContainerSize = useCallback(() => {
     if (!containerRef.current) return
 
-    const containerWidth = containerRef.current.clientWidth - 16 // Account for padding
+    const containerWidth = containerRef.current.clientWidth - 16
     const containerHeight = containerRef.current.clientHeight - 16
 
     if (containerWidth <= 0 || containerHeight <= 0) return
@@ -220,7 +229,7 @@ export const ComponentPreview = memo(function ComponentPreview({
   const hasError = !!error
 
   return (
-    <div className={cn('flex flex-col overflow-hidden', className)}>
+    <div className={cn('flex flex-col overflow-hidden', fillContainer && 'h-full', className)}>
       {/* Header */}
       {showHeader && (
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted-30 shrink-0">
@@ -234,15 +243,20 @@ export const ComponentPreview = memo(function ComponentPreview({
         </div>
       )}
 
-      {/* Preview area - fixed height with proportional scaling */}
+      {/* Preview area - sized to match grid aspect ratio */}
       <div
         ref={containerRef}
         className={cn(
-          'min-h-0 p-2 bg-muted overflow-hidden relative',
+          'min-h-0 bg-muted overflow-hidden relative mx-auto',
           'transition-opacity duration-200',
-          isTransitioning && 'opacity-60'
+          isTransitioning && 'opacity-60',
+          fillContainer ? 'flex-1' : ''
         )}
-        style={{ height: `${maxContentHeight}px` }}
+        style={fillContainer ? undefined : {
+          width: `${idealWidth}px`,
+          maxWidth: '100%',
+          height: `${idealHeight}px`,
+        }}
       >
         {showLoading ? (
           <div className="w-full h-full flex items-center justify-center">
@@ -305,6 +319,9 @@ export const ComponentPreview = memo(function ComponentPreview({
     prevProps.title === nextProps.title &&
     prevConfigKey === nextConfigKey &&
     prevDsKey === nextDsKey &&
-    prevProps.maxContentHeight === nextProps.maxContentHeight
+    prevProps.maxContentHeight === nextProps.maxContentHeight &&
+    prevProps.fillContainer === nextProps.fillContainer &&
+    prevProps.gridW === nextProps.gridW &&
+    prevProps.gridH === nextProps.gridH
   )
 })

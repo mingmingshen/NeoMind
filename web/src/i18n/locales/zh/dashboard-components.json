@@ -591,7 +591,10 @@
     "aiMetric": "AI 指标",
     "aiMetricDesc": "AI 代理生成的指标",
     "noTransforms": "暂无数据转换",
-    "noAiMetrics": "暂无 AI 指标"
+    "noAiMetrics": "暂无 AI 指标",
+    "boundTo": "已绑定 {{source}}",
+    "configureInTab": "在数据源选项卡中配置",
+    "unbindDataSource": "解绑数据源"
   },
   "systemDataSource": {
     "title": "系统",
@@ -929,7 +932,8 @@
     "style": "样式",
     "display": "显示",
     "configOptions": "配置选项",
-    "noDataSourceNeeded": "此组件无需配置数据源"
+    "noDataSourceNeeded": "此组件无需配置数据源",
+    "gridSize": "网格尺寸"
   },
   "customLayer": {
     "device": "设备",
@@ -1045,5 +1049,27 @@
   },
   "extensions": {
     "pluginPathPlaceholder": "/path/to/extension.so"
+  },
+  "dualMode": {
+    "manual": "手动输入",
+    "bound": "数据绑定",
+    "bindSource": "绑定数据源",
+    "unbind": "取消绑定",
+    "upload": "上传",
+    "clear": "清除",
+    "dataBound": "已绑定数据",
+    "changeSource": "更换数据源",
+    "collapseSelector": "收起选择器",
+    "orBindDataSource": "或绑定数据源",
+    "bindDataSourceInstead": "改为绑定数据源",
+    "selectDataSource": "选择数据源"
+  },
+  "bindingSelector": {
+    "addSource": "添加数据源",
+    "changeSource": "更换数据源",
+    "boundCount": "已绑定 {{count}} 个",
+    "noBindings": "未绑定数据源",
+    "confirm": "确认",
+    "cancel": "取消"
   }
 }

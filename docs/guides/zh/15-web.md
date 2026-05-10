@@ -208,6 +208,29 @@ web/src/
 /visual-dashboard/:id    // 指定仪表板
 ```
 
+## 仪表板组件
+
+仪表板组件支持两种数据指定方式：**手动输入**（如 URL、文本）和 **数据源绑定**（关联到设备指标、扩展等）。由 `DualModeSourceField` 组件实现。
+
+### 组件数据源类型
+
+每个组件通过 `allowedTypes` 指定可接受的数据源类型：
+
+| 组件 | 允许的类型 | 说明 |
+|------|-----------|------|
+| `video-display` | `device`, `device-info`, `device-metric` | 视频流 — 可绑定到提供视频 URL（如 RTSP/HLS 地址）的设备指标 |
+| `image-display` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | 图片 — 绑定到提供图片数据的指标或扩展 |
+| `gauge-chart` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | 仪表盘值 — 绑定到数值型指标 |
+| `stat-card` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | 统计值 — 绑定到任意数值型指标 |
+
+### DataSourceId 格式
+
+```
+{type}:{id}:{field}
+```
+
+示例：`extension:weather:temp` — `weather` 扩展的 `temp` 字段。
+
 ## 状态管理 (Zustand)
 
 ### Store 结构

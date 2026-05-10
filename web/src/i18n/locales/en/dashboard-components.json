@@ -643,7 +643,10 @@
     "aiMetric": "AI Metrics",
     "aiMetricDesc": "AI agent generated metrics",
     "noTransforms": "No transform data sources",
-    "noAiMetrics": "No AI metrics"
+    "noAiMetrics": "No AI metrics",
+    "boundTo": "Bound to {{source}}",
+    "configureInTab": "Configure in Data Source tab",
+    "unbindDataSource": "Unbind data source"
   },
   "systemDataSource": {
     "title": "System",
@@ -981,7 +984,8 @@
     "style": "Style",
     "display": "Display",
     "configOptions": "Configuration Options",
-    "noDataSourceNeeded": "This component does not require data source configuration"
+    "noDataSourceNeeded": "This component does not require data source configuration",
+    "gridSize": "Grid Size"
   },
   "customLayer": {
     "device": "Device",
@@ -1097,5 +1101,27 @@
   },
   "extensions": {
     "pluginPathPlaceholder": "/path/to/extension.so"
+  },
+  "dualMode": {
+    "manual": "Manual",
+    "bound": "Data Bound",
+    "bindSource": "Bind data source",
+    "unbind": "Unbind",
+    "upload": "Upload",
+    "clear": "Clear",
+    "dataBound": "Data Bound",
+    "changeSource": "Change source",
+    "collapseSelector": "Hide source selector",
+    "orBindDataSource": "or bind a data source",
+    "bindDataSourceInstead": "Bind data source instead",
+    "selectDataSource": "Select Data Source"
+  },
+  "bindingSelector": {
+    "addSource": "Add data source",
+    "changeSource": "Change data source",
+    "boundCount": "{{count}} bound",
+    "noBindings": "No data sources bound",
+    "confirm": "Confirm",
+    "cancel": "Cancel"
   }
 }

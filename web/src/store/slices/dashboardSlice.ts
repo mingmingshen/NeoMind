@@ -171,15 +171,6 @@ function generateId(): string {
   return 'id_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 15)
 }
 
-/**
- * Shallow clone utility for duplicating dashboard components.
- * Uses spread operator instead of structuredClone for better performance.
- * For DashboardComponent, only a shallow copy is needed since we immediately
- * override top-level fields (id, position).
- */
-function shallowClone<T extends Record<string, any>>(obj: T): T {
-  return { ...obj }
-}
 
 // ============================================================================
 // Create Slice
@@ -202,6 +193,9 @@ export const createDashboardSlice: StateCreator<
 
   // Initialize storage - use API as primary with localStorage fallback for caching
   const storage: DashboardStorage = createDashboardStorage({ type: 'hybrid', cacheEnabled: true })
+
+  // Closure-scoped debounce timer for moveComponent sync (replaces window global)
+  let moveDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   return {
     // Initial state
@@ -430,6 +424,12 @@ export const createDashboardSlice: StateCreator<
       const dashboard = id
         ? dashboards.find((d) => d.id === id) || null
         : dashboards[0] || null
+
+      // Clear pending move sync when switching dashboards
+      if (moveDebounceTimer) {
+        clearTimeout(moveDebounceTimer)
+        moveDebounceTimer = null
+      }
 
       set({
         currentDashboardId: id,
@@ -746,10 +746,10 @@ export const createDashboardSlice: StateCreator<
 
       // Debounced sync - only sync after 500ms of inactivity
       // This prevents excessive API calls during drag operations
-      if ((window as any).__dashboardSyncTimeout) {
-        clearTimeout((window as any).__dashboardSyncTimeout)
+      if (moveDebounceTimer) {
+        clearTimeout(moveDebounceTimer)
       }
-      ;(window as any).__dashboardSyncTimeout = setTimeout(() => {
+      moveDebounceTimer = setTimeout(() => {
         storage.sync(updatedDashboard).then((result) => {
           if (result.data && result.data.id !== updatedDashboard.id) {
             // Server assigned a new ID - update state
@@ -778,7 +778,7 @@ export const createDashboardSlice: StateCreator<
       if (!original) return
 
       const newComponent = {
-        ...shallowClone(original),
+        ...structuredClone(original),
         id: generateId(),
         position: {
           ...original.position,
