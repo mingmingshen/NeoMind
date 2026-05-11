@@ -7,22 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
-
-### Added
-
-- **Dashboard sharing system** — Full-featured share link management for dashboards: create links with read-only or interactive permissions, set expiration (1h–30d), copy/revoke links. Backend proxy forwards API requests via `x-internal-proxy` header for auth bypass. Shared dashboards render using the same component pipeline as the main dashboard
-- **ShareManagerDialog** — New full-screen dialog for managing share links with "Add Share" dashed card pattern. Creation form in nested `UnifiedFormDialog` (z-[110])
-
-### Changed
-
-- **Dashboard header buttons reordered** — Edit → Add Component → Share (Share moved to rightmost position). All buttons use `rounded-md` for consistent smaller border radius
-- **"Add" button label** — Changed from "Add" to "Add Component" for clarity
-- **Device re-registration** — `DeviceRegistry::register()` now updates existing devices in-place instead of returning `AlreadyExists` error, enabling idempotent extension re-registration
-
----
-
-## [v0.7.4] - 2026-05-09
+## [v0.7.4] - 2026-05-11
 
 ### Added
 
@@ -34,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Device metric update sets last_seen** — Reporting metrics from an extension now updates the device's `last_seen` timestamp, preventing "Never Connected" false status
 - **Extension details full-screen dialog** — `ExtensionDetailsDialog` redesigned as `FullScreenDialog` with sidebar navigation: Overview, Configuration, Logs, Metrics, Commands — replacing the old tabbed modal
 - **Extension SDK v0.6.3** — New `register_template()`, `register_device()`, `unregister_device()` functions for device management from extensions
+- **Dashboard sharing system** — Full-featured share link management for dashboards: create links with read-only or interactive permissions, set expiration (1h–30d), copy/revoke links. Backend proxy forwards API requests via `x-internal-proxy` header for auth bypass. Shared dashboards render using the same component pipeline as the main dashboard
+- **ShareManagerDialog** — New full-screen dialog for managing share links with "Add Share" dashed card pattern. Creation form in nested `UnifiedFormDialog` (z-[110])
 
 ### Changed
 
@@ -48,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fix extension uninstall dialog** — Uninstall confirmation now correctly shows the extension name instead of literal `{{name}}`
 - **Fix extension grid props** — Corrected `onConfigure` → `onDetails` prop name to match `ExtensionGrid` API
 - **Bump version to 0.7.4** — Updated workspace, extension-runner, web, Tauri versions. Bumped extension-sdk to 0.7.0
+- **Dashboard header buttons reordered** — Edit → Add Component → Share (Share moved to rightmost position). All buttons use `rounded-md` for consistent smaller border radius
+- **"Add" button label** — Changed from "Add" to "Add Component" for clarity
+- **Device re-registration** — `DeviceRegistry::register()` now updates existing devices in-place instead of returning `AlreadyExists` error, enabling idempotent extension re-registration
 
 ## [v0.7.3] - 2026-05-08
 
