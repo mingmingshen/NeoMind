@@ -2873,6 +2873,8 @@ export interface DashboardComponentDto {
   max_data_sources: number
   /** Allowed data source types for binding */
   data_source_allowed_types?: string[]
+  /** Whether this component supports device binding (receives deviceContext) */
+  has_device_binding?: boolean
   /** JSON Schema for component configuration */
   config_schema?: JSONSchema
   /** JSON Schema for data source binding */

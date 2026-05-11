@@ -6,11 +6,14 @@
  * Supports both static (built-in) and dynamic (extension-provided) components.
  */
 
-import { lazy, Suspense, memo, useMemo, useState, useEffect, useCallback } from 'react'
+import { lazy, Suspense, memo, useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import type { DashboardComponent, GenericComponentType } from '@/types/dashboard'
+import type { Device, DeviceType } from '@/types'
+import { useStore } from '@/store'
+import { useEvents } from '@/hooks/useEvents'
 import { getComponentMeta } from './registry'
 import { dynamicRegistry, dtoToComponentMeta } from './DynamicRegistry'
 import { communityRegistry } from './CommunityRegistry'
@@ -173,6 +176,10 @@ export interface RenderComponentProps {
   onDataSourceChange?: (dataSource: any) => void
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onConfigChange?: (config: any) => void
+  /** Open a fullscreen dialog with arbitrary React content (for extension components) */
+  openFullscreen?: (content: React.ReactNode) => void
+  /** Close the fullscreen dialog */
+  closeFullscreen?: () => void
 }
 
 /**
@@ -191,6 +198,8 @@ const ComponentRenderer = memo(function ComponentRenderer({
   onError,
   onDataSourceChange,
   onConfigChange,
+  openFullscreen,
+  closeFullscreen,
 }: RenderComponentProps) {
   const componentType = component.type
   const isDynamic = dynamicRegistry.isDynamic(componentType)
@@ -358,6 +367,98 @@ const ComponentRenderer = memo(function ComponentRenderer({
   const componentDataSource = (component as any).dataSource
   const componentDisplay = (component as any).display
 
+  // Device binding: check if component has device binding config
+  const boundDeviceId = componentConfig.deviceBinding?.deviceId as string | undefined
+  const communityMetaForDevice = isCommunity ? communityRegistry.getMeta(componentType) : null
+  const dynamicMetaForDevice = isDynamic ? dynamicRegistry.getMeta(componentType) : null
+  const hasDeviceBinding = !!(
+    (communityMetaForDevice?.has_device_binding || dynamicMetaForDevice?.has_device_binding) && boundDeviceId
+  )
+
+  // Subscribe to bound device from store
+  const boundDevice = useStore(useCallback((s: any) =>
+    hasDeviceBinding ? s.devices.find((d: Device) => d.id === boundDeviceId) : null
+  , [hasDeviceBinding, boundDeviceId]))
+
+  const boundDeviceType = useStore(useCallback((s: any) =>
+    hasDeviceBinding && boundDevice
+      ? s.deviceTypes.find((dt: DeviceType) => dt.device_type === boundDevice.device_type)
+      : null
+  , [hasDeviceBinding, boundDevice]))
+
+  const sendCommand = useStore((s) => s.sendCommand)
+
+  // Build deviceContext and sendDeviceCommand for bound components
+  const deviceContext = useMemo(() => {
+    if (!hasDeviceBinding || !boundDevice) return undefined
+    return {
+      device: {
+        id: boundDevice.id,
+        name: boundDevice.name,
+        deviceType: boundDevice.device_type,
+        status: boundDevice.online ? 'online' : 'offline',
+        lastSeen: boundDevice.last_seen,
+        currentValues: boundDevice.current_values || {},
+      },
+      deviceType: boundDeviceType ? {
+        name: boundDeviceType.name,
+        deviceType: boundDeviceType.device_type,
+        metrics: boundDeviceType.metrics || [],
+        commands: boundDeviceType.commands || [],
+      } : undefined,
+    }
+  }, [hasDeviceBinding, boundDevice, boundDeviceType])
+
+  const sendDeviceCommand = useMemo(() => {
+    if (!hasDeviceBinding || !boundDeviceId) return undefined
+    return async (command: string, params?: Record<string, unknown>) => {
+      return sendCommand(boundDeviceId, command, params)
+    }
+  }, [hasDeviceBinding, boundDeviceId, sendCommand])
+
+  // Subscribe to real-time device metric events for device-bound components
+  // This ensures store.updateDeviceMetric is called even when no useDataSource hook
+  // is active on the dashboard (community components don't use useDataSource)
+  const processedEventsRef = useRef(new Set<string>())
+  useEvents({
+    enabled: hasDeviceBinding && !!boundDeviceId,
+    category: 'device',
+    onEvent: useCallback((event: any) => {
+      if (!hasDeviceBinding || !boundDeviceId) return
+      const eventData = event.data || event
+      const eventType = event.type || eventData.type || ''
+      const deviceId = eventData.device_id
+
+      // Only process events for our bound device
+      if (deviceId !== boundDeviceId) return
+
+      // Deduplicate
+      const eventId = eventData.id || `${eventType}-${eventData.timestamp}-${deviceId}`
+      if (processedEventsRef.current.has(eventId)) return
+      processedEventsRef.current.add(eventId)
+      if (processedEventsRef.current.size > 100) {
+        const entries = Array.from(processedEventsRef.current)
+        processedEventsRef.current = new Set(entries.slice(-50))
+      }
+
+      // Check if this is a device metric event
+      const normalized = eventType?.toLowerCase().replace('.', '')
+      if (normalized?.includes('devicemetric') || normalized?.includes('metric') || eventType === 'DeviceMetric') {
+        const store = useStore.getState()
+        // Update primary metric value
+        if ('metric' in eventData && 'value' in eventData) {
+          store.updateDeviceMetric(deviceId, eventData.metric as string, eventData.value)
+        }
+        // Update all other keys as nested metrics
+        for (const [key, value] of Object.entries(eventData)) {
+          if (key !== 'device_id' && key !== 'timestamp' && key !== 'type' && key !== 'id' && key !== 'metric' && key !== 'value') {
+            store.updateDeviceMetric(deviceId, key, value)
+          }
+        }
+      }
+    }, [hasDeviceBinding, boundDeviceId]),
+  })
+
   // Memoize props to prevent unnecessary re-renders of child components
   // Only recreate when actual component data changes
   // IMPORTANT: Must be before any early returns to follow React Hooks rules
@@ -379,6 +480,9 @@ const ComponentRenderer = memo(function ComponentRenderer({
       // Pass callbacks for components to persist their configuration
       onDataSourceChange,
       onConfigChange,
+      // Fullscreen dialog callbacks for extension components
+      openFullscreen,
+      closeFullscreen,
     }
 
     // Special handling for agent-monitor-widget: extract agentId from dataSource
@@ -388,8 +492,16 @@ const ComponentRenderer = memo(function ComponentRenderer({
 
     // ai-analyst: agentId comes from config (restConfig), no special handling needed
 
+    // Device-bound community components get deviceContext + sendDeviceCommand
+    if (deviceContext) {
+      builtProps.deviceContext = deviceContext
+    }
+    if (sendDeviceCommand) {
+      builtProps.sendDeviceCommand = sendDeviceCommand
+    }
+
     return builtProps
-  }, [componentId, componentType, componentTitle, componentConfig, componentDataSource, componentDisplay, className, style, onDataSourceChange, onConfigChange])
+  }, [componentId, componentType, componentTitle, componentConfig, componentDataSource, componentDisplay, className, style, onDataSourceChange, onConfigChange, deviceContext, sendDeviceCommand, openFullscreen, closeFullscreen])
 
   // Show loading state for dynamic/community components
   if ((isDynamic || isCommunity) && loading) {

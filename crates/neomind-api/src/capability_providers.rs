@@ -147,7 +147,7 @@ impl DeviceCapabilityProvider {
         // Update last_seen so the device doesn't show "Never Connected"
         if let Some(device_service) = self.services.get::<DeviceService>(keys::DEVICE_SERVICE) {
             device_service
-                .update_last_seen(device_id, timestamp_ms)
+                .update_last_seen(device_id, timestamp_secs)
                 .await;
         }
 

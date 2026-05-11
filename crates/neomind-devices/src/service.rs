@@ -1583,8 +1583,8 @@ impl DeviceService {
     }
 
     /// Update last_seen timestamp for a device (called when metrics are written by extensions)
-    pub async fn update_last_seen(&self, device_id: &str, last_seen_ms: i64) {
-        self.registry.update_last_seen(device_id, last_seen_ms).await;
+    pub async fn update_last_seen(&self, device_id: &str, last_seen_secs: i64) {
+        self.registry.update_last_seen(device_id, last_seen_secs).await;
     }
 
     /// Get all device statuses

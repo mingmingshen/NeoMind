@@ -32,6 +32,8 @@ export interface FrontendComponentMeta {
   data_source_allowed_types?: string[]
   has_display_config: boolean
   has_actions: boolean
+  has_device_binding?: boolean
+  device_type_filter?: string[]
   config_schema?: {
     type: string
     properties: Record<string, any>
@@ -72,6 +74,8 @@ export interface MarketComponentEntry {
   max_data_sources?: number
   has_display_config: boolean
   has_actions: boolean
+  has_device_binding?: boolean
+  device_type_filter?: string[]
   manifest_url: string
   bundle_url: string
 }
@@ -94,6 +98,8 @@ export interface ComponentManifest {
   data_source_allowed_types?: string[]
   has_display_config?: boolean
   has_actions?: boolean
+  has_device_binding?: boolean
+  device_type_filter?: string[]
   config_schema?: {
     type: string
     properties: Record<string, any>

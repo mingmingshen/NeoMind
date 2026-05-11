@@ -65,6 +65,10 @@ pub struct ComponentManifest {
     pub has_display_config: bool,
     #[serde(default)]
     pub has_actions: bool,
+    #[serde(default)]
+    pub has_device_binding: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub device_type_filter: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_schema: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -104,6 +108,10 @@ pub struct MarketComponentEntry {
     pub max_data_sources: Option<u32>,
     pub has_display_config: bool,
     pub has_actions: bool,
+    #[serde(default)]
+    pub has_device_binding: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub device_type_filter: Vec<String>,
     /// URL to the component's `manifest.json` on GitHub.
     pub manifest_url: String,
     /// URL to the component's `bundle.js` on GitHub.
@@ -266,6 +274,8 @@ mod tests {
             max_data_sources: None,
             has_display_config: false,
             has_actions: false,
+            has_device_binding: false,
+            device_type_filter: vec![],
             config_schema: None,
             default_config: None,
             variants: None,

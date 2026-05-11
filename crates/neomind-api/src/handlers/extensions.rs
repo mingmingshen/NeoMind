@@ -3003,6 +3003,9 @@ pub struct DashboardComponentDef {
     pub has_actions: bool,
     #[serde(default)]
     pub max_data_sources: u8,
+    /// Whether this component supports device binding (receives deviceContext)
+    #[serde(default)]
+    pub has_device_binding: bool,
     pub config_schema: Option<serde_json::Value>,
     pub data_source_schema: Option<serde_json::Value>,
     pub default_config: Option<serde_json::Value>,
@@ -3058,6 +3061,9 @@ pub struct DashboardComponentDto {
     /// Data source allowed types (e.g., ["device"])
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_source_allowed_types: Option<Vec<String>>,
+    /// Whether this component supports device binding (receives deviceContext)
+    #[serde(default)]
+    pub has_device_binding: bool,
     /// Extension ID
     pub extension_id: String,
 }
@@ -3347,6 +3353,7 @@ fn load_extension_components(
             data_source_allowed_types: def._other.get("dataSourceAllowedTypes")
                 .or_else(|| def._other.get("data_source_allowed_types"))
                 .and_then(|v| serde_json::from_value(v.clone()).ok()),
+            has_device_binding: def.has_device_binding,
             extension_id: extension_id.to_string(),
         })
         .collect();

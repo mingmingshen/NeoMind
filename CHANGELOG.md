@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Community component marketplace** — Backend API for browsing, installing, and managing community dashboard components. Manual install via file upload supported. New `FrontendComponentStore` for filesystem-based component storage
 - **Marketplace browser & import UI** — `ComponentMarketplace` full-screen dialog for browsing and installing marketplace components with one-click install/uninstall. `InstallComponentDialog` for manual component import via file upload (manifest.json + bundle.js)
 - **Frontend component runtime** — `CommunityRegistry`, `ComponentRenderer`, Zustand store slice for frontend components. WebSocket event system and lifecycle hooks for community components
+- **Device binding for components** — Dashboard components can bind to devices via `deviceBinding` config. Bound components receive `deviceContext` (device info, current values) and `sendDeviceCommand` function. `DeviceBindingConfig` panel for selecting bound device and command parameters
+- **Extension `has_device_binding` flag** — Extension components declare device binding support via `has_device_binding` in component definition
 
 ### Changed
 
@@ -43,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dashboard header buttons reordered** — Edit → Add Component → Share (Share moved to rightmost position). All buttons use `rounded-md` for consistent smaller border radius
 - **"Add" button label** — Changed from "Add" to "Add Component" for clarity
 - **Device re-registration** — `DeviceRegistry::register()` now updates existing devices in-place instead of returning `AlreadyExists` error, enabling idempotent extension re-registration
+- **Fix last_seen timestamp unit** — Extension metric updates now use seconds instead of milliseconds for `last_seen`, matching device registry expectations
+- **Device command dialog spacing** — Increased spacing between form fields in command control dialog for better readability
 - **Dashboard sidebar alignment** — Fixed header alignment and markdown content padding in dashboard sidebar
 - **Security: protected routes** — Moved sensitive APIs (LLM backends list, etc.) from public to protected routes. Removed `skipAuth` from frontend API calls that should require authentication
 

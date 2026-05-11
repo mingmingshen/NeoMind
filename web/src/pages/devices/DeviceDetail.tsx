@@ -856,6 +856,7 @@ export function DeviceDetail({
               {t('devices:command.dialog.noParameters', { defaultValue: 'No parameters required' })}
             </p>
           )}
+          <div className="space-y-4">
           {selectedCommandDef.parameters?.map((param) => (
             <Field key={param.name}>
               <FieldLabel className="flex items-center gap-1.5">
@@ -869,6 +870,7 @@ export function DeviceDetail({
               {renderParamInput(param)}
             </Field>
           ))}
+          </div>
 
           {/* Execution Result */}
           {commandResult && (

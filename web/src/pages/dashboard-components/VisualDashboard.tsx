@@ -208,6 +208,7 @@ import type { Device, AiAgent } from '@/types'
 import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
 import { dynamicRegistry, dtoToComponentMeta } from '@/components/dashboard/registry/DynamicRegistry'
 import { communityRegistry } from '@/components/dashboard/registry/CommunityRegistry'
+import { DeviceBindingConfig } from '@/components/dashboard/config/DeviceBindingConfig'
 import { componentRegistry, groupComponentsByCategory, getCategoryInfo } from '@/components/dashboard/registry/registry'
 import * as lucideReact from 'lucide-react'
 import { api, fetchAPI } from '@/lib/api'
@@ -514,7 +515,9 @@ export function renderDashboardComponent(
   devices: Device[],
   editMode?: boolean,
   onDataSourceChange?: (dataSource: Record<string, any>) => void,
-  onConfigChange?: (config: Record<string, any>) => void
+  onConfigChange?: (config: Record<string, any>) => void,
+  openFullscreen?: (content: React.ReactNode) => void,
+  closeFullscreen?: () => void
 ) {
   const config = (component as any).config || {}
   // dataSource is a separate property on GenericComponent, not part of config
@@ -907,6 +910,8 @@ export function renderDashboardComponent(
           className="w-full h-full"
           onDataSourceChange={onDataSourceChange}
           onConfigChange={onConfigChange}
+          openFullscreen={openFullscreen}
+          closeFullscreen={closeFullscreen}
         />
       )
     }
@@ -922,6 +927,8 @@ export function renderDashboardComponent(
             className="w-full h-full"
             onDataSourceChange={onDataSourceChange}
             onConfigChange={onConfigChange}
+            openFullscreen={openFullscreen}
+            closeFullscreen={closeFullscreen}
           />
         )
       }
@@ -1247,10 +1254,11 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     }
   }, [componentLibraryOpen, libraryTab, fetchMarket])
 
-  // Fetch installed components when component library opens
+  // Fetch installed components on mount (needed for community registry sync)
+  // and when component library opens
   useEffect(() => {
-    if (componentLibraryOpen) fetchInstalled()
-  }, [componentLibraryOpen, fetchInstalled])
+    fetchInstalled()
+  }, [fetchInstalled])
 
   const filteredLibrary = useMemo(() => {
     if (!librarySearch.trim()) return componentLibrary
@@ -1268,6 +1276,16 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   const [configOpen, setConfigOpen] = useState(false)
   const [selectedComponent, setSelectedComponent] = useState<DashboardComponent | null>(null)
+
+  // Extension fullscreen dialog state
+  const [extFullscreenContent, setExtFullscreenContent] = useState<React.ReactNode | null>(null)
+
+  const openExtFullscreen = useCallback((content: React.ReactNode) => {
+    setExtFullscreenContent(content)
+  }, [])
+  const closeExtFullscreen = useCallback(() => {
+    setExtFullscreenContent(null)
+  }, [])
 
   // Mobile editing state
   const isMobile = useIsMobile()
@@ -2101,7 +2119,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             selectedComponentId={mobileSelectedId}
             isMobile={isMobile}
           >
-            {renderDashboardComponent(component, devices, editMode, handleDataSourceChange, handleConfigChange)}
+            {renderDashboardComponent(component, devices, editMode, handleDataSourceChange, handleConfigChange, openExtFullscreen, closeExtFullscreen)}
           </ComponentWrapper>
         ),
       }
@@ -5041,12 +5059,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         }
 
       default:
-        // Check if this is an extension component
+        // Check if this is an extension or community component
         const extensionDto = dynamicRegistry.getMeta(componentType)
-        if (extensionDto?.config_schema?.properties) {
-          // Generate config UI from extension's JSON Schema
-          const properties = extensionDto.config_schema.properties
-          const uiHints = extensionDto.config_schema.ui_hints
+        const communityMeta = communityRegistry.getMeta(componentType)
+        const schemaSource = extensionDto?.config_schema?.properties
+          ? extensionDto
+          : communityMeta?.config_schema?.properties
+            ? communityMeta
+            : null
+
+        if (schemaSource?.config_schema?.properties) {
+          // Generate config UI from JSON Schema (extension or community)
+          const properties = schemaSource.config_schema.properties
+          const uiHints = schemaSource.config_schema.ui_hints
           const fieldOrder = uiHints?.field_order || Object.keys(properties)
 
           // Visibility rules: check if a field should be visible based on current config values
@@ -5055,7 +5080,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             const rules = uiHints.visibility_rules as Array<{ field: string; condition: string; value: any; then_show?: string[]; then_hide?: string[] }>
             for (const rule of rules) {
               if (rule.then_show?.includes(fieldName)) {
-                const ruleValue = config[rule.field] ?? extensionDto.default_config?.[rule.field]
+                const ruleValue = config[rule.field] ?? schemaSource.default_config?.[rule.field]
                 let show = false
                 switch (rule.condition) {
                   case 'equals': show = ruleValue === rule.value; break
@@ -5067,7 +5092,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 if (show) return true
               }
               if (rule.then_hide?.includes(fieldName)) {
-                const ruleValue = config[rule.field] ?? extensionDto.default_config?.[rule.field]
+                const ruleValue = config[rule.field] ?? schemaSource.default_config?.[rule.field]
                 let hide = false
                 switch (rule.condition) {
                   case 'equals': hide = ruleValue === rule.value; break
@@ -5088,7 +5113,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 <div className="space-y-3">
                   {fieldOrder.filter(key => properties[key] && isFieldVisible(key)).map((key) => {
                     const propDef = properties[key]
-                    const propValue = config[key] ?? extensionDto.default_config?.[key] ?? propDef.default
+                    const propValue = config[key] ?? schemaSource.default_config?.[key] ?? propDef.default
 
                     const handleChange = (value: any) => {
                       updateConfig(key)(value)
@@ -5202,11 +5227,27 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             },
           ]
 
+          // Add device binding section if component requires it
+          if (communityMeta?.has_device_binding) {
+            displaySections.push({
+              type: 'custom' as const,
+              render: () => (
+                <DeviceBindingConfig
+                  deviceId={config.deviceBinding?.deviceId}
+                  deviceTypeFilter={communityMeta.device_type_filter}
+                  onChange={(deviceId) => {
+                    updateConfig('deviceBinding')({ deviceId: deviceId || undefined })
+                  }}
+                />
+              ),
+            })
+          }
+
           // Add data source section if component supports it
           let dataSourceSections: ConfigSection[] = []
-          if (extensionDto.has_data_source) {
+          if (schemaSource.has_data_source) {
             // Use custom allowedTypes from manifest if specified, otherwise default
-            const dsAllowedTypes = (extensionDto.data_source_allowed_types || ['device-metric', 'extension', 'extension-command']) as any
+            const dsAllowedTypes = (schemaSource.data_source_allowed_types || ['device-metric', 'extension', 'extension-command']) as any
             dataSourceSections = [
               {
                 type: 'data-source' as const,
@@ -5225,6 +5266,29 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             styleSections: [],
           }
         }
+
+        // Community component with device binding but no config_schema
+        if (communityMeta?.has_device_binding) {
+          return {
+            displaySections: [
+              {
+                type: 'custom' as const,
+                render: () => (
+                  <DeviceBindingConfig
+                    deviceId={config.deviceBinding?.deviceId}
+                    deviceTypeFilter={communityMeta.device_type_filter}
+                    onChange={(deviceId) => {
+                      updateConfig('deviceBinding')({ deviceId: deviceId || undefined })
+                    }}
+                  />
+                ),
+              },
+            ],
+            dataSourceSections: [],
+            styleSections: [],
+          }
+        }
+
         return null
     }
   }
@@ -5485,7 +5549,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                               const mcName = typeof mc.name === 'string' ? mc.name : (mc.name[i18n.language] || mc.name.en || Object.values(mc.name)[0] || mc.id)
                               const mcDesc = typeof mc.description === 'string' ? mc.description : (mc.description[i18n.language] || mc.description.en || Object.values(mc.description)[0] || '')
                               return (
-                                <div key={mc.id} className="rounded-lg border border-border bg-card p-3 space-y-2">
+                                <div key={mc.id} className="rounded-lg border border-border bg-card p-3 flex flex-col gap-2 h-[140px]">
                                     <div className="flex items-start gap-2">
                                       <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center shrink-0">
                                         <McIcon className="w-4 h-4 text-primary" />
@@ -5498,7 +5562,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                                         <p className="text-xs text-muted-foreground">{t('componentLibrary.version')}: {mc.version}{mc.author ? ` · ${mc.author}` : ''}</p>
                                       </div>
                                     </div>
-                                    <p className="text-xs text-muted-foreground line-clamp-2">{mcDesc}</p>
+                                    <p className="text-xs text-muted-foreground line-clamp-2 flex-1 min-h-0">{mcDesc}</p>
                                     <Button
                                       variant={isInstalled ? 'ghost' : 'outline'}
                                       size="sm"
@@ -5690,6 +5754,21 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         dashboardId={currentDashboardId}
         dashboardName={currentDashboard?.name}
       />
+
+      {/* Extension Fullscreen Dialog */}
+      <FullScreenDialog
+        open={!!extFullscreenContent}
+        onOpenChange={(open) => { if (!open) closeExtFullscreen() }}
+      >
+        <FullScreenDialogHeader
+          icon={<Monitor className="w-5 h-5" />}
+          title="Edit Content"
+          onClose={closeExtFullscreen}
+        />
+        <FullScreenDialogContent>
+          {extFullscreenContent}
+        </FullScreenDialogContent>
+      </FullScreenDialog>
     </div>
   )
 })
