@@ -11,6 +11,7 @@ use axum::response::Response;
 use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
+use std::io::Read;
 
 use crate::handlers::common::{ok, HandlerResult};
 use crate::models::error::ErrorResponse;
@@ -22,8 +23,16 @@ use neomind_storage::frontend_components::{ComponentManifest, MarketIndex};
 // Constants
 // ---------------------------------------------------------------------------
 
-const MARKET_BASE_URL: &str =
-    "https://raw.githubusercontent.com/camthink-ai/NeoMind-Dashboard-Components";
+/// Base URL for marketplace content.
+/// Override via `NEOMIND_MARKET_URL` env var to use a mirror (e.g. GitHub proxy).
+/// Examples:
+///   - Default: https://raw.githubusercontent.com/camthink-ai/NeoMind-Dashboard-Components
+///   - Mirror:  https://ghfast.top/https://raw.githubusercontent.com/camthink-ai/NeoMind-Dashboard-Components
+fn market_base_url() -> String {
+    std::env::var("NEOMIND_MARKET_URL").unwrap_or_else(|_| {
+        "https://raw.githubusercontent.com/camthink-ai/NeoMind-Dashboard-Components".to_string()
+    })
+}
 const MARKET_BRANCH: &str = "main";
 
 /// Component IDs reserved for built-in components — cannot be overwritten.
@@ -116,7 +125,7 @@ async fn fetch_market_index(
 
     let index_url = format!(
         "{}/{}/index.json?t={}",
-        MARKET_BASE_URL, MARKET_BRANCH, cache_buster
+        market_base_url(), MARKET_BRANCH, cache_buster
     );
 
     let response = client
@@ -207,22 +216,38 @@ pub async fn market_install_handler(
     let component_id = req.component_id.trim().to_string();
     validate_component_id(&component_id)?;
 
-    let client = http_client()?;
+    let client = match http_client() {
+        Ok(c) => c,
+        Err(e) => {
+            return ok(json!({
+                "success": false,
+                "error": format!("Failed to create HTTP client: {}", e)
+            }));
+        }
+    };
 
     // Fetch marketplace index
-    let index = fetch_market_index(&client).await?;
+    let index = match fetch_market_index(&client).await {
+        Ok(idx) => idx,
+        Err(e) => {
+            tracing::error!("Failed to fetch marketplace index: {}", e);
+            return ok(json!({
+                "success": false,
+                "error": format!("Network error: Unable to connect to component marketplace. {}", e)
+            }));
+        }
+    };
 
     // Find the component entry
-    let entry = index
-        .components
-        .iter()
-        .find(|c| c.id == component_id)
-        .ok_or_else(|| {
-            ErrorResponse::not_found(format!(
-                "Component '{}' not found in marketplace",
-                component_id
-            ))
-        })?;
+    let entry = match index.components.iter().find(|c| c.id == component_id) {
+        Some(e) => e,
+        None => {
+            return ok(json!({
+                "success": false,
+                "error": format!("Component '{}' not found in marketplace", component_id)
+            }));
+        }
+    };
 
     // Download manifest and bundle in parallel
     let manifest_url = entry.manifest_url.clone();
@@ -239,46 +264,77 @@ pub async fn market_install_handler(
             .send()
     );
 
-    let manifest_resp = manifest_result.map_err(|e| {
-        ErrorResponse::internal(format!("Failed to download manifest: {}", e))
-    })?;
-    let bundle_resp = bundle_result.map_err(|e| {
-        ErrorResponse::internal(format!("Failed to download bundle: {}", e))
-    })?;
+    let manifest_resp = match manifest_result {
+        Ok(r) if r.status().is_success() => r,
+        Ok(r) => {
+            return ok(json!({
+                "success": false,
+                "error": format!("Failed to download manifest: HTTP {}", r.status())
+            }));
+        }
+        Err(e) => {
+            tracing::error!("Failed to download manifest: {}", e);
+            return ok(json!({
+                "success": false,
+                "error": "Network error: Unable to download component manifest. Please check your internet connection."
+            }));
+        }
+    };
 
-    if !manifest_resp.status().is_success() {
-        return Err(ErrorResponse::internal(format!(
-            "Manifest download returned HTTP {}",
-            manifest_resp.status()
-        )));
-    }
-    if !bundle_resp.status().is_success() {
-        return Err(ErrorResponse::internal(format!(
-            "Bundle download returned HTTP {}",
-            bundle_resp.status()
-        )));
-    }
+    let bundle_resp = match bundle_result {
+        Ok(r) if r.status().is_success() => r,
+        Ok(r) => {
+            return ok(json!({
+                "success": false,
+                "error": format!("Failed to download bundle: HTTP {}", r.status())
+            }));
+        }
+        Err(e) => {
+            tracing::error!("Failed to download bundle: {}", e);
+            return ok(json!({
+                "success": false,
+                "error": "Network error: Unable to download component bundle. Please check your internet connection."
+            }));
+        }
+    };
 
-    let manifest_text = manifest_resp
-        .text()
-        .await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to read manifest: {}", e)))?;
-    let bundle_bytes = bundle_resp
-        .bytes()
-        .await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to read bundle: {}", e)))?;
+    let manifest_text = match manifest_resp.text().await {
+        Ok(t) => t,
+        Err(e) => {
+            return ok(json!({
+                "success": false,
+                "error": format!("Failed to read manifest: {}", e)
+            }));
+        }
+    };
+
+    let bundle_bytes = match bundle_resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            return ok(json!({
+                "success": false,
+                "error": format!("Failed to read bundle: {}", e)
+            }));
+        }
+    };
 
     // Parse manifest
-    let mut manifest: ComponentManifest = serde_json::from_str(&manifest_text).map_err(|e| {
-        ErrorResponse::internal(format!("Invalid manifest JSON: {}", e))
-    })?;
+    let mut manifest: ComponentManifest = match serde_json::from_str(&manifest_text) {
+        Ok(m) => m,
+        Err(e) => {
+            return ok(json!({
+                "success": false,
+                "error": format!("Invalid manifest JSON: {}", e)
+            }));
+        }
+    };
 
     // Validate manifest ID matches requested ID
     if manifest.id != component_id {
-        return Err(ErrorResponse::bad_request(format!(
-            "Manifest ID '{}' does not match requested component ID '{}'",
-            manifest.id, component_id
-        )));
+        return ok(json!({
+            "success": false,
+            "error": format!("Manifest ID '{}' does not match requested component ID '{}'", manifest.id, component_id)
+        }));
     }
 
     // Set install timestamp
@@ -287,10 +343,25 @@ pub async fn market_install_handler(
     // Install via store (blocking filesystem operation)
     let store = state.frontend_component_store.clone();
     let id_for_event = manifest.id.clone();
-    tokio::task::spawn_blocking(move || store.install(&manifest, &bundle_bytes))
-        .await
-        .map_err(|e| ErrorResponse::internal(format!("Install task failed: {}", e)))?
-        .map_err(|e| ErrorResponse::internal(format!("Failed to install component: {}", e)))?;
+    let manifest_for_response = manifest.clone();
+    let install_result = tokio::task::spawn_blocking(move || store.install(&manifest, &bundle_bytes))
+        .await;
+
+    match install_result {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            return ok(json!({
+                "success": false,
+                "error": format!("Failed to install component: {}", e)
+            }));
+        }
+        Err(e) => {
+            return ok(json!({
+                "success": false,
+                "error": format!("Install task failed: {}", e)
+            }));
+        }
+    }
 
     // Publish lifecycle event
     publish_lifecycle_event(&state, &id_for_event, "installed").await;
@@ -301,15 +372,18 @@ pub async fn market_install_handler(
     );
 
     ok(json!({
-        "success": true,
-        "component_id": id_for_event,
-        "state": "installed"
+        "component": manifest_for_response
     }))
 }
 
 /// POST `/api/frontend-components` (multipart)
 ///
 /// Manual component installation via multipart upload.
+///
+/// Supports two modes:
+/// 1. **ZIP package**: single `package` field containing a `.zip` with `manifest.json` + `bundle.js`
+/// 2. **Separate files**: `manifest` (JSON text) + `bundle` (JS bytes) fields
+///
 /// Protected endpoint with 5 MB body limit.
 pub async fn install_component_handler(
     State(state): State<ServerState>,
@@ -317,6 +391,7 @@ pub async fn install_component_handler(
 ) -> HandlerResult<serde_json::Value> {
     let mut manifest_text: Option<String> = None;
     let mut bundle_bytes: Option<Vec<u8>> = None;
+    let mut package_bytes: Option<Vec<u8>> = None;
 
     while let Some(field) = multipart
         .next_field()
@@ -326,6 +401,20 @@ pub async fn install_component_handler(
         let name = field.name().unwrap_or("").to_string();
 
         match name.as_str() {
+            "package" => {
+                package_bytes = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| {
+                            ErrorResponse::bad_request(format!(
+                                "Failed to read package field: {}",
+                                e
+                            ))
+                        })?
+                        .to_vec(),
+                );
+            }
             "manifest" => {
                 manifest_text = Some(
                     field
@@ -353,16 +442,26 @@ pub async fn install_component_handler(
                         .to_vec(),
                 );
             }
-            _ => {
-                // Ignore unknown fields
-            }
+            _ => {}
         }
     }
 
+    // Mode 1: ZIP package
+    if let Some(zip_data) = package_bytes {
+        let (m_text, b_bytes) = tokio::task::spawn_blocking(move || {
+            extract_zip_contents(&zip_data)
+        })
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("ZIP extraction task failed: {}", e)))??;
+
+        manifest_text = Some(m_text);
+        bundle_bytes = Some(b_bytes);
+    }
+
     let manifest_text =
-        manifest_text.ok_or_else(|| ErrorResponse::bad_request("Missing 'manifest' field"))?;
+        manifest_text.ok_or_else(|| ErrorResponse::bad_request("Missing 'manifest' or 'package' field"))?;
     let bundle_bytes =
-        bundle_bytes.ok_or_else(|| ErrorResponse::bad_request("Missing 'bundle' field"))?;
+        bundle_bytes.ok_or_else(|| ErrorResponse::bad_request("Missing 'bundle' or 'package' field"))?;
 
     // Parse manifest
     let mut manifest: ComponentManifest =
@@ -378,6 +477,7 @@ pub async fn install_component_handler(
     // Install via store (blocking filesystem operation)
     let store = state.frontend_component_store.clone();
     let id_for_event = manifest.id.clone();
+    let manifest_for_response = manifest.clone();
     tokio::task::spawn_blocking(move || store.install(&manifest, &bundle_bytes))
         .await
         .map_err(|e| ErrorResponse::internal(format!("Install task failed: {}", e)))?
@@ -392,10 +492,59 @@ pub async fn install_component_handler(
     );
 
     ok(json!({
-        "success": true,
-        "component_id": id_for_event,
-        "state": "installed"
+        "component": manifest_for_response
     }))
+}
+
+/// Extract `manifest.json` and `bundle.js` from a ZIP archive.
+fn extract_zip_contents(zip_data: &[u8]) -> Result<(String, Vec<u8>), ErrorResponse> {
+    let reader = std::io::Cursor::new(zip_data);
+    let mut archive = zip::ZipArchive::new(reader)
+        .map_err(|e| ErrorResponse::bad_request(format!("Invalid ZIP file: {}", e)))?;
+
+    let mut manifest_text: Option<String> = None;
+    let mut bundle_bytes: Option<Vec<u8>> = None;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| {
+            ErrorResponse::bad_request(format!("Failed to read ZIP entry: {}", e))
+        })?;
+
+        // Normalize path: strip directory prefixes
+        let name = file.name().to_string();
+        let filename = name
+            .rsplit('/')
+            .next()
+            .unwrap_or(&name)
+            .to_string();
+
+        match filename.as_str() {
+            "manifest.json" => {
+                let mut text = String::new();
+                file.read_to_string(&mut text).map_err(|e| {
+                    ErrorResponse::bad_request(format!("Failed to read manifest.json: {}", e))
+                })?;
+                manifest_text = Some(text);
+            }
+            "bundle.js" => {
+                let mut bytes = Vec::new();
+                file.read_to_end(&mut bytes).map_err(|e| {
+                    ErrorResponse::bad_request(format!("Failed to read bundle.js: {}", e))
+                })?;
+                bundle_bytes = Some(bytes);
+            }
+            _ => {}
+        }
+    }
+
+    let manifest_text = manifest_text.ok_or_else(|| {
+        ErrorResponse::bad_request("ZIP must contain manifest.json")
+    })?;
+    let bundle_bytes = bundle_bytes.ok_or_else(|| {
+        ErrorResponse::bad_request("ZIP must contain bundle.js")
+    })?;
+
+    Ok((manifest_text, bundle_bytes))
 }
 
 /// GET `/api/frontend-components`

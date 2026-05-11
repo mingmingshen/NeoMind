@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dashboard DualModeSourceField** — New dual-mode data source selector supporting both extension metrics and device metrics. Video-display component supports device-metric binding
 - **Component library FullScreenDialog** — Replaced Sheet-based component library picker with `FullScreenDialog` for better space and consistency
 - **Community component marketplace** — Backend API for browsing, installing, and managing community dashboard components. Manual install via file upload supported. New `FrontendComponentStore` for filesystem-based component storage
+- **Marketplace browser & import UI** — `ComponentMarketplace` full-screen dialog for browsing and installing marketplace components with one-click install/uninstall. `InstallComponentDialog` for manual component import via file upload (manifest.json + bundle.js)
 - **Frontend component runtime** — `CommunityRegistry`, `ComponentRenderer`, Zustand store slice for frontend components. WebSocket event system and lifecycle hooks for community components
 
 ### Changed
