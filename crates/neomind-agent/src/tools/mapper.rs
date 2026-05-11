@@ -179,20 +179,24 @@ impl ToolNameMapper {
         // 1. 简化名称映射 (如 device.discover -> device.discover 自身)
         //    优先检查这个，因为它是 LLM 最常用的格式
         if let Some(real) = self.simplified_to_real.get(input) {
+            tracing::debug!(input, resolved = %real, "Tool resolved via simplified name");
             return real.clone();
         }
 
         // 2. 别名映射 (如 "设备列表" -> device.discover, "list_devices" -> device.discover)
         if let Some(real) = self.alias_to_real.get(input) {
+            tracing::debug!(input, resolved = %real, "Tool resolved via alias");
             return real.clone();
         }
 
         // 3. 模糊匹配 - 检查是否包含已知别名的一部分
         if let Some(real) = self.fuzzy_match(input) {
+            tracing::debug!(input, resolved = %real, "Tool resolved via fuzzy match");
             return real;
         }
 
         // 4. 默认返回输入，假设它是真实名称
+        tracing::debug!(input, "Tool name passed through (no mapping found)");
         input.to_string()
     }
 

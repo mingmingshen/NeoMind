@@ -696,6 +696,9 @@ impl IsolatedExtensionManager {
 
     /// Attempt a lazy restart of an extension that is registered but not running.
     /// Returns the isolated extension handle on success, None on failure.
+    ///
+    /// Uses the same per-extension loading_lock as `load()` to avoid racing
+    /// with the death monitoring task.
     async fn try_lazy_restart(
         &self,
         id: &str,
@@ -730,7 +733,43 @@ impl IsolatedExtensionManager {
             info_cache.get(id).map(|info| info.path.clone())
         }?;
 
-        // Remove the dead extension and reload
+        // Acquire the per-extension loading lock to avoid racing with death monitor.
+        // The death monitor also calls `load()` which acquires the same lock,
+        // so whichever gets here first will perform the restart; the other will
+        // see the extension already loaded and return the existing metadata.
+        let loading_lock = {
+            let mut locks = self.loading_locks.write().await;
+            locks
+                .entry(id.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+        let _guard = loading_lock.lock().await;
+
+        // Double-check: death monitor may have already restarted while we waited
+        {
+            let extensions = self.extensions.read().await;
+            if let Some(ext) = extensions.get(id) {
+                if ext.is_alive() {
+                    tracing::debug!(
+                        extension_id = %id,
+                        "Extension already alive after acquiring lock, skipping lazy restart"
+                    );
+                    return Some(Arc::clone(ext));
+                }
+            }
+        }
+
+        // Gracefully stop the old process before removing
+        {
+            let extensions = self.extensions.read().await;
+            if let Some(old_ext) = extensions.get(id) {
+                tracing::debug!(extension_id = %id, "Stopping old extension process before lazy restart");
+                let _ = old_ext.stop().await;
+            }
+        }
+
+        // Remove the dead extension
         {
             let mut extensions = self.extensions.write().await;
             extensions.remove(id);
@@ -744,6 +783,15 @@ impl IsolatedExtensionManager {
 
         match self.load(&path).await {
             Ok(_) => {
+                // Update restart tracking
+                {
+                    let mut info_cache = self.info_cache.write();
+                    if let Some(info) = info_cache.get_mut(id) {
+                        info.runtime.last_restart_at = Some(chrono::Utc::now().timestamp());
+                        info.runtime.restart_count += 1;
+                    }
+                }
+
                 let extensions = self.extensions.read().await;
                 extensions.get(id).cloned()
             }
