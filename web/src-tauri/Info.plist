@@ -37,5 +37,12 @@
   <!-- Sets the app as a foreground application (activatable) -->
   <key>LSUIElement</key>
   <false/>
+
+  <!-- Allow HTTP connections for IoT device images and external resources -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+  </dict>
 </dict>
 </plist>
