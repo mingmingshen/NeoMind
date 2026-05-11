@@ -49,6 +49,8 @@ import {
   // Business
   Camera,
   ScanEye,
+  // Community
+  Store,
 } from 'lucide-react'
 
 // ============================================================================
@@ -515,58 +517,71 @@ export const componentRegistry: ComponentRegistry = {
 // Registry Helpers
 // ============================================================================
 
-// Import dynamic registry
+// Import dynamic registries
 import { dynamicRegistry, dtoToComponentMeta } from './DynamicRegistry'
+import { communityRegistry } from './CommunityRegistry'
 
 /**
  * Get component metadata by type
- * Checks both static (built-in) and dynamic (extension-provided) registries
+ * Checks static (built-in), dynamic (extension-provided), and community registries
  */
 export function getComponentMeta(type: ComponentType): ComponentMeta | undefined {
   // First try static registry
   const staticMeta = componentRegistry[type]
   if (staticMeta) return staticMeta
 
-  // Then try dynamic registry
+  // Then try dynamic registry (extensions)
   const dto = dynamicRegistry.getMeta(type)
   if (dto) {
     return dtoToComponentMeta(dto)
+  }
+
+  // Finally try community registry (marketplace components)
+  const communityMeta = communityRegistry.getMeta(type)
+  if (communityMeta) {
+    return communityRegistry.communityMetaToComponentMeta(communityMeta)
   }
 
   return undefined
 }
 
 /**
- * Get all component types (static + dynamic)
+ * Get all component types (static + dynamic + community)
  */
 export function getAllComponentTypes(): ComponentType[] {
   const staticTypes = Object.keys(componentRegistry) as ComponentType[]
   const dynamicDtos = dynamicRegistry.getAllMetas()
   const dynamicTypes = dynamicDtos.map(dto => dto.type) as ComponentType[]
+  const communityMetas = communityRegistry.getAllMetas()
+  const communityTypes = communityMetas.map(meta => meta.id) as ComponentType[]
 
-  return [...staticTypes, ...dynamicTypes]
+  return [...staticTypes, ...dynamicTypes, ...communityTypes]
 }
 
 /**
- * Get all component metadata as array (static + dynamic)
+ * Get all component metadata as array (static + dynamic + community)
  */
 export function getAllComponents(): ComponentMeta[] {
   const staticComponents = Object.values(componentRegistry)
   const dynamicDtos = dynamicRegistry.getAllMetas()
   const dynamicComponents = dynamicDtos.map(dto => dtoToComponentMeta(dto))
+  const communityMetas = communityRegistry.getAllMetas()
+  const communityComponents = communityMetas.map(meta => communityRegistry.communityMetaToComponentMeta(meta))
 
-  return [...staticComponents, ...dynamicComponents]
+  return [...staticComponents, ...dynamicComponents, ...communityComponents]
 }
 
 /**
- * Filter components by options (includes dynamic components)
+ * Filter components by options (includes dynamic and community components)
  */
 export function filterComponents(options: RegistryFilterOptions = {}): ComponentMeta[] {
   const staticComponents = Object.values(componentRegistry)
   const dynamicDtos = dynamicRegistry.getAllMetas()
   const dynamicComponents = dynamicDtos.map(dto => dtoToComponentMeta(dto))
+  const communityMetas = communityRegistry.getAllMetas()
+  const communityComponents = communityMetas.map(meta => communityRegistry.communityMetaToComponentMeta(meta))
 
-  let components = [...staticComponents, ...dynamicComponents]
+  let components = [...staticComponents, ...dynamicComponents, ...communityComponents]
 
   if (options.category) {
     components = components.filter(c => c.category === options.category)
@@ -606,7 +621,7 @@ export function groupComponentsByCategory(options: RegistryFilterOptions = {}): 
     return acc
   }, {} as Record<string, GroupedComponentRegistry[number]>)
 
-  // Return in a consistent order (including custom category from extensions)
+  // Return in a consistent order (including custom and community categories)
   const categoryOrder: ComponentCategory[] = [
     'indicators',
     'charts',
@@ -615,6 +630,7 @@ export function groupComponentsByCategory(options: RegistryFilterOptions = {}): 
     'spatial',
     'business',
     'custom', // Extension components
+    'community', // Community marketplace components
   ]
 
   return categoryOrder
@@ -634,6 +650,7 @@ export function getCategoryInfo(category: ComponentCategory): { name: string; ic
     spatial: { name: 'Spatial & Media', icon: MapPin },
     business: { name: 'Business Components', icon: Bot },
     custom: { name: 'Extension Components', icon: LayersIcon }, // For dynamic components
+    community: { name: 'Community Components', icon: Store }, // For community components
   }
 
   return categoryInfos[category]

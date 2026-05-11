@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import type { DashboardComponent, GenericComponentType } from '@/types/dashboard'
 import { getComponentMeta } from './registry'
 import { dynamicRegistry, dtoToComponentMeta } from './DynamicRegistry'
+import { communityRegistry } from './CommunityRegistry'
 
 // ============================================================================
 // Lazy Import Components
@@ -193,6 +194,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
 }: RenderComponentProps) {
   const componentType = component.type
   const isDynamic = dynamicRegistry.isDynamic(componentType)
+  const isCommunity = communityRegistry.isCommunity(componentType)
 
   // State for dynamic component loading
   const [DynamicComponent, setDynamicComponent] = useState<React.ComponentType<any> | null>(null)
@@ -204,7 +206,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
   // Heuristic: check if this looks like an extension component (not in static registry)
   const isUnknownType = !componentMap[componentType as GenericComponentType] &&
                         !businessComponentMap[componentType]
-  const mightBeExtension = isUnknownType && !isDynamic
+  const mightBeExtension = isUnknownType && !isDynamic && !isCommunity
 
   // Max auto-retry attempts
   const MAX_LOAD_RETRIES = 5
@@ -214,7 +216,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
 
   // Load dynamic component with auto-retry
   const loadDynamicComponent = useCallback(async (attempt: number): Promise<void> => {
-    if (!isDynamic) {
+    if (!isDynamic && !isCommunity) {
       setDynamicComponent(null)
       setLoadError(null)
       return
@@ -224,7 +226,9 @@ const ComponentRenderer = memo(function ComponentRenderer({
     setLoadError(null)
 
     try {
-      const module = await dynamicRegistry.loadComponent(componentType)
+      const module = isCommunity
+        ? await communityRegistry.loadComponent(componentType)
+        : await dynamicRegistry.loadComponent(componentType)
 
       if (module) {
         let Component: React.ComponentType<any> | null = null
@@ -269,14 +273,14 @@ const ComponentRenderer = memo(function ComponentRenderer({
     } finally {
       setLoading(false)
     }
-  }, [componentType, isDynamic])
+  }, [componentType, isDynamic, isCommunity])
 
-  // Trigger load when isDynamic changes or retry is needed
+  // Trigger load when isDynamic or isCommunity changes or retry is needed
   useEffect(() => {
-    if (isDynamic) {
+    if (isDynamic || isCommunity) {
       loadDynamicComponent(attemptCount)
     }
-  }, [isDynamic, attemptCount, loadDynamicComponent])
+  }, [isDynamic, isCommunity, attemptCount, loadDynamicComponent])
 
   // Reset attempt count when component type changes
   useEffect(() => {
@@ -311,16 +315,17 @@ const ComponentRenderer = memo(function ComponentRenderer({
 
   // Re-check isDynamic when poll count changes
   const currentIsDynamic = dynamicRegistry.isDynamic(componentType)
+  const currentIsCommunity = communityRegistry.isCommunity(componentType)
 
   // Trigger load when component becomes registered
   useEffect(() => {
-    if (currentIsDynamic && !isDynamic && !DynamicComponent && !loading && !loadError) {
+    if ((currentIsDynamic || currentIsCommunity) && !isDynamic && !isCommunity && !DynamicComponent && !loading && !loadError) {
       // Component just became registered, trigger load
       setAttemptCount(0)
     }
-  }, [currentIsDynamic, isDynamic, DynamicComponent, loading, loadError])
+  }, [currentIsDynamic, currentIsCommunity, isDynamic, isCommunity, DynamicComponent, loading, loadError])
 
-  // Get metadata (check both static and dynamic registries)
+  // Get metadata (check static, dynamic, and community registries)
   let meta = getComponentMeta(componentType)
 
   // If not found in static registry, try dynamic registry
@@ -331,11 +336,19 @@ const ComponentRenderer = memo(function ComponentRenderer({
     }
   }
 
+  // If not found, try community registry
+  if (!meta && isCommunity) {
+    const cMeta = communityRegistry.getMeta(componentType)
+    if (cMeta) {
+      meta = communityRegistry.communityMetaToComponentMeta(cMeta)
+    }
+  }
+
   // Try to get component from generic or business component map (static components)
   const StaticComponent = componentMap[component.type as GenericComponentType] || businessComponentMap[component.type]
 
   // Determine which component to render
-  const Component = isDynamic ? DynamicComponent : StaticComponent
+  const Component = (isDynamic || isCommunity) ? DynamicComponent : StaticComponent
 
   // Extract specific values for stable dependencies
   // Use individual properties instead of entire component object to prevent unnecessary re-creates
@@ -378,8 +391,8 @@ const ComponentRenderer = memo(function ComponentRenderer({
     return builtProps
   }, [componentId, componentType, componentTitle, componentConfig, componentDataSource, componentDisplay, className, style, onDataSourceChange, onConfigChange])
 
-  // Show loading state for dynamic components
-  if (isDynamic && loading) {
+  // Show loading state for dynamic/community components
+  if ((isDynamic || isCommunity) && loading) {
     return <ComponentSkeleton meta={meta} className={className} />
   }
 
@@ -388,8 +401,8 @@ const ComponentRenderer = memo(function ComponentRenderer({
     return <ComponentSkeleton meta={undefined} className={className} />
   }
 
-  // Show error state for dynamic component load failures (only after all retries exhausted)
-  if (isDynamic && loadError && attemptCount >= MAX_LOAD_RETRIES) {
+  // Show error state for dynamic/community component load failures (only after all retries exhausted)
+  if ((isDynamic || isCommunity) && loadError && attemptCount >= MAX_LOAD_RETRIES) {
     return (
       <Card className={cn('border-destructive', className)}>
         <div className="flex items-center justify-center h-full min-h-[120px] p-4 text-center">
@@ -414,7 +427,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
   }
 
   // Show loading while retrying
-  if (isDynamic && loadError && attemptCount < MAX_LOAD_RETRIES) {
+  if ((isDynamic || isCommunity) && loadError && attemptCount < MAX_LOAD_RETRIES) {
     return <ComponentSkeleton meta={meta} className={className} />
   }
 
