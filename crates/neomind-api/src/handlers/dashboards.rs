@@ -3,7 +3,10 @@
 //! Provides API endpoints for managing visual dashboards with components.
 
 use axum::{
+    body::Body,
     extract::{Path, Query, State},
+    http::{Method, Request, StatusCode},
+    response::{IntoResponse, Response},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -17,6 +20,7 @@ use crate::models::ErrorResponse;
 use neomind_storage::dashboards::{
     default_templates, Dashboard as StoredDashboard, DashboardComponent as StoredComponent,
     DashboardLayout as StoredLayout, DashboardTemplate as StoredTemplate,
+    SharePermissions as StoredSharePermissions, ShareToken as StoredShareToken,
 };
 
 // ============================================================================
@@ -565,4 +569,348 @@ pub async fn get_template_handler(
         .ok_or_else(|| ErrorResponse::not_found(format!("Template '{}' not found", id)))?;
 
     ok(stored_template_to_api(template))
+}
+
+// ============================================================================
+// Share API Types
+// ============================================================================
+
+/// Share permissions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SharePermissions {
+    pub allow_interactive: bool,
+}
+
+/// Request to create a share link
+#[derive(Debug, Deserialize)]
+pub struct CreateShareRequest {
+    pub permissions: SharePermissions,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_in_hours: Option<i64>,
+}
+
+/// Share token response
+#[derive(Debug, Serialize)]
+pub struct ShareTokenResponse {
+    pub token: String,
+    pub dashboard_id: String,
+    pub permissions: SharePermissions,
+    pub created_at: i64,
+    pub expires_at: Option<i64>,
+    pub share_url: String,
+}
+
+/// Shared dashboard response (public)
+#[derive(Debug, Serialize)]
+pub struct SharedDashboardResponse {
+    pub dashboard: Dashboard,
+    pub permissions: SharePermissions,
+    pub expires_at: Option<i64>,
+}
+
+// ============================================================================
+// Share Handlers
+// ============================================================================
+
+/// Create a share link for a dashboard
+pub async fn create_share_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+    Json(req): Json<CreateShareRequest>,
+) -> HandlerResult<ShareTokenResponse> {
+    // Verify dashboard exists
+    state
+        .dashboard_store
+        .load(&id)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load dashboard: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Dashboard '{}' not found", id)))?;
+
+    // Generate token: ds_ prefix + 22 random hex chars
+    let random_bytes: [u8; 16] = rand::random();
+    let token_str = format!("ds_{}", hex::encode(random_bytes));
+
+    let now = chrono::Utc::now().timestamp();
+    let expires_at = req
+        .expires_in_hours
+        .map(|h| now + h * 3600);
+
+    let share = StoredShareToken {
+        token: token_str.clone(),
+        dashboard_id: id.clone(),
+        permissions: StoredSharePermissions {
+            allow_interactive: req.permissions.allow_interactive,
+        },
+        created_at: now,
+        expires_at,
+        created_by: None,
+    };
+
+    state
+        .dashboard_store
+        .save_share_token(&share)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to save share token: {}", e)))?;
+
+    ok(ShareTokenResponse {
+        token: token_str.clone(),
+        dashboard_id: id.clone(),
+        permissions: SharePermissions {
+            allow_interactive: share.permissions.allow_interactive,
+        },
+        created_at: now,
+        expires_at,
+        share_url: format!("/share/{}", token_str),
+    })
+}
+
+/// List all share links for a dashboard
+pub async fn list_shares_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<Vec<ShareTokenResponse>> {
+    let tokens = state
+        .dashboard_store
+        .list_share_tokens(&id)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to list share tokens: {}", e)))?;
+
+    let now = chrono::Utc::now().timestamp();
+    let responses: Vec<ShareTokenResponse> = tokens
+        .into_iter()
+        .map(|t| ShareTokenResponse {
+            share_url: format!("/share/{}", t.token),
+            token: t.token,
+            dashboard_id: t.dashboard_id,
+            permissions: SharePermissions {
+                allow_interactive: t.permissions.allow_interactive,
+            },
+            created_at: t.created_at,
+            expires_at: t.expires_at,
+        })
+        .filter(|r| r.expires_at.map_or(true, |exp| exp > now))
+        .collect();
+
+    ok(responses)
+}
+
+/// Revoke a share link
+pub async fn revoke_share_handler(
+    State(state): State<ServerState>,
+    Path((id, token)): Path<(String, String)>,
+) -> HandlerResult<serde_json::Value> {
+    // Verify the token belongs to this dashboard
+    let share = state
+        .dashboard_store
+        .load_share_token(&token)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load share token: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found("Share link not found"))?;
+
+    if share.dashboard_id != id {
+        return Err(ErrorResponse::not_found("Share link not found"));
+    }
+
+    state
+        .dashboard_store
+        .delete_share_token(&token)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to delete share token: {}", e)))?;
+
+    ok(serde_json::json!({
+        "ok": true,
+        "token": token,
+    }))
+}
+
+/// Validate a share token: load it, check it exists
+fn validate_share_token(
+    state: &ServerState,
+    token: &str,
+) -> Result<StoredShareToken, ErrorResponse> {
+    state
+        .dashboard_store
+        .load_share_token(token)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load share token: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found("Share link not found"))
+}
+
+/// Get shared dashboard data (public, no auth)
+pub async fn get_shared_dashboard_handler(
+    State(state): State<ServerState>,
+    Path(token): Path<String>,
+) -> HandlerResult<SharedDashboardResponse> {
+    let share = validate_share_token(&state, &token)?;
+
+    let dashboard = state
+        .dashboard_store
+        .load(&share.dashboard_id)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load dashboard: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found("Dashboard not found"))?;
+
+    // Check expiration
+    if let Some(exp) = share.expires_at {
+        if chrono::Utc::now().timestamp() > exp {
+            return Err(ErrorResponse::new(
+                "GONE",
+                "This share link has expired",
+                StatusCode::GONE,
+            ));
+        }
+    }
+
+    ok(SharedDashboardResponse {
+        dashboard: stored_to_api(&dashboard),
+        permissions: SharePermissions {
+            allow_interactive: share.permissions.allow_interactive,
+        },
+        expires_at: share.expires_at,
+    })
+}
+
+/// Proxy data requests through share token (public, no auth)
+///
+/// Forwards requests via localhost loopback to the same Axum server.
+/// This avoids manually matching every API path — any GET/POST that
+/// the existing router handles will work. We only enforce:
+/// - Token validation + expiration check
+/// - Read-only mode blocks write methods
+/// - Sensitive admin/config paths are blocked
+pub async fn share_proxy_handler(
+    State(state): State<ServerState>,
+    Path((token, path)): Path<(String, String)>,
+    req: Request<Body>,
+) -> Response {
+    let method = req.method().clone();
+    let headers = req.headers().clone();
+    let query = req.uri().query().unwrap_or("").to_string();
+    let body = axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap_or_default();
+
+    // 1. Validate share token
+    let share = match validate_share_token(&state, &token) {
+        Ok(s) => s,
+        Err(e) => return e.into_response(),
+    };
+
+    // 2. Check expiration
+    if let Some(exp) = share.expires_at {
+        if chrono::Utc::now().timestamp() > exp {
+            return ErrorResponse::new("GONE", "This share link has expired", StatusCode::GONE)
+                .into_response();
+        }
+    }
+
+    let is_read_only = !share.permissions.allow_interactive;
+    let path_str = path.as_ref();
+
+    // 3. Block sensitive paths (auth, config, admin, CRUD)
+    if is_blocked_proxy_path(path_str) {
+        return ErrorResponse::new(
+            "FORBIDDEN",
+            "This path is not accessible via share proxy",
+            StatusCode::FORBIDDEN,
+        )
+        .into_response();
+    }
+
+    // 4. Block write methods in read-only mode
+    if is_read_only && !is_allowed_readonly_method(path_str, &method) {
+        return ErrorResponse::new(
+            "FORBIDDEN",
+            "This share link is read-only",
+            StatusCode::FORBIDDEN,
+        )
+        .into_response();
+    }
+
+    // 5. Build query string
+    let qs = if query.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", query)
+    };
+    let target_url = format!("http://127.0.0.1:9375/api/{}{}", path_str, qs);
+
+    // 6. Forward via reqwest (internal loopback, skips auth middleware)
+    let client = reqwest::Client::new();
+    let mut req_builder = match method {
+        Method::GET => client.get(&target_url),
+        Method::POST => client.post(&target_url),
+        Method::PUT => client.put(&target_url),
+        Method::DELETE => client.delete(&target_url),
+        _ => {
+            return ErrorResponse::new("METHOD_NOT_ALLOWED", "Method not supported", StatusCode::METHOD_NOT_ALLOWED)
+                .into_response();
+        }
+    };
+
+    // Forward content-type header
+    if let Some(ct) = headers.get("content-type") {
+        req_builder = req_builder.header("content-type", ct);
+    }
+
+    // Mark as internal proxy so auth middleware bypasses JWT check
+    req_builder = req_builder.header("x-internal-proxy", "share");
+
+    if !body.is_empty() {
+        req_builder = req_builder.body(body.to_vec());
+    }
+
+    match req_builder.send().await {
+        Ok(resp) => {
+            let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let ct = resp.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("application/json")
+                .to_string();
+            let body_bytes = resp.bytes().await.unwrap_or_default();
+
+            Response::builder()
+                .status(status)
+                .header("content-type", ct)
+                .body(Body::from(body_bytes))
+                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+        }
+        Err(e) => ErrorResponse::internal(format!("Proxy request failed: {}", e)).into_response(),
+    }
+}
+
+/// Paths that are never allowed through the share proxy
+fn is_blocked_proxy_path(path: &str) -> bool {
+    let blocked_prefixes = [
+        "auth/",           // Login, register, keys
+        "setup/",          // System initialization
+        "config/",         // Import/export config
+        "users/",          // User management
+        "dashboards/",     // Dashboard CRUD
+        "brokers/",        // MQTT broker management
+        "memory/",         // System memory management
+        "mqtt/subscribe",  // MQTT subscriptions
+        "mqtt/unsubscribe",
+        "sessions",        // Chat sessions
+        "skills/",         // Skills CRUD
+        "automations/",    // Automations CRUD
+        "rules/",          // Rules CRUD
+        "messages/channels", // Channel CRUD (read is fine)
+        "instances/",      // Remote instance management
+        "llm-backends/",   // LLM backend config
+        "llm/",            // LLM generate
+        "share/",          // Prevent recursive proxy
+    ];
+    blocked_prefixes.iter().any(|p| path.starts_with(p))
+}
+
+/// In read-only mode, only allow GET and specific safe POST paths
+fn is_allowed_readonly_method(path: &str, method: &Method) -> bool {
+    if method == Method::GET {
+        return true;
+    }
+    // Allow POST for read-like operations (data fetching)
+    if method == Method::POST {
+        let allowed_post_prefixes = [
+            "extensions/",            // Extension commands (data fetching)
+            "devices/current-batch",   // Batch device current values
+            "agents/",                 // Agent execution details (batch get)
+        ];
+        return allowed_post_prefixes.iter().any(|p| path.starts_with(p));
+    }
+    false
 }

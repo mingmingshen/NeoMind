@@ -47,6 +47,7 @@ tower-http = { workspace = true }
 
 # Utils
 uuid = { workspace = true }
+rand = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 async-trait = { workspace = true }

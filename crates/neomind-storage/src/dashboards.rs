@@ -19,6 +19,9 @@ const DASHBOARDS_TABLE: TableDefinition<&str, Vec<u8>> = TableDefinition::new("d
 // Dashboard index table: key = "default", value = dashboard_id (for default dashboard tracking)
 const DEFAULT_TABLE: TableDefinition<&str, &str> = TableDefinition::new("dashboards_default");
 
+// Share tokens table: key = token string, value = JSON ShareToken
+const SHARE_TOKENS_TABLE: TableDefinition<&str, Vec<u8>> = TableDefinition::new("share_tokens");
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -169,6 +172,25 @@ impl DashboardLayout {
             },
         }
     }
+}
+
+/// Dashboard share permissions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SharePermissions {
+    pub allow_interactive: bool,
+}
+
+/// Dashboard share token
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShareToken {
+    pub token: String,
+    pub dashboard_id: String,
+    pub permissions: SharePermissions,
+    pub created_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<String>,
 }
 
 /// Static cache for default templates.
@@ -462,6 +484,70 @@ impl DashboardStore {
             Err(e) => return Err(e.into()),
         };
         Ok(table.get(id)?.is_some())
+    }
+
+    // ========================================================================
+    // Share Token methods
+    // ========================================================================
+
+    /// Save a share token.
+    pub fn save_share_token(&self, share: &ShareToken) -> Result<(), Error> {
+        let write_txn = self.db.begin_write()?;
+        let serialized = serde_json::to_vec(share)?;
+        {
+            let mut table = write_txn.open_table(SHARE_TOKENS_TABLE)?;
+            table.insert(share.token.as_str(), serialized)?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Load a share token by token string.
+    pub fn load_share_token(&self, token: &str) -> Result<Option<ShareToken>, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = match read_txn.open_table(SHARE_TOKENS_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        match table.get(token)? {
+            Some(value) => {
+                let share: ShareToken = serde_json::from_slice(value.value().as_slice())?;
+                Ok(Some(share))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Delete a share token.
+    pub fn delete_share_token(&self, token: &str) -> Result<(), Error> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(SHARE_TOKENS_TABLE)?;
+            table.remove(token)?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// List all share tokens for a given dashboard.
+    pub fn list_share_tokens(&self, dashboard_id: &str) -> Result<Vec<ShareToken>, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = match read_txn.open_table(SHARE_TOKENS_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let mut tokens = Vec::new();
+        for result in table.iter()? {
+            let (_key, value) = result?;
+            if let Ok(share) = serde_json::from_slice::<ShareToken>(value.value().as_slice()) {
+                if share.dashboard_id == dashboard_id {
+                    tokens.push(share);
+                }
+            }
+        }
+        Ok(tokens)
     }
 
     /// Get dashboard count.

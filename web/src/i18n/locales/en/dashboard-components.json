@@ -220,7 +220,38 @@
     "commandSent": "Command Sent",
     "commandFailed": "Command Failed",
     "commandError": "Command Error",
-    "metric": "Metric"
+    "metric": "Metric",
+    "share": {
+      "title": "Share",
+      "description": "Create a shareable link to this dashboard. Anyone with the link can view it without logging in.",
+      "createLink": "New Link",
+      "create": "Create",
+      "activeLinks": "Active Links",
+      "noLinks": "No share links yet. Create one to share this dashboard.",
+      "linkCreated": "Share link created",
+      "linkRevoked": "Share link revoked",
+      "linkCopied": "Link copied to clipboard",
+      "createFailed": "Failed to create share link",
+      "revokeFailed": "Failed to revoke share link",
+      "copyFailed": "Failed to copy link",
+      "revokeConfirm": "Revoke",
+      "permission": {
+        "label": "Permission",
+        "readOnly": "Read-only",
+        "interactive": "Interactive"
+      },
+      "expires": {
+        "label": "Expiration",
+        "never": "Never",
+        "hours": "{{count}}h",
+        "1h": "1 hour",
+        "24h": "24 hours",
+        "72h": "3 days",
+        "168h": "7 days",
+        "720h": "30 days"
+      },
+      "poweredBy": "Powered by NeoMind"
+    }
   },
   "mobileEditBar": {
     "component": "Component",

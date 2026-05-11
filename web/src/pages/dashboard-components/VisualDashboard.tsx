@@ -63,6 +63,7 @@ import {
   Type,
   Code,
   Link,
+  Share2,
   // Layout icons
   Layers,
   Container as ContainerIcon,
@@ -121,6 +122,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
 import {
   FullScreenDialog,
@@ -189,6 +192,7 @@ import {
   type LayerBindingType,
 } from '@/components/dashboard'
 import { DashboardListSidebar } from '@/components/dashboard/DashboardListSidebar'
+import { ShareManagerDialog } from '@/components/dashboard/ShareManagerDialog'
 import { MobileEditBar } from '@/components/dashboard/MobileEditBar'
 import type { DashboardComponent, DataSourceOrList, DataSource, GenericComponent } from '@/types/dashboard'
 import { getSourceId, normalizeDataSource } from '@/types/dashboard'
@@ -197,7 +201,8 @@ import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
 import { dynamicRegistry, dtoToComponentMeta } from '@/components/dashboard/registry/DynamicRegistry'
 import { componentRegistry, groupComponentsByCategory, getCategoryInfo } from '@/components/dashboard/registry/registry'
 import * as lucideReact from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, fetchAPI } from '@/lib/api'
+import { notifySuccess, notifyError } from '@/lib/notify'
 import { confirm } from '@/hooks/use-confirm'
 
 // Import ComponentRenderer for extension components
@@ -403,7 +408,7 @@ function getComponentLibrary(t: (key: string) => string): ComponentCategory[] {
 // ============================================================================
 
 // Helper to extract common display props from component config
-function getCommonDisplayProps(component: DashboardComponent) {
+export function getCommonDisplayProps(component: DashboardComponent) {
   const config = (component as any).config || {}
 
   // Auto-calculate size based on component dimensions
@@ -438,7 +443,7 @@ function getCommonDisplayProps(component: DashboardComponent) {
 }
 
 // Props that can be safely spread to most components
-const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeof getCommonDisplayProps>) => {
+export const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeof getCommonDisplayProps>) => {
   // Components that don't support standard size ('sm' | 'md' | 'lg')
   const noStandardSize = [
     'led-indicator', 'toggle-switch',
@@ -487,14 +492,14 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
 }
 
 // Calculate chart height based on grid dimensions (each grid row ~120px)
-function getChartHeight(component: DashboardComponent): number | 'auto' {
+export function getChartHeight(component: DashboardComponent): number | 'auto' {
   const h = component.position.h
   // Calculate height: grid rows * 120px - padding (approx 60px for card padding)
   const calculatedHeight = Math.max(h * 120 - 60, 120)
   return calculatedHeight
 }
 
-function renderDashboardComponent(
+export function renderDashboardComponent(
   component: DashboardComponent,
   devices: Device[],
   editMode?: boolean,
@@ -1259,6 +1264,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false)
+
+  // Share dialog state
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
 
   // Persist sidebar state to localStorage (default to closed on mobile, open on desktop)
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -5236,7 +5244,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 variant={editMode ? "default" : "outline"}
                 size="sm"
                 onClick={() => setEditMode(!editMode)}
-                className={cn("h-7 text-xs", editMode ? "shadow-sm" : "")}
+                className={cn("h-7 text-xs rounded-md", editMode ? "shadow-sm" : "")}
               >
                 {editMode ? (
                   <>
@@ -5256,13 +5264,23 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               <Button
                 variant="default"
                 size="sm"
-                className="h-7 text-xs shadow-sm"
+                className="h-7 text-xs rounded-md shadow-sm"
                 disabled={!editMode}
                 onClick={() => editMode && setComponentLibraryOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-1" />
-                <span className="hidden sm:inline">{t('visualDashboard.add')}</span>
-                <span className="sm:hidden">{t('visualDashboard.add')}</span>
+                <span className="hidden sm:inline">{t('visualDashboard.addComponent')}</span>
+                <span className="sm:hidden">{t('visualDashboard.addComponent')}</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs rounded-md"
+                onClick={() => setShareDialogOpen(true)}
+              >
+                <Share2 className="h-4 w-4 mr-1" />
+                <span className="hidden sm:inline">{t('visualDashboard.share.title')}</span>
               </Button>
 
               <FullScreenDialog open={componentLibraryOpen} onOpenChange={(open) => {
@@ -5482,6 +5500,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           componentName={currentDashboard?.components.find(c => c.id === mobileSelectedId)?.title}
         />
       )}
+
+      {/* Share Management Dialog */}
+      <ShareManagerDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        dashboardId={currentDashboardId}
+        dashboardName={currentDashboard?.name}
+      />
     </div>
   )
 })

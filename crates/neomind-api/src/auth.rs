@@ -573,6 +573,25 @@ pub async fn hybrid_auth_middleware(
     mut req: axum::extract::Request,
     next: Next,
 ) -> Result<Response, AuthError> {
+    // Internal share proxy bypass — requests forwarded from the share proxy
+    // handler already validated the share token, so we trust them.
+    if headers
+        .get("x-internal-proxy")
+        .and_then(|v| v.to_str().ok())
+        .map_or(false, |v| v == "share")
+    {
+        // Insert a service account session for logging purposes
+        let proxy_session = crate::auth_users::SessionInfo {
+            user_id: "share-proxy".to_string(),
+            username: "share-proxy".to_string(),
+            role: crate::auth_users::UserRole::User,
+            created_at: 0,
+            expires_at: i64::MAX,
+        };
+        req.extensions_mut().insert(proxy_session);
+        return Ok(next.run(req).await);
+    }
+
     // First, try to extract and validate JWT token from Authorization header
     if let Some(auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
         if let Some(token) = auth_header.strip_prefix("Bearer ") {

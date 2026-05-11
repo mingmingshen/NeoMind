@@ -30,6 +30,7 @@ const AgentsPage = lazy(() => import('@/pages/agents').then(m => ({ default: m.A
 const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default: m.SettingsPage })))
 const MessagesPage = lazy(() => import('@/pages/messages').then(m => ({ default: m.default })))
 const ExtensionsPage = lazy(() => import('@/pages/extensions').then(m => ({ default: m.ExtensionsPage })))
+const SharedDashboardPage = lazy(() => import('@/pages/share/SharedDashboard'))
 // Suppress only the specific Radix UI Portal cleanup error during fast page transitions
 // Known issue: React 18 + Radix UI race condition where removeChild fails on unmounted portals
 const originalError = console.error
@@ -447,6 +448,9 @@ function App() {
 
           {/* Login route */}
           <Route path="/login" element={<LoginPage />} />
+
+          {/* Shared dashboard (public, no auth required) */}
+          <Route path="/share/:token" element={<SharedDashboardPage />} />
 
           {/* Protected routes */}
           <Route

@@ -184,7 +184,38 @@
     "commandSent": "命令已发送",
     "commandFailed": "命令发送失败",
     "commandError": "命令错误",
-    "metric": "指标"
+    "metric": "指标",
+    "share": {
+      "title": "分享",
+      "description": "创建分享链接，任何拥有链接的人都可以无需登录查看此仪表板。",
+      "createLink": "新建链接",
+      "create": "创建",
+      "activeLinks": "活跃链接",
+      "noLinks": "暂无分享链接，创建一个来分享此仪表板。",
+      "linkCreated": "分享链接已创建",
+      "linkRevoked": "分享链接已撤销",
+      "linkCopied": "链接已复制到剪贴板",
+      "createFailed": "创建分享链接失败",
+      "revokeFailed": "撤销分享链接失败",
+      "copyFailed": "复制链接失败",
+      "revokeConfirm": "撤销",
+      "permission": {
+        "label": "权限",
+        "readOnly": "只读",
+        "interactive": "可交互"
+      },
+      "expires": {
+        "label": "有效期",
+        "never": "永不过期",
+        "hours": "{{count}}小时",
+        "1h": "1 小时",
+        "24h": "24 小时",
+        "72h": "3 天",
+        "168h": "7 天",
+        "720h": "30 天"
+      },
+      "poweredBy": "Powered by NeoMind"
+    }
   },
   "mobileEditBar": {
     "component": "组件",

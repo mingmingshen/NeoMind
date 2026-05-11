@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Dashboard sharing system** — Full-featured share link management for dashboards: create links with read-only or interactive permissions, set expiration (1h–30d), copy/revoke links. Backend proxy forwards API requests via `x-internal-proxy` header for auth bypass. Shared dashboards render using the same component pipeline as the main dashboard
+- **ShareManagerDialog** — New full-screen dialog for managing share links with "Add Share" dashed card pattern. Creation form in nested `UnifiedFormDialog` (z-[110])
+
+### Changed
+
+- **Dashboard header buttons reordered** — Edit → Add Component → Share (Share moved to rightmost position). All buttons use `rounded-md` for consistent smaller border radius
+- **"Add" button label** — Changed from "Add" to "Add Component" for clarity
+- **Device re-registration** — `DeviceRegistry::register()` now updates existing devices in-place instead of returning `AlreadyExists` error, enabling idempotent extension re-registration
+
+---
+
 ## [v0.7.4] - 2026-05-09
 
 ### Added

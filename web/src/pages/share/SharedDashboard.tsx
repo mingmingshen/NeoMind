@@ -1,0 +1,227 @@
+/**
+ * Shared Dashboard Page
+ *
+ * Public page for viewing shared dashboards without authentication.
+ * Intercepts ALL fetch calls at the window level to route through
+ * the backend share proxy — works for fetchAPI, direct fetch, and
+ * extension UMD bundle fetch calls alike.
+ */
+
+import { useEffect, useState, useMemo, useRef } from 'react'
+import { useParams } from 'react-router-dom'
+import { fetchAPI } from '@/lib/api'
+import { Loader2, AlertTriangle, Eye, Zap } from 'lucide-react'
+import { DashboardGrid } from '@/components/dashboard/DashboardGrid'
+import { renderDashboardComponent } from '@/pages/dashboard-components/VisualDashboard'
+import { fromDashboardDTO } from '@/store/persistence/types'
+import type { Dashboard } from '@/types/dashboard'
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface SharedDashboardData {
+  dashboard: Dashboard
+  permissions: {
+    allow_interactive: boolean
+  }
+  expires_at: number | null
+}
+
+// ============================================================================
+// Window fetch interception for share proxy
+// ============================================================================
+
+/**
+ * Install a global fetch interceptor that rewrites all /api/... URLs
+ * to /api/share/:token/proxy/... — catches fetchAPI, direct fetch,
+ * and extension UMD bundle calls.
+ *
+ * Returns a cleanup function to restore the original fetch.
+ */
+function installShareProxy(token: string): () => void {
+  const originalFetch = window.fetch
+  const proxyPrefix = `/api/share/${token}/proxy/`
+
+  window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+    let url: string
+
+    if (typeof input === 'string') {
+      url = input
+    } else if (input instanceof URL) {
+      url = input.toString()
+    } else if (input instanceof Request) {
+      url = input.url
+    } else {
+      return originalFetch.call(this, input, init)
+    }
+
+    // Find /api/ in the URL (handles both relative /api/... and absolute http://host/api/...)
+    const apiIdx = url.indexOf('/api/')
+    if (apiIdx !== -1) {
+      const afterApi = url.slice(apiIdx + 5) // skip '/api/'
+      // Don't double-rewrite share proxy paths or the share data endpoint
+      if (!afterApi.startsWith('share/')) {
+        const newUrl = url.slice(0, apiIdx) + proxyPrefix + afterApi
+        return originalFetch.call(this, newUrl, init)
+      }
+    }
+
+    return originalFetch.call(this, input, init)
+  }
+
+  return () => {
+    window.fetch = originalFetch
+  }
+}
+
+// ============================================================================
+// Shared Dashboard Component
+// ============================================================================
+
+export function SharedDashboard() {
+  const { token } = useParams<{ token: string }>()
+  const [data, setData] = useState<SharedDashboardData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const proxyCleanupRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    if (!token) {
+      setError('No share token provided')
+      setLoading(false)
+      return
+    }
+
+    let mounted = true
+
+    // Load dashboard data using direct fetch (no proxy needed for /share/:token)
+    const init = async () => {
+      try {
+        const result = await fetchAPI<SharedDashboardData>(`/share/${token}`, {
+          skipAuth: true,
+          skipGlobalError: true,
+          skipErrorToast: true,
+        })
+        if (mounted) {
+          setData({
+            dashboard: convertShareResponse(result),
+            permissions: result.permissions,
+            expires_at: result.expires_at,
+          })
+          // Install global fetch proxy AFTER dashboard data is loaded
+          proxyCleanupRef.current = installShareProxy(token)
+        }
+      } catch (e: any) {
+        if (mounted) {
+          const msg = e.message || ''
+          if (msg.includes('doctype') || msg.includes('Unexpected token')) {
+            setError('Server error: unable to load dashboard data. The server may need to be updated.')
+          } else {
+            setError(msg || 'Failed to load shared dashboard')
+          }
+        }
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+
+    init()
+    return () => {
+      mounted = false
+      proxyCleanupRef.current?.()
+      proxyCleanupRef.current = null
+    }
+  }, [token])
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error || !data) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3 text-center max-w-md px-4">
+          <AlertTriangle className="h-10 w-10 text-warning" />
+          <h2 className="text-lg font-semibold">{error || 'Dashboard not found'}</h2>
+          <p className="text-sm text-muted-foreground">
+            {error?.includes('expired') ? 'This share link has expired.' : 'The shared dashboard could not be loaded.'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const isInteractive = data.permissions.allow_interactive
+
+  return (
+    <div className="flex h-screen flex-col bg-background">
+      {/* Header */}
+      <header className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-border bg-background z-10">
+        <div className="flex items-center gap-2">
+          <h1 className="text-sm font-semibold">{data.dashboard.name}</h1>
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+            {isInteractive ? (
+              <><Zap className="h-3 w-3" /> Interactive</>
+            ) : (
+              <><Eye className="h-3 w-3" /> Read-only</>
+            )}
+          </span>
+        </div>
+        <span className="text-xs text-muted-foreground">Powered by NeoMind</span>
+      </header>
+
+      {/* Dashboard Content - reuse same rendering pipeline */}
+      <div className="flex-1 overflow-auto p-4 relative">
+        {data.dashboard.components && data.dashboard.components.length > 0 ? (
+          <SharedDashboardContent dashboard={data.dashboard} />
+        ) : (
+          <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
+            This dashboard has no components.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// Dashboard Content (reuses renderDashboardComponent from main dashboard)
+// ============================================================================
+
+interface SharedDashboardContentProps {
+  dashboard: Dashboard
+}
+
+function SharedDashboardContent({ dashboard }: SharedDashboardContentProps) {
+  const gridComponents = useMemo(
+    () =>
+      dashboard.components.map((comp) => ({
+        id: comp.id,
+        position: comp.position,
+        children: renderDashboardComponent(comp, [], false),
+      })),
+    [dashboard.components],
+  )
+
+  return <DashboardGrid components={gridComponents} editMode={false} />
+}
+
+/**
+ * Convert raw API share response to internal Dashboard format.
+ * The backend returns snake_case (data_source) but components expect camelCase (dataSource).
+ */
+function convertShareResponse(raw: any): Dashboard {
+  return fromDashboardDTO(raw.dashboard ?? raw)
+}
+
+export default SharedDashboard

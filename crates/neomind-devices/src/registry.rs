@@ -908,9 +908,39 @@ impl DeviceRegistry {
         let device_id = config.device_id.clone();
         let device_type = config.device_type.clone();
 
-        // Check if device already exists
+        // Check if device already exists — update in place for idempotent re-registration
         if self.devices.contains_key(&device_id) {
-            return Err(DeviceError::AlreadyExists(device_id));
+            // Update existing device with new config
+            if let Some(mut entry) = self.devices.get_mut(&device_id) {
+                entry.name = config.name;
+                if config.adapter_id.is_some() {
+                    entry.adapter_id.clone_from(&config.adapter_id);
+                }
+                if config.last_seen > 0 {
+                    entry.last_seen = config.last_seen;
+                }
+            }
+            // Persist update if auto-save is enabled
+            if self.is_auto_save() {
+                if let Some(storage) = &self.storage {
+                    if let Some(updated) = self.devices.get(&device_id) {
+                        let sc = StorageConfig {
+                            device_id: updated.device_id.clone(),
+                            name: updated.name.clone(),
+                            device_type: updated.device_type.clone(),
+                            adapter_type: updated.adapter_type.clone(),
+                            connection_config: convert_connection_config_to_storage(
+                                updated.connection_config.clone(),
+                            ),
+                            adapter_id: updated.adapter_id.clone(),
+                            last_seen: updated.last_seen,
+                        };
+                        let _ = storage.save_device(&sc);
+                    }
+                }
+            }
+            tracing::debug!("Device '{}' re-registered (updated in place)", device_id);
+            return Ok(());
         }
 
         // Prepare storage config (cloned before moving config)

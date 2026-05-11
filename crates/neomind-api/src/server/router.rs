@@ -2,7 +2,7 @@
 
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{delete, get, post, put},
+    routing::{any, delete, get, post, put},
     Router,
 };
 
@@ -162,6 +162,15 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions/market/updates",
             get(extensions::check_marketplace_updates_handler),
         )
+        // Share API (public - access shared dashboards without auth)
+        .route(
+            "/api/share/:token",
+            get(dashboards::get_shared_dashboard_handler),
+        )
+        .route(
+            "/api/share/:token/proxy/*path",
+            any(dashboards::share_proxy_handler),
+        )
         ;
 
     // JWT protected routes (require JWT token authentication)
@@ -250,7 +259,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         // === Extension write operations (moved from public) ===
         .route(
             "/api/extensions/:id",
-            get(extensions::get_extension_handler).delete(extensions::unregister_extension_handler),
+            delete(extensions::unregister_extension_handler),
         )
         .route(
             "/api/extensions/:id/logs",
@@ -757,6 +766,19 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route(
             "/api/dashboards/templates/:id",
             get(dashboards::get_template_handler),
+        )
+        // Dashboard share management (protected - require auth)
+        .route(
+            "/api/dashboards/:id/share",
+            post(dashboards::create_share_handler),
+        )
+        .route(
+            "/api/dashboards/:id/share",
+            get(dashboards::list_shares_handler),
+        )
+        .route(
+            "/api/dashboards/:id/share/:token",
+            delete(dashboards::revoke_share_handler),
         )
         // Auth management API (also protected)
         .route("/api/auth/keys", get(auth_handlers::list_keys_handler))
