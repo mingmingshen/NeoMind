@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Extension SDK v0.6.3** — New `register_template()`, `register_device()`, `unregister_device()` functions for device management from extensions
 - **Dashboard sharing system** — Full-featured share link management for dashboards: create links with read-only or interactive permissions, set expiration (1h–30d), copy/revoke links. Backend proxy forwards API requests via `x-internal-proxy` header for auth bypass. Shared dashboards render using the same component pipeline as the main dashboard
 - **ShareManagerDialog** — New full-screen dialog for managing share links with "Add Share" dashed card pattern. Creation form in nested `UnifiedFormDialog` (z-[110])
+- **Dashboard DualModeSourceField** — New dual-mode data source selector supporting both extension metrics and device metrics. Video-display component supports device-metric binding
+- **Component library FullScreenDialog** — Replaced Sheet-based component library picker with `FullScreenDialog` for better space and consistency
+- **Community component marketplace** — Backend API for browsing, installing, and managing community dashboard components. Manual install via file upload supported. New `FrontendComponentStore` for filesystem-based component storage
+- **Frontend component runtime** — `CommunityRegistry`, `ComponentRenderer`, Zustand store slice for frontend components. WebSocket event system and lifecycle hooks for community components
 
 ### Changed
 
@@ -38,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dashboard header buttons reordered** — Edit → Add Component → Share (Share moved to rightmost position). All buttons use `rounded-md` for consistent smaller border radius
 - **"Add" button label** — Changed from "Add" to "Add Component" for clarity
 - **Device re-registration** — `DeviceRegistry::register()` now updates existing devices in-place instead of returning `AlreadyExists` error, enabling idempotent extension re-registration
+- **Dashboard sidebar alignment** — Fixed header alignment and markdown content padding in dashboard sidebar
+- **Security: protected routes** — Moved sensitive APIs (LLM backends list, etc.) from public to protected routes. Removed `skipAuth` from frontend API calls that should require authentication
 
 ## [v0.7.3] - 2026-05-08
 
