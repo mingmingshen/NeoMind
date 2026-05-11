@@ -76,6 +76,9 @@ bincode = { workspace = true }
 # Version comparison
 semver = { workspace = true }
 
+# ZIP archive support
+zip = "2"
+
 # Static file embedding (optional, requires 'static' feature)
 rust-embed = { version = "8", optional = true }
 mime_guess = { version = "2", optional = true }

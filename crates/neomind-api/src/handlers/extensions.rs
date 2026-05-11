@@ -3055,6 +3055,9 @@ pub struct DashboardComponentDto {
     pub variants: Vec<String>,
     /// Data binding configuration
     pub data_binding: DataBindingDto,
+    /// Data source allowed types (e.g., ["device"])
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_source_allowed_types: Option<Vec<String>>,
     /// Extension ID
     pub extension_id: String,
 }
@@ -3341,6 +3344,9 @@ fn load_extension_components(
                 .data_binding
                 .map(DataBindingDto::from)
                 .unwrap_or_default(),
+            data_source_allowed_types: def._other.get("dataSourceAllowedTypes")
+                .or_else(|| def._other.get("data_source_allowed_types"))
+                .and_then(|v| serde_json::from_value(v.clone()).ok()),
             extension_id: extension_id.to_string(),
         })
         .collect();

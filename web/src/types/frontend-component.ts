@@ -26,13 +26,28 @@ export interface FrontendComponentMeta {
   category: string
   version: string
   author?: string
-  screenshot?: string
   size_constraints: SizeConstraints
   has_data_source: boolean
   max_data_sources?: number
+  data_source_allowed_types?: string[]
   has_display_config: boolean
   has_actions: boolean
-  config_schema?: Record<string, unknown>
+  config_schema?: {
+    type: string
+    properties: Record<string, any>
+    required?: string[]
+    ui_hints?: {
+      field_order?: string[]
+      visibility_rules?: Array<{
+        field: string
+        condition: string
+        value: any
+        then_show?: string[]
+        then_hide?: string[]
+      }>
+    }
+    [key: string]: unknown
+  }
   default_config?: Record<string, unknown>
   variants?: string[]
   global_name: string
@@ -52,7 +67,6 @@ export interface MarketComponentEntry {
   category: string
   version: string
   author?: string
-  screenshot_url?: string
   size_constraints: SizeConstraints
   has_data_source: boolean
   max_data_sources?: number
@@ -74,13 +88,28 @@ export interface ComponentManifest {
   category?: string
   version?: string
   author?: string
-  screenshot?: string
   size_constraints: SizeConstraints
   has_data_source?: boolean
   max_data_sources?: number
+  data_source_allowed_types?: string[]
   has_display_config?: boolean
   has_actions?: boolean
-  config_schema?: Record<string, unknown>
+  config_schema?: {
+    type: string
+    properties: Record<string, any>
+    required?: string[]
+    ui_hints?: {
+      field_order?: string[]
+      visibility_rules?: Array<{
+        field: string
+        condition: string
+        value: any
+        then_show?: string[]
+        then_hide?: string[]
+      }>
+    }
+    [key: string]: unknown
+  }
   default_config?: Record<string, unknown>
   variants?: string[]
   global_name: string

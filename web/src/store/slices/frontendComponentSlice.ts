@@ -11,7 +11,6 @@ import type { StateCreator } from 'zustand'
 import type {
   FrontendComponentMeta,
   MarketComponentEntry,
-  ComponentManifest,
 } from '@/types/frontend-component'
 import { api } from '@/lib/api'
 import { communityRegistry } from '@/components/dashboard/registry/CommunityRegistry'
@@ -38,7 +37,7 @@ export interface FrontendComponentSlice extends FrontendComponentState {
   fetchInstalled: () => Promise<void>
   fetchMarket: () => Promise<void>
   installFromMarket: (componentId: string) => Promise<void>
-  installManual: (manifest: ComponentManifest, bundleFile: File) => Promise<FrontendComponentMeta>
+  installManualZip: (zipFile: File) => Promise<FrontendComponentMeta>
   uninstall: (id: string) => Promise<void>
 }
 
@@ -84,7 +83,7 @@ export const createFrontendComponentSlice: StateCreator<
 
     set({ loading: true, error: null })
     try {
-      const res = await api.get<{ components: FrontendComponentMeta[] }>('/api/frontend-components')
+      const res = await api.get<{ components: FrontendComponentMeta[] }>('/frontend-components')
       const components = res.components || []
 
       // Sync with community registry
@@ -113,7 +112,7 @@ export const createFrontendComponentSlice: StateCreator<
   fetchMarket: async () => {
     set({ marketLoading: true, error: null })
     try {
-      const res = await api.get<{ components: MarketComponentEntry[] }>('/api/frontend-components/market/list')
+      const res = await api.get<{ components: MarketComponentEntry[] }>('/frontend-components/market/list')
       const components = res.components || []
 
       set({
@@ -133,15 +132,22 @@ export const createFrontendComponentSlice: StateCreator<
 
   /**
    * Install a component from the marketplace
-   * Backend: POST /api/frontend-components/market/install -> { component: FrontendComponentMeta }
+   * Backend: POST /frontend-components/market/install -> { component } or { success: false, error }
    */
   installFromMarket: async (componentId) => {
     set({ loading: true, error: null })
     try {
-      const res = await api.post<{ component: FrontendComponentMeta }>(
-        '/api/frontend-components/market/install',
+      const res = await api.post<{ component?: FrontendComponentMeta; success?: boolean; error?: string }>(
+        '/frontend-components/market/install',
         { component_id: componentId }
       )
+
+      // Handle graceful error from backend (network issues etc.)
+      if (res.success === false || !res.component) {
+        const errMsg = res.error || 'Failed to install component'
+        throw new Error(errMsg)
+      }
+
       const component = res.component
 
       // Add to installed list
@@ -173,19 +179,17 @@ export const createFrontendComponentSlice: StateCreator<
   },
 
   /**
-   * Install a component manually with manifest and bundle file
-   * Backend: POST /api/frontend-components -> { component: FrontendComponentMeta }
+   * Install a component from a ZIP package
+   * Backend: POST /frontend-components (multipart, field: package)
    */
-  installManual: async (manifest, bundleFile) => {
+  installManualZip: async (zipFile) => {
     set({ loading: true, error: null })
     try {
-      // Create FormData
       const formData = new FormData()
-      formData.append('manifest', JSON.stringify(manifest))
-      formData.append('bundle', bundleFile)
+      formData.append('package', zipFile)
 
       const res = await api.post<{ component: FrontendComponentMeta }>(
-        '/api/frontend-components',
+        '/frontend-components',
         formData,
         {
           headers: {
@@ -212,7 +216,7 @@ export const createFrontendComponentSlice: StateCreator<
 
       return component
     } catch (error) {
-      logError(error, { operation: 'Install manual component' })
+      logError(error, { operation: 'Install ZIP component' })
       set({
         error: error instanceof Error ? error.message : 'Failed to install component',
       })
@@ -229,7 +233,7 @@ export const createFrontendComponentSlice: StateCreator<
   uninstall: async (id) => {
     set({ loading: true, error: null })
     try {
-      await api.delete(`/api/frontend-components/${id}`)
+      await api.delete(`/frontend-components/${id}`)
 
       // Remove from installed list
       set((state) => ({

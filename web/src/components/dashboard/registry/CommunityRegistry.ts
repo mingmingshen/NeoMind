@@ -52,6 +52,13 @@ export class CommunityComponentRegistry {
   }
 
   /**
+   * Check if a community component is registered
+   */
+  isRegistered(type: string): boolean {
+    return type in this.state.components
+  }
+
+  /**
    * Get all community component metadata
    */
   getAllMetas(): FrontendComponentMeta[] {
@@ -417,7 +424,7 @@ export class CommunityComponentRegistry {
       type: meta.id as any, // Community component types are dynamic
       name: getName(),
       description: getDescription(),
-      category: 'custom', // Use 'custom' to match existing extension category
+      category: 'community',
       icon: IconComponent,
       sizeConstraints: sizeConstraints as any,
       hasDataSource: meta.has_data_source,

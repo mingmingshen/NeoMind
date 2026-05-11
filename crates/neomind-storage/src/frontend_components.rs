@@ -55,8 +55,6 @@ pub struct ComponentManifest {
     pub version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub screenshot: Option<String>,
     #[serde(default)]
     pub size_constraints: SizeConstraints,
     #[serde(default)]
@@ -77,6 +75,7 @@ pub struct ComponentManifest {
     pub global_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub export_name: Option<String>,
+    #[serde(default)]
     pub installed_at: i64,
 }
 
@@ -105,7 +104,6 @@ pub struct MarketComponentEntry {
     pub max_data_sources: Option<u32>,
     pub has_display_config: bool,
     pub has_actions: bool,
-    pub screenshot_url: Option<String>,
     /// URL to the component's `manifest.json` on GitHub.
     pub manifest_url: String,
     /// URL to the component's `bundle.js` on GitHub.
@@ -263,7 +261,6 @@ mod tests {
             category: "custom".to_string(),
             version: "1.0.0".to_string(),
             author: Some("test-author".to_string()),
-            screenshot: None,
             size_constraints: SizeConstraints::default(),
             has_data_source: false,
             max_data_sources: None,

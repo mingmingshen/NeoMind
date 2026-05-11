@@ -2871,6 +2871,8 @@ export interface DashboardComponentDto {
   has_actions: boolean
   /** Maximum number of data sources */
   max_data_sources: number
+  /** Allowed data source types for binding */
+  data_source_allowed_types?: string[]
   /** JSON Schema for component configuration */
   config_schema?: JSONSchema
   /** JSON Schema for data source binding */
@@ -2901,15 +2903,26 @@ export interface DashboardComponentsResponse {
  */
 export interface JSONSchema {
   type?: string
-  properties?: Record<string, JSONSchema>
+  properties?: Record<string, any>
   required?: string[]
   items?: JSONSchema
   enum?: (string | number | boolean)[]
+  enumTitles?: string[]
   default?: unknown
   description?: string
   title?: string
   minimum?: number
   maximum?: number
+  ui_hints?: {
+    field_order?: string[]
+    visibility_rules?: Array<{
+      field: string
+      condition: string
+      value: any
+      then_show?: string[]
+      then_hide?: string[]
+    }>
+  }
   [key: string]: unknown
 }
 
