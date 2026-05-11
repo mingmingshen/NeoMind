@@ -227,6 +227,9 @@ export function ShareManagerDialog({
         icon={<Plus className="h-5 w-5" />}
         width="sm"
         className="z-[110]"
+        onSubmit={handleCreate}
+        submitLabel={loading ? t('visualDashboard.share.create') + '...' : t('visualDashboard.share.create')}
+        submitDisabled={loading}
       >
         <div className="space-y-4">
           {/* Permission toggle */}
@@ -265,14 +268,6 @@ export function ShareManagerDialog({
               </SelectContent>
             </Select>
           </div>
-
-          <Button
-            className="w-full"
-            disabled={loading}
-            onClick={handleCreate}
-          >
-            {loading ? t('visualDashboard.share.create') + '...' : t('visualDashboard.share.create')}
-          </Button>
         </div>
       </UnifiedFormDialog>
     </FullScreenDialog>

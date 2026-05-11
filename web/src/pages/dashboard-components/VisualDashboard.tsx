@@ -919,24 +919,20 @@ export function renderDashboardComponent(
       // TS narrows to `never` when all union members are covered above,
       // but runtime may encounter unrecognised types from persisted dashboards.
       const fallback = component as DashboardComponent
-      // Check if this is an extension or community component
-      if (dynamicRegistry.isDynamic(fallback.type) || communityRegistry.isRegistered(fallback.type)) {
-        return (
-          <ComponentRenderer
-            component={fallback}
-            className="w-full h-full"
-            onDataSourceChange={onDataSourceChange}
-            onConfigChange={onConfigChange}
-            openFullscreen={openFullscreen}
-            closeFullscreen={closeFullscreen}
-          />
-        )
-      }
+      // Always try ComponentRenderer for unknown types — it handles:
+      // - Extension components (DynamicRegistry)
+      // - Community components (CommunityRegistry)
+      // - Late registration (polling mechanism)
+      // Falls back to UnknownComponent internally if truly unrecognized.
       return (
-        <div className="p-4 text-center text-muted-foreground h-full flex flex-col items-center justify-center">
-          <p className="text-sm font-medium">{fallback.type}</p>
-          <p className="text-xs mt-1">Component not implemented</p>
-        </div>
+        <ComponentRenderer
+          component={fallback}
+          className="w-full h-full"
+          onDataSourceChange={onDataSourceChange}
+          onConfigChange={onConfigChange}
+          openFullscreen={openFullscreen}
+          closeFullscreen={closeFullscreen}
+        />
       )
     }
   }

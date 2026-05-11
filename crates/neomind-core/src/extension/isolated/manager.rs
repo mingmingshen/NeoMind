@@ -673,7 +673,89 @@ impl IsolatedExtensionManager {
             IsolatedExtensionError::IpcError(format!("Extension {} not found", id))
         })?;
 
-        isolated.execute_command(command, args).await
+        let result = isolated.execute_command(command, args).await;
+
+        // Lazy restart: if the extension is not running, attempt to restart it once
+        if let Err(IsolatedExtensionError::NotRunning) = &result {
+            drop(extensions); // release read lock before potential restart
+
+            tracing::warn!(
+                extension_id = %id,
+                "Extension not running on command execution, attempting lazy restart..."
+            );
+
+            if let Some(restarted_isolated) = self.try_lazy_restart(id).await {
+                restarted_isolated.execute_command(command, args).await
+            } else {
+                result
+            }
+        } else {
+            result
+        }
+    }
+
+    /// Attempt a lazy restart of an extension that is registered but not running.
+    /// Returns the isolated extension handle on success, None on failure.
+    async fn try_lazy_restart(
+        &self,
+        id: &str,
+    ) -> Option<std::sync::Arc<IsolatedExtension>> {
+        // Check restart policy (cooldown + max attempts)
+        let should_restart = {
+            let info_cache = self.info_cache.read();
+            let config = &self.config.extension_config;
+            info_cache.get(id).map(|info| {
+                let can_restart = config.restart_on_crash;
+                let within_limit = info.runtime.restart_count < config.max_restart_attempts as u64;
+                let past_cooldown = if let Some(last_restart) = info.runtime.last_restart_at {
+                    let now = chrono::Utc::now().timestamp();
+                    (now - last_restart) >= config.restart_cooldown_secs as i64
+                } else {
+                    true
+                };
+                can_restart && within_limit && past_cooldown
+            }).unwrap_or(false)
+        };
+
+        if !should_restart {
+            tracing::warn!(
+                extension_id = %id,
+                "Lazy restart skipped: policy limit reached or restart disabled"
+            );
+            return None;
+        }
+
+        let path = {
+            let info_cache = self.info_cache.read();
+            info_cache.get(id).map(|info| info.path.clone())
+        }?;
+
+        // Remove the dead extension and reload
+        {
+            let mut extensions = self.extensions.write().await;
+            extensions.remove(id);
+        }
+
+        tracing::info!(
+            extension_id = %id,
+            path = %path.display(),
+            "Lazy restarting extension..."
+        );
+
+        match self.load(&path).await {
+            Ok(_) => {
+                let extensions = self.extensions.read().await;
+                extensions.get(id).cloned()
+            }
+            Err(e) => {
+                tracing::error!(
+                    extension_id = %id,
+                    error = %e,
+                    "Lazy restart failed"
+                );
+                None
+            }
+        }
     }
 
     /// Get metrics from an isolated extension

@@ -7,17 +7,56 @@
  * extension UMD bundle fetch calls alike.
  */
 
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback, Component } from 'react'
+import type { ReactNode, ErrorInfo } from 'react'
 import { useParams } from 'react-router-dom'
 import { fetchAPI } from '@/lib/api'
-import { Loader2, AlertTriangle, Eye, Zap } from 'lucide-react'
+import { Loader2, AlertTriangle, Eye, Zap, EyeOff } from 'lucide-react'
 import { DashboardGrid } from '@/components/dashboard/DashboardGrid'
 import { renderDashboardComponent } from '@/pages/dashboard-components/VisualDashboard'
 import { fromDashboardDTO } from '@/store/persistence/types'
 import { communityRegistry } from '@/components/dashboard/registry/CommunityRegistry'
 import { dynamicRegistry } from '@/components/dashboard/registry/DynamicRegistry'
+import { useStore } from '@/store'
 import type { Dashboard } from '@/types/dashboard'
 import type { FrontendComponentMeta } from '@/types/frontend-component'
+
+// ============================================================================
+// Error boundary for graceful degradation of unsupported components
+// ============================================================================
+
+interface ErrorBoundaryProps {
+  children: ReactNode
+  fallback?: ReactNode
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean
+}
+
+class ComponentErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false }
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.warn('[SharedDashboard] Component failed to render:', error.message)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div className="flex flex-col items-center justify-center h-full min-h-[120px] p-4 text-center">
+          <EyeOff className="h-5 w-5 text-muted-foreground mb-2" />
+          <p className="text-xs text-muted-foreground">Component not available in shared view</p>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // ============================================================================
 // Types
@@ -208,53 +247,87 @@ interface SharedDashboardContentProps {
 function SharedDashboardContent({ dashboard }: SharedDashboardContentProps) {
   const [ready, setReady] = useState(false)
 
-  // Fetch installed community components and sync with registries
+  // Get store actions for fetching device data
+  const fetchDevices = useStore(s => s.fetchDevices)
+  const fetchDeviceTypes = useStore(s => s.fetchDeviceTypes)
+  const fetchDevicesCurrentBatch = useStore(s => s.fetchDevicesCurrentBatch)
+
+  // Fetch installed components and device data
   useEffect(() => {
     let mounted = true
 
-    const syncRegistries = async () => {
-      try {
-        // Fetch installed community components
-        const res = await fetchAPI<{ components: FrontendComponentMeta[] }>('/frontend-components', {
-          skipAuth: true,
-        })
-        const components = res.components || []
-        if (mounted && components.length > 0) {
-          communityRegistry.syncFromApi(components)
-        }
-      } catch (e) {
-        // Community components not available — silently skip
-        console.warn('[SharedDashboard] Failed to fetch community components:', e)
-      }
+    const loadData = async () => {
+      // Phase 1: fetch registries and base data in parallel
+      await Promise.allSettled([
+        fetchAPI<{ components: FrontendComponentMeta[] }>('/frontend-components', { skipAuth: true })
+          .then(res => {
+            if (mounted && res.components?.length) {
+              communityRegistry.syncFromApi(res.components)
+            }
+          })
+          .catch(e => console.warn('[SharedDashboard] Community components:', e)),
 
-      try {
-        // Fetch extension dashboard components
-        const extRes = await fetchAPI<{ components: any[] }>('/extensions/dashboard-components', {
-          skipAuth: true,
-        })
-        if (mounted && extRes.components?.length) {
-          for (const comp of extRes.components) {
-            dynamicRegistry.register(comp.extension_id || 'unknown', comp.extension_name || '', comp)
+        fetchAPI<{ components: any[] }>('/extensions/dashboard-components', { skipAuth: true })
+          .then(res => {
+            if (mounted && res.components?.length) {
+              for (const comp of res.components) {
+                dynamicRegistry.register(comp.extension_id || 'unknown', comp.extension_name || '', comp)
+              }
+            }
+          })
+          .catch(e => console.warn('[SharedDashboard] Extension components:', e)),
+
+        // Devices + device types (must complete before current-batch fetch)
+        fetchDevices().catch(e => console.warn('[SharedDashboard] Devices:', e)),
+        fetchDeviceTypes().catch(e => console.warn('[SharedDashboard] Device types:', e)),
+      ])
+
+      // Phase 2: fetch current values for all bound devices
+      if (mounted) {
+        try {
+          const devices = useStore.getState().devices
+          if (devices.length > 0) {
+            await fetchDevicesCurrentBatch(devices.map(d => d.id))
           }
+        } catch (e) {
+          console.warn('[SharedDashboard] Device current values:', e)
         }
-      } catch (e) {
-        // Extension components not available — silently skip
-        console.warn('[SharedDashboard] Failed to fetch extension components:', e)
       }
 
       if (mounted) setReady(true)
     }
 
-    syncRegistries()
+    loadData()
     return () => { mounted = false }
-  }, [])
+  }, [fetchDevices, fetchDeviceTypes, fetchDevicesCurrentBatch])
+
+  // Polling: refresh device current values every 30s for real-time updates
+  // (shared dashboard has no WebSocket, so we poll instead)
+  useEffect(() => {
+    if (!ready) return
+    const interval = setInterval(async () => {
+      try {
+        const devices = useStore.getState().devices
+        if (devices.length > 0) {
+          await fetchDevicesCurrentBatch(devices.map(d => d.id))
+        }
+      } catch {
+        // silently ignore polling errors
+      }
+    }, 30_000)
+    return () => clearInterval(interval)
+  }, [ready, fetchDevicesCurrentBatch])
 
   const gridComponents = useMemo(
     () =>
       dashboard.components.map((comp) => ({
         id: comp.id,
         position: comp.position,
-        children: renderDashboardComponent(comp, [], false),
+        children: (
+          <ComponentErrorBoundary>
+            {renderDashboardComponent(comp, [], false)}
+          </ComponentErrorBoundary>
+        ),
       })),
     [dashboard.components],
   )
