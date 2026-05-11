@@ -13,6 +13,7 @@ use neomind_rules::{
     store::RuleStore, RuleEngine, UnifiedValueProvider,
 };
 use neomind_storage::dashboards::DashboardStore;
+use neomind_storage::frontend_components::FrontendComponentStore;
 use neomind_storage::instances::InstanceStore;
 use neomind_storage::llm_backends::LlmBackendStore;
 
@@ -145,6 +146,9 @@ pub struct ServerState {
 
     /// Instance store for remote backend instance management.
     pub instance_store: Arc<InstanceStore>,
+
+    /// Frontend component store for community dashboard components.
+    pub frontend_component_store: FrontendComponentStore,
 
     /// Server start timestamp.
     pub started_at: i64,
@@ -698,6 +702,14 @@ impl ServerState {
             }
         };
 
+        let frontend_component_store = FrontendComponentStore::open(
+            std::path::PathBuf::from(
+                std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string()),
+            )
+            .join("frontend-components"),
+        )
+        .expect("Failed to init frontend component store");
+
         Self {
             core,
             devices,
@@ -710,6 +722,7 @@ impl ServerState {
             auto_onboard_manager,
             dashboard_store,
             instance_store,
+            frontend_component_store,
             started_at,
             gpu_info,
             agent_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -866,6 +879,13 @@ impl ServerState {
         let auto_onboard_manager = Arc::new(tokio::sync::RwLock::new(None));
         let dashboard_store = DashboardStore::memory().unwrap();
         let instance_store = InstanceStore::memory().unwrap();
+        let frontend_component_store = FrontendComponentStore::open(
+            std::env::temp_dir().join(format!(
+                "neomind-test-fc-{}",
+                uuid::Uuid::new_v4()
+            )),
+        )
+        .expect("Failed to create test frontend component store");
 
         // Empty GPU info for testing
         let gpu_info = Arc::new(std::sync::OnceLock::from(vec![]));
@@ -882,6 +902,7 @@ impl ServerState {
             auto_onboard_manager,
             dashboard_store,
             instance_store,
+            frontend_component_store,
             started_at,
             gpu_info,
             agent_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),

@@ -23,9 +23,9 @@ pub async fn create_router() -> Router {
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         agents, auth as auth_handlers, auth_users, automations, basic, capabilities, config,
-        dashboards, data, devices, events, extension_stream, extensions, instances, llm_backends,
-        memory, message_channels, messages, mqtt, rules, sessions, settings, setup, skills, stats,
-        suggestions, tools,
+        dashboards, data, devices, events, extension_stream, extensions, frontend_components,
+        instances, llm_backends, memory, message_channels, messages, mqtt, rules, sessions,
+        settings, setup, skills, stats, suggestions, tools,
     };
 
     // Public routes (no authentication required)
@@ -170,6 +170,16 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route(
             "/api/share/:token/proxy/*path",
             any(dashboards::share_proxy_handler),
+        )
+        // Frontend Component Marketplace API (public - read-only for browsing marketplace)
+        .route(
+            "/api/frontend-components/market/list",
+            get(frontend_components::market_list_handler),
+        )
+        // Frontend Component Bundle Serving (public - allows unauthenticated loading)
+        .route(
+            "/api/frontend-components/:id/bundle",
+            get(frontend_components::get_bundle_handler),
         )
         ;
 
@@ -861,6 +871,19 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/instances/:id/test",
             post(instances::test_instance_handler),
         )
+        // Frontend Component API (protected - install/uninstall/list)
+        .route(
+            "/api/frontend-components/market/install",
+            post(frontend_components::market_install_handler),
+        )
+        .route(
+            "/api/frontend-components",
+            get(frontend_components::list_components_handler),
+        )
+        .route(
+            "/api/frontend-components/:id",
+            delete(frontend_components::uninstall_component_handler),
+        )
         // Apply rate limiting middleware to all protected routes
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -907,6 +930,25 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             rate_limit_middleware,
         ));
 
+    // Frontend component upload routes with 5MB body limit
+    // Separate router for multipart upload with custom body limit
+    let component_upload_routes = Router::new()
+        .route(
+            "/api/frontend-components",
+            post(frontend_components::install_component_handler)
+                .layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
+        )
+        // Apply hybrid authentication middleware
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            hybrid_auth_middleware,
+        ))
+        // Apply rate limiting middleware
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ));
+
     // Combine all routes
     // IMPORTANT: More specific routes must come before catch-all routes.
     // Also, routes with their own middleware must be merged BEFORE routes
@@ -939,7 +981,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         ));
 
     // Combine all routes - extension_upload_routes has its own larger limit
-    let router = router.merge(limited_routes).merge(extension_upload_routes);
+    let router = router
+        .merge(limited_routes)
+        .merge(extension_upload_routes)
+        .merge(component_upload_routes);
 
     // Static file routes
     let router = assets::configure_static_file_serving(router);

@@ -14,6 +14,7 @@ pub mod devices;
 pub mod events;
 pub mod extension_stream;
 pub mod extensions;
+pub mod frontend_components;
 pub mod instances;
 pub mod llm_backends;
 pub mod memory;
