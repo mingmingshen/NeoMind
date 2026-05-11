@@ -68,6 +68,7 @@ pub mod device_registry;
 pub mod device_state;
 pub mod error;
 pub mod extensions;
+pub mod frontend_components;
 pub mod instances;
 pub mod llm_backends;
 pub mod llm_data;
@@ -123,6 +124,10 @@ pub use llm_backends::{
 pub use instances::{InstanceRecord, InstanceStore};
 
 pub use extensions::{ExtensionRecord, ExtensionStats, ExtensionStore};
+
+pub use frontend_components::{
+    ComponentManifest, FrontendComponentStore, MarketComponentEntry, MarketIndex, SizeConstraints,
+};
 
 pub use agents::{
     ActionExecuted,
