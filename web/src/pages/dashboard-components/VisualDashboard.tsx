@@ -5014,12 +5014,48 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         if (extensionDto?.config_schema?.properties) {
           // Generate config UI from extension's JSON Schema
           const properties = extensionDto.config_schema.properties
+          const uiHints = extensionDto.config_schema.ui_hints
+          const fieldOrder = uiHints?.field_order || Object.keys(properties)
+
+          // Visibility rules: check if a field should be visible based on current config values
+          const isFieldVisible = (fieldName: string): boolean => {
+            if (!uiHints?.visibility_rules) return true
+            for (const rule of uiHints.visibility_rules) {
+              if (rule.then_show?.includes(fieldName)) {
+                const fieldValue = config[fieldName.replace(/^(textContent|imageUrl)$/, m => m)]
+                const ruleValue = config[rule.field] ?? extensionDto.default_config?.[rule.field]
+                let show = false
+                switch (rule.condition) {
+                  case 'equals': show = ruleValue === rule.value; break
+                  case 'not_equals': show = ruleValue !== rule.value; break
+                  case 'contains': show = Array.isArray(ruleValue) && ruleValue.includes(rule.value); break
+                  case 'empty': show = !ruleValue || (Array.isArray(ruleValue) && ruleValue.length === 0); break
+                  case 'not_empty': show = !!ruleValue && (!Array.isArray(ruleValue) || ruleValue.length > 0); break
+                }
+                if (show) return true
+              }
+              if (rule.then_hide?.includes(fieldName)) {
+                const ruleValue = config[rule.field] ?? extensionDto.default_config?.[rule.field]
+                let hide = false
+                switch (rule.condition) {
+                  case 'equals': hide = ruleValue === rule.value; break
+                  case 'not_equals': hide = ruleValue !== rule.value; break
+                }
+                if (hide) return false
+              }
+            }
+            // If field appears in any then_show rule, it's hidden by default (no rule matched)
+            const appearsInThenShow = uiHints.visibility_rules?.some((r: any) => r.then_show?.includes(fieldName))
+            return !appearsInThenShow
+          }
+
           const displaySections: ConfigSection[] = [
             {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  {Object.entries(properties).map(([key, propDef]: [string, any]) => {
+                  {fieldOrder.filter(key => properties[key] && isFieldVisible(key)).map((key) => {
+                    const propDef = properties[key]
                     const propValue = config[key] ?? extensionDto.default_config?.[key] ?? propDef.default
 
                     const handleChange = (value: any) => {
@@ -5137,13 +5173,15 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           // Add data source section if component supports it
           let dataSourceSections: ConfigSection[] = []
           if (extensionDto.has_data_source) {
+            // Use custom allowedTypes from manifest if specified, otherwise default
+            const dsAllowedTypes = extensionDto.data_source_allowed_types || ['device-metric', 'extension', 'extension-command']
             dataSourceSections = [
               {
                 type: 'data-source' as const,
                 props: {
                   dataSource: config.dataSource,
                   onChange: updateDataSource,
-                  allowedTypes: ['device-metric', 'extension', 'extension-command'],
+                  allowedTypes: dsAllowedTypes,
                 },
               },
             ]

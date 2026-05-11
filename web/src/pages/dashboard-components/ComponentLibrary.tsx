@@ -5,7 +5,7 @@
  * Uses the component registry for metadata.
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,11 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { groupComponentsByCategory, getCategoryInfo, type ComponentMeta } from '@/components/dashboard/registry'
 import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
+import { useStore } from '@/store'
+import { useCommunityComponentLifecycle } from '@/hooks/useCommunityComponentLifecycle'
+import { Store, PackagePlus } from 'lucide-react'
+import { ComponentMarketplace } from './ComponentMarketplace'
+import { InstallComponentDialog } from './InstallComponentDialog'
 
 // Translation key mapping for component types
 const COMPONENT_TRANSLATION_KEYS: Record<string, { name: string; description: string }> = {
@@ -49,6 +54,7 @@ const CATEGORY_TRANSLATION_KEYS: Record<string, string> = {
   spatial: 'componentLibrary.spatial',
   business: 'componentLibrary.business',
   custom: 'componentLibrary.custom',
+  community: 'componentLibrary.community',
 }
 
 // ============================================================================
@@ -173,6 +179,19 @@ function CategorySection({ category, components, onAddComponent, t }: CategorySe
 export function ComponentLibrary({ onAddComponent, onClose, className }: ComponentLibraryProps) {
   const { t } = useTranslation('dashboardComponents')
   const [searchQuery, setSearchQuery] = useState('')
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false)
+  const [installOpen, setInstallOpen] = useState(false)
+
+  // Store hooks
+  const fetchInstalled = useStore(s => s.fetchInstalled)
+
+  // Fetch installed components on mount
+  useEffect(() => {
+    fetchInstalled()
+  }, [fetchInstalled])
+
+  // Subscribe to community component lifecycle events
+  useCommunityComponentLifecycle()
 
   // Get grouped components
   const groupedComponents = groupComponentsByCategory({
@@ -219,6 +238,30 @@ export function ComponentLibrary({ onAddComponent, onClose, className }: Compone
           )}
         </div>
       </ScrollArea>
+
+      {/* Bottom Actions */}
+      <div className="px-4 py-3 border-t space-y-2">
+        <Button
+          variant="outline"
+          className="w-full justify-start gap-2"
+          onClick={() => setMarketplaceOpen(true)}
+        >
+          <Store className="w-4 h-4" />
+          {t('componentLibrary.marketplace')}
+        </Button>
+        <Button
+          variant="outline"
+          className="w-full justify-start gap-2"
+          onClick={() => setInstallOpen(true)}
+        >
+          <PackagePlus className="w-4 h-4" />
+          {t('componentLibrary.importComponent')}
+        </Button>
+      </div>
+
+      {/* Dialogs */}
+      <ComponentMarketplace open={marketplaceOpen} onOpenChange={setMarketplaceOpen} />
+      <InstallComponentDialog open={installOpen} onOpenChange={setInstallOpen} />
     </div>
   )
 }
