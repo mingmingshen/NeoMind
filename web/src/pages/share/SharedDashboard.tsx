@@ -7,14 +7,17 @@
  * extension UMD bundle fetch calls alike.
  */
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { fetchAPI } from '@/lib/api'
 import { Loader2, AlertTriangle, Eye, Zap } from 'lucide-react'
 import { DashboardGrid } from '@/components/dashboard/DashboardGrid'
 import { renderDashboardComponent } from '@/pages/dashboard-components/VisualDashboard'
 import { fromDashboardDTO } from '@/store/persistence/types'
+import { communityRegistry } from '@/components/dashboard/registry/CommunityRegistry'
+import { dynamicRegistry } from '@/components/dashboard/registry/DynamicRegistry'
 import type { Dashboard } from '@/types/dashboard'
+import type { FrontendComponentMeta } from '@/types/frontend-component'
 
 // ============================================================================
 // Types
@@ -203,6 +206,49 @@ interface SharedDashboardContentProps {
 }
 
 function SharedDashboardContent({ dashboard }: SharedDashboardContentProps) {
+  const [ready, setReady] = useState(false)
+
+  // Fetch installed community components and sync with registries
+  useEffect(() => {
+    let mounted = true
+
+    const syncRegistries = async () => {
+      try {
+        // Fetch installed community components
+        const res = await fetchAPI<{ components: FrontendComponentMeta[] }>('/frontend-components', {
+          skipAuth: true,
+        })
+        const components = res.components || []
+        if (mounted && components.length > 0) {
+          communityRegistry.syncFromApi(components)
+        }
+      } catch (e) {
+        // Community components not available — silently skip
+        console.warn('[SharedDashboard] Failed to fetch community components:', e)
+      }
+
+      try {
+        // Fetch extension dashboard components
+        const extRes = await fetchAPI<{ components: any[] }>('/extensions/dashboard-components', {
+          skipAuth: true,
+        })
+        if (mounted && extRes.components?.length) {
+          for (const comp of extRes.components) {
+            dynamicRegistry.register(comp.extension_id || 'unknown', comp.extension_name || '', comp)
+          }
+        }
+      } catch (e) {
+        // Extension components not available — silently skip
+        console.warn('[SharedDashboard] Failed to fetch extension components:', e)
+      }
+
+      if (mounted) setReady(true)
+    }
+
+    syncRegistries()
+    return () => { mounted = false }
+  }, [])
+
   const gridComponents = useMemo(
     () =>
       dashboard.components.map((comp) => ({
@@ -212,6 +258,14 @@ function SharedDashboardContent({ dashboard }: SharedDashboardContentProps) {
       })),
     [dashboard.components],
   )
+
+  if (!ready) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   return <DashboardGrid components={gridComponents} editMode={false} />
 }
