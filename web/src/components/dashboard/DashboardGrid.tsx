@@ -217,6 +217,8 @@ export function DashboardGrid({
         .dashboard-item {
           width: 100%; height: 100%;
           display: flex; flex-direction: column; overflow: hidden;
+          border-radius: 0.5rem; border: 1px solid var(--border);
+          background: var(--card);
         }
         .react-grid-placeholder {
           background: rgba(148, 163, 184, 0.15) !important;

@@ -39,8 +39,8 @@ export function ExtensionCard({
   const isActive = extension.state !== "Error"
 
   return (
-    <Card className="group border-border hover:border-border transition-all duration-200 overflow-hidden bg-card backdrop-blur-sm">
-      <CardContent className="p-4">
+    <Card className="group border-border hover:border-border transition-all duration-200 overflow-hidden bg-card backdrop-blur-sm flex flex-col">
+      <CardContent className="p-4 flex flex-col flex-1">
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">
@@ -127,8 +127,8 @@ export function ExtensionCard({
           </p>
         )}
 
-        {/* Action Bar */}
-        <div className="flex items-center justify-between pt-2 border-t border-border">
+        {/* Action Bar — always at bottom */}
+        <div className="flex items-center justify-between pt-2 border-t border-border mt-auto">
           <span className={cn(textNano, "text-muted-foreground")}>
             {isActive ? t('card.active', { defaultValue: 'Active' }) : extension.state}
           </span>

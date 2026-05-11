@@ -640,28 +640,6 @@ function ExtensionDetailView({
           </div>
         )}
       </div>
-
-      {/* Desktop Footer */}
-      {!isMobile && (
-        <div className="flex items-center justify-end gap-3 pt-4 border-t">
-          <Button variant="outline" onClick={onBack} disabled={installing}>
-            {t("common:back")}
-          </Button>
-          <Button onClick={onInstall} disabled={installing}>
-            {installing ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {t("extensions:market.installing", "Installing...")}
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4 mr-2" />
-                {t("extensions:market.install", "Install")}
-              </>
-            )}
-          </Button>
-        </div>
-      )}
     </div>
   )
 }

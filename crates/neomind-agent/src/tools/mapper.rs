@@ -200,8 +200,17 @@ impl ToolNameMapper {
     ///
     /// 对于部分匹配的别名，尝试找到最相似的工具
     fn fuzzy_match(&self, input: &str) -> Option<String> {
+        // Extension tool names (format: "{ext_id}:{cmd}") must not be fuzzy-matched
+        // to avoid routing e.g. "uink-rms-bridge:list_devices" -> "device"
+        if input.contains(':') {
+            return None;
+        }
+
         // 精确子串匹配
         for (alias, real) in &self.alias_to_real {
+            if alias.contains(':') {
+                continue;
+            }
             if alias.contains(input) || input.contains(alias) {
                 return Some(real.clone());
             }
