@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useStore } from '@/store'
 import { shallow } from 'zustand/shallow'
@@ -5345,12 +5346,31 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       )}
 
       {/* Main Content */}
+      {isFullscreen && createPortal(
+        <div className="fixed inset-0 z-[100] bg-background flex flex-col">
+          <div className="flex-1 overflow-auto p-4 relative">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={toggleFullscreen}
+              className="absolute top-4 right-4 z-50 shadow-lg bg-bg-90 backdrop-blur"
+              title={t('visualDashboard.exitFullscreen')}
+            >
+              <Minimize className="h-4 w-4" />
+            </Button>
+            <DashboardGrid
+              components={gridComponents}
+              editMode={false}
+              onLayoutChange={() => {}}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
       <div className={cn(
         "flex-1 flex flex-col overflow-hidden",
-        isFullscreen && "fixed inset-0 z-50 bg-background"
+        isFullscreen && "hidden"
       )}>
-        {/* Header - fixed at top - hidden in fullscreen */}
-        {!isFullscreen && (
           <header className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border bg-background z-10">
             <div className="flex items-center gap-2">
               <Button
@@ -5615,24 +5635,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               </Button>
             </div>
           </header>
-        )}
 
         {/* Dashboard Grid */}
-        <div className={cn(
-          "flex-1 overflow-auto p-4 relative"
-        )}>
-          {/* Fullscreen exit button - floating */}
-          {isFullscreen && (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={toggleFullscreen}
-              className="absolute top-4 right-4 z-50 shadow-lg bg-bg-90 backdrop-blur"
-              title={t('visualDashboard.exitFullscreen')}
-            >
-              <Minimize className="h-4 w-4" />
-            </Button>
-          )}
+        <div className="flex-1 overflow-auto p-4 relative">
 
           {(currentDashboard.components?.length ?? 0) === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
