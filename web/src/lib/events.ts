@@ -32,6 +32,7 @@ export type EventType =
   | 'ToolExecutionFailure'
   | 'ExtensionOutput'
   | 'ExtensionLifecycle'
+  | 'FrontendComponentLifecycle'
   | 'Custom'
 
 export interface CustomEvent extends NeoMindEvent {
@@ -80,6 +81,15 @@ export interface ExtensionLifecycleEvent extends NeoMindEvent {
     extension_id: string
     state: 'registered' | 'unregistered' | 'loaded' | 'started' | 'stopped' | 'error'
     message?: string
+  }
+}
+
+// Frontend component lifecycle events
+export interface FrontendComponentLifecycleEvent extends NeoMindEvent {
+  type: 'FrontendComponentLifecycle'
+  data: {
+    component_id: string
+    state: 'installed' | 'uninstalled'
   }
 }
 
