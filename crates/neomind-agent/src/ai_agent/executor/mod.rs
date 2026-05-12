@@ -372,15 +372,23 @@ impl AgentExecutor {
 
     /// Check whether tool mode should be used for this agent execution.
     ///
-    /// Tool calling is used when the LLM supports function calling and a tool
-    /// registry is available.  Both Focused and Free modes can use tool calling;
-    /// the difference is scope — Focused mode restricts which resources can be
-    /// accessed (enforced in `run_tool_loop` and `filter_tools_for_focused`).
+    /// Only Free mode agents use tool calling; Focused mode always uses
+    /// structured LLM analysis (single-pass, fast, reliable).
     fn should_use_tools(
         &self,
         agent: &AiAgent,
         llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>,
     ) -> bool {
+        // Focused mode never uses tools — keep it simple and fast
+        if agent.execution_mode != neomind_storage::agents::ExecutionMode::Free {
+            tracing::debug!(
+                agent_id = %agent.id,
+                execution_mode = ?agent.execution_mode,
+                "Tool mode skipped — agent is not in Free execution mode"
+            );
+            return false;
+        }
+
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
         let registry_available = self
             .tool_registry
@@ -390,16 +398,9 @@ impl AgentExecutor {
         if !result {
             tracing::info!(
                 agent_id = %agent.id,
-                execution_mode = ?agent.execution_mode,
                 llm_supports_tools,
                 registry_available,
                 "Tool mode NOT activated - falling back to structured analysis"
-            );
-        } else {
-            tracing::info!(
-                agent_id = %agent.id,
-                execution_mode = ?agent.execution_mode,
-                "Tool mode activated (scope enforced by execution mode)"
             );
         }
         result
