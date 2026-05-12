@@ -797,7 +797,9 @@ impl AgentExecutor {
                         let sanitized =
                             crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
                         // UTF-8 safe truncation (has fast-path for short strings)
-                        const MAX_TOOL_RESULT_IN_MSG: usize = 4000;
+                        // 128KB limit: large enough for compact time-series and multi-device
+                        // queries. The compaction layer handles context window limits later.
+                        const MAX_TOOL_RESULT_IN_MSG: usize = 131072;
                         crate::agent::streaming::truncate_result_utf8(
                             &sanitized,
                             MAX_TOOL_RESULT_IN_MSG,
@@ -869,7 +871,7 @@ impl AgentExecutor {
                 all_tool_results.len(),
             );
 
-            const TOOL_RESULT_MAX_LEN: usize = 8000;
+            const TOOL_RESULT_MAX_LEN: usize = 131072;
             for r in &all_tool_results {
                 let result_text = match &r.result {
                     Ok(output) => {

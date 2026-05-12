@@ -1,6 +1,9 @@
 {
   "title": "Settings",
   "description": "Language, theme and system information",
+  "llmBackends": "LLM Backends",
+  "deviceConnections": "Device Connections",
+  "alertChannels": "Message Channels",
   "preferences": "Preferences",
   "preferencesDesc": "Customize your NeoMind experience",
   "about": "About",

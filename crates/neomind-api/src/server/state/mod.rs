@@ -22,5 +22,5 @@ pub use core_state::CoreState;
 pub use device_state::{DeviceState, DeviceStatusUpdate};
 pub use extension_state::{
     ExtensionMetricsStorage, ExtensionMetricsStorageAdapter, ExtensionRegistryAdapter,
-    ExtensionState,
+    ExtensionState, ExtensionStore,
 };

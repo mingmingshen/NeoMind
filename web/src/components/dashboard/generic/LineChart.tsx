@@ -321,6 +321,10 @@ const LineChartInner = function LineChart({
     }
   )
 
+  // Prevent loading flash: only show skeleton when loading AND no data exists yet
+  const hasData = data !== null && data !== undefined && (Array.isArray(data) ? data.length > 0 : true)
+  const showLoading = loading && !hasData
+
   // Get device names for series labels
   const getDeviceName = useCallback((deviceId?: string): string => {
     if (!deviceId) return t('chart.value')
@@ -500,7 +504,7 @@ const LineChartInner = function LineChart({
   }, [chartLabels, series])
 
   // Loading state
-  if (loading) {
+  if (showLoading) {
     return (
       <div className={cn(dashboardCardBase, config.padding, className)}>
         {title && (
@@ -694,6 +698,10 @@ export function AreaChart({
   )
   const rawData = shouldFetch ? sourceData : effectiveSeries
 
+  // Prevent loading flash: only show skeleton when loading AND no data exists yet
+  const hasData = rawData !== null && rawData !== undefined && (Array.isArray(rawData) ? rawData.length > 0 : true)
+  const showLoading = loading && !hasData
+
   // Get device names for series labels
   const getDeviceName = useCallback((deviceId?: string): string => {
     if (!deviceId) return t('chart.value')
@@ -857,7 +865,7 @@ export function AreaChart({
   }, [chartLabels, series])
 
   // Loading state
-  if (loading) {
+  if (showLoading) {
     return (
       <div className={cn(dashboardCardBase, config.padding, className)}>
         {title && (

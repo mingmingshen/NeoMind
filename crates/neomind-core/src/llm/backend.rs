@@ -340,7 +340,7 @@ impl StreamConfig {
     }
 
     fn default_max_thinking_time_secs() -> u64 {
-        120
+        300
     }
 
     fn default_max_stream_duration_secs() -> u64 {

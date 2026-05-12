@@ -5,7 +5,8 @@
  * Supports multiple storage backends (localStorage, API, hybrid).
  */
 
-import type { Dashboard } from '@/types/dashboard'
+import type { Dashboard, DashboardComponent, ComponentPosition, GenericComponent, BusinessComponent, DataSource, ActionConfig, DisplayConfig } from '@/types/dashboard'
+import { isGenericComponent } from '@/types/dashboard'
 
 // ============================================================================
 // Storage Operation Result
@@ -83,6 +84,29 @@ export interface StorageConfig {
 // DTO Conversion (between API and internal format)
 // ============================================================================
 
+/** Component in API snake_case format */
+export interface ComponentDTO {
+  id: string
+  type: string
+  position: {
+    x: number
+    y: number
+    w: number
+    h: number
+    min_w?: number
+    min_h?: number
+    max_w?: number
+    max_h?: number
+  }
+  title?: string
+  data_source?: Record<string, unknown>
+  /** @deprecated API returns data_source, but some internal paths still use dataSource */
+  dataSource?: Record<string, unknown>
+  display?: Record<string, unknown>
+  config?: Record<string, unknown>
+  actions?: Array<Record<string, unknown>>
+}
+
 export interface DashboardDTO {
   id: string
   name: string
@@ -96,25 +120,7 @@ export interface DashboardDTO {
       xs: number
     }
   }
-  components: Array<{
-    id: string
-    type: string
-    position: {
-      x: number
-      y: number
-      w: number
-      h: number
-      min_w?: number
-      min_h?: number
-      max_w?: number
-      max_h?: number
-    }
-    title?: string
-    dataSource?: Record<string, unknown>
-    display?: Record<string, unknown>
-    config?: Record<string, unknown>
-    actions?: Array<Record<string, unknown>>
-  }>
+  components: ComponentDTO[]
   created_at: number
   updated_at: number
   is_default?: boolean
@@ -136,35 +142,61 @@ export interface UpdateDashboardDTO {
 // DTO Conversion Helpers
 // ============================================================================
 
+/** Convert internal ComponentPosition to API snake_case position */
+function positionToDTO(p: ComponentPosition): ComponentDTO['position'] {
+  return {
+    x: p.x,
+    y: p.y,
+    w: p.w,
+    h: p.h,
+    min_w: p.minW,
+    min_h: p.minH,
+    max_w: p.maxW,
+    max_h: p.maxH,
+  }
+}
+
+/** Convert a single DashboardComponent to API snake_case component DTO */
+function componentToDTO(c: DashboardComponent): ComponentDTO {
+  const isGeneric = isGenericComponent(c)
+  return {
+    id: c.id,
+    type: c.type,
+    position: positionToDTO(c.position),
+    title: c.title,
+    data_source: (isGeneric ? (c as GenericComponent).dataSource : (c as BusinessComponent).dataSource) as Record<string, unknown> | undefined,
+    display: isGeneric ? ((c as GenericComponent).display as Record<string, unknown> | undefined) : undefined,
+    config: 'config' in c ? ((c as GenericComponent).config as Record<string, unknown> | undefined) : undefined,
+    actions: isGeneric && (c as GenericComponent).actions
+      ? ((c as GenericComponent).actions as unknown as Array<Record<string, unknown>>)
+      : undefined,
+  }
+}
+
+/** Convert API snake_case position to internal ComponentPosition */
+function positionFromDTO(p: ComponentDTO['position']): ComponentPosition {
+  return {
+    x: p.x,
+    y: p.y,
+    w: p.w,
+    h: p.h,
+    minW: p.min_w,
+    minH: p.min_h,
+    maxW: p.max_w,
+    maxH: p.max_h,
+  }
+}
+
 /**
  * Convert internal Dashboard to API DTO format
  * Returns API format with snake_case fields (data_source)
  */
-export function toDashboardDTO(dashboard: Dashboard): any {
+export function toDashboardDTO(dashboard: Dashboard): CreateDashboardDTO & { id: string; created_at: number; updated_at: number; is_default?: boolean } {
   return {
     id: dashboard.id,
     name: dashboard.name,
     layout: dashboard.layout,
-    components: dashboard.components.map(c => ({
-      id: c.id,
-      type: c.type,
-      position: {
-        x: c.position.x,
-        y: c.position.y,
-        w: c.position.w,
-        h: c.position.h,
-        min_w: c.position.minW,
-        min_h: c.position.minH,
-        max_w: c.position.maxW,
-        max_h: c.position.maxH,
-      },
-      title: (c as any).title,
-      // API uses snake_case for data_source
-      data_source: (c as any).dataSource as Record<string, unknown> | undefined,
-      display: (c as any).display as Record<string, unknown> | undefined,
-      config: (c as any).config,
-      actions: (c as any).actions?.map((a: unknown) => a as Record<string, unknown>),
-    })),
+    components: dashboard.components.map(componentToDTO),
     created_at: dashboard.createdAt,
     updated_at: dashboard.updatedAt,
     is_default: dashboard.isDefault,
@@ -175,31 +207,37 @@ export function toDashboardDTO(dashboard: Dashboard): any {
  * Convert API DTO to internal Dashboard format
  * Handles both DashboardDTO (camelCase) and API DashboardResponse (snake_case)
  */
-export function fromDashboardDTO(dto: DashboardDTO | any): Dashboard {
-  // Handle API response format with snake_case fields
-  const components = (dto.components || []).map((c: any) => {
-    // API uses data_source (snake_case), internal uses dataSource (camelCase)
+export function fromDashboardDTO(dto: DashboardDTO): Dashboard {
+  const components: DashboardComponent[] = (dto.components || []).map((c) => {
     const dataSource = c.data_source ?? c.dataSource
 
-    return {
+    const base = {
       id: c.id,
-      type: c.type as any,
-      position: {
-        x: c.position.x,
-        y: c.position.y,
-        w: c.position.w,
-        h: c.position.h,
-        minW: c.position.min_w,
-        minH: c.position.min_h,
-        maxW: c.position.max_w,
-        maxH: c.position.max_h,
-      },
+      type: c.type as DashboardComponent['type'],
+      position: positionFromDTO(c.position),
       title: c.title,
-      dataSource: dataSource as any,
-      display: c.display as any,
-      config: c.config,
-      actions: c.actions as any,
     }
+
+    if (isGenericComponent({ type: c.type } as DashboardComponent)) {
+      const comp: GenericComponent = {
+        ...base,
+        type: c.type as GenericComponent['type'],
+        ...(dataSource ? { dataSource: dataSource as unknown as DataSource } : {}),
+        ...(c.display ? { display: c.display as unknown as DisplayConfig } : {}),
+        ...(c.config ? { config: c.config } : {}),
+        ...(c.actions ? { actions: c.actions as unknown as ActionConfig[] } : {}),
+      }
+      return comp
+    }
+
+    // BusinessComponent: config + dataSource (for agent binding, etc.)
+    const comp: BusinessComponent = {
+      ...base,
+      type: c.type as BusinessComponent['type'],
+      ...(dataSource ? { dataSource: dataSource as unknown as DataSource } : {}),
+      ...(c.config ? { config: c.config } : {}),
+    }
+    return comp
   })
 
   return {
@@ -217,30 +255,11 @@ export function fromDashboardDTO(dto: DashboardDTO | any): Dashboard {
  * Convert to create DTO (without id and timestamps)
  * Returns API format with snake_case fields (data_source)
  */
-export function toCreateDashboardDTO(dashboard: Omit<Dashboard, 'id' | 'createdAt' | 'updatedAt'>): any {
+export function toCreateDashboardDTO(dashboard: Omit<Dashboard, 'id' | 'createdAt' | 'updatedAt'>): CreateDashboardDTO {
   return {
     name: dashboard.name,
     layout: dashboard.layout,
-    components: dashboard.components.map(c => ({
-      id: c.id,
-      type: c.type,
-      position: {
-        x: c.position.x,
-        y: c.position.y,
-        w: c.position.w,
-        h: c.position.h,
-        min_w: c.position.minW,
-        min_h: c.position.minH,
-        max_w: c.position.maxW,
-        max_h: c.position.maxH,
-      },
-      title: (c as any).title,
-      // API uses snake_case for data_source
-      data_source: (c as any).dataSource as Record<string, unknown> | undefined,
-      display: (c as any).display as Record<string, unknown> | undefined,
-      config: (c as any).config,
-      actions: (c as any).actions?.map((a: unknown) => a as Record<string, unknown>),
-    })),
+    components: dashboard.components.map(componentToDTO),
   }
 }
 
@@ -248,34 +267,14 @@ export function toCreateDashboardDTO(dashboard: Omit<Dashboard, 'id' | 'createdA
  * Convert to update DTO (partial)
  * Returns API format with snake_case fields (data_source)
  */
-export function toUpdateDashboardDTO(updates: Partial<Dashboard>): any {
-  const dto: any = {}
+export function toUpdateDashboardDTO(updates: Partial<Dashboard>): UpdateDashboardDTO {
+  const dto: UpdateDashboardDTO = {}
 
   if (updates.name !== undefined) dto.name = updates.name
   if (updates.layout !== undefined) dto.layout = updates.layout
 
   if (updates.components !== undefined) {
-    // API expects snake_case field names (data_source)
-    dto.components = updates.components.map(c => ({
-      id: c.id,
-      type: c.type,
-      position: {
-        x: c.position.x,
-        y: c.position.y,
-        w: c.position.w,
-        h: c.position.h,
-        min_w: c.position.minW,
-        min_h: c.position.minH,
-        max_w: c.position.maxW,
-        max_h: c.position.maxH,
-      },
-      title: (c as any).title,
-      // API uses snake_case for data_source
-      data_source: (c as any).dataSource as Record<string, unknown> | undefined,
-      display: (c as any).display as Record<string, unknown> | undefined,
-      config: (c as any).config,
-      actions: (c as any).actions?.map((a: unknown) => a as Record<string, unknown>),
-    }))
+    dto.components = updates.components.map(componentToDTO)
   }
 
   return dto

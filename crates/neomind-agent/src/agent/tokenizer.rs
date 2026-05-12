@@ -51,13 +51,17 @@ fn is_chinese(c: char) -> bool {
 }
 
 /// Estimate token count for a message.
+///
+/// IMPORTANT: Thinking content is NOT counted because:
+/// 1. to_core() does NOT include thinking when sending to LLM
+/// 2. Thinking is only for frontend display, not for model context
+/// 3. Counting thinking would incorrectly consume the context budget
 pub fn estimate_message_tokens(message: &crate::agent::AgentMessage) -> usize {
     let mut tokens = estimate_tokens(&message.content);
 
-    // Add tokens for thinking content
-    if let Some(thinking) = &message.thinking {
-        tokens += estimate_tokens(thinking);
-    }
+    // NOTE: Thinking is intentionally NOT counted here
+    // Even though it's stored in AgentMessage, it's not sent to LLM via to_core()
+    // Only count content, tool_calls, and images
 
     // Add tokens for tool calls
     if let Some(tool_calls) = &message.tool_calls {
@@ -65,6 +69,13 @@ pub fn estimate_message_tokens(message: &crate::agent::AgentMessage) -> usize {
             // Tool name + arguments roughly (convert JSON to string for estimation)
             let args_str = tool_call.arguments.to_string();
             tokens += 10 + estimate_tokens(&args_str);
+        }
+    }
+
+    // Add tokens for images (rough estimate)
+    if let Some(images) = &message.images {
+        if !images.is_empty() {
+            tokens += 85 * images.len();
         }
     }
 

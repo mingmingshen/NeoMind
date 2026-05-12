@@ -14,6 +14,7 @@ import type { SessionState } from '../types'
 import type { ChatSession } from '@/types'
 import { api } from '@/lib/api'
 import { normalizeSessions, normalizeSessionsResponse } from '@/lib/api/transforms'
+import { fetchCache } from '@/lib/utils/async'
 
 export interface SessionSlice extends SessionState {
   // Actions
@@ -52,6 +53,12 @@ export const createSessionSlice: StateCreator<
   },
 
   addMessage: (message: Message) => {
+    // Invalidate session history cache so re-fetching shows new messages
+    const currentSessionId = get().sessionId
+    if (currentSessionId) {
+      fetchCache.invalidate(`sessionHistory:${currentSessionId}`)
+    }
+
     set((state) => {
       // If message with same ID exists, update it (especially important for partial->final transition)
       const existingIndex = state.messages.findIndex(m => m.id === message.id)
@@ -97,6 +104,7 @@ export const createSessionSlice: StateCreator<
   },
 
   createSession: async () => {
+    fetchCache.invalidate('sessions')
     try {
       const result = await api.createSession()
 
@@ -205,6 +213,7 @@ export const createSessionSlice: StateCreator<
   },
 
   deleteSession: async (sessionIdToDelete: string) => {
+    fetchCache.invalidate('sessions')
     try {
       await api.deleteSession(sessionIdToDelete)
 
@@ -346,6 +355,8 @@ export const createSessionSlice: StateCreator<
   },
 
   loadSessions: async () => {
+    if (!fetchCache.shouldFetch('sessions')) return
+    fetchCache.markFetching('sessions')
     try {
       // Reset pagination and load first page
       const pageSize = 10
@@ -361,8 +372,10 @@ export const createSessionSlice: StateCreator<
         sessionsHasMore: hasMore,
         sessionsLoading: false,
       })
+      fetchCache.markFetched('sessions')
     } catch (error) {
       logError(error, { operation: 'Load sessions' })
+      fetchCache.invalidate('sessions')
       set({ sessionsLoading: false })
     }
   },
@@ -398,13 +411,18 @@ export const createSessionSlice: StateCreator<
   },
 
   fetchSessionHistory: async (sessionId: string) => {
+    const cacheKey = `sessionHistory:${sessionId}`
+    if (!fetchCache.shouldFetch(cacheKey)) return
+    fetchCache.markFetching(cacheKey)
     try {
       const result = await api.getSessionHistory(sessionId)
       // Merge fragmented assistant messages from backend
       const mergedMessages = mergeAssistantMessages(result.messages || [])
       set({ messages: mergedMessages })
+      fetchCache.markFetched(cacheKey)
     } catch (error) {
       logError(error, { operation: 'Fetch session history' })
+      fetchCache.invalidate(cacheKey)
     }
   },
 })

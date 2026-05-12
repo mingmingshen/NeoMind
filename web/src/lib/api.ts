@@ -1708,6 +1708,13 @@ export const api = {
     fetchAPI<AgentListResponse>('/agents'),
 
   /**
+   * List agent summaries (id, name, status only) for dropdowns
+   * GET /api/agents?view=summary
+   */
+  listAgentSummaries: () =>
+    fetchAPI<AgentListResponse>('/agents?view=summary'),
+
+  /**
    * Get an AI Agent by ID
    * GET /api/agents/:id
    */

@@ -202,7 +202,7 @@ async function fetchSystemStats(
  * Fetch historical telemetry data for a device metric
  * @param includeRawPoints - if true, return full TelemetryPoint[] instead of just values
  */
-async function fetchHistoricalTelemetry(
+export async function fetchHistoricalTelemetry(
   deviceId: string,
   metricId: string,
   timeRange: number = 1, // hours
@@ -578,10 +578,17 @@ function cleanupTelemetryCache() {
   }
 }
 
-// Periodic cache cleanup - store reference for potential cleanup
+// Periodic cache cleanup - store reference for cleanup
 let cacheCleanupInterval: ReturnType<typeof setInterval> | null = null
 if (typeof window !== 'undefined') {
   cacheCleanupInterval = setInterval(cleanupTelemetryCache, 60000) // Clean up every minute
+  // Auto-cleanup on page unload (prevents HMR interval accumulation in dev)
+  window.addEventListener('beforeunload', () => {
+    if (cacheCleanupInterval) {
+      clearInterval(cacheCleanupInterval)
+      cacheCleanupInterval = null
+    }
+  })
 }
 
 /**

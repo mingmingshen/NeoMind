@@ -42,15 +42,15 @@ pub struct UpdateInstanceRequest {
 pub async fn list_instances_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let instances = state
+    let instances: Vec<_> = state
         .instance_store
-        .load_all()
-        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
-
-    let list: Vec<_> = instances.iter().map(|i| i.for_response()).collect();
+        .load_all()?
+        .iter()
+        .map(|i| i.for_response())
+        .collect();
 
     ok(json!({
-        "instances": list,
+        "instances": instances,
     }))
 }
 
@@ -61,8 +61,7 @@ pub async fn get_instance_handler(
 ) -> HandlerResult<serde_json::Value> {
     let instance = state
         .instance_store
-        .load_instance(&id)
-        .map_err(|e| ErrorResponse::internal(e.to_string()))?
+        .load_instance(&id)?
         .ok_or_else(|| ErrorResponse::not_found(format!("Instance {}", id)))?;
 
     ok(json!(instance.for_response()))
@@ -81,15 +80,13 @@ pub async fn create_instance_handler(
     let id = instance.id.clone();
     state
         .instance_store
-        .save_instance(&instance)
-        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+        .save_instance(&instance)?;
 
     // Load back to get consistent state
     let saved = state
         .instance_store
-        .load_instance(&id)
-        .map_err(|e| ErrorResponse::internal(e.to_string()))?
-        .ok_or_else(|| ErrorResponse::internal("Failed to load saved instance".to_string()))?;
+        .load_instance(&id)?
+        .ok_or_else(|| ErrorResponse::internal("Failed to load saved instance"))?;
 
     ok(json!(saved.for_response()))
 }
@@ -102,8 +99,7 @@ pub async fn update_instance_handler(
 ) -> HandlerResult<serde_json::Value> {
     let mut instance = state
         .instance_store
-        .load_instance(&id)
-        .map_err(|e| ErrorResponse::internal(e.to_string()))?
+        .load_instance(&id)?
         .ok_or_else(|| ErrorResponse::not_found(format!("Instance {}", id)))?;
 
     if let Some(name) = req.name {
@@ -126,8 +122,7 @@ pub async fn update_instance_handler(
 
     state
         .instance_store
-        .save_instance(&instance)
-        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+        .save_instance(&instance)?;
 
     ok(json!(instance.for_response()))
 }
@@ -144,7 +139,7 @@ pub async fn delete_instance_handler(
             if e.to_string().contains("Cannot delete") {
                 ErrorResponse::bad_request(e.to_string())
             } else {
-                ErrorResponse::internal(e.to_string())
+                ErrorResponse::from(e)
             }
         })?;
 
@@ -158,8 +153,7 @@ pub async fn test_instance_handler(
 ) -> HandlerResult<serde_json::Value> {
     let instance = state
         .instance_store
-        .load_instance(&id)
-        .map_err(|e| ErrorResponse::internal(e.to_string()))?
+        .load_instance(&id)?
         .ok_or_else(|| ErrorResponse::not_found(format!("Instance {}", id)))?;
 
     let health_url = format!("{}/api/health", instance.url.trim_end_matches('/'));

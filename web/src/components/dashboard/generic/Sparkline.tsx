@@ -368,6 +368,10 @@ export function Sparkline({
     preserveMultiple: true,
   })
 
+  // Prevent loading flash: only show skeleton when loading AND no data exists yet
+  const hasData = data !== null && data !== undefined
+  const showLoading = loading && !hasData
+
   // Check if dataSource is configured
   const hasDataSource = dataSource !== undefined
 
@@ -475,7 +479,7 @@ export function Sparkline({
   }
 
   // Loading state - show skeleton while fetching initial data
-  if (loading && hasDataSource && chartData.length < 2) {
+  if (showLoading && hasDataSource && chartData.length < 2) {
     return (
       <div className={cn(dashboardCardBase, 'flex flex-col', sizeConfig.padding, className)}>
         <div className="flex items-center justify-between mb-2">

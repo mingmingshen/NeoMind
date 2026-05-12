@@ -642,7 +642,8 @@ struct OpenAIEmbedData {
 impl EmbeddingModel for OpenAIEmbedding {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, Error> {
         let results: Vec<Vec<f32>> = self.embed_batch(&[text.to_string()]).await?;
-        Ok(results.into_iter().next().expect("embed_batch returns same count as input"))
+        results.into_iter().next()
+            .ok_or_else(|| Error::Embedding("OpenAI API returned empty results".to_string()))
     }
 
     async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, Error> {
@@ -747,16 +748,18 @@ impl EmbeddingModel for CachedEmbeddingModel {
         let mut uncached_indices = Vec::new();
         let mut uncached_texts = Vec::new();
 
-        // Check cache
-        for (i, text) in texts.iter().enumerate() {
-            let key = Self::hash_text(text);
+        // Check cache — single lock acquisition for all lookups
+        {
             let mut cache = self.cache.lock().await;
-            if let Some(cached) = cache.get(&key) {
-                results.push(Some(cached.clone()));
-            } else {
-                results.push(None);
-                uncached_indices.push(i);
-                uncached_texts.push(text.clone());
+            for (i, text) in texts.iter().enumerate() {
+                let key = Self::hash_text(text);
+                if let Some(cached) = cache.get(&key) {
+                    results.push(Some(cached.clone()));
+                } else {
+                    results.push(None);
+                    uncached_indices.push(i);
+                    uncached_texts.push(text.clone());
+                }
             }
         }
 
@@ -765,6 +768,7 @@ impl EmbeddingModel for CachedEmbeddingModel {
             let uncached_embeddings: Vec<Vec<f32>> =
                 self.inner.embed_batch(&uncached_texts).await?;
 
+            // Single lock acquisition for all inserts
             let mut cache = self.cache.lock().await;
             for (idx, (text, embedding)) in uncached_texts
                 .iter()
@@ -779,7 +783,9 @@ impl EmbeddingModel for CachedEmbeddingModel {
             }
         }
 
-        Ok(results.into_iter().map(|r| r.expect("batch embedding should succeed for all items")).collect())
+        Ok(results.into_iter()
+            .map(|r| r.ok_or_else(|| Error::Embedding("Missing embedding result — cache or batch mismatch".to_string())))
+            .collect::<Result<Vec<_>, _>>()?)
     }
 
     fn dimension(&self) -> usize {

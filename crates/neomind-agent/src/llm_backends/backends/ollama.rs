@@ -882,6 +882,7 @@ impl LlmRuntime for OllamaRuntime {
                     let mut thinking_start_time: Option<Instant> = None; // Track when thinking started
                     let mut terminate_early = false; // Flag to terminate stream early
                     let mut skip_remaining_thinking = false; // Skip thinking chunks but wait for content
+                    let mut thinking_skip_start: Option<Instant> = None; // Track when thinking skip started
                     let mut last_thinking_chunk = String::new(); // Track last thinking chunk for loop detection
                     let mut consecutive_same_thinking = 0usize; // Count consecutive identical thinking chunks
                     let stream_start = Instant::now(); // Track stream duration
@@ -1126,6 +1127,7 @@ impl LlmRuntime for OllamaRuntime {
                                                 if let Some(start) = thinking_start_time {
                                                     if start.elapsed()
                                                         > stream_config.max_thinking_time()
+                                                        && !skip_remaining_thinking
                                                     {
                                                         tracing::warn!(
                                                         "[ollama.rs] Thinking timeout ({:?} elapsed, {} chars). Skipping remaining thinking, waiting for content.",
@@ -1134,6 +1136,20 @@ impl LlmRuntime for OllamaRuntime {
                                                     );
                                                         // Skip future thinking chunks but continue stream for content
                                                         skip_remaining_thinking = true;
+                                                        thinking_skip_start = Some(Instant::now());
+                                                    }
+                                                }
+
+                                                // If thinking was skipped but model keeps producing thinking for too long, terminate
+                                                if skip_remaining_thinking {
+                                                    if let Some(skip_start) = thinking_skip_start {
+                                                        if skip_start.elapsed() > Duration::from_secs(180) {
+                                                            tracing::warn!(
+                                                                "[ollama.rs] Model still producing thinking 180s after timeout. Terminating stream."
+                                                            );
+                                                            terminate_early = true;
+                                                            terminate_early_reason = Some("Thinking timeout - model stuck in thinking loop".to_string());
+                                                        }
                                                     }
                                                 }
 
@@ -1149,7 +1165,10 @@ impl LlmRuntime for OllamaRuntime {
                                                             thinking_content
                                                         );
                                                         // Skip future thinking chunks but continue stream for content
-                                                        skip_remaining_thinking = true;
+                                                        if !skip_remaining_thinking {
+                                                            skip_remaining_thinking = true;
+                                                            thinking_skip_start = Some(Instant::now());
+                                                        }
                                                     }
                                                 } else {
                                                     consecutive_same_thinking = 0;
@@ -1165,7 +1184,10 @@ impl LlmRuntime for OllamaRuntime {
                                                         stream_config.max_thinking_chars
                                                     );
                                                     // Skip future thinking chunks but continue stream for content
-                                                    skip_remaining_thinking = true;
+                                                    if !skip_remaining_thinking {
+                                                        skip_remaining_thinking = true;
+                                                        thinking_skip_start = Some(Instant::now());
+                                                    }
                                                 }
 
                                                 if should_send_thinking {

@@ -127,16 +127,21 @@ impl InFlightRequests {
     /// Returns true if the request was found and completed, false otherwise.
     /// This is a sync method — safe to call from non-async contexts.
     pub fn complete(&self, request_id: RequestId, response: IpcResponse) -> bool {
-        let mut state = match self.state.lock() {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!(request_id, "InFlightRequests mutex poisoned: {}", e);
-                return false;
-            }
+        // Remove the sender from the map while holding the lock,
+        // then send outside the critical section to reduce contention.
+        let tx = {
+            let mut state = match self.state.lock() {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::error!(request_id, "InFlightRequests mutex poisoned: {}", e);
+                    return false;
+                }
+            };
+            state.pending.remove(&request_id)
         };
 
-        if let Some(tx) = state.pending.remove(&request_id) {
-            // Send the response to the waiting caller
+        if let Some(tx) = tx {
+            // Send the response to the waiting caller (outside the lock)
             // Ignore send errors (caller may have timed out and dropped the receiver)
             let _: Result<_, _> = tx.send(response);
             true

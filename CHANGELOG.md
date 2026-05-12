@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.7.5] - 2026-05-12
+
+### Added
+
+- **Adaptive time-series compression for device history** — `device(action="history")` now returns one of two formats, automatically picking the smallest: compact values array (`{"values": [...]}`) or adaptive series (`{"series": [{"range": "...", "kept": 12.0}, {"range": "...", "fluctuated": [12.5, ...]}]}`). Stable periods compress to single `"kept"` entries, significantly reducing token usage for the LLM
+- **Mid-task context compaction** — When agent memory exceeds 70% of the context budget during long ReAct loops, old tool execution rounds are automatically summarized into a structured progress summary. Keeps recent rounds intact, preventing context overflow mid-task
+- **Actual prompt overhead measurement** — Context window budget now measures real system prompt + tool definition tokens instead of using fixed percentage heuristics. Allocates `model_capacity - overhead - 1024` for history with a 20% safety floor
+- **Agent summary API** — New `GET /api/agents?view=summary` endpoint returning lightweight `{id, name, status}` for dashboard dropdowns, replacing full agent payload
+- **LargeDataCache eviction** — Cache now enforces max 20 entries and 50MB total. Oldest entries evicted automatically when limits are exceeded
+- **Release build profile** — Added LTO thin, codegen-units=1, strip, opt-level=3 for smaller optimized binaries
+
+### Changed
+
+- **Time-series write buffering** — Single-point writes are now batched in an in-memory buffer (200 points, 500ms flush interval) and flushed to redb as batched transactions, significantly improving high-frequency device telemetry throughput. Flush is offloaded to `spawn_blocking` to avoid blocking the async runtime
+- **Async storage I/O** — `MessageStore` operations (`insert`, `update`, `delete`, `list`) now have `*_async` wrappers that offload blocking redb I/O to `spawn_blocking`, preventing tokio runtime stalls
+- **Batch delivery log writes** — Message delivery logs are collected per send cycle and written in a single lock acquisition, reducing lock contention
+- **Tool response ID naming** — All aggregated tool responses now use explicit field names (`device_id`, `agent_id`, `rule_id`, `message_id`, `extension_id`) instead of generic `"id"`, improving LLM clarity
+- **Token estimation consolidation** — Unified `estimate_tokens` and `estimate_message_tokens` into `tokenizer` module. Thinking content is correctly excluded from token counts (not sent to LLM)
+- **Tool result compaction thresholds** — Increased keep threshold from 4KB→8KB, data-action preview from 300→2048 chars, and `CompactionConfig.max_message_length` from 8K/6K→32K/16K to preserve compact time-series format intact
+- **Ollama thinking timeout guard** — Added `!skip_remaining_thinking` check to prevent repeated timeout warnings. Added 180s hard limit after timeout — terminates stream if model is stuck in thinking loop
+- **ExtensionStore singleton** — `ExtensionState` now holds a shared `Arc<ExtensionStore>` instead of opening the database per call in `load_from_storage` and error handling paths
+- **Error handling improvements** — `IsolatedExtension::new` uses `ok_or_else()` instead of `expect()` for child process stdin/stdout/stderr. API handlers use `From` conversion with `?` instead of `.map_err()`
+- **InFlightRequests lock optimization** — Send response outside the mutex critical section, reducing lock hold time
+- **Shared `ExtensionStore` in state** — `ExtensionState` constructors now accept `Arc<ExtensionStore>`, eliminating redundant `open()` calls in `load_from_storage` and auto-discovery
+
+### Fixed
+
+- **Dashboard widget loading flash** — All 8 generic dashboard components (ValueCard, LineChart, BarChart, PieChart, Sparkline, ProgressBar, LEDIndicator, AgentMonitorWidget) now use `showLoading = loading && !hasData` pattern, preventing skeleton flash during periodic telemetry refreshes
+- **DashboardGrid blank first frame** — Initial container width measurement now uses `useLayoutEffect` instead of `useEffect`, eliminating the blank frame caused by width 0 → measure → re-render
+- **Dashboard DTO type safety** — Refactored `fromDashboardDTO` / `toDashboardDTO` to eliminate all `any` casts. Proper `ComponentDTO` interface, discriminated `GenericComponent`/`BusinessComponent` handling via `isGenericComponent()`
+- **i18n fallback** — Removed hardcoded `lng: 'en'` default, allowing proper browser language detection. Settings tab labels now correctly use `settings:` namespace prefix
+- **Agent config state injection** — Removed fragile `_agentsList`/`_visionModelsList` injection pattern in `componentConfig`. Dashboard now reads agent/model lists directly from component state
+- **Extension sync consolidation** — Merged three separate extension sync effects in `App.tsx` into two cleaner effects (immediate on auth + periodic 60s timer)
+- **Pending devices broker check** — Now checks both built-in MQTT broker (`connected`) and external brokers, instead of only external
+- **Export dialog tree-shaking** — `xlsx` and `jszip` now loaded via dynamic `import()`, reducing initial bundle size
+- **useDataSource cache leak** — Added `beforeunload` cleanup for the telemetry cache interval, preventing HMR interval accumulation in development
+
 ## [v0.7.4] - 2026-05-11
 
 ### Added

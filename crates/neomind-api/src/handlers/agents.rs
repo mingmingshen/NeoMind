@@ -1,7 +1,7 @@
 //! AI Agents handlers for user-defined automation agents.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -126,6 +126,14 @@ struct AgentDto {
     context_window_size: Option<usize>,
     /// Execution mode: "focused" or "free"
     execution_mode: String,
+}
+
+/// Lightweight agent summary for dropdowns/selectors.
+#[derive(Debug, serde::Serialize)]
+struct AgentSummaryDto {
+    id: String,
+    name: String,
+    status: String,
 }
 
 /// AI Agent detail.
@@ -817,20 +825,45 @@ fn format_datetime(ts: i64) -> String {
 // Handler implementations
 // ============================================================================
 
-/// List all AI Agents.
-pub async fn list_agents(State(state): State<ServerState>) -> HandlerResult<Value> {
+/// List all AI Agents (full or summary via ?view=summary).
+#[derive(serde::Deserialize)]
+pub struct ListAgentsQuery {
+    /// When "summary", return lightweight {id, name, status} only.
+    view: Option<String>,
+}
+
+pub async fn list_agents(
+    State(state): State<ServerState>,
+    Query(query): Query<ListAgentsQuery>,
+) -> HandlerResult<Value> {
     let store = &state.agents.agent_store;
     let agents = store
         .query_agents(AgentFilter::default())
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to query agents: {}", e)))?;
 
-    let dtos: Vec<AgentDto> = agents.into_iter().map(AgentDto::from).collect();
+    if query.view.as_deref() == Some("summary") {
+        let summaries: Vec<AgentSummaryDto> = agents
+            .into_iter()
+            .map(|a| AgentSummaryDto {
+                id: a.id,
+                name: a.name,
+                status: format!("{:?}", a.status),
+            })
+            .collect();
 
-    ok(json!({
-        "agents": dtos,
-        "count": dtos.len(),
-    }))
+        ok(json!({
+            "agents": summaries,
+            "count": summaries.len(),
+        }))
+    } else {
+        let dtos: Vec<AgentDto> = agents.into_iter().map(AgentDto::from).collect();
+
+        ok(json!({
+            "agents": dtos,
+            "count": dtos.len(),
+        }))
+    }
 }
 
 /// Get an AI Agent by ID.

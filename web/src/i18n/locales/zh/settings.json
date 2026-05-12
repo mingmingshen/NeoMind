@@ -1,6 +1,9 @@
 {
   "title": "设置",
   "description": "语言、主题及系统信息",
+  "llmBackends": "LLM 后端",
+  "deviceConnections": "设备连接",
+  "alertChannels": "消息通道",
   "preferences": "偏好设置",
   "preferencesDesc": "自定义您的 NeoMind 使用体验",
   "about": "关于",

@@ -259,8 +259,11 @@ export function DashboardGrid({
           width: 8px; height: 8px;
         }
         .react-grid-layout:not(.edit-mode) .react-resizable-handle { display: none; }
+        .react-grid-layout:not(.edit-mode) {
+          transition: none !important;
+        }
         .react-grid-layout:not(.edit-mode) > .react-grid-item {
-          ${transitionsEnabled ? 'transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), width 200ms cubic-bezier(0.4, 0, 0.2, 1), height 200ms cubic-bezier(0.4, 0, 0.2, 1);' : 'transition: none;'}
+          ${transitionsEnabled ? 'transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);' : 'transition: none;'}
         }
       `}</style>
       {width > 0 && (

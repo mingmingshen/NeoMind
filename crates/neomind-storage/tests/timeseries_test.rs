@@ -82,6 +82,8 @@ async fn test_timeseries_aggregation() {
         store.write("device1", "temperature", point).await.unwrap();
     }
 
+    store.flush().unwrap();
+
     // Query with aggregation (5-second buckets)
     let results = store
         .query_aggregated("device1", "temperature", now, now + 9, 5)
@@ -105,6 +107,8 @@ async fn test_timeseries_delete_range() {
         };
         store.write("device1", "temperature", point).await.unwrap();
     }
+
+    store.flush().unwrap();
 
     // Delete middle range
     store
@@ -177,6 +181,8 @@ async fn test_list_metrics() {
         store.write("device1", metric, point).await.unwrap();
     }
 
+    store.flush().unwrap();
+
     let metrics = store
         .list_metrics("device1")
         .await
@@ -206,6 +212,8 @@ async fn test_delete_metric() {
         p.timestamp = now + i;
         store.write("device1", "temperature", p).await.unwrap();
     }
+
+    store.flush().unwrap();
 
     // Delete the metric
     let deleted = store
@@ -247,6 +255,8 @@ async fn test_concurrent_writes() {
         handle.await.unwrap().unwrap();
     }
 
+    store.flush().unwrap();
+
     let results = store
         .query_range("device1", "temperature", now, now + 9, None)
         .await
@@ -275,6 +285,8 @@ async fn test_performance_stats() {
             .unwrap();
         store.query_latest("device1", "temperature").await.unwrap();
     }
+
+    store.flush().unwrap();
 
     let stats = store.get_stats().await;
     assert_eq!(stats.cache_hits, 5);
@@ -407,6 +419,8 @@ async fn test_quality_scores() {
         .await
         .unwrap();
 
+    store.flush().unwrap();
+
     let results = store
         .query_range("device1", "temperature", now, now + 1, None)
         .await
@@ -454,6 +468,8 @@ async fn test_time_range_query() {
         };
         store.write("device1", "temperature", point).await.unwrap();
     }
+
+    store.flush().unwrap();
 
     // Query specific range (should get points 5-14)
     let start = now + 5 * 60;

@@ -304,7 +304,7 @@ impl DeviceTool {
             // Concise mode: name/type only
             if !detailed {
                 result.push(serde_json::json!({
-                    "id": d.device_id,
+                    "device_id": d.device_id,
                     "name": d.name,
                     "type": d.device_type,
                 }));
@@ -314,7 +314,7 @@ impl DeviceTool {
             // Detailed mode: device info with inline metric/command names
             // so the LLM directly knows what it can query/control per device
             let mut device_json = serde_json::json!({
-                "id": d.device_id,
+                "device_id": d.device_id,
                 "name": d.name,
                 "type": d.device_type,
             });
@@ -453,7 +453,7 @@ impl DeviceTool {
 
         let mut device_json = if detailed {
             serde_json::json!({
-                "id": device.device_id,
+                "device_id": device.device_id,
                 "name": device.name,
                 "type": device.device_type,
                 "adapter_type": device.adapter_type,
@@ -461,7 +461,7 @@ impl DeviceTool {
             })
         } else {
             serde_json::json!({
-                "id": device.device_id,
+                "device_id": device.device_id,
                 "name": device.name,
                 "type": device.device_type
             })
@@ -635,6 +635,11 @@ impl DeviceTool {
 
         let device_id = self.resolve_device_id(device_id_input).await?;
 
+        // Get device name for better context in results
+        let device_name = self.device_service.get_device(&device_id)
+            .map(|d| d.name.clone())
+            .unwrap_or_default();
+
         let storage = self
             .storage
             .as_ref()
@@ -666,14 +671,14 @@ impl DeviceTool {
             end_time - default_window
         };
         // When the user specifies an explicit limit, respect it.
-        // Otherwise, return all points in the time range (up to a safety cap of 2000).
-        // This lets the LLM query "past hour" and get all ~60 per-minute points
-        // without needing to guess a limit value.
+        // Otherwise, return all points — the adaptive series compression
+        // will keep the output size manageable (stable periods compress to
+        // single "kept" entries). 100K covers ~70 days at 1-minute intervals.
         let has_explicit_limit = args.get("limit").is_some();
         let limit = if has_explicit_limit {
             args["limit"].as_u64().unwrap_or(200) as usize
         } else {
-            2000 // safety cap — time range already constrains the result set
+            100_000 // covers all practical time ranges; adaptive compression handles output size
         };
 
         if let Some(m) = metric {
@@ -754,6 +759,7 @@ impl DeviceTool {
                         );
                         return Ok(ToolOutput::success(serde_json::json!({
                             "device_id": device_id,
+                            "device_name": device_name,
                             "metric": m,
                             "error": format!("Metric '{}' not found for device '{}'. Use one of the available metrics below.", m, device_id),
                             "available_metrics": available,
@@ -764,6 +770,7 @@ impl DeviceTool {
                 // No template found either — return a generic error
                 return Ok(ToolOutput::success(serde_json::json!({
                     "device_id": device_id,
+                    "device_name": device_name,
                     "metric": m,
                     "error": format!("Metric '{}' not found. Use device(action=\"list\", response_format=\"detailed\") to see available metrics. Use device(action=\"latest\") to get all current values.", m),
                     "points": []
@@ -822,23 +829,137 @@ impl DeviceTool {
 
                 Ok(ToolOutput::success(serde_json::json!({
                     "device_id": device_id,
+                    "device_name": device_name,
                     "metric": resolved_metric,
                     "data_type": "image",
                     "points": points
                 })))
             } else {
-                Ok(ToolOutput::success(serde_json::json!({
+                let count = data.len();
+                let first_ts = data.first().map(|p| p.timestamp).unwrap_or(0);
+                let last_ts = data.last().map(|p| p.timestamp).unwrap_or(0);
+                let interval = if count > 1 {
+                    (last_ts - first_ts) / (count as i64 - 1)
+                } else {
+                    0
+                };
+
+                // Format timestamp as "MM-DD HH:MM"
+                let fmt_ts = |ts: i64| -> String {
+                    chrono::DateTime::from_timestamp(ts, 0)
+                        .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                        .unwrap_or_else(|| ts.to_string())
+                };
+                // Format a time range, omitting date from end when same day
+                let fmt_range = |s: i64, e: i64| -> String {
+                    let ss = fmt_ts(s);
+                    let se = fmt_ts(e);
+                    if ss.len() >= 11 && se.len() >= 11 && &ss[0..5] == &se[0..5] {
+                        format!("{}~{}", ss, &se[6..])
+                    } else {
+                        format!("{}~{}", ss, se)
+                    }
+                };
+
+                let from_str = fmt_ts(first_ts);
+                let to_str = fmt_ts(last_ts);
+
+                // Build representation A: compact values array
+                let json_values: Vec<Value> =
+                    data.iter().map(|p| p.value.to_json_value()).collect();
+                let compact = serde_json::json!({
                     "device_id": device_id,
+                    "device_name": device_name,
                     "metric": resolved_metric,
-                    "points": data.iter().map(|p| serde_json::json!({
-                        "timestamp": p.timestamp,
-                        "value": p.value.to_json_value()
-                    })).collect::<Vec<_>>()
-                })))
+                    "from": from_str,
+                    "to": to_str,
+                    "sampling": interval,
+                    "total_points": count,
+                    "values": json_values,
+                });
+
+                // Build representation B: adaptive series (kept / fluctuated)
+                // Phase 1: identify runs of consecutive equal values
+                let mut runs: Vec<(usize, usize, Value)> = Vec::new(); // (start, end_exclusive, value)
+                let mut run_start = 0;
+                for i in 1..=count {
+                    let is_eq = if i < count {
+                        data[i].value.to_json_value() == data[run_start].value.to_json_value()
+                    } else {
+                        false
+                    };
+                    if !is_eq {
+                        runs.push((run_start, i, data[run_start].value.to_json_value()));
+                        run_start = i;
+                    }
+                }
+
+                // Phase 2: merge runs into series entries
+                // Long runs (>=3) → "kept", consecutive short runs → "fluctuated"
+                const MIN_STABLE: usize = 3;
+                let mut series: Vec<Value> = Vec::new();
+                let mut ri = 0;
+                while ri < runs.len() {
+                    let (rs, re, rv) = &runs[ri];
+                    let run_len = re - rs;
+
+                    if run_len >= MIN_STABLE {
+                        series.push(serde_json::json!({
+                            "range": fmt_range(data[*rs].timestamp, data[re - 1].timestamp),
+                            "kept": rv,
+                        }));
+                        ri += 1;
+                    } else {
+                        // Collect consecutive short runs into one "fluctuated" segment
+                        let seg_start = *rs;
+                        let mut seg_end = *re;
+                        let mut vals: Vec<Value> = vec![rv.clone(); run_len];
+                        ri += 1;
+
+                        while ri < runs.len() {
+                            let (nrs, nre, nrv) = &runs[ri];
+                            if nre - nrs >= MIN_STABLE {
+                                break; // hit a stable run
+                            }
+                            for _ in 0..(nre - nrs) {
+                                vals.push(nrv.clone());
+                            }
+                            seg_end = *nre;
+                            ri += 1;
+                        }
+
+                        series.push(serde_json::json!({
+                            "range": fmt_range(data[seg_start].timestamp, data[seg_end - 1].timestamp),
+                            "fluctuated": vals,
+                        }));
+                    }
+                }
+
+                let adaptive = serde_json::json!({
+                    "device_id": device_id,
+                    "device_name": device_name,
+                    "metric": resolved_metric,
+                    "from": from_str,
+                    "to": to_str,
+                    "sampling": interval,
+                    "total_points": count,
+                    "series": series,
+                });
+
+                // Pick whichever representation is smaller
+                let compact_len = compact.to_string().len();
+                let adaptive_len = adaptive.to_string().len();
+
+                if adaptive_len < compact_len {
+                    Ok(ToolOutput::success(adaptive))
+                } else {
+                    Ok(ToolOutput::success(compact))
+                }
             }
         } else {
             Ok(ToolOutput::success(serde_json::json!({
                 "device_id": device_id,
+                "device_name": device_name,
                 "message": "Specify a metric name to query data"
             })))
         }
@@ -1276,7 +1397,7 @@ impl AgentTool {
             .map(|a| {
                 if is_detailed(args) {
                     serde_json::json!({
-                        "id": a.id,
+                        "agent_id": a.id,
                         "name": a.name,
                         "description": a.description,
                         "status": format!("{:?}", a.status).to_lowercase(),
@@ -1284,7 +1405,7 @@ impl AgentTool {
                     })
                 } else {
                     serde_json::json!({
-                        "id": a.id,
+                        "agent_id": a.id,
                         "name": a.name,
                         "status": format!("{:?}", a.status).to_lowercase(),
                         "schedule_type": format!("{:?}", a.schedule.schedule_type).to_lowercase()
@@ -1314,7 +1435,7 @@ impl AgentTool {
             .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", &resolved_id, "list")))?;
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": agent.id,
+            "agent_id": agent.id,
             "name": agent.name,
             "description": agent.description,
             "user_prompt": agent.user_prompt,
@@ -1507,7 +1628,7 @@ impl AgentTool {
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": id,
+            "agent_id": id,
             "name": agent.name,
             "status": "created"
         })))
@@ -1543,7 +1664,7 @@ impl AgentTool {
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": resolved_id,
+            "agent_id": resolved_id,
             "status": "updated"
         })))
     }
@@ -1589,7 +1710,7 @@ impl AgentTool {
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": agent_id,
+            "agent_id": agent_id,
             "action": control_action,
             "status": "success"
         })))
@@ -2158,7 +2279,7 @@ impl RuleTool {
                 };
                 if detailed {
                     serde_json::json!({
-                        "id": r.id.to_string(),
+                        "rule_id": r.id.to_string(),
                         "name": r.name,
                         "description": r.description,
                         "status": status_str,
@@ -2168,7 +2289,7 @@ impl RuleTool {
                     })
                 } else {
                     serde_json::json!({
-                        "id": r.id.to_string(),
+                        "rule_id": r.id.to_string(),
                         "name": r.name,
                         "status": status_str,
                         "description": r.description
@@ -2207,7 +2328,7 @@ impl RuleTool {
         };
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": rule.id.to_string(),
+            "rule_id": rule.id.to_string(),
             "name": rule.name,
             "description": rule.description,
             "status": status_str,
@@ -2244,7 +2365,7 @@ impl RuleTool {
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": resolved_id,
+            "rule_id": resolved_id,
             "status": "deleted"
         })))
     }
@@ -2261,7 +2382,7 @@ impl RuleTool {
             .map_err(|e| ToolError::Execution(format!("Failed to create rule. Check DSL syntax and try again. Error: {}", e)))?;
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": rule_id.to_string(),
+            "rule_id": rule_id.to_string(),
             "status": "created",
             "message": "Rule created successfully"
         })))
@@ -2305,8 +2426,8 @@ impl RuleTool {
             })?;
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": new_rule_id.to_string(),
-            "old_id": resolved_id,
+            "rule_id": new_rule_id.to_string(),
+            "old_rule_id": resolved_id,
             "status": "updated",
             "message": "Rule updated successfully"
         })))
@@ -2371,7 +2492,7 @@ impl RuleTool {
                 .map_err(|e| ToolError::Execution(format!("Failed to resume rule. The rule engine may be busy. Error: {}", e)))?;
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": resolved_id,
+                "rule_id": resolved_id,
                 "status": "resumed",
                 "enabled": true,
                 "message": "Rule resumed successfully"
@@ -2383,7 +2504,7 @@ impl RuleTool {
                 .map_err(|e| ToolError::Execution(format!("Failed to pause rule. The rule engine may be busy. Error: {}", e)))?;
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": resolved_id,
+                "rule_id": resolved_id,
                 "status": "paused",
                 "enabled": false,
                 "message": "Rule paused successfully"
@@ -2680,7 +2801,7 @@ impl MessageTool {
                     let level_str = Self::severity_to_level(m.severity);
                     if detailed {
                         serde_json::json!({
-                            "id": m.id.to_string(),
+                            "message_id": m.id.to_string(),
                             "title": m.title,
                             "message": m.message,
                             "level": level_str,
@@ -2690,7 +2811,7 @@ impl MessageTool {
                         })
                     } else {
                         serde_json::json!({
-                            "id": m.id.to_string(),
+                            "message_id": m.id.to_string(),
                             "title": m.title,
                             "level": level_str,
                             "read": !m.is_active()
@@ -2729,12 +2850,12 @@ impl MessageTool {
                 .map(|m| {
                     if detailed {
                         serde_json::to_value(m).unwrap_or_else(|_| serde_json::json!({
-                            "id": m.id,
+                            "message_id": m.id,
                             "title": m.title,
                         }))
                     } else {
                         serde_json::json!({
-                            "id": m.id,
+                            "message_id": m.id,
                             "title": m.title,
                             "level": Self::enum_to_level(&m.level),
                             "read": m.read
@@ -2773,7 +2894,7 @@ impl MessageTool {
             let level_str = Self::severity_to_level(msg.severity);
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": msg.id.to_string(),
+                "message_id": msg.id.to_string(),
                 "title": msg.title,
                 "message": msg.message,
                 "level": level_str,
@@ -2789,7 +2910,7 @@ impl MessageTool {
                 .ok_or_else(|| ToolError::Execution(not_found_msg("Message", id_str, "list")))?;
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": msg.id,
+                "message_id": msg.id,
                 "title": msg.title,
                 "message": msg.message,
                 "level": Self::enum_to_level(&msg.level),
@@ -2835,7 +2956,7 @@ impl MessageTool {
                 .map_err(|e| ToolError::Execution(e.to_string()))?;
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": msg.id.to_string(),
+                "message_id": msg.id.to_string(),
                 "status": "sent"
             })))
         } else {
@@ -2855,7 +2976,7 @@ impl MessageTool {
             self.messages.write().await.push(msg);
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": id,
+                "message_id": id,
                 "status": "sent"
             })))
         }
@@ -2882,7 +3003,7 @@ impl MessageTool {
                 .map_err(|e| ToolError::Execution(e.to_string()))?;
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": resolved_id,
+                "message_id": resolved_id,
                 "status": "read"
             })))
         } else {
@@ -2895,7 +3016,7 @@ impl MessageTool {
             msg.read = true;
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": resolved_id,
+                "message_id": resolved_id,
                 "status": "read"
             })))
         }
@@ -3021,7 +3142,7 @@ impl ExtensionAggregatedTool {
             .map(|info| {
                 if detailed {
                     serde_json::json!({
-                        "id": info.metadata.id,
+                        "extension_id": info.metadata.id,
                         "name": info.metadata.name,
                         "version": info.metadata.version,
                         "description": info.metadata.description,
@@ -3031,7 +3152,7 @@ impl ExtensionAggregatedTool {
                     })
                 } else {
                     serde_json::json!({
-                        "id": info.metadata.id,
+                        "extension_id": info.metadata.id,
                         "name": info.metadata.name,
                         "state": format!("{:?}", info.state),
                         "commands": info.commands.len()
@@ -3082,7 +3203,7 @@ impl ExtensionAggregatedTool {
             .collect();
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": info.metadata.id,
+            "extension_id": info.metadata.id,
             "name": info.metadata.name,
             "version": info.metadata.version,
             "description": info.metadata.description,
@@ -3109,7 +3230,7 @@ impl ExtensionAggregatedTool {
             .unwrap_or(false);
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": info.metadata.id,
+            "extension_id": info.metadata.id,
             "name": info.metadata.name,
             "state": format!("{:?}", info.state),
             "healthy": healthy,

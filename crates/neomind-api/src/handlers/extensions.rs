@@ -865,7 +865,9 @@ async fn publish_extension_metrics(
                     labels: None,
                     quality: None,
                 };
-                let _ = event_bus.publish(event).await;
+                if !event_bus.publish(event).await {
+                    tracing::debug!("No subscribers for extension output event");
+                }
             }
         }
     }

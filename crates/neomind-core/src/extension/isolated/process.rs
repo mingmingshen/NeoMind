@@ -627,9 +627,15 @@ impl IsolatedExtension {
             .spawn()
             .map_err(|e| IsolatedExtensionError::SpawnFailed(e.to_string()))?;
 
-        let stdin = BufWriter::new(child.stdin.take().expect("Child stdin not available"));
-        let stdout = BufReader::new(child.stdout.take().expect("Child stdout not available"));
-        let stderr = child.stderr.take().expect("Child stderr not available");
+        let stdin = BufWriter::new(child.stdin.take().ok_or_else(|| {
+            IsolatedExtensionError::SpawnFailed("Child stdin not available".to_string())
+        })?);
+        let stdout = BufReader::new(child.stdout.take().ok_or_else(|| {
+            IsolatedExtensionError::SpawnFailed("Child stdout not available".to_string())
+        })?);
+        let stderr = child.stderr.take().ok_or_else(|| {
+            IsolatedExtensionError::SpawnFailed("Child stderr not available".to_string())
+        })?;
 
         // Save process ID for resource monitoring
         let pid = child.id();

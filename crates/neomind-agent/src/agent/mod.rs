@@ -120,13 +120,14 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
         // Handle role:tool messages (tool result messages from LargeDataCache)
         if msg.role == "tool" {
             tool_result_count += 1;
-            if tool_result_count <= keep_recent && msg.content.len() <= 4000 {
+            if tool_result_count <= keep_recent && msg.content.len() <= 8000 {
                 result.push(msg.clone());
             } else {
-                // Compress tool result — may already be a cache summary
-                let summary: Arc<str> = if msg.content.len() > 1000 {
+                // Compress tool result — preserve meaningful preview
+                let summary: Arc<str> = if msg.content.len() > 800 {
                     let name = msg.tool_call_name.as_deref().unwrap_or("unknown");
-                    format!("[Tool: {} returned data (see cache)]", name).into()
+                    let preview: String = msg.content.chars().take(500).collect();
+                    format!("[Tool: {} result ({} chars): {}...]", name, msg.content.len(), preview).into()
                 } else {
                     msg.content.clone()
                 };

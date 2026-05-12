@@ -262,7 +262,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         // === Device Tool (aggregates 4 device operations) ===
         LlmToolDefinition {
             name: "device".to_string(),
-            description: "Device management tool. Actions: list (list devices), latest (all current metric values), history (historical time-series data for one metric), control (send commands), write_metric (write a data point). Supports fuzzy device name matching.".to_string(),
+            description: "Device management tool. Actions: list (list devices), latest (all current metric values), history (compact time-series: metadata header + flat values array, not point-by-point JSON), control (send commands), write_metric (write a data point). Supports fuzzy device name matching.".to_string(),
             aliases: vec!["device".to_string(), "devices".to_string(), "sensor".to_string(), "iot".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![

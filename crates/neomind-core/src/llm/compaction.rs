@@ -130,7 +130,7 @@ impl CompactionConfig {
                 reserve_tokens_floor: 1024,
                 max_history_share: 0.92,
                 min_recent_messages: 8,
-                max_message_length: 8192,
+                max_message_length: 32768,
                 compact_tool_results: true,
                 keep_recent_tool_results: 6,
             }
@@ -139,7 +139,7 @@ impl CompactionConfig {
                 reserve_tokens_floor: 1024,
                 max_history_share: 0.88,
                 min_recent_messages: 6,
-                max_message_length: 6144,
+                max_message_length: 16384,
                 compact_tool_results: true,
                 keep_recent_tool_results: 4,
             }
@@ -280,10 +280,15 @@ pub fn compact_messages(
         }
 
         // Handle tool result compaction
+        // Note: This compaction path only applies to the executor path (neomind-core Message).
+        // The streaming chat path (AgentMessage) has its own compaction in streaming.rs.
         if config.compact_tool_results && priority == MessagePriority::Assistant {
-            // Check if this looks like a tool result (has tool_call_id in text)
+            // Check if this looks like a tool result.
+            // Matches both: "tool_call_id" (structured) and "Tool 'name' result:" (plain text)
             let content_text = content_as_text(&msg.content);
-            if content_text.contains("tool_call_id") {
+            let is_tool_result = content_text.contains("tool_call_id")
+                || content_text.starts_with("Tool '");
+            if is_tool_result {
                 tool_result_count += 1;
                 if tool_result_count > config.keep_recent_tool_results {
                     // Summarize old tool result

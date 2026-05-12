@@ -209,6 +209,10 @@ export function LEDIndicator({
   const stateConfig = getStateConfig(t)
   const { data, loading, error } = useDataSource<unknown>(dataSource)
 
+  // Prevent loading flash: only show skeleton when loading AND no data exists yet
+  const hasData = data !== null && data !== undefined
+  const showLoading = loading && !hasData
+
   // Determine state, label, and color from matching rule
   const { state: ledState, label: ruleLabel, color: ruleColor } = useMemo(() => {
     if (error) return { state: 'error' as LEDState }
@@ -252,7 +256,7 @@ export function LEDIndicator({
   }
 
   // Loading state
-  if (loading) {
+  if (showLoading) {
     return (
       <div className={cn(dashboardCardBase, 'flex-row items-center', dashboardComponentSize[size].contentGap, dashboardComponentSize[size].padding, className)}>
         <Skeleton className={cn(dashboardComponentSize[size].iconContainer, 'rounded-full')} />

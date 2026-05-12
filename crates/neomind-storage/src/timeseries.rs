@@ -390,6 +390,77 @@ pub struct AggregateResult {
     pub last_value: Option<serde_json::Value>,
 }
 
+/// Buffered write entry — groups points by (source_id, metric).
+#[derive(Debug)]
+struct BufferedWrite {
+    source_id: String,
+    metric: String,
+    point: DataPoint,
+}
+
+/// Write-behind buffer for batching single-point writes into efficient batch transactions.
+struct WriteBuffer {
+    /// Pending writes, guarded by a parking_lot mutex (non-async, held briefly).
+    pending: Mutex<Vec<BufferedWrite>>,
+    /// Maximum number of buffered points before automatic flush.
+    max_size: usize,
+    /// Handle to the background flush task (for graceful shutdown).
+    flush_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Shutdown flag for the background flush task.
+    shutdown: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl WriteBuffer {
+    fn new(max_size: usize) -> Self {
+        Self {
+            pending: Mutex::new(Vec::with_capacity(max_size)),
+            max_size,
+            flush_task: Mutex::new(None),
+            shutdown: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    /// Push a write into the buffer. Returns `true` if the buffer is full and should be flushed.
+    fn push(&self, write: BufferedWrite) -> bool {
+        let mut pending = self.pending.lock();
+        pending.push(write);
+        pending.len() >= self.max_size
+    }
+
+    /// Drain all pending writes, returning them.
+    fn drain(&self) -> Vec<BufferedWrite> {
+        let mut pending = self.pending.lock();
+        std::mem::take(&mut *pending)
+    }
+
+    /// Start the background periodic flush task.
+    fn start_flush_task(&self, store: Arc<TimeSeriesStore>, interval: Duration) {
+        let shutdown = self.shutdown.clone();
+        let handle = tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            ticker.tick().await; // skip first immediate tick
+            loop {
+                ticker.tick().await;
+                if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                // Offload synchronous redb writes to a blocking thread
+                let s = store.clone();
+                let _ = tokio::task::spawn_blocking(move || s.flush_buffer()).await;
+            }
+            // Final flush on shutdown
+            let s = store.clone();
+            let _ = tokio::task::spawn_blocking(move || s.flush_buffer()).await;
+        });
+        *self.flush_task.lock() = Some(handle);
+    }
+
+    /// Signal the background flush task to stop.
+    fn abort(&self) {
+        self.shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 /// Time series storage using redb.
 pub struct TimeSeriesStore {
     db: Arc<Database>,
@@ -407,6 +478,8 @@ pub struct TimeSeriesStore {
     cache_ttl: Duration,
     /// Storage path for singleton
     path: String,
+    /// Write-behind buffer for batching single-point writes.
+    write_buffer: WriteBuffer,
 }
 
 /// Global time series store singleton (thread-safe).
@@ -455,7 +528,14 @@ impl TimeSeriesStore {
             write_semaphore: Arc::new(Semaphore::new(config.max_concurrent_writes)),
             cache_ttl: config.cache_ttl,
             path: path_str,
+            write_buffer: WriteBuffer::new(config.write_buffer_size),
         });
+
+        // Start background flush task
+        store.write_buffer.start_flush_task(
+            store.clone(),
+            config.write_buffer_flush_interval,
+        );
 
         *TIMESERIES_STORE_SINGLETON.lock() = Some(store.clone());
         Ok(store)
@@ -519,52 +599,126 @@ impl TimeSeriesStore {
         self.latest_cache.iter().count()
     }
 
-    /// Write a data point.
+    /// Write a data point (buffered).
+    ///
+    /// The point is pushed into an in-memory buffer and flushed to redb either:
+    /// - When the buffer reaches `write_buffer_size` entries (immediate flush)
+    /// - On the periodic background flush interval
+    /// - When `flush()` is called explicitly
+    ///
+    /// This amortizes transaction overhead across many data points, significantly
+    /// improving throughput for high-frequency device telemetry.
     pub async fn write(
-        &self,
+        self: &Arc<Self>,
         source_id: &str,
         metric: &str,
         point: DataPoint,
     ) -> Result<(), Error> {
-        let start = Instant::now();
-        let _permit = self
-            .write_semaphore
-            .acquire()
-            .await
-            .map_err(|_| Error::Storage("Write semaphore closed".to_string()))?;
-
-        let key = (source_id, metric, point.timestamp);
-        let value = serde_json::to_vec(&point)?;
-
-        let write_txn = self.db.begin_write()?;
-        {
-            let mut table = write_txn.open_table(TIMESERIES_TABLE)?;
-            table.insert(key, value.as_slice())?;
-        }
-        write_txn.commit()?;
-
-        // Update cache - DashMap is lock-free
+        // Update cache immediately (reads need latest value)
         self.update_cache(source_id, metric, point.clone()).await;
 
-        // Update metrics info - DashMap entry API is lock-free
-        let metric_key = format!("{}:{}", source_id, metric);
-        self.metrics_info
-            .entry(metric_key)
-            .and_modify(|entry| {
-                entry.last_update = point.timestamp;
-                entry.point_count += 1;
-            })
-            .or_insert_with(|| MetricInfo {
-                last_update: point.timestamp,
-                point_count: 1,
-            });
+        let should_flush = self.write_buffer.push(BufferedWrite {
+            source_id: source_id.to_string(),
+            metric: metric.to_string(),
+            point,
+        });
 
-        // Record stats
-        let mut stats = self.stats.write().await;
-        stats.record_write(start.elapsed());
+        if should_flush {
+            let store = Arc::clone(self);
+            tokio::task::spawn_blocking(move || store.flush_buffer())
+                .await
+                .map_err(|e| Error::Storage(format!("spawn_blocking flush: {}", e)))?;
+        }
 
         Ok(())
     }
+
+    /// Flush all buffered writes to redb in batched transactions.
+    ///
+    /// Groups buffered points by (source_id, metric) and writes each group
+    /// as a single transaction. Called automatically by the background task
+    /// and when the buffer is full.
+    fn flush_buffer(&self) {
+        let drained = self.write_buffer.drain();
+        if drained.is_empty() {
+            return;
+        }
+
+        let start = Instant::now();
+
+        // Group by (source_id, metric)
+        let mut groups: std::collections::HashMap<(String, String), Vec<DataPoint>> =
+            std::collections::HashMap::new();
+        for bw in drained {
+            groups
+                .entry((bw.source_id, bw.metric))
+                .or_default()
+                .push(bw.point);
+        }
+
+        let total_count: usize = groups.values().map(|v| v.len()).sum();
+
+        // Write each group in a single transaction
+        for ((source_id, metric), points) in &groups {
+            if let Err(e) = self.write_batch_sync(source_id, metric, points) {
+                tracing::error!(
+                    "Failed to flush batch for {}/{}: {}",
+                    source_id,
+                    metric,
+                    e
+                );
+            }
+        }
+
+        // Record stats
+        if let Ok(mut stats) = self.stats.try_write() {
+            stats.write_count += total_count as u64;
+            stats.total_write_ns += start.elapsed().as_nanos() as u64;
+        }
+    }
+
+    /// Synchronous batch write (used by flush_buffer).
+    fn write_batch_sync(
+        &self,
+        source_id: &str,
+        metric: &str,
+        points: &[DataPoint],
+    ) -> Result<(), Error> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(TIMESERIES_TABLE)?;
+            for point in points {
+                let key = (source_id, metric, point.timestamp);
+                let value = serde_json::to_vec(point)?;
+                table.insert(key, value.as_slice())?;
+            }
+        }
+        write_txn.commit()?;
+
+        // Update metrics info
+        let metric_key = format!("{}:{}", source_id, metric);
+        let last_ts = points.last().map(|p| p.timestamp).unwrap_or(0);
+        self.metrics_info
+            .entry(metric_key)
+            .and_modify(|entry| {
+                entry.last_update = last_ts;
+                entry.point_count += points.len() as u64;
+            })
+            .or_insert_with(|| MetricInfo {
+                last_update: last_ts,
+                point_count: points.len() as u64,
+            });
+
+        Ok(())
+    }
+
+    /// Flush all buffered writes and stop the background flush task.
+    /// Call this on graceful shutdown to ensure no data is lost.
+    pub fn shutdown(&self) {
+        self.write_buffer.abort();
+        self.flush_buffer();
+    }
+
 
     /// Update the latest value cache.
     async fn update_cache(&self, source_id: &str, metric: &str, point: DataPoint) {
@@ -1173,9 +1327,10 @@ impl TimeSeriesStore {
         Ok(count)
     }
 
-    /// Flush all data to disk (redb auto-flushes).
+    /// Flush all buffered writes to disk, then sync redb.
     pub fn flush(&self) -> Result<(), Error> {
-        // redb auto-manages, no manual flush needed
+        self.flush_buffer();
+        // redb auto-manages persistence, no additional sync needed
         Ok(())
     }
 
@@ -1482,6 +1637,11 @@ pub struct TimeSeriesConfig {
     pub max_cache_size: usize,
     /// Maximum concurrent writes
     pub max_concurrent_writes: usize,
+    /// Write buffer size — single-point writes are buffered until this many
+    /// points accumulate, then flushed as a batch transaction.
+    pub write_buffer_size: usize,
+    /// How often the background task flushes buffered writes to disk.
+    pub write_buffer_flush_interval: Duration,
 }
 
 impl Default for TimeSeriesConfig {
@@ -1491,6 +1651,8 @@ impl Default for TimeSeriesConfig {
             cache_ttl: Duration::from_secs(60), // 1 minute
             max_cache_size: 1000,
             max_concurrent_writes: 10,
+            write_buffer_size: 200,
+            write_buffer_flush_interval: Duration::from_millis(500),
         }
     }
 }
@@ -1508,6 +1670,7 @@ mod tests {
             .write("device1", "temperature", point.clone())
             .await
             .unwrap();
+        store.flush().unwrap();
 
         let latest = store.query_latest("device1", "temperature").await.unwrap();
         assert!(latest.is_some());
@@ -1522,6 +1685,7 @@ mod tests {
             let point = DataPoint::new(1000 + i * 100, 20.0 + i as f64);
             store.write("device1", "temperature", point).await.unwrap();
         }
+        store.flush().unwrap();
 
         let result = store
             .query_range("device1", "temperature", 1000, 1500, None)
@@ -1572,6 +1736,7 @@ mod tests {
             .write("device2", "temp", DataPoint::new(1000, 22.0))
             .await
             .unwrap();
+        store.flush().unwrap();
 
         let metrics = store.list_metrics("device1").await.unwrap();
         assert_eq!(metrics.len(), 2);
@@ -1587,6 +1752,7 @@ mod tests {
             let point = DataPoint::new(1000 + i * 100, i as f64);
             store.write("device1", "temp", point).await.unwrap();
         }
+        store.flush().unwrap();
 
         let count = store
             .delete_range("device1", "temp", 1200, 1500)
@@ -1609,6 +1775,7 @@ mod tests {
             let point = DataPoint::new(1000 + i * 10, i as f64);
             store.write("device1", "counter", point).await.unwrap();
         }
+        store.flush().unwrap();
 
         let buckets = store
             .query_aggregated("device1", "counter", 1000, 2000, 100)
@@ -1658,6 +1825,7 @@ mod tests {
             let point = DataPoint::new(1000 + i * 10, i as f64);
             store.write("device1", "temp", point).await.unwrap();
         }
+        store.flush().unwrap();
 
         // Query with limit
         let result = store
@@ -1677,6 +1845,7 @@ mod tests {
             let point = DataPoint::new(1000 + i * 10, i as f64 * 2.0); // 0, 2, 4, 6, 8, 10, 12, 14, 16, 18
             store.write("device1", "value", point).await.unwrap();
         }
+        store.flush().unwrap();
 
         let buckets = store
             .query_aggregated("device1", "value", 1000, 1100, 100)
@@ -1701,6 +1870,7 @@ mod tests {
             let point = DataPoint::new(1000 + i * 100, i as f64);
             store.write("device1", "temp", point).await.unwrap();
         }
+        store.flush().unwrap();
 
         // Delete specific range
         let count = store
@@ -1745,6 +1915,7 @@ mod tests {
             .write("device1", "pressure", DataPoint::new(1000, 1013.25))
             .await
             .unwrap();
+        store.flush().unwrap();
 
         let metrics = store.list_metrics("device1").await.unwrap();
         assert_eq!(metrics.len(), 3);
@@ -1843,6 +2014,7 @@ mod tests {
             let point = DataPoint::new(1000, 20.0);
             store.write("device1", metric, point).await.unwrap();
         }
+        store.flush().unwrap();
 
         // Verify all metrics are listed
         let metrics = store.list_metrics("device1").await.unwrap();
@@ -1920,6 +2092,7 @@ mod tests {
                 store.write("device1", metric, point).await.unwrap();
             }
         }
+        store.flush().unwrap();
 
         // Query batch
         let results = store
@@ -1944,6 +2117,7 @@ mod tests {
             .write("device1", "temp", DataPoint::new(1000, 20.0))
             .await
             .unwrap();
+        store.flush().unwrap();
 
         // Query to populate cache
         let _ = store.query_latest("device1", "temp").await.unwrap();
@@ -1975,6 +2149,7 @@ mod tests {
             let point = DataPoint::new(1000 + i * 10, i as f64);
             store.write("device1", "temp", point).await.unwrap();
         }
+        store.flush().unwrap();
 
         let _ = store.query_latest("device1", "temp").await.unwrap();
 
@@ -2042,6 +2217,7 @@ mod tests {
             let point = DataPoint::new_string(1000 + i * 10, format!("value_{}", i));
             store.write("device1", "status", point).await.unwrap();
         }
+        store.flush().unwrap();
 
         let buckets = store
             .query_aggregated("device1", "status", 1000, 1100, 100)

@@ -50,6 +50,12 @@ function getStageConfig(stage?: string, t?: (key: string) => string) {
       icon: <Loader2 className="h-4 w-4 animate-spin" />
     }
   }
+  if (normalized.includes('compact') || normalized.includes('压缩') || normalized.includes('摘要')) {
+    return {
+      label: t ? t('stage.compacting') : '上下文压缩中',
+      icon: <Loader2 className="h-4 w-4 animate-spin" />
+    }
+  }
 
   // Default: use the stage value as-is
   return {

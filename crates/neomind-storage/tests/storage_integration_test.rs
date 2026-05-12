@@ -27,6 +27,8 @@ async fn test_timeseries_basic_write_read() {
         .await
         .unwrap();
 
+    store.flush().unwrap();
+
     let results = store
         .query_range(
             "device1",
@@ -73,6 +75,8 @@ async fn test_timeseries_query_range() {
         store.write("device1", "metric", point).await.unwrap();
     }
 
+    store.flush().unwrap();
+
     // Query a specific range (inclusive)
     let results = store
         .query_range("device1", "metric", now + 5 * 60, now + 15 * 60, None)
@@ -94,6 +98,8 @@ async fn test_timeseries_multiple_devices() {
         let point = DataPoint::new(now, 100.0);
         store.write(device, "status", point).await.unwrap();
     }
+
+    store.flush().unwrap();
 
     // Query each device
     for device in ["device1", "device2", "device3"] {
@@ -305,6 +311,8 @@ async fn test_timeseries_performance_write() {
         store.write("perf-device", "metric", point).await.unwrap();
     }
 
+    store.flush().unwrap();
+
     let results = store
         .query_range("perf-device", "metric", now, now + count, None)
         .await
@@ -354,6 +362,8 @@ async fn test_timeseries_large_value() {
         .await
         .unwrap();
 
+    store.flush().unwrap();
+
     let results = store
         .query_range(
             "device1",
@@ -379,6 +389,8 @@ async fn test_timeseries_negative_values() {
         .write("device1", "negative", point.clone())
         .await
         .unwrap();
+
+    store.flush().unwrap();
 
     let results = store
         .query_range(
@@ -440,6 +452,8 @@ async fn test_timeseries_concurrent_writes() {
     for handle in handles {
         handle.await.unwrap();
     }
+
+    store.flush().unwrap();
 
     // Verify all writes succeeded
     for i in 0..10 {

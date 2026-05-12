@@ -309,6 +309,10 @@ export function PieChart({
     }
   )
 
+  // Prevent loading flash: only show skeleton when loading AND no data exists yet
+  const hasData = data !== null && data !== undefined && (Array.isArray(data) ? data.length > 0 : true)
+  const showLoading = loading && !hasData
+
   // Get device names for labels
   const getDeviceName = (deviceId?: string): string => {
     if (!deviceId) return t('chart.value')
@@ -474,7 +478,7 @@ export function PieChart({
     ]
   }, [data, propData, dataSource, dataMapping, effectiveAggregate, loading, t, colors])
 
-  if (loading) {
+  if (showLoading) {
     return (
       <div className={cn(dashboardCardBase, config.padding, className)}>
         {title && (

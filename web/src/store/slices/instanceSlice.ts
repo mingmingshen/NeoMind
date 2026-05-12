@@ -15,6 +15,7 @@ import { api, getApiBase, setApiBase, setApiKey, clearApiKey } from '@/lib/api'
 import { tokenManager } from '@/lib/auth'
 import { logError } from '@/lib/errors'
 import { INSTANCE_CACHE_KEY, CURRENT_INSTANCE_KEY, PENDING_SWITCH_KEY } from '@/lib/instance-constants'
+import { fetchCache } from '@/lib/utils/async'
 
 // ============================================================================
 // API key decryption (XOR + hex, matching backend's xor_encode)
@@ -149,7 +150,8 @@ function getCachedInstances(): InstanceInfo[] {
 /** Sync instance list to localStorage cache (strips API keys for security). */
 function syncCache(instances: InstanceInfo[]) {
   try {
-    const safe = instances.map(({ api_key: _, ...rest }) => rest)
+    // Strip both api_key (masked) and encrypted_key (decodable) before caching
+    const safe = instances.map(({ api_key: _, encrypted_key: __, ...rest }) => rest)
     localStorage.setItem(INSTANCE_CACHE_KEY, JSON.stringify(safe))
   } catch { /* ignore storage errors */ }
 }
@@ -258,6 +260,8 @@ export const createInstanceSlice: StateCreator<
 
   // Fetch all instances — only works when connected to local instance
   fetchInstances: async () => {
+    if (!fetchCache.shouldFetch('instances')) return
+    fetchCache.markFetching('instances')
     const { isRemoteInstance } = get()
     // On remote instance, skip API call — use cached list
     if (isRemoteInstance()) {
@@ -265,6 +269,7 @@ export const createInstanceSlice: StateCreator<
       if (cached.length > 0) {
         set({ instances: cached, instanceLoading: false })
       }
+      fetchCache.markFetched('instances')
       return
     }
 
@@ -291,15 +296,18 @@ export const createInstanceSlice: StateCreator<
       } else {
         set({ instances, instanceLoading: false })
       }
+      fetchCache.markFetched('instances')
     } catch (err) {
       console.error('[fetchInstances] failed:', err)
       logError(err, { operation: 'fetchInstances' })
+      fetchCache.invalidate('instances')
       set({ instanceLoading: false })
     }
   },
 
   // Add a new instance
   addInstance: async (data) => {
+    fetchCache.invalidate('instances')
     const instance = await createInstanceApi(data)
     // Decrypt key from backend's encrypted_key
     if (instance.encrypted_key) {
@@ -315,6 +323,7 @@ export const createInstanceSlice: StateCreator<
 
   // Update an existing instance
   updateInstance: async (id, data) => {
+    fetchCache.invalidate('instances')
     const updated = await updateInstanceApi(id, data)
     // Update in-memory key from backend's encrypted_key
     if (updated.encrypted_key) {
@@ -333,6 +342,7 @@ export const createInstanceSlice: StateCreator<
 
   // Delete an instance
   deleteInstance: async (id) => {
+    fetchCache.invalidate('instances')
     await deleteInstanceApi(id)
     const instances = get().instances.filter((i) => i.id !== id)
     set({ instances })

@@ -331,7 +331,7 @@ pub struct AgentConfig {
 
 /// Default value for max tool calls per request.
 fn default_max_tool_calls() -> usize {
-    10
+    100
 }
 
 /// Default value for keep recent tool results.
@@ -841,7 +841,15 @@ pub struct LargeDataCache {
 }
 
 /// Threshold below which we don't cache — just pass through.
-const CACHE_THRESHOLD_BYTES: usize = 4 * 1024;
+/// Set to 32KB: compact time-series format (2000 points ≈ 14KB) should reach LLM intact.
+/// Only truly large payloads (images, huge JSON) get cached with a summary reference.
+const CACHE_THRESHOLD_BYTES: usize = 32 * 1024;
+
+/// Maximum number of cache entries. Oldest entries are evicted when exceeded.
+const MAX_CACHE_ENTRIES: usize = 20;
+
+/// Maximum total cache size in bytes (50MB). Oldest entries are evicted when exceeded.
+const MAX_CACHE_TOTAL_BYTES: usize = 50 * 1024 * 1024;
 
 impl LargeDataCache {
     /// Create a new empty cache.
@@ -849,8 +857,47 @@ impl LargeDataCache {
         Self::default()
     }
 
+    /// Evict oldest entries if cache exceeds limits.
+    fn evict_if_needed(&mut self) {
+        // Evict by count
+        while self.entries.len() > MAX_CACHE_ENTRIES {
+            if let Some(oldest_key) = self.entries
+                .iter()
+                .min_by_key(|(_, v)| v.cached_at)
+                .map(|(k, _)| k.clone())
+            {
+                tracing::debug!("Evicting cache entry '{}' (count limit)", oldest_key);
+                self.entries.remove(&oldest_key);
+            } else {
+                break;
+            }
+        }
+
+        // Evict by total size
+        let total_size: usize = self.entries.values().map(|e| e.size_bytes).sum();
+        if total_size > MAX_CACHE_TOTAL_BYTES {
+            // Sort by age (oldest first) and evict until under budget
+            let mut sorted: Vec<(String, i64)> = self.entries
+                .iter()
+                .map(|(k, v)| (k.clone(), v.cached_at))
+                .collect();
+            sorted.sort_by_key(|(_, ts)| *ts);
+
+            let mut current_size = total_size;
+            for (key, _) in sorted {
+                if current_size <= MAX_CACHE_TOTAL_BYTES {
+                    break;
+                }
+                if let Some(entry) = self.entries.remove(&key) {
+                    tracing::debug!("Evicting cache entry '{}' (size limit, freed {} bytes)", key, entry.size_bytes);
+                    current_size -= entry.size_bytes;
+                }
+            }
+        }
+    }
+
     /// Store a tool result. Returns a summary string to use in message history.
-    /// - Small results (<4KB): not cached, returned as-is
+    /// - Small results (<32KB): not cached, returned as-is
     /// - Large/image/base64 results: cached, returns summary with reference key
     pub fn store(&mut self, tool_name: &str, result: &str) -> String {
         let size_bytes = result.len();
@@ -870,6 +917,9 @@ impl LargeDataCache {
             cached_at: chrono::Utc::now().timestamp(),
         };
         self.entries.insert(tool_name.to_string(), cached);
+
+        // Evict oldest entries if cache exceeds size/count limits
+        self.evict_if_needed();
 
         // Return a concise summary for message history — NO raw base64 preview
         let human_size = Self::humanize_bytes(size_bytes);

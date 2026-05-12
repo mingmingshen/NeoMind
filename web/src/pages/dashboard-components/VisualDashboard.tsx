@@ -13,7 +13,9 @@ import { shallow } from 'zustand/shallow'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { useExtensionLifecycle } from '@/hooks/useExtensionLifecycle'
 import { useCommunityComponentLifecycle } from '@/hooks/useCommunityComponentLifecycle'
+import { useDashboardPrefetch } from '@/hooks/useDashboardPrefetch'
 import { logError } from '@/lib/errors'
+import { fetchCache } from '@/lib/utils/async'
 import { cn } from '@/lib/utils'
 import { chartColorsHex } from '@/design-system/tokens/color'
 import { useIsMobile, useTouchHover } from '@/hooks/useMobile'
@@ -205,7 +207,7 @@ import type { MarketComponentEntry } from '@/types/frontend-component'
 import { MobileEditBar } from '@/components/dashboard/MobileEditBar'
 import type { DashboardComponent, DataSourceOrList, DataSource, GenericComponent } from '@/types/dashboard'
 import { getSourceId, normalizeDataSource } from '@/types/dashboard'
-import type { Device, AiAgent } from '@/types'
+import type { Device } from '@/types'
 import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
 import { dynamicRegistry, dtoToComponentMeta } from '@/components/dashboard/registry/DynamicRegistry'
 import { communityRegistry } from '@/components/dashboard/registry/CommunityRegistry'
@@ -1235,6 +1237,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   // Community component lifecycle
   useCommunityComponentLifecycle()
 
+  // Pre-batch data loading: 1 batch request + telemetry cache warm-up
+  useDashboardPrefetch(currentDashboard?.components ?? [])
+
   // Memoize component library with refreshVersion dependency to trigger re-renders
   const componentLibrary = useMemo(() => getComponentLibrary(t), [t, refreshVersion, installedComponents.length])
 
@@ -1301,8 +1306,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const [layerEditorOpen, setLayerEditorOpen] = useState(false)
   const [layerEditorBindings, setLayerEditorBindings] = useState<LayerBinding[]>([])
 
-  // Agents for agent-monitor-widget config
-  const [agents, setAgents] = useState<AiAgent[]>([])
+  // Agents for agent-monitor-widget config (summaries only)
+  const [agents, setAgents] = useState<{ id: string; name: string; status: string }[]>([])
   const [agentsLoading, setAgentsLoading] = useState(false)
 
   // Vision models for ai-analyst config
@@ -1498,12 +1503,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   // Batch fetch current values for devices used in dashboard components
   // This ensures dashboard components have current_values after server restart
-  useEffect(() => {
-    if (devices.length === 0 || !currentDashboard) {
-      return
-    }
-
-    // Extract all unique device IDs from dashboard components
+  // Only re-fetches when the actual set of device IDs changes (not on every dashboard reference change)
+  const dashboardDeviceIdsKey = useMemo(() => {
     const deviceIds = new Set<string>()
     for (const dashboard of dashboards) {
       for (const component of dashboard.components) {
@@ -1512,7 +1513,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         if (dataSource && getSourceId(dataSource)) {
           deviceIds.add(getSourceId(dataSource)!)
         }
-        // Also check for devices in map-display bindings
         if (genericComponent.type === 'map-display') {
           const bindings = (genericComponent.config as any)?.bindings as MapBinding[] || []
           for (const binding of bindings) {
@@ -1524,16 +1524,18 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         }
       }
     }
+    return Array.from(deviceIds).sort().join(',')
+  }, [dashboards])
 
-    if (deviceIds.size > 0) {
-      fetchDevicesCurrentBatch(Array.from(deviceIds))
-    }
-  }, [devices.length, dashboards, currentDashboard, fetchDevicesCurrentBatch])
-
-  // Initialize: fetch dashboards on mount
   useEffect(() => {
-    fetchDashboards()
-  }, [])
+    if (devices.length === 0 || !currentDashboard || !dashboardDeviceIdsKey) {
+      return
+    }
+    const deviceIds = dashboardDeviceIdsKey.split(',').filter(Boolean)
+    if (deviceIds.length > 0) {
+      fetchDevicesCurrentBatch(deviceIds)
+    }
+  }, [devices.length, dashboardDeviceIdsKey, currentDashboard, fetchDevicesCurrentBatch])
 
   // Re-load dashboards if array becomes empty but we have a current ID
   useEffect(() => {
@@ -1605,35 +1607,33 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     }
   }, [dashboards.length, dashboardsLoading, dashboardId, navigate])
 
-  // Load agents when config opens for agent-monitor-widget
+  // Load agents — preload on mount, refresh when config opens for agent-monitor-widget
   useEffect(() => {
     const loadAgents = async () => {
-      if (configOpen && selectedComponent?.type === 'agent-monitor-widget') {
-        setAgentsLoading(true)
-        try {
-          const data = await api.listAgents()
-          
-          setAgents(data.agents || [])
-        } catch (error) {
-          handleError(error, { operation: 'Load agents for dashboard', showToast: false })
-          setAgents([])
-        } finally {
-          setAgentsLoading(false)
-        }
+      if (!fetchCache.shouldFetch('agents-list')) return
+      fetchCache.markFetching('agents-list')
+      setAgentsLoading(true)
+      try {
+        const data = await api.listAgentSummaries()
+        setAgents(data.agents || [])
+        fetchCache.markFetched('agents-list')
+      } catch (error) {
+        handleError(error, { operation: 'Load agents for dashboard', showToast: false })
+        setAgents([])
+        fetchCache.invalidate('agents-list')
+      } finally {
+        setAgentsLoading(false)
       }
     }
-    loadAgents()
-  }, [configOpen, selectedComponent?.type, selectedComponent?.id])
-
-  // For agent-monitor-widget: update componentConfig with agents when loaded
-  // This ensures the render function has access to the agents list
-  useEffect(() => {
-    if (configOpen && selectedComponent?.type === 'agent-monitor-widget' && !agentsLoading) {
-      
-      // Store agents in componentConfig so the render function can access them
-      setComponentConfig(prev => ({ ...prev, _agentsList: agents }))
+    // Preload on mount, or reload when config opens for agent-monitor-widget
+    if (!configOpen || selectedComponent?.type === 'agent-monitor-widget') {
+      loadAgents()
     }
-  }, [agents, agentsLoading, configOpen, selectedComponent?.type])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configOpen, selectedComponent?.type])
+
+  // NOTE: agents are accessed directly via the `agents` state variable in
+  // generateConfigSchema closure — no need to inject them into componentConfig.
 
   // Load vision models when config opens for ai-analyst
   useEffect(() => {
@@ -1666,12 +1666,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     loadVisionModels()
   }, [configOpen, selectedComponent?.type, selectedComponent?.id])
 
-  // For ai-analyst: update componentConfig with models when loaded
-  useEffect(() => {
-    if (configOpen && selectedComponent?.type === 'ai-analyst' && !visionModelsLoading) {
-      setComponentConfig(prev => ({ ...prev, _visionModelsList: visionModels }))
-    }
-  }, [visionModels, visionModelsLoading, configOpen, selectedComponent?.type])
+  // NOTE: visionModels are accessed directly via the `visionModels` state variable in
+  // generateConfigSchema closure — no need to inject them into componentConfig.
 
   // Note: Removed auto-create dashboard logic
   // Users should explicitly create dashboards via the UI
@@ -4936,8 +4932,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               render: () => {
                 // Read from componentConfig which is kept up-to-date by updateDataSource
                 const currentAgentId = (config.dataSource as any)?.agentId || ''
-                // Read agents from config - populated by the agents loading effect
-                const agentsList = (config as any)._agentsList || agents
+                // Use agents directly from component state (loaded by the agents loading effect)
+                const agentsList = agents
                 
                 return (
                   <div className="space-y-3">
@@ -4957,12 +4953,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                         <SelectContent>
                           {agentsList.map((agent: any) => (
                             <SelectItem key={agent.id} value={agent.id}>
-                              <div className="flex items-center gap-2">
-                                <span>{agent.name}</span>
-                                <span className="text-xs text-muted-foreground">
-                  ({agent.execution_count || 0} {t('agents:card.executions')})
-                                </span>
-                              </div>
+                              {agent.name}
                             </SelectItem>
                           ))}
                           {agentsList.length === 0 && !agentsLoading && (
@@ -4998,7 +4989,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => {
-                const modelsList = (config as any)._visionModelsList || visionModels
+                const modelsList = visionModels
                 return (
                   <div className="space-y-3">
                     <Field>

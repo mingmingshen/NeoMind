@@ -293,6 +293,9 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
   const [detail, setDetail] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null)
+
+  // Prevent loading flash: only show spinner when loading AND no detail exists yet
+  const showLoading = loading && !detail
   const dialogRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -346,7 +349,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
           </DialogHeader>
 
           <div className="flex-1 overflow-auto space-y-4">
-            {loading ? (
+            {showLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
@@ -655,6 +658,9 @@ export function AgentMonitorWidget({
   const [loading, setLoading] = useState(true)
   const [agentNotFound, setAgentNotFound] = useState(false)
   const agentNotFoundRef = useRef(false)
+
+  // Prevent loading flash: only show loading spinner when loading AND no agent data exists yet
+  const agentShowLoading = loading && !agent
   const [executions, setExecutions] = useState<AgentExecution[]>([])
   const [executionDetails, setExecutionDetails] = useState<Record<string, any>>({})
   const [isExecuting, setIsExecuting] = useState(false)
@@ -870,7 +876,7 @@ export function AgentMonitorWidget({
   }
 
   // Loading state
-  if (loading && !editMode) {
+  if (agentShowLoading && !editMode) {
     return (
       <div className={cn(dashboardCardBase, "overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
         <div className="text-center">

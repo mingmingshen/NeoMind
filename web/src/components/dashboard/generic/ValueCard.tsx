@@ -191,6 +191,11 @@ export function ValueCard({
     fallback: null,
   })
 
+  // Keep last valid data to avoid skeleton flash during telemetry refreshes.
+  // Only show skeleton on the very first load when we have no data at all.
+  const hasData = data !== null && data !== undefined
+  const showLoading = loading && !hasData
+
   // Check if dataSource is configured
   const hasDataSource = dataSource !== undefined
 
@@ -377,7 +382,7 @@ export function ValueCard({
         {title && (
           <span className={cn(indicatorFontWeight.title, 'text-muted-foreground mb-1', sizeConfig.labelText)}>{title}</span>
         )}
-        {loading ? (
+        {showLoading ? (
           <Skeleton className={cn('h-6 w-20 rounded')} />
         ) : (
           <span className={cn(indicatorFontWeight.value, 'text-foreground tracking-tight tabular-nums', sizeConfig.valueText)} style={{ color: finalValueColor }}>
@@ -422,7 +427,7 @@ export function ValueCard({
         )}
 
         {/* Value */}
-        {loading ? (
+        {showLoading ? (
           <Skeleton className={cn('h-7 w-16 rounded')} />
         ) : (
           <span className={cn(indicatorFontWeight.value, 'text-foreground tracking-tight tabular-nums text-center', sizeConfig.valueText)} style={{ color: finalValueColor }}>
@@ -473,7 +478,7 @@ export function ValueCard({
             <span className={cn(indicatorFontWeight.title, 'text-muted-foreground truncate', sizeConfig.labelText)}>{title}</span>
           )}
           <div className="flex items-baseline gap-1">
-            {loading ? (
+            {showLoading ? (
               <Skeleton className={cn('h-5 w-16 rounded')} />
             ) : (
               <span className={cn(indicatorFontWeight.value, 'text-foreground tabular-nums', sizeConfig.valueText)} style={{ color: finalValueColor }}>
@@ -522,7 +527,7 @@ export function ValueCard({
           )}
 
           {/* Value - secondary text */}
-          {loading ? (
+          {showLoading ? (
             <Skeleton className={cn('h-5 w-16 rounded mt-0.5')} />
           ) : (
             <span className={cn(indicatorFontWeight.value, 'tabular-nums', sizeConfig.labelText)} style={{ color: finalValueColor }}>

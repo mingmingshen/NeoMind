@@ -325,7 +325,8 @@ impl MessageManager {
         if let Some(store) = self.storage.read().await.as_ref() {
             let stored = Self::message_to_stored(&message);
             store
-                .insert(&stored)
+                .insert_async(stored)
+                .await
                 .map_err(|e| Error::Storage(format!("Failed to persist message: {}", e)))?;
         }
 
@@ -333,6 +334,7 @@ impl MessageManager {
         let channels = self.channels.read().await;
         let channel_names = channels.list_names().await;
         let mut send_results: Vec<(String, std::result::Result<(), String>)> = Vec::new();
+        let mut pending_delivery_logs: Vec<DeliveryLog> = Vec::new();
 
         for channel_name in &channel_names {
             if let Some(channel) = channels.get(channel_name).await {
@@ -385,16 +387,8 @@ impl MessageManager {
                                 channel_name
                             );
                             send_results.push((channel_name.clone(), Ok(())));
-                            // Log successful delivery for DataPush
-                            if let Some(mut log) = delivery_log {
-                                log = log.with_status(DeliveryStatus::Success);
-                                let mut logs = self.delivery_logs.write().await;
-                                // Auto-prune if exceeding 1000 entries
-                                if logs.len() > 1000 {
-                                    let cutoff = chrono::Utc::now() - chrono::Duration::hours(24);
-                                    logs.retain(|_, l| l.created_at > cutoff);
-                                }
-                                logs.insert(log.id.clone(), log);
+                            if let Some(log) = delivery_log {
+                                pending_delivery_logs.push(log.with_status(DeliveryStatus::Success));
                             }
                         }
                         Err(e) => {
@@ -406,21 +400,28 @@ impl MessageManager {
                             );
                             let error_msg = e.to_string();
                             send_results.push((channel_name.clone(), Err(error_msg.clone())));
-                            // Log failed delivery for DataPush
-                            if let Some(mut log) = delivery_log {
-                                log = log
-                                    .with_status(DeliveryStatus::Failed)
-                                    .with_error(error_msg);
-                                let mut logs = self.delivery_logs.write().await;
-                                if logs.len() > 1000 {
-                                    let cutoff = chrono::Utc::now() - chrono::Duration::hours(24);
-                                    logs.retain(|_, l| l.created_at > cutoff);
-                                }
-                                logs.insert(log.id.clone(), log);
+                            if let Some(log) = delivery_log {
+                                pending_delivery_logs.push(
+                                    log.with_status(DeliveryStatus::Failed)
+                                        .with_error(error_msg),
+                                );
                             }
                         }
                     }
                 }
+            }
+        }
+
+        // Batch-write all delivery logs in a single lock acquisition
+        if !pending_delivery_logs.is_empty() {
+            let mut logs = self.delivery_logs.write().await;
+            // Auto-prune if exceeding 1000 entries
+            if logs.len() > 1000 {
+                let cutoff = chrono::Utc::now() - chrono::Duration::hours(24);
+                logs.retain(|_, l| l.created_at > cutoff);
+            }
+            for log in pending_delivery_logs {
+                logs.insert(log.id.clone(), log);
             }
         }
 
@@ -555,7 +556,8 @@ impl MessageManager {
         // Persist outside lock
         if let Some(store) = self.storage.read().await.as_ref() {
             store
-                .update(&stored_msg)
+                .update_async(stored_msg)
+                .await
                 .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
         }
 
@@ -587,7 +589,8 @@ impl MessageManager {
 
         if let Some(store) = self.storage.read().await.as_ref() {
             store
-                .update(&stored_msg)
+                .update_async(stored_msg)
+                .await
                 .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
         }
 
@@ -617,7 +620,8 @@ impl MessageManager {
 
         if let Some(store) = self.storage.read().await.as_ref() {
             store
-                .update(&stored_msg)
+                .update_async(stored_msg)
+                .await
                 .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
         }
 
@@ -636,7 +640,8 @@ impl MessageManager {
         // Delete from storage outside write lock
         if let Some(store) = self.storage.read().await.as_ref() {
             store
-                .delete(&id.to_string())
+                .delete_async(id.to_string())
+                .await
                 .map_err(|e| Error::Storage(format!("Failed to delete message: {}", e)))?;
         }
 
@@ -660,8 +665,8 @@ impl MessageManager {
 
         // Delete from storage outside lock
         if let Some(store) = self.storage.read().await.as_ref() {
-            for id in &id_strings {
-                let _ = store.delete(id);
+            for id in id_strings {
+                let _ = store.delete_async(id).await;
             }
         }
 
@@ -687,8 +692,8 @@ impl MessageManager {
 
         // Persist outside lock
         if let Some(store) = self.storage.read().await.as_ref() {
-            for stored in &to_persist {
-                let _ = store.update(stored);
+            for stored in to_persist {
+                let _ = store.update_async(stored).await;
             }
         }
 
@@ -714,8 +719,8 @@ impl MessageManager {
 
         // Persist outside lock
         if let Some(store) = self.storage.read().await.as_ref() {
-            for stored in &to_persist {
-                let _ = store.update(stored);
+            for stored in to_persist {
+                let _ = store.update_async(stored).await;
             }
         }
 
@@ -891,7 +896,8 @@ impl MessageManager {
     pub async fn reload(&self) -> Result<()> {
         if let Some(store) = self.storage.read().await.as_ref() {
             let stored_msgs = store
-                .list()
+                .list_async()
+                .await
                 .map_err(|e| Error::Storage(format!("Failed to load messages: {}", e)))?;
 
             let mut messages = HashMap::new();

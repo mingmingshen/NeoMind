@@ -29,7 +29,7 @@ use crate::config::LlmSettingsRequest;
 use crate::rate_limit::{RateLimitConfig, RateLimiter};
 use crate::server::state::{
     AgentManager, AgentState, AuthState, AutomationState, CoreState, DeviceState,
-    ExtensionMetricsStorage, ExtensionRegistryAdapter, ExtensionState,
+    ExtensionMetricsStorage, ExtensionRegistryAdapter, ExtensionState, ExtensionStore,
 };
 
 #[cfg(feature = "embedded-broker")]
@@ -417,8 +417,12 @@ impl ServerState {
             time_series_storage.clone(),
         ));
 
-        // Create the extension state with registry and storage
-        let extensions = ExtensionState::new(extension_registry.clone(), extension_metrics_storage);
+        // Open extension store (singleton-cached internally)
+        let extension_store = ExtensionStore::open("data/extensions.redb")
+            .expect("Failed to open extension store — ensure data/ directory exists");
+
+        // Create the extension state with registry, storage, and persistent store
+        let extensions = ExtensionState::new(extension_registry.clone(), extension_metrics_storage, extension_store);
 
         tracing::info!("Extension state initialized");
 
@@ -801,7 +805,9 @@ impl ServerState {
         let extension_metrics_storage = Arc::new(ExtensionMetricsStorage::with_shared_storage(
             time_series_storage.clone(),
         ));
-        let extensions = ExtensionState::new(extension_registry, extension_metrics_storage);
+        let extension_store = ExtensionStore::open("data/extensions.redb")
+            .expect("Failed to open extension store — ensure data/ directory exists");
+        let extensions = ExtensionState::new(extension_registry, extension_metrics_storage, extension_store);
 
         // ========== Build AUTOMATION STATE ==========
         let rule_engine = Arc::new(RuleEngine::new(value_provider.clone()));

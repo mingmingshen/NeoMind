@@ -412,6 +412,54 @@ impl MessageStore {
         Ok(all.into_iter().filter(|m| m.status == status).collect())
     }
 
+    // ========================================================================
+    // Async wrappers — offload blocking redb I/O to a dedicated thread.
+    // These are designed to be called from async contexts (e.g. MessageManager)
+    // to avoid blocking the tokio runtime during database operations.
+    //
+    // Requires an Arc<Self> because spawn_blocking needs 'static lifetime.
+    // ========================================================================
+
+    /// Async version of [`insert`](Self::insert).
+    pub async fn insert_async(self: &Arc<Self>, msg: StoredMessage) -> Result<(), Error> {
+        let this = Arc::clone(self);
+        tokio::task::spawn_blocking(move || this.insert(&msg))
+            .await
+            .map_err(|e| Error::Storage(format!("spawn_blocking insert: {}", e)))?
+    }
+
+    /// Async version of [`update`](Self::update).
+    pub async fn update_async(self: &Arc<Self>, msg: StoredMessage) -> Result<(), Error> {
+        let this = Arc::clone(self);
+        tokio::task::spawn_blocking(move || this.update(&msg))
+            .await
+            .map_err(|e| Error::Storage(format!("spawn_blocking update: {}", e)))?
+    }
+
+    /// Async version of [`delete`](Self::delete).
+    pub async fn delete_async(self: &Arc<Self>, id: String) -> Result<bool, Error> {
+        let this = Arc::clone(self);
+        tokio::task::spawn_blocking(move || this.delete(&id))
+            .await
+            .map_err(|e| Error::Storage(format!("spawn_blocking delete: {}", e)))?
+    }
+
+    /// Async version of [`list`](Self::list).
+    pub async fn list_async(self: &Arc<Self>) -> Result<Vec<StoredMessage>, Error> {
+        let this = Arc::clone(self);
+        tokio::task::spawn_blocking(move || this.list())
+            .await
+            .map_err(|e| Error::Storage(format!("spawn_blocking list: {}", e)))?
+    }
+
+    /// Async version of [`list_active`](Self::list_active).
+    pub async fn list_active_async(self: &Arc<Self>) -> Result<Vec<StoredMessage>, Error> {
+        let this = Arc::clone(self);
+        tokio::task::spawn_blocking(move || this.list_active())
+            .await
+            .map_err(|e| Error::Storage(format!("spawn_blocking list_active: {}", e)))?
+    }
+
     /// List messages by category.
     pub fn list_by_category(&self, category: &str) -> Result<Vec<StoredMessage>, Error> {
         let all = self.list()?;

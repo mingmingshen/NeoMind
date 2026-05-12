@@ -81,6 +81,10 @@ export function ProgressBar({
     fallback: propValue ?? 0,
   })
 
+  // Prevent loading flash: only show skeleton when loading AND no data exists yet
+  const hasData = data !== null && data !== undefined
+  const showLoading = loading && !hasData
+
   // Extract value using DataMapper for proper data handling
   const value = useMemo(() => {
     // If there's an error, fall back to prop value
@@ -210,7 +214,7 @@ export function ProgressBar({
           </div>
 
           {/* Percentage text below icon */}
-          {!loading && (
+          {!showLoading && (
             <span className={cn(
               indicatorFontWeight.value,
               'tabular-nums text-xs',
@@ -326,7 +330,7 @@ export function ProgressBar({
             {title}
           </span>
         )}
-        {loading ? (
+        {showLoading ? (
           <Skeleton className={cn('h-3 w-7 shrink-0 rounded')} />
         ) : (
           <span className={cn(
@@ -341,7 +345,7 @@ export function ProgressBar({
 
       {/* Progress bar with gradient fill */}
       <div className="flex-1 min-h-0 flex items-center">
-        {loading ? (
+        {showLoading ? (
           <div className={cn('w-full rounded-full bg-muted-30 overflow-hidden', barHeight)}>
             <Skeleton className={cn('h-full w-full rounded-full', barHeight)} />
           </div>

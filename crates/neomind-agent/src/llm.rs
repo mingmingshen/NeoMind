@@ -617,6 +617,39 @@ impl LlmInterface {
         4_096 // Conservative default if LLM not ready
     }
 
+    /// Estimate the token overhead from system prompt + tool definitions.
+    /// This is the non-history cost that must be deducted from the context window budget.
+    pub async fn estimate_prompt_overhead_tokens(&self) -> usize {
+        // System prompt: build it and measure
+        let system_prompt = self.build_system_prompt_with_tools(None).await;
+        let prompt_tokens = crate::agent::tokenizer::estimate_tokens(&system_prompt);
+
+        // Tool definitions: serialize to JSON and measure
+        let tools = self.tool_definitions.read().await;
+        let tools_tokens = if tools.is_empty() {
+            0
+        } else {
+            // Each tool definition is roughly: {"type":"function","function":{"name":"...","description":"...","parameters":{...}}}
+            // Estimate by serializing key fields
+            let mut total = 0;
+            for tool in tools.iter() {
+                // Base overhead per tool definition: ~15 tokens for JSON structure
+                total += 15;
+                total += crate::agent::tokenizer::estimate_tokens(&tool.name);
+                total += crate::agent::tokenizer::estimate_tokens(&tool.description);
+                total += crate::agent::tokenizer::estimate_tokens(&tool.parameters.to_string());
+            }
+            total
+        };
+
+        let overhead = prompt_tokens + tools_tokens;
+        tracing::debug!(
+            "Prompt overhead: system_prompt={} tokens, tools={} tokens ({} tools), total={} tokens",
+            prompt_tokens, tools_tokens, tools.len(), overhead
+        );
+        overhead
+    }
+
     /// Check if the current LLM backend supports multimodal (vision) input.
     ///
     /// Returns true if the active backend supports image input, false otherwise.

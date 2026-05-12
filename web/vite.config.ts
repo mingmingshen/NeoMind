@@ -212,6 +212,14 @@ export default defineConfig({
             return 'vendor-icons'
           }
 
+          // Heavy export libraries — lazy loaded via dynamic import()
+          if (
+            id.includes('node_modules/xlsx') ||
+            id.includes('node_modules/jszip')
+          ) {
+            return 'vendor-export'
+          }
+
           // All other node_modules go into a single vendor bundle
           // This avoids circular dependency issues between vendor chunks
           if (id.includes('node_modules')) {

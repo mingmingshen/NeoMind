@@ -14,8 +14,6 @@ import { useToast } from '@/hooks/use-toast'
 import { textNano } from '@/design-system/tokens/typography'
 import { cn } from '@/lib/utils'
 import type { UnifiedDataSourceInfo } from '@/types'
-import * as XLSX from 'xlsx'
-import JSZip from 'jszip'
 
 interface ExportDataDialogProps {
   open: boolean
@@ -317,6 +315,8 @@ async function generateExcel(
   baseName: string,
   data: Array<{ timestamp: number; value: unknown; quality: number | null }>,
 ) {
+  const XLSX = await import('xlsx')
+
   const rows = data.map(p => {
     const rawValue = typeof p.value === 'object' ? JSON.stringify(p.value) : String(p.value ?? '')
     return {
@@ -345,6 +345,7 @@ async function generateZip(
   data: Array<{ timestamp: number; value: unknown; quality: number | null }>,
   source: UnifiedDataSourceInfo,
 ) {
+  const JSZip = (await import('jszip')).default
   const zip = new JSZip()
   let imageCount = 0
 

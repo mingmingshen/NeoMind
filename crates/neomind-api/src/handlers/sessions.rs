@@ -41,13 +41,23 @@ async fn process_stream_to_channel(
     let mut end_event_sent = false;
     let mut event_count = 0u32;
 
+    // Debounce pending-stream DB writes: only persist every N events or after T elapsed.
+    // Avoids a blocking redb write transaction per Thinking/Content chunk (thinking models
+    // can emit 100+ chunks per request).
+    let mut pending_save_counter: u32 = 0;
+    let mut last_pending_save = std::time::Instant::now();
+    const PENDING_SAVE_EVENT_INTERVAL: u32 = 20;
+    const PENDING_SAVE_TIME_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
     // Clone user_message for later use in memory consolidation
     let user_message_for_memory = user_message.clone();
 
     // P0.3: Create pending stream state for recovery
     let session_store = state.agents.session_manager.session_store();
     let mut pending_state = PendingStreamState::new(session_id.clone(), user_message);
-    let _ = session_store.save_pending_stream(&pending_state);
+    if let Err(e) = session_store.save_pending_stream(&pending_state) {
+        tracing::warn!(error = %e, "Failed to save initial pending stream state");
+    }
 
     // Track stream start time for progress reporting
     let stream_start = std::time::Instant::now();
@@ -69,7 +79,16 @@ async fn process_stream_to_channel(
                     AgentEvent::Thinking { content } => {
                         // P0.3: Update pending state with thinking content
                         pending_state.update_thinking(content);
-                        let _ = session_store.save_pending_stream(&pending_state);
+                        pending_save_counter += 1;
+                        if pending_save_counter >= PENDING_SAVE_EVENT_INTERVAL
+                            || last_pending_save.elapsed() >= PENDING_SAVE_TIME_INTERVAL
+                        {
+                            if let Err(e) = session_store.save_pending_stream(&pending_state) {
+                                tracing::warn!(error = %e, "Failed to update pending stream (thinking)");
+                            }
+                            pending_save_counter = 0;
+                            last_pending_save = std::time::Instant::now();
+                        }
 
                         tracing::debug!(
                             "Sending Thinking event: {} chars",
@@ -85,7 +104,16 @@ async fn process_stream_to_channel(
                         // P0.3: Update pending state with content
                         pending_state.update_content(content);
                         pending_state.set_stage(StreamStage::Generating);
-                        let _ = session_store.save_pending_stream(&pending_state);
+                        pending_save_counter += 1;
+                        if pending_save_counter >= PENDING_SAVE_EVENT_INTERVAL
+                            || last_pending_save.elapsed() >= PENDING_SAVE_TIME_INTERVAL
+                        {
+                            if let Err(e) = session_store.save_pending_stream(&pending_state) {
+                                tracing::warn!(error = %e, "Failed to update pending stream (content)");
+                            }
+                            pending_save_counter = 0;
+                            last_pending_save = std::time::Instant::now();
+                        }
 
                         json!({
                             "type": "Content",

@@ -331,55 +331,38 @@ function App() {
   }, [isTauri, backendReady])
 
   // Check authentication status on mount (only once)
-  // Skip auth check on setup page to avoid 401 errors
+  // Skip on /setup to avoid 401 errors during initial setup
   useEffect(() => {
     if (currentPath !== '/setup') {
       checkAuthStatus()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPath])
+  }, [])
 
-  // Set up WebSocket connection handler to update store
-  // Only connect when authenticated and not on setup page
+  // Unified WebSocket + SSE connection management
+  // Connects when authenticated (not on setup), disconnects otherwise
   useEffect(() => {
     if (isAuthenticated && currentPath !== '/setup') {
       import('@/lib/websocket').then(({ ws }) => {
-        // Set up connection handler
+        // Register connection handler for state tracking + extension re-sync
         const cleanup = ws.onConnection((connected, isReconnect) => {
           setWsConnected(connected)
-          // ✨ FIX: Auto-sync extension components when WebSocket reconnects
-          // This ensures extension UI components are available after backend restart
           if (connected && isReconnect) {
             extensionSyncRef.current?.()
           }
         })
-        // Check current state
         setWsConnected(ws.isConnected())
+        // Connect chat WebSocket (idempotent — skips if already connected)
+        ws.connect()
 
         return cleanup
       })
-    } else if (!isAuthenticated && currentPath !== '/setup') {
-      // Disconnect when not authenticated
-      import('@/lib/websocket').then(({ ws }) => {
-        ws.disconnect()
-      })
-    }
-  }, [isAuthenticated, setWsConnected, currentPath])
-
-  // Refresh WebSocket connections when authentication status changes
-  // Only connect when authenticated and not on setup page
-  useEffect(() => {
-    if (isAuthenticated && currentPath !== '/setup') {
-      // Dynamic import to avoid SSR issues
       import('@/lib/events').then(({ refreshEventConnections }) => {
         refreshEventConnections()
       })
-      // Also refresh chat WebSocket (has its own duplicate check)
-      import('@/lib/websocket').then(({ ws }) => {
-        ws.connect()
-      })
-    } else if (currentPath === '/setup') {
-      // Disconnect on setup page to avoid 401 errors
+      // Sync extension components immediately on auth
+      extensionSyncRef.current?.()
+    } else if (!isAuthenticated || currentPath === '/setup') {
       import('@/lib/websocket').then(({ ws }) => {
         ws.disconnect()
       })
@@ -387,33 +370,19 @@ function App() {
         closeAllEventsConnections()
       })
     }
-  }, [isAuthenticated, currentPath])
+  }, [isAuthenticated, setWsConnected, currentPath])
 
-  // Auto-sync extension dashboard components periodically
-  // This ensures extension-provided components stay up to date
+  // Periodic extension component sync (keeps dashboard components up to date)
   useEffect(() => {
+    if (!isAuthenticated || currentPath === '/setup') return
+
     const interval = setInterval(() => {
-      if (isAuthenticated && currentPath !== '/setup') {
-        extensionSyncRef.current?.()
-      }
-    }, 60000) // Sync every 60 seconds
+      extensionSyncRef.current?.()
+    }, 60000)
 
     return () => clearInterval(interval)
   }, [isAuthenticated, currentPath])
 
-
-  // Auto-sync extension dashboard components immediately when authenticated
-  // This ensures components are available right away without waiting for the timer
-  useEffect(() => {
-    if (isAuthenticated && currentPath !== '/setup') {
-      extensionSyncRef.current?.()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated])
-
-
-  // Auto-sync extension dashboard components when authenticated
-  // This ensures extension-provided components are available in the dashboard
 
   // Show loading screen in Tauri until backend is ready
   if (isTauri && !backendReady) {

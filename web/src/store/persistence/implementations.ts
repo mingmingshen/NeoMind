@@ -152,7 +152,8 @@ export class LocalStorageDashboardStorage implements DashboardStorage {
 // ============================================================================
 
 export class ApiDashboardStorage implements DashboardStorage {
-  private api: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic import, resolved at runtime
+  private api: any = null
   private currentDashboardId: string | null = null
 
   constructor() {

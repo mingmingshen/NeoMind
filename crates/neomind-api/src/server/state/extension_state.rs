@@ -137,6 +137,9 @@ pub struct ExtensionState {
 
     /// Extension metrics storage (separate from device telemetry)
     pub metrics_storage: Arc<ExtensionMetricsStorage>,
+
+    /// Persistent extension store (shared Arc, avoids per-request open())
+    pub store: Arc<ExtensionStore>,
 }
 
 impl ExtensionState {
@@ -163,6 +166,7 @@ impl ExtensionState {
     pub fn new(
         registry: Arc<ExtensionRegistry>,
         metrics_storage: Arc<ExtensionMetricsStorage>,
+        store: Arc<ExtensionStore>,
     ) -> Self {
         let config = ExtensionRuntimeConfig::default();
         let runtime = Arc::new(ExtensionRuntime::new(Arc::clone(&registry), config));
@@ -171,6 +175,7 @@ impl ExtensionState {
             registry,
             runtime,
             metrics_storage,
+            store,
         }
     }
 
@@ -178,6 +183,7 @@ impl ExtensionState {
     pub fn with_config(
         registry: Arc<ExtensionRegistry>,
         metrics_storage: Arc<ExtensionMetricsStorage>,
+        store: Arc<ExtensionStore>,
         config: ExtensionRuntimeConfig,
     ) -> Self {
         let runtime = Arc::new(ExtensionRuntime::new(Arc::clone(&registry), config));
@@ -186,6 +192,7 @@ impl ExtensionState {
             registry,
             runtime,
             metrics_storage,
+            store,
         }
     }
 
@@ -204,6 +211,10 @@ impl ExtensionState {
             storage_path,
         ))?);
 
+        // Open extension store (singleton-cached internally)
+        let store = ExtensionStore::open("data/extensions.redb")
+            .map_err(|e| format!("Failed to open extension store: {}", e))?;
+
         let config = ExtensionRuntimeConfig::default();
         let runtime = Arc::new(ExtensionRuntime::new(Arc::clone(&registry), config));
 
@@ -211,6 +222,7 @@ impl ExtensionState {
             registry,
             runtime,
             metrics_storage,
+            store,
         })
     }
 
@@ -219,12 +231,19 @@ impl ExtensionState {
     pub async fn minimal() -> Self {
         let registry = Arc::new(ExtensionRegistry::new());
         let runtime = Arc::new(ExtensionRuntime::with_defaults(registry.clone()));
+        // Use a temp file so tests don't depend on data/ existing
+        let temp_dir = std::env::temp_dir().join(format!("neomind_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let db_path = temp_dir.join("extensions.redb");
+        let store = ExtensionStore::open(db_path.to_str().unwrap_or("data/extensions.redb"))
+            .expect("Failed to open extension store for test");
         Self {
             registry,
             runtime,
             metrics_storage: Arc::new(
                 ExtensionMetricsStorage::memory().expect("Failed to create memory storage"),
             ),
+            store,
         }
     }
 
@@ -235,9 +254,8 @@ impl ExtensionState {
     ///
     /// Extensions are loaded via ExtensionRuntime with process isolation by default.
     pub async fn load_from_storage(&self) -> Result<usize, String> {
-        // Open extension store
-        let store = ExtensionStore::open("data/extensions.redb")
-            .map_err(|e| format!("Failed to open extension store: {}", e))?;
+        // Use the shared extension store from state
+        let store = &self.store;
 
         // Load all auto-start extensions
         let records = store
@@ -313,15 +331,13 @@ impl ExtensionState {
                         "Failed to load extension from storage"
                     );
                     // Record the error in the extension store
-                    if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
-                        if let Err(update_e) = store.update_error_status(&record.id, &e.to_string())
-                        {
-                            tracing::warn!(
-                                extension_id = %record.id,
-                                error = %update_e,
-                                "Failed to update extension error status"
-                            );
-                        }
+                    if let Err(update_e) = self.store.update_error_status(&record.id, &e.to_string())
+                    {
+                        tracing::warn!(
+                            extension_id = %record.id,
+                            error = %update_e,
+                            "Failed to update extension error status"
+                        );
                     }
                 }
             }
@@ -383,9 +399,8 @@ impl ExtensionState {
             );
         }
 
-        // Open the store for checking uninstalled status and saving records
-        let store = ExtensionStore::open("data/extensions.redb")
-            .map_err(|e| format!("Failed to open extension store: {}", e))?;
+        // Use the shared extension store from state
+        let store = &self.store;
 
         let mut registered_count = 0;
         // Limit the number of extensions to load during auto-discovery to prevent resource exhaustion

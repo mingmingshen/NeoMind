@@ -168,7 +168,9 @@ export function PendingDevicesList({
       try {
         const { status } = await api.getMqttStatus()
         if (!cancelled) {
-          setHasBroker(!!status.external_brokers && status.external_brokers.length > 0)
+          const hasBuiltIn = status.connected
+          const hasExternal = !!status.external_brokers && status.external_brokers.length > 0
+          setHasBroker(hasBuiltIn || hasExternal)
         }
       } catch {
         if (!cancelled) setHasBroker(false)

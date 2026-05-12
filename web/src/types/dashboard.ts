@@ -10,7 +10,7 @@
 // Data Source Types
 // ============================================================================
 
-export type DataSourceType = 'device' | 'metric' | 'command' | 'telemetry' | 'device-info' | 'system' | 'extension' | 'extension-metric' | 'extension-command' | 'transform' | 'ai-metric'
+export type DataSourceType = 'device' | 'metric' | 'command' | 'telemetry' | 'device-info' | 'system' | 'extension' | 'extension-metric' | 'extension-command' | 'transform' | 'ai-metric' | 'agent'
 
 export interface ValueMapping {
   on?: unknown
@@ -169,6 +169,9 @@ export interface DataSource {
 
   // === AI Metric fields ===
   aiGroup?: string          // AI metric group name
+
+  // === Agent fields ===
+  agentId?: string          // AI agent ID for agent-monitor-widget binding
 }
 
 // Union type for single or multiple data sources
@@ -395,6 +398,7 @@ export interface GenericComponent extends BaseComponent {
 
 export interface BusinessComponent extends BaseComponent {
   type: BusinessComponentType
+  dataSource?: DataSource
   config?: Record<string, unknown>
 }
 

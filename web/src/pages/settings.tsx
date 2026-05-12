@@ -29,9 +29,9 @@ export function SettingsPage() {
   const testBackend = useStore((state) => state.testBackend)
 
   const tabs = [
-    { value: "llm" as SettingsTabValue, label: t("llmBackends", { defaultValue: "LLM Backends" }), icon: <Cpu className="h-4 w-4" /> },
-    { value: "connections" as SettingsTabValue, label: t("deviceConnections", { defaultValue: "Device Connections" }), icon: <Plug className="h-4 w-4" /> },
-    { value: "alert-channels" as SettingsTabValue, label: t("alertChannels", { defaultValue: "Message Channels" }), icon: <BellRing className="h-4 w-4" /> },
+    { value: "llm" as SettingsTabValue, label: t("settings:llmBackends"), icon: <Cpu className="h-4 w-4" /> },
+    { value: "connections" as SettingsTabValue, label: t("settings:deviceConnections"), icon: <Plug className="h-4 w-4" /> },
+    { value: "alert-channels" as SettingsTabValue, label: t("settings:alertChannels"), icon: <BellRing className="h-4 w-4" /> },
     { value: "preferences" as SettingsTabValue, label: t("settings:preferences"), icon: <Sliders className="h-4 w-4" /> },
     { value: "about" as SettingsTabValue, label: t("settings:about"), icon: <Info className="h-4 w-4" /> },
   ]

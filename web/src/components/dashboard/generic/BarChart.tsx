@@ -342,6 +342,10 @@ export function BarChart({
     }
   )
 
+  // Prevent loading flash: only show skeleton when loading AND no data exists yet
+  const hasData = data !== null && data !== undefined && (Array.isArray(data) ? data.length > 0 : true)
+  const showLoading = loading && !hasData
+
   // Get device names for series labels
   const getDeviceName = (deviceId?: string): string => {
     if (!deviceId) return t('chart.value')
@@ -541,7 +545,7 @@ export function BarChart({
   }, [dataSource, data, color, t])
 
   // Show loading skeleton when fetching data
-  if (dataSource && loading) {
+  if (dataSource && showLoading) {
     return (
       <div className={cn(dashboardCardBase, config.padding, className)}>
         {title && (

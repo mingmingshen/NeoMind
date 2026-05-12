@@ -33,7 +33,6 @@ pub type EventChannel = tokio::sync::mpsc::Sender<AgentEvent>;
 pub use neomind_core::llm::compaction::{
     CompactionConfig,
     MessagePriority,
-    // Note: estimate_tokens is defined locally below to use the tokenizer module
 };
 
 /// Configuration for stream processing safeguards
@@ -90,8 +89,10 @@ impl Default for StreamSafeguards {
 
             max_content_length: usize::MAX,
 
-            // Tool iterations limit - increased to support complex multi-step queries
-            max_tool_iterations: 10,
+            // Tool iterations limit - high limit to support complex multi-step queries
+            // Actual loop uses MAX_TOOL_ITERATIONS constant; this value is for truncating
+            // tool calls in a single LLM response.
+            max_tool_iterations: 100,
 
             // Repetition detection threshold
             max_repetition_count: 3,
@@ -1284,21 +1285,6 @@ struct ToolExecutionResult {
     result: std::result::Result<crate::toolkit::ToolOutput, crate::toolkit::ToolError>,
 }
 
-/// Estimate token count for a string.
-///
-/// Uses the accurate tokenizer implementation from the tokenizer module,
-/// which properly handles:
-/// - Chinese characters: ~1.8 tokens each
-/// - English words: ~0.25 tokens per character
-/// - Numbers: ~0.3 tokens per digit
-/// - Special characters: ~0.5 tokens each
-///
-/// This is much more accurate than the simple char_count / 4 heuristic.
-fn estimate_tokens(text: &str) -> usize {
-    use crate::agent::tokenizer::estimate_tokens as accurate_estimate;
-    accurate_estimate(text)
-}
-
 /// === ANTHROPIC-STYLE IMPROVEMENT: Tool Result Clearing for Streaming ===
 ///
 /// Compacts old tool result messages into concise summaries.
@@ -1377,13 +1363,20 @@ pub fn build_context_window_with_config(
     max_tokens: usize,
     config: &CompactionConfig,
 ) -> Vec<AgentMessage> {
-    // First, compact tool results
-    let compacted = compact_tool_results_stream_with_config(messages, config);
+    // Step 1: Calculate total tokens without any compaction
+    let total_tokens: usize = messages.iter().map(|m| estimate_message_tokens(m)).sum();
+
+    // Step 2: Only compact tool results if we're actually over budget
+    let working = if config.compact_tool_results && total_tokens > max_tokens {
+        compact_tool_results_stream_with_config(messages, config)
+    } else {
+        messages.to_vec()
+    };
 
     let mut selected_messages = Vec::new();
     let mut current_tokens = 0;
 
-    for msg in compacted.iter().rev() {
+    for msg in working.iter().rev() {
         let msg_tokens = estimate_message_tokens(msg);
 
         // Calculate priority for this message
@@ -1401,8 +1394,8 @@ pub fn build_context_window_with_config(
             continue;
         }
 
-        // Truncate long messages if needed
-        let final_msg = if msg_tokens > config.max_message_length {
+        // Truncate long messages only if we're near budget
+        let final_msg = if total_tokens > max_tokens && msg_tokens > config.max_message_length {
             truncate_agent_message(msg, config.max_message_length)
         } else {
             msg.clone()
@@ -1426,35 +1419,9 @@ fn message_priority(role: &str) -> MessagePriority {
     }
 }
 
-/// Estimate tokens for an AgentMessage for LLM context.
-///
-/// IMPORTANT: Thinking content is NOT counted because:
-/// 1. to_core() does NOT include thinking when sending to LLM
-/// 2. Thinking is only for frontend display, not for model context
-/// 3. Counting thinking would incorrectly consume the context budget
+/// Estimate tokens for an AgentMessage — delegates to unified tokenizer.
 fn estimate_message_tokens(msg: &AgentMessage) -> usize {
-    let mut tokens = estimate_tokens(&msg.content);
-
-    // NOTE: Thinking is intentionally NOT counted here
-    // Even though it's stored in AgentMessage, it's not sent to LLM via to_core()
-    // Only count content, tool_calls, and images
-
-    // Add tokens for tool calls
-    if let Some(tool_calls) = &msg.tool_calls {
-        for tool_call in tool_calls {
-            let args_str = tool_call.arguments.to_string();
-            tokens += 10 + estimate_tokens(&args_str);
-        }
-    }
-
-    // Add tokens for images (rough estimate)
-    if let Some(images) = &msg.images {
-        if !images.is_empty() {
-            tokens += 85 * images.len();
-        }
-    }
-
-    tokens
+    crate::agent::tokenizer::estimate_message_tokens(msg)
 }
 
 /// Truncate an AgentMessage's content to fit within max length.
@@ -1529,11 +1496,13 @@ fn compact_tool_results_stream_with_config(
                                     } else {
                                         r.to_string()
                                     };
-                                    // Read actions need more preview to preserve data
+                                    // Read actions need more preview to preserve data.
+                                    // Compact time-series format uses ~10KB for 1440 points,
+                                    // so data actions need generous preview (2KB) to keep stats.
                                     let is_data_action = args_summary.contains("list")
                                         || args_summary.contains("get")
                                         || args_summary.contains("history");
-                                    let preview_len = if is_data_action { 300 } else { 80 };
+                                    let preview_len = if is_data_action { 2048 } else { 80 };
                                     Some(s.chars().take(preview_len).collect::<String>())
                                 })
                                 .unwrap_or_default();
@@ -1580,6 +1549,133 @@ fn compact_tool_results_stream_with_config(
 
     result.reverse();
     result
+}
+
+/// Estimate total tokens in the memory buffer.
+fn estimate_total_memory_tokens(memory: &[AgentMessage]) -> usize {
+    memory.iter().map(|m| estimate_message_tokens(m)).sum()
+}
+
+/// Build a structured summary from old tool execution rounds.
+/// Extracts tool names, arguments, key results, and assistant analysis text.
+fn build_round_summary<'a>(messages: impl Iterator<Item = &'a AgentMessage>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut round_num = 0;
+
+    for msg in messages {
+        if msg.role == "assistant" {
+            if let Some(tool_calls) = &msg.tool_calls {
+                round_num += 1;
+                for tc in tool_calls {
+                    let args = super::types::summarize_tool_args(&tc.name, &tc.arguments);
+                    let result_brief = tc
+                        .result
+                        .as_ref()
+                        .map(|r| {
+                            let s = if let Some(s) = r.as_str() {
+                                s.to_string()
+                            } else {
+                                r.to_string()
+                            };
+                            // Keep more context for data-heavy results
+                            let preview: String = s.chars().take(500).collect();
+                            if preview.is_empty() {
+                                "ok".to_string()
+                            } else if s.len() > 500 {
+                                format!("{}...", preview)
+                            } else {
+                                preview
+                            }
+                        })
+                        .unwrap_or_else(|| "executed".to_string());
+                    parts.push(format!(
+                        "R{} - {}({}) → {}",
+                        round_num, tc.name, args, result_brief
+                    ));
+                }
+                // Capture assistant's analysis text between tool calls
+                let content: String = msg.content.to_string();
+                if !content.trim().is_empty() {
+                    let preview: String = content.chars().take(500).collect();
+                    parts.push(format!("  ↳ {}", preview));
+                }
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        return String::new();
+    }
+
+    format!(
+        "[Task Progress Summary — {} tool rounds completed]\n{}\n\n\
+         Above are key findings from previous rounds. Use this information to continue — do NOT repeat these tool calls.",
+        round_num,
+        parts.join("\n")
+    )
+}
+
+/// Compact memory in-place by summarizing old tool execution rounds.
+/// Keeps `keep_rounds` most recent rounds intact, replaces older ones with a summary.
+/// Returns true if compaction was performed.
+fn compact_memory_mid_task(
+    memory: &mut Vec<AgentMessage>,
+    keep_rounds: usize,
+) -> bool {
+    // Find round boundaries: assistant messages with tool_calls
+    let round_starts: Vec<usize> = memory
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.role == "assistant" && m.tool_calls.is_some())
+        .map(|(i, _)| i)
+        .collect();
+
+    if round_starts.len() <= keep_rounds {
+        return false;
+    }
+
+    let keep_from_idx = round_starts[round_starts.len() - keep_rounds];
+    let rounds_to_compact = round_starts.len() - keep_rounds;
+
+    // Collect old messages (before the kept rounds)
+    let old_messages: Vec<AgentMessage> = memory.iter().take(keep_from_idx).cloned().collect();
+
+    // Build structured summary from old rounds
+    let summary = build_round_summary(old_messages.iter());
+    if summary.is_empty() {
+        return false;
+    }
+
+    // Rebuild memory: keep user/system messages + add summary + keep recent rounds
+    let mut new_memory = Vec::new();
+
+    // Preserve non-round messages (user questions, system messages)
+    for msg in &old_messages {
+        if msg.role == "user" || msg.role == "system" {
+            new_memory.push(msg.clone());
+        }
+    }
+
+    // Insert summary as an assistant message
+    new_memory.push(AgentMessage::assistant(&summary));
+
+    // Keep all recent rounds intact
+    for msg in memory.iter().skip(keep_from_idx) {
+        new_memory.push(msg.clone());
+    }
+
+    let old_len = memory.len();
+    let new_len = new_memory.len();
+    *memory = new_memory;
+
+    tracing::info!(
+        "Mid-task compaction: {} → {} messages (summarized {} old rounds)",
+        old_len,
+        new_len,
+        rounds_to_compact
+    );
+
+    true
 }
 
 /// Process a user message with streaming response.
@@ -1694,22 +1790,25 @@ pub async fn process_stream_events_with_safeguards(
 
     // === DYNAMIC CONTEXT WINDOW: Get model's actual capacity ===
     let max_context = llm_interface.max_context_length().await;
-    // Allocate history budget proportionally to model capacity:
-    // - Small contexts (< 8k): 65% (system prompt + tools take a large share)
-    // - Medium contexts (< 16k): 80%
-    // - Large contexts (>= 16k): 95% (modern models have ample room)
-    let effective_max = if max_context < 8192 {
-        (max_context * 65) / 100
-    } else if max_context < 16384 {
-        (max_context * 80) / 100
-    } else {
-        (max_context * 95) / 100
-    };
+
+    // Measure actual overhead from system prompt + tool definitions
+    let prompt_overhead = llm_interface.estimate_prompt_overhead_tokens().await;
+
+    // Reserve tokens for model response generation (minimum 1024)
+    const RESERVE_FOR_RESPONSE: usize = 1024;
+
+    // History budget = total capacity - prompt overhead - response reserve
+    let effective_max = max_context
+        .saturating_sub(prompt_overhead)
+        .saturating_sub(RESERVE_FOR_RESPONSE);
+
+    // Safety floor: always allow at least 20% of context for history
+    let min_history = (max_context * 20) / 100;
+    let effective_max = effective_max.max(min_history);
 
     tracing::debug!(
-        "Context window: model_capacity={}, effective_max={} for history",
-        max_context,
-        effective_max
+        "Context window: model_capacity={}, prompt_overhead={}, reserve={}, effective_max={} for history",
+        max_context, prompt_overhead, RESERVE_FOR_RESPONSE, effective_max
     );
 
     let history_for_llm: Vec<neomind_core::Message> = build_context_window_with_summary(
@@ -1782,7 +1881,7 @@ pub async fn process_stream_events_with_safeguards(
         // === SAFEGUARD: Track thinking time and content ===
         let mut thinking_start_time: Option<Instant> = None;
         let mut thinking_timeout_warned = false;
-        const THINKING_TIMEOUT_SECS: u64 = 120;
+        const THINKING_TIMEOUT_SECS: u64 = 300;
 
         // === SAFEGUARD: Track recently executed tools for multi-round context ===
         let mut recently_executed_tools: VecDeque<String> = VecDeque::new();
@@ -1795,7 +1894,7 @@ pub async fn process_stream_events_with_safeguards(
 
         // === SAFEGUARD: Track multi-round tool calling iterations ===
         let mut tool_iteration_count = 0usize;
-        const MAX_TOOL_ITERATIONS: usize = 10;
+        const MAX_TOOL_ITERATIONS: usize = 100;
         // Accumulate ALL tool results across rounds for final summary
         let mut all_round_tool_results: Vec<(String, String)> = Vec::new();
         // Track per-round thinking and content for persistence (round number → text)
@@ -1820,14 +1919,15 @@ pub async fn process_stream_events_with_safeguards(
                 tracing::debug!("Starting tool iteration round {}", tool_iteration_count + 1);
 
                 // For subsequent rounds, we need a new LLM call with tools enabled.
-                // Apply tool result compaction to prevent context bloat from accumulated
-                // tool JSON results. compact_tool_results keeps the 2 most recent tool
-                // rounds intact and compresses older ones to brief summaries.
+                // Use the same budget-managed context builder as the initial call.
                 let state_guard = internal_state.read().await;
 
                 let history_for_llm: Vec<neomind_core::Message> = {
-                    // Compact tool results: keep 2 most recent rounds, summarize older ones
-                    let compacted = super::compact_tool_results(&state_guard.memory, 2);
+                    // Build context with the same effective_max budget as the initial call
+                    let config = CompactionConfig::for_context_size(max_context);
+                    let compacted = build_context_window_with_config(
+                        &state_guard.memory, effective_max, &config
+                    );
                     compacted.iter().map(|msg| msg.to_core()).collect::<Vec<_>>()
                 };
 
@@ -2358,7 +2458,6 @@ pub async fn process_stream_events_with_safeguards(
                 let mut should_break_for_duplicate = false;
                 {
                     let mut new_tool_signatures: Vec<Vec<String>> = Vec::new();
-                    let mut already_executed_count = 0usize;
                     for tc in &tool_calls_to_execute {
                         let action_key = tc.arguments.get("action")
                             .and_then(|v| v.as_str())
@@ -2372,11 +2471,7 @@ pub async fn process_stream_events_with_safeguards(
                         }
                         // Check against all previously executed signatures
                         let sig_key = sig.join("|");
-                        if all_executed_signatures.contains(&sig_key) {
-                            already_executed_count += 1;
-                        } else {
-                            all_executed_signatures.insert(sig_key);
-                        }
+                        all_executed_signatures.insert(sig_key);
                         new_tool_signatures.push(sig);
                     }
 
@@ -2401,24 +2496,10 @@ pub async fn process_stream_events_with_safeguards(
                         consecutive_duplicate_rounds = 0;
                     }
 
-                    // Also detect when most tools in this round were already executed before.
-                    // 2B models often re-call already-executed tools despite prompt instructions.
-                    let total_tools = tool_calls_to_execute.len();
-                    if total_tools > 0 && already_executed_count * 100 / total_tools > 50 && tool_iteration_count >= 1 {
-                        tracing::warn!(
-                            already_executed = already_executed_count,
-                            total = total_tools,
-                            "Stopping ReAct loop: {}% of tool calls were already executed in previous rounds",
-                            already_executed_count * 100 / total_tools
-                        );
-                        should_break_for_duplicate = true;
-                    }
-
                     prev_round_signatures = new_tool_signatures;
 
-                    // Stop after 1 consecutive identical round — the LLM is stuck
-                    // (changed from 2: small models waste rounds repeating the same call)
-                    if consecutive_duplicate_rounds >= 1 {
+                    // Stop after 2 consecutive identical rounds — the LLM is stuck
+                    if consecutive_duplicate_rounds >= 2 {
                         tracing::warn!(
                             "LLM stuck in loop (2+ consecutive duplicate rounds). Stopping ReAct loop."
                         );
@@ -2455,6 +2536,34 @@ pub async fn process_stream_events_with_safeguards(
                         let history_content = state.large_data_cache.store(tool_name, result_str);
                         let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
                         state.push_message(tool_result_msg);
+                    }
+                }
+
+                // === MID-TASK COMPACTION: Prevent context overflow during long ReAct loops ===
+                // If memory exceeds 70% of the model's context budget, summarize old rounds
+                // so the LLM can continue working with a clean context.
+                {
+                    let budget_threshold = (effective_max * 70) / 100;
+                    let current_tokens = {
+                        let state = internal_state.read().await;
+                        estimate_total_memory_tokens(&state.memory)
+                    };
+
+                    if current_tokens > budget_threshold {
+                        tracing::warn!(
+                            "Memory approaching context budget ({} > {}/{}), triggering mid-task compaction",
+                            current_tokens, budget_threshold, effective_max
+                        );
+                        let mut state = internal_state.write().await;
+                        let compacted = compact_memory_mid_task(&mut state.memory, 2);
+                        drop(state);
+                        if compacted {
+                            yield AgentEvent::progress(
+                                "Context compacted, continuing task...".to_string(),
+                                "compacting",
+                                0,
+                            );
+                        }
                     }
                 }
 
@@ -2802,16 +2911,13 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     let history_messages = state_guard.memory.clone();
     drop(state_guard);
 
-    // Build context window
+    // Build context window — measure actual prompt overhead instead of guessing
     let max_context = llm_interface.max_context_length().await;
-    // Use conservative context limits
-    let effective_max = if max_context < 8192 {
-        (max_context * 60) / 100
-    } else if max_context < 16384 {
-        (max_context * 70) / 100
-    } else {
-        (max_context * 90) / 100
-    };
+    let prompt_overhead = llm_interface.estimate_prompt_overhead_tokens().await;
+    let effective_max = max_context
+        .saturating_sub(prompt_overhead)
+        .saturating_sub(1024)
+        .max((max_context * 20) / 100);
 
     let history_for_llm: Vec<neomind_core::Message> = build_context_window_with_summary(
         &history_messages,
@@ -3800,8 +3906,8 @@ mod tests {
         let english = "Hello world, this is a test";
         let chinese = "你好世界，这是一个测试";
 
-        let english_tokens = estimate_tokens(english);
-        let chinese_tokens = estimate_tokens(chinese);
+        let english_tokens = crate::agent::tokenizer::estimate_tokens(english);
+        let chinese_tokens = crate::agent::tokenizer::estimate_tokens(chinese);
 
         // Rough estimation: ~4 chars per token for English, ~1.8 tokens per Chinese char
         assert!(english_tokens > 0 && english_tokens < 20);
