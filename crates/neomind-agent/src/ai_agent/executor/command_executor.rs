@@ -346,8 +346,10 @@ impl AgentExecutor {
             .map(|a| {
                 let result_text = a.result.as_deref().unwrap_or("");
                 // Truncate individual results to prevent token overflow
-                let truncated = if result_text.len() > 2000 {
-                    format!("{}...(truncated)", &result_text[..2000])
+                // Use char-level truncation to avoid splitting multi-byte chars
+                let truncated = if result_text.chars().count() > 2000 {
+                    let s: String = result_text.chars().take(2000).collect();
+                    format!("{}...(truncated)", s)
                 } else {
                     result_text.to_string()
                 };
@@ -362,9 +364,9 @@ impl AgentExecutor {
 
         let (system, user) = if is_chinese {
             (
-                "你是一个物联网数据分析助手。基于查询结果修正之前的结论。只输出修正后的结论文字，不要输出JSON或其他格式。",
+                "You are an IoT data analysis assistant. Revise the previous conclusion based on query results. Output ONLY the revised conclusion text, no JSON or other formats.",
                 format!(
-                    "## 之前的结论\n{}\n\n## 补充查询数据\n{}\n\n请根据查询数据，修正或确认之前的结论。直接输出修正后的结论文字：",
+                    "## Previous Conclusion\n{}\n\n## Additional Query Data\n{}\n\nBased on the query data, revise or confirm the previous conclusion. Output the revised conclusion text directly:",
                     conclusion, query_summary
                 ),
             )

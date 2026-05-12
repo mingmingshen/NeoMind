@@ -232,21 +232,21 @@ impl AgentExecutor {
                     .get("data_collection")
                     .and_then(|dc| dc.get("time_range_minutes"))
                     .and_then(|v| v.as_u64())
-                    .unwrap_or(1440);
+                    .unwrap_or(60);
 
                 let include_history = resource
                     .config
                     .get("data_collection")
                     .and_then(|dc| dc.get("include_history"))
                     .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
+                    .unwrap_or(false);
 
                 let max_points = resource
                     .config
                     .get("data_collection")
                     .and_then(|dc| dc.get("max_points"))
                     .and_then(|v| v.as_u64())
-                    .unwrap_or(10000) as usize;
+                    .unwrap_or(1000) as usize;
 
                 let include_trend = resource
                     .config
@@ -556,7 +556,7 @@ impl AgentExecutor {
             };
 
             let end_time = chrono::Utc::now().timestamp();
-            let start_time = end_time - (1440 * 60); // Last 24h for regular metrics
+            let start_time = end_time - (3600); // Last 1 hour for regular metrics
 
             // Image metrics to check separately (only collect one image)
             let image_metric_names = vec![
@@ -738,7 +738,7 @@ impl AgentExecutor {
 
                     // Second, query historical data from storage
                     let end_time = chrono::Utc::now().timestamp();
-                    let start_time = end_time - 1440 * 60; // Last 24h for historical data
+                    let start_time = end_time - 3600; // Last 1 hour for historical data
 
                     let historical_result = tokio::time::timeout(
                         std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
