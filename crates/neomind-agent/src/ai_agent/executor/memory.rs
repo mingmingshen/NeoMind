@@ -160,64 +160,65 @@ fn image_analysis_fingerprint(entry: &str) -> String {
 /// Extract a concise text insight about an image from the LLM's analysis and conclusion.
 ///
 /// Prioritizes content from the situation analysis that describes visual observations,
-/// falling back to the conclusion text.
+/// falling back to the conclusion text.  All truncation is done via
+/// `clean_and_truncate_text` which operates on char boundaries — no manual byte
+/// slicing.
 fn extract_image_insight(situation_analysis: &str, conclusion: &str) -> String {
-    let max_len = 200;
+    let max_chars = 200;
+
+    // Sentence-ending punctuation used to find a natural break point
+    let is_sentence_end = |c: char| -> bool {
+        matches!(c, '。' | '.' | '！' | '？' | '!' | '?')
+    };
 
     // Try to find a visually descriptive segment from situation_analysis
-    // Look for common visual description markers
-    let visual_markers = [
-        ("image shows", "image shows"),
-        ("the image", "the image"),
-        ("visible", "visible"),
-        ("detected", "detected"),
-        ("camera", "camera"),
-        ("observed", "observed"),
-        ("图像", "图像"),
-        ("图片", "图片"),
-        ("画面", "画面"),
-        ("可以看到", "可以看到"),
-        ("观察到", "观察到"),
-        ("检测到", "检测到"),
-        ("发现", "发现"),
-        ("显示", "显示"),
+    let visual_markers: &[&str] = &[
+        "image shows",
+        "the image",
+        "visible",
+        "detected",
+        "camera",
+        "observed",
+        "图像",
+        "图片",
+        "画面",
+        "可以看到",
+        "观察到",
+        "检测到",
+        "发现",
+        "显示",
     ];
 
-    for (marker, _) in &visual_markers {
+    for marker in visual_markers {
         if let Some(pos) = situation_analysis.find(marker) {
-            let start = pos;
-            // Floor to the nearest char boundary to avoid splitting multi-byte chars
-            let mut end = (start + max_len).min(situation_analysis.len());
-            while !situation_analysis.is_char_boundary(end) && end > start {
-                end -= 1;
+            // Take up to max_chars characters (not bytes) after the marker position
+            let segment: String = situation_analysis[pos..]
+                .chars()
+                .take(max_chars)
+                .collect();
+
+            // Try to cut at the last sentence boundary
+            let cut = segment
+                .char_indices()
+                .rev()
+                .find(|(_, c)| is_sentence_end(*c))
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(segment.len());
+
+            let candidate = &segment[..cut.min(segment.len())];
+            if !candidate.is_empty() {
+                return clean_and_truncate_text(candidate, max_chars);
             }
-            // Try to end at a sentence boundary
-            let slice = &situation_analysis[start..end];
-            if let Some(dot_pos) = slice.rfind(|c: char| c == '。' || c == '.' || c == '！' || c == '！')
-            {
-                // dot_pos is the byte index of the START of the punctuation char;
-                // include the full multi-byte character in the slice.
-                let char_end = dot_pos
-                    + slice[dot_pos..]
-                        .chars()
-                        .next()
-                        .map_or(1, |c| c.len_utf8());
-                let trimmed = &slice[..char_end];
-                if trimmed.len() >= 20 {
-                    return clean_and_truncate_text(trimmed, max_len);
-                }
-            }
-            return clean_and_truncate_text(slice, max_len);
         }
     }
 
-    // Fallback: use conclusion (already cleaned/truncated by caller, but limit here)
+    // Fallback: use conclusion
     if !conclusion.is_empty() {
-        return clean_and_truncate_text(conclusion, max_len);
+        return clean_and_truncate_text(conclusion, max_chars);
     }
 
     // Last resort: first part of situation_analysis
-    clean_and_truncate_text(situation_analysis, max_len)
+    clean_and_truncate_text(situation_analysis, max_chars)
 }
 
 impl AgentExecutor {
