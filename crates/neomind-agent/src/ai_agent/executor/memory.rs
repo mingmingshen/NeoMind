@@ -179,7 +179,11 @@ fn extract_image_insight(situation_analysis: &str, conclusion: &str) -> String {
     for (marker, _) in &visual_markers {
         if let Some(pos) = situation_analysis.find(marker) {
             let start = pos;
-            let end = (start + max_len).min(situation_analysis.len());
+            // Floor to the nearest char boundary to avoid splitting multi-byte chars
+            let mut end = (start + max_len).min(situation_analysis.len());
+            while !situation_analysis.is_char_boundary(end) && end > start {
+                end -= 1;
+            }
             // Try to end at a sentence boundary
             let slice = &situation_analysis[start..end];
             if let Some(dot_pos) = slice.rfind(|c: char| c == '。' || c == '.' || c == '！' || c == '！')
