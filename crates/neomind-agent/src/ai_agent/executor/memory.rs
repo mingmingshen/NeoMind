@@ -150,6 +150,58 @@ pub(crate) fn extract_semantic_description(decision: &Decision, symptom: &str) -
     format!("{} - {}", symptom, decision.action)
 }
 
+/// Extract a concise text insight about an image from the LLM's analysis and conclusion.
+///
+/// Prioritizes content from the situation analysis that describes visual observations,
+/// falling back to the conclusion text.
+fn extract_image_insight(situation_analysis: &str, conclusion: &str) -> String {
+    let max_len = 200;
+
+    // Try to find a visually descriptive segment from situation_analysis
+    // Look for common visual description markers
+    let visual_markers = [
+        ("image shows", "image shows"),
+        ("the image", "the image"),
+        ("visible", "visible"),
+        ("detected", "detected"),
+        ("camera", "camera"),
+        ("observed", "observed"),
+        ("图像", "图像"),
+        ("图片", "图片"),
+        ("画面", "画面"),
+        ("可以看到", "可以看到"),
+        ("观察到", "观察到"),
+        ("检测到", "检测到"),
+        ("发现", "发现"),
+        ("显示", "显示"),
+    ];
+
+    for (marker, _) in &visual_markers {
+        if let Some(pos) = situation_analysis.find(marker) {
+            let start = pos;
+            let end = (start + max_len).min(situation_analysis.len());
+            // Try to end at a sentence boundary
+            let slice = &situation_analysis[start..end];
+            if let Some(dot_pos) = slice.rfind(|c: char| c == '。' || c == '.' || c == '！' || c == '！')
+            {
+                let trimmed = &slice[..=dot_pos];
+                if trimmed.len() >= 20 {
+                    return clean_and_truncate_text(trimmed, max_len);
+                }
+            }
+            return clean_and_truncate_text(slice, max_len);
+        }
+    }
+
+    // Fallback: use conclusion (already cleaned/truncated by caller, but limit here)
+    if !conclusion.is_empty() {
+        return clean_and_truncate_text(conclusion, max_len);
+    }
+
+    // Last resort: first part of situation_analysis
+    clean_and_truncate_text(situation_analysis, max_len)
+}
+
 impl AgentExecutor {
     pub(crate) async fn update_memory(
         &self,
@@ -178,30 +230,67 @@ impl AgentExecutor {
             || situation_analysis.to_lowercase().contains("abnormal")
             || situation_analysis.to_lowercase().contains("anomaly");
 
+        // Detect image data — each image analysis is valuable, never treat as routine
+        let has_image_analysis = data.iter().any(|d| {
+            d.values
+                .get("_is_image")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        });
+
+        // Build image analysis summaries from conclusion for image data
+        let image_analyses: Vec<String> = if has_image_analysis {
+            data.iter()
+                .filter(|d| {
+                    d.values
+                        .get("_is_image")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                })
+                .map(|d| {
+                    let insight = extract_image_insight(situation_analysis, conclusion);
+                    format!("[image_analysis] {}: {}", d.source, insight)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         // Fingerprint-based duplicate detection: if the last 2+ short-term summaries
         // have the same conclusion fingerprint as the current one, this execution
         // carries no new information — skip writing to avoid redundant memory entries.
+        // NOTE: image analyses bypass duplicate detection.
         let current_fp = conclusion_fingerprint(conclusion, success);
-        let recent_duplicate_count = memory
-            .short_term
-            .summaries
-            .iter()
-            .rev()
-            .take(2)
-            .filter(|s| conclusion_fingerprint(&s.conclusion, s.success) == current_fp)
-            .count();
+        let recent_duplicate_count = if has_image_analysis {
+            0 // never skip image analyses as duplicates
+        } else {
+            memory
+                .short_term
+                .summaries
+                .iter()
+                .rev()
+                .take(2)
+                .filter(|s| conclusion_fingerprint(&s.conclusion, s.success) == current_fp)
+                .count()
+        };
 
-        let is_routine_success =
-            !has_alert_or_command && decisions.is_empty() && success && !has_anomaly;
-        let is_duplicate = recent_duplicate_count >= 2;
+        let is_routine_success = !has_alert_or_command
+            && decisions.is_empty()
+            && success
+            && !has_anomaly
+            && !has_image_analysis;
+        let is_duplicate = !has_image_analysis && recent_duplicate_count >= 2;
 
         if !is_routine_success && !is_duplicate {
             // Prepare decision summaries for Short-Term Memory
-            let decision_summaries: Vec<String> = decisions
+            let mut decision_summaries: Vec<String> = decisions
                 .iter()
                 .filter(|d| !d.description.is_empty())
                 .map(|d| clean_and_truncate_text(&d.description, 100))
                 .collect();
+
+            // Append image analysis summaries so they persist in short-term memory
+            decision_summaries.extend(image_analyses);
 
             tracing::debug!(
                 agent_id = %agent.id,
@@ -209,6 +298,7 @@ impl AgentExecutor {
                 analysis_len = cleaned_analysis.len(),
                 conclusion_len = cleaned_conclusion.len(),
                 decisions_count = decision_summaries.len(),
+                has_image_analysis,
                 "About to add to short_term memory"
             );
 

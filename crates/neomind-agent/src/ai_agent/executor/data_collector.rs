@@ -167,9 +167,7 @@ impl AgentExecutor {
 
         // Add condensed memory context
         let memory_data = self.collect_memory_summary(agent, timestamp)?;
-        if let Some(mem_data) = memory_data {
-            data.push(mem_data);
-        }
+        data.extend(memory_data);
 
         // Log summary of collected data
         tracing::info!(
@@ -234,21 +232,21 @@ impl AgentExecutor {
                     .get("data_collection")
                     .and_then(|dc| dc.get("time_range_minutes"))
                     .and_then(|v| v.as_u64())
-                    .unwrap_or(60);
+                    .unwrap_or(1440);
 
                 let include_history = resource
                     .config
                     .get("data_collection")
                     .and_then(|dc| dc.get("include_history"))
                     .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
+                    .unwrap_or(true);
 
                 let max_points = resource
                     .config
                     .get("data_collection")
                     .and_then(|dc| dc.get("max_points"))
                     .and_then(|v| v.as_u64())
-                    .unwrap_or(1000) as usize;
+                    .unwrap_or(10000) as usize;
 
                 let include_trend = resource
                     .config
@@ -413,30 +411,20 @@ impl AgentExecutor {
                 0
             };
 
-            let history_values: Vec<_> = result.points[start_idx..]
-                .iter()
-                .map(|p| {
-                    serde_json::json!({
-                        "value": p.value,
-                        "timestamp": p.timestamp
-                    })
-                })
-                .collect();
+            let history_points = &result.points[start_idx..];
 
-            // Calculate statistics for numeric values
-            let stats = calculate_stats(&result.points[start_idx..]).map(|nums| {
-                serde_json::json!({
-                    "min": nums.min,
-                    "max": nums.max,
-                    "avg": nums.avg,
-                    "count": nums.count
-                })
-            });
+            // Use adaptive compression for compact output
+            let compressed = compress_series_adaptive(
+                history_points,
+                device_id,
+                metric_name,
+            );
+            values_json["history"] = compressed["series"].clone();
+            values_json["history_count"] = serde_json::json!(history_points.len());
 
-            values_json["history"] = serde_json::json!(history_values);
-            values_json["history_count"] = serde_json::json!(history_values.len());
-            if let Some(s) = stats {
-                values_json["stats"] = s;
+            // Include stats from compression output
+            if let Some(stats) = compressed.get("stats").cloned() {
+                values_json["stats"] = stats;
             }
         }
 
@@ -568,7 +556,7 @@ impl AgentExecutor {
             };
 
             let end_time = chrono::Utc::now().timestamp();
-            let start_time = end_time - (3600); // Last 1 hour for regular metrics
+            let start_time = end_time - (1440 * 60); // Last 24h for regular metrics
 
             // Image metrics to check separately (only collect one image)
             let image_metric_names = vec![
@@ -750,7 +738,7 @@ impl AgentExecutor {
 
                     // Second, query historical data from storage
                     let end_time = chrono::Utc::now().timestamp();
-                    let start_time = end_time - 3600; // Last 1 hour for historical data
+                    let start_time = end_time - 1440 * 60; // Last 24h for historical data
 
                     let historical_result = tokio::time::timeout(
                         std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
@@ -874,68 +862,121 @@ impl AgentExecutor {
         &self,
         agent: &AiAgent,
         timestamp: i64,
-    ) -> AgentResult<Option<DataCollected>> {
-        if agent.memory.state_variables.is_empty() {
-            return Ok(None);
-        }
+    ) -> AgentResult<Vec<DataCollected>> {
+        let mut results = Vec::new();
 
-        let mut memory_summary = serde_json::Map::new();
+        // --- Part 1: Standard memory summary (from state_variables) ---
+        if !agent.memory.state_variables.is_empty() {
+            let mut memory_summary = serde_json::Map::new();
 
-        // Add last conclusion only
-        if let Some(conclusion) = agent
-            .memory
-            .state_variables
-            .get("last_conclusion")
-            .and_then(|v| v.as_str())
-        {
-            memory_summary.insert("last_conclusion".to_string(), serde_json::json!(conclusion));
-        }
+            // Add last conclusion only
+            if let Some(conclusion) = agent
+                .memory
+                .state_variables
+                .get("last_conclusion")
+                .and_then(|v| v.as_str())
+            {
+                memory_summary.insert("last_conclusion".to_string(), serde_json::json!(conclusion));
+            }
 
-        // Add condensed recent analyses (only conclusions)
-        if let Some(analyses) = agent
-            .memory
-            .state_variables
-            .get("recent_analyses")
-            .and_then(|v| v.as_array())
-        {
-            let condensed: Vec<_> = analyses
-                .iter()
-                .take(2)
-                .filter_map(|a| {
-                    a.get("conclusion")
-                        .and_then(|c| c.as_str())
-                        .filter(|s| !s.is_empty())
-                        .map(|c| serde_json::json!(c))
-                })
-                .collect();
-            if !condensed.is_empty() {
-                memory_summary.insert(
-                    "recent_conclusions".to_string(),
-                    serde_json::json!(condensed),
-                );
+            // Add condensed recent analyses (only conclusions)
+            if let Some(analyses) = agent
+                .memory
+                .state_variables
+                .get("recent_analyses")
+                .and_then(|v| v.as_array())
+            {
+                let condensed: Vec<_> = analyses
+                    .iter()
+                    .take(2)
+                    .filter_map(|a| {
+                        a.get("conclusion")
+                            .and_then(|c| c.as_str())
+                            .filter(|s| !s.is_empty())
+                            .map(|c| serde_json::json!(c))
+                    })
+                    .collect();
+                if !condensed.is_empty() {
+                    memory_summary.insert(
+                        "recent_conclusions".to_string(),
+                        serde_json::json!(condensed),
+                    );
+                }
+            }
+
+            // Add execution count
+            if let Some(count) = agent
+                .memory
+                .state_variables
+                .get("total_executions")
+                .and_then(|v| v.as_i64())
+            {
+                memory_summary.insert("total_executions".to_string(), serde_json::json!(count));
+            }
+
+            if !memory_summary.is_empty() {
+                results.push(DataCollected {
+                    source: "memory".to_string(),
+                    data_type: "summary".to_string(),
+                    values: serde_json::to_value(memory_summary).unwrap_or_default(),
+                    timestamp,
+                });
             }
         }
 
-        // Add execution count
-        if let Some(count) = agent
+        // --- Part 2: Image analysis history (from short-term memory decisions) ---
+        // Scan short-term summaries for [image_analysis] decision entries and collect
+        // the most recent ones as text summaries for the LLM context.
+        let image_entries: Vec<serde_json::Value> = agent
             .memory
-            .state_variables
-            .get("total_executions")
-            .and_then(|v| v.as_i64())
-        {
-            memory_summary.insert("total_executions".to_string(), serde_json::json!(count));
+            .short_term
+            .summaries
+            .iter()
+            .rev()
+            .flat_map(|summary| {
+                summary
+                    .decisions
+                    .iter()
+                    .filter(|d| d.starts_with("[image_analysis]"))
+                    .map(move |d| {
+                        let time_str = chrono::DateTime::from_timestamp(summary.timestamp, 0)
+                            .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                            .unwrap_or_else(|| summary.timestamp.to_string());
+                        serde_json::json!({
+                            "time": time_str,
+                            "analysis": d,
+                        })
+                    })
+            })
+            .take(3)
+            .collect();
+
+        if !image_entries.is_empty() {
+            let mut image_values = serde_json::Map::new();
+            image_values.insert(
+                "image_analyses".to_string(),
+                serde_json::json!(image_entries),
+            );
+            image_values.insert(
+                "description".to_string(),
+                serde_json::json!("Previous image/camera analysis records; each is an independent observation"),
+            );
+
+            results.push(DataCollected {
+                source: "image_history".to_string(),
+                data_type: "image_analysis".to_string(),
+                values: serde_json::to_value(image_values).unwrap_or_default(),
+                timestamp,
+            });
+
+            tracing::debug!(
+                agent_id = %agent.id,
+                image_history_count = image_entries.len(),
+                "[COLLECT] Injected image analysis history"
+            );
         }
 
-        if memory_summary.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(DataCollected {
-                source: "memory".to_string(),
-                data_type: "summary".to_string(),
-                values: serde_json::to_value(memory_summary).unwrap_or_default(),
-                timestamp,
-            }))
-        }
+        Ok(results)
     }
 
     /// Collect data including the triggering event data.
@@ -1169,4 +1210,133 @@ pub(crate) fn is_image_metric(metric_name: &str, value: &serde_json::Value) -> b
     } else {
         false
     }
+}
+
+/// Format a Unix timestamp as a human-readable relative time string.
+fn fmt_relative_ts(ts: i64) -> String {
+    let secs = ts % 60;
+    let mins = (ts / 60) % 60;
+    let hrs = ts / 3600;
+    format!("{}h{}m{}s", hrs, mins, secs)
+}
+
+/// Format a timestamp pair as a range string.
+fn fmt_ts_range(start_ts: i64, end_ts: i64) -> String {
+    let start_dt = chrono::DateTime::from_timestamp(start_ts, 0)
+        .map(|dt| dt.format("%m-%d %H:%M").to_string())
+        .unwrap_or_else(|| start_ts.to_string());
+    let end_dt = chrono::DateTime::from_timestamp(end_ts, 0)
+        .map(|dt| dt.format("%m-%d %H:%M").to_string())
+        .unwrap_or_else(|| end_ts.to_string());
+    format!("{}~{}", start_dt, end_dt)
+}
+
+/// Adaptive series compression for time-series data points.
+///
+/// Compresses a sequence of `neomind_storage::DataPoint` values into a compact
+/// "kept / fluctuated" representation. Long runs of identical values become a
+/// single "kept" entry; consecutive short runs of varying values are grouped
+/// into a "fluctuated" array.
+///
+/// Returns a `serde_json::Value` suitable for embedding in action results or
+/// pre-collected data.
+pub(crate) fn compress_series_adaptive(
+    points: &[neomind_storage::DataPoint],
+    source_id: &str,
+    metric: &str,
+) -> serde_json::Value {
+    if points.is_empty() {
+        return serde_json::json!({
+            "source": source_id,
+            "metric": metric,
+            "points": 0,
+            "message": "no data"
+        });
+    }
+
+    let count = points.len();
+    let first_ts = points[0].timestamp;
+    let last_ts = points[count - 1].timestamp;
+
+    let from_str = fmt_ts_range(first_ts, last_ts).split('~').next().unwrap_or("").trim().to_string();
+    let to_str = fmt_ts_range(first_ts, last_ts).split('~').nth(1).unwrap_or("").trim().to_string();
+    let duration_secs = last_ts - first_ts;
+
+    // Phase 1: identify runs of consecutive equal values
+    let mut runs: Vec<(usize, usize, serde_json::Value)> = Vec::new();
+    let mut run_start = 0;
+    for i in 1..=count {
+        let is_eq = if i < count {
+            points[i].value == points[run_start].value
+        } else {
+            false
+        };
+        if !is_eq {
+            runs.push((run_start, i, points[run_start].value.clone()));
+            run_start = i;
+        }
+    }
+
+    // Phase 2: merge runs into series entries
+    const MIN_STABLE: usize = 3;
+    let mut series: Vec<serde_json::Value> = Vec::new();
+    let mut ri = 0;
+    while ri < runs.len() {
+        let (rs, re, rv) = &runs[ri];
+        let run_len = re - rs;
+
+        if run_len >= MIN_STABLE {
+            series.push(serde_json::json!({
+                "range": fmt_ts_range(points[*rs].timestamp, points[re - 1].timestamp),
+                "kept": rv,
+            }));
+            ri += 1;
+        } else {
+            let seg_start = *rs;
+            let mut seg_end = *re;
+            let mut vals: Vec<serde_json::Value> = vec![rv.clone(); run_len];
+            ri += 1;
+
+            while ri < runs.len() {
+                let (nrs, nre, nrv) = &runs[ri];
+                if nre - nrs >= MIN_STABLE {
+                    break;
+                }
+                for _ in 0..(nre - nrs) {
+                    vals.push(nrv.clone());
+                }
+                seg_end = *nre;
+                ri += 1;
+            }
+
+            series.push(serde_json::json!({
+                "range": fmt_ts_range(points[seg_start].timestamp, points[seg_end - 1].timestamp),
+                "fluctuated": vals,
+            }));
+        }
+    }
+
+    // Calculate stats if numeric
+    let stats = calculate_stats(points).map(|s| serde_json::json!({
+        "min": s.min,
+        "max": s.max,
+        "avg": (s.avg * 100.0).round() / 100.0,
+        "count": s.count
+    }));
+
+    let mut result = serde_json::json!({
+        "source": source_id,
+        "metric": metric,
+        "from": from_str,
+        "to": to_str,
+        "duration": fmt_relative_ts(duration_secs),
+        "points": count,
+        "series": series,
+    });
+
+    if let Some(s) = stats {
+        result["stats"] = s;
+    }
+
+    result
 }
