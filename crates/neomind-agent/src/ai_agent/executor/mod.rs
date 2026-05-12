@@ -371,23 +371,16 @@ impl AgentExecutor {
     }
 
     /// Check whether tool mode should be used for this agent execution.
-    /// Only Free mode agents use tool calling; Focused mode always uses
-    /// structured LLM analysis.
+    ///
+    /// Tool calling is used when the LLM supports function calling and a tool
+    /// registry is available.  Both Focused and Free modes can use tool calling;
+    /// the difference is scope — Focused mode restricts which resources can be
+    /// accessed (enforced in `run_tool_loop` and `filter_tools_for_focused`).
     fn should_use_tools(
         &self,
         agent: &AiAgent,
         llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>,
     ) -> bool {
-        // Focused mode never uses tools
-        if agent.execution_mode != neomind_storage::agents::ExecutionMode::Free {
-            tracing::debug!(
-                agent_id = %agent.id,
-                execution_mode = ?agent.execution_mode,
-                "Tool mode skipped — agent is not in Free execution mode"
-            );
-            return false;
-        }
-
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
         let registry_available = self
             .tool_registry
@@ -395,11 +388,18 @@ impl AgentExecutor {
             .is_some();
         let result = llm_supports_tools && registry_available;
         if !result {
-            tracing::warn!(
+            tracing::info!(
                 agent_id = %agent.id,
+                execution_mode = ?agent.execution_mode,
                 llm_supports_tools,
                 registry_available,
-                "Tool mode NOT activated - one or more conditions not met"
+                "Tool mode NOT activated - falling back to structured analysis"
+            );
+        } else {
+            tracing::info!(
+                agent_id = %agent.id,
+                execution_mode = ?agent.execution_mode,
+                "Tool mode activated (scope enforced by execution mode)"
             );
         }
         result
@@ -428,9 +428,12 @@ impl AgentExecutor {
                 }
             };
 
+        // Both Focused and Free get the same tool set.
+        // Scope is enforced at execution time, not at tool definition level:
+        //   - Focused JSON path: execute_decisions whitelist
+        //   - Tool calling path:  run_tool_loop scope guard
         match tool_config {
             Some(config) if !config.allowed_tools.is_empty() => {
-                // Build a HashSet for O(1) lookup instead of Vec linear scan
                 let allowed: std::collections::HashSet<&str> = config
                     .allowed_tools
                     .iter()
@@ -977,19 +980,121 @@ impl AgentExecutor {
                 Content::text(&output.text),
             ));
 
-            // Execute tools with concurrency limiting via semaphore
-            let registry_calls: Vec<crate::toolkit::registry::ToolCall> = tool_calls
-                .iter()
-                .map(|tc| crate::toolkit::registry::ToolCall {
+            // ── Focused mode scope guard ──
+            // For Focused agents, validate that mutation targets (device control,
+            // agent control, etc.) are in the agent's bound resources.
+            // Read-only operations (list, query, latest, history, get) are always allowed.
+            let is_focused = agent.execution_mode
+                == neomind_storage::agents::ExecutionMode::Focused;
+            let bound_device_ids: std::collections::HashSet<String> = if is_focused {
+                agent
+                    .resources
+                    .iter()
+                    .filter(|r| {
+                        matches!(
+                            r.resource_type,
+                            ResourceType::Device
+                                | ResourceType::Command
+                                | ResourceType::Metric
+                        )
+                    })
+                    .filter_map(|r| r.resource_id.split(':').next().map(|s| s.to_string()))
+                    .collect()
+            } else {
+                std::collections::HashSet::new() // unused
+            };
+
+            // Partition tool calls into allowed / rejected
+            let mut allowed_calls: Vec<(usize, crate::toolkit::registry::ToolCall)> = Vec::new();
+            let mut rejected_results: Vec<(usize, crate::toolkit::ToolResult)> = Vec::new();
+
+            for (idx, tc) in tool_calls.iter().enumerate() {
+                let call = crate::toolkit::registry::ToolCall {
                     name: tc.name.clone(),
                     args: tc.arguments.clone(),
                     id: Some(tc.id.clone()),
-                })
-                .collect();
+                };
 
-            let results = {
+                if !is_focused {
+                    allowed_calls.push((idx, call));
+                    continue;
+                }
+
+                // Focused mode: check scope for mutation actions
+                let action = tc.arguments["action"].as_str().unwrap_or("");
+                let is_read_action = matches!(
+                    action,
+                    "list" | "get" | "latest" | "history"
+                        | "query" | "executions" | "conversation"
+                        | "latest_execution" | "search" | "memory"
+                        | "read" | "status"
+                );
+
+                if is_read_action {
+                    allowed_calls.push((idx, call));
+                    continue;
+                }
+
+                // Mutation action: check device_id against bound resources
+                let device_id = tc.arguments["device_id"].as_str().unwrap_or("");
+                if !device_id.is_empty() && bound_device_ids.contains(device_id) {
+                    allowed_calls.push((idx, call));
+                    continue;
+                }
+
+                // No specific device_id or not in bound → check if any extension tool
+                if tc.name == "extension" || tc.name.starts_with("ext_") {
+                    // Extension tools are allowed if they're in agent's ExtensionTool resources
+                    let ext_allowed = agent.resources.iter().any(|r| {
+                        r.resource_type == ResourceType::ExtensionTool
+                            && tc.arguments.get("extension_id")
+                                .and_then(|v| v.as_str())
+                                .map_or(false, |eid| r.resource_id.contains(eid))
+                    });
+                    if ext_allowed {
+                        allowed_calls.push((idx, call));
+                        continue;
+                    }
+                }
+
+                // Reject: not in scope
+                let reject_msg = format!(
+                    "Focused mode: action '{}' on '{}' is out of scope. \
+                     Only bound resources can be controlled.",
+                    action,
+                    if device_id.is_empty() { "unknown target" } else { device_id }
+                );
+                tracing::warn!(
+                    agent_id = %agent.id,
+                    tool = %tc.name,
+                    action = %action,
+                    "[SCOPE] Rejected out-of-scope tool call"
+                );
+                rejected_results.push((idx, crate::toolkit::ToolResult {
+                    name: tc.name.clone(),
+                    result: Err(crate::toolkit::error::ToolError::Execution(reject_msg)),
+                }));
+            }
+
+            // Execute tools with concurrency limiting via semaphore
+            let results = if allowed_calls.is_empty() {
+                Vec::new()
+            } else {
+                let calls: Vec<_> = allowed_calls.iter().map(|(_, c)| c.clone()).collect();
                 let _permit = self.tool_concurrency.acquire().await.unwrap();
-                registry.execute_parallel(registry_calls).await
+                registry.execute_parallel(calls).await
+            };
+
+            // Merge executed results with rejected results back into original order
+            let results: Vec<crate::toolkit::ToolResult> = {
+                let mut merged: Vec<(usize, crate::toolkit::ToolResult)> = allowed_calls
+                    .iter()
+                    .map(|(orig_idx, _)| *orig_idx)
+                    .zip(results.into_iter())
+                    .collect();
+                merged.extend(rejected_results);
+                merged.sort_by_key(|(i, _)| *i);
+                merged.into_iter().map(|(_, r)| r).collect()
             };
 
             let mut round_tool_calls: Vec<ToolCallRecord> = Vec::new();
@@ -3403,7 +3508,7 @@ impl AgentExecutor {
                 situation_analysis,
                 reasoning_steps,
                 decisions,
-                conclusion,
+                mut conclusion,
             } => {
                 // Send thinking event for analysis completion
                 self.send_thinking(
@@ -3489,6 +3594,26 @@ impl AgentExecutor {
                         ),
                     )
                     .await;
+                }
+
+                // Step 3.5: Refine conclusion if query decisions returned real data
+                if let Some(refined) = self
+                    .refine_conclusion_with_query_results(
+                        &agent,
+                        &conclusion,
+                        &actions_executed,
+                        &execution_id,
+                    )
+                    .await
+                {
+                    self.send_thinking(
+                        &agent_id,
+                        &execution_id,
+                        step_num,
+                        "Refined conclusion with queried data",
+                    )
+                    .await;
+                    conclusion = refined;
                 }
 
                 // Step 4: Generate report if needed

@@ -233,6 +233,7 @@ impl AgentExecutor {
     }
 
     async fn handle_query_decision(
+        &self,
         agent: &AiAgent,
         decision: &Decision,
         actions: &mut Vec<neomind_storage::ActionExecuted>,
@@ -241,23 +242,201 @@ impl AgentExecutor {
         if parts.len() < 4 {
             return;
         }
+        let device_id = parts[1];
+        let metric = parts[2];
         let time_spec = parts[3];
 
         tracing::info!(
             agent_id = %agent.id,
+            device_id = %device_id,
+            metric = %metric,
             time_spec = %time_spec,
             decision_action = %decision.action,
             "Agent requested data with specific time range"
         );
 
+        // Execute the actual query if time_series_storage is available
+        let query_result = if let Some(storage) = &self.time_series_storage {
+            let default_secs = 24 * 3600; // 24h
+            let range_secs = crate::toolkit::aggregated::parse_time_range(time_spec)
+                .unwrap_or(default_secs);
+            let end_time = chrono::Utc::now().timestamp();
+            let start_time = end_time - range_secs;
+
+            match storage
+                .query_range(device_id, metric, start_time, end_time, Some(100_000))
+                .await
+            {
+                Ok(ts_result) => {
+                    if ts_result.points.is_empty() {
+                        format!(
+                            "No data found for {}:{} in last {}",
+                            device_id, metric, time_spec
+                        )
+                    } else {
+                        // Use adaptive compression for compact output
+                        let compressed = super::data_collector::compress_series_adaptive(
+                            &ts_result.points,
+                            device_id,
+                            metric,
+                        );
+                        // Return as JSON string for the action result
+                        serde_json::to_string_pretty(&compressed)
+                            .unwrap_or_else(|_| format!("{} data points retrieved", ts_result.points.len()))
+                    }
+                }
+                Err(e) => format!("Query failed for {}:{}: {}", device_id, metric, e),
+            }
+        } else {
+            "Storage not available for data query".to_string()
+        };
+
         actions.push(neomind_storage::ActionExecuted {
             action_type: "data_query".to_string(),
-            description: format!("Query data with time range: {}", time_spec),
-            target: format!("{}:{}", parts[1], parts[2]),
+            description: format!("Query {}.{} data for last {}", device_id, metric, time_spec),
+            target: format!("{}:{}", device_id, metric),
             parameters: serde_json::json!({"time_spec": time_spec}),
             success: true,
-            result: Some(format!("Time range request noted: {}", time_spec)),
+            result: Some(query_result),
         });
+    }
+
+    /// Refine the LLM conclusion by feeding back query results from executed decisions.
+    ///
+    /// In Focused mode, the LLM generates conclusion + decisions in a single pass.
+    /// This method checks if any `data_query` actions produced real data, and if so,
+    /// makes a lightweight second LLM call to revise the conclusion with that data.
+    pub(crate) async fn refine_conclusion_with_query_results(
+        &self,
+        agent: &AiAgent,
+        conclusion: &str,
+        actions: &[neomind_storage::ActionExecuted],
+        _execution_id: &str,
+    ) -> Option<String> {
+        // Extract query results that contain actual data (not "no data" or errors)
+        let query_results: Vec<&neomind_storage::ActionExecuted> = actions
+            .iter()
+            .filter(|a| {
+                a.action_type == "data_query"
+                    && a.success
+                    && a.result.as_ref().map_or(false, |r| {
+                        !r.starts_with("No data found")
+                            && !r.starts_with("Query failed")
+                            && !r.starts_with("Storage not available")
+                    })
+            })
+            .collect();
+
+        if query_results.is_empty() {
+            return None;
+        }
+
+        tracing::info!(
+            agent_id = %agent.id,
+            query_count = query_results.len(),
+            "[REFINE] Refining conclusion with {} query result(s)",
+            query_results.len()
+        );
+
+        let llm = self.get_llm_runtime_for_agent(agent).await.ok()??;
+
+        // Build compact query results summary
+        let query_data: Vec<String> = query_results
+            .iter()
+            .map(|a| {
+                let result_text = a.result.as_deref().unwrap_or("");
+                // Truncate individual results to prevent token overflow
+                let truncated = if result_text.len() > 2000 {
+                    format!("{}...(truncated)", &result_text[..2000])
+                } else {
+                    result_text.to_string()
+                };
+                format!("Query {}.{}:\n{}", a.target, a.parameters["time_spec"], truncated)
+            })
+            .collect();
+
+        let query_summary = query_data.join("\n\n");
+
+        let is_chinese = crate::agent::semantic_mapper::SemanticToolMapper::detect_language(&agent.user_prompt)
+            != crate::agent::semantic_mapper::Language::English;
+
+        let (system, user) = if is_chinese {
+            (
+                "你是一个物联网数据分析助手。基于查询结果修正之前的结论。只输出修正后的结论文字，不要输出JSON或其他格式。",
+                format!(
+                    "## 之前的结论\n{}\n\n## 补充查询数据\n{}\n\n请根据查询数据，修正或确认之前的结论。直接输出修正后的结论文字：",
+                    conclusion, query_summary
+                ),
+            )
+        } else {
+            (
+                "You are an IoT data analysis assistant. Revise the previous conclusion based on query results. Output ONLY the revised conclusion text, no JSON or other formats.",
+                format!(
+                    "## Previous Conclusion\n{}\n\n## Additional Query Data\n{}\n\nBased on the query data, revise or confirm the previous conclusion. Output the revised conclusion text directly:",
+                    conclusion, query_summary
+                ),
+            )
+        };
+
+        use neomind_core::llm::backend::{GenerationParams, LlmInput};
+
+        let input = LlmInput {
+            messages: vec![
+                neomind_core::message::Message::new(
+                    neomind_core::message::MessageRole::System,
+                    neomind_core::message::Content::text(system),
+                ),
+                neomind_core::message::Message::new(
+                    neomind_core::message::MessageRole::User,
+                    neomind_core::message::Content::text(user),
+                ),
+            ],
+            params: GenerationParams {
+                temperature: Some(0.5),
+                max_tokens: Some(2000),
+                thinking_enabled: Some(false),
+                ..Default::default()
+            },
+            model: None,
+            stream: false,
+            tools: None,
+        };
+
+        match tokio::time::timeout(std::time::Duration::from_secs(60), llm.generate(input)).await {
+            Ok(Ok(output)) => {
+                let refined = output.text.trim().to_string();
+                if refined.is_empty() {
+                    tracing::debug!(
+                        agent_id = %agent.id,
+                        "[REFINE] LLM returned empty, keeping original conclusion"
+                    );
+                    None
+                } else {
+                    tracing::info!(
+                        agent_id = %agent.id,
+                        original_len = conclusion.len(),
+                        refined_len = refined.len(),
+                        "[REFINE] Conclusion refined with query data"
+                    );
+                    Some(refined)
+                }
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(
+                    agent_id = %agent.id,
+                    error = %e,
+                    "[REFINE] LLM call failed, keeping original conclusion"
+                );
+                None
+            }
+            Err(_) => {
+                tracing::warn!(
+                    agent_id = %agent.id,
+                    "[REFINE] LLM call timed out, keeping original conclusion"
+                );
+                None
+            }
+        }
     }
 
     async fn handle_command_decision(
@@ -556,7 +735,7 @@ impl AgentExecutor {
 
             // Handle query decisions (e.g., "query:device_id:metric:time_range")
             if decision.action.starts_with("query:") {
-                Self::handle_query_decision(agent, decision, &mut actions_executed).await;
+                self.handle_query_decision(agent, decision, &mut actions_executed).await;
                 continue;
             }
 
