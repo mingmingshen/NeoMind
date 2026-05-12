@@ -12,7 +12,7 @@
  *   (react-grid-layout#1984: onLayoutChange fires twice)
  */
 
-import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect } from 'react'
 import { ReactElement } from 'react'
 import { ResponsiveGridLayout } from 'react-grid-layout'
 import { cn } from '@/lib/utils'
@@ -169,8 +169,13 @@ export function DashboardGrid({
 
   const resizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
+  // Synchronous measurement — fires before paint so the first frame has correct width.
+  // Eliminates the blank frame from width=0 → measure → re-render.
+  useLayoutEffect(() => {
     updateWidth()
+  }, [updateWidth])
+
+  useEffect(() => {
     const resizeObserver = new ResizeObserver(() => {
       if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current)
       resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 100)

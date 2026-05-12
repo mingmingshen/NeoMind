@@ -391,58 +391,83 @@ pub(crate) fn truncate_to(text: &str, max_chars: usize) -> String {
     }
 }
 
-pub(crate) fn score_turn_relevance(
-    turn: &ConversationTurn,
-    current_data: &[DataCollected],
-    current_trigger: &str,
-) -> f64 {
-    let mut score = 0.0;
-    let now = chrono::Utc::now().timestamp();
-    let age_hours = ((now - turn.timestamp).max(0) as f64) / 3600.0;
-
-    // Factor 1: Time decay (30% weight) - exponential decay
-    // Recent turns (< 1 hour) get close to full score
-    // Old turns (> 24 hours) get minimal score
-    let recency_score = (-0.03 * age_hours).exp().clamp(0.0, 1.0);
-    score += recency_score * 0.3;
-
-    // Factor 2: Success reference (20% weight)
-    // Successful executions are more valuable as positive examples
-    if turn.success {
-        score += 0.2;
-    }
-
-    // Factor 3: Device overlap (30% weight)
-    // Turns that handled the same devices are highly relevant
-    let current_devices: std::collections::HashSet<_> =
-        current_data.iter().map(|d| d.source.as_str()).collect();
-
-    let turn_devices: std::collections::HashSet<_> = turn
-        .input
-        .data_collected
-        .iter()
-        .map(|d| d.source.as_str())
+/// Produce a lightweight fingerprint for comparing conclusions.
+/// Normalizes to lowercase alphanumeric + first 30 chars, combined with success flag.
+pub(crate) fn conclusion_fingerprint(conclusion: &str, success: bool) -> String {
+    let normalized: String = conclusion
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == ' ')
         .collect();
+    let truncated = if normalized.len() > 30 {
+        normalized[..normalized.floor_char_boundary(30)].to_string()
+    } else {
+        normalized
+    };
+    format!("{}:{}", if success { "1" } else { "0" }, truncated.trim())
+}
 
-    if !current_devices.is_empty() {
-        let overlap = current_devices.intersection(&turn_devices).count();
-        let union = current_devices.union(&turn_devices).count();
-        let jaccard = if union > 0 {
-            overlap as f64 / union as f64
+/// Format conversation history with change-detection: consecutive turns with
+/// the same conclusion fingerprint are collapsed into a single entry showing
+/// the count (e.g., "×3 similar"). Only turns representing a *change* get
+/// individual entries, so the limited context window is spent on information
+/// that actually differs.
+///
+/// Returns formatted lines (newest first), up to `max_entries` unique events.
+pub(crate) fn format_changed_history(
+    history: &[ConversationTurn],
+    max_entries: usize,
+) -> Vec<String> {
+    if history.is_empty() {
+        return Vec::new();
+    }
+
+    let mut entries: Vec<String> = Vec::new();
+    // Walk newest → oldest
+    let mut idx = history.len();
+
+    while idx > 0 && entries.len() < max_entries {
+        idx -= 1;
+        let turn = &history[idx];
+        let fp = conclusion_fingerprint(&turn.output.conclusion, turn.success);
+
+        let ts = chrono::DateTime::from_timestamp(turn.timestamp, 0)
+            .map(|dt| dt.format("%m-%d %H:%M").to_string())
+            .unwrap_or_else(|| "??".to_string());
+        let status = if turn.success { "OK" } else { "FAIL" };
+        let conclusion = truncate_to(&turn.output.conclusion, 80);
+
+        // Count how many consecutive older turns share the same fingerprint
+        let mut similar_count: usize = 0;
+        let mut scan = idx;
+        while scan > 0 {
+            scan -= 1;
+            let older_fp = conclusion_fingerprint(
+                &history[scan].output.conclusion,
+                history[scan].success,
+            );
+            if older_fp == fp {
+                similar_count += 1;
+                idx = scan; // Skip past these
+            } else {
+                break;
+            }
+        }
+
+        if similar_count > 0 {
+            let first_ts = chrono::DateTime::from_timestamp(history[idx].timestamp, 0)
+                .map(|dt| dt.format("%m-%d").to_string())
+                .unwrap_or_else(|| "??".to_string());
+            entries.push(format!(
+                "- [{} ~ {}][{}] {} (×{} similar)",
+                first_ts, ts, status, conclusion, similar_count + 1
+            ));
         } else {
-            0.0
-        };
-        score += jaccard * 0.3;
+            entries.push(format!("- [{}][{}] {}", ts, status, conclusion));
+        }
     }
 
-    // Factor 4: Trigger similarity (20% weight)
-    // Same trigger type suggests similar execution context
-    if !current_trigger.is_empty() && turn.trigger_type == current_trigger {
-        score += 0.2;
-    }
-
-    // Clamp to [0, 1]
-    score.clamp(0.0, 1.0)
+    entries
 }
 
 #[cfg(test)]

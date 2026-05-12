@@ -1,5 +1,4 @@
 use super::*;
-use crate::prompts::{CONVERSATION_CONTEXT_EN, CONVERSATION_CONTEXT_ZH};
 
 pub(crate) fn extract_semantic_patterns(
     decisions: &[Decision],
@@ -171,17 +170,32 @@ impl AgentExecutor {
         let cleaned_conclusion = clean_and_truncate_text(conclusion, 200);
         memory.set_working_analysis(cleaned_analysis.clone(), cleaned_conclusion.clone());
 
-        // 2. Write gating: skip short-term/long-term for routine successful executions
+        // 2. Write gating: skip short-term/long-term for routine/duplicate executions
         let has_alert_or_command = decisions
             .iter()
             .any(|d| matches!(d.decision_type.as_str(), "alert" | "command"));
         let has_anomaly = situation_analysis.to_lowercase().contains("异常")
             || situation_analysis.to_lowercase().contains("abnormal")
             || situation_analysis.to_lowercase().contains("anomaly");
+
+        // Fingerprint-based duplicate detection: if the last 2+ short-term summaries
+        // have the same conclusion fingerprint as the current one, this execution
+        // carries no new information — skip writing to avoid redundant memory entries.
+        let current_fp = conclusion_fingerprint(conclusion, success);
+        let recent_duplicate_count = memory
+            .short_term
+            .summaries
+            .iter()
+            .rev()
+            .take(2)
+            .filter(|s| conclusion_fingerprint(&s.conclusion, s.success) == current_fp)
+            .count();
+
         let is_routine_success =
             !has_alert_or_command && decisions.is_empty() && success && !has_anomaly;
+        let is_duplicate = recent_duplicate_count >= 2;
 
-        if !is_routine_success {
+        if !is_routine_success && !is_duplicate {
             // Prepare decision summaries for Short-Term Memory
             let decision_summaries: Vec<String> = decisions
                 .iter()
@@ -230,7 +244,10 @@ impl AgentExecutor {
             tracing::debug!(
                 agent_id = %agent.id,
                 execution_id = %execution_id,
-                "Skipping short-term/long-term memory: routine success"
+                is_routine = is_routine_success,
+                is_duplicate = is_duplicate,
+                recent_duplicate_count,
+                "Skipping short-term/long-term memory: routine or duplicate"
             );
         }
 
@@ -307,269 +324,6 @@ impl AgentExecutor {
         );
 
         Ok(memory)
-    }
-
-    pub fn build_conversation_messages(
-        &self,
-        agent: &AiAgent,
-        current_data: &[DataCollected],
-        event_data: Option<serde_json::Value>,
-    ) -> Vec<Message> {
-        let mut messages = Vec::new();
-
-        // Detect language from user_prompt to determine response language
-        let detected_language = SemanticToolMapper::detect_language(&agent.user_prompt);
-        let is_chinese = matches!(
-            detected_language,
-            crate::agent::semantic_mapper::Language::Chinese
-                | crate::agent::semantic_mapper::Language::Mixed
-        );
-
-        // 1. Generic system prompt with conversation context
-        let (role_prompt, conversation_context, task_header) = if is_chinese {
-            (
-                "你是一个 NeoMind 智能物联网系统的自动化助手。根据用户的指令分析数据、做出决策并执行相应操作。",
-                CONVERSATION_CONTEXT_ZH,
-                "## 你的任务"
-            )
-        } else {
-            (
-                "You are an automation assistant for the NeoMind IoT system. Analyze data, make decisions, and execute operations based on user instructions.",
-                CONVERSATION_CONTEXT_EN,
-                "## Your Task"
-            )
-        };
-
-        // Get current time context for temporal understanding
-        let time_context = get_time_context();
-
-        let system_prompt = format!(
-            "{}\n\n{}\n\n{}\n\n{}\n{}\n\n{}",
-            LANGUAGE_POLICY,
-            role_prompt,
-            time_context,
-            task_header,
-            agent.user_prompt,
-            conversation_context
-        );
-        messages.push(Message::system(system_prompt));
-
-        // 2. Add user messages as important context - these are the user's latest instructions
-        // User messages take priority over initial configuration and historical patterns
-        if !agent.user_messages.is_empty() {
-            let user_msgs_text: Vec<String> = agent
-                .user_messages
-                .iter()
-                .enumerate()
-                .map(|(i, msg)| {
-                    let timestamp_str = chrono::DateTime::from_timestamp(msg.timestamp, 0)
-                        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                        .unwrap_or_else(|| "Unknown".to_string());
-                    format!("{}. [{}] {}", i + 1, timestamp_str, msg.content)
-                })
-                .collect();
-
-            let formatted_msg = if is_chinese {
-                format!(
-                    "## ⚠️ 用户最新指令 (必须严格遵循)\n\n\
-                    用户在运行期间发送了以下消息，这些消息包含对执行策略的更新。\
-                    **请务必将这些指令作为最高优先级，覆盖初始配置中的任何冲突规则：**\n\n\
-                    {}\n\n\
-                    请在分析当前情况时，严格按照上述用户指令进行决策。",
-                    user_msgs_text.join("\n")
-                )
-            } else {
-                format!(
-                    "## ⚠️ Latest User Instructions (Must Follow Strictly)\n\n\
-                    The user sent the following messages during runtime, containing updates to execution strategy.\
-                    **These instructions must be treated as highest priority, overriding any conflicting rules in the initial configuration:**\n\n\
-                    {}\n\n\
-                    When analyzing the current situation, strictly follow the above user instructions for decision-making.",
-                    user_msgs_text.join("\n")
-                )
-            };
-            messages.push(Message::system(formatted_msg));
-        }
-
-        // 3. Add conversation summary if available
-        if let Some(ref summary) = agent.conversation_summary {
-            let summary_header = if is_chinese {
-                "## 历史对话摘要"
-            } else {
-                "## Conversation Summary"
-            };
-            messages.push(Message::system(format!(
-                "{}\n\n{}",
-                summary_header, summary
-            )));
-        }
-
-        // 4. Add recent conversation turns as context with intelligent filtering
-        // Use relevance scoring to select the most valuable conversation turns
-        let context_window = agent.context_window_size;
-        let current_trigger = if event_data.is_some() {
-            "event"
-        } else {
-            "scheduled"
-        };
-
-        // Score all turns by relevance and select top N
-        let mut scored_turns: Vec<_> = agent
-            .conversation_history
-            .iter()
-            .map(|turn| {
-                let score = score_turn_relevance(turn, current_data, current_trigger);
-                (turn, score)
-            })
-            .collect();
-
-        // Filter out turns with very low relevance (< 0.15) to save context space
-        scored_turns.retain(|(_, score)| *score >= 0.15);
-
-        // Sort by relevance score (descending) and take top N
-        scored_turns.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        let recent_turns: Vec<_> = scored_turns.into_iter().take(context_window).collect();
-
-        if !recent_turns.is_empty() {
-            let history_header = if is_chinese {
-                format!(
-                    "## 之前的执行历史 (最近 {} 次)\n\n请参考以下历史记录，避免重复告警，追踪趋势变化。",
-                    recent_turns.len()
-                )
-            } else {
-                format!(
-                    "## Previous Execution History (Last {})\n\nRefer to the following history to avoid duplicate alerts and track trend changes.",
-                    recent_turns.len()
-                )
-            };
-            messages.push(Message::system(history_header));
-
-            // Add each turn as context (in reverse order since we sorted by relevance desc)
-            // recent_turns is Vec<(&ConversationTurn, f64)>
-            for (i, (turn, _score)) in recent_turns.iter().rev().enumerate() {
-                let timestamp_str = chrono::DateTime::from_timestamp(turn.timestamp, 0)
-                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-                    .unwrap_or_else(|| "Unknown".to_string());
-
-                let turn_context = if is_chinese {
-                    format!(
-                        "### 历史执行 #{} ({})\n触发方式: {}\n分析: {}\n结论: {}",
-                        i + 1,
-                        timestamp_str,
-                        turn.trigger_type,
-                        turn.output.situation_analysis,
-                        turn.output.conclusion
-                    )
-                } else {
-                    format!(
-                        "### Historical Execution #{} ({})\nTrigger: {}\nAnalysis: {}\nConclusion: {}",
-                        i + 1,
-                        timestamp_str,
-                        turn.trigger_type,
-                        turn.output.situation_analysis,
-                        turn.output.conclusion
-                    )
-                };
-
-                messages.push(Message::system(turn_context));
-
-                // Add decisions if any
-                if !turn.output.decisions.is_empty() {
-                    let decisions_summary: Vec<String> = turn
-                        .output
-                        .decisions
-                        .iter()
-                        .map(|d| format!("- {}", d.description))
-                        .collect();
-                    let decisions_label = if is_chinese {
-                        "历史决策"
-                    } else {
-                        "Historical Decisions"
-                    };
-                    messages.push(Message::system(format!(
-                        "{}:\n{}",
-                        decisions_label,
-                        decisions_summary.join("\n")
-                    )));
-                }
-            }
-
-            let current_execution_note = if is_chinese {
-                "## 当前执行\n\n请参考上述历史，分析当前情况。特别注意：\n\
-                - 与之前数据相比的变化趋势\n\
-                - 之前报告的问题是否持续\n\
-                - 避免重复相同的分析或决策"
-            } else {
-                "## Current Execution\n\nRefer to the history above when analyzing the current situation. Pay attention to:\n\
-                - Trend changes compared to previous data\n\
-                - Whether previously reported issues persist\n\
-                - Avoid repeating the same analysis or decisions"
-            };
-            messages.push(Message::system(current_execution_note.to_string()));
-        }
-
-        // 5. Current execution data
-        let data_text = if current_data.is_empty() {
-            if is_chinese {
-                "当前无预采集数据，请使用可用工具查询需要的设备数据".to_string()
-            } else {
-                "No pre-collected data available. Use available tools to query the data you need"
-                    .to_string()
-            }
-        } else {
-            current_data
-                .iter()
-                .map(|d| format!("- {}: {}", d.source, d.data_type))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-
-        let (
-            current_data_header,
-            data_sources_label,
-            trigger_label,
-            trigger_type_text,
-            analysis_request,
-        ) = if is_chinese {
-            (
-                "## 当前数据",
-                "数据来源",
-                "触发方式",
-                if event_data.is_some() {
-                    "事件触发"
-                } else {
-                    "定时/手动"
-                },
-                "请分析当前情况并做出决策。",
-            )
-        } else {
-            (
-                "## Current Data",
-                "Data Sources",
-                "Trigger",
-                if event_data.is_some() {
-                    "Event-triggered"
-                } else {
-                    "Scheduled/Manual"
-                },
-                "Please analyze the current situation and make decisions.",
-            )
-        };
-
-        let current_input = format!(
-            "{}\n\n{}:\n{}\n\n{}: {}\n\n{}",
-            current_data_header,
-            data_sources_label,
-            data_text,
-            trigger_label,
-            trigger_type_text,
-            analysis_request
-        );
-
-        messages.push(Message::user(current_input));
-
-        messages
     }
 
     /// Create a conversation turn from execution results.

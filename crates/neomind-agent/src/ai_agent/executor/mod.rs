@@ -39,9 +39,9 @@ use neomind_storage::{
     TurnInput,
     TurnOutput,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 
 // Import DataSourceId for type-safe extension metric queries
 use neomind_core::datasource::DataSourceId;
@@ -49,7 +49,7 @@ use neomind_core::datasource::DataSourceId;
 use crate::agent::semantic_mapper::SemanticToolMapper;
 use crate::agent::types::LlmBackend;
 use crate::error::{NeoMindError, Result as AgentResult};
-use crate::prompts::LANGUAGE_POLICY;
+
 
 /// Internal representation of image content for multimodal LLM messages.
 #[allow(dead_code)]
@@ -95,7 +95,9 @@ pub(crate) use analyzer::AnalysisResult;
 pub use context::{ChainResult, ChainState, DataSourceRef, EventTriggerData};
 
 // Re-export functions needed by sibling modules (via use super::*)
-pub(crate) use context::{clean_and_truncate_text, score_turn_relevance, truncate_to};
+pub(crate) use context::{
+    clean_and_truncate_text, conclusion_fingerprint, format_changed_history, truncate_to,
+};
 pub(crate) use data_collector::get_time_context;
 pub(crate) use intent::extract_threshold;
 pub(crate) use response_parser::{
@@ -149,6 +151,71 @@ fn build_parameters_schema(
         "properties": properties,
         "required": required,
     })
+}
+
+/// Compact executor message history to prevent context window overflow.
+///
+/// When the number of non-system messages exceeds `keep_recent * 2`, old tool result
+/// messages are replaced with short summaries. The system prompt (first message) and
+/// the most recent messages are always preserved.
+///
+/// This operates directly on `Vec<Message>` used by the executor tool loop.
+fn compact_executor_messages(messages: &mut Vec<Message>, keep_recent: usize) {
+    // Threshold: if we have more than keep_recent * 2 non-system messages, compact.
+    let non_system_count = messages
+        .iter()
+        .filter(|m| m.role != MessageRole::System)
+        .count();
+
+    let threshold = keep_recent * 2;
+    if non_system_count <= threshold {
+        return;
+    }
+
+    let to_compact = non_system_count.saturating_sub(keep_recent);
+    if to_compact == 0 {
+        return;
+    }
+
+    tracing::debug!(
+        total_messages = messages.len(),
+        non_system = non_system_count,
+        to_compact,
+        "Compacting executor messages"
+    );
+
+    // Walk from oldest (index 1, skip system prompt) and compact tool result messages.
+    // We need to track how many non-system messages we've compacted.
+    let mut compacted_count = 0usize;
+    let mut i = 1; // Skip system prompt at index 0
+    while i < messages.len() && compacted_count < to_compact {
+        if messages[i].role == MessageRole::User {
+            let text = messages[i].content.as_text();
+            // Tool result messages start with "Tool 'name' result:\n"
+            if text.starts_with("Tool '") || text.starts_with("Skill guide retrieved") {
+                // Replace with a compact summary
+                let summary = if text.len() > 100 {
+                    let preview = &text[..text.floor_char_boundary(80)];
+                    format!("[Previous tool result: {}...]", preview)
+                } else {
+                    format!("[Previous tool result: {}]", text)
+                };
+                messages[i].content = Content::text(summary);
+                compacted_count += 1;
+            } else {
+                compacted_count += 1;
+            }
+        } else if messages[i].role == MessageRole::Assistant {
+            // Compact old assistant messages to just a brief note
+            let text = messages[i].content.as_text();
+            if text.len() > 200 {
+                let preview = &text[..text.floor_char_boundary(100)];
+                messages[i].content = Content::text(format!("[Previous reasoning: {}...]", preview));
+            }
+            compacted_count += 1;
+        }
+        i += 1;
+    }
 }
 
 /// Configuration for agent executor.
@@ -242,6 +309,8 @@ pub struct AgentExecutor {
     memory_store: Option<Arc<MarkdownMemoryStore>>,
     /// Per-LLM-backend semaphores for concurrency limiting (shared with scheduler)
     backend_semaphores: Option<crate::ai_agent::scheduler::BackendSemaphores>,
+    /// Semaphore limiting concurrent tool executions (default: 6)
+    tool_concurrency: Arc<Semaphore>,
 }
 
 /// Calculate relevance score for a conversation turn based on current context.
@@ -289,6 +358,7 @@ impl AgentExecutor {
             tool_registry: parking_lot::RwLock::new(config.tool_registry.clone()),
             memory_store: config.memory_store.clone(),
             backend_semaphores: config.backend_semaphores.clone(),
+            tool_concurrency: Arc::new(Semaphore::new(6)),
         })
     }
 
@@ -460,8 +530,11 @@ impl AgentExecutor {
                 .rev()
                 .take(3)
                 .map(|s| {
+                    let ts = chrono::DateTime::from_timestamp(s.timestamp, 0)
+                        .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                        .unwrap_or_else(|| "??".to_string());
                     let status = if s.success { "OK" } else { "FAIL" };
-                    format!("- [{}] {}", status, truncate_to(&s.conclusion, 80))
+                    format!("- [{}][{}] {}", ts, status, truncate_to(&s.conclusion, 80))
                 })
                 .collect();
             history_parts.push(format!("### Recent Executions\n{}", recent.join("\n")));
@@ -520,6 +593,30 @@ impl AgentExecutor {
                  These override any conflicting rules from initial config:\n{}",
                 msgs.join("\n")
             ));
+        }
+
+        // 5. Recent execution history (conversation turns) — change-detected, collapses duplicates
+        if !agent.conversation_history.is_empty() {
+            let max_entries = agent.context_window_size.min(5) as usize;
+            let entries = format_changed_history(&agent.conversation_history, max_entries);
+            if !entries.is_empty() {
+                history_parts.push(format!(
+                    "### Recent Execution History ({} events)\n{}\n\
+                     Use this to track trends and avoid repeating the same analysis.",
+                    entries.len(),
+                    entries.join("\n")
+                ));
+            }
+        }
+
+        // 6. Conversation summary (compressed older history — preserved across evictions)
+        if let Some(ref summary) = agent.conversation_summary {
+            if !summary.is_empty() {
+                history_parts.push(format!(
+                    "### Earlier History Summary\n{}",
+                    summary
+                ));
+            }
         }
 
         let history_section = if history_parts.is_empty() {
@@ -659,6 +756,13 @@ impl AgentExecutor {
         let mut skill_reference = String::new();
         let mut skill_injected = false;
 
+        // Cross-round tool deduplication: track tool signatures to avoid re-executing
+        // the same tool with the same arguments across rounds.
+        let mut all_executed_signatures: HashSet<String> = HashSet::new();
+        // Duplicate round detection: track tool names per round to detect loops.
+        let mut prev_round_tool_names: Vec<String> = Vec::new();
+        let mut consecutive_duplicate_rounds: usize = 0;
+
         for round in 0..max_rounds {
             // Inject accumulated skill reference into system prompt once, after first tool round
             if round > 0 && !skill_reference.is_empty() && !skill_injected {
@@ -702,13 +806,50 @@ impl AgentExecutor {
                 }
             };
 
-            let (remaining_text, tool_calls) = match parse_tool_calls(&output.text) {
-                Ok(parsed) => parsed,
+            let mut tool_calls = match parse_tool_calls(&output.text) {
+                Ok((_, calls)) => calls,
                 Err(e) => {
-                    tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse tool calls");
-                    final_text = output.text;
-                    break;
+                    // Thinking model fallback: some models (qwen3, deepseek-r1) put tool calls
+                    // in the thinking field instead of the main text output.
+                    let text_empty = output.text.trim().is_empty()
+                        || output.text.trim().len() < 20;
+                    if text_empty {
+                        if let Some(ref thinking) = output.thinking {
+                            if let Ok((_, thinking_calls)) = parse_tool_calls(thinking) {
+                                if !thinking_calls.is_empty() {
+                                    tracing::debug!(
+                                        agent_id = %agent.id,
+                                        "Found {} tool calls in thinking field (fallback)",
+                                        thinking_calls.len()
+                                    );
+                                    thinking_calls
+                                } else {
+                                    tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse tool calls");
+                                    final_text = output.text;
+                                    break;
+                                }
+                            } else {
+                                tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse tool calls");
+                                final_text = output.text;
+                                break;
+                            }
+                        } else {
+                            tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse tool calls");
+                            final_text = output.text;
+                            break;
+                        }
+                    } else {
+                        tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse tool calls");
+                        final_text = output.text;
+                        break;
+                    }
                 }
+            };
+
+            // Get remaining text for reasoning tracking
+            let remaining_text = match parse_tool_calls(&output.text) {
+                Ok((text, _)) => text,
+                Err(_) => output.text.clone(),
             };
 
             if tool_calls.is_empty() {
@@ -716,9 +857,96 @@ impl AgentExecutor {
                 break;
             }
 
+            // --- Intra-round deduplication ---
+            // Remove duplicate tool calls within the same round (same name + similar args).
+            let mut seen_this_round: HashSet<String> = HashSet::new();
+            tool_calls.retain(|tc| {
+                let args_preview = serde_json::to_string(&tc.arguments)
+                    .unwrap_or_default();
+                let args_short = &args_preview[..args_preview.len().min(100)];
+                let sig = format!("{}:{}", tc.name, args_short);
+                seen_this_round.insert(sig)
+            });
+
+            // --- Cross-round deduplication ---
+            // Filter out tool calls that were already executed in previous rounds with
+            // the same arguments. This prevents small models from wasting tokens.
+            let before_count = tool_calls.len();
+            tool_calls.retain(|tc| {
+                let args_preview = serde_json::to_string(&tc.arguments)
+                    .unwrap_or_default();
+                let args_short = &args_preview[..args_preview.len().min(100)];
+                let sig = format!("{}:{}", tc.name, args_short);
+                all_executed_signatures.insert(sig)
+            });
+            let deduped_count = before_count - tool_calls.len();
+            if deduped_count > 0 {
+                tracing::debug!(
+                    agent_id = %agent.id,
+                    round = round + 1,
+                    deduped = deduped_count,
+                    "Skipped duplicate tool calls from previous rounds"
+                );
+            }
+
+            // If all tool calls were duplicates, treat as no-op and ask LLM again
+            if tool_calls.is_empty() {
+                tracing::warn!(
+                    agent_id = %agent.id,
+                    round = round + 1,
+                    "All tool calls were duplicates, asking LLM to proceed differently"
+                );
+                messages.push(Message::new(
+                    MessageRole::Assistant,
+                    Content::text(&output.text),
+                ));
+                messages.push(Message::new(
+                    MessageRole::User,
+                    Content::text(
+                        "Those tool calls were already executed in previous rounds with the same \
+                         arguments. Please use different tools or parameters, or provide your \
+                         final answer based on the results you already have."
+                    ),
+                ));
+                continue;
+            }
+
             // Collect LLM's reasoning text (what it said before/during tool calls)
             if !remaining_text.is_empty() {
                 all_reasoning_texts.push(remaining_text.clone());
+            }
+
+            // --- Duplicate round detection ---
+            let current_round_names = {
+                let mut names: Vec<String> = tool_calls
+                    .iter()
+                    .map(|tc| tc.name.clone())
+                    .collect();
+                names.sort();
+                names
+            };
+            if current_round_names == prev_round_tool_names {
+                consecutive_duplicate_rounds += 1;
+            } else {
+                consecutive_duplicate_rounds = 0;
+            }
+            prev_round_tool_names = current_round_names;
+
+            if consecutive_duplicate_rounds >= 2 {
+                tracing::warn!(
+                    agent_id = %agent.id,
+                    round = round + 1,
+                    consecutive_duplicates = consecutive_duplicate_rounds,
+                    "Detected duplicate tool round loop, terminating early"
+                );
+                self.send_thinking(
+                    &agent.id,
+                    execution_id,
+                    step_num,
+                    "Terminating: detected repeated tool calling pattern",
+                )
+                .await;
+                break;
             }
 
             tracing::debug!(
@@ -749,6 +977,7 @@ impl AgentExecutor {
                 Content::text(&output.text),
             ));
 
+            // Execute tools with concurrency limiting via semaphore
             let registry_calls: Vec<crate::toolkit::registry::ToolCall> = tool_calls
                 .iter()
                 .map(|tc| crate::toolkit::registry::ToolCall {
@@ -757,7 +986,11 @@ impl AgentExecutor {
                     id: Some(tc.id.clone()),
                 })
                 .collect();
-            let results = registry.execute_parallel(registry_calls).await;
+
+            let results = {
+                let _permit = self.tool_concurrency.acquire().await.unwrap();
+                registry.execute_parallel(registry_calls).await
+            };
 
             let mut round_tool_calls: Vec<ToolCallRecord> = Vec::new();
             for (i, tc) in tool_calls.iter().enumerate() {
@@ -843,6 +1076,11 @@ impl AgentExecutor {
                 .await;
                 step_num += 1;
             }
+
+            // --- Messages compaction ---
+            // When the message history grows too large, compact old tool results into
+            // short summaries to prevent context window overflow in subsequent rounds.
+            compact_executor_messages(messages, 10);
         }
 
         // If all rounds exhausted without LLM producing final text, OR if LLM failed

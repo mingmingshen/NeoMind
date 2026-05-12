@@ -752,105 +752,102 @@ impl AgentExecutor {
         // Build history context from conversation turns and memory
         let mut history_parts = Vec::new();
 
-        // Add memory summary if available
-        if !agent.memory.state_variables.is_empty() {
-            // Get recent analyses from memory
-            if let Some(analyses) = agent
-                .memory
-                .state_variables
-                .get("recent_analyses")
-                .and_then(|v| v.as_array())
-            {
-                if !analyses.is_empty() {
-                    let summary: Vec<_> = analyses
-                        .iter()
-                        .take(1) // Reduced to 1 for small models
-                        .filter_map(|a| {
-                            a.get("analysis").and_then(|an| an.as_str()).map(|txt| {
-                                let conclusion =
-                                    a.get("conclusion").and_then(|c| c.as_str()).unwrap_or("");
-                                if !conclusion.is_empty() {
-                                    format!("- 分析: {} | 结论: {}", txt, conclusion)
-                                } else {
-                                    format!("- 分析: {}", txt)
-                                }
-                            })
-                        })
-                        .collect();
+        // 1. Recent execution history — change-detected, collapses consecutive duplicates
+        if !agent.conversation_history.is_empty() {
+            let max_entries = agent.context_window_size.min(3) as usize;
+            let entries = format_changed_history(&agent.conversation_history, max_entries);
+            if !entries.is_empty() {
+                history_parts.push(format!(
+                    "## Recent Execution History ({} events)\n{}",
+                    entries.len(),
+                    entries.join("\n")
+                ));
+            }
+        }
 
-                    if !summary.is_empty() {
-                        history_parts.push(format!(
-                            "\n## 历史分析 (最近{}次)\n{}",
-                            summary.len(),
-                            summary.join("\n")
-                        ));
-                    }
-                }
+        // 2. Short-term memory summaries (recent execution results)
+        if !agent.memory.short_term.summaries.is_empty() {
+            let recent: Vec<String> = agent
+                .memory
+                .short_term
+                .summaries
+                .iter()
+                .rev()
+                .take(3)
+                .map(|s| {
+                    let ts = chrono::DateTime::from_timestamp(s.timestamp, 0)
+                        .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                        .unwrap_or_else(|| "??".to_string());
+                    let status = if s.success { "OK" } else { "FAIL" };
+                    format!("- [{}][{}] {}", ts, status, truncate_to(&s.conclusion, 80))
+                })
+                .collect();
+            history_parts.push(format!(
+                "## Short-term Memory\n{}",
+                recent.join("\n")
+            ));
+        }
+
+        // 3. Learned patterns (high confidence only)
+        if !agent.memory.learned_patterns.is_empty() {
+            let mut pattern_groups: std::collections::HashMap<&str, Vec<&LearnedPattern>> =
+                std::collections::HashMap::new();
+            for pattern in &agent.memory.learned_patterns {
+                pattern_groups
+                    .entry(pattern.pattern_type.as_str())
+                    .or_default()
+                    .push(pattern);
             }
 
-            // === SEMANTIC PATTERNS (Long-term memory) ===
-            // Use learned_patterns instead of raw decision_patterns
-            // Organized by pattern_type for better context
-            if !agent.memory.learned_patterns.is_empty() {
-                // Group patterns by type and show only the best from each category
-                let mut pattern_groups: std::collections::HashMap<&str, Vec<&LearnedPattern>> =
-                    std::collections::HashMap::new();
-                for pattern in &agent.memory.learned_patterns {
-                    pattern_groups
-                        .entry(pattern.pattern_type.as_str())
-                        .or_default()
-                        .push(pattern);
-                }
-
-                // Take only high-confidence patterns (>= 0.7) from each category
-                let mut semantic_patterns = Vec::new();
-                for (category, patterns) in pattern_groups.iter() {
-                    if let Some(&best) =
-                        patterns
-                            .iter()
-                            .filter(|p| p.confidence >= 0.7)
-                            .max_by(|a, b| {
-                                a.confidence
-                                    .partial_cmp(&b.confidence)
-                                    .unwrap_or(std::cmp::Ordering::Equal)
-                            })
-                    {
-                        semantic_patterns.push(format!(
-                            "- [{}] {} (置信度: {:.0}%)",
-                            category,
-                            best.description,
-                            best.confidence * 100.0
-                        ));
-                    }
-                }
-
-                if !semantic_patterns.is_empty() {
-                    history_parts.push(format!(
-                        "\n## 已验证的决策模式\n{}",
-                        semantic_patterns.join("\n")
+            let mut semantic_patterns = Vec::new();
+            for (category, patterns) in pattern_groups.iter() {
+                if let Some(&best) =
+                    patterns
+                        .iter()
+                        .filter(|p| p.confidence >= 0.7)
+                        .max_by(|a, b| {
+                            a.confidence
+                                .partial_cmp(&b.confidence)
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                {
+                    semantic_patterns.push(format!(
+                        "- [{}] {} ({:.0}%)",
+                        category,
+                        best.description,
+                        best.confidence * 100.0
                     ));
                 }
             }
 
-            // === BASELINES (Reference values) ===
-            if !agent.memory.baselines.is_empty() {
-                let baseline_info: Vec<_> = agent
-                    .memory
-                    .baselines
-                    .iter()
-                    .take(3) // Reduced for small models
-                    .map(|(metric, value)| format!("- {}: 基线值 {:.2}", metric, value))
-                    .collect();
-                history_parts.push(format!("\n## 指标基线\n{}", baseline_info.join("\n")));
+            if !semantic_patterns.is_empty() {
+                history_parts.push(format!(
+                    "## Verified Decision Patterns\n{}",
+                    semantic_patterns.join("\n")
+                ));
             }
         }
 
-        // === CONTEXT MANAGEMENT ===
-        // === HISTORY CONTEXT - DISABLED for small models ===
-        // The compressed history context is NOT used to avoid confusing qwen3:1.7b
-        let _history_context = ""; // Intentionally unused
+        // 4. Baselines
+        if !agent.memory.baselines.is_empty() {
+            let baseline_info: Vec<_> = agent
+                .memory
+                .baselines
+                .iter()
+                .take(5)
+                .map(|(metric, value)| format!("- {}: {:.2}", metric, value))
+                .collect();
+            history_parts.push(format!("## Metric Baselines\n{}", baseline_info.join("\n")));
+        }
 
-        // === USER MESSAGES (用户发送的消息) ===
+        // 5. Conversation summary (compressed older history preserved across evictions)
+        if let Some(ref summary) = agent.conversation_summary {
+            if !summary.is_empty() {
+                history_parts.push(format!("## Earlier History Summary\n{}", summary));
+            }
+        }
+
+        // === USER MESSAGES ===
         // Build user messages context for adding to user message (not system message)
         let user_messages_for_user_msg = if !agent.user_messages.is_empty() {
             let user_msgs_text: Vec<String> = agent
@@ -944,7 +941,6 @@ impl AgentExecutor {
 
         // === SYSTEM PROMPT - Restore original working structure ===
         // This was the proven working format - don't over-engineer it
-
         // Detect language from user_prompt to determine response language
         let detected_language = SemanticToolMapper::detect_language(&agent.user_prompt);
         let is_chinese = matches!(
@@ -959,8 +955,18 @@ impl AgentExecutor {
             "You are an IoT automation assistant. Output ONLY valid JSON. No other text."
         };
 
+        // Build history context string for injection into system prompt
+        let history_context_str = if history_parts.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "## Historical Context\n\nRefer to the following history to avoid duplicate alerts and track trends.\n\n{}\n\n",
+                history_parts.join("\n\n")
+            )
+        };
+
         // Get current time context for temporal understanding
-        let _time_context = get_time_context();
+        let time_context = get_time_context();
 
         // Build resources info based on execution mode
         let resources_info = match agent.execution_mode {
@@ -1013,6 +1019,18 @@ impl AgentExecutor {
                 "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Situation analysis\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\"\n}}\n\n{}\n{}",
                 role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
             )
+        };
+
+        // Inject time context and history context into system prompt
+        let system_prompt = {
+            let mut prompt = system_prompt;
+            if !time_context.is_empty() {
+                prompt = format!("{}\n\n{}", prompt, time_context);
+            }
+            if !history_context_str.is_empty() {
+                prompt = format!("{}\n\n{}", prompt, history_context_str);
+            }
+            prompt
         };
 
         // === CONTEXT MANAGEMENT ===

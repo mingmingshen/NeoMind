@@ -1416,9 +1416,33 @@ impl AgentStore {
 
             // Trim history to prevent unbounded growth
             // Keep the most recent MAX_CONVERSATION_TURNS entries
+            // Before discarding old turns, compress them into conversation_summary
             if agent.conversation_history.len() > Self::MAX_CONVERSATION_TURNS {
                 let removed_count = agent.conversation_history.len() - Self::MAX_CONVERSATION_TURNS;
-                // Remove the oldest entries (from the beginning) to keep the most recent ones
+
+                // Compress evicted turns into conversation_summary to preserve key insights
+                let evicted: Vec<&ConversationTurn> =
+                    agent.conversation_history.iter().take(removed_count).collect();
+                let summary_addition = Self::summarize_evicted_turns(&evicted);
+                if !summary_addition.is_empty() {
+                    let existing = agent.conversation_summary.take().unwrap_or_default();
+                    // Keep summary bounded: if it grows too long, trim the oldest part
+                    let combined = if existing.is_empty() {
+                        summary_addition
+                    } else {
+                        format!("{}\n{}", existing, summary_addition)
+                    };
+                    // Cap summary at ~2000 chars to prevent unbounded growth
+                    const MAX_SUMMARY_LEN: usize = 2000;
+                    agent.conversation_summary = Some(if combined.len() > MAX_SUMMARY_LEN {
+                        let cut = combined.floor_char_boundary(combined.len() - MAX_SUMMARY_LEN);
+                        combined[cut..].to_string()
+                    } else {
+                        combined
+                    });
+                }
+
+                // Remove the oldest entries
                 agent.conversation_history.drain(0..removed_count);
 
                 tracing::debug!(
@@ -1636,6 +1660,69 @@ impl AgentStore {
     /// Older turns are automatically removed to prevent unbounded growth.
     const MAX_CONVERSATION_TURNS: usize = 20;
 
+    /// Compress evicted conversation turns into a compact summary string.
+    /// Preserves key insights (conclusions, anomaly patterns, decisions) while
+    /// discarding full details. This prevents total information loss when old
+    /// turns are evicted from the bounded conversation_history.
+    fn summarize_evicted_turns(turns: &[&ConversationTurn]) -> String {
+        if turns.is_empty() {
+            return String::new();
+        }
+
+        let mut lines = Vec::new();
+        let first_ts = turns.first().and_then(|t| {
+            chrono::DateTime::from_timestamp(t.timestamp, 0)
+                .map(|dt| dt.format("%Y-%m-%d").to_string())
+        }).unwrap_or_else(|| "?".to_string());
+        let last_ts = turns.last().and_then(|t| {
+            chrono::DateTime::from_timestamp(t.timestamp, 0)
+                .map(|dt| dt.format("%m-%d %H:%M").to_string())
+        }).unwrap_or_else(|| "?".to_string());
+
+        lines.push(format!("[Historical {} to {}]", first_ts, last_ts));
+
+        let success_count = turns.iter().filter(|t| t.success).count();
+        let fail_count = turns.len() - success_count;
+        lines.push(format!(
+            "Summary: {} executions ({} success, {} failure)",
+            turns.len(), success_count, fail_count
+        ));
+
+        // Collect unique conclusions (truncated)
+        let conclusions: Vec<String> = turns
+            .iter()
+            .filter(|t| !t.output.conclusion.is_empty())
+            .map(|t| {
+                let conclusion = if t.output.conclusion.len() > 80 {
+                    let cut = t.output.conclusion.floor_char_boundary(80);
+                    format!("{}...", &t.output.conclusion[..cut])
+                } else {
+                    t.output.conclusion.clone()
+                };
+                let status = if t.success { "OK" } else { "FAIL" };
+                format!("- [{}] {}", status, conclusion)
+            })
+            .take(5)
+            .collect();
+        if !conclusions.is_empty() {
+            lines.push(format!("Key conclusions:\n{}", conclusions.join("\n")));
+        }
+
+        // Collect decision patterns
+        let all_decisions: Vec<&str> = turns
+            .iter()
+            .flat_map(|t| t.output.decisions.iter())
+            .filter(|d| !d.description.is_empty())
+            .map(|d| &d.description[..d.description.len().min(60)])
+            .take(3)
+            .collect();
+        if !all_decisions.is_empty() {
+            lines.push(format!("Actions taken: {}", all_decisions.join("; ")));
+        }
+
+        lines.join("\n")
+    }
+
     /// Append a new conversation turn to an agent's history.
     /// Automatically trims history to MAX_CONVERSATION_TURNS to prevent unbounded growth.
     pub async fn append_conversation_turn(
@@ -1652,9 +1739,27 @@ impl AgentStore {
 
         // Trim history to prevent unbounded growth
         // Keep the most recent MAX_CONVERSATION_TURNS entries
+        // Compress evicted turns into conversation_summary before discarding
         if agent.conversation_history.len() > Self::MAX_CONVERSATION_TURNS {
             let removed_count = agent.conversation_history.len() - Self::MAX_CONVERSATION_TURNS;
-            // Remove the oldest entries (from the beginning) to keep the most recent ones
+            let evicted: Vec<&ConversationTurn> =
+                agent.conversation_history.iter().take(removed_count).collect();
+            let summary_addition = Self::summarize_evicted_turns(&evicted);
+            if !summary_addition.is_empty() {
+                let existing = agent.conversation_summary.take().unwrap_or_default();
+                let combined = if existing.is_empty() {
+                    summary_addition
+                } else {
+                    format!("{}\n{}", existing, summary_addition)
+                };
+                const MAX_SUMMARY_LEN: usize = 2000;
+                agent.conversation_summary = Some(if combined.len() > MAX_SUMMARY_LEN {
+                    let cut = combined.floor_char_boundary(combined.len() - MAX_SUMMARY_LEN);
+                    combined[cut..].to_string()
+                } else {
+                    combined
+                });
+            }
             agent.conversation_history.drain(0..removed_count);
 
             tracing::debug!(
