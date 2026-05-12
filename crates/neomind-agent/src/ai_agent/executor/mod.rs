@@ -5,6 +5,7 @@
 use crate::llm_backends::{OllamaConfig, OllamaRuntime};
 use crate::memory::compat::persist_agent_memory;
 use futures::future::join_all;
+use futures::FutureExt;
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::{
     message::{Content, ContentPart, Message, MessageRole},
@@ -2698,9 +2699,35 @@ impl AgentExecutor {
 
         // Execute with error handling for stability
         // Use execute_with_chaining to support multi-round tool chaining
-        let execution_result = self
-            .execute_with_chaining(context, event_data.clone())
-            .await;
+        // Wrap with catch_unwind so panics (e.g. UTF-8 slice bugs) are converted
+        // to Err and a proper Failed execution record is created instead of
+        // silently disappearing.
+        let execution_result: AgentResult<(DecisionProcess, StorageExecutionResult)> =
+            match std::panic::AssertUnwindSafe(
+                self.execute_with_chaining(context, event_data.clone())
+            )
+            .catch_unwind()
+            .await
+            {
+                Ok(Ok(result)) => Ok(result),
+                Ok(Err(e)) => Err(e),
+                Err(panic_payload) => {
+                    let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                        (*s).to_string()
+                    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                        (*s).clone()
+                    } else {
+                        "Agent execution panicked".to_string()
+                    };
+                    tracing::error!(
+                        agent_id = %agent_id,
+                        execution_id = %execution_id,
+                        error = %msg,
+                        "Agent execution panicked — converting to error"
+                    );
+                    Err(NeoMindError::Llm(format!("Execution panic: {}", msg)))
+                }
+            };
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
