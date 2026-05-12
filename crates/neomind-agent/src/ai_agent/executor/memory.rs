@@ -188,7 +188,14 @@ fn extract_image_insight(situation_analysis: &str, conclusion: &str) -> String {
             let slice = &situation_analysis[start..end];
             if let Some(dot_pos) = slice.rfind(|c: char| c == '。' || c == '.' || c == '！' || c == '！')
             {
-                let trimmed = &slice[..=dot_pos];
+                // dot_pos is the byte index of the START of the punctuation char;
+                // include the full multi-byte character in the slice.
+                let char_end = dot_pos
+                    + slice[dot_pos..]
+                        .chars()
+                        .next()
+                        .map_or(1, |c| c.len_utf8());
+                let trimmed = &slice[..char_end];
                 if trimmed.len() >= 20 {
                     return clean_and_truncate_text(trimmed, max_len);
                 }
