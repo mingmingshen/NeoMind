@@ -1508,13 +1508,21 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   }, [fetchDashboards, fetchDevices, fetchDeviceTypes])
 
   // Retry device fetching when devices are empty (backend DB may still be loading)
+  // Max 10 retries (30s) to avoid polling forever when no devices exist
   useEffect(() => {
     // Only retry if we have dashboard components that need device data
     if (!currentDashboard || currentDashboard.components.length === 0) return
     if (devices.length > 0) return
     if (dashboardsLoading) return
 
+    let attempts = 0
+    const MAX_ATTEMPTS = 10
     const interval = setInterval(() => {
+      if (attempts >= MAX_ATTEMPTS) {
+        clearInterval(interval)
+        return
+      }
+      attempts++
       fetchDevices()
     }, 3000)
 

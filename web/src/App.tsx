@@ -330,14 +330,21 @@ function App() {
     }
   }, [isTauri, backendReady])
 
-  // Check authentication status on mount (only once)
-  // Skip on /setup to avoid 401 errors during initial setup
+  // Check authentication status on mount.
+  // Re-check when navigating away from /login or /setup (post-login/setup redirect).
+  // Uses a ref to avoid redundant API calls during normal navigation.
+  const prevPathRef = useRef(currentPath)
   useEffect(() => {
-    if (currentPath !== '/setup') {
+    const prevPath = prevPathRef.current
+    prevPathRef.current = currentPath
+    const cameFromAuth = prevPath === '/login' || prevPath === '/setup'
+    const isOnProtectedPage = currentPath !== '/login' && currentPath !== '/setup'
+    // Check on mount (prevPath === currentPath) or after leaving auth pages
+    if (isOnProtectedPage && (prevPath === currentPath || cameFromAuth)) {
       checkAuthStatus()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [currentPath])
 
   // Unified WebSocket + SSE connection management
   // Connects when authenticated (not on setup), disconnects otherwise

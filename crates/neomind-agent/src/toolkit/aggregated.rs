@@ -854,7 +854,8 @@ impl DeviceTool {
                 let fmt_range = |s: i64, e: i64| -> String {
                     let ss = fmt_ts(s);
                     let se = fmt_ts(e);
-                    if ss.len() >= 11 && se.len() >= 11 && &ss[0..5] == &se[0..5] {
+                    // Only shorten if both timestamps have the expected "MM-DD HH:MM" format (11 chars)
+                    if ss.len() == 11 && se.len() == 11 && &ss[0..5] == &se[0..5] {
                         format!("{}~{}", ss, &se[6..])
                     } else {
                         format!("{}~{}", ss, se)

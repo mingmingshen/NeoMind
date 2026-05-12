@@ -114,31 +114,39 @@ async function flushBatch() {
       }
     }
   } catch {
-    // Batch endpoint failed — fall back to individual fetches
+    // Batch endpoint failed — fall back to individual fetches in chunks
+    // to avoid flooding the server with too many concurrent requests
     try {
       const api = (await import('@/lib/api')).api
-      const individualResults = await Promise.allSettled(
-        ids.map(async (id) => {
-          try {
-            const details = await api.getDeviceCurrent(id)
-            const store = useStore.getState()
-            let metricsCount = 0
-            if (details?.metrics) {
-              Object.entries(details.metrics).forEach(([metricName, metricData]: [string, unknown]) => {
-                const value = (metricData as { value?: unknown }).value
-                if (value !== null && value !== undefined) {
-                  store.updateDeviceMetric(id, metricName, value)
-                  metricsCount++
-                }
-              })
+      const CHUNK_SIZE = 5
+      const individualResults: Array<PromiseSettledResult<{ id: string; success: boolean; metricsCount: number }>> = []
+
+      for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+        const chunk = ids.slice(i, i + CHUNK_SIZE)
+        const chunkResults = await Promise.allSettled(
+          chunk.map(async (id) => {
+            try {
+              const details = await api.getDeviceCurrent(id)
+              const store = useStore.getState()
+              let metricsCount = 0
+              if (details?.metrics) {
+                Object.entries(details.metrics).forEach(([metricName, metricData]: [string, unknown]) => {
+                  const value = (metricData as { value?: unknown }).value
+                  if (value !== null && value !== undefined) {
+                    store.updateDeviceMetric(id, metricName, value)
+                    metricsCount++
+                  }
+                })
+              }
+              if (metricsCount > 0) fetchedDevices.add(id)
+              return { id, success: metricsCount > 0, metricsCount }
+            } catch {
+              return { id, success: false, metricsCount: 0 }
             }
-            if (metricsCount > 0) fetchedDevices.add(id)
-            return { id, success: metricsCount > 0, metricsCount }
-          } catch {
-            return { id, success: false, metricsCount: 0 }
-          }
-        })
-      )
+          })
+        )
+        individualResults.push(...chunkResults)
+      }
       for (let i = 0; i < ids.length; i++) {
         const id = ids[i]
         const settled = individualResults[i]
