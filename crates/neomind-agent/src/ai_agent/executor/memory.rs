@@ -150,6 +150,13 @@ pub(crate) fn extract_semantic_description(decision: &Decision, symptom: &str) -
     format!("{} - {}", symptom, decision.action)
 }
 
+/// Build a fingerprint for an image analysis entry.
+/// Takes the first 80 chars of the entry — coarse enough to catch duplicate
+/// observations of the same scene, but granular enough to distinguish changes.
+fn image_analysis_fingerprint(entry: &str) -> String {
+    entry.chars().take(80).collect()
+}
+
 /// Extract a concise text insight about an image from the LLM's analysis and conclusion.
 ///
 /// Prioritizes content from the situation analysis that describes visual observations,
@@ -250,7 +257,21 @@ impl AgentExecutor {
         });
 
         // Build image analysis summaries from conclusion for image data
+        // Deduplicate by (source, insight fingerprint) to avoid filling short-term
+        // memory with identical observations from an unchanged camera scene.
         let image_analyses: Vec<String> = if has_image_analysis {
+            // Collect fingerprints of existing image analyses in recent memory
+            let existing_fps: HashSet<String> = memory
+                .short_term
+                .summaries
+                .iter()
+                .rev()
+                .take(3)
+                .flat_map(|s| s.decisions.iter())
+                .filter(|d| d.starts_with("[image_analysis]"))
+                .map(|d| image_analysis_fingerprint(d))
+                .collect();
+
             data.iter()
                 .filter(|d| {
                     d.values
@@ -258,22 +279,35 @@ impl AgentExecutor {
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false)
                 })
-                .map(|d| {
+                .filter_map(|d| {
                     let insight = extract_image_insight(situation_analysis, conclusion);
-                    format!("[image_analysis] {}: {}", d.source, insight)
+                    let entry = format!("[image_analysis] {}: {}", d.source, insight);
+                    let fp = image_analysis_fingerprint(&entry);
+                    if existing_fps.contains(&fp) {
+                        tracing::debug!(
+                            source = %d.source,
+                            "Skipping duplicate image analysis"
+                        );
+                        None
+                    } else {
+                        Some(entry)
+                    }
                 })
                 .collect()
         } else {
             Vec::new()
         };
 
+        // If all image analyses were deduplicated, treat as no image analysis
+        let has_new_image_analysis = !image_analyses.is_empty();
+
         // Fingerprint-based duplicate detection: if the last 2+ short-term summaries
         // have the same conclusion fingerprint as the current one, this execution
         // carries no new information — skip writing to avoid redundant memory entries.
-        // NOTE: image analyses bypass duplicate detection.
+        // NOTE: new image analyses bypass duplicate detection.
         let current_fp = conclusion_fingerprint(conclusion, success);
-        let recent_duplicate_count = if has_image_analysis {
-            0 // never skip image analyses as duplicates
+        let recent_duplicate_count = if has_new_image_analysis {
+            0 // never skip new image analyses as duplicates
         } else {
             memory
                 .short_term
@@ -289,8 +323,8 @@ impl AgentExecutor {
             && decisions.is_empty()
             && success
             && !has_anomaly
-            && !has_image_analysis;
-        let is_duplicate = !has_image_analysis && recent_duplicate_count >= 2;
+            && !has_new_image_analysis;
+        let is_duplicate = !has_new_image_analysis && recent_duplicate_count >= 2;
 
         if !is_routine_success && !is_duplicate {
             // Prepare decision summaries for Short-Term Memory
