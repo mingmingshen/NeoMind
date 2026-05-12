@@ -93,23 +93,31 @@ export function DashboardGrid({
   // Runs synchronously during render, BEFORE the layouts memo below,
   // so the memo sees the cleared ref and recalculates from c.position.
   const prevWidthRef = useRef(0)
-  if (width > 0 && prevWidthRef.current > 0 && width !== prevWidthRef.current) {
+  const widthChanged = width > 0 && prevWidthRef.current > 0 && width !== prevWidthRef.current
+  if (widthChanged) {
     latestLayoutRef.current = {}
+  }
+
+  // Width change counter — used to force react-grid-layout's deepEqual check
+  // to detect a prop change when sidebar toggles back to the original width.
+  // Without this, c.position values are the same as the previous layouts prop,
+  // and ResponsiveGridLayout's deepEqual ignores the "new" prop.
+  const widthBumpRef = useRef(0)
+  if (widthChanged) {
+    widthBumpRef.current += 1
   }
   if (width > 0) prevWidthRef.current = width
 
   // Build layouts using latestLayoutRef for settled positions.
   // `width` dep: when width changes (sidebar toggle), latestLayoutRef was just
   // cleared above, so this recalculates from c.position in the SAME render.
-  // This single-render approach avoids the stale-state problem where a delayed
-  // useEffect bump allowed react-grid-layout to lock in compacted positions.
   const layouts = useMemo(() => {
-    void width // dep: recalculate on width change
-    const layout = componentsRef.current.map((c) => {
+    const w = widthBumpRef.current // dep via closure — changes when width changes
+    const layout = componentsRef.current.map((c, idx) => {
       const current = latestLayoutRef.current[c.id]
       const pos = current || c.position
       return {
-        i: c.id,
+        i: c.id + (w > 0 ? '' : ''), // keep i stable; w forces memo recalc
         x: pos.x ?? 0, y: pos.y ?? 0,
         w: pos.w ?? c.position.w ?? 4,
         h: pos.h ?? c.position.h ?? 3,
@@ -118,6 +126,9 @@ export function DashboardGrid({
         maxW: c.position.maxW,
         maxH: c.position.maxH,
         static: false,
+        // Hidden marker that makes deepEqual fail on width change
+        // (c.position values are the same, so deepEqual would return true)
+        _w: w,
       }
     })
     return { lg: layout, md: layout, sm: layout, xs: layout }
