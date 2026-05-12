@@ -1225,8 +1225,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const fetchDevicesCurrentBatch = useStore((s) => s.fetchDevicesCurrentBatch)
   const sendCommand = useStore((s) => s.sendCommand)
 
-  // Marketplace store selectors
-  const { marketComponents, marketLoading, installed: installedComponents, fetchMarket, fetchInstalled, installFromMarket, uninstall: uninstallComponent } = useStore()
+  // Marketplace store selectors — use individual selectors to avoid subscribing to entire store
+  const marketComponents = useStore((s) => s.marketComponents)
+  const marketLoading = useStore((s) => s.marketLoading)
+  const installedComponents = useStore((s) => s.installed)
+  const fetchMarket = useStore((s) => s.fetchMarket)
+  const fetchInstalled = useStore((s) => s.fetchInstalled)
+  const installFromMarket = useStore((s) => s.installFromMarket)
+  const uninstallComponent = useStore((s) => s.uninstall)
 
   // Extension lifecycle management for hot updates
   const { refreshVersion } = useExtensionLifecycle({
@@ -1501,6 +1507,20 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     fetchDeviceTypes()
   }, [fetchDashboards, fetchDevices, fetchDeviceTypes])
 
+  // Retry device fetching when devices are empty (backend DB may still be loading)
+  useEffect(() => {
+    // Only retry if we have dashboard components that need device data
+    if (!currentDashboard || currentDashboard.components.length === 0) return
+    if (devices.length > 0) return
+    if (dashboardsLoading) return
+
+    const interval = setInterval(() => {
+      fetchDevices()
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [devices.length, currentDashboard, dashboardsLoading, fetchDevices])
+
   // Batch fetch current values for devices used in dashboard components
   // This ensures dashboard components have current_values after server restart
   // Only re-fetches when the actual set of device IDs changes (not on every dashboard reference change)
@@ -1527,15 +1547,46 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     return Array.from(deviceIds).sort().join(',')
   }, [dashboards])
 
+  // Check if any dashboard device is missing telemetry (current_values)
+  const hasDevicesWithoutTelemetry = useMemo(() => {
+    if (!dashboardDeviceIdsKey || devices.length === 0) return false
+    const ids = new Set(dashboardDeviceIdsKey.split(',').filter(Boolean))
+    return devices.some((d) =>
+      ids.has(d.id || d.device_id) &&
+      (!d.current_values || Object.keys(d.current_values).length === 0)
+    )
+  }, [devices, dashboardDeviceIdsKey])
+
+  // Fetch batch current values — immediate fetch + retry if telemetry is missing
+  // (telemetry.redb may take 20-30s to initialize after server starts)
   useEffect(() => {
-    if (devices.length === 0 || !currentDashboard || !dashboardDeviceIdsKey) {
-      return
-    }
+    if (devices.length === 0 || !currentDashboard || !dashboardDeviceIdsKey) return
+
     const deviceIds = dashboardDeviceIdsKey.split(',').filter(Boolean)
-    if (deviceIds.length > 0) {
-      fetchDevicesCurrentBatch(deviceIds)
-    }
-  }, [devices.length, dashboardDeviceIdsKey, currentDashboard, fetchDevicesCurrentBatch])
+    if (deviceIds.length === 0) return
+
+    // Initial fetch
+    fetchDevicesCurrentBatch(deviceIds)
+
+    // If devices exist but have no telemetry, poll until data arrives
+    // This handles the case where telemetry.redb hasn't finished loading yet
+    if (!hasDevicesWithoutTelemetry) return
+
+    const interval = setInterval(() => {
+      // Re-check from fresh store state
+      const freshDevices = useStore.getState().devices
+      const ids = new Set(deviceIds)
+      const stillMissing = freshDevices.some((d) =>
+        ids.has(d.id || d.device_id) &&
+        (!d.current_values || Object.keys(d.current_values).length === 0)
+      )
+      if (stillMissing) {
+        fetchDevicesCurrentBatch(deviceIds)
+      }
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [devices.length, dashboardDeviceIdsKey, currentDashboard, fetchDevicesCurrentBatch, hasDevicesWithoutTelemetry])
 
   // Re-load dashboards if array becomes empty but we have a current ID
   useEffect(() => {

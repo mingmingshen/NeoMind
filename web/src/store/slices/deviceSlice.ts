@@ -140,7 +140,12 @@ export const createDeviceSlice: StateCreator<
         return new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime()
       })
       set({ devices: sortedDevices })
-      fetchCache.markFetched('devices')
+      if (sortedDevices.length === 0) {
+        // Don't cache empty results — backend may still be loading devices from DB
+        fetchCache.invalidate('devices')
+      } else {
+        fetchCache.markFetched('devices')
+      }
     } catch (error) {
       if ((error as Error).message === 'UNAUTHORIZED') {
         // Will be handled by auth slice
@@ -436,6 +441,9 @@ export const createDeviceSlice: StateCreator<
           }
         }),
       }))
+
+      // Invalidate fetch cache so callers can retry if needed
+      fetchCache.invalidate('devicesCurrentBatch')
     } catch (error) {
       const errorMessage = (error as Error).message
       // Silently ignore 405 errors - backend doesn't support this endpoint yet
@@ -444,6 +452,7 @@ export const createDeviceSlice: StateCreator<
         return
       }
       logError(error, { operation: 'Fetch devices current batch' })
+      fetchCache.invalidate('devicesCurrentBatch')
     }
   },
 

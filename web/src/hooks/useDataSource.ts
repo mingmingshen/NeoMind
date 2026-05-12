@@ -35,72 +35,159 @@ export interface UseDataSourceResult<T = unknown> {
 // Global State for Fetch Deduplication
 // ============================================================================
 
-const activeFetches = new Map<string, Promise<{ success: boolean; metricsCount: number }>>()
 const fetchedDevices = new Set<string>()
-const MAX_ACTIVE_FETCHES = 50  // Limit concurrent/pending fetches
 
 // ============================================================================
-// Data Fetching
+// Batch-Aware Device Fetch Collector
 // ============================================================================
+// Collects device IDs across the same microtask and fires a single
+// POST /devices/current-batch instead of N individual GET requests.
+
+const activeFetches = new Map<string, Promise<{ success: boolean; metricsCount: number }>>()
+
+let pendingDeviceIds = new Set<string>()
+let pendingResolvers = new Map<string, Array<(result: { success: boolean; metricsCount: number }) => void>>()
+let batchScheduled = false
 
 /**
- * Fetch device current state with deduplication
+ * Write batch results into the store and resolve pending promises.
  */
-async function fetchDeviceTelemetry(deviceId: string): Promise<{ success: boolean; metricsCount: number }> {
-  const existingFetch = activeFetches.get(deviceId)
-  if (existingFetch) {
-    return existingFetch
-  }
+function applyBatchResults(
+  results: Record<string, unknown>,
+  deviceIds: string[],
+  resolvers: Map<string, Array<(result: { success: boolean; metricsCount: number }) => void>>
+) {
+  const store = useStore.getState()
 
-  // Limit active fetches to prevent memory buildup
-  if (activeFetches.size >= MAX_ACTIVE_FETCHES) {
-    // Remove oldest entry (first in Map)
-    const firstKey = activeFetches.keys().next().value
-    if (firstKey) {
-      activeFetches.delete(firstKey)
+  for (const id of deviceIds) {
+    const entry = results[id] as { metrics?: Record<string, { value?: unknown }> } | undefined
+    let metricsCount = 0
+
+    if (entry?.metrics) {
+      Object.entries(entry.metrics).forEach(([metricName, metricData]) => {
+        if (metricData.value !== null && metricData.value !== undefined) {
+          store.updateDeviceMetric(id, metricName, metricData.value)
+          metricsCount++
+        }
+      })
     }
-  }
 
-  const fetchPromise = (async () => {
+    if (metricsCount > 0) {
+      fetchedDevices.add(id)
+      if (fetchedDevices.size > 200) {
+        const first = fetchedDevices.values().next().value
+        if (first) fetchedDevices.delete(first)
+      }
+    }
+
+    const result = { success: metricsCount > 0, metricsCount }
+    activeFetches.delete(id)
+    resolvers.get(id)?.forEach(resolve => resolve(result))
+    resolvers.delete(id)
+  }
+}
+
+/**
+ * Drain the pending queue — fire a single batch request.
+ */
+async function flushBatch() {
+  const ids = Array.from(pendingDeviceIds)
+  const resolvers = pendingResolvers
+  pendingDeviceIds = new Set()
+  pendingResolvers = new Map()
+  batchScheduled = false
+
+  if (ids.length === 0) return
+
+  try {
+    const api = (await import('@/lib/api')).api
+    const batchResult = await api.getDevicesCurrentBatch(ids)
+
+    if (batchResult?.devices && typeof batchResult.devices === 'object') {
+      applyBatchResults(batchResult.devices as Record<string, unknown>, ids, resolvers)
+    } else {
+      // Batch succeeded but returned unexpected shape — resolve with failure
+      for (const id of ids) {
+        activeFetches.delete(id)
+        resolvers.get(id)?.forEach(r => r({ success: false, metricsCount: 0 }))
+        resolvers.delete(id)
+      }
+    }
+  } catch {
+    // Batch endpoint failed — fall back to individual fetches
     try {
       const api = (await import('@/lib/api')).api
-      const details = await api.getDeviceCurrent(deviceId)
-
-      if (details?.metrics) {
-        const store = useStore.getState()
-        let updateCount = 0
-
-        Object.entries(details.metrics).forEach(([metricName, metricData]: [string, unknown]) => {
-          const value = (metricData as { value?: unknown }).value
-          if (value !== null && value !== undefined) {
-            store.updateDeviceMetric(deviceId, metricName, value)
-            updateCount++
+      const individualResults = await Promise.allSettled(
+        ids.map(async (id) => {
+          try {
+            const details = await api.getDeviceCurrent(id)
+            const store = useStore.getState()
+            let metricsCount = 0
+            if (details?.metrics) {
+              Object.entries(details.metrics).forEach(([metricName, metricData]: [string, unknown]) => {
+                const value = (metricData as { value?: unknown }).value
+                if (value !== null && value !== undefined) {
+                  store.updateDeviceMetric(id, metricName, value)
+                  metricsCount++
+                }
+              })
+            }
+            if (metricsCount > 0) fetchedDevices.add(id)
+            return { id, success: metricsCount > 0, metricsCount }
+          } catch {
+            return { id, success: false, metricsCount: 0 }
           }
         })
-
-        if (updateCount > 0) {
-          fetchedDevices.add(deviceId)
-          // Limit fetchedDevices set size
-          if (fetchedDevices.size > 200) {
-            const firstEntry = fetchedDevices.values().next().value
-            if (firstEntry) {
-              fetchedDevices.delete(firstEntry)
-            }
-          }
-        }
-
-        return { success: true, metricsCount: updateCount }
+      )
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i]
+        const settled = individualResults[i]
+        const result = settled.status === 'fulfilled'
+          ? settled.value
+          : { success: false, metricsCount: 0 }
+        activeFetches.delete(id)
+        resolvers.get(id)?.forEach(r => r(result))
+        resolvers.delete(id)
       }
-      return { success: false, metricsCount: 0 }
-    } catch (error) {
-      return { success: false, metricsCount: 0 }
-    } finally {
-      activeFetches.delete(deviceId)
+    } catch {
+      // Complete failure — resolve all with failure
+      for (const id of ids) {
+        activeFetches.delete(id)
+        resolvers.get(id)?.forEach(r => r({ success: false, metricsCount: 0 }))
+        resolvers.delete(id)
+      }
     }
-  })()
+  }
+}
 
-  activeFetches.set(deviceId, fetchPromise)
-  return fetchPromise
+/**
+ * Schedule a device fetch — batches multiple devices into a single request.
+ */
+function scheduleDeviceFetch(deviceId: string): Promise<{ success: boolean; metricsCount: number }> {
+  // Already has an in-flight fetch — reuse the promise
+  const existing = activeFetches.get(deviceId)
+  if (existing) return existing
+
+  const promise = new Promise<{ success: boolean; metricsCount: number }>((resolve) => {
+    pendingResolvers.set(deviceId, [...(pendingResolvers.get(deviceId) ?? []), resolve])
+  })
+
+  activeFetches.set(deviceId, promise)
+  pendingDeviceIds.add(deviceId)
+
+  if (!batchScheduled) {
+    batchScheduled = true
+    queueMicrotask(flushBatch)
+  }
+
+  return promise
+}
+
+/**
+ * Fetch device telemetry — uses batch-aware collector.
+ */
+async function fetchDeviceTelemetry(deviceId: string): Promise<{ success: boolean; metricsCount: number }> {
+  return scheduleDeviceFetch(deviceId)
 }
 
 /**
@@ -1263,10 +1350,9 @@ export function useDataSource<T = unknown>(
       const fallbackData = optionsRef.current.fallback ?? 0
       setData(fallbackData as T)
     } finally {
-      const { devicesLoading } = useStore.getState()
-      if (!devicesLoading) {
-        setLoading(false)
-      }
+      // Always clear loading — the component card should render immediately
+      // with skeleton/empty state. Store subscription will re-trigger when data arrives.
+      setLoading(false)
     }
   }, [])
 
