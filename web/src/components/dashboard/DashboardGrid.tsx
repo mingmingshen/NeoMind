@@ -78,17 +78,45 @@ export function DashboardGrid({
   const needsSettleRef = useRef(false)
   const [settleVersion, setSettleVersion] = useState(0)
 
+  // Track width changes to force layout recalc from saved c.position.
+  // Using a version counter (not raw width) avoids recalculating on every
+  // pixel of window resize — only on significant changes (sidebar toggle, etc.)
+  const widthVersionRef = useRef(0)
+  const [layoutVersion, setLayoutVersion] = useState(0)
+  const stableWidthRef = useRef(0)
+
   // Detect new components SYNCHRONOUSLY during render (not in useEffect).
   // This must happen before handleLayoutChange fires, otherwise settle never triggers.
   const prevComponentIdKeyRef = useRef(componentIdKey)
   if (componentIdKey !== prevComponentIdKeyRef.current) {
     prevComponentIdKeyRef.current = componentIdKey
     needsSettleRef.current = true
+    // Clear stale layout data from previous dashboard — prevents
+    // cross-dashboard position leakage when switching between dashboards.
+    latestLayoutRef.current = {}
   }
 
+  // Detect width changes and invalidate stale compacted positions.
+  // Synchronous during render so the layouts memo below sees the cleared ref.
+  if (width > 0 && stableWidthRef.current > 0 && width !== stableWidthRef.current) {
+    latestLayoutRef.current = {}
+    widthVersionRef.current += 1
+  }
+  if (width > 0) {
+    stableWidthRef.current = width
+  }
+
+  // Bump layoutVersion in a useEffect (not during render) to avoid cascading:
+  // render (clear ref) → memo uses c.position → useEffect bumps version →
+  // re-render → memo runs again (ref still empty) → stable.
+  useEffect(() => {
+    if (widthVersionRef.current > 0) {
+      setLayoutVersion(widthVersionRef.current)
+    }
+  }, [width])
+
   // Build layouts using latestLayoutRef for settled positions.
-  // Deps: only recalculate when components are added/removed (componentIdKey)
-  // or after compact settle. Uses componentsRef for latest default sizes.
+  // Deps: recalculate when components change, after compact settle, or on width change.
   const layouts = useMemo(() => {
     const layout = componentsRef.current.map((c) => {
       const current = latestLayoutRef.current[c.id]
@@ -106,7 +134,7 @@ export function DashboardGrid({
       }
     })
     return { lg: layout, md: layout, sm: layout, xs: layout }
-  }, [componentIdKey, settleVersion])
+  }, [componentIdKey, settleVersion, layoutVersion])
 
   // Handle layout changes from react-grid-layout.
   const handleLayoutChange = useCallback((currentLayout: any) => {

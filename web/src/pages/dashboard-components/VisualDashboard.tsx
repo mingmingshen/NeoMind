@@ -1522,58 +1522,55 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   }, [devices.length, currentDashboard, dashboardsLoading, fetchDevices])
 
   // Batch fetch current values for devices used in dashboard components
-  // This ensures dashboard components have current_values after server restart
-  // Only re-fetches when the actual set of device IDs changes (not on every dashboard reference change)
+  // Only considers the CURRENT dashboard (not all dashboards) to avoid
+  // re-fetching when switching between dashboards with different devices.
   const dashboardDeviceIdsKey = useMemo(() => {
+    if (!currentDashboard) return ''
     const deviceIds = new Set<string>()
-    for (const dashboard of dashboards) {
-      for (const component of dashboard.components) {
-        const genericComponent = component as GenericComponent
-        const dataSource = genericComponent.dataSource
-        if (dataSource && getSourceId(dataSource)) {
-          deviceIds.add(getSourceId(dataSource)!)
-        }
-        if (genericComponent.type === 'map-display') {
-          const bindings = (genericComponent.config as any)?.bindings as MapBinding[] || []
-          for (const binding of bindings) {
-            const ds = binding.dataSource as DataSource | undefined
-            if (ds && getSourceId(ds)) {
-              deviceIds.add(getSourceId(ds)!)
-            }
+    for (const component of currentDashboard.components) {
+      const genericComponent = component as GenericComponent
+      const dataSource = genericComponent.dataSource
+      if (dataSource && getSourceId(dataSource)) {
+        deviceIds.add(getSourceId(dataSource)!)
+      }
+      if (genericComponent.type === 'map-display') {
+        const bindings = (genericComponent.config as any)?.bindings as MapBinding[] || []
+        for (const binding of bindings) {
+          const ds = binding.dataSource as DataSource | undefined
+          if (ds && getSourceId(ds)) {
+            deviceIds.add(getSourceId(ds)!)
           }
         }
       }
     }
     return Array.from(deviceIds).sort().join(',')
-  }, [dashboards])
+  }, [currentDashboard])
 
-  // Check if any dashboard device is missing telemetry (current_values)
-  const hasDevicesWithoutTelemetry = useMemo(() => {
-    if (!dashboardDeviceIdsKey || devices.length === 0) return false
-    const ids = new Set(dashboardDeviceIdsKey.split(',').filter(Boolean))
-    return devices.some((d) =>
-      ids.has(d.id || d.device_id) &&
-      (!d.current_values || Object.keys(d.current_values).length === 0)
-    )
-  }, [devices, dashboardDeviceIdsKey])
+  // Fetch batch current values when device set changes.
+  // Separate polling for missing telemetry — uses stable ref to avoid
+  // cascade: batch fetch → store update → deps change → re-fetch.
+  const batchFetchControllerRef = useRef<{ deviceIds: string[]; interval: ReturnType<typeof setInterval> | null }>({ deviceIds: [], interval: null })
 
-  // Fetch batch current values — immediate fetch + retry if telemetry is missing
-  // (telemetry.redb may take 20-30s to initialize after server starts)
   useEffect(() => {
-    if (devices.length === 0 || !currentDashboard || !dashboardDeviceIdsKey) return
+    if (devices.length === 0 || !dashboardDeviceIdsKey) return
 
     const deviceIds = dashboardDeviceIdsKey.split(',').filter(Boolean)
     if (deviceIds.length === 0) return
 
+    // Clear previous polling if device set changed
+    const ctrl = batchFetchControllerRef.current
+    if (ctrl.interval) {
+      clearInterval(ctrl.interval)
+      ctrl.interval = null
+    }
+    ctrl.deviceIds = deviceIds
+
     // Initial fetch
     fetchDevicesCurrentBatch(deviceIds)
 
-    // If devices exist but have no telemetry, poll until data arrives
-    // This handles the case where telemetry.redb hasn't finished loading yet
-    if (!hasDevicesWithoutTelemetry) return
-
-    const interval = setInterval(() => {
-      // Re-check from fresh store state
+    // Check if telemetry is missing — read directly from store (not from React state)
+    // to avoid cascading re-renders when the batch result updates the store.
+    const checkAndPoll = () => {
       const freshDevices = useStore.getState().devices
       const ids = new Set(deviceIds)
       const stillMissing = freshDevices.some((d) =>
@@ -1582,11 +1579,25 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       )
       if (stillMissing) {
         fetchDevicesCurrentBatch(deviceIds)
+      } else if (ctrl.interval) {
+        // All telemetry arrived — stop polling
+        clearInterval(ctrl.interval)
+        ctrl.interval = null
       }
-    }, 3000)
+    }
 
-    return () => clearInterval(interval)
-  }, [devices.length, dashboardDeviceIdsKey, currentDashboard, fetchDevicesCurrentBatch, hasDevicesWithoutTelemetry])
+    // Start polling (reads store directly, so no deps on React state)
+    ctrl.interval = setInterval(checkAndPoll, 3000)
+    // Also check immediately after first fetch settles
+    setTimeout(checkAndPoll, 1500)
+
+    return () => {
+      if (ctrl.interval) {
+        clearInterval(ctrl.interval)
+        ctrl.interval = null
+      }
+    }
+  }, [devices.length, dashboardDeviceIdsKey, fetchDevicesCurrentBatch])
 
   // Re-load dashboards if array becomes empty but we have a current ID
   useEffect(() => {
