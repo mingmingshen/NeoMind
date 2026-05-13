@@ -1336,14 +1336,14 @@ impl AgentExecutor {
         // --- situation_analysis ---
         // When the LLM didn't produce structured JSON:
         // - If Phase 2 generated natural language, use it as situation_analysis
-        // - Otherwise fall back to reasoning texts or generic summary
+        // - Otherwise use final_text (LLM's natural language response from tool loop)
+        // - Then fall back to reasoning texts or generic summary
         if is_generic_fallback
             || situation_analysis.is_empty()
             || situation_analysis == "Completed tool execution rounds."
         {
-            // Phase 2 natural language response — use as situation_analysis
-            if is_generic_fallback
-                && !final_text.is_empty()
+            // Phase 2 or LLM natural language response — use as situation_analysis
+            if !final_text.is_empty()
                 && final_text != "Completed tool execution rounds."
                 && final_text != "LLM generation failed during tool execution."
             {
