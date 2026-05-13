@@ -374,7 +374,7 @@ impl MemoryExtractor {
                 crate::memory::SecurityScanResult::Clean => {}
                 crate::memory::SecurityScanResult::Blocked { reason } => {
                     tracing::warn!(
-                        content = %&candidate.content[..candidate.content.len().min(100)],
+                        content = %&candidate.content[..candidate.content.floor_char_boundary(candidate.content.len().min(100))],
                         reason = %reason,
                         "Memory blocked by security scanner"
                     );

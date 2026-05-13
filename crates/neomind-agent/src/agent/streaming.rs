@@ -1442,11 +1442,12 @@ fn truncate_agent_message(msg: &AgentMessage, max_len: usize) -> AgentMessage {
     // Also truncate thinking if present
     if let Some(thinking) = &truncated.thinking {
         if thinking.len() > max_len / 2 {
+            let half = thinking.floor_char_boundary(max_len / 2);
             truncated.thinking = Some(
-                if let Some(last_space) = thinking[..max_len / 2].rfind(' ') {
+                if let Some(last_space) = thinking[..half].rfind(' ') {
                     format!("{}...", &thinking[..last_space])
                 } else {
-                    format!("{}...", &thinking[..max_len / 2])
+                    format!("{}...", &thinking[..half])
                 },
             );
         }
