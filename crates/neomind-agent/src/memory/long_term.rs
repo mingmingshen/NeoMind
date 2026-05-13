@@ -140,7 +140,8 @@ impl KnowledgeEntry {
     /// Get a summary.
     pub fn summary(&self) -> String {
         let content_preview = if self.content.len() > 100 {
-            format!("{}...", &self.content[..100])
+            let end = self.content.floor_char_boundary(100);
+            format!("{}...", &self.content[..end])
         } else {
             self.content.clone()
         };

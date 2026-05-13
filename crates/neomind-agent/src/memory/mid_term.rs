@@ -100,7 +100,8 @@ impl ConversationEntry {
     /// Get a summary.
     pub fn summary(&self) -> String {
         let response_preview = if self.assistant_response.len() > 100 {
-            format!("{}...", &self.assistant_response[..100])
+            let end = self.assistant_response.floor_char_boundary(100);
+            format!("{}...", &self.assistant_response[..end])
         } else {
             self.assistant_response.clone()
         };

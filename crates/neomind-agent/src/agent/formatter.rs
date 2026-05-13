@@ -202,12 +202,13 @@ fn timestamp_to_datetime(ts: i64) -> Option<String> {
     )
 }
 
-/// Truncate string to max length.
+/// Truncate string to max length (UTF-8 safe).
 fn truncate(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let end = s.floor_char_boundary(max_len.saturating_sub(3));
+        format!("{}...", &s[..end])
     }
 }
 

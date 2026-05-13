@@ -102,7 +102,8 @@ impl InstanceRecord {
         Self {
             api_key: self.api_key.as_ref().map(|k| {
                 if k.len() > 8 {
-                    format!("{}****", &k[..8])
+                    let end = k.floor_char_boundary(8);
+                    format!("{}****", &k[..end])
                 } else {
                     "****".to_string()
                 }
@@ -120,7 +121,8 @@ impl InstanceRecord {
             url: self.url.clone(),
             api_key: self.api_key.as_ref().map(|k| {
                 if k.len() > 8 {
-                    format!("{}****", &k[..8])
+                    let end = k.floor_char_boundary(8);
+                    format!("{}****", &k[..end])
                 } else {
                     "****".to_string()
                 }

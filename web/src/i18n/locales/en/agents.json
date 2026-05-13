@@ -500,6 +500,8 @@
       "enableToolChaining": "Multi-round Tool Calls",
       "toolChainingHint": "Allow the agent to make multiple rounds of tool calls in a single execution",
       "toolChainingHintFocused": "Allow the agent to make multiple rounds of tool calls during analysis (query data, control devices, send notifications, etc.)",
+      "toolChainingOn": "LLM can call tools during analysis — query real-time data, control devices, send notifications, etc. Data collection config above will not be used.",
+      "toolChainingOff": "One-shot analysis: agent collects data once based on the configured time range, then analyzes. No additional tool calls.",
       "maxChainDepth": "Max Chain Depth",
       "focusedHint": "Focused mode: single-pass analysis with pre-collected data. Tool calling supported when enabled.",
       "agentPriority": "Agent Priority",

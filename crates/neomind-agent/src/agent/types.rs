@@ -1311,7 +1311,8 @@ impl LargeDataCache {
                     .map(|(k, v)| {
                         let vs = match v {
                             serde_json::Value::String(s) if s.len() > 40 => {
-                                format!("{}...", &s[..40])
+                                let end = s.floor_char_boundary(40);
+                                format!("{}...", &s[..end])
                             }
                             serde_json::Value::Array(a) => format!("Array({})", a.len()),
                             serde_json::Value::Object(_) => "{...}".to_string(),
@@ -1350,7 +1351,8 @@ impl LargeDataCache {
                             other => {
                                 let s = other.to_string();
                                 if s.len() > 50 {
-                                    format!("{}...", &s[..50])
+                                    let end = s.floor_char_boundary(50);
+                                    format!("{}...", &s[..end])
                                 } else {
                                     s
                                 }

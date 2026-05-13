@@ -952,7 +952,8 @@ impl DeviceActionExecutor {
                             Ok(text) => {
                                 // Truncate if too long
                                 if text.len() > 200 {
-                                    format!("{}...", &text[..200])
+                                    let end = text.floor_char_boundary(200);
+                                    format!("{}...", &text[..end])
                                 } else {
                                     text
                                 }

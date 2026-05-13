@@ -1283,7 +1283,8 @@ impl RuleEngine {
                             Ok(text) => {
                                 // Truncate if too long
                                 if text.len() > 500 {
-                                    format!("{}... (truncated)", &text[..500])
+                                    let end = text.floor_char_boundary(500);
+                                    format!("{}... (truncated)", &text[..end])
                                 } else {
                                     text
                                 }

@@ -89,6 +89,8 @@ struct ToolLoopConfig {
     /// Recommended tool names (None = no recommendation, all tools available).
     /// Not a whitelist — just prompt guidance for the LLM.
     recommended_tools: Option<Vec<String>>,
+    /// Whether this is Focused+ mode (Focused with tool chaining enabled)
+    is_focused_plus: bool,
 }
 
 impl ToolLoopConfig {
@@ -96,6 +98,7 @@ impl ToolLoopConfig {
         Self {
             max_rounds: 30,
             recommended_tools: None,
+            is_focused_plus: false,
         }
     }
 
@@ -103,6 +106,7 @@ impl ToolLoopConfig {
         Self {
             max_rounds: agent.max_chain_depth.max(1).min(10),
             recommended_tools: Some(Self::build_focused_recommended_tools(agent)),
+            is_focused_plus: true,
         }
     }
 
@@ -525,60 +529,14 @@ impl AgentExecutor {
     ) -> String {
         let time_ctx = get_time_context();
 
-        // Collect non-image, non-placeholder data.
-        // Keep memory / baselines / patterns data — they are valuable for both modes.
-        let data_text: Vec<String> = data_collected
-            .iter()
-            .filter(|d| {
-                // Exclude images
-                if d.values
-                    .get("_is_image")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-                {
-                    return false;
-                }
-                // Exclude placeholder data from collect_data
-                if d.source == "system"
-                    && d.values
-                        .get("message")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.contains("No pre-collected data"))
-                        .unwrap_or(false)
-                {
-                    return false;
-                }
-                true
-            })
-            .map(|d| {
-                let json_str = serde_json::to_string_pretty(&d.values).unwrap_or_default();
-                format!("**Source: {}**\n{}", d.source, json_str)
-            })
-            .collect();
-
-        let resource_info = if agent.resources.is_empty() {
-            String::new()
+        // ── Build resource_info and current_data_section based on mode ──
+        let (resource_info, current_data_section) = if config.is_focused_plus {
+            // Focused+: grouped resources with latest value snapshot,
+            // LLM uses tools for historical queries.
+            Self::build_focused_plus_sections(agent, data_collected)
         } else {
-            let items: Vec<String> = agent
-                .resources
-                .iter()
-                .map(|r| format!("- {} ({})", r.name, r.resource_id))
-                .collect();
-            format!(
-                "\nRecommended resources to focus on:\n{}\n",
-                items.join("\n")
-            )
-        };
-
-        let current_data_section = if data_text.is_empty() {
-            "\n## Current Data\nNo pre-collected data available.\n\n\
-             **IMPORTANT**: You MUST use the available tools to query the data you need!\n\
-             - Use `query_metric` or `get_latest_metrics` to fetch device metrics\n\
-             - Use `list_devices` to discover available devices\n\
-             - Do NOT conclude \"no data\" without first attempting to query using tools.\n"
-                .to_string()
-        } else {
-            format!("\n## Current Data\n{}\n", data_text.join("\n\n"))
+            // Free mode: full pre-collected data dump, flat resource list.
+            Self::build_free_sections(agent, data_collected)
         };
 
         // ── Historical Context (shared with Focused via build_history_context) ──
@@ -610,7 +568,7 @@ impl AgentExecutor {
             None => String::new(),
         };
 
-        // Focused+ mode: append recommended tools and round constraints
+        // Mode constraints
         let mut mode_constraints = String::new();
         if let Some(ref recommended) = config.recommended_tools {
             mode_constraints.push_str(&format!(
@@ -618,25 +576,42 @@ impl AgentExecutor {
                 recommended.join(", ")
             ));
         }
-        if config.max_rounds <= 5 {
+        if config.is_focused_plus {
             mode_constraints.push_str(&format!(
                 "\nYou have at most {} round(s). Be efficient — \
-                 use tools only when pre-collected data is insufficient.",
+                 use tools to query history or details when the snapshot is insufficient.",
                 config.max_rounds
             ));
         }
+
+        let guidelines = if config.is_focused_plus {
+            format!(
+                "Guidelines:\n\
+                 - The snapshot above shows current values. Use `device(action=\"history\")` \
+                 with `time_range` to query trends when the task requires historical analysis.\n\
+                 - You can use `device(action=\"control\")` to execute bound commands.\n\
+                 - Do NOT call the same tool with the same parameters if it already returned results.\n\
+                 - Max {} rounds of tool calls. Be efficient.\n\
+                 - For complex operations, use the `skill` tool to search for guides.",
+                config.max_rounds,
+            )
+        } else {
+            format!(
+                "Guidelines:\n\
+                 - Do NOT call the same tool with the same parameters if it already returned results.\n\
+                 - If a metric query returns empty data, try a different metric or move on.\n\
+                 - Max {} rounds of tool calls. Be efficient.\n\
+                 - For complex operations (rules, device control, messaging), use the `skill` tool to search for relevant guides before executing.",
+                config.max_rounds,
+            )
+        };
 
         format!(
             "You are an intelligent IoT agent named '{}' monitoring edge devices.\n\
              Current time: {}\n\
              Your task: {}\n{}{}{}{}{}\
-             You have access to tools for querying metrics, executing commands, and sending notifications.\n\
-             Always use tools to fetch the latest data before making conclusions.\n\n\
-             Guidelines:\n\
-             - Do NOT call the same tool with the same parameters if it already returned results.\n\
-             - If a metric query returns empty data, try a different metric or move on.\n\
-             - Max {} rounds of tool calls. Be efficient.\n\
-             - For complex operations (rules, device control, messaging), use the `skill` tool to search for relevant guides before executing.\n\n\
+             You have access to tools for querying metrics, executing commands, and sending notifications.\n\n\
+             {}\n\n\
              When you have enough information, respond with your analysis in natural language. \
              Do NOT wrap your response in JSON or code blocks — just write your analysis directly.\n\
              Keep your conclusion concise and structured (2-5 sentences). \
@@ -650,8 +625,161 @@ impl AgentExecutor {
             history_section,
             invocation_section,
             mode_constraints,
-            config.max_rounds,
+            guidelines,
         )
+    }
+
+    /// Build sections for Focused+ mode:
+    /// - resource_info: grouped by type (metrics, commands, extension tools)
+    /// - current_data: only latest value snapshots, no history blobs
+    fn build_focused_plus_sections(
+        agent: &AiAgent,
+        data_collected: &[DataCollected],
+    ) -> (String, String) {
+        // Build a lookup: source -> latest value for snapshot
+        let mut latest_values: std::collections::HashMap<&str, String> =
+            std::collections::HashMap::new();
+        for d in data_collected {
+            if d.source == "system" {
+                continue;
+            }
+            if d.values
+                .get("_is_image")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            if let Some(v) = d.values.get("value") {
+                latest_values.insert(&d.source, format!("{}", v));
+            }
+        }
+
+        // Group resources by type
+        let mut metric_lines: Vec<String> = Vec::new();
+        let mut command_lines: Vec<String> = Vec::new();
+
+        for r in &agent.resources {
+            match r.resource_type {
+                ResourceType::Metric => {
+                    let current = latest_values
+                        .get(r.resource_id.as_str())
+                        .map(|v| format!(" (current: {})", v))
+                        .unwrap_or_default();
+                    metric_lines.push(format!("- {} (`{}`){}", r.name, r.resource_id, current));
+                }
+                ResourceType::Command => {
+                    command_lines.push(format!("- {} (`{}`)", r.name, r.resource_id));
+                }
+                ResourceType::ExtensionTool => {
+                    command_lines.push(format!("- {} (`{}`)", r.name, r.resource_id));
+                }
+                ResourceType::ExtensionMetric => {
+                    let current = latest_values
+                        .get(r.resource_id.as_str())
+                        .map(|v| format!(" (current: {})", v))
+                        .unwrap_or_default();
+                    metric_lines.push(format!("- {} (`{}`){}", r.name, r.resource_id, current));
+                }
+                ResourceType::Device | ResourceType::DataStream => {}
+            }
+        }
+
+        let mut resource_info = String::from("\n## Bound Resources\n");
+        if !metric_lines.is_empty() {
+            resource_info.push_str("### Metrics\n");
+            for line in &metric_lines {
+                resource_info.push_str(line);
+                resource_info.push('\n');
+            }
+        }
+        if !command_lines.is_empty() {
+            resource_info.push_str("### Commands\n");
+            for line in &command_lines {
+                resource_info.push_str(line);
+                resource_info.push('\n');
+            }
+        }
+        resource_info.push('\n');
+
+        // current_data: snapshot only, no history blobs
+        let current_data_section = if latest_values.is_empty() {
+            "\n## Current Snapshot\nNo pre-collected data. Use tools to query.\n".to_string()
+        } else {
+            let mut table = String::from("\n## Current Snapshot (latest values)\n");
+            table.push_str("| Resource | Value |\n|----------|-------|\n");
+            let mut entries: Vec<_> = latest_values.iter().collect();
+            entries.sort_by_key(|(k, _)| *k);
+            for (source, value) in entries {
+                table.push_str(&format!("| {} | {} |\n", source, value));
+            }
+            table.push('\n');
+            table
+        };
+
+        (resource_info, current_data_section)
+    }
+
+    /// Build sections for Free mode:
+    /// - resource_info: flat resource list
+    /// - current_data: full pre-collected data dump
+    fn build_free_sections(
+        agent: &AiAgent,
+        data_collected: &[DataCollected],
+    ) -> (String, String) {
+        let resource_info = if agent.resources.is_empty() {
+            String::new()
+        } else {
+            let items: Vec<String> = agent
+                .resources
+                .iter()
+                .map(|r| format!("- {} ({})", r.name, r.resource_id))
+                .collect();
+            format!(
+                "\nRecommended resources to focus on:\n{}\n",
+                items.join("\n")
+            )
+        };
+
+        let data_text: Vec<String> = data_collected
+            .iter()
+            .filter(|d| {
+                if d.values
+                    .get("_is_image")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    return false;
+                }
+                if d.source == "system"
+                    && d.values
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.contains("No pre-collected data"))
+                        .unwrap_or(false)
+                {
+                    return false;
+                }
+                true
+            })
+            .map(|d| {
+                let json_str = serde_json::to_string_pretty(&d.values).unwrap_or_default();
+                format!("**Source: {}**\n{}", d.source, json_str)
+            })
+            .collect();
+
+        let current_data_section = if data_text.is_empty() {
+            "\n## Current Data\nNo pre-collected data available.\n\n\
+             **IMPORTANT**: You MUST use the available tools to query the data you need!\n\
+             - Use `query_metric` or `get_latest_metrics` to fetch device metrics\n\
+             - Use `list_devices` to discover available devices\n\
+             - Do NOT conclude \"no data\" without first attempting to query using tools.\n"
+                .to_string()
+        } else {
+            format!("\n## Current Data\n{}\n", data_text.join("\n\n"))
+        };
+
+        (resource_info, current_data_section)
     }
 
     /// Build initial messages (system + user) with multimodal image support.

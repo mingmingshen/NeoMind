@@ -371,7 +371,8 @@ impl AgentExecutor {
                 } else {
                     let json_str = serde_json::to_string(&d.values).unwrap_or_default();
                     if json_str.len() > 100 {
-                        json_str[..100].to_string() + "..."
+                        let end = json_str.floor_char_boundary(100);
+                        json_str[..end].to_string() + "..."
                     } else {
                         json_str
                     }

@@ -433,9 +433,11 @@ pub fn truncate_text(text: &str, max_len: usize) -> String {
     }
 
     // Try to truncate at a word boundary
-    let truncated = &text[..max_len];
+    let end = text.floor_char_boundary(max_len);
+    let truncated = &text[..end];
     if let Some(last_space) = truncated.rfind(' ') {
-        format!("{}...", &text[..last_space])
+        let space_end = text.floor_char_boundary(last_space);
+        format!("{}...", &text[..space_end])
     } else {
         format!("{}...", truncated)
     }

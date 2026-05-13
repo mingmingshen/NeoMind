@@ -67,7 +67,6 @@ import {
   Wand2,
   ChevronRight,
   Bell,
-  Lightbulb,
   Eye,
   Brain,
   Wrench,
@@ -76,6 +75,7 @@ import {
   Workflow,
   MousePointerClick,
   GitBranch,
+  Settings,
 } from "lucide-react"
 import type {
   AiAgentDetail,
@@ -333,7 +333,6 @@ export function AgentEditorFullScreen({
   const [enableToolChaining, setEnableToolChaining] = useState(false)
   const [priority, setPriority] = useState(5)
   const [contextWindowSize, setContextWindowSize] = useState(10)
-  const [showAdvanced, setShowAdvanced] = useState(false)
 
   // LLM validation state
   const [llmValidating, setLlmValidating] = useState(false)
@@ -487,7 +486,6 @@ export function AgentEditorFullScreen({
         setEnableToolChaining(false)
         setPriority(5)
         setContextWindowSize(10)
-        setShowAdvanced(false)
         setScheduleType('timer')
         setTimerSubType('interval')
         setIntervalValue(5)
@@ -1370,28 +1368,6 @@ export function AgentEditorFullScreen({
                   </p>
                 </button>
               </div>
-              {/* Tool Chaining toggle — only shown in Focused mode */}
-              {isFocusedMode && (
-                <div className="flex items-center justify-between rounded-lg border border-border p-3 mt-1">
-                  <div className="flex items-start gap-2.5">
-                    <div className="h-7 w-7 rounded-md bg-muted flex items-center justify-center shrink-0 mt-0.5">
-                      <Workflow className="h-3.5 w-3.5 text-muted-foreground" />
-                    </div>
-                    <div className="space-y-0.5">
-                      <Label className="text-sm font-medium">
-                        {tAgent('enableToolChaining', 'Enable Tool Chaining')}
-                      </Label>
-                      <p className="text-xs text-muted-foreground">
-                        {tAgent('enableToolChainingDescription', 'Allow the LLM to use tools for supplementary data queries. Enables multi-round tool calling within the focused scope.')}
-                      </p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={enableToolChaining}
-                    onCheckedChange={setEnableToolChaining}
-                  />
-                </div>
-              )}
             </div>
 
             {/* Name */}
@@ -1539,67 +1515,60 @@ export function AgentEditorFullScreen({
               )}
             </div>
 
-            {/* Advanced Configuration */}
-            <div className="space-y-3">
-              <div
-                className="flex items-center justify-between cursor-pointer"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-              >
-                <Label className="text-sm font-medium flex items-center gap-2">
-                  <Lightbulb className="h-4 w-4 text-muted-foreground" />
-                  {tAgent('creator.advanced.title', 'Advanced Configuration')}
-                </Label>
-                <ChevronRight
-                  className={cn(
-                    "h-4 w-4 text-muted-foreground transition-transform",
-                    showAdvanced && "rotate-90"
-                  )}
+            {/* Tool Chaining - Focused mode only */}
+            {isFocusedMode && (
+              <div className="flex items-center justify-between py-1">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">{tAgent('creator.advanced.toolChaining', 'Tool Chaining')}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {enableToolChaining
+                      ? tAgent('creator.advanced.toolChainingOn', 'LLM can call tools during analysis — query real-time data, control devices, send notifications, etc. Data collection config above will not be used.')
+                      : tAgent('creator.advanced.toolChainingOff', 'One-shot analysis: agent collects data once based on the configured time range, then analyzes. No additional tool calls.')}
+                  </p>
+                </div>
+                <Switch
+                  checked={enableToolChaining}
+                  onCheckedChange={setEnableToolChaining}
                 />
               </div>
+            )}
 
-              {showAdvanced && (
-                <div className="bg-muted-50 rounded-lg p-4 border space-y-4">
-                  {/* Agent Priority */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium">{tAgent('creator.advanced.agentPriority', 'Agent Priority')}</Label>
-                      <span className="text-sm font-medium tabular-nums">{priority}</span>
-                    </div>
-                    <Slider
-                      min={1}
-                      max={10}
-                      step={1}
-                      value={[priority]}
-                      onValueChange={([v]) => setPriority(v)}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {tAgent('creator.advanced.priorityHint', 'Execution priority (1=lowest, 10=highest)')}
-                    </p>
-                  </div>
+            {/* Agent Priority */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">{tAgent('creator.advanced.agentPriority', 'Agent Priority')}</Label>
+                <span className="text-sm font-medium tabular-nums">{priority}</span>
+              </div>
+              <Slider
+                min={1}
+                max={10}
+                step={1}
+                value={[priority]}
+                onValueChange={([v]) => setPriority(v)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {tAgent('creator.advanced.priorityHint', 'Execution priority (1=lowest, 10=highest)')}
+              </p>
+            </div>
 
-                  <div className="h-px bg-border" />
-
-                  {/* Context Window Size */}
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">{tAgent('creator.advanced.contextWindow', 'Context Window Size')}</Label>
-                    <Select value={contextWindowSize.toString()} onValueChange={(v) => setContextWindowSize(parseInt(v))}>
-                      <SelectTrigger className="h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="5">5</SelectItem>
-                        <SelectItem value="10">10</SelectItem>
-                        <SelectItem value="20">20</SelectItem>
-                        <SelectItem value="30">30</SelectItem>
-                        <SelectItem value="50">50</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      {tAgent('creator.advanced.contextHint', 'Number of recent conversation turns to include as context')}
-                    </p>
-                  </div>
-                </div>
-              )}
+            {/* Conversation History Depth */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">{tAgent('creator.advanced.historyDepth', 'Conversation History Depth')}</Label>
+              <Select value={contextWindowSize.toString()} onValueChange={(v) => setContextWindowSize(parseInt(v))}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="30">30</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {tAgent('creator.advanced.contextHint', 'Number of recent conversation turns to include as context')}
+              </p>
             </div>
 
             {/* Execution Schedule */}
@@ -2202,7 +2171,7 @@ export function AgentEditorFullScreen({
                               setSelectedResources((prev) => prev.map(r => r.id === resourceId ? { ...r, selectedCommands: new Set(r.selectedCommands.has(commandName) ? Array.from(r.selectedCommands).filter(n => n !== commandName) : [...r.selectedCommands, commandName]) } : r))
                             }}
                             isMobile={isMobile}
-                            isFocusedMode={true}
+                            showDataCollection={!enableToolChaining}
                           />
                         ))}
                       </div>
@@ -2261,7 +2230,6 @@ export function AgentEditorFullScreen({
                                 setSelectedResources((prev) => prev.map(r => r.id === resourceId ? { ...r, selectedCommands: new Set(r.selectedCommands.has(commandName) ? Array.from(r.selectedCommands).filter(n => n !== commandName) : [...r.selectedCommands, commandName]) } : r))
                               }}
                               isMobile={isMobile}
-                              isFocusedMode={false}
                             />
                           ))}
                         </div>
@@ -2326,6 +2294,7 @@ export function AgentEditorFullScreen({
         toggleResource={toggleResource}
         toggleRecommendation={toggleRecommendation}
         scheduleType={scheduleType}
+        enableToolChaining={enableToolChaining}
       />
     </FullScreenDialog>
   )
@@ -2348,6 +2317,7 @@ interface ResourceSelectionDialogProps {
   toggleResource: (r: AvailableResource) => void
   toggleRecommendation: (r: ResourceRecommendation) => void
   scheduleType: ScheduleType
+  enableToolChaining?: boolean
 }
 
 function ResourceSelectionDialog({
@@ -2363,6 +2333,7 @@ function ResourceSelectionDialog({
   toggleResource,
   toggleRecommendation,
   scheduleType,
+  enableToolChaining = false,
 }: ResourceSelectionDialogProps) {
   const { t: tAgent } = useTranslation('agents')
   const isMobile = useIsMobile()
@@ -2516,6 +2487,7 @@ function ResourceSelectionDialog({
                       )
                     }}
                     isMobile={true}
+                    showDataCollection={!enableToolChaining}
                   />
                 ))}
               </div>
@@ -2667,6 +2639,7 @@ function ResourceSelectionDialog({
                             )
                           )
                         }}
+                        showDataCollection={!enableToolChaining}
                       />
                     ))
                   )}
@@ -2816,12 +2789,14 @@ interface SelectedResourceItemProps {
   onToggleMetric: (resourceId: string, metricName: string) => void
   onToggleCommand: (resourceId: string, commandName: string) => void
   isMobile?: boolean
-  isFocusedMode?: boolean
+  showDataCollection?: boolean
 }
 
-function SelectedResourceItem({ resource, setSelectedResources, onRemove, onToggleMetric, onToggleCommand, isMobile = false, isFocusedMode = false }: SelectedResourceItemProps) {
+function SelectedResourceItem({ resource, setSelectedResources, onRemove, onToggleMetric, onToggleCommand, isMobile = false, showDataCollection = false }: SelectedResourceItemProps) {
   const [expanded, setExpanded] = useState(false)
-  const [dataCollectionExpanded, setDataCollectionExpanded] = useState(false)
+  const [configuringMetric, setConfiguringMetric] = useState<string | null>(null)
+  const [showAllMetrics, setShowAllMetrics] = useState(false)
+  const [showAllCommands, setShowAllCommands] = useState(false)
   const { t: tAgent } = useTranslation('agents')
   const selectedMetricCount = resource.selectedMetrics.size
   const selectedCommandCount = resource.selectedCommands.size
@@ -2901,18 +2876,33 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
         </Button>
       </div>
 
-      {/* Expandable Metrics/Commands */}
+      {/* Collapsed state summary */}
+      {!expanded && (selectedMetricCount > 0 || selectedCommandCount > 0) && (
+        <div className={cn("mt-1", isMobile ? "pl-7" : "pl-6")}>
+          <p className="text-xs text-muted-foreground truncate">
+            {resource.allMetrics
+              .filter(m => resource.selectedMetrics.has(m.name))
+              .map(m => m.display_name)
+              .slice(0, 3)
+              .join(', ')}
+            {selectedMetricCount > 3 && ` +${selectedMetricCount - 3} more`}
+            {selectedMetricCount > 0 && selectedCommandCount > 0 && ' \u00B7 '}
+            {selectedCommandCount > 0 && `${selectedCommandCount} cmd${selectedCommandCount > 1 ? 's' : ''}`}
+          </p>
+        </div>
+      )}
+
+      {/* Expandable Metrics/Commands — partition folding: show only selected by default */}
       {expanded && (hasMetrics || hasCommands) && (
         <div className={cn("space-y-2", isMobile ? "mt-3 pl-7" : "mt-2 pl-6")}>
           {/* Metrics */}
           {hasMetrics && (
-            <div className="space-y-2">
+            <div className="space-y-1">
               <div className={cn("text-muted-foreground flex items-center justify-between", isMobile ? "text-sm" : "text-xs")}>
-                <span>Metrics</span>
+                <span>Metrics ({selectedMetricCount}/{allMetricCount})</span>
                 <button
                   type="button"
                   onClick={() => {
-                    // Toggle all metrics
                     const selectAll = selectedMetricCount < allMetricCount
                     setSelectedResources((prev: SelectedResource[]) =>
                       prev.map(r =>
@@ -2929,44 +2919,129 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                   }}
                   className="text-primary hover:underline"
                 >
-                  {selectedMetricCount === allMetricCount ? 'Deselect All' : selectedMetricCount > 0 ? 'Select All' : 'Select All'}
+                  {selectedMetricCount === allMetricCount ? 'Deselect All' : 'Select All'}
                 </button>
               </div>
               <div className={cn("gap-1", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
-                {resource.allMetrics.map((metric) => (
-                  <div
-                    key={metric.name}
-                    className={cn(
-                      "flex items-center gap-2 rounded cursor-pointer transition-colors",
-                      isMobile
-                        ? "px-3 py-2.5 text-sm"
-                        : "px-2 py-1 text-xs",
-                      resource.selectedMetrics.has(metric.name)
-                        ? "bg-muted text-primary"
-                        : "hover:bg-muted-50"
+                {(showAllMetrics || selectedMetricCount === 0 ? resource.allMetrics : resource.allMetrics.filter(m => resource.selectedMetrics.has(m.name)))
+                  .map((metric) => (
+                  <div key={metric.name} className="contents">
+                    <div
+                      className={cn(
+                        "flex items-center justify-between rounded transition-colors",
+                        isMobile
+                          ? "px-2 py-1 text-sm"
+                          : "px-1.5 py-0.5 text-xs",
+                        resource.selectedMetrics.has(metric.name)
+                          ? "bg-muted text-primary"
+                          : "hover:bg-muted-50"
+                      )}
+                    >
+                      <div
+                        className="flex items-center gap-2 cursor-pointer min-w-0"
+                        onClick={() => onToggleMetric(resource.id, metric.name)}
+                      >
+                        <Checkbox
+                          checked={resource.selectedMetrics.has(metric.name)}
+                          className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")}
+                        />
+                        <span className="truncate">{metric.display_name}</span>
+                      </div>
+                      {resource.selectedMetrics.has(metric.name) && showDataCollection && (
+                        <button
+                          type="button"
+                          onClick={() => setConfiguringMetric(configuringMetric === metric.name ? null : metric.name)}
+                          className="shrink-0 ml-1"
+                        >
+                          <Settings className={cn(
+                            "hover:text-foreground transition-colors",
+                            configuringMetric === metric.name ? "text-foreground" : "text-muted-foreground",
+                            isMobile ? "h-4 w-4" : "h-3.5 w-3.5"
+                          )} />
+                        </button>
+                      )}
+                    </div>
+                    {configuringMetric === metric.name && (
+                      <div className="col-span-2 pl-6 pt-1 pb-2 space-y-2 border-l-2 border-muted ml-2">
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs whitespace-nowrap">{tAgent('creator.advanced.timeRange', 'Time Range')}</Label>
+                          <Select
+                            value={(getResourceConfig()?.time_range_minutes ?? 60).toString()}
+                            onValueChange={(v) => updateResourceDataCollection('time_range_minutes', parseInt(v))}
+                          >
+                            <SelectTrigger className="h-7 text-xs w-[130px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="5">5 min</SelectItem>
+                              <SelectItem value="15">15 min</SelectItem>
+                              <SelectItem value="30">30 min</SelectItem>
+                              <SelectItem value="60">1 hour</SelectItem>
+                              <SelectItem value="360">6 hours</SelectItem>
+                              <SelectItem value="720">12 hours</SelectItem>
+                              <SelectItem value="1440">24 hours</SelectItem>
+                              <SelectItem value="10080">7 days</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                          <div className="flex items-center gap-1.5">
+                            <Checkbox
+                              checked={getResourceConfig()?.include_history ?? false}
+                              onCheckedChange={(checked) => updateResourceDataCollection('include_history', !!checked)}
+                              className="h-4 w-4"
+                            />
+                            <Label className="text-xs text-muted-foreground cursor-pointer">
+                              {tAgent('creator.advanced.includeHistory', 'Include History')}
+                            </Label>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Checkbox
+                              checked={getResourceConfig()?.include_trend ?? false}
+                              onCheckedChange={(checked) => updateResourceDataCollection('include_trend', !!checked)}
+                              className="h-4 w-4"
+                            />
+                            <Label className="text-xs text-muted-foreground cursor-pointer">
+                              {tAgent('creator.advanced.includeTrend', 'Include Trend')}
+                            </Label>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Checkbox
+                              checked={getResourceConfig()?.include_baseline ?? false}
+                              onCheckedChange={(checked) => updateResourceDataCollection('include_baseline', !!checked)}
+                              className="h-4 w-4"
+                            />
+                            <Label className="text-xs text-muted-foreground cursor-pointer">
+                              {tAgent('creator.advanced.includeBaseline', 'Include Baseline')}
+                            </Label>
+                          </div>
+                        </div>
+                      </div>
                     )}
-                    onClick={() => onToggleMetric(resource.id, metric.name)}
-                  >
-                    <Checkbox
-                      checked={resource.selectedMetrics.has(metric.name)}
-                      className={cn(isMobile ? "h-4 w-4" : "h-4 w-4")}
-                    />
-                    <span className="truncate">{metric.display_name}</span>
                   </div>
                 ))}
               </div>
+              {!showAllMetrics && selectedMetricCount < allMetricCount && (
+                <button type="button" onClick={() => setShowAllMetrics(true)} className="text-xs text-primary hover:underline">
+                  Show All ({allMetricCount})
+                </button>
+              )}
+              {showAllMetrics && selectedMetricCount < allMetricCount && (
+                <button type="button" onClick={() => setShowAllMetrics(false)} className="text-xs text-primary hover:underline">
+                  Show Selected Only
+                </button>
+              )}
             </div>
           )}
 
           {/* Commands */}
           {hasCommands && (
-            <div className="space-y-2">
+            <div className="space-y-1">
               <div className={cn("text-muted-foreground flex items-center justify-between", isMobile ? "text-sm" : "text-xs")}>
-                <span>Commands</span>
+                <span>Commands ({selectedCommandCount}/{allCommandCount})</span>
                 <button
                   type="button"
                   onClick={() => {
-                    // Toggle all commands
                     const selectAll = selectedCommandCount < allCommandCount
                     setSelectedResources((prev: SelectedResource[]) =>
                       prev.map(r =>
@@ -2983,18 +3058,19 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                   }}
                   className="text-primary hover:underline"
                 >
-                  {selectedCommandCount === allCommandCount ? 'Deselect All' : selectedCommandCount > 0 ? 'Select All' : 'Select All'}
+                  {selectedCommandCount === allCommandCount ? 'Deselect All' : 'Select All'}
                 </button>
               </div>
               <div className={cn("gap-1", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
-                {resource.allCommands.map((command) => (
+                {(showAllCommands || selectedCommandCount === 0 ? resource.allCommands : resource.allCommands.filter(c => resource.selectedCommands.has(c.name)))
+                  .map((command) => (
                   <div
                     key={command.name}
                     className={cn(
                       "flex items-center gap-2 rounded cursor-pointer transition-colors",
                       isMobile
-                        ? "px-3 py-2.5 text-sm"
-                        : "px-2 py-1 text-xs",
+                        ? "px-2 py-1 text-sm"
+                        : "px-1.5 py-0.5 text-xs",
                       resource.selectedCommands.has(command.name)
                         ? "bg-muted text-primary"
                         : "hover:bg-muted-50"
@@ -3009,6 +3085,16 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                   </div>
                 ))}
               </div>
+              {!showAllCommands && selectedCommandCount < allCommandCount && (
+                <button type="button" onClick={() => setShowAllCommands(true)} className="text-xs text-primary hover:underline">
+                  Show All ({allCommandCount})
+                </button>
+              )}
+              {showAllCommands && selectedCommandCount < allCommandCount && (
+                <button type="button" onClick={() => setShowAllCommands(false)} className="text-xs text-primary hover:underline">
+                  Show Selected Only
+                </button>
+              )}
             </div>
           )}
 
@@ -3016,76 +3102,6 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
             <p className={cn("text-muted-foreground italic", isMobile ? "text-xs" : "text-xs")}>No metrics or commands available</p>
           )}
 
-          {/* Data Collection Config for Focused Mode */}
-          {isFocusedMode && hasMetrics && (
-            <div className="ml-0 mt-2 border-t border-muted pt-2 space-y-2">
-              <button
-                type="button"
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setDataCollectionExpanded(!dataCollectionExpanded)}
-              >
-                <ChevronRight className={`h-4 w-4 transition-transform ${dataCollectionExpanded ? 'rotate-90' : ''}`} />
-                {tAgent('creator.advanced.dataCollection', 'Data Collection')}
-              </button>
-              {dataCollectionExpanded && (
-                <div className="space-y-3 pt-2 pl-4">
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs whitespace-nowrap">{tAgent('creator.advanced.timeRange', 'Time Range')}</Label>
-                    <Select
-                      value={(getResourceConfig()?.time_range_minutes ?? 60).toString()}
-                      onValueChange={(v) => updateResourceDataCollection('time_range_minutes', parseInt(v))}
-                    >
-                      <SelectTrigger className="h-7 text-xs w-[130px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="5">5 min</SelectItem>
-                        <SelectItem value="15">15 min</SelectItem>
-                        <SelectItem value="30">30 min</SelectItem>
-                        <SelectItem value="60">1 hour</SelectItem>
-                        <SelectItem value="360">6 hours</SelectItem>
-                        <SelectItem value="720">12 hours</SelectItem>
-                        <SelectItem value="1440">24 hours</SelectItem>
-                        <SelectItem value="10080">7 days</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <div className="flex items-center gap-1.5">
-                      <Checkbox
-                        checked={getResourceConfig()?.include_history ?? false}
-                        onCheckedChange={(checked) => updateResourceDataCollection('include_history', !!checked)}
-                        className="h-4 w-4"
-                      />
-                      <Label className="text-xs text-muted-foreground cursor-pointer">
-                        {tAgent('creator.advanced.includeHistory', 'Include History')}
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Checkbox
-                        checked={getResourceConfig()?.include_trend ?? false}
-                        onCheckedChange={(checked) => updateResourceDataCollection('include_trend', !!checked)}
-                        className="h-4 w-4"
-                      />
-                      <Label className="text-xs text-muted-foreground cursor-pointer">
-                        {tAgent('creator.advanced.includeTrend', 'Include Trend')}
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Checkbox
-                        checked={getResourceConfig()?.include_baseline ?? false}
-                        onCheckedChange={(checked) => updateResourceDataCollection('include_baseline', !!checked)}
-                        className="h-4 w-4"
-                      />
-                      <Label className="text-xs text-muted-foreground cursor-pointer">
-                        {tAgent('creator.advanced.includeBaseline', 'Include Baseline')}
-                      </Label>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
     </div>

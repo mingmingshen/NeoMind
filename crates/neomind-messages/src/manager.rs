@@ -365,7 +365,8 @@ impl MessageManager {
                                 let s = p.to_string();
                                 // Truncate to 500 chars for display
                                 if s.len() > 500 {
-                                    format!("{}...", &s[..497])
+                                    let end = s.floor_char_boundary(497);
+                                    format!("{}...", &s[..end])
                                 } else {
                                     s
                                 }

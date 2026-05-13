@@ -500,6 +500,8 @@
       "enableToolChaining": "启用多轮工具调用",
       "toolChainingHint": "允许 Agent 在一次执行中进行多轮工具调用以完成复杂任务",
       "toolChainingHintFocused": "允许 Agent 在分析过程中进行多轮工具调用（查询数据、控制设备、发送通知等）",
+      "toolChainingOn": "LLM 可在分析过程中调用工具——查询实时数据、控制设备、发送通知等。上方数据采集配置将不生效。",
+      "toolChainingOff": "单次分析模式：Agent 按配置的时间范围采集一次数据，然后进行分析。不会额外调用工具。",
       "maxChainDepth": "最大链深度",
       "focusedHint": "精准模式：基于预收集数据进行单次分析。启用工具链后可调用工具。",
       "agentPriority": "优先级",
