@@ -221,7 +221,7 @@ export function AgentDetailPanel({
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex flex-col gap-3 h-full">
       {/* Real-time Thinking Panel - shows during execution */}
       {agent.id && (
         <AgentThinkingPanel
@@ -231,7 +231,7 @@ export function AgentDetailPanel({
       )}
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as DetailTab)} className="flex-1 flex flex-col">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as DetailTab)} className="flex flex-col flex-1 min-h-0">
         <div className={cn("pt-3", isMobile ? "px-2" : "px-4")}>
           <TabsList className={cn("bg-muted-50 h-9", isMobile ? "w-full overflow-x-auto" : "w-full justify-start")}>
             <TabsTrigger value="overview" className={cn("h-7", isMobile ? "text-xs px-2" : "text-sm")}>
@@ -504,9 +504,9 @@ interface InfoRowProps {
 
 function InfoRow({ label, value, mono }: InfoRowProps) {
   return (
-    <div className="flex justify-between items-center py-1 text-sm">
-      <span className="text-muted-foreground text-xs">{label}</span>
-      <span className={cn("font-medium text-xs truncate max-w-[180px] sm:max-w-[280px]", mono && "font-mono")}>{value}</span>
+    <div className="flex items-baseline gap-2 py-1 text-sm">
+      <span className="text-muted-foreground text-xs shrink-0">{label}</span>
+      <span className={cn("font-medium text-xs truncate", mono && "font-mono")}>{value}</span>
     </div>
   )
 }
