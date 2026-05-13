@@ -438,6 +438,7 @@ impl CloudRuntime {
                     }
                     .to_string(),
                     content,
+                    tool_name: msg.tool_name.clone(),
                 }
             })
             .collect()
@@ -1612,6 +1613,8 @@ impl From<neomind_core::llm::backend::ToolDefinition> for OpenAiTool {
 struct ApiMessage {
     role: String,
     content: ApiContent,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

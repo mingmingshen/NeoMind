@@ -185,8 +185,6 @@ fn extract_image_insight(situation_analysis: &str, conclusion: &str) -> String {
         "可以看到",
         "观察到",
         "检测到",
-        "发现",
-        "显示",
     ];
 
     for marker in visual_markers {

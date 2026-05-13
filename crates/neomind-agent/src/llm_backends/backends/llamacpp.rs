@@ -289,6 +289,7 @@ impl LlamaCppRuntime {
                 ApiMessage {
                     role: role.to_string(),
                     content,
+                    tool_name: msg.tool_name.clone(),
                 }
             })
             .collect()
@@ -943,6 +944,8 @@ pub struct GenerationSettings {
 struct ApiMessage {
     role: String,
     content: ApiContent,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

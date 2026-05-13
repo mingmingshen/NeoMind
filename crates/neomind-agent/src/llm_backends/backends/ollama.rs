@@ -339,7 +339,7 @@ impl OllamaRuntime {
                     content: text,
                     images,
                     tool_calls: None,
-                    tool_name: None, // Tool results should use ExtendedMessage.tool_result_ollama() instead
+                    tool_name: msg.tool_name.clone(),
                 }
             })
             .collect()

@@ -924,57 +924,9 @@ impl AgentExecutor {
             }
         }
 
-        // --- Part 2: Image analysis history (from short-term memory decisions) ---
-        // Scan short-term summaries for [image_analysis] decision entries and collect
-        // the most recent ones as text summaries for the LLM context.
-        let image_entries: Vec<serde_json::Value> = agent
-            .memory
-            .short_term
-            .summaries
-            .iter()
-            .rev()
-            .flat_map(|summary| {
-                summary
-                    .decisions
-                    .iter()
-                    .filter(|d| d.starts_with("[image_analysis]"))
-                    .map(move |d| {
-                        let time_str = chrono::DateTime::from_timestamp(summary.timestamp, 0)
-                            .map(|dt| dt.format("%m-%d %H:%M").to_string())
-                            .unwrap_or_else(|| summary.timestamp.to_string());
-                        serde_json::json!({
-                            "time": time_str,
-                            "analysis": d,
-                        })
-                    })
-            })
-            .take(3)
-            .collect();
-
-        if !image_entries.is_empty() {
-            let mut image_values = serde_json::Map::new();
-            image_values.insert(
-                "image_analyses".to_string(),
-                serde_json::json!(image_entries),
-            );
-            image_values.insert(
-                "description".to_string(),
-                serde_json::json!("Previous image/camera analysis records; each is an independent observation"),
-            );
-
-            results.push(DataCollected {
-                source: "image_history".to_string(),
-                data_type: "image_analysis".to_string(),
-                values: serde_json::to_value(image_values).unwrap_or_default(),
-                timestamp,
-            });
-
-            tracing::debug!(
-                agent_id = %agent.id,
-                image_history_count = image_entries.len(),
-                "[COLLECT] Injected image analysis history"
-            );
-        }
+        // Image analysis history is now handled by `build_history_context` in context.rs,
+        // which directly scans short_term.summaries for [image_analysis] entries.
+        // No need to inject it as DataCollected here.
 
         Ok(results)
     }

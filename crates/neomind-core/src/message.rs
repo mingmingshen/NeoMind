@@ -165,6 +165,10 @@ pub struct Message {
     pub role: MessageRole,
     /// Content of the message.
     pub content: Content,
+    /// Tool name for tool result messages (Ollama format).
+    /// Only meaningful when role == MessageRole::Tool.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
     /// Optional timestamp.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<chrono::DateTime<chrono::Utc>>,
@@ -176,6 +180,17 @@ impl Message {
         Self {
             role,
             content: content.into(),
+            tool_name: None,
+            timestamp: Some(chrono::Utc::now()),
+        }
+    }
+
+    /// Create a tool result message.
+    pub fn tool_result(tool_name: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: MessageRole::Tool,
+            content: Content::text(content),
+            tool_name: Some(tool_name.into()),
             timestamp: Some(chrono::Utc::now()),
         }
     }

@@ -22,100 +22,181 @@ pub struct EventTriggerData {
     pub timestamp: i64,
 }
 
-/// State for tracking tool chaining progress
-#[derive(Debug, Clone)]
-pub struct ChainState {
-    /// Current depth in the chain
-    pub(crate) depth: usize,
-    /// Results from previous rounds that can be used as input
-    pub(crate) previous_results: Vec<ChainResult>,
-    /// Maximum depth allowed
-    pub(crate) max_depth: usize,
+/// Configuration for `build_history_context` — controls how much history
+/// to include and whether to include image analysis history.
+pub(crate) struct HistoryConfig {
+    pub max_history_entries: usize,
+    pub max_short_term: usize,
+    pub pattern_confidence: f32,
+    pub max_patterns: usize,
+    pub max_baselines: usize,
+    pub max_user_messages: usize,
+    pub include_image_history: bool,
 }
 
-/// A result from one step in the chain that can be used as input
-#[derive(Debug, Clone)]
-pub struct ChainResult {
-    /// Action that produced this result
-    action_type: String,
-    /// Target of the action
-    target: String,
-    /// Result data (if any)
-    result: Option<String>,
-    /// Whether the action succeeded
-    success: bool,
-}
-
-impl ChainState {
-    pub(crate) fn new(max_depth: usize) -> Self {
+impl HistoryConfig {
+    /// Focused: lightweight, concise context for fast analysis on small models.
+    pub(crate) fn focused() -> Self {
         Self {
-            depth: 0,
-            previous_results: Vec::new(),
-            max_depth,
+            max_history_entries: 3,
+            max_short_term: 3,
+            pattern_confidence: 0.7,
+            max_patterns: 5,
+            max_baselines: 5,
+            max_user_messages: 5,
+            include_image_history: true,
         }
     }
 
-    pub(crate) fn can_continue(&self) -> bool {
-        self.depth < self.max_depth
-    }
-
-    pub(crate) fn advance(&mut self, results: &[neomind_storage::ActionExecuted]) {
-        self.depth += 1;
-        for action in results {
-            self.previous_results.push(ChainResult {
-                action_type: action.action_type.clone(),
-                target: action.target.clone(),
-                result: action.result.clone(),
-                success: action.success,
-            });
+    /// Free: full context for autonomous multi-round tool calling.
+    pub(crate) fn free() -> Self {
+        Self {
+            max_history_entries: 5,
+            max_short_term: 3,
+            pattern_confidence: 0.6,
+            max_patterns: 5,
+            max_baselines: 5,
+            max_user_messages: 5,
+            include_image_history: true,
         }
     }
+}
 
-    /// Format previous results as context for the next LLM round
-    pub(crate) fn format_as_context(&self) -> String {
-        if self.previous_results.is_empty() {
-            return String::new();
-        }
+/// Build a unified history context string from agent memory and conversation history.
+/// Used by both Focused (analyze_with_llm) and Free (build_tool_system_prompt) paths.
+pub(crate) fn build_history_context(agent: &AiAgent, config: &HistoryConfig) -> String {
+    let mut parts: Vec<String> = Vec::new();
 
-        let mut context =
-            String::from("\n\n## Previous Tool Execution Results (Tool Chaining)\n\n");
-        context.push_str(&format!("Currently on round {}.\n\n", self.depth));
-
-        for (i, result) in self.previous_results.iter().enumerate() {
-            context.push_str(&format!(
-                "### Execution Step {} - {}\n",
-                i + 1,
-                result.action_type
+    // 1. Recent execution history (conversation turns) — change-detected, collapses duplicates
+    if !agent.conversation_history.is_empty() {
+        let entries = format_changed_history(&agent.conversation_history, config.max_history_entries);
+        if !entries.is_empty() {
+            parts.push(format!(
+                "### Recent Execution History ({} events)\n{}\n\
+                 Use this to track trends and avoid repeating the same analysis.",
+                entries.len(),
+                entries.join("\n")
             ));
-            context.push_str(&format!("- **Target**: {}\n", result.target));
-            context.push_str(&format!(
-                "- **Status**: {}\n",
-                if result.success { "Success" } else { "Failed" }
-            ));
-            if let Some(ref result_str) = result.result {
-                // Only include non-trivial results
-                if !result_str.is_empty() && result_str != "Command sent successfully" {
-                    // Sanitize base64/image data to prevent context bloat
-                    let sanitized =
-                        crate::agent::streaming::sanitize_tool_result_for_prompt(result_str);
-                    let display = if sanitized.chars().count() > 2000 {
-                        crate::agent::streaming::truncate_result_utf8(&sanitized, 2000)
-                    } else {
-                        sanitized
-                    };
-                    context.push_str(&format!("- **Result**: {}\n", display));
-                }
-            }
-            context.push('\n');
         }
+    }
 
-        context.push_str(
-            "Based on the above execution results, determine if further operations are needed. ",
-        );
-        context.push_str("If previous operations have completed the goal, or there are no more meaningful operations, please explain and end. ");
-        context.push_str("If you need to continue, please clearly state what to do next.\n");
+    // 2. Short-term memory summaries (recent execution results)
+    if !agent.memory.short_term.summaries.is_empty() {
+        let recent: Vec<String> = agent
+            .memory
+            .short_term
+            .summaries
+            .iter()
+            .rev()
+            .take(config.max_short_term)
+            .map(|s| {
+                let ts = chrono::DateTime::from_timestamp(s.timestamp, 0)
+                    .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                    .unwrap_or_else(|| "??".to_string());
+                let status = if s.success { "OK" } else { "FAIL" };
+                format!("- [{}][{}] {}", ts, status, truncate_to(&s.conclusion, 80))
+            })
+            .collect();
+        parts.push(format!("### Short-term Memory\n{}", recent.join("\n")));
+    }
 
-        context
+    // 3. Learned patterns (high confidence only)
+    if !agent.memory.learned_patterns.is_empty() {
+        let patterns: Vec<String> = agent
+            .memory
+            .learned_patterns
+            .iter()
+            .filter(|p| p.confidence >= config.pattern_confidence)
+            .take(config.max_patterns)
+            .map(|p| {
+                format!(
+                    "- [{}] {} ({:.0}%)",
+                    p.pattern_type,
+                    p.description,
+                    p.confidence * 100.0
+                )
+            })
+            .collect();
+        if !patterns.is_empty() {
+            parts.push(format!("### Learned Patterns\n{}", patterns.join("\n")));
+        }
+    }
+
+    // 4. Baseline values
+    if !agent.memory.baselines.is_empty() {
+        let bl: Vec<String> = agent
+            .memory
+            .baselines
+            .iter()
+            .take(config.max_baselines)
+            .map(|(k, v)| format!("- {}: {:.2}", k, v))
+            .collect();
+        parts.push(format!("### Known Baselines\n{}", bl.join("\n")));
+    }
+
+    // 5. User messages (highest priority instructions)
+    if !agent.user_messages.is_empty() {
+        let msgs: Vec<String> = agent
+            .user_messages
+            .iter()
+            .rev()
+            .take(config.max_user_messages)
+            .map(|m| {
+                let ts = chrono::DateTime::from_timestamp(m.timestamp, 0)
+                    .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                    .unwrap_or_else(|| "??".to_string());
+                format!("- [{}] {}", ts, m.content)
+            })
+            .collect();
+        parts.push(format!(
+            "### User Instructions (HIGHEST PRIORITY)\n\
+             These override any conflicting rules from initial config:\n{}",
+            msgs.join("\n")
+        ));
+    }
+
+    // 6. Conversation summary (compressed older history preserved across evictions)
+    if let Some(ref summary) = agent.conversation_summary {
+        if !summary.is_empty() {
+            parts.push(format!("### Earlier History Summary\n{}", summary));
+        }
+    }
+
+    // 7. Image analysis history (from short-term decisions with [image_analysis] prefix)
+    if config.include_image_history {
+        let image_entries: Vec<String> = agent
+            .memory
+            .short_term
+            .summaries
+            .iter()
+            .rev()
+            .flat_map(|s| {
+                let time_str = chrono::DateTime::from_timestamp(s.timestamp, 0)
+                    .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                    .unwrap_or_else(|| s.timestamp.to_string());
+                s.decisions
+                    .iter()
+                    .filter(|d| d.starts_with("[image_analysis]"))
+                    .map(move |d| format!("- [{}] {}", time_str, truncate_to(d, 120)))
+            })
+            .take(3)
+            .collect();
+
+        if !image_entries.is_empty() {
+            parts.push(format!(
+                "### Recent Image Analysis\n{}",
+                image_entries.join("\n")
+            ));
+        }
+    }
+
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n## Historical Context (learn from past experience)\n{}\n",
+            parts.join("\n\n")
+        )
     }
 }
 

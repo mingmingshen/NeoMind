@@ -548,8 +548,8 @@ async fn test_capability_metadata() {
 async fn test_all_capabilities() {
     let all_caps = ExtensionCapability::all_capabilities();
 
-    // Verify all 11 standard capabilities are present
-    assert_eq!(all_caps.len(), 11);
+    // Verify all 14 standard capabilities are present
+    assert_eq!(all_caps.len(), 14);
 
     let cap_names: Vec<String> = all_caps.iter().map(|c| c.name()).collect();
 
@@ -564,6 +564,9 @@ async fn test_all_capabilities() {
     assert!(cap_names.contains(&"extension_call".to_string()));
     assert!(cap_names.contains(&"agent_trigger".to_string()));
     assert!(cap_names.contains(&"rule_trigger".to_string()));
+    assert!(cap_names.contains(&"device_template_register".to_string()));
+    assert!(cap_names.contains(&"device_register".to_string()));
+    assert!(cap_names.contains(&"device_unregister".to_string()));
 }
 
 #[tokio::test]

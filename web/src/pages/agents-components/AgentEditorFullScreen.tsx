@@ -30,12 +30,13 @@ import { textNano } from "@/design-system/tokens/typography"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
+
 import { Checkbox } from "@/components/ui/checkbox"
 import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Switch } from "@/components/ui/switch"
 import {
   Select,
   SelectContent,
@@ -329,8 +330,7 @@ export function AgentEditorFullScreen({
 
   // Advanced configuration state
   const [executionMode, setExecutionMode] = useState<'focused' | 'free' | 'chat' | 'react'>('focused')
-  const [enableToolChaining, setEnableToolChaining] = useState(true)
-  const [maxChainDepth, setMaxChainDepth] = useState(3)
+  const [enableToolChaining, setEnableToolChaining] = useState(false)
   const [priority, setPriority] = useState(5)
   const [contextWindowSize, setContextWindowSize] = useState(10)
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -470,9 +470,8 @@ export function AgentEditorFullScreen({
         setUserPrompt(agent.user_prompt || '')
         setLlmBackendId(agent.llm_backend_id || null)
         // Load advanced config from agent
-        setEnableToolChaining(agent.enable_tool_chaining ?? false)
         setExecutionMode(agent.execution_mode ?? 'focused')
-        setMaxChainDepth(agent.max_chain_depth ?? 3)
+        setEnableToolChaining(agent.enable_tool_chaining ?? false)
         setPriority(agent.priority ?? 5)
         setContextWindowSize(agent.context_window_size ?? 10)
         parseSchedule(agent.schedule)
@@ -485,8 +484,7 @@ export function AgentEditorFullScreen({
         setLlmBackendId(null)
         // Reset to defaults
         setExecutionMode('focused')
-        setEnableToolChaining(true)
-        setMaxChainDepth(3)
+        setEnableToolChaining(false)
         setPriority(5)
         setContextWindowSize(10)
         setShowAdvanced(false)
@@ -1221,12 +1219,11 @@ export function AgentEditorFullScreen({
           cron_expression: cronExpression,
           event_filter: eventFilter,
         },
-        // Advanced configuration (tool chaining only for Free mode)
-        enable_tool_chaining: !isFocusedMode && enableToolChaining ? true : undefined,
-        max_chain_depth: !isFocusedMode && enableToolChaining ? maxChainDepth : undefined,
+        // Advanced configuration
         priority: priority !== 5 ? priority : undefined,
         context_window_size: contextWindowSize !== 10 ? contextWindowSize : undefined,
         execution_mode: isFocusedMode ? 'focused' : 'free',
+        enable_tool_chaining: isFocusedMode ? enableToolChaining : undefined,
       }
 
       await onSave(data)
@@ -1373,6 +1370,28 @@ export function AgentEditorFullScreen({
                   </p>
                 </button>
               </div>
+              {/* Tool Chaining toggle — only shown in Focused mode */}
+              {isFocusedMode && (
+                <div className="flex items-center justify-between rounded-lg border border-border p-3 mt-1">
+                  <div className="flex items-start gap-2.5">
+                    <div className="h-7 w-7 rounded-md bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                      <Workflow className="h-3.5 w-3.5 text-muted-foreground" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label className="text-sm font-medium">
+                        {tAgent('enableToolChaining', 'Enable Tool Chaining')}
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        {tAgent('enableToolChainingDescription', 'Allow the LLM to use tools for supplementary data queries. Enables multi-round tool calling within the focused scope.')}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={enableToolChaining}
+                    onCheckedChange={setEnableToolChaining}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Name */}
@@ -1540,42 +1559,6 @@ export function AgentEditorFullScreen({
 
               {showAdvanced && (
                 <div className="bg-muted-50 rounded-lg p-4 border space-y-4">
-                  {/* Tool Chaining — Free mode only */}
-                  {!isFocusedMode && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5 max-w-[75%]">
-                        <Label className="text-sm font-medium">{tAgent('creator.advanced.enableToolChaining', 'Multi-round Tool Calls')}</Label>
-                        <p className="text-xs text-muted-foreground">
-                          {tAgent('creator.advanced.toolChainingHint', 'Allow the agent to chain multiple tool calls for complex tasks')}
-                        </p>
-                      </div>
-                      <Switch
-                        checked={enableToolChaining}
-                        onCheckedChange={setEnableToolChaining}
-                      />
-                    </div>
-
-                    {enableToolChaining && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs text-muted-foreground">{tAgent('creator.advanced.maxChainDepth', 'Max Chain Depth')}</Label>
-                          <span className="text-sm font-medium tabular-nums">{maxChainDepth}</span>
-                        </div>
-                        <Slider
-                          min={1}
-                          max={10}
-                          step={1}
-                          value={[maxChainDepth]}
-                          onValueChange={([v]) => setMaxChainDepth(v)}
-                        />
-                      </div>
-                    )}
-                  </div>
-                  )}
-
-                  {!isFocusedMode && <div className="h-px bg-border" />}
-
                   {/* Agent Priority */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">

@@ -82,6 +82,48 @@ struct ToolLoopOutput {
     round_data_list_raw: Vec<(Option<String>, Vec<ToolCallRecord>)>,
 }
 
+/// Configuration for the tool loop, varying by execution mode.
+struct ToolLoopConfig {
+    /// Maximum LLM call rounds
+    max_rounds: usize,
+    /// Recommended tool names (None = no recommendation, all tools available).
+    /// Not a whitelist — just prompt guidance for the LLM.
+    recommended_tools: Option<Vec<String>>,
+}
+
+impl ToolLoopConfig {
+    fn free() -> Self {
+        Self {
+            max_rounds: 30,
+            recommended_tools: None,
+        }
+    }
+
+    fn focused_plus(agent: &AiAgent) -> Self {
+        Self {
+            max_rounds: agent.max_chain_depth.max(1).min(10),
+            recommended_tools: Some(Self::build_focused_recommended_tools(agent)),
+        }
+    }
+
+    fn build_focused_recommended_tools(agent: &AiAgent) -> Vec<String> {
+        let mut tools = vec![
+            "device".to_string(),
+            "skill".to_string(),
+            "message".to_string(),
+        ];
+        for r in &agent.resources {
+            if matches!(r.resource_type, ResourceType::Command) {
+                tools.push(format!("device:{}", r.resource_id));
+            }
+            if matches!(r.resource_type, ResourceType::ExtensionTool) {
+                tools.push(r.resource_id.clone());
+            }
+        }
+        tools
+    }
+}
+
 // Sub-modules
 mod analyzer;
 mod command_executor;
@@ -93,11 +135,12 @@ mod response_parser;
 
 // Re-export public types
 pub(crate) use analyzer::AnalysisResult;
-pub use context::{ChainResult, ChainState, DataSourceRef, EventTriggerData};
+pub use context::{DataSourceRef, EventTriggerData};
 
 // Re-export functions needed by sibling modules (via use super::*)
 pub(crate) use context::{
-    clean_and_truncate_text, conclusion_fingerprint, format_changed_history, truncate_to,
+    build_history_context, clean_and_truncate_text, conclusion_fingerprint, truncate_to,
+    HistoryConfig,
 };
 pub(crate) use data_collector::get_time_context;
 pub(crate) use intent::extract_threshold;
@@ -192,9 +235,8 @@ fn compact_executor_messages(messages: &mut Vec<Message>, keep_recent: usize) {
     while i < messages.len() && compacted_count < to_compact {
         if messages[i].role == MessageRole::User {
             let text = messages[i].content.as_text();
-            // Tool result messages start with "Tool 'name' result:\n"
-            if text.starts_with("Tool '") || text.starts_with("Skill guide retrieved") {
-                // Replace with a compact summary
+            // Skill guide acknowledgment messages start with "Skill guide retrieved"
+            if text.starts_with("Skill guide retrieved") {
                 let summary = if text.len() > 100 {
                     let preview = &text[..text.floor_char_boundary(80)];
                     format!("[Previous tool result: {}...]", preview)
@@ -206,6 +248,17 @@ fn compact_executor_messages(messages: &mut Vec<Message>, keep_recent: usize) {
             } else {
                 compacted_count += 1;
             }
+        } else if messages[i].role == MessageRole::Tool {
+            // Native tool result messages (MessageRole::Tool with tool_name)
+            let text = messages[i].content.as_text();
+            let summary = if text.len() > 100 {
+                let preview = &text[..text.floor_char_boundary(80)];
+                format!("[Previous tool result: {}...]", preview)
+            } else {
+                format!("[Previous tool result: {}]", text)
+            };
+            messages[i].content = Content::text(summary);
+            compacted_count += 1;
         } else if messages[i].role == MessageRole::Assistant {
             // Compact old assistant messages to just a brief note
             let text = messages[i].content.as_text();
@@ -373,38 +426,45 @@ impl AgentExecutor {
 
     /// Check whether tool mode should be used for this agent execution.
     ///
-    /// Only Free mode agents use tool calling; Focused mode always uses
-    /// structured LLM analysis (single-pass, fast, reliable).
+    /// - Free mode: always uses tool calling (if LLM + registry support it)
+    /// - Focused mode: uses tool calling only when `enable_tool_chaining=true`
+    /// - Otherwise falls back to structured JSON analysis
     fn should_use_tools(
         &self,
         agent: &AiAgent,
         llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>,
     ) -> bool {
-        // Focused mode never uses tools — keep it simple and fast
-        if agent.execution_mode != neomind_storage::agents::ExecutionMode::Free {
-            tracing::debug!(
-                agent_id = %agent.id,
-                execution_mode = ?agent.execution_mode,
-                "Tool mode skipped — agent is not in Free execution mode"
-            );
-            return false;
-        }
+        use neomind_storage::agents::ExecutionMode;
 
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
         let registry_available = self
             .tool_registry
             .read()
             .is_some();
-        let result = llm_supports_tools && registry_available;
-        if !result {
+
+        if !(llm_supports_tools && registry_available) {
             tracing::info!(
                 agent_id = %agent.id,
                 llm_supports_tools,
                 registry_available,
                 "Tool mode NOT activated - falling back to structured analysis"
             );
+            return false;
         }
-        result
+
+        match agent.execution_mode {
+            ExecutionMode::Free => true,
+            ExecutionMode::Focused => {
+                let enabled = agent.enable_tool_chaining;
+                if !enabled {
+                    tracing::debug!(
+                        agent_id = %agent.id,
+                        "Tool mode skipped — Focused agent has enable_tool_chaining=false"
+                    );
+                }
+                enabled
+            }
+        }
     }
 
     /// Execute agent using tool/function-calling mode.
@@ -431,9 +491,8 @@ impl AgentExecutor {
             };
 
         // Both Focused and Free get the same tool set.
-        // Scope is enforced at execution time, not at tool definition level:
-        //   - Focused JSON path: execute_decisions whitelist
-        //   - Tool calling path:  run_tool_loop scope guard
+        // Focused JSON path: execute_decisions whitelist enforces scope.
+        // Free mode (tool calling): all tools available, agent decides what to use.
         match tool_config {
             Some(config) if !config.allowed_tools.is_empty() => {
                 let allowed: std::collections::HashSet<&str> = config
@@ -462,11 +521,12 @@ impl AgentExecutor {
         agent: &AiAgent,
         data_collected: &[DataCollected],
         invocation_input: Option<&super::AgentInput>,
+        config: &ToolLoopConfig,
     ) -> String {
         let time_ctx = get_time_context();
 
         // Collect non-image, non-placeholder data.
-        // Keep memory / baselines / patterns data — they are valuable for Free mode.
+        // Keep memory / baselines / patterns data — they are valuable for both modes.
         let data_text: Vec<String> = data_collected
             .iter()
             .filter(|d| {
@@ -516,122 +576,13 @@ impl AgentExecutor {
              - Use `query_metric` or `get_latest_metrics` to fetch device metrics\n\
              - Use `list_devices` to discover available devices\n\
              - Do NOT conclude \"no data\" without first attempting to query using tools.\n"
+                .to_string()
         } else {
-            &format!("\n## Current Data\n{}\n", data_text.join("\n\n"))
+            format!("\n## Current Data\n{}\n", data_text.join("\n\n"))
         };
 
-        // ── Historical Context (Free mode exclusive) ──
-        // Build a rich context from agent memory so the LLM can learn from
-        // past executions and user feedback.
-        let mut history_parts: Vec<String> = Vec::new();
-
-        // 1. Recent conclusions from short-term memory
-        if !agent.memory.short_term.summaries.is_empty() {
-            let recent: Vec<String> = agent
-                .memory
-                .short_term
-                .summaries
-                .iter()
-                .rev()
-                .take(3)
-                .map(|s| {
-                    let ts = chrono::DateTime::from_timestamp(s.timestamp, 0)
-                        .map(|dt| dt.format("%m-%d %H:%M").to_string())
-                        .unwrap_or_else(|| "??".to_string());
-                    let status = if s.success { "OK" } else { "FAIL" };
-                    format!("- [{}][{}] {}", ts, status, truncate_to(&s.conclusion, 80))
-                })
-                .collect();
-            history_parts.push(format!("### Recent Executions\n{}", recent.join("\n")));
-        }
-
-        // 2. Learned patterns (high confidence only)
-        if !agent.memory.learned_patterns.is_empty() {
-            let patterns: Vec<String> = agent
-                .memory
-                .learned_patterns
-                .iter()
-                .filter(|p| p.confidence >= 0.6)
-                .take(5)
-                .map(|p| {
-                    format!(
-                        "- [{}] {} ({:.0}%)",
-                        p.pattern_type,
-                        p.description,
-                        p.confidence * 100.0
-                    )
-                })
-                .collect();
-            if !patterns.is_empty() {
-                history_parts.push(format!("### Learned Patterns\n{}", patterns.join("\n")));
-            }
-        }
-
-        // 3. Baseline values
-        if !agent.memory.baselines.is_empty() {
-            let bl: Vec<String> = agent
-                .memory
-                .baselines
-                .iter()
-                .take(5)
-                .map(|(k, v)| format!("- {}: {:.2}", k, v))
-                .collect();
-            history_parts.push(format!("### Known Baselines\n{}", bl.join("\n")));
-        }
-
-        // 4. User messages (highest priority instructions)
-        if !agent.user_messages.is_empty() {
-            let msgs: Vec<String> = agent
-                .user_messages
-                .iter()
-                .rev()
-                .take(5)
-                .map(|m| {
-                    let ts = chrono::DateTime::from_timestamp(m.timestamp, 0)
-                        .map(|dt| dt.format("%m-%d %H:%M").to_string())
-                        .unwrap_or_else(|| "??".to_string());
-                    format!("- [{}] {}", ts, m.content)
-                })
-                .collect();
-            history_parts.push(format!(
-                "### User Instructions (HIGHEST PRIORITY)\n\
-                 These override any conflicting rules from initial config:\n{}",
-                msgs.join("\n")
-            ));
-        }
-
-        // 5. Recent execution history (conversation turns) — change-detected, collapses duplicates
-        if !agent.conversation_history.is_empty() {
-            let max_entries = agent.context_window_size.min(5) as usize;
-            let entries = format_changed_history(&agent.conversation_history, max_entries);
-            if !entries.is_empty() {
-                history_parts.push(format!(
-                    "### Recent Execution History ({} events)\n{}\n\
-                     Use this to track trends and avoid repeating the same analysis.",
-                    entries.len(),
-                    entries.join("\n")
-                ));
-            }
-        }
-
-        // 6. Conversation summary (compressed older history — preserved across evictions)
-        if let Some(ref summary) = agent.conversation_summary {
-            if !summary.is_empty() {
-                history_parts.push(format!(
-                    "### Earlier History Summary\n{}",
-                    summary
-                ));
-            }
-        }
-
-        let history_section = if history_parts.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "\n## Historical Context (learn from past experience)\n{}\n",
-                history_parts.join("\n\n")
-            )
-        };
+        // ── Historical Context (shared with Focused via build_history_context) ──
+        let history_section = build_history_context(agent, &HistoryConfig::free());
 
         // Build invocation input section
         let invocation_section = match invocation_input {
@@ -659,23 +610,47 @@ impl AgentExecutor {
             None => String::new(),
         };
 
+        // Focused+ mode: append recommended tools and round constraints
+        let mut mode_constraints = String::new();
+        if let Some(ref recommended) = config.recommended_tools {
+            mode_constraints.push_str(&format!(
+                "\nRecommended tools for this task (prioritize these): {}",
+                recommended.join(", ")
+            ));
+        }
+        if config.max_rounds <= 5 {
+            mode_constraints.push_str(&format!(
+                "\nYou have at most {} round(s). Be efficient — \
+                 use tools only when pre-collected data is insufficient.",
+                config.max_rounds
+            ));
+        }
+
         format!(
             "You are an intelligent IoT agent named '{}' monitoring edge devices.\n\
              Current time: {}\n\
-             Your task: {}\n{}{}{}{}\
+             Your task: {}\n{}{}{}{}{}\
              You have access to tools for querying metrics, executing commands, and sending notifications.\n\
              Always use tools to fetch the latest data before making conclusions.\n\n\
              Guidelines:\n\
              - Do NOT call the same tool with the same parameters if it already returned results.\n\
              - If a metric query returns empty data, try a different metric or move on.\n\
-             - Max 3 rounds of tool calls. Be efficient.\n\
+             - Max {} rounds of tool calls. Be efficient.\n\
              - For complex operations (rules, device control, messaging), use the `skill` tool to search for relevant guides before executing.\n\n\
              When you have enough information, respond with your analysis in natural language. \
              Do NOT wrap your response in JSON or code blocks — just write your analysis directly.\n\
              Keep your conclusion concise and structured (2-5 sentences). \
              State key findings first, then anomalies or recommendations. Avoid filler words.\n\
              Reply in the SAME language as the task description.",
-            agent.name, time_ctx, agent.user_prompt, resource_info, current_data_section, history_section, invocation_section,
+            agent.name,
+            time_ctx,
+            agent.user_prompt,
+            resource_info,
+            current_data_section,
+            history_section,
+            invocation_section,
+            mode_constraints,
+            config.max_rounds,
         )
     }
 
@@ -741,17 +716,10 @@ impl AgentExecutor {
         filtered_tools: &[neomind_core::llm::backend::ToolDefinition],
         messages: &mut Vec<Message>,
         execution_id: &str,
+        max_rounds: usize,
     ) -> ToolLoopOutput {
         use crate::agent::tool_parser::parse_tool_calls;
         use neomind_core::llm::backend::{GenerationParams, LlmInput};
-
-        // Focused mode or tool chaining disabled: single round only.
-        // Free mode with chaining: use max_chain_depth.
-        let max_rounds = if agent.enable_tool_chaining {
-            agent.max_chain_depth.max(1)
-        } else {
-            1
-        };
         let mut all_tool_results: Vec<crate::toolkit::ToolResult> = Vec::new();
         let mut round_data_list: Vec<RoundData> = Vec::new();
         let mut all_reasoning_texts: Vec<String> = Vec::new();
@@ -982,121 +950,20 @@ impl AgentExecutor {
                 Content::text(&output.text),
             ));
 
-            // ── Focused mode scope guard ──
-            // For Focused agents, validate that mutation targets (device control,
-            // agent control, etc.) are in the agent's bound resources.
-            // Read-only operations (list, query, latest, history, get) are always allowed.
-            let is_focused = agent.execution_mode
-                == neomind_storage::agents::ExecutionMode::Focused;
-            let bound_device_ids: std::collections::HashSet<String> = if is_focused {
-                agent
-                    .resources
-                    .iter()
-                    .filter(|r| {
-                        matches!(
-                            r.resource_type,
-                            ResourceType::Device
-                                | ResourceType::Command
-                                | ResourceType::Metric
-                        )
-                    })
-                    .filter_map(|r| r.resource_id.split(':').next().map(|s| s.to_string()))
-                    .collect()
-            } else {
-                std::collections::HashSet::new() // unused
-            };
-
-            // Partition tool calls into allowed / rejected
-            let mut allowed_calls: Vec<(usize, crate::toolkit::registry::ToolCall)> = Vec::new();
-            let mut rejected_results: Vec<(usize, crate::toolkit::ToolResult)> = Vec::new();
-
-            for (idx, tc) in tool_calls.iter().enumerate() {
-                let call = crate::toolkit::registry::ToolCall {
+            // Execute tools with concurrency limiting via semaphore
+            let calls: Vec<_> = tool_calls
+                .iter()
+                .map(|tc| crate::toolkit::registry::ToolCall {
                     name: tc.name.clone(),
                     args: tc.arguments.clone(),
                     id: Some(tc.id.clone()),
-                };
-
-                if !is_focused {
-                    allowed_calls.push((idx, call));
-                    continue;
-                }
-
-                // Focused mode: check scope for mutation actions
-                let action = tc.arguments["action"].as_str().unwrap_or("");
-                let is_read_action = matches!(
-                    action,
-                    "list" | "get" | "latest" | "history"
-                        | "query" | "executions" | "conversation"
-                        | "latest_execution" | "search" | "memory"
-                        | "read" | "status"
-                );
-
-                if is_read_action {
-                    allowed_calls.push((idx, call));
-                    continue;
-                }
-
-                // Mutation action: check device_id against bound resources
-                let device_id = tc.arguments["device_id"].as_str().unwrap_or("");
-                if !device_id.is_empty() && bound_device_ids.contains(device_id) {
-                    allowed_calls.push((idx, call));
-                    continue;
-                }
-
-                // No specific device_id or not in bound → check if any extension tool
-                if tc.name == "extension" || tc.name.starts_with("ext_") {
-                    // Extension tools are allowed if they're in agent's ExtensionTool resources
-                    let ext_allowed = agent.resources.iter().any(|r| {
-                        r.resource_type == ResourceType::ExtensionTool
-                            && tc.arguments.get("extension_id")
-                                .and_then(|v| v.as_str())
-                                .map_or(false, |eid| r.resource_id.contains(eid))
-                    });
-                    if ext_allowed {
-                        allowed_calls.push((idx, call));
-                        continue;
-                    }
-                }
-
-                // Reject: not in scope
-                let reject_msg = format!(
-                    "Focused mode: action '{}' on '{}' is out of scope. \
-                     Only bound resources can be controlled.",
-                    action,
-                    if device_id.is_empty() { "unknown target" } else { device_id }
-                );
-                tracing::warn!(
-                    agent_id = %agent.id,
-                    tool = %tc.name,
-                    action = %action,
-                    "[SCOPE] Rejected out-of-scope tool call"
-                );
-                rejected_results.push((idx, crate::toolkit::ToolResult {
-                    name: tc.name.clone(),
-                    result: Err(crate::toolkit::error::ToolError::Execution(reject_msg)),
-                }));
-            }
-
-            // Execute tools with concurrency limiting via semaphore
-            let results = if allowed_calls.is_empty() {
+                })
+                .collect();
+            let results = if calls.is_empty() {
                 Vec::new()
             } else {
-                let calls: Vec<_> = allowed_calls.iter().map(|(_, c)| c.clone()).collect();
                 let _permit = self.tool_concurrency.acquire().await.unwrap();
                 registry.execute_parallel(calls).await
-            };
-
-            // Merge executed results with rejected results back into original order
-            let results: Vec<crate::toolkit::ToolResult> = {
-                let mut merged: Vec<(usize, crate::toolkit::ToolResult)> = allowed_calls
-                    .iter()
-                    .map(|(orig_idx, _)| *orig_idx)
-                    .zip(results.into_iter())
-                    .collect();
-                merged.extend(rejected_results);
-                merged.sort_by_key(|(i, _)| *i);
-                merged.into_iter().map(|(_, r)| r).collect()
             };
 
             let mut round_tool_calls: Vec<ToolCallRecord> = Vec::new();
@@ -1160,10 +1027,7 @@ impl AgentExecutor {
                         Content::text("Skill guide retrieved and will be used as reference."),
                     ));
                 } else {
-                    messages.push(Message::new(
-                        MessageRole::User,
-                        Content::text(&format!("Tool '{}' result:\n{}", result.name, result_text)),
-                    ));
+                    messages.push(Message::tool_result(&result.name, &result_text));
                 }
 
                 // Send thinking event for each tool result
@@ -1309,6 +1173,19 @@ impl AgentExecutor {
         }
     }
 
+    /// Map tool name to semantic decision type for memory pattern extraction.
+    fn tool_name_to_semantic_type(tool_name: &str) -> &'static str {
+        match tool_name {
+            // Query tools → info
+            "query_metric" | "get_latest_metrics" | "list_devices" | "get_device_info" => "info",
+            // Control tools → command
+            "execute_command" | "execute_extension_command" | "control_device" => "command",
+            // Notification tools → alert
+            "send_message" | "send_notification" => "alert",
+            _ => "info",
+        }
+    }
+
     /// Build the final DecisionProcess and ExecutionResult from tool loop output.
     fn build_tool_result(
         agent: &AiAgent,
@@ -1451,11 +1328,12 @@ impl AgentExecutor {
                     }
                     Err(e) => (format!("Tool '{}' failed", r.name), format!("Error: {}", e)),
                 };
+                let semantic_type = Self::tool_name_to_semantic_type(&r.name);
                 Decision {
-                    decision_type: "tool_execution".to_string(),
+                    decision_type: semantic_type.to_string(),
                     description: desc,
                     action,
-                    rationale: String::new(),
+                    rationale: format!("Tool '{}' executed successfully", r.name),
                     expected_outcome: String::new(),
                 }
             })
@@ -1555,8 +1433,15 @@ impl AgentExecutor {
             .clone()
             .ok_or_else(|| NeoMindError::Tool("Tool registry not available".to_string()))?;
 
+        // Build mode-specific config
+        let tool_config = match agent.execution_mode {
+            neomind_storage::agents::ExecutionMode::Free => ToolLoopConfig::free(),
+            neomind_storage::agents::ExecutionMode::Focused => ToolLoopConfig::focused_plus(agent),
+        };
+
         let filtered_tools = Self::filter_tools(&registry, &agent.tool_config);
-        let system_prompt = Self::build_tool_system_prompt(agent, data_collected, invocation_input);
+        let system_prompt =
+            Self::build_tool_system_prompt(agent, data_collected, invocation_input, &tool_config);
         let mut messages = Self::build_tool_messages(&system_prompt, data_collected);
 
         let loop_output = self
@@ -1567,6 +1452,7 @@ impl AgentExecutor {
                 &filtered_tools,
                 &mut messages,
                 execution_id,
+                tool_config.max_rounds,
             )
             .await;
 
@@ -2697,14 +2583,13 @@ impl AgentExecutor {
         })
         .await;
 
-        // Execute with error handling for stability
-        // Use execute_with_chaining to support multi-round tool chaining
+        // Execute with error handling for stability.
         // Wrap with catch_unwind so panics (e.g. UTF-8 slice bugs) are converted
         // to Err and a proper Failed execution record is created instead of
         // silently disappearing.
         let execution_result: AgentResult<(DecisionProcess, StorageExecutionResult)> =
             match std::panic::AssertUnwindSafe(
-                self.execute_with_chaining(context, event_data.clone())
+                self.execute_internal(context, event_data.clone())
             )
             .catch_unwind()
             .await
@@ -2990,397 +2875,6 @@ impl AgentExecutor {
         Ok(records)
     }
 
-    /// Check if an action result is chainable (contains data useful for next round)
-    fn is_chainable_action(action: &neomind_storage::ActionExecuted) -> bool {
-        // Extension commands that return data are chainable
-        if action.action_type == "extension_command" {
-            return true;
-        }
-
-        // Actions with meaningful results (not just success messages)
-        if let Some(ref result) = action.result {
-            // Filter out generic success messages
-            if !result.is_empty()
-                && result != "Command sent successfully"
-                && result != "Success"
-                && !result.starts_with("Failed:")
-            {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    /// Generate a conclusion summary using LLM when the original conclusion is empty or meaningless.
-    async fn generate_conclusion_summary(
-        &self,
-        agent: &AiAgent,
-        actions: &[neomind_storage::ActionExecuted],
-        chain_depth: usize,
-        original_prompt: &str,
-    ) -> AgentResult<String> {
-        // Get LLM runtime
-        let llm_runtime = match self.get_llm_runtime_for_agent(agent).await? {
-            Some(runtime) => runtime,
-            None => {
-                // Fallback to simple summary
-                let success_count = actions.iter().filter(|a| a.success).count();
-                return Ok(format!(
-                    "Execution complete: {} rounds, {} / {} actions succeeded",
-                    chain_depth,
-                    success_count,
-                    actions.len()
-                ));
-            }
-        };
-
-        // Build action summary
-        let action_details: Vec<String> = actions
-            .iter()
-            .take(5)
-            .map(|a| {
-                format!(
-                    "- {} -> {}: {} ({})",
-                    a.action_type,
-                    a.target,
-                    if a.success { "success" } else { "failed" },
-                    a.result
-                        .as_deref()
-                        .unwrap_or("no result")
-                        .chars()
-                        .take(100)
-                        .collect::<String>()
-                )
-            })
-            .collect();
-
-        let success_rate = if actions.is_empty() {
-            1.0
-        } else {
-            actions.iter().filter(|a| a.success).count() as f32 / actions.len() as f32
-        };
-
-        let prompt = format!(
-            r#"基于以下工具执行结果，生成一个简洁的总结（1-2句话）：
-
-用户原始请求：{}
-执行轮数：{}
-成功率：{:.0}%
-
-执行的操作：
-{}
-
-请直接输出总结，不要包含任何其他内容。"#,
-            original_prompt,
-            chain_depth,
-            success_rate * 100.0,
-            action_details.join("\n")
-        );
-
-        use neomind_core::llm::backend::{GenerationParams, LlmInput};
-        use neomind_core::message::{Content, Message, MessageRole};
-
-        let input = LlmInput {
-            messages: vec![
-                Message::new(
-                    MessageRole::System,
-                    Content::text("你是一个简洁的总结助手。用1-2句话总结执行结果。"),
-                ),
-                Message::new(MessageRole::User, Content::text(&prompt)),
-            ],
-            params: GenerationParams {
-                max_tokens: Some(200),
-                temperature: Some(0.3),
-                ..Default::default()
-            },
-            model: None,
-            stream: false,
-            tools: None,
-        };
-
-        match llm_runtime.generate(input).await {
-            Ok(output) => {
-                let conclusion = output.text.trim().to_string();
-                if conclusion.is_empty() {
-                    Ok(format!(
-                        "Execution complete: {} rounds, success rate {:.0}%",
-                        chain_depth,
-                        success_rate * 100.0
-                    ))
-                } else {
-                    Ok(conclusion)
-                }
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "Failed to generate conclusion summary");
-                let success_count = actions.iter().filter(|a| a.success).count();
-                Ok(format!(
-                    "Execution complete: {} rounds, {} / {} actions succeeded",
-                    chain_depth,
-                    success_count,
-                    actions.len()
-                ))
-            }
-        }
-    }
-
-    /// Execute with tool chaining support
-    async fn execute_with_chaining(
-        &self,
-        mut context: ExecutionContext,
-        event_data: Option<EventTriggerData>,
-    ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
-        let agent = context.agent.clone();
-        let max_depth = if agent.enable_tool_chaining {
-            agent.max_chain_depth
-        } else {
-            1 // No chaining, just single execution
-        };
-
-        let mut chain_state = ChainState::new(max_depth);
-        #[allow(unused_assignments)]
-        let mut final_decision_process: Option<DecisionProcess> = None;
-        let mut all_actions_executed: Vec<neomind_storage::ActionExecuted> = Vec::new();
-        let mut all_notifications_sent: Vec<neomind_storage::NotificationSent> = Vec::new();
-
-        if let Some(ref ed) = event_data {
-            tracing::debug!(
-                agent_id = %agent.id,
-                enable_chaining = agent.enable_tool_chaining,
-                max_depth = max_depth,
-                event_source = %ed.source.source_id,
-                event_field = %ed.source.field,
-                "Starting event-triggered agent execution"
-            );
-        } else {
-            tracing::debug!(
-                agent_id = %agent.id,
-                enable_chaining = agent.enable_tool_chaining,
-                max_depth = max_depth,
-                "Starting agent execution"
-            );
-        }
-
-        // Execute rounds until we reach max depth or no more chainable results
-        loop {
-            tracing::debug!(
-                agent_id = %agent.id,
-                current_depth = chain_state.depth,
-                max_depth = chain_state.max_depth,
-                "Execution round"
-            );
-
-            // Update context with chain results if we have any
-            if chain_state.depth > 0 {
-                context.agent.user_prompt = format!(
-                    "{}{}",
-                    context.agent.user_prompt,
-                    chain_state.format_as_context()
-                );
-            }
-
-            // Execute one round with retry
-            let (decision_process, execution_result) = self
-                .execute_with_retry(context.clone(), event_data.clone())
-                .await?;
-
-            // Collect results from this round
-            all_actions_executed.extend(execution_result.actions_executed.clone());
-            all_notifications_sent.extend(execution_result.notifications_sent.clone());
-
-            // Store the final decision process (last round takes precedence)
-            final_decision_process = Some(decision_process.clone());
-
-            // Check if we should continue chaining
-            if !agent.enable_tool_chaining || !chain_state.can_continue() {
-                tracing::debug!(
-                    agent_id = %agent.id,
-                    depth = chain_state.depth,
-                    "Chaining disabled or max depth reached, stopping"
-                );
-                break;
-            }
-
-            // Check if we have chainable results
-            let has_chainable = execution_result
-                .actions_executed
-                .iter()
-                .any(Self::is_chainable_action);
-
-            if !has_chainable {
-                tracing::debug!(
-                    agent_id = %agent.id,
-                    "No chainable results, stopping"
-                );
-                break;
-            }
-
-            // Check if decisions indicate more work needed
-            let needs_more_work = decision_process.decisions.iter().any(|d| {
-                d.decision_type == "needs_more_data"
-                    || d.action.to_lowercase().contains("continue")
-                    || d.action.to_lowercase().contains("further")
-                    || d.action.to_lowercase().contains("next step")
-                    || d.action.to_lowercase().contains("continue")
-            });
-
-            if !needs_more_work {
-                tracing::debug!(
-                    agent_id = %agent.id,
-                    "Decisions indicate no more work needed, stopping"
-                );
-                break;
-            }
-
-            // Advance to next round
-            chain_state.advance(&execution_result.actions_executed);
-
-            // Send progress event for chaining
-            self.send_progress(
-                &context.agent.id,
-                &context.execution_id,
-                "chaining",
-                &format!("Tool chaining round {}", chain_state.depth + 1),
-                Some(&format!(
-                    "Continuing analysis with results from {} previous action(s)...",
-                    chain_state.previous_results.len()
-                )),
-            )
-            .await;
-        }
-
-        // Merge decision processes from all rounds
-        let merged_decision_process = if let Some(mut final_dp) = final_decision_process {
-            // Add chain info to situation analysis
-            if chain_state.depth > 1 {
-                final_dp.situation_analysis = format!(
-                    "{}\n\n[Tool chaining: {} rounds executed]",
-                    final_dp.situation_analysis, chain_state.depth
-                );
-            }
-
-            // If conclusion is empty or meaningless, generate via LLM
-            // Only do this for multi-round chaining where we have accumulated actions to summarize
-            if final_dp.conclusion.is_empty()
-                || final_dp.conclusion == "No conclusion"
-                || final_dp.conclusion == "Completed tool execution rounds."
-            {
-                if !all_actions_executed.is_empty() {
-                    final_dp.conclusion = self
-                        .generate_conclusion_summary(
-                            &agent,
-                            &all_actions_executed,
-                            chain_state.depth,
-                            &agent.user_prompt,
-                        )
-                        .await?;
-                } else if final_dp.conclusion.is_empty() || final_dp.conclusion == "No conclusion" {
-                    // No actions and no conclusion — keep reasoning text as fallback
-                    final_dp.conclusion = "No additional actions required.".to_string();
-                }
-            }
-
-            final_dp
-        } else {
-            // Fallback (shouldn't happen) - build from actions
-            let conclusion = if !all_actions_executed.is_empty() {
-                let success_count = all_actions_executed.iter().filter(|a| a.success).count();
-                let total_count = all_actions_executed.len();
-                format!(
-                    "Execution complete: {} rounds, {} / {} actions succeeded",
-                    chain_state.depth, success_count, total_count
-                )
-            } else {
-                format!("Execution complete: {} tool call rounds", chain_state.depth)
-            };
-
-            DecisionProcess {
-                situation_analysis: format!(
-                    "Agent executed {} rounds via tool chaining",
-                    chain_state.depth
-                ),
-                data_collected: vec![],
-                reasoning_steps: vec![],
-                decisions: vec![],
-                conclusion,
-                confidence: 0.5,
-            }
-        };
-
-        // Extract conclusion for summary before moving
-        let summary_conclusion = merged_decision_process.conclusion.clone();
-
-        let success_rate = if all_actions_executed.is_empty() {
-            1.0
-        } else {
-            all_actions_executed.iter().filter(|a| a.success).count() as f32
-                / all_actions_executed.len() as f32
-        };
-
-        let total_actions = all_actions_executed.len();
-
-        let merged_execution_result = StorageExecutionResult {
-            actions_executed: all_actions_executed,
-            report: None, // Reports are generated per-round, not in chaining
-            notifications_sent: all_notifications_sent,
-            summary: if chain_state.depth > 1 {
-                format!(
-                    "Completed {} execution rounds via tool chaining",
-                    chain_state.depth
-                )
-            } else {
-                summary_conclusion
-            },
-            success_rate,
-        };
-
-        tracing::debug!(
-            agent_id = %agent.id,
-            total_rounds = chain_state.depth,
-            total_actions = total_actions,
-            "Tool chaining execution completed"
-        );
-
-        Ok((merged_decision_process, merged_execution_result))
-    }
-
-    /// Execute with retry for stability.
-    async fn execute_with_retry(
-        &self,
-        context: ExecutionContext,
-        event_data: Option<EventTriggerData>,
-    ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
-        let max_retries = 3u32;
-        let mut last_error = None;
-
-        for attempt in 0..=max_retries {
-            let result = self
-                .execute_internal(context.clone(), event_data.clone())
-                .await;
-            match result {
-                Ok(result) => return Ok(result),
-                Err(e) => {
-                    tracing::warn!(
-                        agent_id = %context.agent.id,
-                        attempt = attempt + 1,
-                        max_retries = max_retries + 1,
-                        error = %e,
-                        "Agent execution failed, retrying"
-                    );
-                    last_error = Some(e);
-
-                    if attempt < max_retries {
-                        let delay_ms = 100 * (2_u64.pow(attempt));
-                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                    }
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| NeoMindError::Llm("Max retries exceeded".to_string())))
-    }
-
     /// Internal execution logic.
     async fn execute_internal(
         &self,
@@ -3477,7 +2971,7 @@ impl AgentExecutor {
             .await?;
 
         match analysis {
-            // ── Free path ──────────────────────────────────────────────
+            // ── Tool-calling path (Free + Focused+) ────────────────────────
             // Tool-calling mode already produced a full DecisionProcess and
             // ExecutionResult.  We only need to update memory and return.
             AnalysisResult::Free {
@@ -3489,7 +2983,7 @@ impl AgentExecutor {
                     &execution_id,
                     step_num,
                     &format!(
-                        "Free mode analysis completed: {} tool call(s), confidence {:.0}%",
+                        "Tool-calling analysis completed: {} tool call(s), confidence {:.0}%",
                         decision_process.decisions.len(),
                         decision_process.confidence * 100.0
                     ),
@@ -3523,7 +3017,7 @@ impl AgentExecutor {
 
                 tracing::debug!(
                     agent_id = %agent_id,
-                    "[FREE] Returning direct results — skipped Focused post-processing"
+                    "[TOOL-CALLING] Returning direct results — skipped Focused JSON post-processing"
                 );
 
                 Ok((decision_process, execution_result))
@@ -3536,7 +3030,7 @@ impl AgentExecutor {
                 situation_analysis,
                 reasoning_steps,
                 decisions,
-                mut conclusion,
+                conclusion,
             } => {
                 // Send thinking event for analysis completion
                 self.send_thinking(
@@ -3624,25 +3118,10 @@ impl AgentExecutor {
                     .await;
                 }
 
-                // Step 3.5: Refine conclusion if query decisions returned real data
-                if let Some(refined) = self
-                    .refine_conclusion_with_query_results(
-                        &agent,
-                        &conclusion,
-                        &actions_executed,
-                        &execution_id,
-                    )
-                    .await
-                {
-                    self.send_thinking(
-                        &agent_id,
-                        &execution_id,
-                        step_num,
-                        "Refined conclusion with queried data",
-                    )
-                    .await;
-                    conclusion = refined;
-                }
+                // Note: refine_conclusion_with_query_results is intentionally NOT called
+                // here. This Focused JSON path does not produce data_query actions
+                // (those come from tool-calling mode). Calling it would always return
+                // None and waste an await.
 
                 // Step 4: Generate report if needed
                 let report = self.maybe_generate_report(&agent, &data_collected).await?;

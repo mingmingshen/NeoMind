@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v0.7.5] - 2026-05-12
+## [v0.7.5] - 2026-05-13
 
 ### Added
 
+- **Unified execution engine: Focused / Focused+ / Free** — Focused mode agents can now opt into tool calling via the `enable_tool_chaining` toggle, creating a "Focused+" mode that combines pre-collected data with multi-round tool queries. The `run_tool_loop` engine is shared across Free (30 rounds, full autonomy) and Focused+ (configurable rounds, recommended tool guidance). Original Focused JSON path preserved as fallback when tool chaining is disabled
+- **ToolLoopConfig** — New configuration struct driving the tool loop with mode-specific parameters: `max_rounds` (30 for Free, `max_chain_depth` for Focused+) and `recommended_tools` (prompt guidance extracted from bound resources for Focused+, unrestricted for Free)
+- **Focused mode tool chaining toggle** — Agent editor shows an "Enable Tool Chaining" switch under Focused mode, persisted via `enable_tool_chaining` field. Hidden when Free mode is selected
 - **Adaptive time-series compression for device history** — `device(action="history")` now returns one of two formats, automatically picking the smallest: compact values array (`{"values": [...]}`) or adaptive series (`{"series": [{"range": "...", "kept": 12.0}, {"range": "...", "fluctuated": [12.5, ...]}]}`). Stable periods compress to single `"kept"` entries, significantly reducing token usage for the LLM
 - **Mid-task context compaction** — When agent memory exceeds 70% of the context budget during long ReAct loops, old tool execution rounds are automatically summarized into a structured progress summary. Keeps recent rounds intact, preventing context overflow mid-task
 - **Actual prompt overhead measurement** — Context window budget now measures real system prompt + tool definition tokens instead of using fixed percentage heuristics. Allocates `model_capacity - overhead - 1024` for history with a 20% safety floor
@@ -31,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Error handling improvements** — `IsolatedExtension::new` uses `ok_or_else()` instead of `expect()` for child process stdin/stdout/stderr. API handlers use `From` conversion with `?` instead of `.map_err()`
 - **InFlightRequests lock optimization** — Send response outside the mutex critical section, reducing lock hold time
 - **Shared `ExtensionStore` in state** — `ExtensionState` constructors now accept `Arc<ExtensionStore>`, eliminating redundant `open()` calls in `load_from_storage` and auto-discovery
+- **Image insight extraction** — Rewritten to use char-level operations for UTF-8 safety. Image analyses deduplicated by content fingerprint to prevent memory bloat
+- **Agent panic protection** — `execute_agent` now catches panics via `catch_unwind` and converts them to Failed execution records instead of crashing the scheduler
 
 ### Fixed
 
@@ -43,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Pending devices broker check** — Now checks both built-in MQTT broker (`connected`) and external brokers, instead of only external
 - **Export dialog tree-shaking** — `xlsx` and `jszip` now loaded via dynamic `import()`, reducing initial bundle size
 - **useDataSource cache leak** — Added `beforeunload` cleanup for the telemetry cache interval, preventing HMR interval accumulation in development
+- **UTF-8 safe truncation** — Text truncation in agent prompts now correctly handles multi-byte characters at sentence boundaries, preventing panics on non-ASCII content
+- **Agent editor state reset** — Creating a new agent now correctly resets `enableToolChaining` to prevent stale state from previous edits
 
 ## [v0.7.4] - 2026-05-11
 

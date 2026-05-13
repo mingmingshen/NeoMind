@@ -466,7 +466,7 @@ impl AgentExecutor {
                                 agent_id = %agent.id,
                                 "Tool-based analysis completed successfully"
                             );
-                            // Free path: return full (DP, ER) — caller uses them directly
+                            // Tool-calling path (Free + Focused+): return full (DP, ER)
                             return Ok(AnalysisResult::Free {
                                 decision_process: dp,
                                 execution_result: exec_result,
@@ -749,103 +749,8 @@ impl AgentExecutor {
             "".to_string()
         };
 
-        // Build history context from conversation turns and memory
-        let mut history_parts = Vec::new();
-
-        // 1. Recent execution history — change-detected, collapses consecutive duplicates
-        if !agent.conversation_history.is_empty() {
-            let max_entries = agent.context_window_size.min(3) as usize;
-            let entries = format_changed_history(&agent.conversation_history, max_entries);
-            if !entries.is_empty() {
-                history_parts.push(format!(
-                    "## Recent Execution History ({} events)\n{}",
-                    entries.len(),
-                    entries.join("\n")
-                ));
-            }
-        }
-
-        // 2. Short-term memory summaries (recent execution results)
-        if !agent.memory.short_term.summaries.is_empty() {
-            let recent: Vec<String> = agent
-                .memory
-                .short_term
-                .summaries
-                .iter()
-                .rev()
-                .take(3)
-                .map(|s| {
-                    let ts = chrono::DateTime::from_timestamp(s.timestamp, 0)
-                        .map(|dt| dt.format("%m-%d %H:%M").to_string())
-                        .unwrap_or_else(|| "??".to_string());
-                    let status = if s.success { "OK" } else { "FAIL" };
-                    format!("- [{}][{}] {}", ts, status, truncate_to(&s.conclusion, 80))
-                })
-                .collect();
-            history_parts.push(format!(
-                "## Short-term Memory\n{}",
-                recent.join("\n")
-            ));
-        }
-
-        // 3. Learned patterns (high confidence only)
-        if !agent.memory.learned_patterns.is_empty() {
-            let mut pattern_groups: std::collections::HashMap<&str, Vec<&LearnedPattern>> =
-                std::collections::HashMap::new();
-            for pattern in &agent.memory.learned_patterns {
-                pattern_groups
-                    .entry(pattern.pattern_type.as_str())
-                    .or_default()
-                    .push(pattern);
-            }
-
-            let mut semantic_patterns = Vec::new();
-            for (category, patterns) in pattern_groups.iter() {
-                if let Some(&best) =
-                    patterns
-                        .iter()
-                        .filter(|p| p.confidence >= 0.7)
-                        .max_by(|a, b| {
-                            a.confidence
-                                .partial_cmp(&b.confidence)
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        })
-                {
-                    semantic_patterns.push(format!(
-                        "- [{}] {} ({:.0}%)",
-                        category,
-                        best.description,
-                        best.confidence * 100.0
-                    ));
-                }
-            }
-
-            if !semantic_patterns.is_empty() {
-                history_parts.push(format!(
-                    "## Verified Decision Patterns\n{}",
-                    semantic_patterns.join("\n")
-                ));
-            }
-        }
-
-        // 4. Baselines
-        if !agent.memory.baselines.is_empty() {
-            let baseline_info: Vec<_> = agent
-                .memory
-                .baselines
-                .iter()
-                .take(5)
-                .map(|(metric, value)| format!("- {}: {:.2}", metric, value))
-                .collect();
-            history_parts.push(format!("## Metric Baselines\n{}", baseline_info.join("\n")));
-        }
-
-        // 5. Conversation summary (compressed older history preserved across evictions)
-        if let Some(ref summary) = agent.conversation_summary {
-            if !summary.is_empty() {
-                history_parts.push(format!("## Earlier History Summary\n{}", summary));
-            }
-        }
+        // Build history context from conversation turns and memory (shared with Free mode)
+        let history_context = build_history_context(agent, &HistoryConfig::focused());
 
         // === USER MESSAGES ===
         // Build user messages context for adding to user message (not system message)
@@ -956,12 +861,12 @@ impl AgentExecutor {
         };
 
         // Build history context string for injection into system prompt
-        let history_context_str = if history_parts.is_empty() {
+        let history_context_str = if history_context.is_empty() {
             String::new()
         } else {
             format!(
                 "## Historical Context\n\nRefer to the following history to avoid duplicate alerts and track trends.\n\n{}\n\n",
-                history_parts.join("\n\n")
+                history_context
             )
         };
 

@@ -285,11 +285,13 @@ mod tests {
             Message {
                 role: MessageRole::System,
                 content: Content::Text("You are a helpful assistant.".to_string()),
+                tool_name: None,
                 timestamp: None,
             },
             Message {
                 role: MessageRole::User,
                 content: Content::Text("Hello!".to_string()),
+                tool_name: None,
                 timestamp: None,
             },
         ];
@@ -327,6 +329,7 @@ mod tests {
         let messages = vec![Message {
             role: MessageRole::User,
             content: Content::Text("Hello".to_string()),
+            tool_name: None,
             timestamp: None,
         }];
 

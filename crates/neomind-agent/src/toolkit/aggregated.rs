@@ -4183,7 +4183,7 @@ mod tests {
             .unwrap();
 
         assert!(send_result.success);
-        let msg_id = send_result.data["id"].as_str().unwrap().to_string();
+        let msg_id = send_result.data["message_id"].as_str().unwrap().to_string();
 
         // List messages
         let list_result = tool

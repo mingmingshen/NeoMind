@@ -299,6 +299,7 @@ pub fn compact_messages(
                             "[Previous tool result: {}]",
                             truncated
                         )),
+                        tool_name: msg.tool_name.clone(),
                         timestamp: msg.timestamp,
                     };
                     current_tokens += estimate_message_tokens(&summary_msg.content);
