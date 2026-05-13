@@ -103,7 +103,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
   const thinkingPreview = lastStep?.description || (currentExecution.status === 'running' ? t('agents:thinking.waiting') : '')
 
   return (
-    <div className="border-t bg-muted-30">
+    <div className="shrink-0 border rounded-lg bg-muted-30 overflow-hidden">
       {/* Header - always visible, clickable to toggle */}
       <button
         type="button"
@@ -170,7 +170,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
 
       {/* Content - collapsible */}
       {!collapsed && (
-        <ScrollArea className="max-h-[200px]">
+        <ScrollArea className="h-[200px]">
           <div className="p-3 pt-0 space-y-3">
             {!hasContent ? (
               <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">

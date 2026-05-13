@@ -155,144 +155,200 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
     }
   }
 
-  // Status color override (for device online/offline status)
+  const markerConfig = getMarkerConfig()
+
+  // Status indicator color helper
   const getStatusColor = (status?: string) => {
     switch (status) {
       case 'online': return 'bg-success'
       case 'offline': return 'bg-muted-foreground'
       case 'error': return 'bg-error'
       case 'warning': return 'bg-warning'
-      default: return null
+      default: return 'bg-muted-foreground'
     }
   }
 
-  const markerConfig = getMarkerConfig()
   const statusColor = getStatusColor(marker.status)
   const finalBgColor = statusColor || markerConfig.bgColor
   const Icon = markerConfig.icon
 
-  // Get tooltip content based on marker type
-  const getTooltipContent = () => {
-    const baseInfo = (
-      <div className="font-medium">{marker.label || 'Unnamed'}</div>
-    )
-
-    switch (marker.markerType) {
-      case 'device':
-        return (
-          <>
-            {baseInfo}
-            <div className="flex items-center gap-1 text-muted-foreground">
-              <span className={`w-2 h-2 rounded-full ${
-                marker.status === 'online' ? 'bg-success' :
-                marker.status === 'offline' ? 'bg-muted-foreground' :
-                marker.status === 'error' ? 'bg-error' : 'bg-warning'
-              }`}></span>
-              <span>{marker.status || 'unknown'}</span>
-            </div>
-            {marker.deviceName && marker.deviceName !== marker.label && (
-              <div className="text-xs text-muted-foreground">{t('mapDisplay.device')}: {marker.deviceName}</div>
-            )}
-          </>
-        )
-
-      case 'metric':
-        return (
-          <>
-            {baseInfo}
-            <div className="text-success font-semibold">{t('mapDisplay.value')}: {marker.metricValue || '-'}</div>
-            {marker.deviceName && (
-              <div className="text-xs text-muted-foreground">{t('mapDisplay.device')}: {marker.deviceName}</div>
-            )}
-            {marker.metricName && (
-              <div className="text-xs text-muted-foreground">{t('mapDisplay.metric')}: {marker.metricName}</div>
-            )}
-          </>
-        )
-
-      case 'command':
-        return (
-          <>
-            {baseInfo}
-            {marker.commandName && (
-              <div className="text-accent-orange text-sm">{t('mapDisplay.command')}: {marker.commandName}</div>
-            )}
-            {marker.deviceName && (
-              <div className="text-xs text-muted-foreground mb-2">{t('mapDisplay.device')}: {marker.deviceName}</div>
-            )}
-            <Button
-              size="sm"
-              className="h-7 text-xs bg-info hover:bg-info/90 text-primary-foreground"
-              onClick={async (e) => {
-                e.stopPropagation()
-                const markerSourceId = marker.sourceId ?? marker.deviceId
-                if (markerSourceId && marker.command) {
-                  const sendCommand = useStore.getState().sendCommand
-                  try {
-                    await sendCommand(markerSourceId, marker.command)
-                  } catch (error) {
-                    console.error('Failed to execute command:', error)
-                  }
-                }
-              }}
-            >
-              {t('mapDisplay.executeCommand')}
-            </Button>
-          </>
-        )
-
-      default:
-        return baseInfo
-    }
-  }
-
   return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation()
-        onClick()
-      }}
-      className={cn(
-        "absolute transform -translate-x-1/2 -translate-y-1/2 group",
-        isSelected && "z-20"
-      )}
-      style={{ left: '50%', top: '50%' }}
-    >
-      {/* Pulsing effect for online devices or active markers */}
-      {marker.status === 'online' && (
-        <span className={cn(
-          "absolute inline-flex h-full w-full animate-ping opacity-75 rounded-full",
-          markerConfig.pingColor
-        )} />
-      )}
-
-      {/* Marker with icon */}
-      <span
+    <>
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onClick()
+        }}
         className={cn(
-          'relative inline-flex rounded-full items-center justify-center',
-          finalBgColor,
-          'h-6 w-6 border-2 border-background shadow-sm',
-          'group-hover:scale-125 transition-transform',
-          isSelected && 'ring-2 ring-primary-foreground ring-offset-2'
+          "absolute transform -translate-x-1/2 -translate-y-1/2 group",
+          isSelected && "z-20"
         )}
+        style={{ left: '50%', top: '50%' }}
       >
-        {/* Icon inside marker */}
-        <Icon className="h-4 w-4 text-primary-foreground" strokeWidth={2.5} />
-      </span>
+        {/* Pulsing effect for online devices or active markers */}
+        {marker.status === 'online' && (
+          <span className={cn(
+            "absolute inline-flex h-full w-full animate-ping opacity-75 rounded-full",
+            markerConfig.pingColor
+          )} />
+        )}
 
-      {/* Enhanced tooltip - always visible when selected, or on hover */}
-      <div
-        className={cn(
-          "absolute bottom-full left-0 mb-2 px-3 py-2 bg-bg-95 backdrop-blur rounded-lg shadow-lg border min-w-[140px] transition-opacity text-left",
-          isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-          isSelected ? "pointer-events-auto" : "pointer-events-none"
-        )}
-      >
-        <div className="text-sm">
-          {getTooltipContent()}
+        {/* Marker with icon */}
+        <span
+          className={cn(
+            'relative inline-flex rounded-full items-center justify-center',
+            finalBgColor,
+            'h-6 w-6 border-2 border-background shadow-sm',
+            'group-hover:scale-125 transition-transform',
+            isSelected && 'ring-2 ring-primary-foreground ring-offset-2'
+          )}
+        >
+          <Icon className="h-4 w-4 text-primary-foreground" strokeWidth={2.5} />
+        </span>
+      </button>
+
+      {/* Details Popup — same style as CustomLayer */}
+      {isSelected && (
+        <div
+          className={cn(
+            'absolute z-50 min-w-[200px] max-w-[280px] rounded-lg shadow-xl border',
+            'bg-bg-95 backdrop-blur',
+            'p-3 animate-in fade-in zoom-in-95 duration-150'
+          )}
+          style={{
+            left: '50%',
+            top: '100%',
+            transform: 'translate(-50%, 8px)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Close button */}
+          <button
+            className="absolute top-1.5 right-1.5 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center"
+            onClick={(e) => { e.stopPropagation(); onClick() }}
+          >
+            <X className="h-4 w-4" />
+          </button>
+
+          {/* Header with icon and type */}
+          <div className="flex items-center gap-2 mb-2 pb-2 border-b">
+            <div className={cn('p-1.5 rounded-md', markerConfig.bgColor)}>
+              <Icon className={cn('h-4 w-4 text-primary-foreground')} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-muted-foreground uppercase">
+                {marker.markerType === 'device' && t('mapDisplay.device')}
+                {marker.markerType === 'metric' && t('mapDisplay.metric')}
+                {marker.markerType === 'command' && t('mapDisplay.command')}
+                {marker.markerType === 'marker' && t('mapDisplay.marker')}
+              </p>
+              <p className="text-sm font-semibold truncate">{marker.label || marker.deviceName || marker.id}</p>
+            </div>
+          </div>
+
+          {/* Content based on type */}
+          <div className="space-y-1.5 text-sm">
+            {marker.markerType === 'device' && (
+              <>
+                {marker.sourceId && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">{t('mapDisplay.device')} ID:</span>
+                    <span className="font-mono text-xs">{marker.sourceId}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">{t('mapDisplay.status')}:</span>
+                  <span className={cn(
+                    'flex items-center gap-1.5',
+                    marker.status === 'online' && 'text-success',
+                    marker.status === 'offline' && 'text-muted-foreground'
+                  )}>
+                    <span className={cn('w-2 h-2 rounded-full', getStatusColor(marker.status))} />
+                    {marker.status === 'online' ? t('mapDisplay.online') : marker.status === 'offline' ? t('mapDisplay.offline') : (marker.status || '-')}
+                  </span>
+                </div>
+                {marker.deviceName && marker.deviceName !== marker.label && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">{t('mapDisplay.device')}:</span>
+                    <span className="text-xs">{marker.deviceName}</span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {marker.markerType === 'metric' && (
+              <>
+                {marker.deviceName && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">{t('mapDisplay.device')}:</span>
+                    <span className="text-xs">{marker.deviceName}</span>
+                  </div>
+                )}
+                {marker.metricName && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">{t('mapDisplay.metric')}:</span>
+                    <span className="text-xs font-mono">{marker.metricName}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">{t('mapDisplay.currentValue')}:</span>
+                  <span className="text-sm font-semibold tabular-nums text-accent-purple max-w-[120px] truncate" title={marker.metricValue || '-'}>
+                    {marker.metricValue || '-'}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {marker.markerType === 'command' && (
+              <>
+                {marker.deviceName && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">{t('mapDisplay.device')}:</span>
+                    <span className="text-xs">{marker.deviceName}</span>
+                  </div>
+                )}
+                {marker.commandName && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">{t('mapDisplay.command')}:</span>
+                    <span className="text-xs font-mono">{marker.commandName}</span>
+                  </div>
+                )}
+                <Button
+                  size="sm"
+                  className="w-full mt-2 bg-info hover:bg-info/90 text-primary-foreground"
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    const markerSourceId = marker.sourceId ?? marker.deviceId
+                    if (markerSourceId && marker.command) {
+                      const sendCommand = useStore.getState().sendCommand
+                      try {
+                        await sendCommand(markerSourceId, marker.command)
+                      } catch (error) {
+                        console.error('Failed to execute command:', error)
+                      }
+                    }
+                  }}
+                >
+                  <Zap className="h-4 w-4 mr-1" />
+                  {t('mapDisplay.executeCommand')}
+                </Button>
+              </>
+            )}
+
+            {(marker.markerType === 'marker' || !marker.markerType) && (
+              <>
+                {marker.label && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">{t('mapDisplay.label')}:</span>
+                    <span>{marker.label}</span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
-      </div>
-    </button>
+      )}
+    </>
   )
 }
 
@@ -600,8 +656,8 @@ function SimpleSvgMap({
             key={marker.id}
             className="absolute"
             style={{
-              left: pos.x - 8,
-              top: pos.y - 8,
+              left: pos.x,
+              top: pos.y,
               pointerEvents: interactive ? 'auto' : 'none',
             }}
           >
@@ -964,7 +1020,7 @@ export function MapDisplay({
     setCurrentZoom(prev => Math.max(prev - 1, minZoom))
   }, [minZoom])
 
-  const handleMarkerClick = useCallback(async (marker: MapMarker) => {
+  const handleMarkerClick = useCallback((marker: MapMarker) => {
     if (!interactive) return
 
     // Toggle selection: if clicking the same marker, deselect it
@@ -973,73 +1029,19 @@ export function MapDisplay({
       return
     }
 
-    // Different actions based on marker type
-    switch (marker.markerType) {
-      case 'device': {
-        // Show device info in toast instead of navigating away
-        const deviceId = marker.sourceId || marker.deviceId
-        toast({
-          title: marker.label || deviceId || t('mapDisplay.device'),
-          description: deviceId ? `${t('mapDisplay.device')}: ${deviceId}` : '',
-        })
-        break
-      }
-
-      case 'metric': {
-        // For metrics: show current value and trend in toast
-        const metricValue = marker.metricValue ?? '-'
-        toast({
-          title: t('mapDisplay.metricValue'),
-          description: `${t('mapDisplay.metric')}: ${marker.metricName || '-'}\n${t('mapDisplay.value')}: ${metricValue}`,
-        })
-        break
-      }
-
-      case 'command': {
-        // For commands: execute the command
-        const deviceId = marker.sourceId || marker.deviceId
-        const commandName = marker.commandName
-        if (deviceId && commandName) {
-          try {
-            const success = await sendCommand(deviceId, commandName)
-            if (success) {
-              toast({
-                title: t('mapDisplay.commandSent'),
-                description: `${t('mapDisplay.command')}: ${commandName}`,
-              })
-            } else {
-              toast({
-                title: t('mapDisplay.commandFailed'),
-                description: `${t('mapDisplay.command')}: ${commandName}`,
-                variant: 'destructive',
-              })
-            }
-          } catch (error) {
-            toast({
-              title: t('mapDisplay.commandError'),
-              description: `${t('mapDisplay.command')}: ${commandName}`,
-              variant: 'destructive',
-            })
-          }
-        }
-        break
-      }
-
-      default:
-        // For regular markers: just show tooltip
-        break
-    }
-
     setSelectedMarker(marker)
 
     // Execute marker's click handler if defined
     if (marker.onClick) {
       marker.onClick()
     }
-  }, [interactive, selectedMarker, sendCommand, t])
+  }, [interactive, selectedMarker])
 
-  // Loading state - only show loading when we have a dataSource to load
-  if (loading && dataSource) {
+  // Loading state - only show skeleton for the initial empty load.
+  // During refreshes, keep rendering the previous/fallback markers so Tauri
+  // fast scrolling does not look like the whole component disappeared.
+  const showLoading = loading && !!dataSource && markers.length === 0
+  if (showLoading) {
     return (
       <div className={cn(dashboardCardBase, 'flex items-center justify-center', sizeConfig.padding, className)}>
         <Skeleton className={cn('w-full h-full rounded-lg')} />

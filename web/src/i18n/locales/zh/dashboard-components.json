@@ -496,7 +496,10 @@
     "metricValue": "指标数值",
     "commandSent": "命令已发送",
     "commandFailed": "命令发送失败",
-    "commandError": "命令错误"
+    "commandError": "命令错误",
+    "status": "状态",
+    "currentValue": "当前值",
+    "label": "标签"
   },
   "customLayer": {
     "title": "自定义图层",

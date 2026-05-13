@@ -1125,8 +1125,10 @@ export function CustomLayer({
     }
   }, [isDragging, dragStart])
 
-  // Loading state
-  if (loading) {
+  // Loading state - only show skeleton before the layer has anything to draw.
+  // Refreshes should keep the current items visible to avoid dashboard flicker.
+  const showLoading = loading && renderItems.length === 0
+  if (showLoading) {
     return (
       <div className={cn(dashboardCardBase, 'flex items-center justify-center', sizeConfig.padding, className)}>
         <Skeleton className={cn('w-full h-full rounded-lg')} />

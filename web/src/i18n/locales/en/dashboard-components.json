@@ -536,7 +536,10 @@
     "metricValue": "Metric Value",
     "commandSent": "Command Sent",
     "commandFailed": "Command Failed",
-    "commandError": "Command Error"
+    "commandError": "Command Error",
+    "status": "Status",
+    "currentValue": "Current Value",
+    "label": "Label"
   },
   "customLayer": {
     "title": "Custom Layer",
