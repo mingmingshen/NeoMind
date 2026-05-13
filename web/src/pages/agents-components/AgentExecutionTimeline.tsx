@@ -581,16 +581,42 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
   const isLongDesc = step.description.length > 300
   const displayDesc = descExpanded ? step.description : (isLongDesc ? step.description.slice(0, 300) + '...' : step.description)
 
+  // Compact display for thought steps (LLM internal reasoning — less prominent)
+  if (isThought) {
+    return (
+      <div>
+        {showRoundSeparator && roundNumber !== undefined && (
+          <div className="flex items-center gap-2 mb-3 -mt-1">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+            <span className="text-xs text-muted-foreground font-medium shrink-0 px-2">
+              {t('agents:memory.round', 'Round {{round}}', { round: roundNumber })}
+            </span>
+            <div className="h-px flex-1 bg-gradient-to-l from-transparent via-border to-transparent" />
+          </div>
+        )}
+        <div className="text-xs text-muted-foreground italic py-1 px-2 rounded bg-muted-30 mb-1">
+          {displayDesc}
+          {isLongDesc && (
+            <button
+              type="button"
+              onClick={() => setDescExpanded(!descExpanded)}
+              className="text-primary hover:underline ml-1"
+            >
+              {descExpanded ? t('agents:memory.showLess', 'Show less') : t('agents:memory.showMore', 'Show more')}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   const numberBg = isError ? 'bg-error text-primary-foreground' :
-                    isThought ? 'bg-info text-primary-foreground' :
                     'bg-primary text-primary-foreground'
   const borderColor = isError ? 'border-error' :
-                      isThought ? 'border-info-light' :
                       'border-border'
 
   return (
     <div>
-      {/* Round separator - shown above the step content */}
       {showRoundSeparator && roundNumber !== undefined && (
         <div className="flex items-center gap-2 mb-3 -mt-1">
           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
@@ -605,16 +631,14 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
           <div className={cn("w-6 h-6 rounded-full text-xs flex items-center justify-center", numberBg)}>
             {step.step_number}
           </div>
-          <div className={cn("w-0.5 flex-1 min-h-[24px]", isError ? "bg-error-light" : isThought ? "bg-info-light" : "bg-border")} />
+          <div className={cn("w-0.5 flex-1 min-h-[24px]", isError ? "bg-error-light" : "bg-border")} />
         </div>
         <div className={cn("flex-1 min-w-0 pb-4 pl-1")}>
-        {/* Description with icon */}
+        {/* Description */}
         <div className="flex items-start gap-1.5">
-          {isThought && <span className="text-info text-xs mt-0.5 shrink-0">&#x1F4AD;</span>}
           {isError && <span className="text-error text-xs mt-0.5 shrink-0">&#x26A0;</span>}
           <div className={cn(
             "text-sm break-words",
-            isThought && "italic text-info",
             isError && "text-error"
           )}>
             {displayDesc}
@@ -647,11 +671,10 @@ function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: Re
           <CollapsibleOutput label={t('agents:memory.output')} content={step.output} />
         )}
 
-        {/* Step type badge only - no per-step confidence */}
+        {/* Step type badge */}
         <Badge variant="outline" className={cn(
           "text-xs h-5 mt-1.5",
-          isError && "border-error text-error",
-          isThought && "border-info text-info"
+          isError && "border-error text-error"
         )}>
           {step.step_type}
         </Badge>

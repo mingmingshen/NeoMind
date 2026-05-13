@@ -262,7 +262,8 @@ pub(crate) fn parse_final_tool_response(text: &str) -> (String, String, f32) {
     if let Some(pos) = trimmed.find("\n\n") {
         let analysis = trimmed[..pos].trim().to_string();
         let conclusion = trimmed[pos + 2..].trim().to_string();
-        if !conclusion.is_empty() {
+        // Only split if the first paragraph has real content (not just a heading)
+        if !conclusion.is_empty() && analysis.len() > 80 {
             return (analysis, conclusion, 0.7);
         }
     }
