@@ -325,7 +325,7 @@ function SharedDashboardContent({ dashboard }: SharedDashboardContentProps) {
         position: comp.position,
         children: (
           <ComponentErrorBoundary>
-            {renderDashboardComponent(comp, [], false)}
+            {renderDashboardComponent(comp, false)}
           </ComponentErrorBoundary>
         ),
       })),

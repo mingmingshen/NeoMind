@@ -12,7 +12,7 @@
  *   (react-grid-layout#1984: onLayoutChange fires twice)
  */
 
-import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect, memo } from 'react'
 import { ReactElement } from 'react'
 import { ResponsiveGridLayout } from 'react-grid-layout'
 import { cn } from '@/lib/utils'
@@ -43,7 +43,7 @@ export interface DashboardGridProps {
   className?: string
 }
 
-export function DashboardGrid({
+export const DashboardGrid = memo(function DashboardGrid({
   components,
   rowHeight = 60,
   margin = [4, 4],
@@ -56,6 +56,7 @@ export function DashboardGrid({
 }: DashboardGridProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
+  const widthRef = useRef(0)
   const isMobile = useIsMobile()
   const touchEnabled = isTouchDevice()
 
@@ -89,35 +90,14 @@ export function DashboardGrid({
     latestLayoutRef.current = {}
   }
 
-  // Detect width changes and invalidate stale compacted positions.
-  // Runs synchronously during render, BEFORE the layouts memo below,
-  // so the memo sees the cleared ref and recalculates from c.position.
-  const prevWidthRef = useRef(0)
-  const widthChanged = width > 0 && prevWidthRef.current > 0 && width !== prevWidthRef.current
-  if (widthChanged) {
-    latestLayoutRef.current = {}
-  }
-
-  // Width change counter — used to force react-grid-layout's deepEqual check
-  // to detect a prop change when sidebar toggles back to the original width.
-  // Without this, c.position values are the same as the previous layouts prop,
-  // and ResponsiveGridLayout's deepEqual ignores the "new" prop.
-  const widthBumpRef = useRef(0)
-  if (widthChanged) {
-    widthBumpRef.current += 1
-  }
-  if (width > 0) prevWidthRef.current = width
-
   // Build layouts using latestLayoutRef for settled positions.
-  // `width` dep: when width changes (sidebar toggle), latestLayoutRef was just
-  // cleared above, so this recalculates from c.position in the SAME render.
+  // Only recalculates when components change or settle occurs.
   const layouts = useMemo(() => {
-    const w = widthBumpRef.current // dep via closure — changes when width changes
-    const layout = componentsRef.current.map((c, idx) => {
+    const layout = componentsRef.current.map((c) => {
       const current = latestLayoutRef.current[c.id]
       const pos = current || c.position
       return {
-        i: c.id + (w > 0 ? '' : ''), // keep i stable; w forces memo recalc
+        i: c.id,
         x: pos.x ?? 0, y: pos.y ?? 0,
         w: pos.w ?? c.position.w ?? 4,
         h: pos.h ?? c.position.h ?? 3,
@@ -126,13 +106,10 @@ export function DashboardGrid({
         maxW: c.position.maxW,
         maxH: c.position.maxH,
         static: false,
-        // Hidden marker that makes deepEqual fail on width change
-        // (c.position values are the same, so deepEqual would return true)
-        _w: w,
       }
     })
     return { lg: layout, md: layout, sm: layout, xs: layout }
-  }, [componentIdKey, settleVersion, width])
+  }, [componentIdKey, settleVersion])
 
   // Handle layout changes from react-grid-layout.
   const handleLayoutChange = useCallback((currentLayout: any) => {
@@ -189,7 +166,10 @@ export function DashboardGrid({
   // Debounced container width
   const updateWidth = useCallback(() => {
     if (containerRef.current) {
-      setWidth(containerRef.current.offsetWidth)
+      const nextWidth = Math.round(containerRef.current.offsetWidth)
+      if (nextWidth <= 0 || nextWidth === widthRef.current) return
+      widthRef.current = nextWidth
+      setWidth(nextWidth)
     }
   }, [])
 
@@ -204,12 +184,12 @@ export function DashboardGrid({
   useEffect(() => {
     const resizeObserver = new ResizeObserver(() => {
       if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current)
-      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 100)
+      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 250)
     })
     if (containerRef.current) resizeObserver.observe(containerRef.current)
     const handleWindowResize = () => {
       if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current)
-      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 100)
+      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 250)
     }
     window.addEventListener('resize', handleWindowResize)
     return () => {
@@ -233,7 +213,10 @@ export function DashboardGrid({
       <style>{`
         .react-grid-layout { display: block !important; }
         .react-grid-item {
-          ${transitionsEnabled ? 'transition: transform 200ms ease;' : 'transition: none;'}
+          ${editMode && transitionsEnabled ? 'transition: transform 200ms ease;' : 'transition: none !important;'}
+          will-change: transform;
+          -webkit-backface-visibility: hidden;
+          backface-visibility: hidden;
         }
         ${touchEnabled ? `
         .react-grid-item { touch-action: none; }
@@ -248,8 +231,7 @@ export function DashboardGrid({
         .dashboard-item {
           width: 100%; height: 100%;
           display: flex; flex-direction: column; overflow: hidden;
-          border-radius: 0.5rem;
-          background: var(--card);
+          contain: layout paint;
         }
         .react-grid-placeholder {
           background: rgba(148, 163, 184, 0.15) !important;
@@ -294,7 +276,7 @@ export function DashboardGrid({
           transition: none !important;
         }
         .react-grid-layout:not(.edit-mode) > .react-grid-item {
-          ${transitionsEnabled ? 'transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);' : 'transition: none;'}
+          transition: none !important;
         }
       `}</style>
       {width > 0 && (
@@ -339,4 +321,4 @@ export function DashboardGrid({
       {editMode && <div className="h-48" />}
     </div>
   )
-}
+})

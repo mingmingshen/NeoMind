@@ -515,7 +515,6 @@ export function getChartHeight(component: DashboardComponent): number | 'auto' {
 
 export function renderDashboardComponent(
   component: DashboardComponent,
-  devices: Device[],
   editMode?: boolean,
   onDataSourceChange?: (dataSource: Record<string, any>) => void,
   onConfigChange?: (config: Record<string, any>) => void,
@@ -795,9 +794,9 @@ export function renderDashboardComponent(
 
     case 'map-display':
       // Convert bindings to markers format for MapDisplay
-      // Get devices from store for metric values and names
-      // Use devices from store hook instead of getState() to ensure reactivity
-      const storeDevices = devices
+      // Read devices directly from store to avoid parameter coupling
+      // (devices change every 3s from batch polling, would cause gridComponents memo invalidation)
+      const storeDevices = useStore.getState().devices
 
       // Helper to get device name
       const getDeviceName = (deviceId: string) => {
@@ -1187,13 +1186,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const { t, i18n } = useTranslation('dashboardComponents')
   const { handleError } = useErrorHandler()
 
-  // Dashboard state (data that changes frequently)
+  // Dashboard state — split subscriptions to avoid cascade:
+  // `devices` changes every 3s (batch polling) but rarely affects layout.
+  // Keep it in a separate selector so the main block doesn't re-render on every batch.
   const {
     currentDashboard,
     currentDashboardId,
     dashboards,
     dashboardsLoading,
-    devices,
     editMode,
     componentLibraryOpen,
   } = useStore((s) => ({
@@ -1201,10 +1201,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     currentDashboardId: s.currentDashboardId,
     dashboards: s.dashboards,
     dashboardsLoading: s.dashboardsLoading,
-    devices: s.devices,
     editMode: s.editMode,
     componentLibraryOpen: s.componentLibraryOpen,
   }), shallow)
+
+  // Subscribe to devices separately — only triggers re-render when length changes
+  // (component data comes from useDataSource, not this prop)
+  const devices = useStore((s) => s.devices)
+  const devicesLength = devices.length
 
   // Action selectors (stable function references, no shallow needed)
   const setEditMode = useStore((s) => s.setEditMode)
@@ -1512,7 +1516,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   useEffect(() => {
     // Only retry if we have dashboard components that need device data
     if (!currentDashboard || currentDashboard.components.length === 0) return
-    if (devices.length > 0) return
+    if (devicesLength > 0) return
     if (dashboardsLoading) return
 
     let attempts = 0
@@ -1527,7 +1531,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     }, 3000)
 
     return () => clearInterval(interval)
-  }, [devices.length, currentDashboard, dashboardsLoading, fetchDevices])
+  }, [devicesLength, currentDashboard, dashboardsLoading, fetchDevices])
 
   // Batch fetch current values for devices used in dashboard components
   // Only considers the CURRENT dashboard (not all dashboards) to avoid
@@ -1560,7 +1564,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const batchFetchControllerRef = useRef<{ deviceIds: string[]; interval: ReturnType<typeof setInterval> | null }>({ deviceIds: [], interval: null })
 
   useEffect(() => {
-    if (devices.length === 0 || !dashboardDeviceIdsKey) return
+    if (devicesLength === 0 || !dashboardDeviceIdsKey) return
 
     const deviceIds = dashboardDeviceIdsKey.split(',').filter(Boolean)
     if (deviceIds.length === 0) return
@@ -1605,7 +1609,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         ctrl.interval = null
       }
     }
-  }, [devices.length, dashboardDeviceIdsKey, fetchDevicesCurrentBatch])
+  }, [devicesLength, dashboardDeviceIdsKey, fetchDevicesCurrentBatch])
 
   // Re-load dashboards if array becomes empty but we have a current ID
   useEffect(() => {
@@ -2182,12 +2186,12 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             selectedComponentId={mobileSelectedId}
             isMobile={isMobile}
           >
-            {renderDashboardComponent(component, devices, editMode, handleDataSourceChange, handleConfigChange, openExtFullscreen, closeExtFullscreen)}
+            {renderDashboardComponent(component, editMode, handleDataSourceChange, handleConfigChange, openExtFullscreen, closeExtFullscreen)}
           </ComponentWrapper>
         ),
       }
     }) ?? []
-  }, [componentsStableKey, configVersion, editMode, devices.length, isMobile])
+  }, [componentsStableKey, configVersion, editMode, devicesLength, isMobile])
 
   // Track initial config load to avoid unnecessary updates
   const initialConfigRef = useRef<any>(null)
