@@ -1090,21 +1090,21 @@ impl AgentExecutor {
             }
             prev_round_tool_names = current_round_sig;
 
-            // Only stop after 5+ consecutive identical rounds — the LLM is truly stuck.
+            // Stop after 3+ consecutive identical rounds — the LLM is stuck.
             // Repeated tool calls in complex tasks are normal; cross-round dedup above
             // already prevents actual re-execution.
-            if consecutive_duplicate_rounds >= 5 {
+            if consecutive_duplicate_rounds >= 3 {
                 tracing::warn!(
                     agent_id = %agent.id,
                     round = round + 1,
                     consecutive_duplicates = consecutive_duplicate_rounds,
-                    "LLM stuck in loop (5+ consecutive duplicate rounds), terminating"
+                    "LLM stuck in loop (3+ consecutive duplicate rounds), forcing text response"
                 );
                 self.send_thinking(
                     &agent.id,
                     execution_id,
                     step_num,
-                    "Terminating: detected repeated tool calling pattern",
+                    "Stopping: detected repeated tool calling pattern, forcing text response",
                 )
                 .await;
                 break;

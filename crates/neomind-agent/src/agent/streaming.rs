@@ -1552,133 +1552,6 @@ fn compact_tool_results_stream_with_config(
     result
 }
 
-/// Estimate total tokens in the memory buffer.
-fn estimate_total_memory_tokens(memory: &[AgentMessage]) -> usize {
-    memory.iter().map(|m| estimate_message_tokens(m)).sum()
-}
-
-/// Build a structured summary from old tool execution rounds.
-/// Extracts tool names, arguments, key results, and assistant analysis text.
-fn build_round_summary<'a>(messages: impl Iterator<Item = &'a AgentMessage>) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    let mut round_num = 0;
-
-    for msg in messages {
-        if msg.role == "assistant" {
-            if let Some(tool_calls) = &msg.tool_calls {
-                round_num += 1;
-                for tc in tool_calls {
-                    let args = super::types::summarize_tool_args(&tc.name, &tc.arguments);
-                    let result_brief = tc
-                        .result
-                        .as_ref()
-                        .map(|r| {
-                            let s = if let Some(s) = r.as_str() {
-                                s.to_string()
-                            } else {
-                                r.to_string()
-                            };
-                            // Keep more context for data-heavy results
-                            let preview: String = s.chars().take(500).collect();
-                            if preview.is_empty() {
-                                "ok".to_string()
-                            } else if s.len() > 500 {
-                                format!("{}...", preview)
-                            } else {
-                                preview
-                            }
-                        })
-                        .unwrap_or_else(|| "executed".to_string());
-                    parts.push(format!(
-                        "R{} - {}({}) → {}",
-                        round_num, tc.name, args, result_brief
-                    ));
-                }
-                // Capture assistant's analysis text between tool calls
-                let content: String = msg.content.to_string();
-                if !content.trim().is_empty() {
-                    let preview: String = content.chars().take(500).collect();
-                    parts.push(format!("  ↳ {}", preview));
-                }
-            }
-        }
-    }
-
-    if parts.is_empty() {
-        return String::new();
-    }
-
-    format!(
-        "[Task Progress Summary — {} tool rounds completed]\n{}\n\n\
-         Above are key findings from previous rounds. Use this information to continue — do NOT repeat these tool calls.",
-        round_num,
-        parts.join("\n")
-    )
-}
-
-/// Compact memory in-place by summarizing old tool execution rounds.
-/// Keeps `keep_rounds` most recent rounds intact, replaces older ones with a summary.
-/// Returns true if compaction was performed.
-fn compact_memory_mid_task(
-    memory: &mut Vec<AgentMessage>,
-    keep_rounds: usize,
-) -> bool {
-    // Find round boundaries: assistant messages with tool_calls
-    let round_starts: Vec<usize> = memory
-        .iter()
-        .enumerate()
-        .filter(|(_, m)| m.role == "assistant" && m.tool_calls.is_some())
-        .map(|(i, _)| i)
-        .collect();
-
-    if round_starts.len() <= keep_rounds {
-        return false;
-    }
-
-    let keep_from_idx = round_starts[round_starts.len() - keep_rounds];
-    let rounds_to_compact = round_starts.len() - keep_rounds;
-
-    // Collect old messages (before the kept rounds)
-    let old_messages: Vec<AgentMessage> = memory.iter().take(keep_from_idx).cloned().collect();
-
-    // Build structured summary from old rounds
-    let summary = build_round_summary(old_messages.iter());
-    if summary.is_empty() {
-        return false;
-    }
-
-    // Rebuild memory: keep user/system messages + add summary + keep recent rounds
-    let mut new_memory = Vec::new();
-
-    // Preserve non-round messages (user questions, system messages)
-    for msg in &old_messages {
-        if msg.role == "user" || msg.role == "system" {
-            new_memory.push(msg.clone());
-        }
-    }
-
-    // Insert summary as an assistant message
-    new_memory.push(AgentMessage::assistant(&summary));
-
-    // Keep all recent rounds intact
-    for msg in memory.iter().skip(keep_from_idx) {
-        new_memory.push(msg.clone());
-    }
-
-    let old_len = memory.len();
-    let new_len = new_memory.len();
-    *memory = new_memory;
-
-    tracing::info!(
-        "Mid-task compaction: {} → {} messages (summarized {} old rounds)",
-        old_len,
-        new_len,
-        rounds_to_compact
-    );
-
-    true
-}
-
 /// Process a user message with streaming response.
 ///
 /// Logic:
@@ -1947,17 +1820,35 @@ pub async fn process_stream_events_with_safeguards(
                         .map(|s| format!("- {}", s))
                         .collect::<Vec<_>>()
                         .join("\n");
-                    format!(
+                    let mut msg = format!(
                         "Round {} of processing.\n\n\
                         Previously executed tools (results are in context above):\n{}\n\n\
                         STOP AND THINK: Do you need MORE tools, or can you answer from the results above?\n\
                         - If tools above already returned the data you need → give the final response NOW. Do NOT call them again.\n\
                         - If you need different tools → call them in ONE batch using JSON array: [{{\"name\":\"tool\",\"arguments\":{{...}}}}]\n\
-                        - NEVER call the same tool with the same arguments — results are already in context.\n\
-                        - Example: if you already called message(list) and got 7 messages, do NOT call message(list) again — analyze those results instead.",
+                        - NEVER call the same tool with the same arguments — results are already in context.",
                         tool_iteration_count + 1,
                         executed_summary
-                    )
+                    );
+                    // Inject duplicate warning so the LLM knows it's repeating
+                    if consecutive_duplicate_rounds > 0 {
+                        let prev_results_summary: Vec<String> = prev_round_results.iter()
+                            .take(3)
+                            .map(|(name, result)| format!("- {}: {}", name, result.chars().take(200).collect::<String>()))
+                            .collect();
+                        msg.push_str(&format!(
+                            "\n\n⚠️ DUPLICATE WARNING: You have called the same tool with the same arguments {} time(s) already. \
+                            The previous results were:\n{}\n\n\
+                            IMPORTANT: Do NOT repeat the same call. Either:\n\
+                            1. Use DIFFERENT arguments if the previous ones were wrong, OR\n\
+                            2. Give your final text response based on the results above, OR\n\
+                            3. Ask the user for clarification.\n\
+                            If you repeat the same call again, the system will force-stop and generate a response without tools.",
+                            consecutive_duplicate_rounds,
+                            prev_results_summary.join("\n")
+                        ));
+                    }
+                    msg
                 };
 
                 tracing::debug!("Multi-round context: {}", context_msg);
@@ -2457,8 +2348,8 @@ pub async fn process_stream_events_with_safeguards(
 
                 // === DUPLICATE DETECTION ===
                 // Detect consecutive duplicate rounds (same tool calls repeated).
-                // Instead of aborting, reuse previous results so the LLM can continue
-                // reasoning without wasting tokens on re-execution.
+                // After 2 consecutive duplicates, force a no-tool summary call so the
+                // LLM must output text instead of repeating tool calls endlessly.
                 let mut should_break_for_duplicate = false;
                 {
                     let mut new_tool_signatures: Vec<Vec<String>> = Vec::new();
@@ -2509,10 +2400,11 @@ pub async fn process_stream_events_with_safeguards(
                     // Save this round's results for potential reuse next round
                     prev_round_results = tool_call_results.clone();
 
-                    // Only break after 5+ consecutive identical rounds — the LLM is truly stuck
-                    if consecutive_duplicate_rounds >= 5 {
+                    // Break after 3 consecutive identical rounds — the LLM is stuck.
+                    // A forced no-tool summary call will follow to produce a text response.
+                    if consecutive_duplicate_rounds >= 3 {
                         tracing::warn!(
-                            "LLM stuck in loop ({} consecutive duplicate rounds). Stopping ReAct loop.",
+                            "LLM stuck in loop ({} consecutive duplicate rounds). Forcing text-only response.",
                             consecutive_duplicate_rounds
                         );
                         should_break_for_duplicate = true;
@@ -2551,33 +2443,11 @@ pub async fn process_stream_events_with_safeguards(
                     }
                 }
 
-                // === MID-TASK COMPACTION: Prevent context overflow during long ReAct loops ===
-                // If memory exceeds 70% of the model's context budget, summarize old rounds
-                // so the LLM can continue working with a clean context.
-                {
-                    let budget_threshold = (effective_max * 70) / 100;
-                    let current_tokens = {
-                        let state = internal_state.read().await;
-                        estimate_total_memory_tokens(&state.memory)
-                    };
-
-                    if current_tokens > budget_threshold {
-                        tracing::warn!(
-                            "Memory approaching context budget ({} > {}/{}), triggering mid-task compaction",
-                            current_tokens, budget_threshold, effective_max
-                        );
-                        let mut state = internal_state.write().await;
-                        let compacted = compact_memory_mid_task(&mut state.memory, 2);
-                        drop(state);
-                        if compacted {
-                            yield AgentEvent::progress(
-                                "Context compacted, continuing task...".to_string(),
-                                "compacting",
-                                0,
-                            );
-                        }
-                    }
-                }
+                // NOTE: Mid-task compaction removed — build_context_window_with_config
+                // (called above at each round) already handles LLM context trimming
+                // without modifying the stored history. In-place compaction caused
+                // persisted history to shrink after session switch (messages permanently
+                // lost when compact_memory_mid_task modified state.memory).
 
                 // If we should continue the ReAct loop, save round state and loop back
                 if should_continue && !should_break_for_duplicate {
@@ -2634,6 +2504,15 @@ pub async fn process_stream_events_with_safeguards(
                 if content_before_tools.is_empty() {
                     let deduped_results = deduplicate_tool_results(&all_round_tool_results);
 
+                    // Notify user that we're generating a final response
+                    if should_break_for_duplicate {
+                        yield AgentEvent::progress(
+                            "Generating final response...".to_string(),
+                            "summarizing",
+                            0,
+                        );
+                    }
+
                     // Build compact history for the summary call
                     let summary_history: Vec<neomind_core::Message> = {
                         let state_guard = internal_state.read().await;
@@ -2641,9 +2520,36 @@ pub async fn process_stream_events_with_safeguards(
                         compacted.iter().map(|msg| msg.to_core()).collect()
                     };
 
-                    let summary_prompt = "Based on the tool execution results in the conversation above, \
+                    // Detect whether tool results contain errors to tailor the prompt
+                    let has_errors = deduped_results.iter().any(|(_, result)| {
+                        let lower = result.to_lowercase();
+                        lower.contains("error") || lower.contains("failed") || lower.contains("invalid")
+                    });
+
+                    let summary_prompt = if should_break_for_duplicate {
+                        // Duplicate loop exit — let LLM decide how to respond
+                        if has_errors {
+                            "The tool calls kept returning errors and the system stopped retrying. \
+                            Review the error messages above and decide:\n\
+                            1. If you can give a useful answer or explanation → do so now.\n\
+                            2. If you need the user to provide different info (e.g., correct parameters) → ask them clearly.\n\
+                            Do NOT output any tool calls — give a direct text response."
+                        } else {
+                            "The tool execution has gathered the results above. Decide:\n\
+                            1. If you have enough data to answer the user's question → give your final answer now.\n\
+                            2. If you need more info from the user → ask them clearly what you need.\n\
+                            Do NOT output any tool calls — give a direct text response."
+                        }
+                    } else if has_errors {
+                        "The tool calls above returned errors. \
+                        Analyze the errors and explain to the user what went wrong in plain language. \
+                        Suggest what the user can do (e.g., provide different parameters, check the device, etc.). \
+                        Do NOT output any tool calls — give a direct text response."
+                    } else {
+                        "Based on the tool execution results in the conversation above, \
                         provide a concise analysis and summary. Do NOT output any tool calls — \
-                        give a direct text response to the user's question.";
+                        give a direct text response to the user's question."
+                    };
 
                     let summary_result = llm_interface.chat_stream_summary(
                         summary_prompt,
