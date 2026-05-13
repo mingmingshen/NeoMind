@@ -606,16 +606,35 @@ impl AgentExecutor {
             )
         };
 
+        let exit_guidance = if config.is_focused_plus {
+            "\n## When to stop\n\
+             Stop calling tools and write your final response when:\n\
+             - You have collected enough data to answer the task.\n\
+             - A tool call failed and retrying won't help.\n\
+             Write your analysis directly — do NOT use JSON or code blocks.\n".to_string()
+        } else {
+            format!(
+                "\n## When to stop\n\
+                 IMPORTANT — stop calling tools and write your final response as soon as ONE of these is true:\n\
+                 1. You have the data needed to answer the task.\n\
+                 2. You have already sent notifications or executed commands (no need to verify them).\n\
+                 3. You called a tool and got the same or similar result as before.\n\
+                 4. You have used {} rounds and still don't have enough data — summarize what you have.\n\
+                 5. A tool failed — explain the failure, don't retry.\n\
+                 After your last tool call, write your analysis directly. \
+                 Do NOT use JSON or code blocks — plain text only.\n\
+                 Keep it concise: key findings first, then anomalies, then recommendations.\n",
+                config.max_rounds,
+            )
+        };
+
         format!(
             "You are an intelligent IoT agent named '{}' monitoring edge devices.\n\
              Current time: {}\n\
              Your task: {}\n{}{}{}{}{}\
              You have access to tools for querying metrics, executing commands, and sending notifications.\n\n\
-             {}\n\n\
-             When you have enough information, respond with your analysis in natural language. \
-             Do NOT wrap your response in JSON or code blocks — just write your analysis directly.\n\
-             Keep your conclusion concise and structured (2-5 sentences). \
-             State key findings first, then anomalies or recommendations. Avoid filler words.\n\
+             {}\n\
+             {}\n\
              Reply in the SAME language as the task description.",
             agent.name,
             time_ctx,
@@ -626,6 +645,7 @@ impl AgentExecutor {
             invocation_section,
             mode_constraints,
             guidelines,
+            exit_guidance,
         )
     }
 
