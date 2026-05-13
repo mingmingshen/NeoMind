@@ -662,8 +662,9 @@ export function VideoDisplay({
     )
   }
 
-  // Loading state from data source
-  if (loading && isLoading) {
+  // Loading state from data source. Only replace the card before the first
+  // usable source arrives; refreshes should keep the existing video surface.
+  if (loading && isLoading && !rawSrc) {
     return (
       <div className={cn(dashboardCardBase, 'flex items-center justify-center', sizeConfig.padding, className)}>
         <Skeleton className={cn('w-full h-full', rounded && 'rounded-lg')} />

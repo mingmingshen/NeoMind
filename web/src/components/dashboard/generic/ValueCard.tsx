@@ -8,13 +8,12 @@
 
 import { useMemo } from 'react'
 import { ArrowUpRight, ArrowDownRight, Minus, Activity, TrendingUp, TrendingDown } from 'lucide-react'
-import { Skeleton } from '@/components/ui/skeleton'
 import { cn, getIconForEntity } from '@/lib/utils'
 import { chartColors, indicatorFontWeight, indicatorColors, dashboardCardBase, dashboardCardHorizontal } from '@/design-system'
 import { valueCardSize, type ValueCardSize } from '@/design-system/tokens/size'
 import type { DataSourceOrList } from '@/types/dashboard'
 import { useDataSource } from '@/hooks/useDataSource'
-import { ErrorState } from '../shared'
+import { ErrorState, LoadingState } from '../shared'
 
 // ============================================================================
 // Module-level cache for trend data (persists across component remounts)
@@ -372,6 +371,10 @@ export function ValueCard({
     return <ErrorState size={safeSize} className={className} />
   }
 
+  if (showLoading) {
+    return <LoadingState size={safeSize} className={className} />
+  }
+
   // ============================================================================
   // Minimal variant - just value with optional label
   // ============================================================================
@@ -382,13 +385,9 @@ export function ValueCard({
         {title && (
           <span className={cn(indicatorFontWeight.title, 'text-muted-foreground mb-1', sizeConfig.labelText)}>{title}</span>
         )}
-        {showLoading ? (
-          <Skeleton className={cn('h-6 w-20 rounded')} />
-        ) : (
-          <span className={cn(indicatorFontWeight.value, 'text-foreground tracking-tight tabular-nums', sizeConfig.valueText)} style={{ color: finalValueColor }}>
-            {formattedValue}
-          </span>
-        )}
+        <span className={cn(indicatorFontWeight.value, 'text-foreground tracking-tight tabular-nums', sizeConfig.valueText)} style={{ color: finalValueColor }}>
+          {formattedValue}
+        </span>
         {showTrend && hasValidTrend && trendDirection && (
           <div className={cn(
             'flex items-center gap-1 mt-1',
@@ -427,13 +426,9 @@ export function ValueCard({
         )}
 
         {/* Value */}
-        {showLoading ? (
-          <Skeleton className={cn('h-7 w-16 rounded')} />
-        ) : (
-          <span className={cn(indicatorFontWeight.value, 'text-foreground tracking-tight tabular-nums text-center', sizeConfig.valueText)} style={{ color: finalValueColor }}>
-            {formattedValue}
-          </span>
-        )}
+        <span className={cn(indicatorFontWeight.value, 'text-foreground tracking-tight tabular-nums text-center', sizeConfig.valueText)} style={{ color: finalValueColor }}>
+          {formattedValue}
+        </span>
 
         {/* Label */}
         {title && (
@@ -478,13 +473,9 @@ export function ValueCard({
             <span className={cn(indicatorFontWeight.title, 'text-muted-foreground truncate', sizeConfig.labelText)}>{title}</span>
           )}
           <div className="flex items-baseline gap-1">
-            {showLoading ? (
-              <Skeleton className={cn('h-5 w-16 rounded')} />
-            ) : (
-              <span className={cn(indicatorFontWeight.value, 'text-foreground tabular-nums', sizeConfig.valueText)} style={{ color: finalValueColor }}>
-                {formattedValue}
-              </span>
-            )}
+            <span className={cn(indicatorFontWeight.value, 'text-foreground tabular-nums', sizeConfig.valueText)} style={{ color: finalValueColor }}>
+              {formattedValue}
+            </span>
           </div>
         </div>
 
@@ -527,13 +518,9 @@ export function ValueCard({
           )}
 
           {/* Value - secondary text */}
-          {showLoading ? (
-            <Skeleton className={cn('h-5 w-16 rounded mt-0.5')} />
-          ) : (
-            <span className={cn(indicatorFontWeight.value, 'tabular-nums', sizeConfig.labelText)} style={{ color: finalValueColor }}>
-              {formattedValue}
-            </span>
-          )}
+          <span className={cn(indicatorFontWeight.value, 'tabular-nums', sizeConfig.labelText)} style={{ color: finalValueColor }}>
+            {formattedValue}
+          </span>
         </div>
 
         {/* Optional trend indicator on the right */}

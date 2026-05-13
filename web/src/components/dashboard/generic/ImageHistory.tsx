@@ -13,6 +13,7 @@ import { dashboardCardBase, dashboardComponentSize } from '@/design-system/token
 import { ImageOff, AlertTriangle, RefreshCw, Images } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
+import { LoadingState } from '../shared'
 
 type ImageFormatType = 'png' | 'jpeg' | 'jpg' | 'gif' | 'webp' | 'bmp' | 'svg' | 'tiff' | 'ico' | 'unknown'
 
@@ -532,18 +533,10 @@ export function ImageHistory({
     setCurrentIndex(index)
   }, [])
 
-  // Loading state
-  if (loading) {
-    return (
-      <div className={cn(dashboardCardBase, className)}>
-        <div className={cn(
-          'w-full flex items-center justify-center bg-muted',
-          size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]'
-        )}>
-          <RefreshCw className="h-6 w-6 text-muted-foreground animate-spin" />
-        </div>
-      </div>
-    )
+  // Loading state - only replace the card before the first image list arrives.
+  // On refresh, keep the current image visible and use the lightweight overlay.
+  if (loading && !hasImages) {
+    return <LoadingState size={size} className={className} />
   }
 
   // No images state

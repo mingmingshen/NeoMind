@@ -8,13 +8,13 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { Maximize2, Minimize2, Download, ImageOff, AlertTriangle, RefreshCw, Image as ImageIcon } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
+import { LoadingState } from '../shared'
 
 export interface ImageDisplayProps {
   dataSource?: DataSource
@@ -535,8 +535,8 @@ export function ImageDisplay({
     if (!hasDataSource) {
       // No data source configured - show no-source state
       setImageLoadState('no-source')
-    } else if (loading) {
-      // Data source is still loading - show loading
+    } else if (loading && !displaySrc) {
+      // Data source is still loading and there is no previous image to keep.
       setImageLoadState('loading')
     } else if (!hasValidSource) {
       // No valid image source - show no-source state
@@ -548,8 +548,9 @@ export function ImageDisplay({
     // If displaySrc hasn't changed, keep current state
   }, [displaySrc, loading, hasValidSource, hasDataSource, displaySrcChanged])
 
-  // Show loading skeleton only during data fetch, not during image render
-  const shouldShowLoading = loading && hasDataSource && imageLoadState === 'loading'
+  // Show a skeleton only before the first image arrives. During refreshes,
+  // keep the existing image visible so scrolling in Tauri does not flash.
+  const shouldShowLoading = loading && hasDataSource && !displaySrc && imageLoadState === 'loading'
 
   const handleImageLoad = useCallback(() => {
     setImageLoadState('loaded')
@@ -562,11 +563,7 @@ export function ImageDisplay({
   // Loading state from data source
   // Only show loading when there's actually a dataSource to load from
   if (shouldShowLoading) {
-    return (
-      <div className={cn(dashboardCardBase, 'flex items-center justify-center', sizeConfig.padding, className)}>
-        <Skeleton className={cn('w-full h-full', rounded && 'rounded-lg')} />
-      </div>
-    )
+    return <LoadingState size={size} className={className} />
   }
 
   // No source configured or invalid format
