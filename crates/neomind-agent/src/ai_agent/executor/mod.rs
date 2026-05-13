@@ -964,7 +964,8 @@ impl AgentExecutor {
             tool_calls.retain(|tc| {
                 let args_preview = serde_json::to_string(&tc.arguments)
                     .unwrap_or_default();
-                let args_short = &args_preview[..args_preview.len().min(100)];
+                let bound = args_preview.len().min(100);
+                let args_short = &args_preview[..args_preview.floor_char_boundary(bound)];
                 let sig = format!("{}:{}", tc.name, args_short);
                 seen_this_round.insert(sig)
             });
@@ -976,7 +977,8 @@ impl AgentExecutor {
             tool_calls.retain(|tc| {
                 let args_preview = serde_json::to_string(&tc.arguments)
                     .unwrap_or_default();
-                let args_short = &args_preview[..args_preview.len().min(100)];
+                let bound = args_preview.len().min(100);
+                let args_short = &args_preview[..args_preview.floor_char_boundary(bound)];
                 let sig = format!("{}:{}", tc.name, args_short);
                 all_executed_signatures.insert(sig)
             });

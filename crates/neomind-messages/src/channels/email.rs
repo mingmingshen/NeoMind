@@ -101,9 +101,10 @@ impl EmailChannel {
                 let payload_str = payload.to_string();
                 // Truncate if too long
                 let display_payload = if payload_str.len() > 2000 {
+                    let end = payload_str.floor_char_boundary(2000);
                     format!(
                         "{}...\n\n<i>(Content truncated, total {} characters)</i>",
-                        &payload_str[..2000],
+                        &payload_str[..end],
                         payload_str.len()
                     )
                 } else {
