@@ -151,7 +151,7 @@ pub(crate) use intent::extract_threshold;
 pub(crate) use response_parser::{
     extract_command_from_description, extract_device_from_description, extract_json_from_codeblock,
     extract_json_from_mixed_text, extract_string_field, json_value_to_string,
-    parse_final_tool_response, sanitize_json_string, summarize_tool_output,
+    sanitize_json_string, summarize_tool_output,
     try_recover_truncated_json,
 };
 
@@ -1324,84 +1324,54 @@ impl AgentExecutor {
     ) -> (DecisionProcess, neomind_storage::ExecutionResult) {
         let ToolLoopOutput {
             final_text,
-            is_generic_fallback,
+            is_generic_fallback: _,
             all_tool_results,
-            all_reasoning_texts,
+            all_reasoning_texts: _,
             round_data_list_raw,
         } = loop_output;
 
-        let (mut situation_analysis, mut conclusion, confidence) =
-            parse_final_tool_response(&final_text);
+        // === Free mode: LLM natural language response is the primary output ===
+        // Tool calls already executed all actions. The final_text is the LLM's
+        // summary/analysis for the user — use it directly as conclusion.
+        // situation_analysis is a concise tool execution summary for context.
 
-        // --- situation_analysis ---
-        // When the LLM didn't produce structured JSON:
-        // - If Phase 2 generated natural language, use it as situation_analysis
-        // - Otherwise use final_text (LLM's natural language response from tool loop)
-        // - Then fall back to reasoning texts or generic summary
-        if is_generic_fallback
-            || situation_analysis.is_empty()
-            || situation_analysis == "Completed tool execution rounds."
-        {
-            // Phase 2 or LLM natural language response — use as situation_analysis
-            if !final_text.is_empty()
-                && final_text != "Completed tool execution rounds."
-                && final_text != "LLM generation failed during tool execution."
-            {
-                situation_analysis = if final_text.len() > 500 {
-                    let cut = final_text.floor_char_boundary(500);
-                    let end = final_text[..cut]
-                        .rfind(|c: char| c == '.' || c == '!' || c == '?' || c == '。')
-                        .map(|i| i + 1)
-                        .unwrap_or(cut);
-                    format!("{}...", &final_text[..end])
-                } else {
-                    final_text.clone()
-                };
-            } else if !all_reasoning_texts.is_empty() {
-                let combined = all_reasoning_texts.join(" ");
-                situation_analysis = if combined.len() > 500 {
-                    let cut = combined.floor_char_boundary(500);
-                    let end = combined[..cut]
-                        .rfind(|c: char| c == '.' || c == '!' || c == '?' || c == '。')
-                        .map(|i| i + 1)
-                        .unwrap_or(cut);
-                    format!("{}...", &combined[..end])
-                } else {
-                    combined
-                };
-            } else {
-                situation_analysis = format!(
-                    "Agent executed {} tool operations across completed rounds.",
-                    all_tool_results.len()
-                );
-            }
-        }
+        // --- situation_analysis: concise tool execution summary ---
+        let situation_analysis = if all_tool_results.is_empty() {
+            "No tools were executed.".to_string()
+        } else {
+            let tool_names: Vec<&str> = all_tool_results
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect();
+            let success_count = all_tool_results.iter().filter(|r| r.result.is_ok()).count();
+            format!(
+                "Executed {} tool operation(s) ({} successful): {}",
+                all_tool_results.len(),
+                success_count,
+                tool_names.join(", ")
+            )
+        };
 
-        // --- conclusion ---
-        // Priority: JSON-parsed > Phase 2 natural language > tool summary
-        // Treat generic/error strings as empty so they get replaced.
-        let is_generic_conclusion = conclusion == "Completed tool execution rounds."
-            || conclusion == "LLM generation failed during tool execution.";
-        if conclusion.is_empty() || is_generic_conclusion {
-            if !final_text.is_empty()
-                && final_text != "Completed tool execution rounds."
-                && final_text != "LLM generation failed during tool execution."
-            {
-                // Use the LLM's Phase 2 natural language response
-                conclusion = final_text.clone();
-            } else if !all_tool_results.is_empty() {
-                let tool_summary: Vec<String> = all_tool_results
-                    .iter()
-                    .filter_map(|r| match &r.result {
-                        Ok(output) => Some(summarize_tool_output(&output.data, &r.name)),
-                        Err(e) => Some(format!("{} failed: {}", r.name, e)),
-                    })
-                    .collect();
-                conclusion = tool_summary.join("; ") + ".";
-            } else {
-                conclusion = "No tools were executed during this agent run.".to_string();
-            }
-        }
+        // --- conclusion: LLM's natural language response, directly ---
+        let is_generic = final_text.is_empty()
+            || final_text == "Completed tool execution rounds."
+            || final_text == "LLM generation failed during tool execution.";
+
+        let conclusion = if !is_generic {
+            final_text.clone()
+        } else if !all_tool_results.is_empty() {
+            // Fallback: summarize tool results when LLM didn't produce text
+            let tool_summary: Vec<String> = all_tool_results
+                .iter()
+                .filter_map(|r| match &r.result {
+                    Ok(output) => Some(summarize_tool_output(&output.data, &r.name)),
+                    Err(e) => Some(format!("{} failed: {}", r.name, e)),
+                })
+                .collect();
+            tool_summary.join("; ") + "."
+        } else {
+            "No tools were executed during this agent run.".to_string()
+        };
 
         // --- reasoning steps ---
         let mut reasoning_steps: Vec<ReasoningStep> = Vec::new();
@@ -1469,22 +1439,12 @@ impl AgentExecutor {
             })
             .collect();
 
-        // Derive confidence: LLM may provide it via JSON (explicit), natural language (0.7),
-        // or not at all (0.5). Use tool success rate as a floor.
-        let tool_success_rate = if all_tool_results.is_empty() {
-            None
+        // Confidence: based on tool success rate
+        let final_confidence = if all_tool_results.is_empty() {
+            0.5
         } else {
             let ok = all_tool_results.iter().filter(|r| r.result.is_ok()).count() as f32;
-            Some((ok / all_tool_results.len() as f32).max(0.5))
-        };
-        let final_confidence = if confidence > 0.7 {
-            // LLM provided explicit confidence via JSON
-            confidence
-        } else if let Some(rate) = tool_success_rate {
-            // Fall back to tool success rate when confidence is default or steps empty
-            rate
-        } else {
-            0.5
+            (ok / all_tool_results.len() as f32).max(0.5)
         };
 
         let decision_process = DecisionProcess {
@@ -1522,9 +1482,10 @@ impl AgentExecutor {
                 / actions_executed.len() as f32
         };
 
-        // summary: the actual LLM response text (Phase 2 or natural).
+        // summary: the actual LLM response text.
         // Skip generic/error strings — the frontend already shows conclusion separately.
-        let summary_text = if is_generic_fallback
+        let summary_text = if final_text.is_empty()
+            || final_text == "Completed tool execution rounds."
             || final_text == "LLM generation failed during tool execution."
         {
             String::new()
