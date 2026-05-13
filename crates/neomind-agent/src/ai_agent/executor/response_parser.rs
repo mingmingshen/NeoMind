@@ -216,62 +216,6 @@ pub(crate) fn try_recover_truncated_json(json_str: &str) -> Option<(String, bool
     None
 }
 
-fn extract_analysis_fields(
-    parsed: &serde_json::Value,
-    fallback_text: &str,
-) -> (String, String, f32) {
-    let situation_analysis = parsed
-        .get("situation_analysis")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let conclusion = parsed
-        .get("conclusion")
-        .and_then(|v| v.as_str())
-        .unwrap_or(fallback_text)
-        .to_string();
-    let confidence = parsed
-        .get("confidence")
-        .and_then(|v| v.as_f64())
-        .map(|v| v as f32)
-        .unwrap_or(0.7);
-    (situation_analysis, conclusion, confidence)
-}
-
-pub(crate) fn parse_final_tool_response(text: &str) -> (String, String, f32) {
-    // Try to extract a JSON code block from the text
-    if let Some(json_str) = extract_json_from_codeblock(text) {
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
-            return extract_analysis_fields(&parsed, text);
-        }
-    }
-
-    // Try to parse the entire text as JSON (in case no code block wrapping)
-    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text.trim()) {
-        return extract_analysis_fields(&parsed, text);
-    }
-
-    // Natural language response — the entire text is the conclusion.
-    // Try to split into situation_analysis (first paragraph) and conclusion (rest).
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return (String::new(), String::new(), 0.5);
-    }
-
-    // Split on double-newline to separate analysis from conclusion
-    if let Some(pos) = trimmed.find("\n\n") {
-        let analysis = trimmed[..pos].trim().to_string();
-        let conclusion = trimmed[pos + 2..].trim().to_string();
-        // Only split if the first paragraph has real content (not just a heading)
-        if !conclusion.is_empty() && analysis.len() > 80 {
-            return (analysis, conclusion, 0.7);
-        }
-    }
-
-    // Single paragraph — use as both analysis and conclusion
-    (String::new(), trimmed.to_string(), 0.7)
-}
-
 /// Extract JSON string from text that may be wrapped in markdown code blocks.
 /// Handles `\`\`\`json ... \`\`\`` and plain `\`\`\` ... \`\`\`` wrappers.
 pub(crate) fn extract_json_from_codeblock(text: &str) -> Option<&str> {

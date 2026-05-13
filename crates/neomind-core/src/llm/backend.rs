@@ -120,6 +120,24 @@ pub struct ToolDefinition {
     pub parameters: serde_json::Value,
 }
 
+/// Sanitize a tool name for OpenAI-compatible API compatibility.
+///
+/// OpenAI-compatible APIs require `function.name` to match `^[a-zA-Z0-9_-]+$`.
+/// Extension tools use `{extension_id}:{command_name}` format (e.g. `test.extension:test_command`)
+/// which contains `.` and `:`. This function replaces any character that is not
+/// alphanumeric, underscore, or hyphen with an underscore.
+pub fn sanitize_tool_name(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 /// LLM input.
 #[derive(Debug, Clone)]
 pub struct LlmInput {

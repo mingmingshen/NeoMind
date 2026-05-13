@@ -500,7 +500,7 @@ Common use cases: analysis scores, predictions, derived indicators, computed sta
                 },
                 "time_range": {
                     "type": "string",
-                    "description": "Relative time range for data query. Examples: '30min', '1h', '1d', '3d', '1w'. Use this instead of start_time/end_time."
+                    "description": "Relative time range for data query. Examples: '30min', '1h', '1d', '3d', '1w', '1m'/'1mo' (month). Use 'min' for minutes, 'm'/'mo' for months."
                 },
                 "start_time": {
                     "type": "number",

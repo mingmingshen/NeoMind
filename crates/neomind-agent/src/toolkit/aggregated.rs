@@ -20,8 +20,7 @@
 use std::collections::HashMap;
 
 /// Parse relative time range string to seconds.
-/// Supports: "30min", "1h", "6h", "1d", "3d", "1w", "2w", "1m" (month), "3m"
-/// Also supports: "30m" as alias for "30min"
+/// Supports: "30min", "1h", "6h", "1d", "3d", "1w", "2w", "1m"/"1mo" (month), "3m"
 pub(crate) fn parse_time_range(input: &str) -> Option<i64> {
     let s = input.trim().to_lowercase();
     let (num, unit) = if let Some(rest) = s.strip_suffix("min") {
@@ -32,8 +31,10 @@ pub(crate) fn parse_time_range(input: &str) -> Option<i64> {
         (rest.parse::<i64>().ok()?, "d")
     } else if let Some(rest) = s.strip_suffix('w') {
         (rest.parse::<i64>().ok()?, "w")
+    } else if let Some(rest) = s.strip_suffix("mo") {
+        (rest.parse::<i64>().ok()?, "mo") // explicit month suffix
     } else if let Some(rest) = s.strip_suffix('m') {
-        (rest.parse::<i64>().ok()?, "m") // could be minutes or months
+        (rest.parse::<i64>().ok()?, "m") // m = months (use min for minutes)
     } else {
         return None;
     };
@@ -42,8 +43,8 @@ pub(crate) fn parse_time_range(input: &str) -> Option<i64> {
         "h" => num * 3600,
         "d" => num * 86400,
         "w" => num * 7 * 86400,
-        "m" if num < 60 => num * 60,       // small number → minutes
-        "m" => num * 30 * 86400,            // large number → months (approx)
+        "m" => num * 30 * 86400,            // m = months
+        "mo" => num * 30 * 86400,           // mo = months (explicit)
         _ => return None,
     })
 }
@@ -214,7 +215,7 @@ Important:
                 },
                 "time_range": {
                     "type": "string",
-                    "description": "Relative time range for history query. Examples: '30min', '1h', '6h', '1d', '3d', '1w', '2w'. Default: '24h'. Use this instead of start_time/end_time."
+                    "description": "Relative time range for history query. Examples: '30min', '1h', '6h', '1d', '3d', '1w', '2w', '1m' (month), '3mo' (months). Default: '24h'. Use 'min' for minutes, 'm' or 'mo' for months."
                 },
                 "start_time": {
                     "type": "number",
@@ -2187,7 +2188,7 @@ RULE "Safety Check" WHEN (smoke_01.level > 50) AND (temp_01.temperature > 60) DO
                 },
                 "time_range": {
                     "type": "string",
-                    "description": "Relative time range for history query. Examples: '30min', '1h', '1d', '1w', '2w'. Use this instead of start_time/end_time."
+                    "description": "Relative time range for history query. Examples: '30min', '1h', '1d', '1w', '2w', '1m'/'1mo' (month). Use 'min' for minutes, 'm'/'mo' for months."
                 },
                 "start_time": {
                     "type": "number",
@@ -2640,7 +2641,7 @@ Tips:
                 },
                 "time_range": {
                     "type": "string",
-                    "description": "Relative time range for listing messages. Examples: '30min', '1h', '1d', '3d', '1w'. Use when user asks about messages in a time period."
+                    "description": "Relative time range for listing messages. Examples: '30min', '1h', '1d', '3d', '1w', '1m'/'1mo' (month). Use 'min' for minutes, 'm'/'mo' for months."
                 },
                 "limit": {
                     "type": "number",

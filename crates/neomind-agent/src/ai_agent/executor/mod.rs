@@ -73,11 +73,7 @@ struct RoundData {
 
 struct ToolLoopOutput {
     final_text: String,
-    /// Whether final_text is a generic fallback (no LLM response) vs real output
-    is_generic_fallback: bool,
     all_tool_results: Vec<crate::toolkit::ToolResult>,
-    /// Text the LLM produced between tool calls (thinking/reasoning)
-    all_reasoning_texts: Vec<String>,
     /// (thought, tool_calls) per round
     round_data_list_raw: Vec<(Option<String>, Vec<ToolCallRecord>)>,
 }
@@ -104,7 +100,7 @@ impl ToolLoopConfig {
 
     fn focused_plus(agent: &AiAgent) -> Self {
         Self {
-            max_rounds: agent.max_chain_depth.max(1).min(10),
+            max_rounds: agent.max_chain_depth.max(1).min(30),
             recommended_tools: Some(Self::build_focused_recommended_tools(agent)),
             is_focused_plus: true,
         }
@@ -479,16 +475,29 @@ impl AgentExecutor {
     /// Filter tool definitions based on agent's allowed_tools config.
     ///
     /// Uses cached definitions directly — no JSON round-trip.
+    /// Sanitizes tool names for OpenAI-compatible API compatibility
+    /// (replacing `.` and `:` with `_`) and returns a reverse mapping
+    /// so tool calls from the LLM can be routed back to the correct tool.
     fn filter_tools(
         registry: &crate::toolkit::registry::ToolRegistry,
         tool_config: &Option<AgentToolConfig>,
-    ) -> Vec<neomind_core::llm::backend::ToolDefinition> {
+    ) -> (
+        Vec<neomind_core::llm::backend::ToolDefinition>,
+        std::collections::HashMap<String, String>,
+    ) {
+        use neomind_core::llm::backend::sanitize_tool_name;
+
         let defs = registry.definitions();
+        let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
         let to_tool_def =
-            |d: &crate::toolkit::tool::ToolDefinition| -> neomind_core::llm::backend::ToolDefinition {
+            |d: &crate::toolkit::tool::ToolDefinition, map: &mut std::collections::HashMap<String, String>| -> neomind_core::llm::backend::ToolDefinition {
+                let sanitized = sanitize_tool_name(&d.name);
+                if sanitized != d.name {
+                    map.entry(sanitized.clone()).or_insert_with(|| d.name.clone());
+                }
                 neomind_core::llm::backend::ToolDefinition {
-                    name: d.name.clone(),
+                    name: sanitized,
                     description: d.description.clone(),
                     parameters: d.parameters.clone(),
                 }
@@ -497,7 +506,7 @@ impl AgentExecutor {
         // Both Focused and Free get the same tool set.
         // Focused JSON path: execute_decisions whitelist enforces scope.
         // Free mode (tool calling): all tools available, agent decides what to use.
-        match tool_config {
+        let filtered = match tool_config {
             Some(config) if !config.allowed_tools.is_empty() => {
                 let allowed: std::collections::HashSet<&str> = config
                     .allowed_tools
@@ -507,11 +516,13 @@ impl AgentExecutor {
 
                 defs.iter()
                     .filter(|d| allowed.contains(d.name.as_str()))
-                    .map(to_tool_def)
+                    .map(|d| to_tool_def(d, &mut name_map))
                     .collect()
             }
-            _ => defs.iter().map(to_tool_def).collect(),
-        }
+            _ => defs.iter().map(|d| to_tool_def(d, &mut name_map)).collect(),
+        };
+
+        (filtered, name_map)
     }
 
     /// Build the system prompt for tool-calling (Free) mode.
@@ -865,12 +876,20 @@ impl AgentExecutor {
         messages: &mut Vec<Message>,
         execution_id: &str,
         max_rounds: usize,
+        tool_name_map: &std::collections::HashMap<String, String>,
     ) -> ToolLoopOutput {
         use crate::agent::tool_parser::parse_tool_calls;
         use neomind_core::llm::backend::{GenerationParams, LlmInput};
+
+        // Build reverse map: original_name → sanitized_name
+        // Used to convert tool result names back to what the LLM expects
+        let original_to_sanitized: std::collections::HashMap<String, String> = tool_name_map
+            .iter()
+            .map(|(sanitized, original)| (original.clone(), sanitized.clone()))
+            .collect();
+
         let mut all_tool_results: Vec<crate::toolkit::ToolResult> = Vec::new();
         let mut round_data_list: Vec<RoundData> = Vec::new();
-        let mut all_reasoning_texts: Vec<String> = Vec::new();
         let mut final_text = String::new();
         let mut step_num = 1u32;
         // Accumulate skill tool results separately — inject as concise prompt, not full history
@@ -880,8 +899,8 @@ impl AgentExecutor {
         // Cross-round tool deduplication: track tool signatures to avoid re-executing
         // the same tool with the same arguments across rounds.
         let mut all_executed_signatures: HashSet<String> = HashSet::new();
-        // Duplicate round detection: track tool names per round to detect loops.
-        let mut prev_round_tool_names: Vec<String> = Vec::new();
+        // Duplicate round detection: track tool signatures per round to detect loops.
+        let mut prev_round_tool_names: String = String::new();
         let mut consecutive_duplicate_rounds: usize = 0;
 
         for round in 0..max_rounds {
@@ -1034,33 +1053,52 @@ impl AgentExecutor {
                 continue;
             }
 
-            // Collect LLM's reasoning text (what it said before/during tool calls)
-            if !remaining_text.is_empty() {
-                all_reasoning_texts.push(remaining_text.clone());
-            }
 
             // --- Duplicate round detection ---
-            let current_round_names = {
-                let mut names: Vec<String> = tool_calls
+            // Compare tool signatures (name + key arguments) to detect truly stuck loops.
+            // Only counts as duplicate when the FULL round's tool set AND arguments match
+            // the previous round — different arguments to the same tool are NOT duplicates.
+            let current_round_sig = {
+                let mut sigs: Vec<String> = tool_calls
                     .iter()
-                    .map(|tc| tc.name.clone())
+                    .map(|tc| {
+                        let action = tc.arguments.get("action")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let mut sig = format!("{}|{}", tc.name, action);
+                        for param in &["device_id", "metric", "agent_id", "rule_id", "extension_id"] {
+                            if let Some(val) = tc.arguments.get(*param).and_then(|v| v.as_str()) {
+                                sig.push_str(&format!("|{}", val));
+                            }
+                        }
+                        sig
+                    })
                     .collect();
-                names.sort();
-                names
+                sigs.sort();
+                sigs.join(";;")
             };
-            if current_round_names == prev_round_tool_names {
+            if current_round_sig == prev_round_tool_names {
                 consecutive_duplicate_rounds += 1;
+                tracing::info!(
+                    agent_id = %agent.id,
+                    round = round + 1,
+                    consecutive_duplicates = consecutive_duplicate_rounds,
+                    "Duplicate tool round detected (same tools + args) — continuing, cross-round dedup handles re-execution"
+                );
             } else {
                 consecutive_duplicate_rounds = 0;
             }
-            prev_round_tool_names = current_round_names;
+            prev_round_tool_names = current_round_sig;
 
-            if consecutive_duplicate_rounds >= 2 {
+            // Only stop after 5+ consecutive identical rounds — the LLM is truly stuck.
+            // Repeated tool calls in complex tasks are normal; cross-round dedup above
+            // already prevents actual re-execution.
+            if consecutive_duplicate_rounds >= 5 {
                 tracing::warn!(
                     agent_id = %agent.id,
                     round = round + 1,
                     consecutive_duplicates = consecutive_duplicate_rounds,
-                    "Detected duplicate tool round loop, terminating early"
+                    "LLM stuck in loop (5+ consecutive duplicate rounds), terminating"
                 );
                 self.send_thinking(
                     &agent.id,
@@ -1101,12 +1139,19 @@ impl AgentExecutor {
             ));
 
             // Execute tools with concurrency limiting via semaphore
+            // Map sanitized tool names back to original names for registry lookup
             let calls: Vec<_> = tool_calls
                 .iter()
-                .map(|tc| crate::toolkit::registry::ToolCall {
-                    name: tc.name.clone(),
-                    args: tc.arguments.clone(),
-                    id: Some(tc.id.clone()),
+                .map(|tc| {
+                    let original_name = tool_name_map
+                        .get(&tc.name)
+                        .cloned()
+                        .unwrap_or_else(|| tc.name.clone());
+                    crate::toolkit::registry::ToolCall {
+                        name: original_name,
+                        args: tc.arguments.clone(),
+                        id: Some(tc.id.clone()),
+                    }
                 })
                 .collect();
             let results = if calls.is_empty() {
@@ -1123,13 +1168,21 @@ impl AgentExecutor {
                         .get(i)
                         .cloned()
                         .unwrap_or_else(|| crate::toolkit::ToolResult {
-                            name: tc.name.clone(),
+                            name: tool_name_map
+                                .get(&tc.name)
+                                .cloned()
+                                .unwrap_or_else(|| tc.name.clone()),
                             result: Err(crate::toolkit::error::ToolError::Execution(
                                 "No result".to_string(),
                             )),
                         });
+                // Use original name for history display
+                let display_name = tool_name_map
+                    .get(&tc.name)
+                    .cloned()
+                    .unwrap_or_else(|| tc.name.clone());
                 round_tool_calls.push(ToolCallRecord {
-                    name: tc.name.clone(),
+                    name: display_name,
                     input: tc.arguments.clone(),
                     result,
                 });
@@ -1177,7 +1230,12 @@ impl AgentExecutor {
                         Content::text("Skill guide retrieved and will be used as reference."),
                     ));
                 } else {
-                    messages.push(Message::tool_result(&result.name, &result_text));
+                    // Use sanitized name for LLM message so it matches what the LLM used
+                    let msg_name = original_to_sanitized
+                        .get(&result.name)
+                        .cloned()
+                        .unwrap_or_else(|| result.name.clone());
+                    messages.push(Message::tool_result(&msg_name, &result_text));
                 }
 
                 // Send thinking event for each tool result
@@ -1302,20 +1360,13 @@ impl AgentExecutor {
             }
         }
 
-        // is_generic_fallback: true when the post-loop summary was needed (and may or
-        // may not have succeeded). This tells build_tool_result to prefer tool-derived
-        // fallbacks over the raw final_text when the latter is unhelpful.
-        let is_generic_fallback = needs_summary;
-
         if final_text.is_empty() {
             final_text = "Completed tool execution rounds.".to_string();
         }
 
         ToolLoopOutput {
             final_text,
-            is_generic_fallback,
             all_tool_results,
-            all_reasoning_texts,
             round_data_list_raw: round_data_list
                 .into_iter()
                 .map(|rd| (rd.thought, rd.tool_calls))
@@ -1344,33 +1395,31 @@ impl AgentExecutor {
     ) -> (DecisionProcess, neomind_storage::ExecutionResult) {
         let ToolLoopOutput {
             final_text,
-            is_generic_fallback: _,
             all_tool_results,
-            all_reasoning_texts: _,
             round_data_list_raw,
         } = loop_output;
 
         // === Free mode: LLM natural language response is the primary output ===
         // Tool calls already executed all actions. The final_text is the LLM's
         // summary/analysis for the user — use it directly as conclusion.
-        // situation_analysis is a concise tool execution summary for context.
 
-        // --- situation_analysis: concise tool execution summary ---
-        let situation_analysis = if all_tool_results.is_empty() {
-            "No tools were executed.".to_string()
-        } else {
-            let tool_names: Vec<&str> = all_tool_results
-                .iter()
-                .map(|r| r.name.as_str())
-                .collect();
-            let success_count = all_tool_results.iter().filter(|r| r.result.is_ok()).count();
-            format!(
-                "Executed {} tool operation(s) ({} successful): {}",
-                all_tool_results.len(),
-                success_count,
-                tool_names.join(", ")
-            )
-        };
+        // --- situation_analysis: use the LLM's first-round thinking as context summary ---
+        // This is more meaningful than "Executed N tool operations" because it tells
+        // the user what the agent was thinking/trying to accomplish.
+        let situation_analysis = round_data_list_raw
+            .iter()
+            .find_map(|(thought, _)| thought.as_ref().filter(|t| !t.is_empty()))
+            .cloned()
+            .unwrap_or_else(|| {
+                if all_tool_results.is_empty() {
+                    "No tools were executed.".to_string()
+                } else {
+                    format!(
+                        "Executed {} tool operation(s).",
+                        all_tool_results.len()
+                    )
+                }
+            });
 
         // --- conclusion: LLM's natural language response, directly ---
         let is_generic = final_text.is_empty()
@@ -1550,7 +1599,14 @@ impl AgentExecutor {
             neomind_storage::agents::ExecutionMode::Focused => ToolLoopConfig::focused_plus(agent),
         };
 
-        let filtered_tools = Self::filter_tools(&registry, &agent.tool_config);
+        let (filtered_tools, tool_name_map) = Self::filter_tools(&registry, &agent.tool_config);
+        if !tool_name_map.is_empty() {
+            tracing::debug!(
+                agent_id = %agent.id,
+                tools = ?tool_name_map,
+                "Sanitized tool names for API compatibility"
+            );
+        }
         let system_prompt =
             Self::build_tool_system_prompt(agent, data_collected, invocation_input, &tool_config);
         let mut messages = Self::build_tool_messages(&system_prompt, data_collected);
@@ -1564,6 +1620,7 @@ impl AgentExecutor {
                 &mut messages,
                 execution_id,
                 tool_config.max_rounds,
+                &tool_name_map,
             )
             .await;
 

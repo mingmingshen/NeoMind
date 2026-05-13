@@ -64,13 +64,24 @@ impl ToolRegistry {
     }
 
     /// Get a tool by name.
+    ///
+    /// Falls back to desanitized lookup for extension tools whose names were
+    /// sanitized for API compatibility (e.g., `test_extension_cmd` → `test.extension:cmd`).
     pub fn get(&self, name: &str) -> Option<&DynTool> {
-        self.tools.get(name)
+        if let Some(tool) = self.tools.get(name) {
+            return Some(tool);
+        }
+        // Fallback: try to find a tool whose sanitized name matches the requested name.
+        // This handles the case where the LLM returns a sanitized tool name.
+        self.tools.values().find(|tool| {
+            let sanitized = neomind_core::llm::backend::sanitize_tool_name(tool.name());
+            sanitized == name
+        })
     }
 
-    /// Check if a tool exists.
+    /// Check if a tool exists (with sanitized name fallback).
     pub fn has(&self, name: &str) -> bool {
-        self.tools.contains_key(name)
+        self.tools.contains_key(name) || self.get(name).is_some()
     }
 
     /// List all tool names.

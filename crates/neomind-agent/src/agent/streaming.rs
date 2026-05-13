@@ -1888,6 +1888,7 @@ pub async fn process_stream_events_with_safeguards(
         let mut recently_executed_tools: VecDeque<String> = VecDeque::new();
         // Track tool signatures to detect consecutive duplicate rounds
         let mut prev_round_signatures: Vec<Vec<String>> = Vec::new();
+        let mut prev_round_results: Vec<(String, String)> = Vec::new();
         let mut consecutive_duplicate_rounds: usize = 0;
         // Track ALL tool signatures ever executed to detect repeated tool calls
         // (2B models often re-call already-executed tools despite prompt instructions)
@@ -2456,6 +2457,8 @@ pub async fn process_stream_events_with_safeguards(
 
                 // === DUPLICATE DETECTION ===
                 // Detect consecutive duplicate rounds (same tool calls repeated).
+                // Instead of aborting, reuse previous results so the LLM can continue
+                // reasoning without wasting tokens on re-execution.
                 let mut should_break_for_duplicate = false;
                 {
                     let mut new_tool_signatures: Vec<Vec<String>> = Vec::new();
@@ -2488,21 +2491,29 @@ pub async fn process_stream_events_with_safeguards(
 
                     if is_consecutive_dup {
                         consecutive_duplicate_rounds += 1;
-                        tracing::warn!(
-                            "Consecutive duplicate round detected (count={}/2). Tools: {:?}",
+                        tracing::info!(
+                            "Consecutive duplicate round detected (count={}). Reusing cached results, not re-executing tools.",
                             consecutive_duplicate_rounds,
-                            tool_call_results.iter().map(|(n, _)| n).collect::<Vec<_>>()
                         );
+
+                        // Reuse previous round's results instead of the freshly executed ones.
+                        // This prevents wasting tokens on identical re-executions.
+                        if !prev_round_results.is_empty() {
+                            tool_call_results = prev_round_results.clone();
+                        }
                     } else {
                         consecutive_duplicate_rounds = 0;
                     }
 
                     prev_round_signatures = new_tool_signatures;
+                    // Save this round's results for potential reuse next round
+                    prev_round_results = tool_call_results.clone();
 
-                    // Stop after 2 consecutive identical rounds — the LLM is stuck
-                    if consecutive_duplicate_rounds >= 2 {
+                    // Only break after 5+ consecutive identical rounds — the LLM is truly stuck
+                    if consecutive_duplicate_rounds >= 5 {
                         tracing::warn!(
-                            "LLM stuck in loop (2+ consecutive duplicate rounds). Stopping ReAct loop."
+                            "LLM stuck in loop ({} consecutive duplicate rounds). Stopping ReAct loop.",
+                            consecutive_duplicate_rounds
                         );
                         should_break_for_duplicate = true;
                     }

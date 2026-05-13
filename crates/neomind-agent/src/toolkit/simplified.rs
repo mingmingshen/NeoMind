@@ -287,9 +287,9 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     examples: vec![r#"{"value": 26}"#.to_string(), r#"{"brightness": 80}"#.to_string()],
                 }),
                 ("time_range".to_string(), ParameterInfo {
-                    description: "Relative time range for history (e.g., '30min', '1h', '1d', '2w'). Prefer this over start_time/end_time.".to_string(),
+                    description: "Relative time range for history (e.g., '30min', '1h', '1d', '2w', '1m'/'1mo' for month). Use 'min' for minutes, 'm'/'mo' for months.".to_string(),
                     default: serde_json::json!("24h"),
-                    examples: vec!["30min".to_string(), "1h".to_string(), "1d".to_string(), "2w".to_string()],
+                    examples: vec!["30min".to_string(), "1h".to_string(), "1d".to_string(), "2w".to_string(), "1m".to_string()],
                 }),
                 ("start_time".to_string(), ParameterInfo {
                     description: "Start timestamp for history time range (history action). Unix timestamp in seconds. Default: 1 hour ago".to_string(),
@@ -537,9 +537,9 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     examples: vec!["battery".to_string(), "temperature".to_string()],
                 }),
                 ("time_range".to_string(), ParameterInfo {
-                    description: "Relative time range for history (e.g., '30min', '1h', '1d', '2w'). Prefer this over start_time/end_time.".to_string(),
+                    description: "Relative time range for history (e.g., '30min', '1h', '1d', '2w', '1m'/'1mo' for month). Use 'min' for minutes, 'm'/'mo' for months.".to_string(),
                     default: serde_json::json!("24h"),
-                    examples: vec!["30min".to_string(), "1h".to_string(), "1d".to_string(), "2w".to_string()],
+                    examples: vec!["30min".to_string(), "1h".to_string(), "1d".to_string(), "2w".to_string(), "1m".to_string()],
                 }),
                 ("start_time".to_string(), ParameterInfo {
                     description: "Start timestamp for history range (history action)".to_string(),

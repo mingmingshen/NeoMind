@@ -727,11 +727,24 @@ impl LlmInterface {
     }
 
     /// Set tool definitions for function calling.
+    ///
+    /// Tool names are automatically sanitized for OpenAI-compatible API
+    /// compatibility (e.g., `test.extension:cmd` → `test_extension_cmd`).
+    /// The original names are preserved in a reverse mapping for tool call routing.
     pub async fn set_tool_definitions(
         &self,
         tools: Vec<neomind_core::llm::backend::ToolDefinition>,
     ) {
-        *self.tool_definitions.write().await = tools;
+        use neomind_core::llm::backend::sanitize_tool_name;
+
+        let sanitized: Vec<neomind_core::llm::backend::ToolDefinition> = tools
+            .into_iter()
+            .map(|mut t| {
+                t.name = sanitize_tool_name(&t.name);
+                t
+            })
+            .collect();
+        *self.tool_definitions.write().await = sanitized;
         // Invalidate system prompt cache when tools change
         self.invalidate_prompt_cache().await;
     }
