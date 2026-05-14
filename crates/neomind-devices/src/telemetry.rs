@@ -203,6 +203,11 @@ impl TimeSeriesStorage {
         Ok(())
     }
 
+    /// Flush buffered writes to disk.
+    pub fn flush(&self) -> Result<(), DeviceError> {
+        self.store().flush().map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))
+    }
+
     /// Query data points for a time range
     pub async fn query(
         &self,

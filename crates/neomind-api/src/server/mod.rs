@@ -273,8 +273,8 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     let app = create_router_with_state(state);
 
     let app = app
-        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(30)))
-        .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(60)));
+        .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(20)))
+        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(30)));
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
 

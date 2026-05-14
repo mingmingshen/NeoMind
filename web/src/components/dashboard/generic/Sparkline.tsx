@@ -12,14 +12,12 @@ import { useDataSource } from '@/hooks/useDataSource'
 import { toNumberArray } from '@/design-system/utils/format'
 import { dashboardComponentSize, dashboardCardBase } from '@/design-system/tokens/size'
 import { Skeleton } from '@/components/ui/skeleton'
-
-// Static style constants to avoid re-creation on each render
-const SVG_OVERFLOW_VISIBLE: React.CSSProperties = { overflow: 'visible' }
 import {
   indicatorFontWeight,
   indicatorColors,
   getValueStateColor,
 } from '@/design-system/tokens/indicator'
+
 import type { DataSourceOrList, TelemetryAggregate, TimeWindowType } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
 import { EmptyState, ErrorState } from '../shared'
@@ -30,6 +28,9 @@ import {
   getEffectiveTimeWindow,
   timeWindowToHours,
 } from '@/lib/telemetryTransform'
+
+// Static style constants to avoid re-creation on each render
+const SVG_OVERFLOW_VISIBLE: React.CSSProperties = { overflow: 'visible' }
 
 export interface SparklineProps {
   // Data source configuration

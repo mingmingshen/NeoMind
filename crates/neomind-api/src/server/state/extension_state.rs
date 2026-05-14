@@ -94,6 +94,11 @@ impl ExtensionMetricsStorage {
             .map_err(|e| format!("Storage query failed: {}", e))
     }
 
+    /// Flush buffered writes to disk.
+    pub fn flush(&self) -> Result<(), String> {
+        self.inner.flush().map_err(|e| format!("Storage flush failed: {}", e))
+    }
+
     /// Query the latest value for a metric.
     pub async fn query_latest(
         &self,
@@ -589,6 +594,9 @@ mod tests {
             .write("ext_test", "test_metric", point)
             .await
             .expect("Write failed");
+
+        // Flush write buffer to ensure data is queryable
+        storage.flush().expect("Flush failed");
 
         // Query it back
         let points = storage

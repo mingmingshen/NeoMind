@@ -194,9 +194,6 @@ export const createDashboardSlice: StateCreator<
   // Initialize storage - use API as primary with localStorage fallback for caching
   const storage: DashboardStorage = createDashboardStorage({ type: 'hybrid', cacheEnabled: true })
 
-  // Debounce timer for moveComponent sync (replaces window global)
-  let moveDebounceTimer: ReturnType<typeof setTimeout> | null = null
-
   // Shared debounce for background persistence to reduce write amplification
   let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null
   let pendingSyncDashboard: Dashboard | null = null
@@ -228,13 +225,16 @@ export const createDashboardSlice: StateCreator<
   function handleIdChange(dash: Dashboard, result: { data: Dashboard | null }): void {
     if (result.data && result.data.id !== dash.id) {
       const { dashboards: currentDashboards } = get()
+      const activeDashboardId = get().currentDashboardId
       const newDashboards = currentDashboards.map((d) =>
-        d.id === dash.id ? result.data : d
-      ).filter((d): d is Dashboard => d !== null)
+        d.id === dash.id ? result.data! : d
+      )
       set({
         dashboards: newDashboards,
-        currentDashboard: result.data,
-        currentDashboardId: result.data?.id,
+        // Only update currentDashboard/Id if the user hasn't switched away
+        ...(activeDashboardId === dash.id
+          ? { currentDashboard: result.data, currentDashboardId: result.data.id }
+          : {}),
       })
     }
   }
@@ -481,12 +481,6 @@ export const createDashboardSlice: StateCreator<
 
       // Flush pending debounced sync before switching dashboards
       flushSync()
-
-      // Clear pending move sync when switching dashboards
-      if (moveDebounceTimer) {
-        clearTimeout(moveDebounceTimer)
-        moveDebounceTimer = null
-      }
 
       set({
         currentDashboardId: id,
@@ -754,20 +748,8 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: updatedDashboard,
       })
 
-      // Debounced sync - only sync after 500ms of inactivity
-      // This prevents excessive API calls during drag operations
-      if (moveDebounceTimer) {
-        clearTimeout(moveDebounceTimer)
-      }
-      moveDebounceTimer = setTimeout(() => {
-        storage.sync(updatedDashboard).then((result) => {
-          if (result.data && result.data.id !== updatedDashboard.id) {
-            handleIdChange(updatedDashboard, result)
-          }
-        }).catch((err) => {
-          console.warn('[DashboardSlice] Failed to sync after moveComponent:', err)
-        })
-      }, 500)
+      // Use shared debounced sync (500ms trailing) to coalesce rapid drag events
+      scheduleSync(updatedDashboard)
     },
 
     duplicateComponent(id) {

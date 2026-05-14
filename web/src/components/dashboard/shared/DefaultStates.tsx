@@ -6,7 +6,7 @@
  */
 
 import { cn } from '@/lib/utils'
-import { RefreshCw, AlertCircle } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { dashboardComponentSize, dashboardCardBase, type DashboardComponentSize } from '@/design-system/tokens/size'
 
@@ -126,7 +126,7 @@ export function LoadingState({ size = 'md', className }: StateProps) {
 
   return (
     <div className={cn(dashboardCardBase, sizeConfig.padding, className)}>
-      <div className={cn('w-full rounded-md bg-muted')} style={{ height }} />
+      <div className={cn('w-full rounded-md bg-muted animate-pulse')} style={{ height }} />
     </div>
   )
 }

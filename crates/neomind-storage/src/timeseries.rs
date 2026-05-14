@@ -1362,12 +1362,10 @@ impl TimeSeriesStore {
             }
         }
 
-        // Cold-start fallback: skip if metrics_info was never populated (still warming up)
-        if !self.metrics_initialized.load(Ordering::Acquire) {
-            return Ok(Vec::new());
-        }
-
-        // Cold-start fallback: range scan from database
+        // Cold-start fallback: range scan from database.
+        // (No metrics_initialized guard: the first call after server restart
+        // with existing data must always reach this scan. We cache the result
+        // in the fast path for subsequent calls.)
         let read_txn = self.db.begin_read()?;
 
         // Handle case where table doesn't exist yet (no data has been written)
@@ -1392,6 +1390,9 @@ impl TimeSeriesStore {
             let (_, metric, _) = key.value();
             metrics.insert(metric.to_string());
         }
+
+        // Mark as initialized so future calls use the fast path
+        self.metrics_initialized.store(true, Ordering::Release);
 
         Ok(metrics.into_iter().collect())
     }
@@ -1472,6 +1473,9 @@ impl TimeSeriesStore {
             "list_all_metrics_grouped: rebuilt index with {} source groups",
             grouped.len()
         );
+
+        // Mark metrics as initialized so list_metrics() can use the fast path
+        self.metrics_initialized.store(true, Ordering::Release);
 
         Ok(grouped)
     }
