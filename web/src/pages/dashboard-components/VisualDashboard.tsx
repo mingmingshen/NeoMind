@@ -2148,7 +2148,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   // Only recalculate when actual component data changes (detected via stableKey)
   // Note: handleOpenConfig, removeComponent, duplicateComponent are NOT dependencies
   // because they don't affect the rendered output structure, only event handlers
-  // devices.length is included to ensure re-render when devices are initially loaded
+  // devices.length is deliberately excluded from deps — it changes every 3s due to
+  // batch polling and is NOT used in this callback (component data comes via useDataSource).
   // IMPORTANT: Use currentDashboard from props (reactive) to ensure updates are reflected
   const gridComponents = useMemo(() => {
     return (currentDashboard?.components ?? []).map((component) => {
@@ -2191,7 +2192,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         ),
       }
     }) ?? []
-  }, [componentsStableKey, configVersion, editMode, devicesLength, isMobile])
+  }, [componentsStableKey, configVersion, editMode, isMobile])
 
   // Track initial config load to avoid unnecessary updates
   const initialConfigRef = useRef<any>(null)
