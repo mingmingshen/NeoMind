@@ -211,7 +211,10 @@ export const DashboardGrid = memo(function DashboardGrid({
   return (
     <div ref={containerRef} className={cn('w-full', className)}>
       <style>{`
-        .react-grid-layout { display: block !important; }
+        .react-grid-layout {
+          display: block !important;
+          isolation: isolate;
+        }
         .react-grid-item {
           ${editMode && transitionsEnabled ? 'transition: transform 200ms ease;' : 'transition: none !important;'}
           -webkit-backface-visibility: hidden;
@@ -230,9 +233,9 @@ export const DashboardGrid = memo(function DashboardGrid({
         .dashboard-item {
           width: 100%; height: 100%;
           display: flex; flex-direction: column; overflow: hidden;
-          contain: layout paint;
-          -webkit-transform: translate3d(0,0,0);
-          transform: translate3d(0,0,0);
+          content-visibility: auto;
+          contain-intrinsic-size: 200px;
+          overflow-anchor: none;
           -webkit-backface-visibility: hidden;
           backface-visibility: hidden;
         }
