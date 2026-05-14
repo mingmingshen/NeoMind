@@ -49,6 +49,14 @@ export class DynamicComponentRegistry {
     loadingPromises: {},
   }
 
+  // Track preload <link> elements for cleanup
+  private preloadElements: Map<string, HTMLLinkElement> = new Map()
+
+  // Concurrency control for script loading (max 3 simultaneous loads)
+  private static readonly MAX_CONCURRENT_LOADS = 3
+  private static loadingQueue: Array<() => void> = []
+  private static activeLoads = 0
+
   /**
    * Check if a component type is a dynamic (extension) component
    */
@@ -92,6 +100,9 @@ export class DynamicComponentRegistry {
     if (def.global_name) {
       this.state.extensions[extensionId].globalNames.add(def.global_name)
     }
+
+    // Preload the bundle for faster loading
+    this.preloadBundles(def)
   }
 
   /**
@@ -122,6 +133,17 @@ export class DynamicComponentRegistry {
 
     // Remove extension index
     delete this.state.extensions[extensionId]
+
+    // Remove preload links for this extension's components
+    for (const type of extInfo.componentTypes) {
+      const link = this.preloadElements.get(type)
+      if (link) {
+        try {
+          document.head.removeChild(link)
+        } catch {}
+        this.preloadElements.delete(type)
+      }
+    }
   }
 
   /**
@@ -189,7 +211,14 @@ export class DynamicComponentRegistry {
           return null
         }
 
-        const Component = await this.loadViaScriptTag(bundleUrl, globalName, def.export_name)
+        // Acquire a concurrency slot before loading the script
+        await this.acquireSlot()
+        let Component: unknown
+        try {
+          Component = await this.loadViaScriptTag(bundleUrl, globalName, def.export_name)
+        } finally {
+          this.releaseSlot()
+        }
 
         // Check if Component is valid - can be a function, forwardRef, memo, or object containing a function
         if (!Component) {
@@ -405,6 +434,14 @@ export class DynamicComponentRegistry {
    * Clear all registered components (for testing)
    */
   clear(): void {
+    // Remove all preload links
+    for (const [, link] of this.preloadElements) {
+      try {
+        document.head.removeChild(link)
+      } catch {}
+    }
+    this.preloadElements.clear()
+
     this.state = {
       components: {},
       extensions: {},
@@ -480,6 +517,8 @@ export class DynamicComponentRegistry {
       }
 
       if (!exists) {
+        // Preload bundle for new component
+        this.preloadBundles(comp)
         added++
       } else {
         unchanged++
@@ -529,6 +568,52 @@ export class DynamicComponentRegistry {
   /**
    * Get the current state (for debugging)
    */
+  /**
+   * Preload an extension bundle via <link rel="preload">
+   * The browser downloads the bundle preemptively so that when loadViaScriptTag()
+   * later injects the <script> tag, it hits the browser cache.
+   */
+  private preloadBundles(def: DashboardComponentDto): void {
+    // Only preload IIFE bundles served from the API
+    if (!def.bundle_url?.startsWith('/api/') || !def.global_name) return
+    // Don't duplicate preloads for the same component type
+    if (this.preloadElements.has(def.type)) return
+    const link = document.createElement('link')
+    link.rel = 'preload'
+    link.href = def.bundle_url
+    link.as = 'script'
+    document.head.appendChild(link)
+    this.preloadElements.set(def.type, link)
+  }
+
+  /**
+   * Acquire a slot in the concurrent loading queue.
+   * Waits if all slots are occupied.
+   */
+  private acquireSlot(): Promise<void> {
+    return new Promise((resolve) => {
+      if (DynamicComponentRegistry.activeLoads < DynamicComponentRegistry.MAX_CONCURRENT_LOADS) {
+        DynamicComponentRegistry.activeLoads++
+        resolve()
+      } else {
+        DynamicComponentRegistry.loadingQueue.push(resolve)
+      }
+    })
+  }
+
+  /**
+   * Release a slot in the concurrent loading queue.
+   * Dequeues the next waiting load if any.
+   */
+  private releaseSlot(): void {
+    if (DynamicComponentRegistry.loadingQueue.length > 0) {
+      const next = DynamicComponentRegistry.loadingQueue.shift()
+      if (next) next()
+    } else {
+      DynamicComponentRegistry.activeLoads--
+    }
+  }
+
   getState(): Readonly<DynamicRegistryState> {
     return this.state
   }

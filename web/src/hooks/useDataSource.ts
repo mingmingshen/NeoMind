@@ -222,6 +222,17 @@ const SYSTEM_CACHE_TTL = 5000 // 5 seconds cache
 const MAX_SYSTEM_CACHE_SIZE = 20  // Limit cache size
 
 /**
+ * Cache for extension data
+ */
+interface ExtensionCacheEntry {
+  data: unknown
+  timestamp: number
+}
+const extensionDataCache = new Map<string, ExtensionCacheEntry>()
+const EXTENSION_CACHE_TTL = 5000 // 5 seconds cache
+const MAX_EXTENSION_CACHE_SIZE = 50  // Limit cache size
+
+/**
  * Fetch system stats for a specific metric
  */
 async function fetchSystemStats(
@@ -669,6 +680,24 @@ function cleanupTelemetryCache() {
     for (const key of systemStatsCache.keys()) {
       if (removed >= entriesToRemove) break
       systemStatsCache.delete(key)
+      removed++
+    }
+  }
+
+  // Clean expired extension data cache entries
+  for (const [key, value] of extensionDataCache.entries()) {
+    if (now - value.timestamp > EXTENSION_CACHE_TTL) {
+      extensionDataCache.delete(key)
+    }
+  }
+
+  // Enforce extension cache size limit
+  if (extensionDataCache.size > MAX_EXTENSION_CACHE_SIZE) {
+    const entriesToRemove = extensionDataCache.size - MAX_EXTENSION_CACHE_SIZE
+    let removed = 0
+    for (const key of extensionDataCache.keys()) {
+      if (removed >= entriesToRemove) break
+      extensionDataCache.delete(key)
       removed++
     }
   }
@@ -3000,6 +3029,13 @@ export function useDataSource<T = unknown>(
               return { data: null }
             }
 
+            // Check shared cache for extension data (5s TTL)
+            const extCacheKey = `${extensionId}|${metric}`
+            const extCached = extensionDataCache.get(extCacheKey)
+            if (extCached && Date.now() - extCached.timestamp < EXTENSION_CACHE_TTL) {
+              return { data: extCached.data, success: true }
+            }
+
             // Check if this is a V2 data source (format: command:field)
             const isV2 = metric.includes(':')
             const parts = metric.split(':')
@@ -3072,6 +3108,14 @@ export function useDataSource<T = unknown>(
             }
           })
         )
+
+        // Cache successful extension results for shared use
+        extensionDataSources.forEach((ds, i) => {
+          if (ds.extensionId && ds.extensionMetric && results[i]?.success) {
+            const key = `${ds.extensionId}|${ds.extensionMetric}`
+            extensionDataCache.set(key, { data: results[i].data, timestamp: Date.now() })
+          }
+        })
 
         // Combine results
         let finalData: unknown
