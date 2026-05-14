@@ -17,6 +17,7 @@ import { useEvents } from '@/hooks/useEvents'
 import { useStore } from '@/store'
 import { toNumberArray, isEmpty, isValidNumber } from '@/design-system/utils/format'
 import { logError } from '@/lib/errors'
+import { createStableKey } from '@/lib/stable-key'
 
 // ============================================================================
 // Types
@@ -982,19 +983,6 @@ function hasCurrentValuesChanged(
   }
 
   return false
-}
-
-/**
- * Helper function to create stable JSON key for memoization
- * Handles objects with potentially different property order
- */
-function createStableKey(obj: unknown): string {
-  if (obj === null || obj === undefined) return ''
-  if (typeof obj !== 'object') return String(obj)
-  if (Array.isArray(obj)) return '[' + obj.map(createStableKey).join(',') + ']'
-  const sortedKeys = Object.keys(obj).sort()
-  const recordObj = obj as Record<string, unknown>
-  return '{' + sortedKeys.map(k => `"${k}":${createStableKey(recordObj[k])}`).join(',') + '}'
 }
 
 export function useDataSource<T = unknown>(

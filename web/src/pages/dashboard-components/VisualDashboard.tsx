@@ -18,6 +18,7 @@ import { logError } from '@/lib/errors'
 import { fetchCache } from '@/lib/utils/async'
 import { cn } from '@/lib/utils'
 import { chartColorsHex } from '@/design-system/tokens/color'
+import { createStableKey as createStableCacheKey } from '@/lib/stable-key'
 import { useIsMobile, useTouchHover } from '@/hooks/useMobile'
 import {
   LayoutDashboard,
@@ -232,18 +233,6 @@ import ComponentRenderer from '@/components/dashboard/registry/ComponentRenderer
 const telemetryCache: Record<string, any> = {}
 const MAX_CACHE_SIZE = 100  // Prevent memory leaks by limiting cache size
 const cacheKeys: string[] = []  // Track insertion order for LRU eviction
-
-/**
- * Create stable cache key from object (handles property order variations)
- */
-function createStableCacheKey(obj: unknown): string {
-  if (obj === null || obj === undefined) return ''
-  if (typeof obj !== 'object') return String(obj)
-  if (Array.isArray(obj)) return '[' + obj.map(createStableCacheKey).join(',') + ']'
-  const sortedKeys = Object.keys(obj).sort()
-  const recordObj = obj as Record<string, unknown>
-  return '{' + sortedKeys.map((k) => `"${k}":${createStableCacheKey(recordObj[k])}`).join(',') + '}'
-}
 
 /**
  * Convert device data source to telemetry with caching to prevent infinite re-renders

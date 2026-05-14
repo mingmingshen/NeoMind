@@ -16,15 +16,7 @@ import ComponentRenderer from '@/components/dashboard/registry/ComponentRenderer
 import { getComponentMeta } from '@/components/dashboard/registry/registry'
 import type { DashboardComponent, DataSource, ImplementedComponentType } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
-
-// Helper function to create stable key for comparison
-function createStableKey(obj: any): string {
-  if (obj === null || obj === undefined) return ''
-  if (typeof obj !== 'object') return String(obj)
-  if (Array.isArray(obj)) return '[' + obj.map(createStableKey).join(',') + ']'
-  const sortedKeys = Object.keys(obj).sort()
-  return '{' + sortedKeys.map(k => `"${k}":${createStableKey(obj[k])}`).join(',') + '}'
-}
+import { createStableKey } from '@/lib/stable-key'
 
 /**
  * Create a simple key to detect dataSource changes
