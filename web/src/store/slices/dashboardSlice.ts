@@ -217,22 +217,26 @@ export const createDashboardSlice: StateCreator<
 
       try {
         const result = await storage.sync(dash)
-        // Handle ID change if server assigned a new ID
-        if (result.data && result.data.id !== dash.id) {
-          const { dashboards: currentDashboards, currentDashboardId } = get()
-          const newDashboards = currentDashboards.map((d) =>
-            d.id === dash.id ? result.data : d
-          ).filter((d): d is Dashboard => d !== null)
-          set({
-            dashboards: newDashboards,
-            currentDashboard: result.data,
-            currentDashboardId: result.data?.id,
-          })
-        }
+        handleIdChange(dash, result)
       } catch (err) {
         console.warn('[DashboardSlice] Background sync failed:', err)
       }
     }, 500)
+  }
+
+  /** Handle server-assigned ID change in sync result */
+  function handleIdChange(dash: Dashboard, result: { data: Dashboard | null }): void {
+    if (result.data && result.data.id !== dash.id) {
+      const { dashboards: currentDashboards } = get()
+      const newDashboards = currentDashboards.map((d) =>
+        d.id === dash.id ? result.data : d
+      ).filter((d): d is Dashboard => d !== null)
+      set({
+        dashboards: newDashboards,
+        currentDashboard: result.data,
+        currentDashboardId: result.data?.id,
+      })
+    }
   }
 
   /** Flush any pending debounced sync immediately */
@@ -244,18 +248,10 @@ export const createDashboardSlice: StateCreator<
       pendingSyncDashboard = null
       if (dash) {
         storage.sync(dash).then((result) => {
-          if (result.data && result.data.id !== dash.id) {
-            const { dashboards: currentDashboards } = get()
-            const newDashboards = currentDashboards.map((d) =>
-              d.id === dash.id ? result.data : d
-            ).filter((d): d is Dashboard => d !== null)
-            set({
-              dashboards: newDashboards,
-              currentDashboard: result.data,
-              currentDashboardId: result.data?.id,
-            })
-          }
-        }).catch(() => {})
+          handleIdChange(dash, result)
+        }).catch((err) => {
+          console.warn('[DashboardSlice] flushSync failed:', err)
+        })
       }
     }
   }
@@ -766,17 +762,7 @@ export const createDashboardSlice: StateCreator<
       moveDebounceTimer = setTimeout(() => {
         storage.sync(updatedDashboard).then((result) => {
           if (result.data && result.data.id !== updatedDashboard.id) {
-            // Server assigned a new ID - update state
-
-            const { dashboards: currentDashboards } = get()
-            const newDashboards = currentDashboards.map((d) =>
-              d.id === updatedDashboard.id ? result.data : d
-            ).filter((d): d is Dashboard => d !== null)
-            set({
-              dashboards: newDashboards,
-              currentDashboard: result.data,
-              currentDashboardId: result.data?.id,
-            })
+            handleIdChange(updatedDashboard, result)
           }
         }).catch((err) => {
           console.warn('[DashboardSlice] Failed to sync after moveComponent:', err)

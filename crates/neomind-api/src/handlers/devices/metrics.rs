@@ -62,6 +62,8 @@ pub async fn query_metric_handler(
 
     let data_points: Vec<serde_json::Value> = points
         .iter()
+        // Storage layer already limits results when query.limit is Some;
+        // this take() is a safety cap for the limit=None case (max 1000 points)
         .take(query.limit.unwrap_or(1000))
         .map(|(timestamp, value)| {
             json!({

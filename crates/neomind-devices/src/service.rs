@@ -1497,9 +1497,9 @@ impl DeviceService {
                     }
                 }
                 Err(e) => {
-                    tracing::debug!(
-                        "Failed to batch get latest values for {}/{}: {}",
-                        device_id, template.device_type, e
+                    tracing::warn!(
+                        "Failed to batch get latest values for {}/{} ({} metrics): {}",
+                        device_id, template.device_type, metric_names.len(), e
                     );
                 }
             }
@@ -1519,9 +1519,9 @@ impl DeviceService {
                             }
                         }
                         Err(e) => {
-                            tracing::debug!(
-                                "Failed to batch get latest values for {}: {}",
-                                device_id, e
+                            tracing::warn!(
+                                "Failed to batch get latest values for {} ({} metrics): {}",
+                                device_id, metric_names.len(), e
                             );
                         }
                     }
