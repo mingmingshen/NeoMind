@@ -194,8 +194,71 @@ export const createDashboardSlice: StateCreator<
   // Initialize storage - use API as primary with localStorage fallback for caching
   const storage: DashboardStorage = createDashboardStorage({ type: 'hybrid', cacheEnabled: true })
 
-  // Closure-scoped debounce timer for moveComponent sync (replaces window global)
+  // Debounce timer for moveComponent sync (replaces window global)
   let moveDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  // Shared debounce for background persistence to reduce write amplification
+  let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingSyncDashboard: Dashboard | null = null
+
+  /**
+   * Schedule a debounced sync (500ms trailing). Only the latest dashboard state is synced,
+   * which reduces write amplification during rapid operations like component updates.
+   * Centralizes ID-change handling to eliminate boilerplate.
+   */
+  function scheduleSync(dashboard: Dashboard): void {
+    pendingSyncDashboard = dashboard
+    if (syncDebounceTimer) clearTimeout(syncDebounceTimer)
+    syncDebounceTimer = setTimeout(async () => {
+      syncDebounceTimer = null
+      const dash = pendingSyncDashboard
+      pendingSyncDashboard = null
+      if (!dash) return
+
+      try {
+        const result = await storage.sync(dash)
+        // Handle ID change if server assigned a new ID
+        if (result.data && result.data.id !== dash.id) {
+          const { dashboards: currentDashboards, currentDashboardId } = get()
+          const newDashboards = currentDashboards.map((d) =>
+            d.id === dash.id ? result.data : d
+          ).filter((d): d is Dashboard => d !== null)
+          set({
+            dashboards: newDashboards,
+            currentDashboard: result.data,
+            currentDashboardId: result.data?.id,
+          })
+        }
+      } catch (err) {
+        console.warn('[DashboardSlice] Background sync failed:', err)
+      }
+    }, 500)
+  }
+
+  /** Flush any pending debounced sync immediately */
+  function flushSync(): void {
+    if (syncDebounceTimer) {
+      clearTimeout(syncDebounceTimer)
+      syncDebounceTimer = null
+      const dash = pendingSyncDashboard
+      pendingSyncDashboard = null
+      if (dash) {
+        storage.sync(dash).then((result) => {
+          if (result.data && result.data.id !== dash.id) {
+            const { dashboards: currentDashboards } = get()
+            const newDashboards = currentDashboards.map((d) =>
+              d.id === dash.id ? result.data : d
+            ).filter((d): d is Dashboard => d !== null)
+            set({
+              dashboards: newDashboards,
+              currentDashboard: result.data,
+              currentDashboardId: result.data?.id,
+            })
+          }
+        }).catch(() => {})
+      }
+    }
+  }
 
   return {
     // Initial state
@@ -362,10 +425,8 @@ export const createDashboardSlice: StateCreator<
           console.warn('[DashboardSlice] Background sync failed:', err)
         }
       } else {
-        // For server dashboards, sync in background
-        storage.sync(localDashboard).catch((err) => {
-          console.warn('[DashboardSlice] Background sync failed:', err)
-        })
+        // For server dashboards, debounced sync
+        scheduleSync(localDashboard)
       }
 
       return localDashboard.id
@@ -388,13 +449,10 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: currentDashboardId === id ? currentDashboard : get().currentDashboard,
       })
 
-      // Persist to storage in background
+      // Debounced sync
       const targetDashboard = updatedDashboards.find(d => d.id === id)
       if (targetDashboard) {
-        storage.sync(targetDashboard).catch((err) => {
-          // Sync failed - but state is already saved locally
-          console.warn('[DashboardSlice] Background sync failed:', err)
-        })
+        scheduleSync(targetDashboard)
       }
     },
 
@@ -424,6 +482,9 @@ export const createDashboardSlice: StateCreator<
       const dashboard = id
         ? dashboards.find((d) => d.id === id) || null
         : dashboards[0] || null
+
+      // Flush pending debounced sync before switching dashboards
+      flushSync()
 
       // Clear pending move sync when switching dashboards
       if (moveDebounceTimer) {
@@ -508,24 +569,8 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: updatedDashboard,
       })
 
-      // Sync to storage and handle ID change if dashboard was just created on server
-      storage.sync(updatedDashboard).then((result) => {
-        if (result.data && result.data.id !== updatedDashboard.id) {
-          // Server assigned a new ID - update state
-          
-          const { dashboards: currentDashboards, currentDashboardId: currId } = get()
-          const newDashboards = currentDashboards.map((d) =>
-            d.id === updatedDashboard.id ? result.data : d
-          ).filter((d): d is Dashboard => d !== null)
-          set({
-            dashboards: newDashboards,
-            currentDashboard: result.data,
-            currentDashboardId: result.data?.id,
-          })
-        }
-      }).catch((err) => {
-        console.warn('[DashboardSlice] Failed to sync after addComponent:', err)
-      })
+      // Debounced sync
+      scheduleSync(updatedDashboard)
     },
 
     updateComponent(id, updates, persist = true) {
@@ -561,23 +606,7 @@ export const createDashboardSlice: StateCreator<
 
       // Only persist if persist=true (default for backward compatibility)
       if (persist) {
-        storage.sync(updatedDashboard).then((result) => {
-          if (result.data && result.data.id !== updatedDashboard.id) {
-            // Server assigned a new ID - update state
-            
-            const { dashboards: currentDashboards } = get()
-            const newDashboards = currentDashboards.map((d) =>
-              d.id === updatedDashboard.id ? result.data : d
-            ).filter((d): d is Dashboard => d !== null)
-            set({
-              dashboards: newDashboards,
-              currentDashboard: result.data,
-              currentDashboardId: result.data?.id,
-            })
-          }
-        }).catch((err) => {
-          console.warn('[DashboardSlice] Failed to sync after updateComponent:', err)
-        })
+        scheduleSync(updatedDashboard)
       }
     },
 
@@ -606,9 +635,8 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: updatedDashboard,
       })
 
-      storage.sync(updatedDashboard).catch((err) => {
-        console.warn('[DashboardSlice] Failed to sync after batchUpdatePositions:', err)
-      })
+      // Debounced sync
+      scheduleSync(updatedDashboard)
     },
 
     removeComponent(id) {
@@ -640,22 +668,8 @@ export const createDashboardSlice: StateCreator<
         configComponentId: newConfigComponentId,
       })
 
-      // Sync and handle ID change if dashboard was just created on server
-      storage.sync(updatedDashboard).then((result) => {
-        if (result.data && result.data.id !== updatedDashboard.id) {
-          // Server assigned a new ID - update state
-          
-          const { dashboards: currentDashboards } = get()
-          const newDashboards = currentDashboards.map((d) =>
-            d.id === updatedDashboard.id ? result.data : d
-          ).filter((d): d is Dashboard => d !== null)
-          set({
-            dashboards: newDashboards,
-            currentDashboard: result.data,
-            currentDashboardId: result.data?.id,
-          })
-        }
-      }).catch(() => {})
+      // Debounced sync
+      scheduleSync(updatedDashboard)
     },
 
     removeComponentsByExtension(extensionId: string) {
@@ -707,8 +721,8 @@ export const createDashboardSlice: StateCreator<
         configComponentId: newConfigComponentId,
       })
 
-      // Persist changes
-      storage.sync(updatedDashboard).catch(() => {})
+      // Debounced sync
+      scheduleSync(updatedDashboard)
     },
 
     moveComponent(id, position) {
@@ -801,22 +815,8 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: updatedDashboard,
       })
 
-      // Sync and handle ID change if dashboard was just created on server
-      storage.sync(updatedDashboard).then((result) => {
-        if (result.data && result.data.id !== updatedDashboard.id) {
-          // Server assigned a new ID - update state
-          
-          const { dashboards: currentDashboards } = get()
-          const newDashboards = currentDashboards.map((d) =>
-            d.id === updatedDashboard.id ? result.data : d
-          ).filter((d): d is Dashboard => d !== null)
-          set({
-            dashboards: newDashboards,
-            currentDashboard: result.data,
-            currentDashboardId: result.data?.id,
-          })
-        }
-      }).catch(() => {})
+      // Debounced sync
+      scheduleSync(updatedDashboard)
     },
 
     // ========================================================================
@@ -896,22 +896,8 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: newDashboard,
       }))
 
-      // Sync and handle ID change if dashboard was created on server
-      storage.sync(newDashboard).then((result) => {
-        if (result.data && result.data.id !== newDashboard.id) {
-          // Server assigned a new ID - update state
-          
-          const { dashboards: currentDashboards } = get()
-          const newDashboards = currentDashboards.map((d) =>
-            d.id === newDashboard.id ? result.data : d
-          ).filter((d): d is Dashboard => d !== null)
-          set({
-            dashboards: newDashboards,
-            currentDashboard: result.data,
-            currentDashboardId: result.data?.id,
-          })
-        }
-      }).catch(() => {})
+      // Debounced sync — if user creates multiple templates rapidly, only the last syncs
+      scheduleSync(newDashboard)
     },
   }
 }
