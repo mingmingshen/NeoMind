@@ -11,6 +11,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 
@@ -480,6 +481,8 @@ pub struct TimeSeriesStore {
     path: String,
     /// Write-behind buffer for batching single-point writes.
     write_buffer: WriteBuffer,
+    /// Whether metrics_info has been populated at least once (prevents cold-start full scan).
+    metrics_initialized: AtomicBool,
 }
 
 /// Global time series store singleton (thread-safe).
@@ -529,6 +532,7 @@ impl TimeSeriesStore {
             cache_ttl: config.cache_ttl,
             path: path_str,
             write_buffer: WriteBuffer::new(config.write_buffer_size),
+            metrics_initialized: AtomicBool::new(false),
         });
 
         // Start background flush task
@@ -709,6 +713,9 @@ impl TimeSeriesStore {
                 point_count: points.len() as u64,
             });
 
+        // Mark metrics_info as populated (prevents cold-start full scan in list_metrics)
+        self.metrics_initialized.store(true, Ordering::Release);
+
         Ok(())
     }
 
@@ -767,6 +774,9 @@ impl TimeSeriesStore {
                 last_update: last_ts,
                 point_count: points.len() as u64,
             });
+
+        // Mark metrics_info as populated (prevents cold-start full scan in list_metrics)
+        self.metrics_initialized.store(true, Ordering::Release);
 
         Ok(())
     }
@@ -1350,6 +1360,11 @@ impl TimeSeriesStore {
                 metrics.sort();
                 return Ok(metrics);
             }
+        }
+
+        // Cold-start fallback: skip if metrics_info was never populated (still warming up)
+        if !self.metrics_initialized.load(Ordering::Acquire) {
+            return Ok(Vec::new());
         }
 
         // Cold-start fallback: range scan from database
