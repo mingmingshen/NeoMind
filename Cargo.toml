@@ -17,7 +17,7 @@ exclude = ["web"]
 resolver = "2"
 
 [workspace.package]
-version = "0.7.5"
+version = "0.7.6"
 edition = "2021"
 rust-version = "1.85"
 authors = ["NeoMind Contributors"]
@@ -43,7 +43,7 @@ urlencoding = "2.1"
 
 # UI (Web)
 axum = "0.7"
-tower-http = { version = "0.6", features = ["fs", "cors", "compression-gzip", "limit"] }
+tower-http = { version = "0.6", features = ["fs", "cors", "compression-gzip", "limit", "timeout"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }

@@ -30,7 +30,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::http::StatusCode;
 use neomind_storage::ExtensionStore;
+use tower_http::timeout::{RequestBodyTimeoutLayer, TimeoutLayer};
 
 /// Start the web server on a specific address.
 /// This is the main entry point for running the server.
@@ -269,6 +271,10 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     });
 
     let app = create_router_with_state(state);
+
+    let app = app
+        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(30)))
+        .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(60)));
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
 
