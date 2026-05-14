@@ -430,7 +430,7 @@ pub async fn get_device_current_handler(
             match state
                 .devices
                 .service
-                .query_telemetry(&device_id, &metric_name, Some(now - 3600), Some(now))
+                .query_telemetry(&device_id, &metric_name, Some(now - 3600), Some(now), Some(1))
                 .await
             {
                 Ok(points) => points.last().map(|(_, v)| super::metrics::value_to_json(v)),

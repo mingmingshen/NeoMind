@@ -56,7 +56,7 @@ pub async fn query_metric_handler(
     let points = state
         .devices
         .service
-        .query_telemetry(&device_id, &metric, Some(start), Some(end))
+        .query_telemetry(&device_id, &metric, Some(start), Some(end), query.limit)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to query metric: {:?}", e)))?;
 

@@ -289,7 +289,7 @@ pub async fn get_device_telemetry_handler(
                     };
 
                     let (points, total) = match device_service
-                        .query_telemetry(&device_id, &metric_name, Some(effective_start), Some(end))
+                        .query_telemetry(&device_id, &metric_name, Some(effective_start), Some(end), None)
                         .await
                     {
                         Ok(all_points) => {

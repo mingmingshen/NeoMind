@@ -1391,6 +1391,7 @@ impl DeviceService {
         metric_name: &str,
         start_time: Option<i64>,
         end_time: Option<i64>,
+        limit: Option<usize>,
     ) -> Result<Vec<(i64, MetricValue)>, DeviceError> {
         // Get device config and template
         let (_config, template) = self.get_device_with_template(device_id).await?;
@@ -1429,7 +1430,7 @@ impl DeviceService {
             let end = end_time.unwrap_or(i64::MAX);
 
             let points = storage
-                .query(device_id, metric_name, start, end)
+                .query_limited(device_id, metric_name, start, end, limit)
                 .await
                 .map_err(|e| {
                     tracing::error!(
