@@ -12,6 +12,9 @@ import { useDataSource } from '@/hooks/useDataSource'
 import { toNumberArray } from '@/design-system/utils/format'
 import { dashboardComponentSize, dashboardCardBase } from '@/design-system/tokens/size'
 import { Skeleton } from '@/components/ui/skeleton'
+
+// Static style constants to avoid re-creation on each render
+const SVG_OVERFLOW_VISIBLE: React.CSSProperties = { overflow: 'visible' }
 import {
   indicatorFontWeight,
   indicatorColors,
@@ -184,7 +187,7 @@ const ResponsiveSparkline = memo(function ResponsiveSparkline({
         height="100%"
         viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
         preserveAspectRatio="none"
-        style={{ overflow: 'visible' }}
+        style={SVG_OVERFLOW_VISIBLE}
       >
         <defs>
           <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
@@ -269,6 +272,84 @@ const ResponsiveSparkline = memo(function ResponsiveSparkline({
     </div>
   )
 })
+
+/**
+ * Props for the extracted SparklineContent component
+ */
+interface SparklineContentProps {
+  title?: string
+  showValue?: boolean
+  stats: { latestValue: number; dataMax: number; effectiveMax: number }
+  sizeConfig: { labelText: string; valueText: string }
+  chartHeight: number
+  width: number
+  chartData: number[]
+  lineColor: string
+  fill?: boolean
+  strokeWidth?: number
+  curved?: boolean
+  showThreshold?: boolean
+  effectiveThreshold?: number
+  thresholdColor?: string
+}
+
+/**
+ * Extracted top-level SparklineContent to prevent remount on each render.
+ * Wrapped in React.memo so re-renders are skipped when props haven't changed.
+ */
+const SparklineContent = memo(function SparklineContent({
+  title,
+  showValue,
+  stats,
+  sizeConfig,
+  chartHeight,
+  width,
+  chartData,
+  lineColor,
+  fill,
+  strokeWidth,
+  curved,
+  showThreshold,
+  effectiveThreshold,
+  thresholdColor,
+}: SparklineContentProps) {
+  return (
+    <>
+      {/* Header with title and value */}
+      {(title || showValue) && (
+        <div className="flex items-center justify-between mb-2">
+          {title && (
+            <span className={cn(indicatorFontWeight.title, 'text-muted-foreground', sizeConfig.labelText)}>
+              {title}
+            </span>
+          )}
+          {showValue && (
+            <span className={cn(indicatorFontWeight.value, 'text-foreground tabular-nums', sizeConfig.valueText)}>
+              {stats.latestValue.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Chart */}
+      <div className={cn('flex-1 min-h-0', 'overflow-visible')} style={{ height: chartHeight }}>
+        <ResponsiveSparkline
+          data={chartData}
+          width={width}
+          height={chartHeight}
+          color={lineColor}
+          fill={fill}
+          strokeWidth={strokeWidth}
+          curved={curved}
+          showThreshold={showThreshold}
+          threshold={effectiveThreshold}
+          thresholdColor={thresholdColor || indicatorColors.neutral.base}
+        />
+      </div>
+    </>
+  )
+})
+
 
 export function Sparkline({
   dataSource,
@@ -436,42 +517,6 @@ export function Sparkline({
     return color || indicatorColors.primary.base
   }, [color, colorMode, stats.latestValue, stats.effectiveMax])
 
-  // Inner content component
-  const SparklineContent = () => (
-    <>
-      {/* Header with title and value */}
-      {(title || showValue) && (
-        <div className="flex items-center justify-between mb-2">
-          {title && (
-            <span className={cn(indicatorFontWeight.title, 'text-muted-foreground', sizeConfig.labelText)}>
-              {title}
-            </span>
-          )}
-          {showValue && (
-            <span className={cn(indicatorFontWeight.value, 'text-foreground tabular-nums', sizeConfig.valueText)}>
-              {stats.latestValue.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Chart */}
-      <div className={cn('flex-1 min-h-0', 'overflow-visible')} style={{ height: chartHeight }}>
-        <ResponsiveSparkline
-          data={chartData}
-          width={width}
-          height={chartHeight}
-          color={lineColor}
-          fill={fill}
-          strokeWidth={strokeWidth}
-          curved={curved}
-          showThreshold={showThreshold}
-          threshold={effectiveThreshold}
-          thresholdColor={thresholdColor || indicatorColors.neutral.base}
-        />
-      </div>
-    </>
-  )
 
   // Error state - use unified ErrorState (skip in editMode to keep preview visible)
   if (error && !editMode) {
@@ -500,7 +545,22 @@ export function Sparkline({
   if (showCard) {
     return (
       <div className={cn(dashboardCardBase, 'flex flex-col', sizeConfig.padding, className)}>
-        <SparklineContent />
+        <SparklineContent
+          title={title}
+          showValue={showValue}
+          stats={stats}
+          sizeConfig={sizeConfig}
+          chartHeight={chartHeight}
+          width={width}
+          chartData={chartData}
+          lineColor={lineColor}
+          fill={fill}
+          strokeWidth={strokeWidth}
+          curved={curved}
+          showThreshold={showThreshold}
+          effectiveThreshold={effectiveThreshold}
+          thresholdColor={thresholdColor}
+        />
       </div>
     )
   }
@@ -508,7 +568,22 @@ export function Sparkline({
   // Non-card mode (when used in custom layouts)
   return (
     <div className={cn('flex flex-col w-full', className)}>
-      <SparklineContent />
+      <SparklineContent
+          title={title}
+          showValue={showValue}
+          stats={stats}
+          sizeConfig={sizeConfig}
+          chartHeight={chartHeight}
+          width={width}
+          chartData={chartData}
+          lineColor={lineColor}
+          fill={fill}
+          strokeWidth={strokeWidth}
+          curved={curved}
+          showThreshold={showThreshold}
+          effectiveThreshold={effectiveThreshold}
+          thresholdColor={thresholdColor}
+        />
     </div>
   )
 }
