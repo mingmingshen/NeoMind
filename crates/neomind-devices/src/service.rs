@@ -1486,47 +1486,43 @@ impl DeviceService {
 
         // If template has defined metrics, query those specifically
         if !template.metrics.is_empty() {
-            for metric in &template.metrics {
-                // Use latest() to get the true latest value (no time range limitation)
-                match storage.latest(device_id, &metric.name).await {
-                    Ok(Some(point)) => {
-                        result.insert(metric.name.clone(), point.value);
+            // Batch: fetch all template metrics in a single redb transaction
+            let metric_names: Vec<&str> = template.metrics.iter()
+                .map(|m| m.name.as_str())
+                .collect();
+            match storage.latest_batch(device_id, &metric_names).await {
+                Ok(batch) => {
+                    for (name, point) in batch {
+                        result.insert(name, point.value);
                     }
-                    Ok(None) => {
-                        // No data available yet for this metric
-                    }
-                    Err(e) => {
-                        tracing::debug!(
-                            "Failed to get latest value for {}/{}: {}",
-                            device_id,
-                            metric.name,
-                            e
-                        );
-                    }
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        "Failed to batch get latest values for {}/{}: {}",
+                        device_id, template.device_type, e
+                    );
                 }
             }
         } else {
             // Simple mode: no metrics defined - return all available metrics from storage
-            // List all metrics for this device and get the latest value for each
+            // List all metrics for this device and batch-fetch the latest values
             if let Ok(all_metrics) = storage.list_metrics(device_id).await {
-                for metric_name in all_metrics {
-                    if !metric_name.is_empty() {
-                        // Use latest() to get the true latest value (no time range limitation)
-                        match storage.latest(device_id, &metric_name).await {
-                            Ok(Some(point)) => {
-                                result.insert(metric_name.clone(), point.value);
+                let metric_names: Vec<&str> = all_metrics.iter()
+                    .filter(|n| !n.is_empty())
+                    .map(|n| n.as_str())
+                    .collect();
+                if !metric_names.is_empty() {
+                    match storage.latest_batch(device_id, &metric_names).await {
+                        Ok(batch) => {
+                            for (name, point) in batch {
+                                result.insert(name, point.value);
                             }
-                            Ok(None) => {
-                                // No data available yet for this metric
-                            }
-                            Err(e) => {
-                                tracing::debug!(
-                                    "Failed to get latest value for {}/{}: {}",
-                                    device_id,
-                                    metric_name,
-                                    e
-                                );
-                            }
+                        }
+                        Err(e) => {
+                            tracing::debug!(
+                                "Failed to batch get latest values for {}: {}",
+                                device_id, e
+                            );
                         }
                     }
                 }
