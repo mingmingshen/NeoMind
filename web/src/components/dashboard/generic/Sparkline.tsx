@@ -351,7 +351,7 @@ const SparklineContent = memo(function SparklineContent({
 })
 
 
-export function Sparkline({
+function SparklineComponent({
   dataSource,
   data: propData,
   width = 100,
@@ -587,3 +587,5 @@ export function Sparkline({
     </div>
   )
 }
+
+export const Sparkline = memo(SparklineComponent)
