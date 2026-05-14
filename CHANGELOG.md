@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.7.6] - 2026-05-14
+
+### Performance
+
+- **WKWebView dashboard rendering** — Replaced `translate3d(0,0,0)` with `content-visibility: auto` + `isolation: isolate` + `contain: layout paint` to prevent GPU compositing layer exhaustion during loading/scrolling, eliminating white screen flash on Tauri macOS
+- **Sparkline render optimization** — Extracted `SparklineContent` to top-level `memo`-wrapped component to prevent remount on each parent render; wrapped `Sparkline` export in `React.memo` to skip reconciliation when props unchanged
+- **DashboardGrid render optimization** — Removed `devicesLength` from `gridComponents` useMemo dependency to prevent 3-second full rebuild on unrelated device changes
+- **Limit push-down to storage** — Added `limit: Option<usize>` parameter through `query_telemetry` → `query_limited` → `query_range` chain, capping data allocation at the storage layer instead of filtering after full read
+- **N+1 query elimination** — Replaced per-metric `latest()` loops with single-transaction `latest_batch` in `get_current_metrics`, reducing storage transactions linearly with metric count
+- **Cold-start metrics warmup** — `list_metrics` now caches results in `metrics_info` DashMap after the first cold-start range scan, skipping full-table scans on subsequent calls
+- **Debounced dashboard persistence** — `storage.sync` debounced to 500ms trailing window to coalesce rapid drag/resize events into a single API call
+- **HTTP timeout layers** — Added `RequestBodyTimeoutLayer(20s)` nested inside `TimeoutLayer(30s)` to prevent slow-client DoS while preserving proper LIFO semantics
+- **Code deduplication** — Extracted `createStableKey` utility from 3 duplicate implementations into shared `@/lib/stable-key.ts`
+
+### Fixed
+
+- **Timeout layer ordering** — Swapped `TimeoutLayer(30s)` and `RequestBodyTimeoutLayer(60s)` so the body timeout (20s) fires before the overall request timeout (30s), per Tower LIFO middleware semantics
+- **Cold-start `list_metrics` returning empty** — Removed early-return guard that prevented the fallback range scan from running after server restart; added `metrics_initialized = true` after both `list_metrics` and `list_all_metrics_grouped` fallback scans
+- **`moveComponent` stale closure** — Replaced separate `moveDebounceTimer` with shared `scheduleSync()` mutable-ref pattern to capture latest dashboard state during rapid drag operations
+- **`handleIdChange` dashboard overwrite** — Added `activeDashboardId` guard to only update `currentDashboard`/`currentDashboardId` when the user hasn't switched away during sync
+- **Sparkline const between import blocks** — Moved `SVG_OVERFLOW_VISIBLE` style constant to after all imports to satisfy linter
+- **LoadingState animation** — Restored missing `animate-pulse` on loading skeleton placeholder
+- **Removed unused `AlertCircle` import** from `DefaultStates.tsx`
+- **Flaky test** — Added `flush()` method to `TimeSeriesStorage`/`ExtensionMetricsStorage` and call it in `test_extension_storage_write_query` to drain write buffer before asserting query results
+
+### Chore
+
+- **Gitignore** — Added `.worktrees/` for git worktree isolation
+
 ## [v0.7.5] - 2026-05-13
 
 ### Added
