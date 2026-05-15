@@ -664,6 +664,7 @@ pub struct CloudDeviceType {
 struct CloudDeviceTypesIndex {
     version: String,
     #[serde(default)]
+    #[allow(dead_code)]
     last_updated: Option<String>,
     device_types: Vec<CloudDeviceType>,
 }

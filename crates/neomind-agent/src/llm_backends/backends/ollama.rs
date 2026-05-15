@@ -1000,10 +1000,9 @@ impl LlmRuntime for OllamaRuntime {
                                 buffer.extend_from_slice(&chunk);
 
                                 let mut search_start = 0;
-                                loop {
-                                    if let Some(nl_pos) =
-                                        buffer[search_start..].iter().position(|&b| b == b'\n')
-                                    {
+                                while let Some(nl_pos) =
+                                    buffer[search_start..].iter().position(|&b| b == b'\n')
+                                {
                                         let line_end = search_start + nl_pos;
                                         let line_bytes = &buffer[..line_end];
                                         let line =
@@ -1271,10 +1270,7 @@ impl LlmRuntime for OllamaRuntime {
                                                 return;
                                             }
                                         }
-                                    } else {
-                                        break;
                                     }
-                                }
                             }
                             Err(e) => {
                                 let _ = tx.send(Err(LlmError::Network(e.to_string()))).await;

@@ -176,7 +176,7 @@ fn build_source_options(
 }
 
 /// Fetch latest telemetry values for all collected data sources concurrently.
-async fn populate_latest_values(state: &ServerState, sources: &mut Vec<UnifiedDataSourceInfo>) {
+async fn populate_latest_values(state: &ServerState, sources: &mut [UnifiedDataSourceInfo]) {
     let telemetry = &state.devices.telemetry;
 
     // Build indexed futures for parallel execution

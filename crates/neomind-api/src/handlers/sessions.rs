@@ -23,6 +23,7 @@ use neomind_storage::{PendingStreamState, StreamStage};
 #[derive(Debug, Clone)]
 struct StreamEvent {
     json: String,
+    #[allow(dead_code)]
     session_id: String,
 }
 

@@ -15,7 +15,6 @@ use futures::{Stream, StreamExt};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use super::planner::types::ExecutionPlan;
 use super::staged::{IntentCategory, IntentClassifier};
 use super::tool_parser::{parse_tool_calls, remove_tool_calls_from_response};
 use super::types::{
@@ -1067,9 +1066,7 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
     }
 
     // Fallback: format the JSON object with key-value pairs (handles extension tools, etc.)
-    if json.is_object() {
-        format_json_data(json, response);
-    } else if json.is_array() {
+    if json.is_object() || json.is_array() {
         format_json_data(json, response);
     } else {
         response.push_str(&format!("**[OK]** {} completed.\n", tool_name));
@@ -1262,29 +1259,12 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
     response
 }
 
-/// Emit plan events from an ExecutionPlan through the event channel.
-pub fn emit_plan_events(
-    plan: &ExecutionPlan,
-    tx: &tokio::sync::mpsc::Sender<super::types::AgentEvent>,
-) {
-    let _ = tx.send(super::types::AgentEvent::ExecutionPlanCreated {
-        plan: plan.clone(),
-        session_id: None,
-    });
-}
-
 /// Result of a single tool execution with metadata
 struct ToolExecutionResult {
     _name: String,
     arguments: serde_json::Value,
     result: std::result::Result<crate::toolkit::ToolOutput, crate::toolkit::ToolError>,
 }
-
-/// === ANTHROPIC-STYLE IMPROVEMENT: Tool Result Clearing for Streaming ===
-///
-/// Compacts old tool result messages into concise summaries.
-/// This follows Anthropic's guidance for context engineering.
-#[allow(dead_code)]
 
 /// === IMPROVED: Context Window with CompactionConfig ===
 ///
@@ -1295,6 +1275,7 @@ struct ToolExecutionResult {
 /// 4. Always keep recent messages for context continuity
 ///
 /// The `max_tokens` parameter allows dynamic context sizing based on the model's actual capacity.
+#[allow(dead_code)]
 pub(crate) fn build_context_window(
     messages: &[AgentMessage],
     max_tokens: usize,

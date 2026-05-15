@@ -684,7 +684,7 @@ impl DeviceTool {
 
         if let Some(m) = metric {
             let mut data = storage
-                .query_limited(&device_id, m, start_time, end_time, Some(limit))
+                .query_limited(&format!("device:{}", device_id), m, start_time, end_time, Some(limit))
                 .await
                 .map_err(|e| ToolError::Execution(e.to_string()))?;
 
@@ -707,7 +707,7 @@ impl DeviceTool {
                         }) {
                             let resolved = matched_def.name.clone();
                             if let Ok(d) = storage
-                                .query_limited(&device_id, &resolved, start_time, end_time, Some(limit))
+                                .query_limited(&format!("device:{}", device_id), &resolved, start_time, end_time, Some(limit))
                                 .await
                             {
                                 data = d;
@@ -722,7 +722,7 @@ impl DeviceTool {
             // data point regardless of time range. This ensures we always return
             // something useful even if the time range didn't capture any data.
             if data.is_empty() {
-                if let Ok(Some(latest_point)) = storage.latest(&device_id, &resolved_metric).await {
+                if let Ok(Some(latest_point)) = storage.latest(&format!("device:{}", device_id), &resolved_metric).await {
                     tracing::info!(
                         "Time range query returned empty, using latest point (timestamp={})",
                         latest_point.timestamp
@@ -1116,7 +1116,7 @@ impl DeviceTool {
         };
 
         storage
-            .write(&device_id, metric, point)
+            .write(&format!("device:{}", device_id), metric, point)
             .await
             .map_err(|e| ToolError::Execution(format!("Failed to write metric to device. {}", e)))?;
 
@@ -3289,9 +3289,7 @@ impl TransformTool {
     fn parse_scope(scope_str: &str) -> std::result::Result<String, String> {
         if scope_str == "global" {
             Ok("global".to_string())
-        } else if scope_str.starts_with("device_type:") {
-            Ok(scope_str.to_string())
-        } else if scope_str.starts_with("device:") {
+        } else if scope_str.starts_with("device_type:") || scope_str.starts_with("device:") {
             Ok(scope_str.to_string())
         } else {
             Err(format!(

@@ -100,7 +100,7 @@ impl ToolLoopConfig {
 
     fn focused_plus(agent: &AiAgent) -> Self {
         Self {
-            max_rounds: agent.max_chain_depth.max(1).min(30),
+            max_rounds: agent.max_chain_depth.clamp(1, 30),
             recommended_tools: Some(Self::build_focused_recommended_tools(agent)),
             is_focused_plus: true,
         }
@@ -204,7 +204,7 @@ fn build_parameters_schema(
 /// the most recent messages are always preserved.
 ///
 /// This operates directly on `Vec<Message>` used by the executor tool loop.
-fn compact_executor_messages(messages: &mut Vec<Message>, keep_recent: usize) {
+fn compact_executor_messages(messages: &mut [Message], keep_recent: usize) {
     // Threshold: if we have more than keep_recent * 2 non-system messages, compact.
     let non_system_count = messages
         .iter()
@@ -367,21 +367,10 @@ pub struct AgentExecutor {
     tool_concurrency: Arc<Semaphore>,
 }
 
-/// Calculate relevance score for a conversation turn based on current context.
-///
-/// Scoring factors (inspired by MemoryOS heat-based approach):
-/// - Time decay (30%): exp(-0.03 * age_hours) - recent turns score higher
-/// - Success reference (20%): successful turns are more valuable
-/// - Device overlap (30%): turns involving same devices are more relevant
-/// - Trigger similarity (20%): same trigger type suggests similar context
-///
-/// Returns a score between 0.0 (irrelevant) and 1.0 (highly relevant).
-
 /// Parse the LLM's final text response to extract situation_analysis, conclusion, and confidence.
 ///
 /// Expects a JSON block like: ```json\n{"situation_analysis":"...","conclusion":"...","confidence":0.8}\n```
 /// Falls back to sensible defaults if parsing fails.
-
 impl AgentExecutor {
     /// Publish an event to the event bus (no-op if no bus is configured).
     async fn publish_event(&self, event: NeoMindEvent) {
@@ -1432,9 +1421,9 @@ impl AgentExecutor {
             // Fallback: summarize tool results when LLM didn't produce text
             let tool_summary: Vec<String> = all_tool_results
                 .iter()
-                .filter_map(|r| match &r.result {
-                    Ok(output) => Some(summarize_tool_output(&output.data, &r.name)),
-                    Err(e) => Some(format!("{} failed: {}", r.name, e)),
+                .map(|r| match &r.result {
+                    Ok(output) => summarize_tool_output(&output.data, &r.name),
+                    Err(e) => format!("{} failed: {}", r.name, e),
                 })
                 .collect();
             tool_summary.join("; ") + "."

@@ -1180,7 +1180,7 @@ impl LargeDataCache {
             let items: Vec<String> = arr
                 .iter()
                 .take(10)
-                .filter_map(|item: &serde_json::Value| {
+                .map(|item: &serde_json::Value| {
                     let name = name_keys
                         .iter()
                         .find_map(|k| item.get(*k).and_then(|v| v.as_str()))
@@ -1189,7 +1189,7 @@ impl LargeDataCache {
                         .iter()
                         .find_map(|k| item.get(*k).and_then(|v| v.as_str()))
                         .unwrap_or("?");
-                    Some(format!("{}({})", name, id))
+                    format!("{}({})", name, id)
                 })
                 .collect();
             if items.is_empty() {
@@ -1210,7 +1210,7 @@ impl LargeDataCache {
             let items: Vec<String> = arr
                 .iter()
                 .take(10)
-                .filter_map(|item: &serde_json::Value| {
+                .map(|item: &serde_json::Value| {
                     let title = item
                         .get("title")
                         .or_else(|| item.get("subject"))
@@ -1221,7 +1221,7 @@ impl LargeDataCache {
                         .and_then(|v| v.as_str())
                         .map(|l| format!("[{}]", l))
                         .unwrap_or_default();
-                    Some(format!("{}{}", title, level))
+                    format!("{}{}", title, level)
                 })
                 .collect();
             if items.is_empty() {
@@ -1242,7 +1242,7 @@ impl LargeDataCache {
             let items: Vec<String> = arr
                 .iter()
                 .take(10)
-                .filter_map(|item: &serde_json::Value| {
+                .map(|item: &serde_json::Value| {
                     let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("?");
                     let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("?");
                     let state = item
@@ -1250,7 +1250,7 @@ impl LargeDataCache {
                         .and_then(|v| v.as_str())
                         .map(|s| format!(":{}", s))
                         .unwrap_or_default();
-                    Some(format!("{}({}){}", name, id, state))
+                    format!("{}({}){}", name, id, state)
                 })
                 .collect();
             if items.is_empty() {

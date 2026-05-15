@@ -152,8 +152,8 @@ fn get_wifi_ssid() -> Option<String> {
         {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
-                if line.starts_with("yes:") {
-                    let ssid = line[4..].trim().to_string();
+                if let Some(rest) = line.strip_prefix("yes:") {
+                    let ssid = rest.trim().to_string();
                     if !ssid.is_empty() {
                         return Some(ssid);
                     }

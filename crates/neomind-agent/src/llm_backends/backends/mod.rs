@@ -135,39 +135,28 @@ pub fn create_backend(
 
 /// Get list of available backend types (based on enabled features).
 pub fn available_backends() -> Vec<&'static str> {
-    let mut backends = Vec::new();
-
-    #[cfg(feature = "ollama")]
-    backends.push("ollama");
-
-    #[cfg(feature = "llamacpp")]
-    backends.push("llamacpp");
-
-    #[cfg(feature = "cloud")]
-    backends.push("openai");
-
-    #[cfg(feature = "cloud")]
-    backends.push("anthropic");
-
-    #[cfg(feature = "cloud")]
-    backends.push("google");
-
-    #[cfg(feature = "cloud")]
-    backends.push("xai");
-
-    #[cfg(feature = "cloud")]
-    backends.push("qwen");
-
-    #[cfg(feature = "cloud")]
-    backends.push("deepseek");
-
-    #[cfg(feature = "cloud")]
-    backends.push("glm");
-
-    #[cfg(feature = "cloud")]
-    backends.push("minimax");
-
-    backends
+    vec![
+        #[cfg(feature = "ollama")]
+        "ollama",
+        #[cfg(feature = "llamacpp")]
+        "llamacpp",
+        #[cfg(feature = "cloud")]
+        "openai",
+        #[cfg(feature = "cloud")]
+        "anthropic",
+        #[cfg(feature = "cloud")]
+        "google",
+        #[cfg(feature = "cloud")]
+        "xai",
+        #[cfg(feature = "cloud")]
+        "qwen",
+        #[cfg(feature = "cloud")]
+        "deepseek",
+        #[cfg(feature = "cloud")]
+        "glm",
+        #[cfg(feature = "cloud")]
+        "minimax",
+    ]
 }
 
 #[cfg(test)]
