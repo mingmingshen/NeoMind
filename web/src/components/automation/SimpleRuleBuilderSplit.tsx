@@ -1967,11 +1967,6 @@ function BasicInfoStep({
 
   return (
     <div className="space-y-6 py-4">
-      <div className="text-center mb-6">
-        <h3 className="text-lg font-semibold">{tBuilder('steps.basic')}</h3>
-        <p className="text-sm text-muted-foreground">{tBuilder('steps.basicDesc')}</p>
-      </div>
-
       <div className="space-y-2">
         <Label className="text-sm font-medium">
           {tBuilder('ruleName')} <span className="text-destructive">*</span>
@@ -2118,11 +2113,6 @@ function ConditionStep({
 
   return (
     <div className="space-y-4 py-4">
-      <div className="text-center mb-6">
-        <h3 className="text-lg font-semibold">{tBuilder('triggerType') || '触发配置'}</h3>
-        <p className="text-sm text-muted-foreground">{tBuilder('steps.conditionDesc')}</p>
-      </div>
-
       {/* Trigger Type Selector */}
       <div className="space-y-4 max-w-3xl mx-auto">
         <Label className="text-sm font-medium">{tBuilder('triggerType')}</Label>
@@ -2537,11 +2527,6 @@ function ActionStep({ actions, onActionsChange, devices, deviceTypes, extensions
 
   return (
     <div className="space-y-4 py-4">
-      <div className="text-center mb-6">
-        <h3 className="text-lg font-semibold">{tBuilder('steps.action')}</h3>
-        <p className="text-sm text-muted-foreground">{tBuilder('steps.actionDesc')}</p>
-      </div>
-
       {/* Action Type Buttons */}
       <div className="flex flex-wrap justify-center gap-2 mb-4">
         <ActionTypeButton label={tBuilder('executeCommand')} icon={<Zap className="h-4 w-4" />} onClick={() => addAction('Execute')} />
@@ -2610,11 +2595,6 @@ interface ReviewStepProps {
 function ReviewStep({ name, description, enabled, condition, actions, forDuration, forUnit, previewDSL, t, tBuilder }: ReviewStepProps) {
   return (
     <div className="space-y-6 max-w-3xl mx-auto py-4">
-      <div className="text-center mb-6">
-        <h3 className="text-lg font-semibold">{tBuilder('review.title')}</h3>
-        <p className="text-sm text-muted-foreground">{tBuilder('review.description')}</p>
-      </div>
-
       {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div className={cn(cardPadded, "text-center")}>

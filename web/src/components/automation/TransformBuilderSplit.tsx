@@ -32,6 +32,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  Plus,
   Puzzle,
   FileCode,
   Info,
@@ -1550,11 +1551,6 @@ function BasicInfoStep({
 }: BasicInfoStepProps) {
   return (
     <div className="space-y-6 py-4">
-      <div className="text-center mb-6">
-        <h3 className="text-lg font-semibold">{tBuilder('steps.basic')}</h3>
-        <p className="text-sm text-muted-foreground">{tBuilder('steps.basicDesc')}</p>
-      </div>
-
       {/* Transform Name */}
       <div className="space-y-2">
         <Label className="text-sm font-medium">
@@ -1673,84 +1669,418 @@ function CodeStep({
   t,
   isMobile = false,
 }: CodeStepProps) {
+  // Extension data fetching state (migrated from VariablesPanel)
+  const [extensions, setExtensions] = useState<ExtensionDataSourceGroup[]>([])
+  const [extensionCommands, setExtensionCommands] = useState<ExtensionCommandInfo[]>([])
+  const [loadingExtensions, setLoadingExtensions] = useState(false)
+  const [insertPopoverOpen, setInsertPopoverOpen] = useState(false)
+
+  // Fetch extension data sources when popover opens
+  useEffect(() => {
+    if (!insertPopoverOpen || extensions.length > 0) return
+    const fetchSources = async () => {
+      setLoadingExtensions(true)
+      try {
+        const [allSources, extList] = await Promise.all([
+          api.listAllDataSources(),
+          api.listExtensions()
+        ])
+        const extSources = allSources.filter(
+          (source): source is import('@/types').ExtensionDataSourceInfo =>
+            'extension_id' in source
+        )
+        const groups: Record<string, ExtensionDataSourceGroup> = {}
+        for (const source of extSources) {
+          const key = source.extension_id
+          if (!groups[key]) {
+            const ext = extList.find(e => e.id === source.extension_id)
+            groups[key] = {
+              extension_id: source.extension_id,
+              extension_name: ext?.name || source.extension_id,
+              commands: [],
+            }
+          }
+          const cmdKey = source.command || 'metrics'
+          let cmdGroup = groups[key].commands.find(c => c.command === cmdKey)
+          if (!cmdGroup) {
+            cmdGroup = { command: cmdKey, command_display_name: 'Metrics', fields: [] }
+            groups[key].commands.push(cmdGroup)
+          }
+          cmdGroup.fields.push({
+            field: source.field,
+            display_name: source.display_name,
+            data_type: source.data_type as ExtensionDataType,
+            unit: source.unit,
+          })
+        }
+        setExtensions(Object.values(groups))
+
+        const commands: ExtensionCommandInfo[] = []
+        for (const ext of extList) {
+          for (const cmd of ext.commands || []) {
+            if (cmd.id === 'metrics' || cmd.id === 'get_current') continue
+            const parameters = extractParametersFromSchema(cmd.input_schema)
+            commands.push({
+              extension_id: ext.id,
+              extension_name: ext.name,
+              command_id: cmd.id,
+              command_name: cmd.id,
+              display_name: cmd.display_name || cmd.id,
+              description: cmd.description || '',
+              parameters,
+            })
+          }
+        }
+        setExtensionCommands(commands)
+      } catch (err) {
+        console.error('Failed to load extension data sources:', err)
+      } finally {
+        setLoadingExtensions(false)
+      }
+    }
+    fetchSources()
+  }, [insertPopoverOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Helper: extract parameters from JSON schema (migrated from VariablesPanel)
+  const extractParametersFromSchema = (schema: Record<string, unknown> | undefined): ExtensionCommandInfo['parameters'] => {
+    if (!schema || typeof schema !== 'object') return []
+    const params: ExtensionCommandInfo['parameters'] = []
+    const properties = schema.properties as Record<string, unknown> | undefined
+    const required = (schema.required as string[]) || []
+    if (!properties) return params
+    for (const [name, propSchema] of Object.entries(properties)) {
+      if (typeof propSchema !== 'object' || propSchema === null) continue
+      const prop = propSchema as Record<string, unknown>
+      let dataType = 'string'
+      const type = prop.type as string | undefined
+      if (type === 'number' || type === 'integer') dataType = 'number'
+      else if (type === 'boolean') dataType = 'boolean'
+      else if (type === 'array') dataType = 'array'
+      else if (type === 'object') dataType = 'object'
+      params.push({
+        name,
+        display_name: (prop.title as string) || name,
+        data_type: dataType,
+        required: required.includes(name),
+        default_value: prop.default,
+        description: prop.description as string | undefined,
+      })
+    }
+    return params
+  }
+
+  // Extension source toggle helpers (migrated from VariablesPanel)
+  const isSourceSelected = (extId: string, field: string) =>
+    extensionSources?.some(s => s.extension_id === extId && s.field === field)
+
+  const toggleSource = (extId: string, extName: string, field: string, display: string, dataType: ExtensionDataType, unit: string | undefined) => {
+    const currentSources = extensionSources || []
+    const key = `${extId}/${field}`
+    if (isSourceSelected(extId, field)) {
+      onExtensionSourcesChange(currentSources.filter(s => `${s.extension_id}/${s.field}` !== key))
+    } else {
+      onExtensionSourcesChange([...currentSources, {
+        extension_id: extId,
+        extension_name: extName,
+        command: 'metrics',
+        command_display_name: 'Metrics',
+        field,
+        display_name: display,
+        data_type: dataType,
+        unit,
+      }])
+    }
+  }
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'number': case 'integer': case 'float': return 'text-info'
+      case 'string': return 'text-success'
+      case 'boolean': return 'text-accent-purple'
+      case 'object': return 'text-accent-orange'
+      case 'array': return 'text-accent-cyan'
+      case 'binary': return 'text-warning'
+      default: return 'text-muted-foreground'
+    }
+  }
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'number': case 'integer': case 'float': return '#'
+      case 'string': return '"'
+      case 'boolean': return 'TF'
+      case 'object': return '{}'
+      case 'array': return '[]'
+      case 'binary': return 'BIN'
+      default: return '?'
+    }
+  }
+
+  const handleInvokeCommand = (cmdInfo: ExtensionCommandInfo) => {
+    let paramsCode = '  data: input'
+    if (cmdInfo.parameters.length > 0) {
+      const otherParams = cmdInfo.parameters
+        .filter(p => p.name !== 'data')
+        .map(p => {
+          const comment = p.required ? '' : ` // optional${p.description ? ` - ${p.description}` : ''}`
+          const value = p.default_value !== undefined ? JSON.stringify(p.default_value) : `/* ${p.display_name} */`
+          return `\n  ${p.name}: ${value},${comment}`
+        })
+        .join('')
+      if (otherParams) paramsCode += ',' + otherParams
+    }
+    const hasParams = cmdInfo.parameters.length > 0
+    const resultParam = hasParams ? 'result' : '{ processed: true }'
+    const codeTemplate = `// Call ${cmdInfo.extension_name}: ${cmdInfo.display_name}\n// ${cmdInfo.description || 'Execute extension command'}\nconst ${resultParam} = extensions_invoke('${cmdInfo.extension_id}', '${cmdInfo.command_name}', {\n${paramsCode}\n})\n\nreturn ${resultParam}`
+    onInsertVariable?.(codeTemplate)
+    setInsertPopoverOpen(false)
+  }
+
+  // Grouped selected extension sources for badge display
+  const selectedSourceBadges = useMemo(() => {
+    if (!extensionSources || extensionSources.length === 0) return []
+    const grouped: Record<string, { name: string; count: number }> = {}
+    for (const s of extensionSources) {
+      if (!grouped[s.extension_id]) {
+        grouped[s.extension_id] = { name: s.extension_name, count: 0 }
+      }
+      grouped[s.extension_id].count++
+    }
+    return Object.entries(grouped).map(([id, info]) => ({ id, ...info }))
+  }, [extensionSources])
+
   return (
-    <div className="space-y-6 py-4">
-      {/* Title */}
-      <div className="text-center mb-6">
-        <h3 className="text-lg font-semibold">{tBuilder('steps.code')}</h3>
-        <p className="text-sm text-muted-foreground">{tBuilder('steps.codeDesc')}</p>
-      </div>
-
-      {/* Output Prefix */}
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">{tBuilder('outputPrefix')}</Label>
-        <Input
-          value={outputPrefix}
-          onChange={e => onOutputPrefixChange(e.target.value)}
-          placeholder={tBuilder('outputPrefixPlaceholder')}
-          className={cn(errors.outputPrefix && "border-destructive")}
-        />
-        {errors.outputPrefix && (
-          <p className="text-xs text-destructive">{errors.outputPrefix}</p>
-        )}
-      </div>
-
-      {/* Code Editor Section with Variables Panel */}
-      <div className="space-y-3">
-        {/* Section Header */}
-        <Label className="text-sm font-medium">
-          {tBuilder('codeLabel')}
-        </Label>
-
-        {/* Template Badges */}
-        <div className="flex flex-wrap gap-1.5">
-          {templates.map((tpl) => (
-            <Button
-              key={tpl.key}
-              variant="outline"
-              size="sm"
-              onClick={() => onApplyTemplate(tpl.code)}
-              className="h-7 text-xs px-2"
-            >
-              {tBuilder(tpl.nameKey)}
-            </Button>
-          ))}
-        </div>
-
-        {/* Main Code Editor Area */}
-        <div className={cn(
-          "min-h-[400px]",
-          isMobile ? "flex flex-col gap-3" : "flex gap-3"
-        )}>
-          {/* Left - Variables Panel with integrated Extension selector */}
-          <VariablesPanel
-            deviceTypeMetrics={deviceTypeMetrics}
-            extensionSources={extensionSources}
-            onExtensionSourcesChange={onExtensionSourcesChange}
-            scopeType="global"
-            tBuilder={tBuilder}
-            t={t}
-            onInsertVariable={onInsertVariable}
-            isMobile={isMobile}
-          />
-
-          {/* Right - Code Editor */}
-          <div className={cn(
-            "flex flex-col min-w-0 min-h-0",
-            isMobile ? "w-full" : "flex-1"
-          )}>
-            <CodeEditor
-              value={jsCode}
-              onChange={onCodeChange}
-              minHeight={isMobile ? "300px" : "400px"}
-              maxHeight={isMobile ? "500px" : "600px"}
-              className="flex-1"
-            />
-            {errors.code && (
-              <p className="text-xs text-destructive mt-1">{errors.code}</p>
-            )}
+    <div className="space-y-4 py-4">
+      {/* Unified code editor container */}
+      <div className="rounded-xl border bg-background overflow-hidden">
+        {/* Toolbar */}
+        <div className="border-b px-3 py-2 bg-muted-30">
+          {/* Output Prefix section */}
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-2 flex-1">
+              <Label className="text-xs font-medium whitespace-nowrap text-muted-foreground">{tBuilder('outputPrefix')}</Label>
+              <Input
+                value={outputPrefix}
+                onChange={e => onOutputPrefixChange(e.target.value)}
+                placeholder={tBuilder('outputPrefixPlaceholder')}
+                className={cn(
+                  "h-8 text-sm w-[180px]",
+                  errors.outputPrefix && "border-destructive"
+                )}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">{tBuilder('outputPrefixHint')}</p>
           </div>
+
+          {/* Toolbar row: Template + Insert Data + badges */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Template Select */}
+            <Select onValueChange={(key) => {
+              const tpl = templates.find(t => t.key === key)
+              if (tpl) onApplyTemplate(tpl.code)
+            }}>
+              <SelectTrigger className="w-[160px] h-8 text-sm">
+                <FileCode className="h-4 w-4 mr-1.5 text-muted-foreground" />
+                <SelectValue placeholder={tBuilder('selectTemplate') || 'Template'} />
+              </SelectTrigger>
+              <SelectContent>
+                {templates.map((tpl) => (
+                  <SelectItem key={tpl.key} value={tpl.key}>
+                    {tBuilder(tpl.nameKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Insert Data */}
+            <Popover open={insertPopoverOpen} onOpenChange={setInsertPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="h-8 text-sm font-medium px-3">
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  {tBuilder('insertData') || 'Insert Data'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0" align="start" side="bottom">
+                <Tabs defaultValue="device">
+                  <div className="px-3 pt-3">
+                    <TabsList className="w-full h-8">
+                      <TabsTrigger value="device" className="flex-1 h-7 text-xs">
+                        <Database className="h-3.5 w-3.5 mr-1" />
+                        {tBuilder('device') || 'Device'}
+                      </TabsTrigger>
+                      <TabsTrigger value="extension" className="flex-1 h-7 text-xs">
+                        <Puzzle className="h-3.5 w-3.5 mr-1" />
+                        {tBuilder('extension') || 'Extension'}
+                      </TabsTrigger>
+                      <TabsTrigger value="actions" className="flex-1 h-7 text-xs">
+                        <Zap className="h-3.5 w-3.5 mr-1" />
+                        {tBuilder('extensionActions') || 'Actions'}
+                      </TabsTrigger>
+                    </TabsList>
+                  </div>
+
+                  {/* Device Metrics Tab */}
+                  <TabsContent value="device" className="overflow-y-auto max-h-[280px] p-2 mt-0">
+                    {deviceTypeMetrics && deviceTypeMetrics.length > 0 ? (
+                      <div className="space-y-1">
+                        {deviceTypeMetrics.map((metric, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between bg-background border rounded px-2 py-1.5 hover:bg-muted hover:border-border transition-all cursor-pointer"
+                            onClick={() => {
+                              const safePath = metric.name.split('.').join('?.')
+                              onInsertVariable?.(`input.${safePath}`)
+                              setInsertPopoverOpen(false)
+                            }}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <code className="font-mono text-xs text-info truncate">{metric.name}</code>
+                              {metric.display_name && metric.display_name !== metric.name && (
+                                <span className="text-xs text-muted-foreground truncate">{metric.display_name}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {metric.unit && <span className="text-xs text-muted-foreground">{metric.unit}</span>}
+                              <Badge variant="outline" className="py-0 h-5 px-1.5 text-xs" >
+                                <span className={getTypeColor(metric.data_type)}>{getTypeIcon(metric.data_type)}</span>
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center text-muted-foreground py-8 px-4 text-sm">
+                        <Database className="mx-auto mb-2 opacity-30 h-8 w-8" />
+                        <div>{tBuilder('noVariablesHint')}</div>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  {/* Extension Tab */}
+                  <TabsContent value="extension" className="overflow-y-auto max-h-[280px] p-2 mt-0">
+                    {loadingExtensions ? (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-2" />
+                        <span className="text-sm text-muted-foreground">{t('loading')}</span>
+                      </div>
+                    ) : extensions.length === 0 ? (
+                      <div className="text-center py-6 text-sm text-muted-foreground">
+                        <Puzzle className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                        {tBuilder('noExtensionSources')}
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {extensions.map((ext) => (
+                          <div key={ext.extension_id} className="space-y-1">
+                            <div className="font-medium text-xs flex items-center gap-2 px-1">
+                              <Puzzle className="h-3.5 w-3.5 text-accent-purple" />
+                              {ext.extension_name}
+                            </div>
+                            {ext.commands.map((cmd) => (
+                              <div key={cmd.command} className="ml-5 space-y-0.5">
+                                {cmd.fields.map((field) => (
+                                  <div
+                                    key={field.field}
+                                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted cursor-pointer text-xs"
+                                    onClick={() => {
+                                      toggleSource(ext.extension_id, ext.extension_name, field.field, field.display_name, field.data_type, field.unit)
+                                      onInsertVariable?.(`input.extensions?.${ext.extension_id}?.${field.field}`)
+                                      setInsertPopoverOpen(false)
+                                    }}
+                                  >
+                                    <Checkbox
+                                      checked={isSourceSelected(ext.extension_id, field.field)}
+                                      className="h-3.5 w-3.5 pointer-events-none"
+                                    />
+                                    <span className="text-muted-foreground truncate flex-1">{field.field}</span>
+                                    {field.unit && <span className="text-muted-foreground">({field.unit})</span>}
+                                    <Badge variant="outline" className="py-0 h-4 px-1 text-xs">
+                                      <span className={getTypeColor(field.data_type)}>{getTypeIcon(field.data_type)}</span>
+                                    </Badge>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  {/* Actions Tab */}
+                  <TabsContent value="actions" className="overflow-y-auto max-h-[280px] p-2 mt-0">
+                    {extensionCommands.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {extensionCommands.map((cmd, idx) => (
+                          <div
+                            key={idx}
+                            className="border border-warning rounded-lg overflow-hidden bg-warning-light hover:bg-warning-light cursor-pointer"
+                            onClick={() => handleInvokeCommand(cmd)}
+                          >
+                            <div className="flex items-center justify-between px-2.5 py-1.5">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <Zap className="h-3.5 w-3.5 text-warning shrink-0" />
+                                <div className="min-w-0">
+                                  <div className="text-xs font-medium text-warning truncate">{cmd.display_name}</div>
+                                  <div className="text-xs text-muted-foreground truncate">{cmd.extension_name}</div>
+                                </div>
+                              </div>
+                              <Badge variant="outline" className="text-xs h-5 px-1.5 text-warning border-warning">
+                                {tBuilder('call') || 'Call'}
+                              </Badge>
+                            </div>
+                            {cmd.parameters.length > 0 && (
+                              <div className="px-2.5 pb-1.5 flex flex-wrap gap-1">
+                                {cmd.parameters.map((p, pi) => (
+                                  <span key={pi} className={cn(textNano, "px-1.5 rounded bg-muted")}>
+                                    {p.name}
+                                    {p.required && <span className="text-error ml-0.5">*</span>}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-sm text-muted-foreground">
+                        <Zap className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                        {tBuilder('noExtensionSources')}
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
+              </PopoverContent>
+            </Popover>
+
+            {/* Selected extension source badges */}
+            {selectedSourceBadges.map(({ id, name, count }) => (
+              <Badge key={id} variant="secondary" className="h-6 text-xs gap-1">
+                <Puzzle className="h-3 w-3 text-accent-purple" />
+                {name}
+                <span className="text-muted-foreground">×{count}</span>
+              </Badge>
+            ))}
+          </div>
+
+          {errors.outputPrefix && (
+            <p className="text-xs text-destructive mt-1">{errors.outputPrefix}</p>
+          )}
         </div>
+
+        {/* Code Editor - full width, no border */}
+        <CodeEditor
+          value={jsCode}
+          onChange={onCodeChange}
+          minHeight={isMobile ? "350px" : "500px"}
+          maxHeight={isMobile ? "500px" : "700px"}
+          className="border-0 rounded-none focus-within:ring-0 focus-within:ring-offset-0"
+        />
+        {errors.code && (
+          <div className="px-3 pb-2">
+            <p className="text-xs text-destructive">{errors.code}</p>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1858,11 +2188,6 @@ function TestStep({
 
   return (
     <div className="space-y-6 py-4">
-      <div className="text-center mb-6">
-        <h3 className="text-lg font-semibold">{tBuilder('test.title')}</h3>
-        <p className="text-sm text-muted-foreground">{tBuilder('test.description')}</p>
-      </div>
-
       {/* Summary */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div className={cn(cardPadded, "text-center")}>

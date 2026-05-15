@@ -725,6 +725,8 @@
     "deviceMetrics": "设备指标",
     "extensionDataSources": "扩展数据源",
     "selectSources": "选择数据源",
+    "selectTemplate": "模板",
+    "insertData": "插入数据",
     "noExtensionSources": "暂无可用扩展数据源",
     "noSourcesSelectedHint": "点击「选择数据源」添加扩展数据",
     "noVariablesHint": "暂无可用变量",

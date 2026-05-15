@@ -737,6 +737,8 @@
     "deviceMetrics": "Device Metrics",
     "extensionDataSources": "Extension Data Sources",
     "selectSources": "Select Sources",
+    "selectTemplate": "Template",
+    "insertData": "Insert Data",
     "noExtensionSources": "No extension data sources available",
     "noSourcesSelectedHint": "Click 'Select Sources' to add extension data",
     "noVariablesHint": "No variables available",
