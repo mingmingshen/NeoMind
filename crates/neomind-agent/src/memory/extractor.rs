@@ -14,18 +14,15 @@ const fn default_importance() -> u8 {
 /// Action to take when persisting a memory
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum MemoryAction {
     /// Append as a new memory entry
+    #[default]
     Append,
     /// Merge with existing similar memories (targets contain keywords to match)
     Merge { targets: Vec<String> },
 }
 
-impl Default for MemoryAction {
-    fn default() -> Self {
-        Self::Append
-    }
-}
 
 /// A candidate memory entry extracted by LLM
 #[derive(Debug, Clone, Serialize, Deserialize)]

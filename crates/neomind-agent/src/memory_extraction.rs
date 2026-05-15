@@ -215,10 +215,10 @@ impl MemoryExtractor {
 
         for category in MemoryCategory::all() {
             let stats = store
-                .category_stats(&category)
+                .category_stats(category)
                 .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
 
-            let max_entries = compressor.max_entries(&category);
+            let max_entries = compressor.max_entries(category);
 
             if stats.entry_count > max_entries {
                 tracing::info!(
@@ -268,7 +268,7 @@ impl MemoryExtractor {
         let mut all_memories = String::new();
 
         for category in MemoryCategory::all() {
-            if let Ok(content) = store.read_category(&category) {
+            if let Ok(content) = store.read_category(category) {
                 if !content.trim().is_empty() {
                     all_memories.push_str(&format!("\n### {}\n", category.display_name()));
                     // Limit to last 20 entries per category to avoid context overflow

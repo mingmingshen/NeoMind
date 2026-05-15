@@ -21,7 +21,6 @@ use neomind_storage::{PendingStreamState, StreamStage};
 
 /// Stream event sent from the LLM processing task to the WebSocket handler.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 struct StreamEvent {
     json: String,
     session_id: String,

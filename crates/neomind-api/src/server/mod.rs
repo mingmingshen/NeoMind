@@ -45,7 +45,14 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     let mut startup = StartupLogger::new();
     startup.banner();
 
+    // ── Phase A: Core init + HTTP listener (fast path to serving) ──
+
+    let t_start = std::time::Instant::now();
     let state = ServerState::new().await;
+    tracing::info!(
+        elapsed_ms = t_start.elapsed().as_millis() as u64,
+        "ServerState::new() completed"
+    );
 
     // Initialization phase
     startup.phase_init();
@@ -73,169 +80,8 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     state.init_auto_onboarding_events().await;
     startup.service("Auto-onboarding events", ServiceStatus::Started);
 
-    // Initialize extension metrics collector (decoupled from device system)
-    let runtime = state.extensions.runtime.clone();
-    let metrics_storage = state.extensions.metrics_storage.clone();
-    let event_bus_for_metrics = state.core.event_bus.clone();
-    let _metrics_task = tokio::spawn(async move {
-        use crate::server::extension_metrics::ExtensionMetricsCollector;
-        use std::time::Duration;
-
-        let mut collector = ExtensionMetricsCollector::new(runtime, metrics_storage)
-            .with_interval(Duration::from_secs(60));
-
-        if let Some(bus) = event_bus_for_metrics {
-            collector = collector.with_event_bus(bus);
-        }
-
-        collector.run().await;
-    });
-    startup.service("Extension metrics collector", ServiceStatus::Started);
-
-    // Kill orphaned extension runner processes from a previous session.
-    // MUST run before init_extensions() to avoid killing newly spawned runners.
-    // Orphaned runners hold dylib files open and cause dlopen() hangs.
-    neomind_core::extension::isolated::IsolatedExtensionManager::cleanup_orphaned_runners();
-    startup.service("Extension orphan cleanup", ServiceStatus::Started);
-
-    // Initialize extensions from persistent storage
-    // This loads all extensions marked with auto_start=true
-    state.init_extensions().await;
-
-    // Refresh tool registry now that extensions are loaded
-    // (init_tools runs before extensions, so we rescan here)
-    state.refresh_extension_tools().await;
-
-    // Start extension death monitoring for auto-restart
-    // Set up crash recovery callback to apply saved config after restart
-    {
-        let runtime = state.extensions.runtime.clone();
-        state.extensions.runtime.set_on_crash_recovery_restart(Arc::new(
-            move |extension_id: &str, _path: &std::path::Path| {
-                let ext_id = extension_id.to_string();
-                let rt = runtime.clone();
-                // Use tokio spawn to apply config asynchronously
-                tokio::spawn(async move {
-                    // Load saved config from extension store
-                    if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
-                        if let Ok(Some(record)) = store.load(&ext_id) {
-                            if let Some(ref config) = record.config {
-                                tracing::info!(
-                                    extension_id = %ext_id,
-                                    "Applying saved config to extension after crash recovery"
-                                );
-                                if let Err(e) = rt
-                                    .execute_command(&ext_id, "configure", config)
-                                    .await
-                                {
-                                    tracing::warn!(
-                                        extension_id = %ext_id,
-                                        error = %e,
-                                        "Failed to apply saved config after crash recovery"
-                                    );
-                                }
-                            }
-                        }
-                    }
-                });
-            },
-        ));
-    }
-    state.extensions.runtime.clone().start_death_monitoring();
-    startup.service("Extension death monitoring", ServiceStatus::Started);
-
-    // Initialize extension event subscription
-    // This must be after init_extensions() so extensions can subscribe to events
-    state.init_extension_event_subscription().await;
-    startup.service("Extension event subscription", ServiceStatus::Started);
-
-    // Initialize AI Agent manager
-    let _ = state.start_agent_manager().await;
-    startup.service("AI Agent manager", ServiceStatus::Started);
-
-    // Initialize AI Agent event listener
-    state.init_agent_events().await;
-    startup.service("AI Agent events", ServiceStatus::Started);
-
-    // Detect llama.cpp backend capabilities from /props endpoint
-    {
-        tokio::spawn(async move {
-            // Wait for instance manager to be ready
-            let mut retry_interval = tokio::time::interval(Duration::from_secs(5));
-            for _ in 0..12 {
-                retry_interval.tick().await;
-                if let Ok(instance_manager) = neomind_agent::get_instance_manager() {
-                    instance_manager.detect_llamacpp_capabilities().await;
-                    break;
-                }
-            }
-        });
-    }
-
-    // Start memory scheduler — spawns a background retry task that polls
-    // for LLM runtime availability. This ensures the scheduler starts even
-    // when the LLM backend becomes ready after the server has started.
-    {
-        let agents_state = state.agents.clone();
-        tokio::spawn(async move {
-            let mut retry_interval = tokio::time::interval(Duration::from_secs(30));
-            let mut attempts = 0u32;
-
-            loop {
-                retry_interval.tick().await;
-
-                let Ok(instance_manager) = neomind_agent::get_instance_manager() else {
-                    attempts += 1;
-                    if attempts % 10 == 1 {
-                        tracing::info!(
-                            attempts = attempts,
-                            "Waiting for LLM instance manager to initialize memory scheduler"
-                        );
-                    }
-                    continue;
-                };
-
-                let Ok(runtime) = instance_manager.get_active_runtime().await else {
-                    attempts += 1;
-                    if attempts % 10 == 1 {
-                        tracing::info!(
-                            attempts = attempts,
-                            "Waiting for LLM runtime to start memory scheduler"
-                        );
-                    }
-                    continue;
-                };
-
-                match agents_state.start_memory_scheduler(runtime).await {
-                    Ok(()) => {
-                        tracing::info!(
-                            category = "memory",
-                            "Memory scheduler started (attempt {})",
-                            attempts + 1
-                        );
-                        break; // Scheduler is running, no need to retry
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            category = "memory",
-                            error = %e,
-                            "Failed to start memory scheduler, will retry"
-                        );
-                        attempts += 1;
-                    }
-                }
-            }
-        });
-    }
-
     // Configuration phase
     startup.phase_config();
-
-    // Initialize MQTT and register device types
-    state.init_mqtt().await;
-
-    // Services phase
-    startup.phase_services();
 
     // Clone state for cleanup (move into shutdown task)
     let state_for_cleanup = state.clone();
@@ -270,7 +116,7 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
         }
     });
 
-    let app = create_router_with_state(state);
+    let app = create_router_with_state(state.clone());
 
     let app = app
         .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(20)))
@@ -278,9 +124,223 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
 
-    // Ready phase
+    // Ready phase — HTTP listener is bound
     startup.phase_ready();
     startup.ready_info(&bind.to_string());
+
+    tracing::info!(
+        elapsed_ms = t_start.elapsed().as_millis() as u64,
+        "HTTP listener ready (time to serve)"
+    );
+
+    // ── Phase B: Deferred background services (after listener starts serving) ──
+    // These run in the background and do not block HTTP serving.
+
+    // Initialize extension metrics collector (decoupled from device system)
+    let runtime = state.extensions.runtime.clone();
+    let metrics_storage = state.extensions.metrics_storage.clone();
+    let event_bus_for_metrics = state.core.event_bus.clone();
+    tokio::spawn(async move {
+        use crate::server::extension_metrics::ExtensionMetricsCollector;
+        use std::time::Duration;
+
+        let mut collector = ExtensionMetricsCollector::new(runtime, metrics_storage)
+            .with_interval(Duration::from_secs(60));
+
+        if let Some(bus) = event_bus_for_metrics {
+            collector = collector.with_event_bus(bus);
+        }
+
+        collector.run().await;
+    });
+
+    // Start telemetry retention cleanup background task
+    {
+        tokio::spawn(async move {
+            use neomind_storage::{SettingsStore, TimeSeriesStore};
+
+            // Wait for server to initialize
+            tokio::time::sleep(Duration::from_secs(10)).await;
+
+            const SETTINGS_DB_PATH: &str = "data/settings.redb";
+            const TELEMETRY_DB_PATH: &str = "data/telemetry.redb";
+
+            loop {
+                // Load config on each cycle so runtime changes take effect
+                let config = SettingsStore::open(SETTINGS_DB_PATH)
+                    .map(|s| s.get_retention_config())
+                    .unwrap_or_default();
+
+                let interval_secs = config.interval_hours * 3600;
+
+                if config.enabled {
+                    let policy = config.to_retention_policy();
+                    if let Ok(ts_store) = TimeSeriesStore::open(TELEMETRY_DB_PATH) {
+                        ts_store.set_retention_policy(policy).await;
+                        match ts_store.apply_retention().await {
+                            Ok(result) => {
+                                if result.points_removed > 0 {
+                                    tracing::info!(
+                                        points_removed = result.points_removed,
+                                        metrics_cleaned = result.metrics_cleaned.len(),
+                                        "Retention cleanup completed"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "Retention cleanup failed");
+                            }
+                        }
+                    }
+                }
+
+                tokio::time::sleep(Duration::from_secs(interval_secs)).await;
+            }
+        });
+    }
+
+    // Heavy background services — extension loading, agent manager, MQTT
+    {
+        let bg_state = state.clone();
+        tokio::spawn(async move {
+            let t_bg = std::time::Instant::now();
+
+            // Kill orphaned extension runner processes from a previous session.
+            // MUST run before init_extensions() to avoid killing newly spawned runners.
+            // Orphaned runners hold dylib files open and cause dlopen() hangs.
+            neomind_core::extension::isolated::IsolatedExtensionManager::cleanup_orphaned_runners();
+            tracing::info!(
+                elapsed_ms = t_bg.elapsed().as_millis() as u64,
+                "Extension orphan cleanup done"
+            );
+
+            // Initialize extensions from persistent storage
+            bg_state.init_extensions().await;
+
+            // Refresh tool registry now that extensions are loaded
+            bg_state.refresh_extension_tools().await;
+
+            // Start extension death monitoring for auto-restart
+            {
+                let runtime = bg_state.extensions.runtime.clone();
+                bg_state.extensions.runtime.set_on_crash_recovery_restart(Arc::new(
+                    move |extension_id: &str, _path: &std::path::Path| {
+                        let ext_id = extension_id.to_string();
+                        let rt = runtime.clone();
+                        tokio::spawn(async move {
+                            if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+                                if let Ok(Some(record)) = store.load(&ext_id) {
+                                    if let Some(ref config) = record.config {
+                                        tracing::info!(
+                                            extension_id = %ext_id,
+                                            "Applying saved config to extension after crash recovery"
+                                        );
+                                        if let Err(e) = rt
+                                            .execute_command(&ext_id, "configure", config)
+                                            .await
+                                        {
+                                            tracing::warn!(
+                                                extension_id = %ext_id,
+                                                error = %e,
+                                                "Failed to apply saved config after crash recovery"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    },
+                ));
+            }
+            bg_state.extensions.runtime.clone().start_death_monitoring();
+
+            // Initialize extension event subscription
+            bg_state.init_extension_event_subscription().await;
+
+            // Initialize AI Agent manager
+            let _ = bg_state.start_agent_manager().await;
+
+            // Initialize AI Agent event listener
+            bg_state.init_agent_events().await;
+
+            // Detect llama.cpp backend capabilities from /props endpoint
+            {
+                let mut retry_interval = tokio::time::interval(Duration::from_secs(5));
+                for _ in 0..12 {
+                    retry_interval.tick().await;
+                    if let Ok(instance_manager) = neomind_agent::get_instance_manager() {
+                        instance_manager.detect_llamacpp_capabilities().await;
+                        break;
+                    }
+                }
+            }
+
+            // Start memory scheduler
+            {
+                let agents_state = bg_state.agents.clone();
+                tokio::spawn(async move {
+                    let mut retry_interval = tokio::time::interval(Duration::from_secs(30));
+                    let mut attempts = 0u32;
+
+                    loop {
+                        retry_interval.tick().await;
+
+                        let Ok(instance_manager) = neomind_agent::get_instance_manager() else {
+                            attempts += 1;
+                            if attempts % 10 == 1 {
+                                tracing::info!(
+                                    attempts = attempts,
+                                    "Waiting for LLM instance manager to initialize memory scheduler"
+                                );
+                            }
+                            continue;
+                        };
+
+                        let Ok(runtime) = instance_manager.get_active_runtime().await else {
+                            attempts += 1;
+                            if attempts % 10 == 1 {
+                                tracing::info!(
+                                    attempts = attempts,
+                                    "Waiting for LLM runtime to start memory scheduler"
+                                );
+                            }
+                            continue;
+                        };
+
+                        match agents_state.start_memory_scheduler(runtime).await {
+                            Ok(()) => {
+                                tracing::info!(
+                                    category = "memory",
+                                    "Memory scheduler started (attempt {})",
+                                    attempts + 1
+                                );
+                                break;
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    category = "memory",
+                                    error = %e,
+                                    "Failed to start memory scheduler, will retry"
+                                );
+                                attempts += 1;
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Initialize MQTT and register device types
+            bg_state.init_mqtt().await;
+
+            tracing::info!(
+                elapsed_ms = t_bg.elapsed().as_millis() as u64,
+                "Background services init complete"
+            );
+        });
+    }
+
+    // Services phase
+    startup.phase_services();
 
     // Run with graceful shutdown
     axum::serve(listener, app)

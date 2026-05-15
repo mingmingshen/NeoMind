@@ -517,7 +517,7 @@ impl LlmRuntime for OllamaRuntime {
 
         // Determine context size: use max_context from params, or the model's real context length
         // from /api/show. Never hardcode — the API returns the accurate value (e.g., 131072 for qwen3.5).
-        let num_ctx = input.params.max_context.or_else(|| {
+        let num_ctx = input.params.max_context.or({
             if caps.max_context > 0 {
                 Some(caps.max_context)
             } else {
@@ -747,7 +747,7 @@ impl LlmRuntime for OllamaRuntime {
 
         // Determine context size: use max_context from params, or the model's real context length
         // from /api/show. Never hardcode — the API returns the accurate value (e.g., 131072 for qwen3.5).
-        let num_ctx = input.params.max_context.or_else(|| {
+        let num_ctx = input.params.max_context.or({
             if caps.max_context > 0 {
                 Some(caps.max_context)
             } else {

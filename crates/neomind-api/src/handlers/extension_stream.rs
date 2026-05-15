@@ -122,9 +122,6 @@ enum ServerMessage {
         duration_ms: u64,
         stats: SessionStatsDto,
     },
-    /// Heartbeat
-    #[allow(dead_code)]
-    Heartbeat { timestamp: i64 },
 }
 
 /// DTO for stream capability
@@ -663,7 +660,7 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                                     }
                                                                 }
                                                                 // Periodic diagnostics
-                                                                if frames_received % 500 == 0 {
+                                                                if frames_received.is_multiple_of(500) {
                                                                     tracing::info!(
                                                                         received = frames_received,
                                                                         dropped = frames_dropped,

@@ -18,7 +18,10 @@ import {
   Info,
   Loader2,
   Globe,
+  Database,
+  SwitchCamera,
 } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
 import { api } from "@/lib/api"
 import { useGlobalTimezone } from "@/hooks/useTimeFormat"
@@ -280,11 +283,205 @@ export function PreferencesTab() {
         </CardContent>
       </Card>
 
+      {/* Data Management */}
+      <DataManagementCard />
+
       {/* Info */}
       <div className="text-sm text-muted-foreground text-center py-4">
         <p>{t("settings:preferencesInfo")}</p>
       </div>
     </div>
+  )
+}
+
+// Retention option values (hours, null = forever)
+const retentionOptions: { value: string; labelKey: string }[] = [
+  { value: "never", labelKey: "settings:retentionNever" },
+  { value: "12", labelKey: "settings:retention12h" },
+  { value: "24", labelKey: "settings:retention1d" },
+  { value: "72", labelKey: "settings:retention3d" },
+  { value: "168", labelKey: "settings:retention7d" },
+  { value: "720", labelKey: "settings:retention30d" },
+  { value: "2160", labelKey: "settings:retention90d" },
+]
+
+function hoursToOption(hours: number | null | undefined): string {
+  if (hours === null || hours === undefined) return "never"
+  return String(hours)
+}
+
+function optionToHours(value: string): number | null {
+  if (value === "never") return null
+  return Number(value)
+}
+
+function DataManagementCard() {
+  const { t } = useTranslation(["common", "settings"])
+  const { toast } = useToast()
+  const [config, setConfig] = useState<{
+    enabled: boolean
+    interval_hours: number
+    default_retention: number | null
+    image_retention: number | null
+  } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [cleaning, setCleaning] = useState(false)
+
+  useEffect(() => {
+    api.get("/settings/retention")
+      .then((data: any) => setConfig(data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const saveConfig = async (updates: Partial<typeof config>) => {
+    if (!config) return
+    const newConfig = { ...config, ...updates }
+    setConfig(newConfig)
+    try {
+      await api.put("/settings/retention", newConfig)
+      toast({ title: t("settings:retentionUpdated") })
+    } catch {
+      toast({ title: t("settings:retentionUpdateFailed"), variant: "destructive" })
+    }
+  }
+
+  const handleCleanup = async () => {
+    setCleaning(true)
+    try {
+      const result: any = await api.post("/settings/retention/cleanup", {})
+      toast({
+        title: t("settings:cleanupSuccess", { count: result.points_removed ?? 0 }),
+      })
+    } catch {
+      toast({ title: t("settings:cleanupFailed"), variant: "destructive" })
+    } finally {
+      setCleaning(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5 text-accent-orange" />
+            {t("settings:dataManagement")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!config) return null
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Database className="h-5 w-5 text-accent-orange" />
+          {t("settings:dataManagement")}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {/* Auto Cleanup Toggle */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1">
+            <Label className="text-sm font-medium">
+              {t("settings:autoCleanup")}
+            </Label>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {t("settings:autoCleanupDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={config.enabled}
+            onCheckedChange={(checked) => saveConfig({ enabled: checked })}
+          />
+        </div>
+
+        {/* Default Retention */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <Label className="text-sm font-medium">
+              {t("settings:defaultRetention")}
+            </Label>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {t("settings:defaultRetentionDesc")}
+            </p>
+          </div>
+          <Select
+            value={hoursToOption(config.default_retention)}
+            onValueChange={(v) => saveConfig({ default_retention: optionToHours(v) })}
+            disabled={!config.enabled}
+          >
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {retentionOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {t(opt.labelKey)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Image Retention */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <SwitchCamera className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <Label className="text-sm font-medium">
+                {t("settings:imageRetention")}
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {t("settings:imageRetentionDesc")}
+              </p>
+            </div>
+          </div>
+          <Select
+            value={hoursToOption(config.image_retention)}
+            onValueChange={(v) => saveConfig({ image_retention: optionToHours(v) })}
+            disabled={!config.enabled}
+          >
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {retentionOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {t(opt.labelKey)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Manual Cleanup */}
+        <div className="pt-4 border-t">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCleanup}
+            disabled={cleaning}
+          >
+            {cleaning ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Database className="h-4 w-4 mr-2" />
+            )}
+            {cleaning ? t("settings:cleanupRunning") : t("settings:cleanupNow")}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

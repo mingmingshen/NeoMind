@@ -269,8 +269,6 @@ pub enum ContextRelevance {
     Medium,
     /// Normal relevance - standard priority
     Normal,
-    /// Low relevance - tool likely not needed
-    Low,
 }
 
 #[cfg(test)]

@@ -50,7 +50,6 @@ impl Default for IsolatedLoaderConfig {
 /// Loader for isolated extensions
 pub struct IsolatedExtensionLoader {
     /// Metadata loader for extension discovery (uses sidecar JSON, no dlopen)
-    #[allow(dead_code)]
     native_loader: NativeExtensionMetadataLoader,
     /// Configuration
     config: IsolatedLoaderConfig,

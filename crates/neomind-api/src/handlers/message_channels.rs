@@ -177,7 +177,7 @@ pub async fn create_channel_handler(
     let info = registry_guard
         .get_info(&req.name)
         .await
-        .expect("Just created");
+        .ok_or_else(|| ErrorResponse::internal("Channel was registered but could not be retrieved"))?;
 
     ok(json!({
         "message": "Channel created successfully",
@@ -309,7 +309,9 @@ pub async fn update_channel_handler(
 
     // Get updated info
     let registry_guard = registry.read().await;
-    let info = registry_guard.get_info(&name).await.expect("Just updated");
+    let info = registry_guard.get_info(&name).await.ok_or_else(|| {
+        ErrorResponse::internal("Channel was updated but could not be retrieved")
+    })?;
 
     ok(json!({
         "message": "Channel updated successfully",

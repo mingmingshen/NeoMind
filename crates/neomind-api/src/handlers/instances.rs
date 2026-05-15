@@ -75,7 +75,7 @@ pub async fn create_instance_handler(
     let instance = InstanceRecord::new(req.name, req.url, req.api_key);
     instance
         .validate()
-        .map_err(|e| ErrorResponse::bad_request(e))?;
+        .map_err(ErrorResponse::bad_request)?;
 
     let id = instance.id.clone();
     state
@@ -118,7 +118,7 @@ pub async fn update_instance_handler(
 
     instance
         .validate()
-        .map_err(|e| ErrorResponse::bad_request(e))?;
+        .map_err(ErrorResponse::bad_request)?;
 
     state
         .instance_store

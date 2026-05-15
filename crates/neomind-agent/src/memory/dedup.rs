@@ -80,7 +80,7 @@ impl DedupProcessor {
     }
 
     /// Find similar entry in existing list
-    pub fn find_similar<'a>(&self, content: &str, existing: &'a [String]) -> Option<(usize, f32)> {
+    pub fn find_similar(&self, content: &str, existing: &[String]) -> Option<(usize, f32)> {
         for (i, entry) in existing.iter().enumerate() {
             let similarity = Self::jaccard_similarity_with_ngram(content, entry, self.ngram_size);
             if similarity >= self.similarity_threshold {

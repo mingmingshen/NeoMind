@@ -20,6 +20,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use futures::future::join_all;
 use neomind_core::extension::registry::ExtensionRegistry;
 use neomind_core::extension::{ExtensionRuntime, ExtensionRuntimeConfig};
 
@@ -258,6 +259,7 @@ impl ExtensionState {
     /// It loads all extensions marked with `auto_start=true` from the extension store.
     ///
     /// Extensions are loaded via ExtensionRuntime with process isolation by default.
+    /// Multiple extensions are loaded concurrently with bounded parallelism (Semaphore(4)).
     pub async fn load_from_storage(&self) -> Result<usize, String> {
         // Use the shared extension store from state
         let store = &self.store;
@@ -270,18 +272,18 @@ impl ExtensionState {
         if records.is_empty() {
             tracing::info!("No auto-start extensions found in storage");
             // Don't return early - continue to auto-discovery
+        } else {
+            tracing::info!("Found {} auto-start extension(s) in storage", records.len());
         }
 
-        tracing::info!("Found {} auto-start extension(s) in storage", records.len());
-
-        let mut loaded_count = 0;
         let total = records.len();
-        let mut current = 0;
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(4));
+        let mut handles = Vec::with_capacity(records.len());
 
         for record in records {
-            let file_path = Path::new(&record.file_path);
+            let file_path = Path::new(&record.file_path).to_path_buf();
 
-            // Check if file still exists
+            // Check if file still exists before spawning
             if !file_path.exists() {
                 tracing::warn!(
                     extension_id = %record.id,
@@ -291,86 +293,99 @@ impl ExtensionState {
                 continue;
             }
 
-            current += 1;
-            tracing::info!("Loading extension {}/{}: {}", current, total, record.id);
+            let runtime = self.runtime.clone();
+            let store = self.store.clone();
+            let permit = semaphore.clone();
+            let record_id = record.id.clone();
+            let record_name = record.name.clone();
+            let record_type = record.extension_type.clone();
+            let record_config = record.config.clone();
 
-            let load_result = self.runtime.load(file_path).await;
+            handles.push(tokio::spawn(async move {
+                let _permit = permit.acquire().await.unwrap();
+                tracing::info!("Loading extension: {}", record_id);
 
-            match load_result {
-                Ok(metadata) => {
-                    // Apply saved config if present
-                    if let Some(ref config) = record.config {
-                        // Try to apply config via execute_command
-                        if let Err(e) = self
-                            .runtime
-                            .execute_command(&metadata.id, "configure", config)
-                            .await
+                let load_result = runtime.load(&file_path).await;
+
+                match load_result {
+                    Ok(metadata) => {
+                        // Apply saved config if present
+                        if let Some(ref config) = record_config {
+                            if let Err(e) = runtime
+                                .execute_command(&metadata.id, "configure", config)
+                                .await
+                            {
+                                tracing::warn!(
+                                    extension_id = %metadata.id,
+                                    error = %e,
+                                    "Failed to apply saved config to extension"
+                                );
+                            } else {
+                                tracing::info!(
+                                    extension_id = %metadata.id,
+                                    "Applied saved config to extension"
+                                );
+                            }
+                        }
+
+                        tracing::info!(
+                            extension_id = %metadata.id,
+                            name = %record_name,
+                            extension_type = %record_type,
+                            has_config = record_config.is_some(),
+                            is_isolated = true,
+                            "Loaded extension from storage"
+                        );
+                        Ok(metadata.id)
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            extension_id = %record_id,
+                            error = %e,
+                            "Failed to load extension from storage"
+                        );
+                        if let Err(update_e) = store.update_error_status(&record_id, &e.to_string())
                         {
                             tracing::warn!(
-                                extension_id = %metadata.id,
-                                error = %e,
-                                "Failed to apply saved config to extension"
-                            );
-                        } else {
-                            tracing::info!(
-                                extension_id = %metadata.id,
-                                "Applied saved config to extension"
+                                extension_id = %record_id,
+                                error = %update_e,
+                                "Failed to update extension error status"
                             );
                         }
-                    }
-
-                    tracing::info!(
-                        extension_id = %metadata.id,
-                        name = %record.name,
-                        extension_type = %record.extension_type,
-                        has_config = record.config.is_some(),
-                        is_isolated = true,
-                        "Loaded extension from storage"
-                    );
-                    loaded_count += 1;
-                }
-                Err(e) => {
-                    tracing::error!(
-                        extension_id = %record.id,
-                        error = %e,
-                        "Failed to load extension from storage"
-                    );
-                    // Record the error in the extension store
-                    if let Err(update_e) = self.store.update_error_status(&record.id, &e.to_string())
-                    {
-                        tracing::warn!(
-                            extension_id = %record.id,
-                            error = %update_e,
-                            "Failed to update extension error status"
-                        );
+                        Err(())
                     }
                 }
-            }
+            }));
         }
 
-        // Small delay between extensions to reduce memory pressure
-        // This prevents OOM when loading multiple heavy extensions
-        if current < total {
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        }
+        // Collect results
+        let results = join_all(handles).await;
+        let loaded_count = results.into_iter().filter(|r| r.is_ok() && r.as_ref().unwrap().is_ok()).count();
 
-        tracing::info!("Loaded {} extension(s) from storage", loaded_count);
+        tracing::info!(
+            total = total,
+            loaded = loaded_count,
+            "Extension loading complete"
+        );
 
         // If no extensions were loaded, auto-discover and register
-        if loaded_count == 0 {
+        let loaded_count = if loaded_count == 0 {
             tracing::info!("No extensions loaded, attempting auto-discovery...");
             match self.auto_discover_and_register().await {
                 Ok(count) => {
                     if count > 0 {
                         tracing::info!("Auto-discovered and registered {} extension(s)", count);
-                        loaded_count = count;
                     }
+                    count
                 }
                 Err(e) => {
                     tracing::warn!("Auto-discovery failed: {}", e);
+                    0
                 }
             }
-        }
+        } else {
+            loaded_count
+        };
 
         Ok(loaded_count)
     }

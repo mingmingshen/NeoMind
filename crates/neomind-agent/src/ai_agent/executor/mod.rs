@@ -2507,21 +2507,19 @@ impl AgentExecutor {
                         if let Some(filter_device) =
                             filter.get("device_id").and_then(|v| v.as_str())
                         {
-                            if filter_device == "all" || filter_device == source_id {
-                                if source_type == "device" {
+                            if (filter_device == "all" || filter_device == source_id)
+                                && source_type == "device" {
                                     return true;
                                 }
-                            }
                         }
                     } else if event_type == "extension.output" {
                         if let Some(filter_ext) =
                             filter.get("extension_id").and_then(|v| v.as_str())
                         {
-                            if filter_ext == "all" || filter_ext == source_id {
-                                if source_type == "extension" {
+                            if (filter_ext == "all" || filter_ext == source_id)
+                                && source_type == "extension" {
                                     return true;
                                 }
-                            }
                         }
                     }
                 }

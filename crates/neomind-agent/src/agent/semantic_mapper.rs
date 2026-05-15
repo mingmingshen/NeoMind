@@ -89,10 +89,6 @@ const DEVICE_NICKNAMES_EN: &[(&str, &[&str])] = &[
     ("wall", &["sconce", "wall_mounted"]),
 ];
 
-/// Compound word separators for splitting device names
-#[allow(dead_code)]
-const COMPOUND_SEPARATORS: &[char] = &[' ', '_', '-', '、', '·', '•'];
-
 /// Mapping result from semantic name to technical ID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticMapping {

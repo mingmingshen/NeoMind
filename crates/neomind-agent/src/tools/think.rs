@@ -39,32 +39,6 @@ pub trait ThinkStorage: Send + Sync {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 
-/// Convenience wrapper for async storage.
-///
-/// Implementations can spawn tasks internally if needed.
-#[allow(dead_code)]
-pub struct AsyncThinkStorage<T> {
-    inner: Arc<T>,
-    runtime: Option<Arc<tokio::runtime::Handle>>,
-}
-
-impl<T> AsyncThinkStorage<T>
-where
-    T: Send + Sync + 'static,
-{
-    pub fn new(storage: Arc<T>) -> Self {
-        Self {
-            inner: storage,
-            runtime: None,
-        }
-    }
-
-    pub fn with_runtime(mut self, handle: Arc<tokio::runtime::Handle>) -> Self {
-        self.runtime = Some(handle);
-        self
-    }
-}
-
 /// A thought record.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ThoughtRecord {

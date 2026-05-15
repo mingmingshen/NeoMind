@@ -360,13 +360,11 @@ impl LlmBackendInstanceManager {
 
     /// Set the active backend
     pub async fn set_active(&self, id: &str) -> Result<(), LlmError> {
-        // Verify instance exists - DashMap read is lock-free
-        if !self.instances.contains_key(id) {
-            return Err(LlmError::BackendUnavailable(format!(
-                "Backend instance {}",
-                id
-            )));
-        }
+        // Atomically verify instance exists via DashMap reference guard.
+        // Holding the guard prevents concurrent removal until we finish.
+        let _guard = self.instances.get(id).ok_or_else(|| {
+            LlmError::BackendUnavailable(format!("Backend instance {}", id))
+        })?;
 
         // Clear runtime cache when switching
         self.runtime_cache.clear();

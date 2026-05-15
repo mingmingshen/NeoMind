@@ -242,9 +242,17 @@ pub async fn get_system_stats_handler(
         )
     };
 
-    // Detect GPUs
-    // Get cached GPU info (detected at startup)
-    let gpus = state.gpu_info.get().cloned().unwrap_or(vec![]);
+    // Detect GPUs (lazy: first call triggers detection, subsequent calls use cache)
+    let gpus = match state.gpu_info.get() {
+        Some(gpus) => gpus.clone(),
+        None => {
+            let gpus = detect_gpus();
+            // Another request may have already populated it — set() is fine to ignore
+            let _ = state.gpu_info.set(gpus.clone());
+            tracing::info!("GPU information cached: {} GPU(s) detected", gpus.len());
+            gpus
+        }
+    };
 
     // Version from env or default
     let version = env!("CARGO_PKG_VERSION");

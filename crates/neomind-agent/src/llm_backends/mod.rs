@@ -15,7 +15,6 @@ pub mod config;
 pub mod factories;
 pub mod instance_manager;
 pub mod rate_limited_client;
-pub mod tokenizer;
 
 // Re-export backend types - available unconditionally for backward compatibility
 // (actual instantiation requires appropriate feature)
@@ -31,7 +30,6 @@ pub use backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
 pub use config::{
     GenerationParams as LlmGenerationParams, LlmBackendConfig, LlmConfig, LlmRuntimeManager,
 };
-pub use tokenizer::TokenizerWrapper;
 
 // Plugin system
 pub use backend_plugin::{BackendRegistry, DynBackendPlugin, LlmBackendPlugin};

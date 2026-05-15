@@ -286,6 +286,96 @@ impl ServerState {
             tracing::warn!(category = "storage", error = %e, "Failed to create data directory");
         }
 
+        // ========== Parallel store opens (spawn_blocking for concurrent I/O) ==========
+        // Open independent stores concurrently while we build in-memory state.
+        // Handles are awaited later when results are needed.
+        let t_stores = std::time::Instant::now();
+
+        let rule_store_h = tokio::task::spawn_blocking(|| {
+            match RuleStore::open("data/rules.redb") {
+                Ok(store) => {
+                    tracing::info!("Rule store initialized at data/rules.redb");
+                    Some(store)
+                }
+                Err(e) => {
+                    tracing::warn!(category = "storage", error = %e, "Failed to open rule store, rules will not be persisted");
+                    None
+                }
+            }
+        });
+
+        let rule_history_store_h = tokio::task::spawn_blocking(|| {
+            match neomind_storage::business::RuleHistoryStore::open("data/rule_history.redb") {
+                Ok(store) => {
+                    tracing::info!("Rule history store initialized at data/rule_history.redb");
+                    Some(Arc::new(store))
+                }
+                Err(e) => {
+                    tracing::warn!(category = "storage", error = %e, "Failed to open rule history store, statistics will be limited");
+                    None
+                }
+            }
+        });
+
+        let agent_store_h = tokio::task::spawn_blocking(|| {
+            match neomind_storage::AgentStore::open("data/agents.redb") {
+                Ok(store) => {
+                    tracing::info!("AI Agent store initialized at data/agents.redb");
+                    store
+                }
+                Err(e) => {
+                    tracing::warn!(category = "storage", error = %e, "Failed to open agent store, using in-memory");
+                    neomind_storage::AgentStore::memory().unwrap_or_else(|e| {
+                        tracing::error!(category = "storage", error = %e, "Failed to create in-memory agent store");
+                        std::process::exit(1);
+                    })
+                }
+            }
+        });
+
+        let dashboard_store_h = tokio::task::spawn_blocking(|| {
+            match DashboardStore::open("data/dashboards.redb") {
+                Ok(store) => store,
+                Err(_e) => {
+                    DashboardStore::memory().unwrap_or_else(|e| {
+                        tracing::error!(category = "storage", error = %e, "Failed to create in-memory dashboard store");
+                        std::process::exit(1);
+                    })
+                }
+            }
+        });
+
+        let instance_store_h = tokio::task::spawn_blocking(|| {
+            match InstanceStore::open("data/instances.redb") {
+                Ok(store) => store,
+                Err(e) => {
+                    tracing::error!(category = "storage", error = %e, "Failed to open instance store");
+                    InstanceStore::memory().unwrap_or_else(|e| {
+                        tracing::error!(category = "storage", error = %e, "Failed to create in-memory instance store");
+                        std::process::exit(1);
+                    })
+                }
+            }
+        });
+
+        let session_manager_h = tokio::task::spawn_blocking(|| {
+            SessionManager::new().unwrap_or_else(|e| {
+                tracing::warn!(category = "storage", error = %e, "Failed to create persistent SessionManager, using in-memory");
+                SessionManager::memory()
+            })
+        });
+
+        let data_dir = std::path::PathBuf::from(
+            std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string()),
+        );
+        let frontend_component_store_h = tokio::task::spawn_blocking({
+            let dir = data_dir.join("frontend-components");
+            move || {
+                FrontendComponentStore::open(dir)
+                    .expect("Failed to init frontend component store")
+            }
+        });
+
         // ========== Build CORE STATE ==========
         // Create event bus FIRST (needed for adapters to publish events)
         let event_bus = Some(Arc::new(EventBus::new()));
@@ -530,17 +620,8 @@ impl ServerState {
             core.message_manager.set_event_bus(bus.clone()).await;
         }
 
-        // Create rule store
-        let rule_store = match RuleStore::open("data/rules.redb") {
-            Ok(store) => {
-                tracing::info!("Rule store initialized at data/rules.redb");
-                Some(store)
-            }
-            Err(e) => {
-                tracing::warn!(category = "storage", error = %e, "Failed to open rule store, rules will not be persisted");
-                None
-            }
-        };
+        // Await parallel-opened rule store
+        let rule_store = rule_store_h.await.expect("rule_store task panicked");
 
         // Load rules from store into rule engine
         if let Some(ref store) = rule_store {
@@ -593,19 +674,8 @@ impl ServerState {
         )));
         tracing::info!("Transform engine initialized with extension registry");
 
-        // Create rule history store
-        let rule_history_store = match neomind_storage::business::RuleHistoryStore::open(
-            "data/rule_history.redb",
-        ) {
-            Ok(store) => {
-                tracing::info!("Rule history store initialized at data/rule_history.redb");
-                Some(Arc::new(store))
-            }
-            Err(e) => {
-                tracing::warn!(category = "storage", error = %e, "Failed to open rule history store, statistics will be limited");
-                None
-            }
-        };
+        // Await parallel-opened rule history store
+        let rule_history_store = rule_history_store_h.await.expect("rule_history_store task panicked");
 
         let automation = AutomationState::new(
             rule_engine,
@@ -616,11 +686,8 @@ impl ServerState {
         );
 
         // ========== Build AGENT STATE ==========
-        // Create session manager
-        let session_manager = SessionManager::new().unwrap_or_else(|e| {
-            tracing::warn!(category = "storage", error = %e, "Failed to create persistent SessionManager, using in-memory");
-            SessionManager::memory()
-        });
+        // Await parallel-opened session manager
+        let session_manager = session_manager_h.await.expect("session_manager task panicked");
 
         // Create tiered memory
         let memory_config = crate::config::get_memory_config();
@@ -628,20 +695,8 @@ impl ServerState {
             memory_config,
         )));
 
-        // Create agent store
-        let agent_store = match neomind_storage::AgentStore::open("data/agents.redb") {
-            Ok(store) => {
-                tracing::info!("AI Agent store initialized at data/agents.redb");
-                store
-            }
-            Err(e) => {
-                tracing::warn!(category = "storage", error = %e, "Failed to open agent store, using in-memory");
-                neomind_storage::AgentStore::memory().unwrap_or_else(|e| {
-                    tracing::error!(category = "storage", error = %e, "Failed to create in-memory agent store");
-                    std::process::exit(1);
-                })
-            }
-        };
+        // Await parallel-opened agent store
+        let agent_store = agent_store_h.await.expect("agent_store task panicked");
 
         // Initialize system memory store (Markdown-based persistent memory)
         let system_memory_store =
@@ -672,47 +727,21 @@ impl ServerState {
 
         let auto_onboard_manager = Arc::new(tokio::sync::RwLock::new(None));
 
-        // ========== Detect and cache GPU info (once at startup) ==========
-        let gpu_info = {
-            use crate::handlers::stats::detect_gpus;
-            let lock = Arc::new(std::sync::OnceLock::new());
-            let gpus = detect_gpus();
-            lock.set(gpus).ok();
-            tracing::info!(
-                "GPU information cached at startup: {} GPU(s) detected",
-                lock.get().map(|g| g.len()).unwrap_or(0)
-            );
-            lock
-        };
-        let dashboard_store = match DashboardStore::open("data/dashboards.redb") {
-            Ok(store) => store,
-            Err(_e) => {
-                // ========== Detect and cache GPU info (once at startup) ==========
-                DashboardStore::memory().unwrap_or_else(|e| {
-                    tracing::error!(category = "storage", error = %e, "Failed to create in-memory dashboard store");
-                    std::process::exit(1);
-                })
-            }
-        };
+        // ========== GPU info: lazy — populated on first /api/stats request ==========
+        let gpu_info: Arc<std::sync::OnceLock<Vec<crate::handlers::stats::GpuInfo>>> =
+            Arc::new(std::sync::OnceLock::new());
 
-        let instance_store = match InstanceStore::open("data/instances.redb") {
-            Ok(store) => store,
-            Err(e) => {
-                tracing::error!(category = "storage", error = %e, "Failed to open instance store");
-                InstanceStore::memory().unwrap_or_else(|e| {
-                    tracing::error!(category = "storage", error = %e, "Failed to create in-memory instance store");
-                    std::process::exit(1);
-                })
-            }
-        };
+        // Await parallel-opened stores
+        let dashboard_store = dashboard_store_h.await.expect("dashboard_store task panicked");
+        let instance_store = instance_store_h.await.expect("instance_store task panicked");
+        let frontend_component_store = frontend_component_store_h
+            .await
+            .expect("frontend_component_store task panicked");
 
-        let frontend_component_store = FrontendComponentStore::open(
-            std::path::PathBuf::from(
-                std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string()),
-            )
-            .join("frontend-components"),
-        )
-        .expect("Failed to init frontend component store");
+        tracing::info!(
+            elapsed_ms = t_stores.elapsed().as_millis() as u64,
+            "All parallel store opens completed"
+        );
 
         Self {
             core,
@@ -737,9 +766,7 @@ impl ServerState {
             )),
             extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
             telemetry_query_semaphore: Arc::new(tokio::sync::Semaphore::new(16)),
-            data_dir: std::path::PathBuf::from(
-                std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string()),
-            ),
+            data_dir,
         }
     }
 
@@ -805,8 +832,8 @@ impl ServerState {
         let extension_metrics_storage = Arc::new(ExtensionMetricsStorage::with_shared_storage(
             time_series_storage.clone(),
         ));
-        let extension_store = ExtensionStore::open("data/extensions.redb")
-            .expect("Failed to open extension store — ensure data/ directory exists");
+        let extension_store = ExtensionStore::open(":memory:")
+            .expect("Failed to open in-memory extension store for testing");
         let extensions = ExtensionState::new(extension_registry, extension_metrics_storage, extension_store);
 
         // ========== Build AUTOMATION STATE ==========

@@ -232,6 +232,18 @@ const extensionDataCache = new Map<string, ExtensionCacheEntry>()
 const EXTENSION_CACHE_TTL = 5000 // 5 seconds cache
 const MAX_EXTENSION_CACHE_SIZE = 50  // Limit cache size
 
+/** Enforce cache size limit by evicting the oldest entries (FIFO). */
+function evictCache<K, V>(cache: Map<K, V>, maxSize: number): void {
+  if (cache.size >= maxSize) {
+    const keysToDelete = cache.size - maxSize + 1
+    let i = 0
+    for (const key of cache.keys()) {
+      cache.delete(key)
+      if (++i >= keysToDelete) break
+    }
+  }
+}
+
 /**
  * Fetch system stats for a specific metric
  */
@@ -293,6 +305,7 @@ async function fetchSystemStats(
     }
 
     // Cache the result
+    evictCache(systemStatsCache, MAX_SYSTEM_CACHE_SIZE)
     systemStatsCache.set(cacheKey, {
       data: value,
       timestamp: Date.now()
@@ -487,6 +500,7 @@ export async function fetchHistoricalTelemetry(
         }
 
         // Cache the result
+        evictCache(telemetryCache, MAX_TELEMETRY_CACHE_SIZE)
         telemetryCache.set(cacheKey, {
           data: values,
           raw: rawPoints,
@@ -3113,6 +3127,7 @@ export function useDataSource<T = unknown>(
         extensionDataSources.forEach((ds, i) => {
           if (ds.extensionId && ds.extensionMetric && results[i]?.success) {
             const key = `${ds.extensionId}|${ds.extensionMetric}`
+            evictCache(extensionDataCache, MAX_EXTENSION_CACHE_SIZE)
             extensionDataCache.set(key, { data: results[i].data, timestamp: Date.now() })
           }
         })

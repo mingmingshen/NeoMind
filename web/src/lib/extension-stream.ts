@@ -204,6 +204,8 @@ export class ExtensionStreamClient {
     }
 
     if (this.ws) {
+      this.ws.onclose = null  // Prevent reconnect on close
+      this.ws.onerror = null  // Prevent error callbacks after disconnect
       this.ws.close(1000, 'Client disconnect')
       this.ws = null
     }
@@ -214,6 +216,20 @@ export class ExtensionStreamClient {
       capability: null,
     }
     this.notifyConnectionChange()
+  }
+
+  /**
+   * Full teardown — disconnects and clears all handlers to release references.
+   * Call this when the client will no longer be used.
+   */
+  destroy(): void {
+    this.disconnect()
+    this.messageHandlers.clear()
+    this.connectionHandlers.clear()
+    this.resultHandlers.clear()
+    this.sessionClosedHandlers.clear()
+    this.errorHandlers.clear()
+    this.pendingMessages = []
   }
 
   /**
@@ -468,7 +484,7 @@ export function getExtensionStreamClient(extensionId: string): ExtensionStreamCl
 export function closeExtensionStreamClient(extensionId: string): void {
   const client = streamClients.get(extensionId)
   if (client) {
-    client.disconnect()
+    client.destroy()
     streamClients.delete(extensionId)
   }
 }

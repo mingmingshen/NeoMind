@@ -2,7 +2,7 @@
 //!
 //! Maps device capabilities to MQTT topics and handles JSON/binary payload parsing.
 
-use crate::mdl::{MetricDataType, MetricValue};
+use crate::mdl::MetricValue;
 use crate::protocol::mapping::{
     Address, MappingConfig, MappingError, MappingResult, ProtocolMapping,
 };
@@ -78,35 +78,12 @@ impl MqttValueParser {
 /// MQTT protocol mapping implementation.
 pub struct MqttMapping {
     config: MqttMappingConfig,
-    /// Capability definitions for data type info (reserved for future use).
-    #[allow(dead_code)]
-    capabilities: HashMap<String, MetricDataType>,
 }
 
 impl MqttMapping {
     /// Create a new MQTT mapping from configuration.
     pub fn new(config: MqttMappingConfig) -> Self {
-        let capabilities = config
-            .metric_topics
-            .keys()
-            .map(|k| (k.clone(), MetricDataType::Float))
-            .collect();
-
-        Self {
-            config,
-            capabilities,
-        }
-    }
-
-    /// Create a new MQTT mapping with capability data types.
-    pub fn with_capabilities(
-        config: MqttMappingConfig,
-        capabilities: HashMap<String, MetricDataType>,
-    ) -> Self {
-        Self {
-            config,
-            capabilities,
-        }
+        Self { config }
     }
 
     /// Create from a generic MappingConfig.

@@ -262,3 +262,120 @@ pub async fn list_timezones() -> HandlerResult<serde_json::Value> {
         }).collect::<Vec<_>>()
     }))
 }
+
+// ============================================================================
+// Retention Configuration Handlers
+// ============================================================================
+
+/// Get the current retention configuration.
+pub async fn get_retention_config(
+    State(_state): State<ServerState>,
+) -> HandlerResult<serde_json::Value> {
+    use neomind_storage::SettingsStore;
+
+    const SETTINGS_DB_PATH: &str = "data/settings.redb";
+
+    let settings_store = SettingsStore::open(SETTINGS_DB_PATH)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
+
+    let config = settings_store.get_retention_config();
+
+    ok(json!({
+        "enabled": config.enabled,
+        "interval_hours": config.interval_hours,
+        "default_retention": config.default_retention,
+        "image_retention": config.image_retention,
+    }))
+}
+
+/// Update the retention configuration.
+pub async fn update_retention_config(
+    State(_state): State<ServerState>,
+    Json(req): Json<RetentionConfigRequest>,
+) -> HandlerResult<serde_json::Value> {
+    use neomind_storage::SettingsStore;
+
+    const SETTINGS_DB_PATH: &str = "data/settings.redb";
+
+    // Validate interval
+    if req.interval_hours == 0 {
+        return Err(ErrorResponse::bad_request("interval_hours must be greater than 0"));
+    }
+
+    let settings_store = SettingsStore::open(SETTINGS_DB_PATH)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
+
+    let config = neomind_storage::settings::RetentionConfig {
+        enabled: req.enabled,
+        interval_hours: req.interval_hours,
+        default_retention: req.default_retention,
+        image_retention: req.image_retention,
+    };
+
+    settings_store
+        .save_retention_config(&config)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to save retention config: {}", e)))?;
+
+    tracing::info!(
+        enabled = config.enabled,
+        interval_h = config.interval_hours,
+        default_h = ?config.default_retention,
+        image_h = ?config.image_retention,
+        "Retention configuration updated"
+    );
+
+    ok(json!({
+        "success": true,
+        "enabled": config.enabled,
+        "interval_hours": config.interval_hours,
+        "default_retention": config.default_retention,
+        "image_retention": config.image_retention,
+    }))
+}
+
+/// Manually trigger a retention cleanup.
+pub async fn trigger_retention_cleanup(
+    State(_state): State<ServerState>,
+) -> HandlerResult<serde_json::Value> {
+    use neomind_storage::{SettingsStore, TimeSeriesStore};
+
+    const SETTINGS_DB_PATH: &str = "data/settings.redb";
+    const TELEMETRY_DB_PATH: &str = "data/telemetry.redb";
+
+    let settings_store = SettingsStore::open(SETTINGS_DB_PATH)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
+
+    let config = settings_store.get_retention_config();
+    let policy = config.to_retention_policy();
+
+    let ts_store = TimeSeriesStore::open(TELEMETRY_DB_PATH)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to open telemetry store: {}", e)))?;
+
+    // Apply the policy
+    ts_store.set_retention_policy(policy).await;
+    let result = ts_store
+        .apply_retention()
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("Retention cleanup failed: {}", e)))?;
+
+    tracing::info!(
+        points_removed = result.points_removed,
+        metrics_cleaned = result.metrics_cleaned.len(),
+        "Manual retention cleanup completed"
+    );
+
+    ok(json!({
+        "success": true,
+        "points_removed": result.points_removed,
+        "metrics_cleaned": result.metrics_cleaned.len(),
+    }))
+}
+
+/// Request body for updating retention configuration.
+#[derive(serde::Deserialize)]
+pub struct RetentionConfigRequest {
+    pub enabled: bool,
+    pub interval_hours: u64,
+    pub default_retention: Option<u64>,
+    pub image_retention: Option<u64>,
+}

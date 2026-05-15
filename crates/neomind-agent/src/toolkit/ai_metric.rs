@@ -199,7 +199,7 @@ impl AiMetricTool {
             DV::Boolean(b) => neomind_core::MetricValue::Boolean(*b),
             DV::Array(arr) => neomind_core::MetricValue::Json(serde_json::json!(arr
                 .iter()
-                .map(|v| Self::devices_to_core_metric_value(v))
+                .map(Self::devices_to_core_metric_value)
                 .collect::<Vec<_>>())),
             DV::Binary(_) => neomind_core::MetricValue::String("[binary]".to_string()),
             DV::Null => neomind_core::MetricValue::Json(Value::Null),
@@ -222,7 +222,7 @@ impl AiMetricTool {
             }
             Value::String(s) => neomind_devices::mdl::MetricValue::String(s.clone()),
             Value::Array(arr) => neomind_devices::mdl::MetricValue::Array(
-                arr.iter().map(|v| Self::json_to_metric_value(v)).collect(),
+                arr.iter().map(Self::json_to_metric_value).collect(),
             ),
             other => neomind_devices::mdl::MetricValue::String(other.to_string()),
         }
@@ -314,7 +314,7 @@ impl AiMetricTool {
 
         match query.as_str() {
             "list" => self.read_list().await,
-            "data" => self.read_data(&args).await,
+            "data" => self.read_data(args).await,
             _ => Err(ToolError::InvalidArguments(format!(
                 "Unknown query type: '{}'. Valid: list, data",
                 query

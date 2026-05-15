@@ -156,9 +156,14 @@ export function useExtensionStream(options: UseExtensionStreamOptions): UseExten
 
   // Get or create stream client
   const clientRef = useRef<ReturnType<typeof getExtensionStreamClient> | null>(null)
+  const unsubscribesRef = useRef<Array<() => void>>([])
 
   // Connection methods
   const connect = useCallback(() => {
+    // Clean up previous handlers if any
+    unsubscribesRef.current.forEach(unsub => unsub?.())
+    unsubscribesRef.current = []
+
     const client = getExtensionStreamClient(extensionId)
     clientRef.current = client
 
@@ -195,7 +200,7 @@ export function useExtensionStream(options: UseExtensionStreamOptions): UseExten
     })
 
     // Store unsubscribe functions for cleanup
-    ;(client as any)._unsubscribes = [
+    unsubscribesRef.current = [
       unsubscribeConnection,
       unsubscribeResult,
       unsubscribeError,
@@ -207,11 +212,11 @@ export function useExtensionStream(options: UseExtensionStreamOptions): UseExten
   }, [extensionId])
 
   const disconnect = useCallback(() => {
-    if (clientRef.current) {
-      // Call unsubscribe functions
-      const unsubscribes = (clientRef.current as any)._unsubscribes as Array<() => void> || []
-      unsubscribes.forEach(unsub => unsub?.())
+    // Call unsubscribe functions
+    unsubscribesRef.current.forEach(unsub => unsub?.())
+    unsubscribesRef.current = []
 
+    if (clientRef.current) {
       clientRef.current.disconnect()
       clientRef.current = null
     }

@@ -577,12 +577,12 @@ impl AgentMessage {
                                 let result_preview = tc
                                     .result
                                     .as_ref()
-                                    .and_then(|r| {
+                                    .map(|r| {
                                         if let Some(s) = r.as_str() {
-                                            Some(s.chars().take(120).collect::<String>())
+                                            s.chars().take(120).collect::<String>()
                                         } else {
                                             let s = r.to_string();
-                                            Some(s.chars().take(120).collect::<String>())
+                                            s.chars().take(120).collect::<String>()
                                         }
                                     })
                                     .unwrap_or_default();

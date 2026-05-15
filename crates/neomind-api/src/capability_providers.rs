@@ -270,7 +270,7 @@ impl DeviceCapabilityProvider {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|v| parse_metric_from_json(v))
+                    .filter_map(parse_metric_from_json)
                     .collect()
             })
             .unwrap_or_default();
@@ -280,7 +280,7 @@ impl DeviceCapabilityProvider {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|v| parse_command_from_json(v))
+                    .filter_map(parse_command_from_json)
                     .collect()
             })
             .unwrap_or_default();

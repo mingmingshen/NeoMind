@@ -26,9 +26,6 @@ pub struct MessageManager {
     channels: Arc<RwLock<ChannelRegistry>>,
     /// Optional event bus for publishing message events
     event_bus: Arc<RwLock<Option<Arc<neomind_core::EventBus>>>>,
-    /// Data directory for persistent storage (reserved for future use).
-    #[allow(dead_code)]
-    data_dir: Arc<RwLock<Option<String>>>,
     /// Delivery log storage (in-memory with optional persistence)
     delivery_logs: Arc<RwLock<HashMap<DeliveryLogId, DeliveryLog>>>,
 }
@@ -41,7 +38,6 @@ impl MessageManager {
             storage: Arc::new(RwLock::new(None)),
             channels: Arc::new(RwLock::new(ChannelRegistry::new())),
             event_bus: Arc::new(RwLock::new(None)),
-            data_dir: Arc::new(RwLock::new(None)),
             delivery_logs: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -101,7 +97,6 @@ impl MessageManager {
             storage: Arc::new(RwLock::new(Some(store))),
             channels: Arc::new(RwLock::new(channels)),
             event_bus: Arc::new(RwLock::new(None)),
-            data_dir: Arc::new(RwLock::new(Some(data_dir.to_string_lossy().to_string()))),
             delivery_logs: Arc::new(RwLock::new(HashMap::new())),
         })
     }

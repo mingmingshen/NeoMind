@@ -48,6 +48,55 @@ where
     })
 }
 
+/// Maximum time an FFI call is allowed to run before we consider it hung.
+const FFI_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Wrapper that makes a raw pointer `Send` for crossing thread boundaries.
+/// SAFETY: The pointer is only moved between threads, not accessed concurrently.
+pub(crate) struct SendPtr<T>(pub *mut T);
+unsafe impl<T> Send for SendPtr<T> {}
+
+/// Like [`safe_ffi_call`] but also enforces a wall-clock timeout.
+///
+/// The FFI closure is executed on a dedicated thread. If it does not return
+/// within `FFI_CALL_TIMEOUT`, the thread is **detached** (it cannot be
+/// safely cancelled) and an error is returned. The runner remains alive but
+/// the hung thread will eventually finish or be cleaned up when the process
+/// exits.
+pub(crate) fn safe_ffi_call_with_timeout<F, T>(
+    label: &str,
+    f: F,
+) -> Result<T, String>
+where
+    F: FnOnce() -> T + UnwindSafe + Send + 'static,
+    T: Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::channel();
+    let builder = std::thread::Builder::new().name(format!("ffi-{label}"));
+    builder
+        .spawn(move || {
+            let result = safe_ffi_call("ffi-worker", f);
+            let _ = tx.send(result);
+        })
+        .map_err(|e| format!("Failed to spawn FFI thread for {}: {}", label, e))?;
+
+    match rx.recv_timeout(FFI_CALL_TIMEOUT) {
+        Ok(inner_result) => inner_result,
+        Err(_) => {
+            error!(
+                label = label,
+                timeout_secs = FFI_CALL_TIMEOUT.as_secs(),
+                "FFI call timed out — extension may be stuck, thread detached"
+            );
+            Err(format!(
+                "FFI call timed out after {}s in {}",
+                FFI_CALL_TIMEOUT.as_secs(),
+                label
+            ))
+        }
+    }
+}
+
 pub(crate) fn get_pending_requests() -> &'static DashMap<u64, ResponseSender> {
     PENDING_REQUESTS.get_or_init(DashMap::new)
 }

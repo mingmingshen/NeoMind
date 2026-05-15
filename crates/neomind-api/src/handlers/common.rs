@@ -145,7 +145,7 @@ impl PaginationQuery {
             has_next: has_more,
             has_prev: false, // cursor pagination is forward-only
             next_cursor: if has_more {
-                last_key.map(|k| Self::encode_cursor(k))
+                last_key.map(Self::encode_cursor)
             } else {
                 None
             },

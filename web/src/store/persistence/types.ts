@@ -15,7 +15,6 @@ import { isGenericComponent } from '@/types/dashboard'
 export interface StorageResult<T> {
   data: T | null
   error: Error | null
-  source: 'local' | 'api' | 'cache'
 }
 
 // ============================================================================
@@ -173,13 +172,17 @@ function componentToDTO(c: DashboardComponent): ComponentDTO {
   }
 }
 
-/** Convert API snake_case position to internal ComponentPosition */
-function positionFromDTO(p: ComponentDTO['position']): ComponentPosition {
+/** Convert API snake_case position to internal ComponentPosition.
+ *  Returns a safe default if the position object is missing or malformed. */
+function positionFromDTO(p: ComponentDTO['position'] | undefined | null): ComponentPosition {
+  if (!p || typeof p !== 'object') {
+    return { x: 0, y: 0, w: 4, h: 3 }
+  }
   return {
-    x: p.x,
-    y: p.y,
-    w: p.w,
-    h: p.h,
+    x: typeof p.x === 'number' ? p.x : 0,
+    y: typeof p.y === 'number' ? p.y : 0,
+    w: typeof p.w === 'number' ? p.w : 4,
+    h: typeof p.h === 'number' ? p.h : 3,
     minW: p.min_w,
     minH: p.min_h,
     maxW: p.max_w,
@@ -208,7 +211,11 @@ export function toDashboardDTO(dashboard: Dashboard): CreateDashboardDTO & { id:
  * Handles both DashboardDTO (camelCase) and API DashboardResponse (snake_case)
  */
 export function fromDashboardDTO(dto: DashboardDTO): Dashboard {
-  const components: DashboardComponent[] = (dto.components || []).map((c) => {
+  const components: DashboardComponent[] = (dto.components || [])
+    .filter((c): c is ComponentDTO & { id: string; type: string } =>
+      c != null && typeof c === 'object' && typeof c.id === 'string' && typeof c.type === 'string'
+    )
+    .map((c) => {
     const dataSource = c.data_source ?? c.dataSource
 
     const base = {

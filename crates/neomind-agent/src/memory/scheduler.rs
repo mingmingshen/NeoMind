@@ -314,7 +314,7 @@ impl MemoryScheduler {
         let mut total_result = CompressionResult::default();
 
         for category in MemoryCategory::all() {
-            match compressor.compress(store, category.clone()).await {
+            match compressor.compress(store, *category).await {
                 Ok(result) => {
                     total_result.total_before += result.total_before;
                     total_result.kept += result.kept;

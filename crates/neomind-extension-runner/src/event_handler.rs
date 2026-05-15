@@ -5,6 +5,10 @@
 use std::collections::HashMap;
 
 use serde_json::json;
+use tracing::warn;
+
+/// Maximum number of events per subscriber queue before dropping the oldest.
+const MAX_QUEUE_SIZE: usize = 1000;
 
 /// Global event state shared across the runner
 pub(crate) struct GlobalEventState {
@@ -31,6 +35,7 @@ impl GlobalEventState {
     }
 
     pub(crate) fn unsubscribe(&self, id: i64) -> bool {
+        self.queues.write().remove(&id);
         self.subscriptions.write().remove(&id).is_some()
     }
 
@@ -47,7 +52,16 @@ impl GlobalEventState {
                     "event_type": event_type,
                     "payload": payload,
                 });
-                queues.entry(*id).or_default().push(event);
+                let queue = queues.entry(*id).or_default();
+                if queue.len() >= MAX_QUEUE_SIZE {
+                    queue.remove(0);
+                    warn!(
+                        subscriber_id = *id,
+                        max = MAX_QUEUE_SIZE,
+                        "Event queue full, dropped oldest event"
+                    );
+                }
+                queue.push(event);
             }
         }
     }

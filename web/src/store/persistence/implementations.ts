@@ -38,7 +38,7 @@ export class LocalStorageDashboardStorage implements DashboardStorage {
     try {
       const stored = localStorage.getItem(this.storageKey)
       if (!stored) {
-        return { data: [], error: null, source: 'local' }
+        return { data: [], error: null }
       }
 
       const dashboards = JSON.parse(stored) as Dashboard[]
@@ -47,12 +47,12 @@ export class LocalStorageDashboardStorage implements DashboardStorage {
         ...d,
         components: Array.isArray(d.components) ? d.components : [],
       }))
-      return { data: normalized, error: null, source: 'local' }
+      return { data: normalized, error: null }
     } catch (error) {
       return {
         data: null,
         error: error instanceof Error ? error : new Error('Failed to load from localStorage'),
-        source: 'local',
+
       }
     }
   }
@@ -60,12 +60,12 @@ export class LocalStorageDashboardStorage implements DashboardStorage {
   async save(dashboards: Dashboard[]): Promise<StorageResult<void>> {
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(dashboards))
-      return { data: undefined, error: null, source: 'local' }
+      return { data: undefined, error: null }
     } catch (error) {
       return {
         data: null,
         error: error instanceof Error ? error : new Error('Failed to save to localStorage'),
-        source: 'local',
+
       }
     }
   }
@@ -89,12 +89,12 @@ export class LocalStorageDashboardStorage implements DashboardStorage {
       }
 
       await this.save(dashboards)
-      return { data: dashboardToSave, error: null, source: 'local' }
+      return { data: dashboardToSave, error: null }
     } catch (error) {
       return {
         data: null,
         error: error instanceof Error ? error : new Error('Failed to sync to localStorage'),
-        source: 'local',
+
       }
     }
   }
@@ -104,12 +104,12 @@ export class LocalStorageDashboardStorage implements DashboardStorage {
       const result = await this.load()
       const dashboards = (result.data || []).filter(d => d.id !== id)
       await this.save(dashboards)
-      return { data: undefined, error: null, source: 'local' }
+      return { data: undefined, error: null }
     } catch (error) {
       return {
         data: null,
         error: error instanceof Error ? error : new Error('Failed to delete from localStorage'),
-        source: 'local',
+
       }
     }
   }
@@ -181,12 +181,12 @@ export class ApiDashboardStorage implements DashboardStorage {
           ? response.map(fromDashboardDTO)
           : []
 
-      return { data: dashboards, error: null, source: 'api' }
+      return { data: dashboards, error: null }
     } catch (error) {
       return {
         data: null,
         error: error instanceof Error ? error : new Error('Failed to load from API'),
-        source: 'api',
+
       }
     }
   }
@@ -199,7 +199,7 @@ export class ApiDashboardStorage implements DashboardStorage {
     } catch {
       // Ignore cache errors
     }
-    return { data: undefined, error: null, source: 'api' }
+    return { data: undefined, error: null }
   }
 
   async sync(dashboard: Dashboard): Promise<StorageResult<Dashboard>> {
@@ -219,11 +219,11 @@ export class ApiDashboardStorage implements DashboardStorage {
           const createDto = toCreateDashboardDTO(dashboardForCreate as any)
           const result = await api.createDashboard(createDto)
           // Backend returns full Dashboard
-          return { data: fromDashboardDTO(result), error: null, source: 'api' }
+          return { data: fromDashboardDTO(result), error: null }
         } catch (createError) {
           console.warn('[ApiStorage] Dashboard creation failed:', createError)
           // Return local version - do NOT fall through to avoid querying server with local UUID
-          return { data: dashboard, error: null, source: 'local' }
+          return { data: dashboard, error: null }
         }
       }
 
@@ -235,24 +235,24 @@ export class ApiDashboardStorage implements DashboardStorage {
         const updateDto = toUpdateDashboardDTO(dashboard)
         const result = await api.updateDashboard(dashboard.id, updateDto)
         // Backend returns full Dashboard
-        return { data: fromDashboardDTO(result), error: null, source: 'api' }
+        return { data: fromDashboardDTO(result), error: null }
       } else {
         // Dashboard doesn't exist on server - try to create it
         try {
           const createDto = toCreateDashboardDTO(dashboard)
           const result = await api.createDashboard(createDto)
-          return { data: fromDashboardDTO(result), error: null, source: 'api' }
+          return { data: fromDashboardDTO(result), error: null }
         } catch (createError) {
           // Create failed - keep local version
           console.warn('[ApiStorage] Dashboard sync failed, using local version:', createError)
-          return { data: dashboard, error: null, source: 'api' }
+          return { data: dashboard, error: null }
         }
       }
     } catch (error) {
       return {
         data: null,
         error: error instanceof Error ? error : new Error('Failed to sync to API'),
-        source: 'api',
+
       }
     }
   }
@@ -274,12 +274,12 @@ export class ApiDashboardStorage implements DashboardStorage {
         // Ignore cache errors
       }
 
-      return { data: undefined, error: null, source: 'api' }
+      return { data: undefined, error: null }
     } catch (error) {
       return {
         data: null,
         error: error instanceof Error ? error : new Error('Failed to delete from API'),
-        source: 'api',
+
       }
     }
   }

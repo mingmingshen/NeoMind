@@ -685,7 +685,7 @@ pub async fn list_shares_handler(
             created_at: t.created_at,
             expires_at: t.expires_at,
         })
-        .filter(|r| r.expires_at.map_or(true, |exp| exp > now))
+        .filter(|r| r.expires_at.is_none_or(|exp| exp > now))
         .collect();
 
     ok(responses)

@@ -17,10 +17,9 @@ pub mod session;
 pub mod storage;
 pub mod tools;
 
-// Legacy exports (backward compatibility)
-pub use llm::{GenerationResult, LlmBackend, LlmConfig, LlmError};
+pub use llm::LlmError;
 
-// New exports
+// Exports
 pub use llm::backend::{
     BackendCapabilities, BackendId, DynamicLlmRuntime, FinishReason, GenerationParams,
     LlmInput as LlmRuntimeInput, LlmOutput, LlmRuntime, StreamChunk, TokenUsage,
@@ -50,8 +49,7 @@ pub mod prelude {
     // Error handling
     pub use crate::error::{Error, Result};
 
-    // Legacy
-    pub use crate::llm::{GenerationResult, LlmBackend, LlmConfig, LlmError};
+    pub use crate::llm::LlmError;
     pub use crate::message::{Content, Message, MessageRole};
     pub use crate::session::{Session, SessionId};
 

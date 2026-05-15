@@ -158,9 +158,6 @@ struct HttpPollingTask {
     config: HttpDeviceConfig,
     last_poll: Instant,
     next_poll: Instant,
-    /// Error counter (reserved for future retry logic).
-    #[allow(dead_code)]
-    error_count: u32,
     is_running: bool,
 }
 
@@ -240,7 +237,6 @@ impl HttpAdapter {
                 config: device.clone(),
                 last_poll: now,
                 next_poll: now + Duration::from_secs(device.poll_interval),
-                error_count: 0,
                 is_running: true,
             })
             .collect()
@@ -433,7 +429,6 @@ impl HttpAdapter {
                             config: config.clone(),
                             last_poll: Instant::now(),
                             next_poll: Instant::now(),
-                            error_count: 0,
                             is_running: true,
                         })
                         .await
@@ -728,7 +723,6 @@ impl DeviceAdapter for HttpAdapter {
                 config: device_config,
                 last_poll: Instant::now(),
                 next_poll: Instant::now(),
-                error_count: 0,
                 is_running: true,
             };
             tasks.push(task);

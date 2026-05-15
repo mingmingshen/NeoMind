@@ -203,10 +203,27 @@ pub struct ExtensionStore {
 }
 
 impl ExtensionStore {
-    /// Get or create the extension store singleton
+    /// Get or create the extension store singleton.
+    ///
+    /// For production use, pass a file path like `"data/extensions.redb"`.
+    /// For testing, pass `":memory:"` to create an isolated temporary database
+    /// (each call gets its own DB — no singleton caching, no file lock conflicts).
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Arc<Self>, Error> {
         let path_ref = path.as_ref();
         let path_str = path_ref.to_string_lossy().to_string();
+
+        // :memory: — create isolated temp DB for tests (skip singleton)
+        if path_str == ":memory:" {
+            let temp_dir = std::env::temp_dir();
+            let temp_path = temp_dir.join(format!("neomind_ext_{}", uuid::Uuid::new_v4()));
+            let db = Database::create(&temp_path)?;
+            let store = Arc::new(ExtensionStore {
+                db: Arc::new(db),
+                path: temp_path.to_string_lossy().to_string(),
+            });
+            store.ensure_tables()?;
+            return Ok(store);
+        }
 
         // Check if we already have a store for this path
         {
@@ -218,7 +235,6 @@ impl ExtensionStore {
             }
         }
 
-        // Use the same database as settings store
         let db = if path_ref.exists() {
             Database::open(path_ref)?
         } else {

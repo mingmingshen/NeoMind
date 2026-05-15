@@ -18,6 +18,7 @@ pub const SETTINGS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("s
 pub const KEY_LLM_CONFIG: &str = "llm_config";
 pub const KEY_MQTT_CONFIG: &str = "mqtt_config";
 pub const KEY_GLOBAL_TIMEZONE: &str = "global_timezone";
+pub const KEY_RETENTION_CONFIG: &str = "retention_config";
 
 /// Default global timezone (IANA format)
 pub const DEFAULT_GLOBAL_TIMEZONE: &str = "Asia/Shanghai";
@@ -300,6 +301,67 @@ impl MqttSettings {
     /// Get the listen address for the embedded broker.
     pub fn listen_address(&self) -> String {
         format!("{}:{}", self.listen, self.port)
+    }
+}
+
+/// Retention configuration for data cleanup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetentionConfig {
+    /// Whether automatic cleanup is enabled.
+    #[serde(default = "default_retention_enabled")]
+    pub enabled: bool,
+
+    /// Cleanup interval in hours.
+    #[serde(default = "default_retention_interval")]
+    pub interval_hours: u64,
+
+    /// Default retention period in hours for numeric metrics (None = forever).
+    #[serde(default = "default_retention_default")]
+    pub default_retention: Option<u64>,
+
+    /// Retention period in hours for image/binary data (None = forever).
+    #[serde(default = "default_retention_image")]
+    pub image_retention: Option<u64>,
+}
+
+fn default_retention_enabled() -> bool {
+    true
+}
+
+fn default_retention_interval() -> u64 {
+    1 // 1 hour
+}
+
+fn default_retention_default() -> Option<u64> {
+    Some(720) // 30 days
+}
+
+fn default_retention_image() -> Option<u64> {
+    Some(72) // 3 days
+}
+
+impl Default for RetentionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_retention_enabled(),
+            interval_hours: default_retention_interval(),
+            default_retention: default_retention_default(),
+            image_retention: default_retention_image(),
+        }
+    }
+}
+
+impl RetentionConfig {
+    /// Convert to a RetentionPolicy for the time-series store.
+    pub fn to_retention_policy(&self) -> super::timeseries::RetentionPolicy {
+        let mut policy = super::timeseries::RetentionPolicy::new(self.default_retention);
+        // Apply shorter retention for common image/binary metric names
+        if let Some(img_hours) = self.image_retention {
+            for metric in &["image", "snapshot", "frame", "photo", "picture"] {
+                policy.set_metric_retention(metric.to_string(), Some(img_hours));
+            }
+        }
+        policy
     }
 }
 
@@ -1099,6 +1161,45 @@ impl SettingsStore {
             .ok()
             .flatten()
             .unwrap_or_else(|| DEFAULT_GLOBAL_TIMEZONE.to_string())
+    }
+
+    // ========================================================================
+    // Retention Configuration
+    // ========================================================================
+
+    /// Save retention configuration.
+    pub fn save_retention_config(&self, config: &RetentionConfig) -> Result<(), Error> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(SETTINGS_TABLE)?;
+            let value =
+                serde_json::to_vec(config).map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(KEY_RETENTION_CONFIG, value.as_slice())?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Load retention configuration.
+    pub fn load_retention_config(&self) -> Result<Option<RetentionConfig>, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(SETTINGS_TABLE)?;
+
+        if let Some(data) = table.get(KEY_RETENTION_CONFIG)? {
+            let config: RetentionConfig = serde_json::from_slice(data.value())
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            Ok(Some(config))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Get retention configuration, returning defaults if not set.
+    pub fn get_retention_config(&self) -> RetentionConfig {
+        self.load_retention_config()
+            .ok()
+            .flatten()
+            .unwrap_or_default()
     }
 }
 

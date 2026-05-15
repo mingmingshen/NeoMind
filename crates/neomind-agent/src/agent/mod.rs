@@ -90,11 +90,6 @@ pub use types::{
     LlmBackend, SessionState, ToolCall,
 };
 
-/// Maximum number of tool calls allowed per request to prevent infinite loops
-/// Note: This constant is kept for backward compatibility. Config values take precedence.
-#[allow(dead_code)]
-const MAX_TOOL_CALLS_PER_REQUEST_DEFAULT: usize = 5;
-
 /// === ANTHROPIC-STYLE IMPROVEMENT: Tool Result Clearing ===
 ///
 /// Compacts old tool result messages into concise summaries.
@@ -159,7 +154,7 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
                         let result_preview = tc
                             .result
                             .as_ref()
-                            .and_then(|r| {
+                            .map(|r| {
                                 let s = if let Some(s) = r.as_str() {
                                     s.to_string()
                                 } else {
@@ -170,7 +165,7 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
                                     || args_summary.contains("get")
                                     || args_summary.contains("history");
                                 let preview_len = if is_data_action { 300 } else { 80 };
-                                Some(s.chars().take(preview_len).collect::<String>())
+                                s.chars().take(preview_len).collect::<String>()
                             })
                             .unwrap_or_default();
                         if result_preview.is_empty() {
@@ -615,11 +610,6 @@ fn calculate_adaptive_context_adjustment(messages: &[AgentMessage]) -> f64 {
 
     adjustment
 }
-
-/// Default context window size to use when model capacity is unknown.
-/// This is a conservative value that works for most models.
-#[allow(dead_code)]
-const DEFAULT_CONTEXT_TOKENS: usize = 8_000;
 
 /// Tool result cache to avoid redundant executions.
 ///
@@ -1526,106 +1516,6 @@ impl Agent {
     pub async fn update_context_rule_engine(&self, engine: Arc<neomind_rules::RuleEngine>) {
         let selector = self.context_selector.read().await;
         selector.set_rule_engine(engine).await;
-    }
-
-    // === P4.2: INTELLIGENT MEMORY INJECTION HELPERS ===
-
-    /// Extract entities and topics from conversation for memory retrieval.
-    ///
-    /// Analyzes recent messages to identify:
-    /// - Device mentions (device IDs, locations)
-    /// - Topic keywords (temperature, lighting, etc.)
-    /// - Rule/automation mentions
-    #[allow(dead_code)]
-    fn extract_conversation_entities_topics(
-        &self,
-        messages: &[AgentMessage],
-    ) -> (Vec<String>, Vec<String>) {
-        use std::collections::HashSet;
-
-        let mut entities = HashSet::new();
-        let mut topics = HashSet::new();
-
-        // Analyze last 10 messages
-        let recent_count = messages.len().min(10);
-        let recent = &messages[messages.len().saturating_sub(recent_count)..];
-
-        for msg in recent {
-            let content = msg.content.to_lowercase();
-
-            // Extract device entities
-            for word in content.split_whitespace() {
-                if word.starts_with("device_") || word.starts_with("设备") {
-                    entities.insert(word.to_string());
-                }
-                // Location mentions
-                if word.contains("客厅") || word.contains("卧室") || word.contains("厨房") {
-                    entities.insert(word.to_string());
-                }
-                if word.contains("living") || word.contains("bedroom") || word.contains("kitchen") {
-                    entities.insert(word.to_string());
-                }
-            }
-
-            // Extract topics
-            if content.contains("温度") || content.contains("temperature") {
-                topics.insert("temperature".to_string());
-            }
-            if content.contains("灯") || content.contains("light") {
-                topics.insert("lighting".to_string());
-            }
-            if content.contains("湿度") || content.contains("humidity") {
-                topics.insert("humidity".to_string());
-            }
-            if content.contains("规则") || content.contains("自动化") || content.contains("rule")
-            {
-                topics.insert("automation".to_string());
-            }
-        }
-
-        (entities.into_iter().collect(), topics.into_iter().collect())
-    }
-
-    /// Build memory injection hint based on entities, topics, and health status.
-    ///
-    /// Creates a system prompt that guides the LLM to recall relevant context
-    /// from long-term memory. This is a framework that can be extended with
-    /// actual memory queries when a persistent memory service is integrated.
-    #[allow(dead_code)]
-    fn build_memory_injection_hint(
-        &self,
-        entities: &[String],
-        topics: &[String],
-        health: &crate::context::ContextHealth,
-    ) -> String {
-        if entities.is_empty() && topics.is_empty() {
-            return String::new();
-        }
-
-        let mut hint = String::from("[Memory Recall] ");
-
-        // Add health-based guidance
-        if let Some(recommendation) = health.recommendation() {
-            hint.push_str(&format!("Context hint: {}. ", recommendation));
-        }
-
-        // Add entity recall hints
-        if !entities.is_empty() {
-            hint.push_str(&format!("Related entities: {}. ", entities.join(", ")));
-        }
-
-        // Add topic recall hints
-        if !topics.is_empty() {
-            hint.push_str(&format!(
-                "Previous topics discussed: {}. ",
-                topics.join(", ")
-            ));
-        }
-
-        // Add guidance for memory retrieval
-        hint.push_str("Consider any relevant information from earlier in the conversation that might help with the current request.");
-
-        hint
     }
 
     // === SEMANTIC MAPPING METHODS ===

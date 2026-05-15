@@ -42,6 +42,7 @@ NeoMind/
 
 - **Ollama API**: Use `/api/chat` (native), NOT `/v1/chat/completions`
 - **Tauri Environment**: API base is `http://localhost:9375/api`, WebSocket uses `ws://`
+- **Frontend API calls**: `getApiBase()` already includes `/api`, so use `/settings/retention` NOT `/api/settings/retention`
 - **Time-series DB**: All metrics in `data/telemetry.redb`
 - **DataSourceId Format**: `{type}:{id}:{field}` (e.g., `extension:weather:temp`)
 

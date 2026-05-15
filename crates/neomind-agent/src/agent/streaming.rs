@@ -375,11 +375,6 @@ impl ToolResultCache {
         }
     }
 
-    /// Get current cache size (for monitoring)
-    #[allow(dead_code)]
-    fn len(&self) -> usize {
-        self.entries.len()
-    }
 
     /// Generate cache key from tool name and arguments.
     /// Sorts object keys to ensure consistent keys regardless of parameter order.
@@ -971,7 +966,7 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
         // Distinguish from agent conversation history:
         // message tool returns objects with "title", "level", "read" fields
         // agent conversation returns objects with "role", "content" fields
-        let is_message_list = messages.first().map_or(false, |m| {
+        let is_message_list = messages.first().is_some_and(|m| {
             m.get("title").is_some() || m.get("level").is_some() || m.get("read").is_some()
         });
 
@@ -1364,7 +1359,7 @@ pub fn build_context_window_with_config(
     config: &CompactionConfig,
 ) -> Vec<AgentMessage> {
     // Step 1: Calculate total tokens without any compaction
-    let total_tokens: usize = messages.iter().map(|m| estimate_message_tokens(m)).sum();
+    let total_tokens: usize = messages.iter().map(estimate_message_tokens).sum();
 
     // Step 2: Only compact tool results if we're actually over budget
     let working = if config.compact_tool_results && total_tokens > max_tokens {
@@ -1491,7 +1486,7 @@ fn compact_tool_results_stream_with_config(
                             let result_preview = tc
                                 .result
                                 .as_ref()
-                                .and_then(|r| {
+                                .map(|r| {
                                     let s = if let Some(s) = r.as_str() {
                                         s.to_string()
                                     } else {
@@ -1504,7 +1499,7 @@ fn compact_tool_results_stream_with_config(
                                         || args_summary.contains("get")
                                         || args_summary.contains("history");
                                     let preview_len = if is_data_action { 2048 } else { 80 };
-                                    Some(s.chars().take(preview_len).collect::<String>())
+                                    s.chars().take(preview_len).collect::<String>()
                                 })
                                 .unwrap_or_default();
                             if result_preview.is_empty() {
@@ -1931,7 +1926,7 @@ pub async fn process_stream_events_with_safeguards(
                 let is_interrupted = safeguards.interrupt_signal.as_ref().map(|rx| *rx.borrow()).unwrap_or(false);
                 if is_interrupted {
                     tracing::info!("Stream interrupted by user");
-                    yield AgentEvent::content("\n\n[Interrupted]".to_string());
+                    yield AgentEvent::content("\n\n[Interrupted]");
                     yield AgentEvent::end();
                     return;
                 }
@@ -2085,7 +2080,7 @@ pub async fn process_stream_events_with_safeguards(
                                 let new_content = &buffer[yielded_up_to..json_start];
                                 if !new_content.is_empty() {
                                     content_before_tools.push_str(new_content);
-                                    yield AgentEvent::content(new_content.to_string());
+                                    yield AgentEvent::content(new_content);
                                 }
                             }
                             // Still track ALL content before tools for memory saving
@@ -2116,7 +2111,7 @@ pub async fn process_stream_events_with_safeguards(
                                     let new_content = &buffer[yielded_up_to..tool_start];
                                     if !new_content.is_empty() {
                                         content_before_tools.push_str(new_content);
-                                        yield AgentEvent::content(new_content.to_string());
+                                        yield AgentEvent::content(new_content);
                                     }
                                 }
                                 let before_tool = &buffer[..tool_start];
@@ -2164,7 +2159,7 @@ pub async fn process_stream_events_with_safeguards(
                                         let safe_content = &buffer[yielded_up_to..suspicious_pos];
                                         if !safe_content.is_empty() {
                                             content_before_tools.push_str(safe_content);
-                                            yield AgentEvent::content(safe_content.to_string());
+                                            yield AgentEvent::content(safe_content);
                                         }
                                         yielded_up_to = suspicious_pos;
                                     }
@@ -2209,7 +2204,7 @@ pub async fn process_stream_events_with_safeguards(
                 let remaining = &buffer[yielded_up_to..];
                 if !remaining.is_empty() {
                     content_before_tools.push_str(remaining);
-                    yield AgentEvent::content(remaining.to_string());
+                    yield AgentEvent::content(remaining);
                 }
                 yielded_up_to = buffer.len();
             }
@@ -2971,7 +2966,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                         let before_tool = &buffer[..json_start];
                         if !before_tool.is_empty() {
                             content_before_tools.push_str(before_tool);
-                            yield AgentEvent::content(before_tool.to_string());
+                            yield AgentEvent::content(before_tool);
                         }
 
                         if let Ok((_, calls)) = parse_tool_calls(&tool_json) {
@@ -2987,7 +2982,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                             let before_tool = &buffer[..tool_start];
                             if !before_tool.is_empty() {
                                 content_before_tools.push_str(before_tool);
-                                yield AgentEvent::content(before_tool.to_string());
+                                yield AgentEvent::content(before_tool);
                             }
 
                             if let Some(tool_end) = buffer.find("</tool_calls>") {
@@ -3228,114 +3223,6 @@ pub async fn process_multimodal_stream_events_with_safeguards(
             None => yield AgentEvent::end(),
         }
     }))
-}
-
-/// Detect if the user's intent requires multi-step tool calling using LLM analysis.
-///
-/// NOTE: This function is currently unused as it adds latency.
-/// Kept for potential future use with configuration option.
-#[allow(dead_code)]
-async fn detect_complex_intent_with_llm(llm_interface: &LlmInterface, user_message: &str) -> bool {
-    let detection_prompt = format!(
-        "分析以下用户请求是否需要**多步操作**才能完成。
-
-用户请求: {}
-
-判断标准（满足任一即返回 true）:
-1. 条件判断: 如 \"如果A则B\"，\"当温度超过X时做Y\"
-2. 链式操作: 如 \"先查询A，然后基于结果做B\"
-3. 多个独立操作: 如 \"同时检查A和B\"，\"获取所有设备的数据\"
-4. 需要分析后决定: 如 \"看看设备状态，如果有问题就告警\"
-5. **数据分析**: 如 \"分析趋势\"，\"统计\"，\"对比\"，\"查看历史数据并分析\"
-6. **多设备操作**: 如 \"所有\"，\"每个\"，\"全部设备\"
-
-**关键**: 如果请求涉及\"分析\"、\"趋势\"、\"历史\"、\"所有\"等词，通常需要多步操作。
-
-**只需要回答\"true\"或\"false\"，小写，不要其他内容。**",
-        user_message
-    );
-
-    match llm_interface.chat_without_tools(&detection_prompt).await {
-        Ok(response) => {
-            let response_text = &response.text;
-            let response_lower = response_text.to_lowercase();
-            let is_complex = response_lower.contains("true")
-                || response_lower.contains("是")
-                || response_lower.contains("yes")
-                || response_lower.contains("多步")
-                || response_lower.contains("需要多次");
-            let complexity_label = if is_complex { "complex" } else { "simple" };
-            tracing::info!(
-                "LLM intent detection: message='{}' => response='{}' => is_{}",
-                user_message.chars().take(50).collect::<String>(),
-                response_text.chars().take(50).collect::<String>(),
-                complexity_label
-            );
-            is_complex
-        }
-        Err(e) => {
-            tracing::warn!(
-                "LLM complex intent detection failed: {}, falling back to keyword matching",
-                e
-            );
-            // Fallback to keyword-based detection if LLM call fails
-            is_complex_multi_step_intent_fallback(user_message)
-        }
-    }
-}
-
-/// Fallback keyword-based complex intent detection (used when LLM detection fails).
-/// Detects patterns that indicate multi-step tool calling is needed.
-fn is_complex_multi_step_intent_fallback(message: &str) -> bool {
-    let complex_patterns = [
-        // Conditional patterns
-        ("如果", "就"),
-        ("如果", "则"),
-        ("当", "时"),
-        ("超过", "就"),
-        // Chained operation patterns
-        ("查询", "然后"),
-        ("检查", "之后"),
-        ("根据", "然后"),
-        // Multiple operation indicators
-        ("并且", ""),
-        ("同时", ""),
-        // === NEW: Analysis and data patterns ===
-        ("分析", ""),
-        ("趋势", ""),
-        ("统计", ""),
-        ("历史", ""),
-        ("对比", ""),
-        ("比较", ""),
-        ("所有", ""),
-        ("每个", ""),
-        ("全部", ""),
-        // === NEW: Multi-step patterns ===
-        ("查看", "并"),
-        ("查询", "并"),
-        ("获取", "后"),
-        ("先", "后"),
-    ];
-
-    let lower = message.to_lowercase();
-
-    for (first, second) in complex_patterns {
-        if !second.is_empty() {
-            if lower.contains(first) && lower.contains(second) {
-                tracing::info!(
-                    "Complex intent detected by keyword: '{}' + '{}'",
-                    first,
-                    second
-                );
-                return true;
-            }
-        } else if lower.contains(first) {
-            tracing::info!("Complex intent detected by keyword: '{}'", first);
-            return true;
-        }
-    }
-
-    false
 }
 
 /// Argument names that typically hold image/base64 data.

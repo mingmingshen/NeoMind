@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.7.7] - 2026-05-15
+
+### Added
+
+- **Data retention configuration** — New `GET/PUT /api/settings/retention` and `POST /api/settings/retention/cleanup` endpoints for automatic telemetry cleanup. Configurable retention period (never–90 days), image data retention, cleanup interval, and manual trigger
+- **Preferences UI — Data Management** — New data management section in Settings > Preferences with auto-cleanup toggle, retention period selector, image data retention selector, and manual cleanup button
+- **Extension FFI timeout protection** — Added `safe_ffi_call_with_timeout` with 30-second limit for all extension FFI calls, preventing hung extensions from blocking the runner
+- **Extension event queue backpressure** — Event queue now capped at 1000 entries; oldest events dropped with warning log when queue is full
+
+### Changed
+
+- **Server startup parallelization** — Split initialization into Phase A (parallel store opening via `spawn_blocking`) and Phase B (background services). All redb stores (rule, agent, dashboard, instance, extension) open concurrently, reducing cold-start time
+- **Concurrent extension loading** — Extension loading now uses bounded parallelism (`Semaphore(4)`) instead of sequential loading
+- **Lazy GPU detection** — GPU info collected on first `/api/stats` request instead of at startup, eliminating startup delay on systems without GPU
+- **Frontend cache eviction** — `useDataSource` now enforces max cache sizes with FIFO eviction for system stats, telemetry, and extension data caches
+- **Extension stream lifecycle** — Added `destroy()` method for complete client cleanup; proper subscription handler cleanup on reconnect
+- **Robust dashboard conversion** — `positionFromDTO` returns safe defaults for missing/malformed position data; better validation of component DTOs
+
+### Fixed
+
+- **Integration test redb lock conflict** — `ExtensionStore::open` now supports `:memory:` mode (isolated temp DB per call); `new_for_testing()` uses `:memory:` to eliminate parallel test file lock failures (87/87 tests passing)
+- **Backend switching race condition** — `set_active` now holds a DashMap guard to prevent concurrent instance removal during active backend switch
+- **Channel handler error handling** — Replaced `expect("Just created")` / `expect("Just updated")` with proper `ok_or_else` error responses in channel CRUD handlers
+
+### Removed (Dead Code Cleanup)
+
+- **Legacy `LlmBackend` trait** — Removed unused trait from `neomind-core` along with `LlmConfig`, `GenerationResult`, `StopReason`, `GenerationStream` types (0 implementations, fully replaced by `LlmRuntime`)
+- **`TokenizerWrapper`** — Removed empty placeholder module (`llm_backends/tokenizer.rs`), never had a real implementation
+- **`ContextRelevance::Low`** — Removed unused enum variant that was never constructed or matched
+- **`StorageResult.source`** — Removed unused `'local' | 'api' | 'cache'` field from frontend persistence types (set 28 times, never read)
+- **Dead functions/constants** — Removed 10 `#[allow(dead_code)]` items: `filter_simplified_tools`, `AsyncThinkStorage`, `AggressiveMockLlm`, `COMPOUND_SEPARATORS`, `MAX_TOOL_CALLS_PER_REQUEST_DEFAULT`, `DEFAULT_CONTEXT_TOKENS`, `extract_conversation_entities_topics`, `build_memory_injection_hint`, `detect_complex_intent_with_llm`, `is_complex_multi_step_intent_fallback`
+- **Dead struct fields** — Removed `MessageManager.data_dir`, `MqttMapping.capabilities`, `HttpPollingTask.error_count`, `ExtensionStreamEvent::Heartbeat` variant
+- **Unused example files** — Removed 5 dead examples from `crates/neomind-devices/examples/`
+- **Incorrect `#[allow(dead_code)]` annotations** — Cleaned from `IsolatedExtensionLoader.native_loader` (actively used), `StreamEvent`, `CloudDeviceTypesIndex`
+
+### Fixed
+
+- **Integration test redb lock conflict** — `ExtensionStore::open` now supports `:memory:` mode (isolated temp DB per call); `new_for_testing()` uses `:memory:` to eliminate parallel test file lock failures (87/87 tests passing)
+- **Clippy warnings** — Auto-fixed ~57 clippy issues: unnecessary `to_string`, redundant closures, `and_then→map`, `filter_map→map`, `map_or` simplification, `strip_prefix`, `is_multiple_of`, empty lines after doc comments
+
 ## [v0.7.6] - 2026-05-14
 
 ### Performance

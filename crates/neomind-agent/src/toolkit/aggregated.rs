@@ -789,7 +789,7 @@ impl DeviceTool {
                 || data.iter().any(|p| {
                     p.value
                         .as_str()
-                        .map_or(false, |s| s.starts_with("data:image/"))
+                        .is_some_and(|s| s.starts_with("data:image/"))
                 });
 
             if is_image_metric && !data.is_empty() {
@@ -856,7 +856,7 @@ impl DeviceTool {
                     let ss = fmt_ts(s);
                     let se = fmt_ts(e);
                     // Only shorten if both timestamps have the expected "MM-DD HH:MM" format (11 chars)
-                    if ss.len() == 11 && se.len() == 11 && &ss[0..5] == &se[0..5] {
+                    if ss.len() == 11 && se.len() == 11 && ss[0..5] == se[0..5] {
                         format!("{}~{}", ss, &se[6..])
                     } else {
                         format!("{}~{}", ss, se)
@@ -1806,7 +1806,7 @@ impl AgentTool {
         )
         .await
         .map_err(|_| ToolError::Execution("Agent invocation timed out after 120 seconds. The agent may be stuck or the task is too complex. Try simplifying the request or check the agent's status.".into()))?
-        .map_err(|e| ToolError::Execution(e))?;
+        .map_err(ToolError::Execution)?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "execution_id": result.execution_id,
@@ -1831,7 +1831,7 @@ impl AgentTool {
             .get_agent(agent_id)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", &agent_id, "list")))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", agent_id, "list")))?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "agent_id": agent_id,
@@ -1952,7 +1952,7 @@ impl AgentTool {
             .get_agent(agent_id)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", &agent_id, "list")))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", agent_id, "list")))?;
 
         let conversation: Vec<Value> = agent
             .conversation_history
@@ -1988,7 +1988,7 @@ impl AgentTool {
             .get_agent(agent_id_input)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", &agent_id_input, "list")))?;
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Agent", agent_id_input, "list")))?;
 
         let last_turn = agent.conversation_history.first();
 
@@ -3409,7 +3409,7 @@ impl TransformTool {
             .store
             .list_transforms()
             .await
-            .map_err(|e| ToolError::Execution(e))?;
+            .map_err(ToolError::Execution)?;
 
         let items: Vec<Value> = transforms
             .iter()
@@ -3441,7 +3441,7 @@ impl TransformTool {
             .store
             .get_transform(id)
             .await
-            .map_err(|e| ToolError::Execution(e))?
+            .map_err(ToolError::Execution)?
         {
             Some(t) => Ok(ToolOutput::success(serde_json::json!({
                 "id": t["id"],
@@ -3456,7 +3456,7 @@ impl TransformTool {
                 "last_executed": t["last_executed"],
                 "created_at": t["created_at"],
             }))),
-            None => Err(ToolError::Execution(not_found_msg("Transform", &id, "list"))),
+            None => Err(ToolError::Execution(not_found_msg("Transform", id, "list"))),
         }
     }
 
@@ -3471,7 +3471,7 @@ impl TransformTool {
             )
         })?;
 
-        Self::parse_scope(scope_str).map_err(|e| ToolError::InvalidArguments(e))?;
+        Self::parse_scope(scope_str).map_err(ToolError::InvalidArguments)?;
 
         let id = format!("transform_{}", uuid::Uuid::new_v4());
         let now = chrono::Utc::now().timestamp();
@@ -3499,7 +3499,7 @@ impl TransformTool {
         self.store
             .save_transform(transform_data)
             .await
-            .map_err(|e| ToolError::Execution(e))?;
+            .map_err(ToolError::Execution)?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "id": id,
@@ -3518,8 +3518,8 @@ impl TransformTool {
             .store
             .get_transform(id)
             .await
-            .map_err(|e| ToolError::Execution(e))?
-            .ok_or_else(|| ToolError::Execution(not_found_msg("Transform", &id, "list")))?;
+            .map_err(ToolError::Execution)?
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Transform", id, "list")))?;
 
         // Merge changed fields
         // Note: TransformAutomation uses #[serde(flatten)] for metadata,
@@ -3531,7 +3531,7 @@ impl TransformTool {
             existing["description"] = Value::String(desc.to_string());
         }
         if let Some(scope_str) = args["scope"].as_str() {
-            Self::parse_scope(scope_str).map_err(|e| ToolError::InvalidArguments(e))?;
+            Self::parse_scope(scope_str).map_err(ToolError::InvalidArguments)?;
             existing["scope"] = Value::String(scope_str.to_string());
         }
         if args.get("intent").is_some() {
@@ -3558,7 +3558,7 @@ impl TransformTool {
         self.store
             .save_transform(automation_data)
             .await
-            .map_err(|e| ToolError::Execution(e))?;
+            .map_err(ToolError::Execution)?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "id": id,
@@ -3575,7 +3575,7 @@ impl TransformTool {
             .store
             .delete_transform(id)
             .await
-            .map_err(|e| ToolError::Execution(e))?;
+            .map_err(ToolError::Execution)?;
 
         if deleted {
             Ok(ToolOutput::success(serde_json::json!({
@@ -3583,7 +3583,7 @@ impl TransformTool {
                 "status": "deleted"
             })))
         } else {
-            Err(ToolError::Execution(not_found_msg("Transform", &id, "list")))
+            Err(ToolError::Execution(not_found_msg("Transform", id, "list")))
         }
     }
 
@@ -3596,8 +3596,8 @@ impl TransformTool {
             .store
             .get_transform(id)
             .await
-            .map_err(|e| ToolError::Execution(e))?
-            .ok_or_else(|| ToolError::Execution(not_found_msg("Transform", &id, "list")))?;
+            .map_err(ToolError::Execution)?
+            .ok_or_else(|| ToolError::Execution(not_found_msg("Transform", id, "list")))?;
 
         let js_code = transform["js_code"]
             .as_str()

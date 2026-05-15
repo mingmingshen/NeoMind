@@ -223,7 +223,7 @@ impl ExtensionTool {
                 Value::Object(normalized)
             }
             Value::Array(arr) => {
-                Value::Array(arr.iter().map(|v| Self::normalize_image_args(v)).collect())
+                Value::Array(arr.iter().map(Self::normalize_image_args).collect())
             }
             _ => args.clone(),
         }

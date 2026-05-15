@@ -568,6 +568,13 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/settings/timezone", get(settings::get_timezone))
         .route("/api/settings/timezone", put(settings::update_timezone))
         .route("/api/settings/timezones", get(settings::list_timezones))
+        // Retention Configuration API
+        .route("/api/settings/retention", get(settings::get_retention_config))
+        .route("/api/settings/retention", put(settings::update_retention_config))
+        .route(
+            "/api/settings/retention/cleanup",
+            post(settings::trigger_retention_cleanup),
+        )
         // Unified Automations API
         .route(
             "/api/automations",

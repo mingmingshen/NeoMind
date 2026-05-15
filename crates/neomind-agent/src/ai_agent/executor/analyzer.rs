@@ -1179,7 +1179,7 @@ impl AgentExecutor {
                                     description: desc.clone(),
                                     step_type: "llm_analysis".to_string(),
                                     input: Some(text_data_summary.join("\n")),
-                                    output: step.result.or_else(|| Some(desc)).unwrap_or_default(),
+                                    output: step.result.or(Some(desc)).unwrap_or_default(),
                                     confidence: step.confidence,
                                 }
                             })
@@ -1273,7 +1273,7 @@ impl AgentExecutor {
                                                     input: Some(text_data_summary.join("\n")),
                                                     output: step
                                                         .result
-                                                        .or_else(|| Some(desc))
+                                                        .or(Some(desc))
                                                         .unwrap_or_default(),
                                                     confidence: step.confidence,
                                                 }
@@ -1342,7 +1342,7 @@ impl AgentExecutor {
                                                     input: Some(text_data_summary.join("\n")),
                                                     output: step
                                                         .result
-                                                        .or_else(|| Some(desc))
+                                                        .or(Some(desc))
                                                         .unwrap_or_default(),
                                                     confidence: step.confidence,
                                                 }

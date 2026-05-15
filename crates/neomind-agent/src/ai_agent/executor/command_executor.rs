@@ -565,7 +565,7 @@ impl AgentExecutor {
                         return true;
                     }
                     // 2. Suffix match: action "turn_on" matches rid "light_living:turn_on"
-                    if let Some(cmd_suffix) = rid.split(':').last() {
+                    if let Some(cmd_suffix) = rid.split(':').next_back() {
                         if action == cmd_suffix {
                             return true;
                         }

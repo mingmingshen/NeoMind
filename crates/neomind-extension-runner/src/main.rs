@@ -63,7 +63,7 @@ use event_handler::get_global_event_state;
 mod ipc_routing;
 use ipc_routing::{
     complete_pending_request, create_event_channel, get_pending_requests, register_pending_request,
-    safe_ffi_call, start_stdin_reader, STDOUT_WRITE_MUTEX,
+    safe_ffi_call, safe_ffi_call_with_timeout, start_stdin_reader, SendPtr, STDOUT_WRITE_MUTEX,
 };
 
 // ============================================================================
@@ -740,7 +740,9 @@ impl NativeExtensionBridge {
     }
 
     fn call_json0(&self, func: JsonFn0) -> Result<serde_json::Value, String> {
-        let ptr = safe_ffi_call("call_json0", AssertUnwindSafe(|| unsafe { func() }))?;
+        let SendPtr(ptr) = safe_ffi_call_with_timeout("call_json0", AssertUnwindSafe(move || unsafe {
+            SendPtr(func())
+        }))?;
         self.read_json_ptr(ptr)
     }
 
@@ -751,9 +753,9 @@ impl NativeExtensionBridge {
     ) -> Result<serde_json::Value, String> {
         let bytes = serde_json::to_vec(input)
             .map_err(|e| format!("Failed to serialize native bridge input: {}", e))?;
-        let ptr = safe_ffi_call(
+        let SendPtr(ptr) = safe_ffi_call_with_timeout(
             "call_json1",
-            AssertUnwindSafe(|| unsafe { func(bytes.as_ptr(), bytes.len()) }),
+            AssertUnwindSafe(move || unsafe { SendPtr(func(bytes.as_ptr(), bytes.len())) }),
         )?;
         self.read_json_ptr(ptr)
     }

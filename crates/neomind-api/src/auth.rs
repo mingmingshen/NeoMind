@@ -577,8 +577,7 @@ pub async fn hybrid_auth_middleware(
     // handler already validated the share token, so we trust them.
     if headers
         .get("x-internal-proxy")
-        .and_then(|v| v.to_str().ok())
-        .map_or(false, |v| v == "share")
+        .and_then(|v| v.to_str().ok()) == Some("share")
     {
         // Insert a service account session for logging purposes
         let proxy_session = crate::auth_users::SessionInfo {
