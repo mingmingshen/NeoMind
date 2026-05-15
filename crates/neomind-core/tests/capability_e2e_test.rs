@@ -529,9 +529,9 @@ async fn test_native_isolated_event_capability_ipc() {
         std::env::set_var("PATH", &joined);
     }
 
-    let manager = Arc::new(IsolatedExtensionManager::new(
-        IsolatedManagerConfig::default(),
-    ));
+    let mut config = IsolatedManagerConfig::default();
+    config.extension_config.startup_timeout_secs = 60;
+    let manager = Arc::new(IsolatedExtensionManager::new(config));
     manager
         .set_capability_provider(Arc::new(NativeWriteCapabilityProvider))
         .await;

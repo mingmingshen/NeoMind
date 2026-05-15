@@ -9,7 +9,9 @@
 //! - **Linux/Windows**: Basic file existence and format checks
 
 use std::path::Path;
-use tracing::{info, warn};
+#[cfg(target_os = "macos")]
+use tracing::warn;
+use tracing::info;
 
 /// Validation error types
 #[derive(Debug, thiserror::Error)]
@@ -23,6 +25,7 @@ pub enum ValidationError {
     #[error("Invalid library format: {0}")]
     InvalidFormat(String),
 
+    #[cfg(target_os = "macos")]
     #[error("macOS LC_ID_DYLIB validation failed: {0}")]
     InvalidDylibId(String),
 
@@ -234,7 +237,7 @@ fn validate_windows_dll(path: &Path) -> Result<(), ValidationError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::{self, File};
+    use std::fs::File;
     use std::io::Write;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -244,8 +247,11 @@ mod tests {
         let err = ValidationError::FileNotFound("test.dylib".to_string());
         assert!(err.to_string().contains("test.dylib"));
 
-        let err = ValidationError::InvalidDylibId("bad id".to_string());
-        assert!(err.to_string().contains("bad id"));
+        #[cfg(target_os = "macos")]
+        {
+            let err = ValidationError::InvalidDylibId("bad id".to_string());
+            assert!(err.to_string().contains("bad id"));
+        }
     }
 
     #[test]
