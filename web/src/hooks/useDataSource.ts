@@ -200,10 +200,11 @@ async function fetchDeviceTelemetry(deviceId: string): Promise<{ success: boolea
 }
 
 /**
- * Generic typed cache with TTL and size limits
+ * Generic typed cache with TTL and size limits.
+ * Supports optional per-entry metadata (e.g. refresh scheduling).
  */
-class TypedCache<T> {
-  private cache = new Map<string, { data: T; timestamp: number }>()
+class TypedCache<T, M = void> {
+  private cache = new Map<string, { data: T; timestamp: number; meta?: M }>()
 
   constructor(
     private ttl: number,
@@ -220,12 +221,52 @@ class TypedCache<T> {
     return entry.data
   }
 
-  set(key: string, data: T): void {
+  /** Get data along with metadata. */
+  getWithMeta(key: string): { data: T; meta?: M } | undefined {
+    const entry = this.cache.get(key)
+    if (!entry) return undefined
+    if (Date.now() - entry.timestamp > this.ttl) {
+      this.cache.delete(key)
+      return undefined
+    }
+    return { data: entry.data, meta: entry.meta }
+  }
+
+  set(key: string, data: T, meta?: M): void {
     if (this.cache.size >= this.maxSize) {
       const oldestKey = this.cache.keys().next().value
       if (oldestKey) this.cache.delete(oldestKey)
     }
-    this.cache.set(key, { data, timestamp: Date.now() })
+    this.cache.set(key, { data, timestamp: Date.now(), meta })
+  }
+
+  /** Update metadata for an existing entry. Returns true if entry existed. */
+  updateMeta(key: string, meta: M): boolean {
+    const entry = this.cache.get(key)
+    if (!entry) return false
+    entry.meta = meta
+    return true
+  }
+
+  /** Delete a specific entry. */
+  delete(key: string): boolean {
+    return this.cache.delete(key)
+  }
+
+  /** Iterate entries that match a predicate (for batch operations). */
+  forEach(predicate: (data: T, meta: M | undefined, key: string) => void): void {
+    for (const [key, entry] of this.cache) {
+      predicate(entry.data, entry.meta, key)
+    }
+  }
+
+  /** Delete entries matching a predicate. */
+  deleteWhere(predicate: (meta: M | undefined, key: string) => boolean): void {
+    for (const [key, entry] of this.cache) {
+      if (predicate(entry.meta, key)) {
+        this.cache.delete(key)
+      }
+    }
   }
 
   cleanup(): void {
@@ -239,31 +280,18 @@ class TypedCache<T> {
 }
 
 /**
- * Cache for historical telemetry data
- * Key: deviceId|metric|timeRange|limit|aggregate
+ * Cache for historical telemetry data.
+ * Metadata tracks scheduled refreshes for real-time coalescing.
  */
-interface TelemetryCacheEntry {
+interface TelemetryRefreshMeta {
+  refreshing?: boolean
+  refreshAfter?: number
+}
+interface TelemetryCacheData {
   data: number[]
   raw?: unknown[]
-  timestamp: number
-  refreshing?: boolean  // If a refresh is scheduled
-  refreshAfter?: number  // Unix timestamp when refresh should occur
 }
-const telemetryCache = new Map<string, TelemetryCacheEntry>()
-const TELEMETRY_CACHE_TTL = 5000 // 5 seconds cache
-const MAX_TELEMETRY_CACHE_SIZE = 50  // Limit cache size to prevent memory issues
-
-/** Enforce cache size limit by evicting the oldest entries (FIFO). */
-function evictCache<K, V>(cache: Map<K, V>, maxSize: number): void {
-  if (cache.size >= maxSize) {
-    const keysToDelete = cache.size - maxSize + 1
-    let i = 0
-    for (const key of cache.keys()) {
-      cache.delete(key)
-      if (++i >= keysToDelete) break
-    }
-  }
-}
+const telemetryCache = new TypedCache<TelemetryCacheData, TelemetryRefreshMeta>(5000, 50)
 
 /**
  * Cache for system stats data
@@ -363,7 +391,7 @@ export async function fetchHistoricalTelemetry(
   const cached = telemetryCache.get(cacheKey)
 
   // Return cached data if fresh (unless bypassing cache)
-  if (!bypassCache && cached && Date.now() - cached.timestamp < TELEMETRY_CACHE_TTL) {
+  if (!bypassCache && cached) {
     return { data: cached.data, raw: cached.raw, success: true }
   }
 
@@ -528,11 +556,9 @@ export async function fetchHistoricalTelemetry(
         }
 
         // Cache the result
-        evictCache(telemetryCache, MAX_TELEMETRY_CACHE_SIZE)
         telemetryCache.set(cacheKey, {
           data: values,
           raw: rawPoints,
-          timestamp: Date.now()
         })
 
         return { data: values, raw: rawPoints, success: true }
@@ -684,31 +710,10 @@ function dedupeTelemetryPoints(
 }
 
 /**
- * Clear expired telemetry cache entries
- * Also enforces cache size limits
+ * Clear expired cache entries across all caches.
  */
 function cleanupTelemetryCache() {
-  const now = Date.now()
-
-  // Clean expired telemetry cache entries
-  for (const [key, value] of telemetryCache.entries()) {
-    if (now - value.timestamp > TELEMETRY_CACHE_TTL) {
-      telemetryCache.delete(key)
-    }
-  }
-
-  // Enforce telemetry cache size limit (remove oldest entries if needed)
-  if (telemetryCache.size > MAX_TELEMETRY_CACHE_SIZE) {
-    const entriesToRemove = telemetryCache.size - MAX_TELEMETRY_CACHE_SIZE
-    let removed = 0
-    for (const key of telemetryCache.keys()) {
-      if (removed >= entriesToRemove) break
-      telemetryCache.delete(key)
-      removed++
-    }
-  }
-
-  // TypedCache instances handle their own cleanup
+  telemetryCache.cleanup()
   systemStatsCache.cleanup()
   extensionDataCache.cleanup()
 }
@@ -1970,11 +1975,11 @@ export function useDataSource<T = unknown>(
           const refreshDelay = 10000 // 10 seconds minimum between cache refreshes
           matchingTelemetrySources.forEach((ds) => {
             const cacheKey = `${getSourceId(ds)}|${ds.metricId}|${ds.timeRange ?? 1}|${ds.limit ?? 50}|${ds.aggregate ?? ds.aggregateExt ?? 'raw'}`
-            const cached = telemetryCache.get(cacheKey)
+            const cached = telemetryCache.getWithMeta(cacheKey)
 
             // Only schedule refresh if cache exists and isn't being refreshed
-            if (cached && !cached.refreshing) {
-              telemetryCache.set(cacheKey, { ...cached, refreshing: true, refreshAfter: Date.now() + refreshDelay })
+            if (cached && !cached.meta?.refreshing) {
+              telemetryCache.updateMeta(cacheKey, { refreshing: true, refreshAfter: Date.now() + refreshDelay })
             }
           })
 
@@ -1983,12 +1988,10 @@ export function useDataSource<T = unknown>(
             clearTimeout(telemetryRefreshTimerRef.current)
           }
           telemetryRefreshTimerRef.current = setTimeout(() => {
-            // Clear the refreshing flag and trigger actual fetch
-            for (const [key, value] of telemetryCache.entries()) {
-              if (value.refreshing && value.refreshAfter && Date.now() >= value.refreshAfter) {
-                telemetryCache.delete(key)
-              }
-            }
+            // Delete entries ready for refresh, triggering re-fetch
+            telemetryCache.deleteWhere((meta) =>
+              !!meta?.refreshing && !!meta?.refreshAfter && Date.now() >= meta.refreshAfter
+            )
             telemetryRefreshTimerRef.current = null
             setTelemetryRefreshTrigger(prev => prev + 1)
           }, refreshDelay)

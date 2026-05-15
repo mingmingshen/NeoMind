@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Integration test redb lock conflict** — `ExtensionStore::open` now supports `:memory:` mode (isolated temp DB per call); `new_for_testing()` uses `:memory:` to eliminate parallel test file lock failures (87/87 tests passing)
 - **Backend switching race condition** — `set_active` now holds a DashMap guard to prevent concurrent instance removal during active backend switch
 - **Channel handler error handling** — Replaced `expect("Just created")` / `expect("Just updated")` with proper `ok_or_else` error responses in channel CRUD handlers
+- **Dashboard scroll white screen** — `ChartContainer` replaced ResizeObserver + useState with pure CSS (`minHeight: 120`), eliminating the first-frame blank render. Grid items use `content-visibility: auto` with `contain-intrinsic-size: 300px` to prevent GPU texture exhaustion during fast scrolling
+- **Chart component deduplication** — Extracted shared `toTelemetrySource`, `getDeviceName`, `getPropertyDisplayName`, `getSeriesName`, and `ChartTooltip` from LineChart/BarChart/PieChart into shared modules (~300 lines removed)
+- **Cache implementation unified** — `useDataSource` telemetry cache migrated from raw Map + manual TTL/eviction to `TypedCache` with metadata support, unified with system stats and extension caches (~70 lines removed)
 
 ### Removed (Dead Code Cleanup)
 

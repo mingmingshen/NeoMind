@@ -11,7 +11,7 @@
  * - Chart view modes: timeseries, snapshot, comparison
  */
 
-import { useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -35,7 +35,7 @@ import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors, chartColorsHex } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate, ChartViewMode } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
-import { ChartContainer, EmptyState } from '../shared'
+import { ChartContainer, ChartTooltip, EmptyState } from '../shared'
 import {
   getEffectiveAggregate,
   getEffectiveTimeWindow,
@@ -44,106 +44,14 @@ import {
   transformToBarData,
   type TimeSeriesData,
 } from '@/lib/telemetryTransform'
+import { toTelemetrySource } from '@/lib/chartTelemetry'
+import { getDeviceName as _getDeviceName, getPropertyDisplayName as _getPropertyDisplayName, getSeriesName as _getSeriesName } from '@/lib/chartDisplay'
 
 // Use design system chart colors
 const chartColors = designChartColors
 
 // Fallback colors as hex values for SVG
 const fallbackColors = chartColorsHex
-
-/**
- * shadcn/ui style tooltip component
- */
-function ChartTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
-  if (!active || !payload?.length) return null
-
-  return (
-    <div className="rounded-lg border bg-background p-2 shadow-md">
-      <div className="grid gap-1.5 text-xs">
-        {payload.map((entry: any, index: number) => (
-          <div key={index} className="flex items-center gap-2">
-            <div
-              className="h-2 w-2 shrink-0 rounded-[2px]"
-              style={{ backgroundColor: entry.color }}
-            />
-            <span className="text-muted-foreground font-medium">{entry.name}:</span>
-            <span className="tabular-nums font-semibold">{entry.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/**
- * Convert device/metric source to telemetry for bar charts.
- * Bar charts can display time-series data as discrete bars.
- * Now supports the new timeWindow and aggregateExt options.
- */
-function toTelemetrySource(
-  dataSource?: DataSource,
-  limit: number = 24,
-  timeRange: number = 1
-): DataSource | undefined {
-  if (!dataSource) {
-    return undefined
-  }
-
-  // Get effective time window (new or legacy)
-  const effectiveTimeWindow = getEffectiveTimeWindow(dataSource)
-  const effectiveAggregate = getEffectiveAggregate(dataSource)
-
-  // If already telemetry type, update with settings
-  if (dataSource.type === 'telemetry') {
-    return {
-      ...dataSource,
-      limit: dataSource.limit ?? limit,
-      timeRange: dataSource.timeRange ?? timeWindowToHours(effectiveTimeWindow.type),
-      aggregate: dataSource.aggregate ?? (effectiveAggregate === 'raw' ? 'raw' : 'avg'),
-      params: {
-        ...dataSource.params,
-        includeRawPoints: true,
-      },
-      transform: 'raw',
-    }
-  }
-
-  // Convert device type to telemetry for historical data
-  const sourceId = getSourceId(dataSource)
-  if (dataSource.type === 'device' && sourceId) {
-    return {
-      type: 'telemetry' as const,
-      sourceId: sourceId,
-      metricId: dataSource.metricId ?? dataSource.property ?? 'value',
-      timeRange: timeWindowToHours(effectiveTimeWindow.type),
-      limit: limit,
-      aggregate: effectiveAggregate === 'raw' ? 'raw' : 'avg',
-      params: {
-        includeRawPoints: true,
-      },
-      transform: 'raw' as const,
-    }
-  }
-
-  // Convert metric type with deviceId to telemetry
-  // Metric type without deviceId will be handled by useDataSource's dynamic lookup
-  if (dataSource.type === 'metric' && sourceId) {
-    return {
-      type: 'telemetry' as const,
-      sourceId: sourceId,
-      metricId: dataSource.metricId ?? dataSource.property ?? 'value',
-      timeRange: timeWindowToHours(effectiveTimeWindow.type),
-      limit: limit,
-      aggregate: effectiveAggregate === 'raw' ? 'raw' : 'avg',
-      params: {
-        includeRawPoints: true,
-      },
-      transform: 'raw' as const,
-    }
-  }
-
-  return dataSource
-}
 
 /**
  * Transform raw telemetry points to chart data using DataMapper
@@ -345,44 +253,14 @@ export function BarChart({
   const showLoading = loading && !hasData
 
   // Get device names for series labels
-  const getDeviceName = (deviceId?: string): string => {
-    if (!deviceId) return t('chart.value')
-    return deviceId.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-  }
+  const getDeviceName = useCallback((deviceId?: string): string => _getDeviceName(deviceId, t), [t])
 
-  const getPropertyDisplayName = (property?: string): string => {
-    if (!property) return t('chart.value')
-    const propertyNames: Record<string, string> = {
-      temperature: t('chart.temperature'),
-      humidity: t('chart.humidity'),
-      temp: t('chart.temperature'),
-      value: t('chart.value'),
-    }
-    return propertyNames[property] || property.replace(/[-_]/g, ' ')
-  }
+  const getPropertyDisplayName = useCallback((property?: string): string => _getPropertyDisplayName(property, t), [t])
 
   // Get series display name from data source, handling extension sources
-  const getSeriesName = (ds: DataSource, idx: number): string => {
-    if (ds.type === 'extension' || ds.type === 'extension-metric') {
-      const extName = ds.extensionDisplayName || ds.extensionId || ''
-      const metricPart = ds.extensionMetric
-        ? getPropertyDisplayName(ds.extensionMetric.includes(':') ? ds.extensionMetric.split(':').pop()! : ds.extensionMetric)
-        : ''
-      if (extName && metricPart) return `${extName} · ${metricPart}`
-      if (extName) return extName
-      if (metricPart) return metricPart
-      return t('chart.series', { count: idx + 1 })
-    }
-    const metricName = ds.metricId || ds.property
-    const deviceId = getSourceId(ds)
-    if (deviceId) {
-      return `${getDeviceName(deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-    }
-    if (metricName) {
-      return getPropertyDisplayName(metricName.includes(':') ? metricName.split(':').pop()! : metricName)
-    }
-    return t('chart.series', { count: idx + 1 })
-  }
+  const getSeriesName = useCallback((ds: DataSource, idx: number): string => {
+    return _getSeriesName(ds, idx, { getDeviceName, getPropertyDisplayName, t })
+  }, [getDeviceName, getPropertyDisplayName, t])
 
   // Check if data is multi-source (array of arrays)
   const isMultiSource = (data: unknown): boolean => {

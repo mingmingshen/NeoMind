@@ -217,8 +217,6 @@ export const DashboardGrid = memo(function DashboardGrid({
         }
         .react-grid-item {
           ${editMode && transitionsEnabled ? 'transition: transform 200ms ease;' : 'transition: none !important;'}
-          -webkit-backface-visibility: hidden;
-          backface-visibility: hidden;
         }
         ${touchEnabled ? `
         .react-grid-item { touch-action: none; }
@@ -233,11 +231,9 @@ export const DashboardGrid = memo(function DashboardGrid({
         .dashboard-item {
           width: 100%; height: 100%;
           display: flex; flex-direction: column; overflow: hidden;
-          content-visibility: auto;
-          contain-intrinsic-size: 200px;
           overflow-anchor: none;
-          -webkit-backface-visibility: hidden;
-          backface-visibility: hidden;
+          content-visibility: auto;
+          contain-intrinsic-size: 300px;
         }
         .react-grid-placeholder {
           background: rgba(148, 163, 184, 0.15) !important;
