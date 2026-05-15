@@ -396,20 +396,20 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   const isStreamingRef = useRef(false)
   const messagesRef = useRef<Message[]>([])  // Store latest messages for WebSocket handlers
 
-  // Auto-scroll to bottom when messages change
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [])
-
   // Ref for messages end
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Ref for the scroll container (passed to MergedMessageList for virtual scrolling)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
+  // Auto-scroll to bottom on messages change or during streaming.
+  // Uses instant scroll after stream ends to prevent bounce during
+  // the streaming→saved message transition.
   useEffect(() => {
-    scrollToBottom()
-  }, [messages, streamState.streamingContent, scrollToBottom])
+    messagesEndRef.current?.scrollIntoView({
+      behavior: streamState.isStreaming ? "smooth" : "instant"
+    })
+  }, [messages, streamState.streamingContent, streamState.isStreaming])
 
   // Sync isStreaming ref with state
   useEffect(() => {

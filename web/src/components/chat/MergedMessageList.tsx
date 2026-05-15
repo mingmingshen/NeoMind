@@ -38,6 +38,21 @@ export function MergedMessageList({
   // Memoize merged messages to avoid recalculation on every render
   const displayMessages = useMemo(() => mergeMessagesForDisplay(messages), [messages])
 
+  // Pin last 2 messages outside virtualizer for smooth streaming transition.
+  // This prevents layout shift when the streaming block is replaced by the saved message.
+  const PIN_COUNT = 2
+  const virtualMessages = useMemo(() => {
+    return displayMessages.length > PIN_COUNT
+      ? displayMessages.slice(0, -PIN_COUNT)
+      : []
+  }, [displayMessages])
+
+  const pinnedMessages = useMemo(() => {
+    return displayMessages.length > PIN_COUNT
+      ? displayMessages.slice(-PIN_COUNT)
+      : displayMessages
+  }, [displayMessages])
+
   // Get user initials
   const getUserInitials = useCallback((username: string) => {
     return username.slice(0, 2).toUpperCase()
@@ -46,7 +61,7 @@ export function MergedMessageList({
   // Virtual scrolling — uses the parent scroll container (ChatContainer's overflow-y-auto div)
   // to avoid nested scrolling issues
   const virtualizer = useVirtualizer({
-    count: displayMessages.length,
+    count: virtualMessages.length,
     getScrollElement: () => scrollElementRef.current,
     estimateSize: () => 120,
     overscan: 5,
@@ -64,7 +79,7 @@ export function MergedMessageList({
       ) : (
         <div className="space-y-6">
           {/* Virtual list for existing messages */}
-          {displayMessages.length > 0 && (
+          {virtualMessages.length > 0 && (
             <div
               style={{
                 height: virtualizer.getTotalSize(),
@@ -73,7 +88,7 @@ export function MergedMessageList({
               }}
             >
               {virtualizer.getVirtualItems().map((virtualItem) => {
-                const message = displayMessages[virtualItem.index]
+                const message = virtualMessages[virtualItem.index]
                 return (
                   <div
                     key={virtualItem.key}
@@ -98,10 +113,21 @@ export function MergedMessageList({
             </div>
           )}
 
+          {/* Pinned recent messages — rendered directly (no virtualizer) for smooth transition
+              from streaming block to saved message without layout shift */}
+          {pinnedMessages.map((message) => (
+            <MessageItem
+              key={message.id}
+              message={message}
+              user={user}
+              getUserInitials={getUserInitials}
+            />
+          ))}
+
           {/* Streaming message — always rendered outside the virtualizer */}
           {isStreaming && (
             <div className="flex gap-3 justify-start">
-              <img src="/logo-square.png" alt="NeoMind" width={32} height={32} className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5 animate-pulse" />
+              <img src="/logo-square.png" alt="NeoMind" width={32} height={32} className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5" />
               <div className="flex-1 min-w-0">
                 {/* Execution plan */}
                 {executionPlan && (
