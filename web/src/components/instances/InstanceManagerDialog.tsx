@@ -382,6 +382,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
               onChange={(e) => setFormUrl(e.target.value)}
               placeholder={t('urlPlaceholder')}
             />
+            {!formErrors.url && <p className="text-xs text-muted-foreground">{t('urlHint')}</p>}
             {formErrors.url && <p className="text-xs text-destructive">{formErrors.url}</p>}
           </div>
           <div className="space-y-2">

@@ -9,6 +9,7 @@
   "namePlaceholder": "如：工厂-1",
   "url": "地址",
   "urlPlaceholder": "如：http://192.168.1.50:9375",
+  "urlHint": "默认端口为 9375",
   "apiKey": "API 密钥",
   "apiKeyPlaceholder": "nmk_xxxx...",
   "apiKeyEditPlaceholder": "输入新密钥以替换，留空则不变",
