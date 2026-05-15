@@ -25,6 +25,7 @@ import {
   ChevronRight,
   ChevronLeft,
   ExternalLink,
+  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
@@ -443,19 +444,30 @@ export function MarketplaceDialog({
 
   return (
     <FullScreenDialog open={open} onOpenChange={(v) => { if (!v) handleClose(); else onOpenChange(v) }}>
-      <FullScreenDialogHeader
-        icon={
-          showDetail
-            ? <Button variant="ghost" size={isMobile ? "icon" : "sm"} onClick={handleBack} disabled={installing} className="-ml-2">
-                <ChevronLeft className={isMobile ? "h-5 w-5" : "h-4 w-4 mr-1"} />
-                {!isMobile && t("common:back")}
-              </Button>
-            : <Globe className="h-5 w-5" />
-        }
-        title={showDetail ? (selectedExtension?.name || '') : t("extensions:market.title", "Extension Marketplace")}
-        subtitle={!showDetail && marketVersion ? `v${marketVersion}` : undefined}
-        onClose={handleClose}
-      />
+      {showDetail ? (
+        <header className="shrink-0 flex items-center justify-between gap-3 px-3 md:px-5 py-3 md:py-4 border-b border-border">
+          <div className="flex items-center gap-2 min-w-0">
+            <Button variant="ghost" size={isMobile ? "icon" : "sm"} onClick={handleBack} disabled={installing} className="-ml-2 shrink-0">
+              <ChevronLeft className="h-4 w-4" />
+              {!isMobile && t("common:back")}
+            </Button>
+            <span className="text-base md:text-lg font-semibold truncate">{selectedExtension?.name}</span>
+          </div>
+          <button
+            onClick={handleClose}
+            className="shrink-0 flex items-center justify-center w-8 h-8 md:w-9 rounded-lg text-muted-foreground hover:text-foreground bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-all"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </header>
+      ) : (
+        <FullScreenDialogHeader
+          icon={<Globe className="h-5 w-5" />}
+          title={t("extensions:market.title", "Extension Marketplace")}
+          subtitle={marketVersion ? `v${marketVersion}` : undefined}
+          onClose={handleClose}
+        />
+      )}
       <FullScreenDialogContent>
         <FullScreenDialogMain className="p-4 md:p-6">
           {showDetail ? <DetailContent /> : <ExtensionListContent />}
