@@ -144,15 +144,9 @@ export function DeviceTypeList({
       <ResponsiveTable
         columns={[
           {
-            key: 'index',
-            label: '#',
-            width: 'w-10',
-            align: 'center',
-          },
-          {
             key: 'name',
             label: t('devices:types.headers.name'),
-            width: 'w-48',
+            width: '28%',
           },
           {
             key: 'description',
@@ -183,16 +177,8 @@ export function DeviceTypeList({
         loading={loading}
         renderCell={(columnKey, rowData) => {
           const type = rowData as unknown as DeviceType
-          const index = paginatedDeviceTypes.indexOf(type)
 
           switch (columnKey) {
-            case 'index':
-              return (
-                <span className="text-xs text-muted-foreground font-medium">
-                  {index + 1}
-                </span>
-              )
-
             case 'name':
               return (
                 <div className="flex items-center gap-3">

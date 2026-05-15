@@ -431,12 +431,6 @@ export function PendingDevicesList({
       <ResponsiveTable
         columns={[
           {
-            key: 'index',
-            label: '#',
-            width: 'w-10',
-            align: 'center',
-          },
-          {
             key: 'deviceId',
             label: t('devices:pending.headers.deviceId'),
           },
@@ -488,18 +482,10 @@ export function PendingDevicesList({
         }
         renderCell={(columnKey, rowData) => {
           const draft = rowData as unknown as DraftDevice
-          const index = paginatedDrafts.indexOf(draft)
           const hasGeneratedType = draft.generated_type && draft.status === 'waiting_processing'
           const confidence = draft.generated_type?.confidence
 
           switch (columnKey) {
-            case 'index':
-              return (
-                <span className="text-xs text-muted-foreground font-medium">
-                  {index + 1}
-                </span>
-              )
-
             case 'deviceId':
               return (
                 <div className="flex items-center gap-3">

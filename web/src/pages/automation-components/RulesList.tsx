@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { ResponsiveTable } from "@/components/shared"
-import { Edit, Play, Trash2, Bell, FileText, FlaskConical, AlertTriangle, Sparkles, Clock, CheckCircle2, Timer, Zap, MoreVertical } from "lucide-react"
+import { Edit, Play, Trash2, Bell, FileText, FlaskConical, AlertTriangle, Sparkles, Timer, Zap, MoreVertical } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import type { Rule, RuleAction } from "@/types"
 import { cn } from "@/lib/utils"
@@ -283,33 +283,29 @@ export function RulesList({
     <ResponsiveTable
       columns={[
         {
-          key: 'index',
-          label: '#',
-          width: 'w-10',
-          align: 'center',
-        },
-        {
           key: 'name',
           label: t('automation:ruleName'),
+          width: '28%',
         },
         {
           key: 'trigger',
           label: t('automation:trigger'),
+          width: '24%',
         },
         {
           key: 'actions',
           label: t('automation:ruleBuilder.executeActions'),
-          align: 'center',
+          width: '20%',
         },
         {
           key: 'lastTriggered',
           label: t('automation:lastTriggered'),
-          align: 'center',
+          width: '16%',
         },
         {
           key: 'status',
           label: t('automation:status'),
-          align: 'center',
+          width: '12%',
         },
       ]}
       data={paginatedRules as unknown as Record<string, unknown>[]}
@@ -321,18 +317,8 @@ export function RulesList({
       }}
       renderCell={(columnKey, rowData) => {
         const rule = rowData as unknown as Rule
-        const index = paginatedRules.indexOf(rule)
 
         switch (columnKey) {
-          case 'index':
-            return (
-              <div className="flex items-center justify-center">
-                <span className="text-xs text-muted-foreground font-medium">
-                  {startIndex + index + 1}
-                </span>
-              </div>
-            )
-
           case 'name':
             return (
               <div className="flex items-center gap-3">
@@ -356,22 +342,16 @@ export function RulesList({
             const forClause = parseForClause(rule)
 
             return (
-              <div className="flex items-center gap-2">
-                <div className="flex flex-col gap-1 min-w-0 flex-1">
-                  <div className="text-xs font-mono bg-muted px-2.5 py-1.5 rounded-md border border-border truncate" title={condition.full}>
-                    <span className={condition.text === '-' ? 'text-muted-foreground' : 'text-foreground'}>
-                      {condition.text}
-                    </span>
-                  </div>
-                  {forClause && (
-                    <div className="flex items-center gap-1.5">
-                      <Badge variant="outline" className="text-xs gap-1 px-2 py-0 text-info border-info">
-                        <Timer className="h-4 w-4" />
-                        {forClause.duration}{forClause.unit}
-                      </Badge>
-                    </div>
-                  )}
-                </div>
+              <div className="flex items-center gap-2 min-w-0">
+                <code className="text-xs font-mono bg-muted px-2 py-1 rounded-md truncate block" title={condition.full}>
+                  {condition.text === '-' ? <span className="text-muted-foreground">-</span> : condition.text}
+                </code>
+                {forClause && (
+                  <Badge variant="outline" className="text-xs gap-1 shrink-0 text-info border-info">
+                    <Timer className="h-3 w-3" />
+                    {forClause.duration}{forClause.unit}
+                  </Badge>
+                )}
               </div>
             )
           }
@@ -384,32 +364,28 @@ export function RulesList({
             const firstActions = actions.slice(0, 2)
 
             return actionsCount === 0 ? (
-              <div className="flex items-center justify-center">
-                <span className="text-muted-foreground text-sm">-</span>
-              </div>
+              <span className="text-muted-foreground text-sm">-</span>
             ) : (
-              <div className="flex items-center">
-                <div className="flex flex-wrap gap-1">
-                  {firstActions.map((action, i) => {
-                    const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.Execute
-                    const Icon = config.icon
-                    return (
-                      <Badge
-                        key={i}
-                        variant="outline"
-                        className={cn("text-xs gap-1", config.color)}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {t(config.label)}
-                      </Badge>
-                    )
-                  })}
-                  {actionsCount > 2 && (
-                    <Badge variant="outline" className="text-xs bg-muted">
-                      +{actionsCount - 2}
+              <div className="flex flex-wrap gap-1">
+                {firstActions.map((action, i) => {
+                  const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.Execute
+                  const Icon = config.icon
+                  return (
+                    <Badge
+                      key={i}
+                      variant="outline"
+                      className={cn("text-xs gap-1", config.color)}
+                    >
+                      <Icon className="h-3 w-3" />
+                      {t(config.label)}
                     </Badge>
-                  )}
-                </div>
+                  )
+                })}
+                {actionsCount > 2 && (
+                  <Badge variant="outline" className="text-xs bg-muted">
+                    +{actionsCount - 2}
+                  </Badge>
+                )}
               </div>
             )
           }
@@ -418,25 +394,15 @@ export function RulesList({
             const hasTriggered = rule.last_triggered && rule.last_triggered !== '-' && rule.last_triggered !== 0
             const triggerCount = rule.trigger_count || 0
 
-            return (
-              <div className="flex items-center justify-center">
-                {!hasTriggered ? (
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    <span>{t('automation:never', 'Never')}</span>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-0.5">
-                    <div className="flex items-center gap-1.5 text-xs">
-                      <CheckCircle2 className="h-4 w-4 text-success" />
-                      <span>{formatTimestamp(rule.last_triggered)}</span>
-                    </div>
-                    {triggerCount > 1 && (
-                      <span className="text-xs text-muted-foreground">
-                        {t('automation:triggeredTimes', '{{count}} times', { count: triggerCount })}
-                      </span>
-                    )}
-                  </div>
+            return !hasTriggered ? (
+              <span className="text-xs text-muted-foreground">-</span>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs">{formatTimestamp(rule.last_triggered)}</span>
+                {triggerCount > 1 && (
+                  <span className="text-xs text-muted-foreground">
+                    {triggerCount}x
+                  </span>
                 )}
               </div>
             )
@@ -444,22 +410,11 @@ export function RulesList({
 
           case 'status':
             return (
-              <div className="flex items-center justify-center gap-2">
-                <Switch
-                  checked={rule.enabled}
-                  onCheckedChange={() => onToggleStatus(rule)}
-                  className="scale-90"
-                />
-                <Badge variant="outline" className={cn(
-                  "text-xs gap-1 hidden sm:flex",
-                  rule.enabled
-                    ? "bg-success-light text-success border-success"
-                    : "text-foreground bg-muted border-border"
-                )}>
-                  <CheckCircle2 className="h-4 w-4" />
-                  {rule.enabled ? t('automation:statusEnabled') : t('automation:statusDisabled')}
-                </Badge>
-              </div>
+              <Switch
+                checked={rule.enabled}
+                onCheckedChange={() => onToggleStatus(rule)}
+                className="scale-90"
+              />
             )
 
           default:

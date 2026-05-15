@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { ResponsiveTable } from "@/components/shared"
-import { Edit, Trash2, Code, Database, Globe, Cpu, HardDrive, CheckCircle2, Download, MoreVertical } from "lucide-react"
+import { Edit, Trash2, Code, Database, Globe, Cpu, HardDrive, Download, MoreVertical } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import { textMini } from "@/design-system/tokens/typography"
@@ -193,31 +193,24 @@ export function TransformsList({
     <ResponsiveTable
       columns={[
         {
-          key: 'index',
-          label: '#',
-          width: 'w-10',
-          align: 'center',
-        },
-        {
           key: 'name',
           label: t('automation:name'),
+          width: '30%',
         },
         {
           key: 'scope',
           label: t('automation:scope'),
+          width: '18%',
         },
         {
           key: 'transformCode',
           label: t('automation:transformBuilder.transformCode'),
-        },
-        {
-          key: 'outputPrefix',
-          label: t('automation:outputPrefix'),
+          width: '30%',
         },
         {
           key: 'status',
           label: t('automation:status'),
-          align: 'center',
+          width: '10%',
         },
       ]}
       data={paginatedTransforms as unknown as Record<string, unknown>[]}
@@ -229,31 +222,24 @@ export function TransformsList({
       }}
       renderCell={(columnKey, rowData) => {
         const transform = rowData as unknown as TransformAutomation
-        const index = paginatedTransforms.indexOf(transform)
         const scopeInfo = getScopeInfo(transform.scope)
         const ScopeIcon = scopeInfo.icon
 
         switch (columnKey) {
-          case 'index':
-            return (
-              <span className="text-xs text-muted-foreground font-medium">
-                {startIndex + index + 1}
-              </span>
-            )
-
           case 'name':
             return (
               <div className="flex items-center gap-3">
                 <div className={cn(
-                  "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
+                  "w-9 h-9 rounded-lg flex items-center justify-center transition-colors shrink-0",
                   transform.enabled ? "bg-accent-cyan-light text-accent-cyan" : "bg-muted text-muted-foreground"
                 )}>
                   <Code className="h-4 w-4" />
                 </div>
-                <div>
-                  <div className="font-medium text-sm">{transform.name}</div>
-                  <div className="text-xs text-muted-foreground line-clamp-1">
-                    {transform.description || '-'}
+                <div className="min-w-0">
+                  <div className="font-medium text-sm truncate">{transform.name}</div>
+                  <div className="text-xs text-muted-foreground line-clamp-1 flex items-center gap-1">
+                    <Database className="h-3 w-3 shrink-0" />
+                    <code className="truncate">{(transform.output_prefix || 'transform')}.</code>
                   </div>
                 </div>
               </div>
@@ -261,47 +247,26 @@ export function TransformsList({
 
           case 'scope':
             return (
-              <Badge variant="outline" className={cn("text-xs gap-1.5", scopeInfo.color)}>
-                <ScopeIcon className="h-4 w-4" />
+              <Badge variant="outline" className={cn("text-xs gap-1", scopeInfo.color)}>
+                <ScopeIcon className="h-3 w-3" />
                 {getScopeLabel(transform.scope)}
               </Badge>
             )
 
           case 'transformCode':
             return (
-              <code className="text-xs bg-muted px-2 py-1 rounded-md font-mono truncate block max-w-[200px]">
+              <code className="text-xs font-mono bg-muted px-2 py-1 rounded-md truncate block">
                 {getCodeSummary(transform.js_code || '')}
               </code>
             )
 
-          case 'outputPrefix':
-            return (
-              <div className="flex items-center gap-1.5">
-                <Database className="h-4 w-4 text-muted-foreground" />
-                <code className="text-xs bg-muted px-2 py-0.5 rounded">
-                  {(transform.output_prefix || 'transform') + '.'}
-                </code>
-              </div>
-            )
-
           case 'status':
             return (
-              <div className="flex items-center justify-start gap-2">
-                <Switch
-                  checked={transform.enabled}
-                  onCheckedChange={() => onToggleStatus(transform)}
-                  className="scale-90"
-                />
-                <Badge variant="outline" className={cn(
-                  "text-xs gap-1 hidden sm:flex",
-                  transform.enabled
-                    ? "bg-success-light text-success border-success"
-                    : "text-foreground bg-muted border-border"
-                )}>
-                  <CheckCircle2 className="h-4 w-4" />
-                  {transform.enabled ? t('automation:statusEnabled') : t('automation:statusDisabled')}
-                </Badge>
-              </div>
+              <Switch
+                checked={transform.enabled}
+                onCheckedChange={() => onToggleStatus(transform)}
+                className="scale-90"
+              />
             )
 
           default:
