@@ -84,7 +84,6 @@ function toTelemetrySource(
   if (dataSource.type === 'device' && sourceId) {
     return {
       type: 'telemetry',
-      deviceId: sourceId,
       sourceId: sourceId,
       metricId: dataSource.metricId ?? dataSource.property ?? 'value',
       timeRange: timeWindowToHours(effectiveTimeWindow.type),
@@ -97,12 +96,11 @@ function toTelemetrySource(
     }
   }
 
-  // Convert metric type with deviceId to telemetry
-  // Metric type without deviceId will be handled by useDataSource's dynamic lookup
+  // Convert metric type with sourceId to telemetry
+  // Metric type without sourceId will be handled by useDataSource's dynamic lookup
   if (dataSource.type === 'metric' && sourceId) {
     return {
       type: 'telemetry',
-      deviceId: sourceId,
       sourceId: sourceId,
       metricId: dataSource.metricId ?? dataSource.property ?? 'value',
       timeRange: timeWindowToHours(effectiveTimeWindow.type),

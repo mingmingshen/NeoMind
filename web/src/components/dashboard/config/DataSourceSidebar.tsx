@@ -95,11 +95,11 @@ function selectedItemsToDataSource(
     const [type, ...parts] = item.split(':')
 
     if (type === 'device-metric' && parts.length >= 2) {
-      return { type: 'metric', deviceId: parts[0], sourceId: parts[0], metricId: parts[1], property: parts[1] }
+      return { type: 'metric', sourceId: parts[0], metricId: parts[1], property: parts[1] }
     } else if (type === 'device-command' && parts.length >= 2) {
-      return { type: 'command', deviceId: parts[0], sourceId: parts[0], command: parts[1] }
+      return { type: 'command', sourceId: parts[0], command: parts[1] }
     } else if (type === 'device-info' && parts.length >= 2) {
-      return { type: 'device-info', deviceId: parts[0], sourceId: parts[0], infoProperty: parts[1] as any }
+      return { type: 'device-info', sourceId: parts[0], infoProperty: parts[1] as any }
     }
   }
 
@@ -110,11 +110,11 @@ function selectedItemsToDataSource(
     const [type, ...parts] = item.split(':')
 
     if (type === 'device-metric' && parts.length >= 2) {
-      sources.push({ type: 'metric', deviceId: parts[0], sourceId: parts[0], metricId: parts[1], property: parts[1] })
+      sources.push({ type: 'metric', sourceId: parts[0], metricId: parts[1], property: parts[1] })
     } else if (type === 'device-command' && parts.length >= 2) {
-      sources.push({ type: 'command', deviceId: parts[0], sourceId: parts[0], command: parts[1] })
+      sources.push({ type: 'command', sourceId: parts[0], command: parts[1] })
     } else if (type === 'device-info' && parts.length >= 2) {
-      sources.push({ type: 'device-info', deviceId: parts[0], sourceId: parts[0], infoProperty: parts[1] as any })
+      sources.push({ type: 'device-info', sourceId: parts[0], infoProperty: parts[1] as any })
     }
   }
 

@@ -346,6 +346,9 @@ pub async fn get_device_current_handler(
     let mut metrics_data = serde_json::Map::new();
     let now = chrono::Utc::now().timestamp();
 
+    // Unified source_id for telemetry storage queries
+    let device_source_id = format!("device:{}", device_id);
+
     // Transform-generated metric namespaces (with dot notation)
     let transform_namespaces = get_transform_namespaces();
 
@@ -353,7 +356,7 @@ pub async fn get_device_current_handler(
     let all_storage_metrics: Vec<String> = state
         .devices
         .telemetry
-        .list_metrics(&device_id)
+        .list_metrics(&device_source_id)
         .await
         .unwrap_or_default();
 
@@ -449,7 +452,7 @@ pub async fn get_device_current_handler(
             match state
                 .devices
                 .telemetry
-                .latest(&device_id, &metric_name)
+                .latest(&device_source_id, &metric_name)
                 .await
             {
                 Ok(Some(point)) => Some(super::metrics::value_to_json(&point.value)),
@@ -518,6 +521,9 @@ pub async fn get_devices_current_batch_handler(
     let mut devices = std::collections::HashMap::new();
 
     for device_id in req.device_ids {
+        // Unified source_id for telemetry storage queries
+        let device_source_id = format!("device:{}", device_id);
+
         // Get current metrics from device_service
         let current_values = state
             .devices
@@ -545,7 +551,7 @@ pub async fn get_devices_current_batch_handler(
                     if let Ok(Some(point)) = state
                         .devices
                         .telemetry
-                        .latest(&device_id, &metric.name)
+                        .latest(&device_source_id, &metric.name)
                         .await
                     {
                         values.insert(

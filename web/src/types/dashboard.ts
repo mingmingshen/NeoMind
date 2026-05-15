@@ -109,8 +109,6 @@ export interface DataSource {
   params?: Record<string, unknown>
   staticValue?: unknown
   // Device-specific fields (for reading device telemetry)
-  /** @deprecated Use sourceId instead */
-  deviceId?: string
   sourceId?: string
   property?: string
   // Metric-specific fields
@@ -188,9 +186,9 @@ export function normalizeDataSource(dataSource: DataSourceOrList | undefined): D
   return isDataSourceList(dataSource) ? dataSource : [dataSource]
 }
 
-/** Get the source identifier from a DataSource, preferring sourceId over deprecated deviceId */
+/** Get the source identifier from a DataSource */
 export function getSourceId(ds: DataSource): string | undefined {
-  return ds.sourceId ?? ds.deviceId
+  return ds.sourceId
 }
 
 // ============================================================================

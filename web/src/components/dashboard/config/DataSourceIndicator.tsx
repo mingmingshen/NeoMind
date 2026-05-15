@@ -17,7 +17,7 @@ import { normalizeDataSource } from '@/types/dashboard'
 // ============================================================================
 
 export function getSourceSummary(ds: DataSource): string {
-  const sourceId = ds.sourceId ?? ds.deviceId ?? ''
+  const sourceId = ds.sourceId ?? ''
   switch (ds.type) {
     case 'device':
     case 'telemetry':

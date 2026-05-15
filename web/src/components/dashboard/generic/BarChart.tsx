@@ -113,7 +113,6 @@ function toTelemetrySource(
   if (dataSource.type === 'device' && sourceId) {
     return {
       type: 'telemetry' as const,
-      deviceId: sourceId,
       sourceId: sourceId,
       metricId: dataSource.metricId ?? dataSource.property ?? 'value',
       timeRange: timeWindowToHours(effectiveTimeWindow.type),
@@ -131,7 +130,6 @@ function toTelemetrySource(
   if (dataSource.type === 'metric' && sourceId) {
     return {
       type: 'telemetry' as const,
-      deviceId: sourceId,
       sourceId: sourceId,
       metricId: dataSource.metricId ?? dataSource.property ?? 'value',
       timeRange: timeWindowToHours(effectiveTimeWindow.type),

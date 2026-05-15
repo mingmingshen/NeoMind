@@ -449,6 +449,21 @@ impl ServerState {
 
             if let Some(persistent) = t {
                 let inner = persistent.inner_store();
+
+                // Migrate legacy bare device_id keys to unified "device:" prefix format.
+                // Must run here — after the DB is opened, before swap_store makes it live.
+                match inner.migrate_device_prefix() {
+                    Ok(count) => {
+                        tracing::info!(
+                            "Time-series key migration completed: {} keys migrated",
+                            count
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!("Time-series key migration failed: {}", e);
+                    }
+                }
+
                 telemetry_for_bg.swap_store(inner);
                 tracing::info!("Persistent telemetry storage swapped in");
             }

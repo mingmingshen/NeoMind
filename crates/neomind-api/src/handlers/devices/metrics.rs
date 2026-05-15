@@ -94,11 +94,14 @@ pub async fn aggregate_metric_handler(
     let end = query.end.unwrap_or_else(|| chrono::Utc::now().timestamp());
     let start = query.start.unwrap_or(end - 86400); // Default 24 hours
 
+    // Use unified source_id for telemetry storage queries
+    let device_source_id = format!("device:{}", device_id);
+
     // Use telemetry service for aggregation
     let aggregated = state
         .devices
         .telemetry
-        .aggregate(&device_id, &metric, start, end)
+        .aggregate(&device_source_id, &metric, start, end)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to aggregate metric: {:?}", e)))?;
 

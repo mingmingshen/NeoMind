@@ -156,12 +156,14 @@ impl DataSourceId {
 
     /// Get the source_id part for TimeSeriesStorage API
     ///
-    /// For extensions, returns "extension:{extension_id}"
-    /// For devices, returns "{device_id}"
-    /// For transforms, returns "transform:{transform_id}"
+    /// All types now return a prefixed format for consistency:
+    /// - Devices: "device:{device_id}"
+    /// - Extensions: "extension:{extension_id}"
+    /// - Transforms: "transform:{transform_id}"
+    /// - AI: "ai:{group}"
     pub fn source_part(&self) -> String {
         match &self.source_type {
-            DataSourceType::Device => self.source_id.clone(),
+            DataSourceType::Device => format!("device:{}", self.source_id),
             DataSourceType::Extension => format!("extension:{}", self.source_id),
             DataSourceType::Transform => format!("transform:{}", self.source_id),
             DataSourceType::Ai => format!("ai:{}", self.source_id),
@@ -185,6 +187,7 @@ impl DataSourceId {
             Some(("transform", id)) => Some(Self::transform(id, metric)),
             Some(("ai", id)) => Some(Self::ai(id, metric)),
             Some(("device", id)) => Some(Self::device(id, metric)),
+            // Legacy bare device IDs (pre-migration) — treat as device
             _ => Some(Self::device(source_id, metric)),
         }
     }
@@ -586,9 +589,9 @@ mod tests {
 
     #[test]
     fn test_source_part() {
-        // Device: no prefix
+        // Device: "device:" prefix (unified)
         let id = DataSourceId::device("sensor1", "temperature");
-        assert_eq!(id.source_part(), "sensor1");
+        assert_eq!(id.source_part(), "device:sensor1");
         assert_eq!(id.metric_part(), "temperature");
 
         // Extension: "extension:" prefix
@@ -610,7 +613,13 @@ mod tests {
         assert_eq!(id.source_id, "weather");
         assert_eq!(id.field_path, "temperature");
 
-        // Device storage format
+        // Device storage format (unified with prefix)
+        let id = DataSourceId::from_storage_parts("device:sensor1", "temperature").unwrap();
+        assert_eq!(id.source_type, DataSourceType::Device);
+        assert_eq!(id.source_id, "sensor1");
+        assert_eq!(id.field_path, "temperature");
+
+        // Legacy bare device ID (pre-migration backward compat)
         let id = DataSourceId::from_storage_parts("sensor1", "temperature").unwrap();
         assert_eq!(id.source_type, DataSourceType::Device);
         assert_eq!(id.source_id, "sensor1");
@@ -626,7 +635,17 @@ mod tests {
     #[test]
     fn test_round_trip_storage_parts() {
         // Test that source_part() + metric_part() round-trips through from_storage_parts()
+        // Extension
         let original = DataSourceId::extension("weather", "temperature");
+        let reconstructed =
+            DataSourceId::from_storage_parts(&original.source_part(), original.metric_part())
+                .unwrap();
+        assert_eq!(original.source_type, reconstructed.source_type);
+        assert_eq!(original.source_id, reconstructed.source_id);
+        assert_eq!(original.field_path, reconstructed.field_path);
+
+        // Device (now uses "device:" prefix)
+        let original = DataSourceId::device("sensor1", "temperature");
         let reconstructed =
             DataSourceId::from_storage_parts(&original.source_part(), original.metric_part())
                 .unwrap();

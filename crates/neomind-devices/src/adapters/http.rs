@@ -459,8 +459,13 @@ impl HttpAdapter {
                                             value: value.clone(),
                                             quality: None,
                                         };
-                                        let _ =
-                                            storage.write(&device_id, &metric, data_point).await;
+                                        let _ = storage
+                                            .write(
+                                                &format!("device:{}", device_id),
+                                                &metric,
+                                                data_point,
+                                            )
+                                            .await;
                                     }
                                 }
                             }

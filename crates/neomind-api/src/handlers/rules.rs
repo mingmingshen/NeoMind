@@ -695,6 +695,7 @@ pub async fn test_rule_handler(
     // Try to get historical data from time series storage as fallback
     // The metric in the rule might be "battery" but the storage key could be "values.battery"
     // Try multiple common prefixes if the direct lookup fails
+    let device_source_id = format!("device:{}", device_id);
     let metric_variants = vec![
         metric.clone(),
         format!("values.{}", metric),
@@ -715,7 +716,7 @@ pub async fn test_rule_handler(
         let result = state
             .devices
             .telemetry
-            .latest(&device_id, metric_variant)
+            .latest(&device_source_id, metric_variant)
             .await;
 
         match result {

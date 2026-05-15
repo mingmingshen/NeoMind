@@ -546,7 +546,7 @@ impl AgentExecutor {
                 bound.clone()
             } else {
                 // Get all available metrics for this device
-                let all_metrics = storage.list_metrics(device_id).await.unwrap_or_default();
+                let all_metrics = storage.list_metrics(&format!("device:{}", device_id)).await.unwrap_or_default();
                 tracing::debug!(
                     device_id = %device_id,
                     metrics_count = all_metrics.len(),

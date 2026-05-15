@@ -263,7 +263,6 @@ function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataS
     if (ds.type === 'device' && getSourceId(ds) && ds.property) {
       return {
         type: 'telemetry',
-        deviceId: getSourceId(ds),
         sourceId: getSourceId(ds),
         metricId: ds.property,
         timeRange: ds.timeRange ?? 1,

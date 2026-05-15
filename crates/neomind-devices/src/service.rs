@@ -473,7 +473,7 @@ impl DeviceService {
                                 quality: None,
                             };
 
-                            if let Err(e) = storage.write(&device_id, &metric, data_point).await {
+                            if let Err(e) = storage.write(&format!("device:{}", device_id), &metric, data_point).await {
                                 tracing::warn!("Failed to write telemetry to storage: {}", e);
                             }
                         } else {
@@ -691,10 +691,10 @@ impl DeviceService {
 
         for (device_id, _device_type) in devices_to_migrate {
             // Get metrics for this device, then query the latest data point of the first metric
-            match storage.list_metrics(&device_id).await {
+            match storage.list_metrics(&format!("device:{}", device_id)).await {
                 Ok(metrics) if !metrics.is_empty() => {
                     // Pick the first metric and get its latest data point
-                    if let Ok(Some(latest)) = storage.latest(&device_id, &metrics[0]).await {
+                    if let Ok(Some(latest)) = storage.latest(&format!("device:{}", device_id), &metrics[0]).await {
                         let ts = latest.timestamp;
                         tracing::debug!(
                             "Migrating last_seen for {} → {} from telemetry",
@@ -1430,7 +1430,13 @@ impl DeviceService {
             let end = end_time.unwrap_or(i64::MAX);
 
             let points = storage
-                .query_limited(device_id, metric_name, start, end, limit)
+                .query_limited(
+                    &format!("device:{}", device_id),
+                    metric_name,
+                    start,
+                    end,
+                    limit,
+                )
                 .await
                 .map_err(|e| {
                     tracing::error!(
@@ -1484,13 +1490,16 @@ impl DeviceService {
             }
         };
 
+        // Unified source_id for telemetry storage queries
+        let device_source_id = format!("device:{}", device_id);
+
         // If template has defined metrics, query those specifically
         if !template.metrics.is_empty() {
             // Batch: fetch all template metrics in a single redb transaction
             let metric_names: Vec<&str> = template.metrics.iter()
                 .map(|m| m.name.as_str())
                 .collect();
-            match storage.latest_batch(device_id, &metric_names).await {
+            match storage.latest_batch(&device_source_id, &metric_names).await {
                 Ok(batch) => {
                     for (name, point) in batch {
                         result.insert(name, point.value);
@@ -1506,13 +1515,13 @@ impl DeviceService {
         } else {
             // Simple mode: no metrics defined - return all available metrics from storage
             // List all metrics for this device and batch-fetch the latest values
-            if let Ok(all_metrics) = storage.list_metrics(device_id).await {
+            if let Ok(all_metrics) = storage.list_metrics(&device_source_id).await {
                 let metric_names: Vec<&str> = all_metrics.iter()
                     .filter(|n| !n.is_empty())
                     .map(|n| n.as_str())
                     .collect();
                 if !metric_names.is_empty() {
-                    match storage.latest_batch(device_id, &metric_names).await {
+                    match storage.latest_batch(&device_source_id, &metric_names).await {
                         Ok(batch) => {
                             for (name, point) in batch {
                                 result.insert(name, point.value);

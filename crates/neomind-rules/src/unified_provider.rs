@@ -306,7 +306,8 @@ impl TimeSeriesStorageAdapter {
 #[async_trait::async_trait]
 impl DeviceStorageLike for TimeSeriesStorageAdapter {
     async fn query_latest(&self, device_id: &str, metric: &str) -> Option<f64> {
-        match self.storage.latest(device_id, metric).await {
+        let source_id = format!("device:{}", device_id);
+        match self.storage.latest(&source_id, metric).await {
             Ok(Some(dp)) => match &dp.value {
                 neomind_devices::MetricValue::Float(f) => Some(*f),
                 neomind_devices::MetricValue::Integer(i) => Some(*i as f64),

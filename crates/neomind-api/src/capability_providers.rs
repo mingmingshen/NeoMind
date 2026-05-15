@@ -66,7 +66,7 @@ impl DeviceCapabilityProvider {
         if let Some(template) = device_service.get_template(&device.device_type) {
             for metric_def in &template.metrics {
                 if let Ok(Some(latest)) =
-                    telemetry_storage.latest(device_id, &metric_def.name).await
+                    telemetry_storage.latest(&format!("device:{}", device_id), &metric_def.name).await
                 {
                     metrics.insert(
                         metric_def.name.clone(),
@@ -140,7 +140,7 @@ impl DeviceCapabilityProvider {
         };
 
         telemetry_storage
-            .write(device_id, metric, data_point)
+            .write(&format!("device:{}", device_id), metric, data_point)
             .await
             .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 
@@ -1043,7 +1043,7 @@ impl StorageCapabilityProvider {
                 if let Some(metric_name) = metric {
                     // Query single metric
                     let result = telemetry_storage
-                        .latest(device_id, metric_name)
+                        .latest(&format!("device:{}", device_id), metric_name)
                         .await
                         .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 
@@ -1083,7 +1083,7 @@ impl StorageCapabilityProvider {
                     if let Some(template) = device_service.get_template(&device.device_type) {
                         for metric_def in &template.metrics {
                             if let Ok(Some(latest)) =
-                                telemetry_storage.latest(device_id, &metric_def.name).await
+                                telemetry_storage.latest(&format!("device:{}", device_id), &metric_def.name).await
                             {
                                 metrics.insert(
                                     metric_def.name.clone(),
@@ -1130,7 +1130,7 @@ impl StorageCapabilityProvider {
                     .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
                 let results = telemetry_storage
-                    .query(device_id, metric, start, end)
+                    .query(&format!("device:{}", device_id), metric, start, end)
                     .await
                     .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 

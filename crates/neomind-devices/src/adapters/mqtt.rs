@@ -1356,7 +1356,7 @@ impl MqttAdapter {
                                             quality: None,
                                         };
                                         if let Err(e) = storage
-                                            .write(&device_id, &metric.name, data_point)
+                                            .write(&format!("device:{}", device_id), &metric.name, data_point)
                                             .await
                                         {
                                             error!(
@@ -1436,7 +1436,13 @@ impl MqttAdapter {
                                     value: value.clone(),
                                     quality: None,
                                 };
-                                let _ = storage.write(&device_id, &metric_name, data_point).await;
+                                let _ = storage
+                                    .write(
+                                        &format!("device:{}", device_id),
+                                        &metric_name,
+                                        data_point,
+                                    )
+                                    .await;
                             }
 
                             // Emit event to device event channel - event forwarding task will publish to EventBus
@@ -1557,7 +1563,7 @@ impl MqttAdapter {
                                             quality: None,
                                         };
                                         if let Err(e) =
-                                            storage.write(device_id, &metric.name, data_point).await
+                                            storage.write(&format!("device:{}", device_id), &metric.name, data_point).await
                                         {
                                             error!(
                                                 "Failed to write telemetry for {}/{}: {}",
@@ -1602,7 +1608,7 @@ impl MqttAdapter {
                                             quality: None,
                                         };
                                         let _ =
-                                            storage.write(device_id, metric_name, data_point).await;
+                                            storage.write(&format!("device:{}", device_id), metric_name, data_point).await;
                                     }
 
                                     // Emit to device event channel - event forwarding task will publish to EventBus

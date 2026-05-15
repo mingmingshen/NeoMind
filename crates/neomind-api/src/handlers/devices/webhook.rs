@@ -289,10 +289,11 @@ async fn publish_metric_event(
     };
 
     let data_point = DataPoint::new(timestamp, devices_metric_value);
+    let device_source_id = format!("device:{}", device_id);
     let _ = state
         .devices
         .telemetry
-        .write(device_id, metric, data_point)
+        .write(&device_source_id, metric, data_point)
         .await;
 }
 
@@ -367,10 +368,11 @@ async fn process_device_transforms(
                         metric.timestamp,
                         neomind_devices::mdl::MetricValue::Float(metric.value),
                     );
+                    let transform_source_id = format!("device:{}", metric.device_id);
                     let _ = state
                         .devices
                         .telemetry
-                        .write(&metric.device_id, &metric.metric, data_point)
+                        .write(&transform_source_id, &metric.metric, data_point)
                         .await;
                 }
             }

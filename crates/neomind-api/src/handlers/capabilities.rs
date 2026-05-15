@@ -174,8 +174,9 @@ pub async fn write_virtual_metric_handler(
     };
 
     // Write to time series storage
+    let device_source_id = format!("device:{}", device_id);
     match time_series_storage
-        .write(&device_id, &req.metric, data_point)
+        .write(&device_source_id, &req.metric, data_point)
         .await
     {
         Ok(_) => {
@@ -247,8 +248,9 @@ pub async fn aggregate_metrics_handler(
     let end = _query.end.unwrap_or(now.timestamp()); // Now in seconds
 
     // Aggregate metrics using time series storage
+    let device_source_id = format!("device:{}", device_id);
     match time_series_storage
-        .aggregate(&device_id, &_query.metric, start, end)
+        .aggregate(&device_source_id, &_query.metric, start, end)
         .await
     {
         Ok(result) => {

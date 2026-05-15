@@ -83,7 +83,6 @@ function toTelemetrySource(
   if (dataSource.type === 'device' && sourceId) {
     return {
       type: 'telemetry',
-      deviceId: sourceId,
       sourceId: sourceId,
       metricId: dataSource.metricId ?? dataSource.property ?? 'value',
       timeRange: timeWindowToHours(effectiveTimeWindow.type),

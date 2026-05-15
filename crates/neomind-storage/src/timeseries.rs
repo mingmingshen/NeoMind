@@ -551,6 +551,65 @@ impl TimeSeriesStore {
         Self::open(temp_path)
     }
 
+    /// One-time migration: rewrite bare device_id keys to "device:" prefix format.
+    ///
+    /// Before this migration, device telemetry was stored with bare device IDs
+    /// (e.g., "sensor1") while extensions used prefixed format (e.g., "extension:weather").
+    /// After migration, all keys use the unified DataSourceId source_part() format.
+    ///
+    /// Returns the number of migrated keys.
+    pub fn migrate_device_prefix(&self) -> Result<u64, Error> {
+        // Known prefixes that are already correct — skip them
+        const KNOWN_PREFIXES: &[&str] = &["device:", "extension:", "transform:", "ai:"];
+
+        let write_txn = self.db.begin_write()?;
+        let migrated;
+
+        {
+            let mut table = write_txn.open_table(TIMESERIES_TABLE)?;
+
+            // Collect keys that need migration
+            let mut to_migrate: Vec<((String, String, i64), Vec<u8>)> = Vec::new();
+
+            for result in table.iter()? {
+                let (key, value) = result?;
+                let (source_id, metric, ts) = key.value();
+                let sid = source_id;
+
+                // Only migrate bare IDs (no colon prefix)
+                if KNOWN_PREFIXES.iter().any(|p| sid.starts_with(p)) {
+                    continue;
+                }
+
+                let new_source_id = format!("device:{}", sid);
+                to_migrate.push((
+                    (new_source_id, metric.to_string(), ts),
+                    value.value().to_vec(),
+                ));
+            }
+
+            // Write new keys and delete old ones
+            for (new_key, value) in &to_migrate {
+                table.insert(
+                    (new_key.0.as_str(), new_key.1.as_str(), new_key.2),
+                    value.as_slice(),
+                )?;
+            }
+
+            // Delete old keys (use original bare source_id)
+            for ((new_source, metric, ts), _) in &to_migrate {
+                // Extract bare ID from "device:{id}"
+                let bare_id = &new_source[7..]; // Skip "device:"
+                table.remove((bare_id, metric.as_str(), *ts))?;
+            }
+
+            migrated = to_migrate.len() as u64;
+        }
+
+        write_txn.commit()?;
+        Ok(migrated)
+    }
+
     /// Get performance statistics.
     pub async fn get_stats(&self) -> PerformanceStats {
         self.stats.read().await.clone()

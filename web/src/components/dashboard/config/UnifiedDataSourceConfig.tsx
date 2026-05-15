@@ -143,13 +143,11 @@ function selectedItemsToDataSource(
         // Device location marker - just store device reference
         return {
           type: 'device',
-          deviceId: parts[1],
           sourceId: parts[1],
         }
       case 'device-metric':
         return {
           type: 'telemetry',
-          deviceId: parts[1],
           sourceId: parts[1],
           metricId: parts.slice(2).join(':'),
           timeRange: 1,  // 1 hour for real-time dashboards (was 24, too large)
@@ -161,14 +159,12 @@ function selectedItemsToDataSource(
       case 'device-command':
         return {
           type: 'command',
-          deviceId: parts[1],
           sourceId: parts[1],
           command: parts.slice(2).join(':'),
         }
       case 'device-info':
         return {
           type: 'device-info',
-          deviceId: parts[1],
           sourceId: parts[1],
           infoProperty: parts.slice(2).join(':') as any,
         }
@@ -204,7 +200,6 @@ function selectedItemsToDataSource(
         // Format: transform:transformId:field
         return {
           type: 'transform',
-          deviceId: `transform:${parts[1]}`,
           sourceId: `transform:${parts[1]}`,
           metricId: parts.slice(2).join(':'),
           transformId: parts[1],
@@ -218,7 +213,6 @@ function selectedItemsToDataSource(
         // Format: ai-metric:group:field
         return {
           type: 'ai-metric',
-          deviceId: `ai:${parts[1]}`,
           sourceId: `ai:${parts[1]}`,
           metricId: parts.slice(2).join(':'),
           aiGroup: parts[1],
@@ -243,14 +237,12 @@ function selectedItemsToDataSource(
       case 'device':
         result.push({
           type: 'device',
-          deviceId: parts[1],
           sourceId: parts[1],
         })
         break
       case 'device-metric':
         result.push({
           type: 'telemetry',
-          deviceId: parts[1],
           sourceId: parts[1],
           metricId: parts.slice(2).join(':'),
           timeRange: 1,  // 1 hour for real-time dashboards (was 24, too large)
@@ -263,7 +255,6 @@ function selectedItemsToDataSource(
       case 'device-command':
         result.push({
           type: 'command',
-          deviceId: parts[1],
           sourceId: parts[1],
           command: parts.slice(2).join(':'),
         })
@@ -271,7 +262,6 @@ function selectedItemsToDataSource(
       case 'device-info':
         result.push({
           type: 'device-info',
-          deviceId: parts[1],
           sourceId: parts[1],
           infoProperty: parts.slice(2).join(':') as any,
         })
@@ -307,7 +297,6 @@ function selectedItemsToDataSource(
       case 'transform':
         result.push({
           type: 'transform',
-          deviceId: `transform:${parts[1]}`,
           sourceId: `transform:${parts[1]}`,
           metricId: parts.slice(2).join(':'),
           transformId: parts[1],
@@ -321,7 +310,6 @@ function selectedItemsToDataSource(
       case 'ai-metric':
         result.push({
           type: 'ai-metric',
-          deviceId: `ai:${parts[1]}`,
           sourceId: `ai:${parts[1]}`,
           metricId: parts.slice(2).join(':'),
           aiGroup: parts[1],

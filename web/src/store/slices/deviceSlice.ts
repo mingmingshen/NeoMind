@@ -227,6 +227,9 @@ export const createDeviceSlice: StateCreator<
     if (result.deleted) {
       fetchCache.invalidate('devices')
       await get().fetchDevices()
+      // Clean up dashboard components referencing this device
+      const store = (await import('@/store')).useStore
+      store.getState().removeComponentsByDevice(id)
       return true
     }
     return false

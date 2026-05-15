@@ -364,7 +364,10 @@ impl WebhookAdapter {
                     value: value.clone(),
                     quality: None,
                 };
-                if let Err(e) = storage.write(&device_id, &metric_name, data_point).await {
+                if let Err(e) = storage
+                    .write(&format!("device:{}", device_id), &metric_name, data_point)
+                    .await
+                {
                     warn!(
                         "Failed to write telemetry for {}/{}: {}",
                         device_id, metric_name, e

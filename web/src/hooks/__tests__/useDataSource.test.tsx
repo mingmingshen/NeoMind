@@ -234,7 +234,7 @@ describe('useDataSource Hook', () => {
       const deviceDataSource = {
         id: 'device-1',
         type: 'device' as const,
-        deviceId: 'device-1',
+        sourceId: 'device-1',
         metric: 'temperature',
         aggregation: 'mean' as const,
         label: 'Temperature',
@@ -242,7 +242,7 @@ describe('useDataSource Hook', () => {
       }
 
       expect(deviceDataSource.type).toBe('device')
-      expect(deviceDataSource.deviceId).toBe('device-1')
+      expect(deviceDataSource.sourceId).toBe('device-1')
     })
 
     it('should accept transform type data source', () => {
@@ -274,13 +274,13 @@ describe('useDataSource Hook', () => {
       const dataSourceList: Array<{
         id: string
         type: 'device' | 'transform' | 'extension-command'
-        deviceId?: string
+        sourceId?: string
         metric?: string
         transformId?: string
         extensionId?: string
         extensionCommand?: string
       }> = [
-        { id: '1', type: 'device' as const, deviceId: '1', metric: 'temp' },
+        { id: '1', type: 'device' as const, sourceId: '1', metric: 'temp' },
         { id: '2', type: 'transform' as const, transformId: '2' },
         { id: '3', type: 'extension-command' as const, extensionId: '3', extensionCommand: 'cmd' },
       ]

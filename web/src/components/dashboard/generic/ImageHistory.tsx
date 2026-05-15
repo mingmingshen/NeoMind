@@ -354,7 +354,6 @@ function normalizeDataSourceForImages(
     const sourceId = getSourceId(ds)
     return {
       type: 'telemetry',
-      deviceId: sourceId,
       sourceId: sourceId,
       metricId: ds.metricId ?? ds.property ?? 'image',
       timeRange: timeRange,

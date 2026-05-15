@@ -200,6 +200,45 @@ async function fetchDeviceTelemetry(deviceId: string): Promise<{ success: boolea
 }
 
 /**
+ * Generic typed cache with TTL and size limits
+ */
+class TypedCache<T> {
+  private cache = new Map<string, { data: T; timestamp: number }>()
+
+  constructor(
+    private ttl: number,
+    private maxSize: number
+  ) {}
+
+  get(key: string): T | undefined {
+    const entry = this.cache.get(key)
+    if (!entry) return undefined
+    if (Date.now() - entry.timestamp > this.ttl) {
+      this.cache.delete(key)
+      return undefined
+    }
+    return entry.data
+  }
+
+  set(key: string, data: T): void {
+    if (this.cache.size >= this.maxSize) {
+      const oldestKey = this.cache.keys().next().value
+      if (oldestKey) this.cache.delete(oldestKey)
+    }
+    this.cache.set(key, { data, timestamp: Date.now() })
+  }
+
+  cleanup(): void {
+    const now = Date.now()
+    for (const [key, entry] of this.cache) {
+      if (now - entry.timestamp > this.ttl) {
+        this.cache.delete(key)
+      }
+    }
+  }
+}
+
+/**
  * Cache for historical telemetry data
  * Key: deviceId|metric|timeRange|limit|aggregate
  */
@@ -214,24 +253,6 @@ const telemetryCache = new Map<string, TelemetryCacheEntry>()
 const TELEMETRY_CACHE_TTL = 5000 // 5 seconds cache
 const MAX_TELEMETRY_CACHE_SIZE = 50  // Limit cache size to prevent memory issues
 
-/**
- * Cache for system stats data
- */
-const systemStatsCache = new Map<string, { data: unknown; timestamp: number }>()
-const SYSTEM_CACHE_TTL = 5000 // 5 seconds cache
-const MAX_SYSTEM_CACHE_SIZE = 20  // Limit cache size
-
-/**
- * Cache for extension data
- */
-interface ExtensionCacheEntry {
-  data: unknown
-  timestamp: number
-}
-const extensionDataCache = new Map<string, ExtensionCacheEntry>()
-const EXTENSION_CACHE_TTL = 5000 // 5 seconds cache
-const MAX_EXTENSION_CACHE_SIZE = 50  // Limit cache size
-
 /** Enforce cache size limit by evicting the oldest entries (FIFO). */
 function evictCache<K, V>(cache: Map<K, V>, maxSize: number): void {
   if (cache.size >= maxSize) {
@@ -245,6 +266,17 @@ function evictCache<K, V>(cache: Map<K, V>, maxSize: number): void {
 }
 
 /**
+ * Cache for system stats data
+ */
+const systemStatsCache = new TypedCache<unknown>(5000, 20)
+
+/**
+ * Cache for extension data
+ */
+const extensionDataCache = new TypedCache<unknown>(5000, 50)
+
+
+/**
  * Fetch system stats for a specific metric
  */
 async function fetchSystemStats(
@@ -254,8 +286,8 @@ async function fetchSystemStats(
   const cached = systemStatsCache.get(cacheKey)
 
   // Return cached data if fresh
-  if (cached && Date.now() - cached.timestamp < SYSTEM_CACHE_TTL) {
-    return { data: cached.data, success: true }
+  if (cached !== undefined) {
+    return { data: cached, success: true }
   }
 
   try {
@@ -305,11 +337,7 @@ async function fetchSystemStats(
     }
 
     // Cache the result
-    evictCache(systemStatsCache, MAX_SYSTEM_CACHE_SIZE)
-    systemStatsCache.set(cacheKey, {
-      data: value,
-      timestamp: Date.now()
-    })
+    systemStatsCache.set(cacheKey, value)
 
     return { data: value, success: true }
   } catch (error) {
@@ -680,41 +708,9 @@ function cleanupTelemetryCache() {
     }
   }
 
-  // Clean expired system stats cache entries
-  for (const [key, value] of systemStatsCache.entries()) {
-    if (now - value.timestamp > SYSTEM_CACHE_TTL) {
-      systemStatsCache.delete(key)
-    }
-  }
-
-  // Enforce system stats cache size limit
-  if (systemStatsCache.size > MAX_SYSTEM_CACHE_SIZE) {
-    const entriesToRemove = systemStatsCache.size - MAX_SYSTEM_CACHE_SIZE
-    let removed = 0
-    for (const key of systemStatsCache.keys()) {
-      if (removed >= entriesToRemove) break
-      systemStatsCache.delete(key)
-      removed++
-    }
-  }
-
-  // Clean expired extension data cache entries
-  for (const [key, value] of extensionDataCache.entries()) {
-    if (now - value.timestamp > EXTENSION_CACHE_TTL) {
-      extensionDataCache.delete(key)
-    }
-  }
-
-  // Enforce extension cache size limit
-  if (extensionDataCache.size > MAX_EXTENSION_CACHE_SIZE) {
-    const entriesToRemove = extensionDataCache.size - MAX_EXTENSION_CACHE_SIZE
-    let removed = 0
-    for (const key of extensionDataCache.keys()) {
-      if (removed >= entriesToRemove) break
-      extensionDataCache.delete(key)
-      removed++
-    }
-  }
+  // TypedCache instances handle their own cleanup
+  systemStatsCache.cleanup()
+  extensionDataCache.cleanup()
 }
 
 // Periodic cache cleanup - store reference for cleanup
@@ -3046,8 +3042,8 @@ export function useDataSource<T = unknown>(
             // Check shared cache for extension data (5s TTL)
             const extCacheKey = `${extensionId}|${metric}`
             const extCached = extensionDataCache.get(extCacheKey)
-            if (extCached && Date.now() - extCached.timestamp < EXTENSION_CACHE_TTL) {
-              return { data: extCached.data, success: true }
+            if (extCached !== undefined) {
+              return { data: extCached, success: true }
             }
 
             // Check if this is a V2 data source (format: command:field)
@@ -3127,8 +3123,7 @@ export function useDataSource<T = unknown>(
         extensionDataSources.forEach((ds, i) => {
           if (ds.extensionId && ds.extensionMetric && results[i]?.success) {
             const key = `${ds.extensionId}|${ds.extensionMetric}`
-            evictCache(extensionDataCache, MAX_EXTENSION_CACHE_SIZE)
-            extensionDataCache.set(key, { data: results[i].data, timestamp: Date.now() })
+            extensionDataCache.set(key, results[i].data)
           }
         })
 

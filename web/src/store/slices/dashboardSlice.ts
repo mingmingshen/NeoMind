@@ -12,6 +12,7 @@ import type {
   DashboardTemplate,
   ComponentPosition,
   DashboardLayout,
+  DataSource,
 } from '@/types/dashboard'
 import { createDashboardStorage, type DashboardStorage } from '../persistence'
 import { logError } from '@/lib/errors'
@@ -30,6 +31,28 @@ function cleanupAgentForComponent(component: DashboardComponent | undefined) {
       console.warn('[DashboardSlice] Failed to delete agent', agentId, err)
     })
   })
+}
+
+// ============================================================================
+// Data Source Validation
+// ============================================================================
+
+/** Check if a component's data source references a valid entity */
+function isDataSourceValid(comp: DashboardComponent, validDeviceIds: Set<string>, validExtensionIds: Set<string>): boolean {
+  const ds = ('dataSource' in comp ? comp.dataSource : undefined) as DataSource | undefined
+  if (!ds) return true
+
+  // Validate device data sources
+  if ((ds.type === 'device' || ds.type === 'telemetry' || ds.type === 'metric' || ds.type === 'command' || ds.type === 'device-info') && ds.sourceId) {
+    return validDeviceIds.has(ds.sourceId)
+  }
+
+  // Validate extension data sources
+  if ((ds.type === 'extension' || ds.type === 'extension-metric' || ds.type === 'extension-command') && ds.extensionId) {
+    return validExtensionIds.has(ds.extensionId)
+  }
+
+  return true
 }
 
 // ============================================================================
@@ -88,6 +111,7 @@ export interface DashboardState {
   batchUpdatePositions: (positions: Array<{ id: string; position: ComponentPosition }>) => void
   removeComponent: (id: string) => void
   removeComponentsByExtension: (extensionId: string) => void
+  removeComponentsByDevice: (deviceId: string) => void
   moveComponent: (id: string, position: ComponentPosition) => void
   duplicateComponent: (id: string) => void
 
@@ -322,6 +346,27 @@ export const createDashboardSlice: StateCreator<
               }),
             }
           })
+
+          // Validate data sources: remove components referencing deleted devices/extensions
+          try {
+            const storeState = get() as any
+            const validDeviceIds = new Set<string>(
+              (storeState.devices || []).map((d: any) => d.id || d.device_id).filter(Boolean)
+            )
+            const validExtensionIds = new Set<string>(
+              (storeState.extensions || []).map((e: any) => e.id || e.extension_id).filter(Boolean)
+            )
+
+            if (validDeviceIds.size > 0 || validExtensionIds.size > 0) {
+              for (const dashboard of migratedDashboards) {
+                dashboard.components = dashboard.components.filter(
+                  (comp: DashboardComponent) => isDataSourceValid(comp, validDeviceIds, validExtensionIds)
+                )
+              }
+            }
+          } catch {
+            // Validation is best-effort, don't block dashboard loading
+          }
 
           // Final check before updating state
           const finalState = get()
@@ -699,6 +744,54 @@ export const createDashboardSlice: StateCreator<
       )
 
       // Clear selection if the deleted component was selected
+      const newSelectedComponent =
+        selectedComponent && componentIdsToRemove.has(selectedComponent) ? null : selectedComponent
+      const newConfigComponentId =
+        configComponentId && componentIdsToRemove.has(configComponentId) ? null : configComponentId
+
+      set({
+        dashboards: updatedDashboards,
+        currentDashboard: updatedDashboard,
+        selectedComponent: newSelectedComponent,
+        configComponentId: newConfigComponentId,
+      })
+
+      // Debounced sync
+      scheduleSync(updatedDashboard)
+    },
+
+    removeComponentsByDevice(deviceId: string) {
+      const { currentDashboard, dashboards, selectedComponent, configComponentId } = get()
+      if (!currentDashboard) return
+
+      // Find all components that reference this device
+      const componentsToRemove = currentDashboard.components.filter(
+        (comp) => {
+          const dataSource = 'dataSource' in comp ? (comp.dataSource as any) : undefined
+          return (
+            dataSource?.sourceId === deviceId ||
+            dataSource?.type === 'device' && dataSource?.property && dataSource.sourceId === deviceId
+          )
+        }
+      )
+
+      if (componentsToRemove.length === 0) return
+
+      // Clean up AI agents for any ai-analyst components being removed
+      componentsToRemove.forEach((comp) => cleanupAgentForComponent(comp))
+
+      const componentIdsToRemove = new Set(componentsToRemove.map((c) => c.id))
+
+      const updatedDashboard = {
+        ...currentDashboard,
+        components: currentDashboard.components.filter((c) => !componentIdsToRemove.has(c.id)),
+        updatedAt: Date.now(),
+      }
+
+      const updatedDashboards = dashboards.map((d) =>
+        d.id === currentDashboard.id ? updatedDashboard : d
+      )
+
       const newSelectedComponent =
         selectedComponent && componentIdsToRemove.has(selectedComponent) ? null : selectedComponent
       const newConfigComponentId =

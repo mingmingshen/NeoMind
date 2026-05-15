@@ -99,8 +99,6 @@ export interface ComponentDTO {
   }
   title?: string
   data_source?: Record<string, unknown>
-  /** @deprecated API returns data_source, but some internal paths still use dataSource */
-  dataSource?: Record<string, unknown>
   display?: Record<string, unknown>
   config?: Record<string, unknown>
   actions?: Array<Record<string, unknown>>
@@ -216,7 +214,7 @@ export function fromDashboardDTO(dto: DashboardDTO): Dashboard {
       c != null && typeof c === 'object' && typeof c.id === 'string' && typeof c.type === 'string'
     )
     .map((c) => {
-    const dataSource = c.data_source ?? c.dataSource
+    const dataSource = c.data_source
 
     const base = {
       id: c.id,
