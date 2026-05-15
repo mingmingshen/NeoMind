@@ -108,6 +108,7 @@
   "update": "更新",
   "updateAvailableWithVersion": "NeoMind {version} 版本已就绪，是否立即更新？",
   "alreadyUpToDate": "您当前使用的已是最新版本的 NeoMind。",
+  "updateApplied": "已成功更新至 {version} 版本！",
   "timeFormat12h": "12小时制 (12:00 PM)",
   "timeFormat24h": "24小时制 (14:00)",
   "dataManagement": "数据管理",

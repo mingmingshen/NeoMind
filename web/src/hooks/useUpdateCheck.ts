@@ -11,7 +11,11 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/store'
+import { notifySuccess } from '@/lib/notify'
 import type { UpdateInfo, UpdateProgress } from '@/store/slices/updateSlice'
+
+/** Normalize version strings for reliable comparison */
+const normalizeVersion = (v: string) => v.trim().replace(/^v/, '')
 
 const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000 // 24 hours
 
@@ -69,6 +73,7 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
   const intervalRef = useRef<ReturnType<typeof setInterval>>()
   const unlistenRef = useRef<(() => void) | null>(null)
   const lastNotificationVersion = useRef<string | null>(null)
+  const lastProgressUpdateRef = useRef(0)
 
   // Use refs to store the latest callbacks without triggering re-renders
   const onUpdateAvailableRef = useRef(onUpdateAvailable)
@@ -120,36 +125,38 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
       setUpdateStatus('checking')
       setError(null)
 
+      // Handle post-update restart: detect if an update was just applied
+      // by comparing the stored target version with the current app version.
+      // This is more reliable than comparing with the update check result.
+      const pendingVersion = localStorage.getItem('neomind_installed_version')
+      if (pendingVersion) {
+        try {
+          const currentVersion = await invoke<string>('get_app_version')
+          if (normalizeVersion(currentVersion) === normalizeVersion(pendingVersion)) {
+            // Update was successfully applied
+            notifySuccess(
+              t('settings:updateApplied', { version: currentVersion }),
+              t('settings:newVersionAvailable')
+            )
+          }
+        } catch { /* ignore version check failure */ }
+        // Always clear marker — if update failed, re-showing the dialog won't help
+        localStorage.removeItem('neomind_installed_version')
+      }
+
       const info = await invoke<UpdateInfo>('check_update')
 
       if (info.available) {
-        // Skip if this version was just installed (hot update restart scenario)
-        // NOTE: Do NOT remove the marker here — keep it until the app version
-        // actually catches up and the updater returns available: false.
-        // Removing it prematurely causes the dialog to reappear on subsequent checks.
-        const installedVersion = localStorage.getItem('neomind_installed_version')
-        if (installedVersion && info.version === installedVersion) {
-          setUpdateStatus('up-to-date')
-          onUpToDateRef.current?.()
-          return
-        }
-
         setUpdateInfo(info)
         setUpdateStatus('available')
 
-        // Show system notification
         if (showNotification) {
           await showUpdateNotification(info)
         }
 
-        // Open update dialog
         setUpdateDialogOpen(true)
-
-        // Use ref to get latest callback without including it in dependencies
         onUpdateAvailableRef.current?.(info)
       } else {
-        // Update applied successfully, clear the marker
-        localStorage.removeItem('neomind_installed_version')
         setUpdateStatus('up-to-date')
         onUpToDateRef.current?.()
       }
@@ -160,7 +167,7 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
       setUpdateStatus('error')
       onErrorRef.current?.(errorMessage)
     }
-  }, [setUpdateStatus, setUpdateInfo, setError, setUpdateDialogOpen, showNotification, showUpdateNotification])
+  }, [setUpdateStatus, setUpdateInfo, setError, setUpdateDialogOpen, showNotification, showUpdateNotification, t])
 
   /**
    * Download and install the available update
@@ -227,6 +234,12 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
     const setupListener = async () => {
       try {
         const unlisten = await listen<UpdateProgress>('update-progress', (event) => {
+          // Throttle to ~200ms intervals to prevent UI flickering
+          const now = Date.now()
+          if (now - lastProgressUpdateRef.current < 200 && event.payload.progress < 100) {
+            return
+          }
+          lastProgressUpdateRef.current = now
           setDownloadProgress(event.payload)
         })
         unlistenRef.current = unlisten
