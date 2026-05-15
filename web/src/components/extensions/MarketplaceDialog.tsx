@@ -5,7 +5,13 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { useToast } from "@/components/ui/use-toast"
-import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
+import {
+  FullScreenDialog,
+  FullScreenDialogHeader,
+  FullScreenDialogContent,
+  FullScreenDialogFooter,
+  FullScreenDialogMain,
+} from "@/components/automation/dialog"
 import {
   Loader2,
   Download,
@@ -433,47 +439,31 @@ export function MarketplaceDialog({
     )
   }
 
-  // Dynamic header icon and title
-  const dialogIcon = showDetail ? (
-    <Button variant="ghost" size={isMobile ? "icon" : "sm"} onClick={handleBack} disabled={installing} className={isMobile ? "-ml-2" : "-ml-2"}>
-      <ChevronLeft className={isMobile ? "h-5 w-5" : "h-4 w-4 mr-1"} />
-      {!isMobile && t("common:back")}
-    </Button>
-  ) : (
-    <Globe className="h-5 w-5 text-primary" />
-  )
-
-  const dialogTitle = showDetail
-    ? (selectedExtension?.name || '')
-    : t("extensions:market.title", "Extension Marketplace")
-
-  const dialogDescription = !showDetail && marketVersion
-    ? `v${marketVersion}`
-    : undefined
-
-  // Footer: only show install button when viewing detail of an uninstalled extension
   const showInstallFooter = showDetail && selectedExtension && !isInstalled(selectedExtension.id)
 
   return (
-    <UnifiedFormDialog
-      open={open}
-      onOpenChange={(newOpen) => {
-        if (!newOpen) {
-          handleClose()
-        } else {
-          onOpenChange(newOpen)
+    <FullScreenDialog open={open} onOpenChange={(v) => { if (!v) handleClose(); else onOpenChange(v) }}>
+      <FullScreenDialogHeader
+        icon={
+          showDetail
+            ? <Button variant="ghost" size={isMobile ? "icon" : "sm"} onClick={handleBack} disabled={installing} className="-ml-2">
+                <ChevronLeft className={isMobile ? "h-5 w-5" : "h-4 w-4 mr-1"} />
+                {!isMobile && t("common:back")}
+              </Button>
+            : <Globe className="h-5 w-5" />
         }
-      }}
-      title={dialogTitle}
-      description={dialogDescription}
-      icon={dialogIcon}
-      width="3xl"
-      loading={loading}
-      preventCloseOnSubmit={false}
-      hideFooter={!showInstallFooter}
-      footer={
-        showInstallFooter ? (
-          <Button onClick={() => handleInstall(selectedExtension!.id)} disabled={installing} className={isMobile ? "w-full" : ""}>
+        title={showDetail ? (selectedExtension?.name || '') : t("extensions:market.title", "Extension Marketplace")}
+        subtitle={!showDetail && marketVersion ? `v${marketVersion}` : undefined}
+        onClose={handleClose}
+      />
+      <FullScreenDialogContent>
+        <FullScreenDialogMain className="p-4 md:p-6">
+          {showDetail ? <DetailContent /> : <ExtensionListContent />}
+        </FullScreenDialogMain>
+      </FullScreenDialogContent>
+      {showInstallFooter && (
+        <FullScreenDialogFooter>
+          <Button onClick={() => handleInstall(selectedExtension!.id)} disabled={installing} className={isMobile ? "flex-1" : ""}>
             {installing ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -486,11 +476,9 @@ export function MarketplaceDialog({
               </>
             )}
           </Button>
-        ) : undefined
-      }
-    >
-      {showDetail ? <DetailContent /> : <ExtensionListContent />}
-    </UnifiedFormDialog>
+        </FullScreenDialogFooter>
+      )}
+    </FullScreenDialog>
   )
 }
 

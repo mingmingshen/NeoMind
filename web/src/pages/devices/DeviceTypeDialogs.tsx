@@ -2540,6 +2540,7 @@ interface CloudImportResponse {
 export function CloudImportDialog({ open, onOpenChange, onImportComplete }: CloudImportDialogProps) {
   const { t } = useTranslation(['common', 'devices'])
   const { toast } = useToast()
+  const isMobile = useIsMobile()
 
   // UI state
   const [loading, setLoading] = useState(false)
@@ -2560,7 +2561,6 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
       const res = await fetchAPI<CloudImportResponse & { error?: string; message?: string }>("/device-types/cloud/list")
       setDeviceTypes(res.device_types || [])
 
-      // Show warning if there was an error but still got some results
       if (res.error && res.device_types?.length === 0) {
         toast({
           title: res.message || t('devices:cloud.loadFailed', "加载失败"),
@@ -2619,7 +2619,6 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
         })
       })
 
-      // Build result description
       const description = response.failed > 0
         ? t('devices:cloud.importPartialDesc', '{{count}} imported/updated, {{failed}} failed', { count: response.imported, failed: response.failed })
         : t('devices:cloud.importSuccessDesc', '{{count}} device type(s) imported/updated', { count: response.imported })
@@ -2634,7 +2633,6 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
         variant,
       })
 
-      // Log failures for debugging
       if (response.failures && response.failures.length > 0) {
         console.warn("Failed device type imports:", response.failures)
       }
@@ -2656,49 +2654,25 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
   }
 
   return (
-    <UnifiedFormDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title={t('devices:cloud.importTitle', "从云端导入设备类型")}
-      description={t('devices:cloud.importDescription', "选择需要的设备类型快速添加到系统")}
-      icon={<Download className="h-5 w-5" />}
-      width="2xl"
-      loading={loading}
-      contentClassName="flex-1 overflow-y-auto"
-      footer={
-        <>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={importing}
-          >
-            {t('common:cancel')}
-          </Button>
-          <Button
-            onClick={handleImport}
-            disabled={importing || selectedIds.size === 0}
-          >
-            {importing ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {t('devices:cloud.importing', "导入中...")}
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4 mr-2" />
-                {t('devices:cloud.importButton', "导入 ({{count}})", { count: selectedIds.size })}
-              </>
-            )}
-          </Button>
-        </>
-      }
-    >
-          {loading ? null : deviceTypes.length === 0 ? (
+    <FullScreenDialog open={open} onOpenChange={onOpenChange}>
+      <FullScreenDialogHeader
+        icon={<Download className="h-5 w-5" />}
+        title={t('devices:cloud.importTitle', "从云端导入设备类型")}
+        subtitle={t('devices:cloud.importDescription', "选择需要的设备类型快速添加到系统")}
+        onClose={() => onOpenChange(false)}
+      />
+      <FullScreenDialogContent>
+        <FullScreenDialogMain className="p-4 md:p-6">
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : deviceTypes.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               {t('devices:cloud.noDeviceTypes', "暂无可用设备类型")}
             </div>
           ) : (
-            <div className="space-y-4 py-4">
+            <div className="space-y-4">
               {/* Select All / Clear */}
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
@@ -2762,6 +2736,34 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
               </div>
             </div>
           )}
-    </UnifiedFormDialog>
+        </FullScreenDialogMain>
+      </FullScreenDialogContent>
+      <FullScreenDialogFooter>
+        <Button
+          variant="outline"
+          onClick={() => onOpenChange(false)}
+          disabled={importing}
+        >
+          {t('common:cancel')}
+        </Button>
+        <Button
+          onClick={handleImport}
+          disabled={importing || selectedIds.size === 0}
+          className={isMobile ? "flex-1" : ""}
+        >
+          {importing ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              {t('devices:cloud.importing', "导入中...")}
+            </>
+          ) : (
+            <>
+              <Download className="h-4 w-4 mr-2" />
+              {t('devices:cloud.importButton', "导入 ({{count}})", { count: selectedIds.size })}
+            </>
+          )}
+        </Button>
+      </FullScreenDialogFooter>
+    </FullScreenDialog>
   )
 }
