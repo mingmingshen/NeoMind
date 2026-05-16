@@ -5,8 +5,8 @@ pub mod types;
 // Command modules will be added in subsequent tasks
 pub mod device;
 pub mod dashboard;
-// pub mod rule;
-// pub mod transform;
+pub mod rule;
+pub mod transform;
 // pub mod extension;
 // pub mod agent;
 // pub mod message;

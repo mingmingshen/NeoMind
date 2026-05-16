@@ -107,6 +107,16 @@ enum Command {
         #[command(subcommand)]
         dashboard_cmd: DashboardCommand,
     },
+    /// Rule management commands.
+    Rule {
+        #[command(subcommand)]
+        rule_cmd: RuleCommand,
+    },
+    /// Transform management commands.
+    Transform {
+        #[command(subcommand)]
+        transform_cmd: TransformCommand,
+    },
 }
 
 /// API key subcommands.
@@ -380,6 +390,105 @@ enum DashboardCommand {
     },
 }
 
+/// Rule subcommands.
+#[derive(Subcommand, Debug)]
+enum RuleCommand {
+    /// List all rules.
+    List,
+    /// Get rule details.
+    Get {
+        /// Rule ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Create a new rule.
+    Create {
+        /// Rule name.
+        #[arg(short, long)]
+        name: String,
+        /// Trigger type (e.g., "schedule", "device", "threshold").
+        #[arg(short, long)]
+        trigger: String,
+        /// Actions JSON.
+        #[arg(short, long)]
+        actions: String,
+        /// Condition JSON (optional).
+        #[arg(short, long)]
+        condition: Option<String>,
+    },
+    /// Update rule.
+    Update {
+        /// Rule ID.
+        #[arg(required = true)]
+        id: String,
+        /// New name.
+        #[arg(short, long)]
+        name: Option<String>,
+        /// New trigger type.
+        #[arg(short, long)]
+        trigger: Option<String>,
+        /// New actions JSON.
+        #[arg(short, long)]
+        actions: Option<String>,
+        /// New condition JSON.
+        #[arg(short, long)]
+        condition: Option<String>,
+    },
+    /// Delete rule.
+    Delete {
+        /// Rule ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Enable rule.
+    Enable {
+        /// Rule ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Disable rule.
+    Disable {
+        /// Rule ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Test rule.
+    Test {
+        /// Rule ID.
+        #[arg(required = true)]
+        id: String,
+        /// Input data JSON.
+        #[arg(short, long)]
+        input: String,
+    },
+    /// Get rule execution history.
+    History {
+        /// Rule ID.
+        #[arg(required = true)]
+        id: String,
+    },
+}
+
+/// Transform subcommands.
+#[derive(Subcommand, Debug)]
+enum TransformCommand {
+    /// List all transforms.
+    List,
+    /// List virtual metrics from transforms.
+    Metrics,
+    /// Test transform code.
+    TestCode {
+        /// Transform code (JavaScript).
+        #[arg(short, long)]
+        code: String,
+        /// Input data JSON.
+        #[arg(short, long)]
+        input: String,
+    },
+    /// List transform data sources.
+    DataSources,
+}
+
 // Custom runtime with increased worker threads for better concurrent performance
 // Default is num_cpus, but we use more to handle block_in_place alternatives
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
@@ -484,6 +593,8 @@ async fn main() -> Result<()> {
         Command::ApiKey { key_cmd } => run_api_key_cmd(key_cmd).await,
         Command::Device { device_cmd } => run_device_cmd(device_cmd).await,
         Command::Dashboard { dashboard_cmd } => run_dashboard_cmd(dashboard_cmd).await,
+        Command::Rule { rule_cmd } => run_rule_cmd(rule_cmd).await,
+        Command::Transform { transform_cmd } => run_transform_cmd(transform_cmd).await,
     }
 }
 
@@ -1877,6 +1988,117 @@ async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<()> {
             let resp = share_dashboard(&client, &id, public, expires.as_deref()).await?;
             format_output(&resp, fmt);
             return Ok(());
+        }
+    };
+
+    // Format and print output
+    format_output(&response, output_format);
+    Ok(())
+}
+
+/// Run rule management commands.
+async fn run_rule_cmd(cmd: RuleCommand) -> Result<()> {
+    use neomind_cli_ops::{ApiClient, rule::*, output::format_output};
+    use neomind_cli_ops::types::OutputFormat;
+
+    // Get API base URL from environment or use default
+    let api_base = std::env::var("NEOMIND_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+
+    // Create API client
+    let client = ApiClient::with_base_url(&api_base);
+
+    // Get output format (check for --json flag in global args or environment)
+    let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+
+    let response = match cmd {
+        RuleCommand::List => {
+            list_rules(&client).await?
+        }
+        RuleCommand::Get { id } => {
+            get_rule(&client, &id).await?
+        }
+        RuleCommand::Create { name, trigger, actions, condition } => {
+            let actions_json = serde_json::from_str(&actions)?;
+            let condition_json = if let Some(cond_str) = condition {
+                Some(serde_json::from_str(&cond_str)?)
+            } else {
+                None
+            };
+            create_rule(&client, &name, &trigger, actions_json, condition_json).await?
+        }
+        RuleCommand::Update { id, name, trigger, actions, condition } => {
+            let actions_json = if let Some(actions_str) = actions {
+                Some(serde_json::from_str(&actions_str)?)
+            } else {
+                None
+            };
+            let condition_json = if let Some(cond_str) = condition {
+                Some(serde_json::from_str(&cond_str)?)
+            } else {
+                None
+            };
+            update_rule(&client, &id, name.as_deref(), trigger.as_deref(), actions_json, condition_json).await?
+        }
+        RuleCommand::Delete { id } => {
+            delete_rule(&client, &id).await?
+        }
+        RuleCommand::Enable { id } => {
+            enable_rule(&client, &id).await?
+        }
+        RuleCommand::Disable { id } => {
+            disable_rule(&client, &id).await?
+        }
+        RuleCommand::Test { id, input } => {
+            let input_json = serde_json::from_str(&input)?;
+            test_rule(&client, &id, input_json).await?
+        }
+        RuleCommand::History { id } => {
+            get_rule_history(&client, &id).await?
+        }
+    };
+
+    // Format and print output
+    format_output(&response, output_format);
+    Ok(())
+}
+
+/// Run transform management commands.
+async fn run_transform_cmd(cmd: TransformCommand) -> Result<()> {
+    use neomind_cli_ops::{ApiClient, transform::*, output::format_output};
+    use neomind_cli_ops::types::OutputFormat;
+
+    // Get API base URL from environment or use default
+    let api_base = std::env::var("NEOMIND_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+
+    // Create API client
+    let client = ApiClient::with_base_url(&api_base);
+
+    // Get output format (check for --json flag in global args or environment)
+    let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+
+    let response = match cmd {
+        TransformCommand::List => {
+            list_transforms(&client).await?
+        }
+        TransformCommand::Metrics => {
+            list_virtual_metrics(&client).await?
+        }
+        TransformCommand::TestCode { code, input } => {
+            let input_json = serde_json::from_str(&input)?;
+            test_transform_code(&client, &code, input_json).await?
+        }
+        TransformCommand::DataSources => {
+            list_transform_data_sources(&client).await?
         }
     };
 
