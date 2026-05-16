@@ -3,6 +3,21 @@
 //! Allows the AI agent to run arbitrary shell commands on the host system.
 //! Cross-platform: uses `/bin/sh -c` on Unix, `cmd /C` on Windows.
 //! Disabled by default — must be explicitly enabled in agent configuration.
+//!
+//! ## Internal CLI Execution Mode
+//!
+//! When `internal_cli_execution` is enabled in the config, neomind CLI commands
+//! are executed via direct function calls to `neomind-cli-ops` instead of spawning
+//! a separate process. This optimization is useful for Tauri/Web environments where
+//! process spawning overhead is significant.
+//!
+//! TODO: Implement full internal execution for all neomind CLI commands.
+//! Current implementation is a placeholder that always falls back to process spawning.
+//! To complete this feature:
+//! 1. Parse CLI arguments (handle quotes, flags, values)
+//! 2. Map to appropriate cli-ops functions
+//! 3. Convert CliResponse to CommandOutput
+//! 4. Handle all command variants (device, dashboard, rule, transform, extension, widget, agent, message)
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -29,6 +44,11 @@ pub struct ShellConfig {
     /// Maximum output characters (stdout + stderr combined). Default: 10000.
     #[serde(default = "default_max_output")]
     pub max_output_chars: usize,
+
+    /// Use internal execution for neomind CLI commands (Tauri/Web mode). Default: false.
+    /// When true, neomind commands are executed via direct function calls instead of spawning processes.
+    #[serde(default)]
+    pub internal_cli_execution: bool,
 }
 
 fn default_timeout() -> u64 {
@@ -45,6 +65,7 @@ impl Default for ShellConfig {
             enabled: false,
             timeout_secs: default_timeout(),
             max_output_chars: default_max_output(),
+            internal_cli_execution: false,
         }
     }
 }
@@ -68,6 +89,49 @@ impl ShellTool {
         Self { config }
     }
 
+    /// Check if command is a neomind CLI command and execute it internally if enabled.
+    /// Returns Some(result) if internally executed, None if should use process spawning.
+    async fn try_internal_execution(
+        &self,
+        command: &str,
+    ) -> Option<Result<CommandOutput>> {
+        // Only use internal execution if configured
+        if !self.config.internal_cli_execution {
+            return None;
+        }
+
+        // Check if command starts with "neomind"
+        let command = command.trim();
+        if !command.starts_with("neomind ") {
+            return None;
+        }
+
+        // Parse the command to extract domain and action
+        // This is a simple implementation - full arg parsing would be more complex
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        if parts.len() < 2 {
+            return None;
+        }
+
+        let domain = parts[1];
+        let action = parts.get(2).map(|s| *s).unwrap_or("");
+
+        // For now, we'll use process spawning for all commands
+        // A full implementation would:
+        // 1. Parse arguments (handle quotes, flags, values)
+        // 2. Map to the appropriate cli-ops function
+        // 3. Handle the result and convert to CommandOutput
+        //
+        // This is a placeholder for future optimization in Tauri/Web environments
+        tracing::debug!(
+            domain = domain,
+            action = action,
+            "Internal CLI execution not yet implemented, using process spawning"
+        );
+
+        None
+    }
+
     /// Build a platform-appropriate shell command.
     /// Unix: login shell (`$SHELL -l -c`) with isolated process group;
     ///       falls back to `/bin/sh -c` without `-l` if $SHELL is not set.
@@ -88,6 +152,12 @@ impl ShellTool {
         working_dir: Option<&str>,
         timeout: Duration,
     ) -> Result<CommandOutput> {
+        // Try internal execution for neomind CLI commands (if enabled)
+        if let Some(result) = self.try_internal_execution(command).await {
+            return result;
+        }
+
+        // Fall back to process spawning
         let mut cmd = Self::build_command(command);
 
         if let Some(dir) = working_dir {

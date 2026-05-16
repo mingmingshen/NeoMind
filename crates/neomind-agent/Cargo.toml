@@ -23,6 +23,7 @@ neomind-devices = { path = "../neomind-devices" }
 neomind-storage = { path = "../neomind-storage" }
 neomind-rules = { path = "../neomind-rules" }
 neomind-messages = { path = "../neomind-messages" }
+neomind-cli-ops = { path = "../neomind-cli-ops" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

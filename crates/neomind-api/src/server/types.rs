@@ -1321,6 +1321,7 @@ impl ServerState {
                 enabled: true,
                 timeout_secs: 30,
                 max_output_chars: 10000,
+                internal_cli_execution: false,
             }))
             // Scan extensions and register their tools
             .with_extensions_scanned()
@@ -1382,6 +1383,7 @@ impl ServerState {
                 enabled: true,
                 timeout_secs: 30,
                 max_output_chars: 10000,
+                internal_cli_execution: false,
             }))
             .with_extensions_scanned()
             .await

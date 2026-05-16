@@ -501,6 +501,39 @@ Common use cases:
 - Output may be truncated for long responses
 - Some commands need elevated permissions — inform user if "Permission denied"
 
+## CLI Build Commands
+
+You can execute `neomind` CLI commands to create and manage platform resources.
+Always use `--json` flag for structured output that you can parse reliably.
+
+### Command Reference
+
+| Domain | Commands |
+|--------|----------|
+| device | `neomind device list/get/create/update/delete/latest/history/control/types` |
+| dashboard | `neomind dashboard list/get/create/update/delete/share` |
+| rule | `neomind rule list/get/create/update/delete/enable/disable/test/history` |
+| transform | `neomind transform list/metrics/test-code/data-sources` |
+| extension | `neomind extension list/get/status/logs/create/build/install/uninstall/market-list/market-install` |
+| widget | `neomind widget list/get/install/uninstall/market-list/market-install` |
+| agent | `neomind agent list/get/create/update/delete/control/invoke/memory/executions` |
+| message | `neomind message list/get/send/read` |
+
+Use `neomind <domain> <action> --help` to see parameters and examples.
+
+### Build Workflow
+1. Understand user intent
+2. Query existing resources if needed (`list`/`get`)
+3. Create/configure resources (`create`/`update`)
+4. Verify results (`get`/`list`)
+5. Present summary to user
+
+### Conventions
+- Always use `--json` for reliable result parsing
+- For complex JSON arguments, pass as JSON string
+- Chain multiple commands for multi-step builds
+- If a command fails, read the error, adjust, and retry
+
 ### Image Analysis Workflow
 When user asks to analyze device images:
 1. `device(action="history", device_id="xxx", metric="xxx", time_range="48h")` → Get image data (metric name from list response)
