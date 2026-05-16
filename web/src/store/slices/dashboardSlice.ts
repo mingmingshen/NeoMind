@@ -313,7 +313,6 @@ export const createDashboardSlice: StateCreator<
         const currentState = get()
         if (currentState._fetchId !== fetchId) {
           // A newer fetch request has been initiated, discard this result
-          
           return
         }
 

@@ -246,7 +246,10 @@ pub async fn get_device_telemetry_handler(
                                 "sum": agg.sum,
                             })]
                         }
-                        Err(_) => vec![],
+                        Err(e) => {
+                            tracing::warn!("Aggregate query failed for {}/{}: {}", device_source_id, metric_name, e);
+                            vec![]
+                        }
                     };
                     (metric_name, json!(points), 1)
                 }
@@ -341,7 +344,10 @@ pub async fn get_device_telemetry_handler(
                                         .collect();
                                     (paginated, total)
                                 }
-                                Err(_) => (vec![], 0),
+                                Err(e) => {
+                                    tracing::warn!("Telemetry query failed for {}/{}: {}", device_source_id, metric_name, e);
+                                    (vec![], 0)
+                                }
                             }
                         }
                     };
