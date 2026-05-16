@@ -255,12 +255,18 @@ enum DeviceCommand {
         /// Filter by status.
         #[arg(short, long)]
         status: Option<String>,
+        /// Output in JSON format.
+        #[arg(long)]
+        json: bool,
     },
     /// Get device details.
     Get {
         /// Device ID.
         #[arg(required = true)]
         id: String,
+        /// Output in JSON format.
+        #[arg(long)]
+        json: bool,
     },
     /// Create a new device.
     Create {
@@ -276,6 +282,9 @@ enum DeviceCommand {
         /// Connection config JSON.
         #[arg(short, long)]
         config: Option<String>,
+        /// Output in JSON format.
+        #[arg(long)]
+        json: bool,
     },
     /// Update device.
     Update {
@@ -288,18 +297,27 @@ enum DeviceCommand {
         /// Connection config JSON.
         #[arg(short, long)]
         config: Option<String>,
+        /// Output in JSON format.
+        #[arg(long)]
+        json: bool,
     },
     /// Delete device.
     Delete {
         /// Device ID.
         #[arg(required = true)]
         id: String,
+        /// Output in JSON format.
+        #[arg(long)]
+        json: bool,
     },
     /// Get latest metrics.
     Latest {
         /// Device ID.
         #[arg(required = true)]
         id: String,
+        /// Output in JSON format.
+        #[arg(long)]
+        json: bool,
     },
     /// Get telemetry history.
     History {
@@ -312,6 +330,9 @@ enum DeviceCommand {
         /// Time range (e.g., "1h", "24h", "7d").
         #[arg(short, long)]
         time_range: Option<String>,
+        /// Output in JSON format.
+        #[arg(long)]
+        json: bool,
     },
     /// Send control command.
     Control {
@@ -324,6 +345,9 @@ enum DeviceCommand {
         /// Command parameters JSON.
         #[arg(short, long)]
         params: Option<String>,
+        /// Output in JSON format.
+        #[arg(long)]
+        json: bool,
     },
     /// Device type management.
     Types {
@@ -2128,54 +2152,58 @@ async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
     // Create API client
     let client = ApiClient::with_base_url(&api_base);
 
-    // Get output format (check for --json flag in global args or environment)
-    let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
-        OutputFormat::Json
-    } else {
-        OutputFormat::Human
-    };
-
-    let response = match cmd {
-        DeviceCommand::List { device_type, status } => {
-            list_devices(&client, device_type.as_deref(), status.as_deref()).await?
+    let (response, output_format) = match cmd {
+        DeviceCommand::List { device_type, status, json } => {
+            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            (list_devices(&client, device_type.as_deref(), status.as_deref()).await?, output_format)
         }
-        DeviceCommand::Get { id } => {
-            get_device(&client, &id).await?
+        DeviceCommand::Get { id, json } => {
+            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            (get_device(&client, &id).await?, output_format)
         }
-        DeviceCommand::Create { name, device_type, adapter_type, config } => {
+        DeviceCommand::Create { name, device_type, adapter_type, config, json } => {
+            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
             let connection_config = if let Some(config_str) = config {
                 Some(serde_json::from_str(&config_str)?)
             } else {
                 None
             };
-            create_device(&client, &name, &device_type, &adapter_type, connection_config).await?
+            (create_device(&client, &name, &device_type, &adapter_type, connection_config).await?, output_format)
         }
-        DeviceCommand::Update { id, name, config } => {
+        DeviceCommand::Update { id, name, config, json } => {
+            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
             let connection_config = if let Some(config_str) = config {
                 Some(serde_json::from_str(&config_str)?)
             } else {
                 None
             };
-            update_device(&client, &id, name.as_deref(), connection_config).await?
+            (update_device(&client, &id, name.as_deref(), connection_config).await?, output_format)
         }
-        DeviceCommand::Delete { id } => {
-            delete_device(&client, &id).await?
+        DeviceCommand::Delete { id, json } => {
+            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            (delete_device(&client, &id).await?, output_format)
         }
-        DeviceCommand::Latest { id } => {
-            get_latest_metrics(&client, &id).await?
+        DeviceCommand::Latest { id, json } => {
+            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            (get_latest_metrics(&client, &id).await?, output_format)
         }
-        DeviceCommand::History { id, metric, time_range } => {
-            get_telemetry_history(&client, &id, metric.as_deref(), time_range.as_deref()).await?
+        DeviceCommand::History { id, metric, time_range, json } => {
+            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            (get_telemetry_history(&client, &id, metric.as_deref(), time_range.as_deref()).await?, output_format)
         }
-        DeviceCommand::Control { id, command, params } => {
+        DeviceCommand::Control { id, command, params, json } => {
+            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
             let params_json = if let Some(params_str) = params {
                 serde_json::from_str(&params_str)?
             } else {
                 serde_json::json!({})
             };
-            control_device(&client, &id, &command, params_json).await?
+            (control_device(&client, &id, &command, params_json).await?, output_format)
         }
         DeviceCommand::Types { type_cmd } => {
+            // For Types subcommands, keep using the old behavior for now
+            // (they don't have --json flag in this change)
+            let output_format = OutputFormat::Human;
             return run_device_type_cmd(client, type_cmd, output_format).await;
         }
     };

@@ -8,6 +8,7 @@ const DEFAULT_TIMEOUT_SECS: u64 = 30;
 pub struct ApiClient {
     base_url: String,
     client: Client,
+    api_key: Option<String>,
 }
 
 impl ApiClient {
@@ -16,6 +17,7 @@ impl ApiClient {
     }
 
     pub fn with_base_url(base_url: &str) -> Self {
+        let api_key = std::env::var("NEOMIND_API_KEY").ok();
         let client = Client::builder()
             .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
             .build()
@@ -23,6 +25,7 @@ impl ApiClient {
         Self {
             base_url: base_url.to_string(),
             client,
+            api_key,
         }
     }
 
@@ -31,9 +34,18 @@ impl ApiClient {
         &self.base_url
     }
 
+    fn add_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some(key) = &self.api_key {
+            req.header("Authorization", format!("Bearer {}", key))
+        } else {
+            req
+        }
+    }
+
     pub async fn get(&self, path: &str) -> Result<serde_json::Value> {
         let url = format!("{}{}", self.base_url, path);
-        let resp = self.client.get(&url).send().await?;
+        let req = self.client.get(&url);
+        let resp = self.add_auth(req).send().await?;
         let status = resp.status();
         let body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
@@ -45,7 +57,8 @@ impl ApiClient {
 
     pub async fn post(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
         let url = format!("{}{}", self.base_url, path);
-        let resp = self.client.post(&url).json(body).send().await?;
+        let req = self.client.post(&url).json(body);
+        let resp = self.add_auth(req).send().await?;
         let status = resp.status();
         let resp_body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
@@ -57,7 +70,8 @@ impl ApiClient {
 
     pub async fn post_raw(&self, path: &str) -> Result<serde_json::Value> {
         let url = format!("{}{}", self.base_url, path);
-        let resp = self.client.post(&url).send().await?;
+        let req = self.client.post(&url);
+        let resp = self.add_auth(req).send().await?;
         let status = resp.status();
         let resp_body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
@@ -69,7 +83,8 @@ impl ApiClient {
 
     pub async fn put(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
         let url = format!("{}{}", self.base_url, path);
-        let resp = self.client.put(&url).json(body).send().await?;
+        let req = self.client.put(&url).json(body);
+        let resp = self.add_auth(req).send().await?;
         let status = resp.status();
         let resp_body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
@@ -81,7 +96,8 @@ impl ApiClient {
 
     pub async fn delete(&self, path: &str) -> Result<serde_json::Value> {
         let url = format!("{}{}", self.base_url, path);
-        let resp = self.client.delete(&url).send().await?;
+        let req = self.client.delete(&url);
+        let resp = self.add_auth(req).send().await?;
         let status = resp.status();
         let resp_body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
@@ -111,7 +127,8 @@ impl ApiClient {
             .file_name(file_name.to_string());
         let form = multipart::Form::new().part("file", part);
 
-        let resp = self.client.post(&url).multipart(form).send().await?;
+        let req = self.client.post(&url).multipart(form);
+        let resp = self.add_auth(req).send().await?;
         let status = resp.status();
         let resp_body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
