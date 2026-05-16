@@ -117,6 +117,16 @@ enum Command {
         #[command(subcommand)]
         transform_cmd: TransformCommand,
     },
+    /// Agent management commands.
+    Agent {
+        #[command(subcommand)]
+        agent_cmd: AgentCommand,
+    },
+    /// Message management commands.
+    Message {
+        #[command(subcommand)]
+        message_cmd: MessageCommand,
+    },
 }
 
 /// API key subcommands.
@@ -195,6 +205,38 @@ enum ExtensionCommand {
         #[arg(short, long)]
         output: Option<std::path::PathBuf>,
     },
+    /// Get extension health status.
+    Status {
+        /// Extension ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Get extension logs.
+    Logs {
+        /// Extension ID.
+        #[arg(required = true)]
+        id: String,
+        /// Number of log lines to show.
+        #[arg(short, long)]
+        lines: Option<usize>,
+    },
+    /// Build an extension from source.
+    Build {
+        /// Extension directory path.
+        #[arg(required = true)]
+        path: std::path::PathBuf,
+    },
+    /// Install from marketplace.
+    MarketInstall {
+        /// Extension ID in marketplace.
+        #[arg(required = true)]
+        extension_id: String,
+        /// Version to install (optional, defaults to latest).
+        #[arg(short, long)]
+        version: Option<String>,
+    },
+    /// List marketplace extensions.
+    MarketList,
 }
 
 /// Device subcommands.
@@ -489,6 +531,141 @@ enum TransformCommand {
     DataSources,
 }
 
+/// Agent subcommands.
+#[derive(Subcommand, Debug)]
+enum AgentCommand {
+    /// List all agents.
+    List,
+    /// Get agent details.
+    Get {
+        /// Agent ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Create a new agent.
+    Create {
+        /// Agent name.
+        #[arg(short, long)]
+        name: String,
+        /// Description.
+        #[arg(short, long)]
+        description: Option<String>,
+        /// LLM backend configuration.
+        #[arg(short, long)]
+        llm_backend: Option<String>,
+        /// System prompt.
+        #[arg(short, long)]
+        system_prompt: Option<String>,
+    },
+    /// Update agent.
+    Update {
+        /// Agent ID.
+        #[arg(required = true)]
+        id: String,
+        /// New name.
+        #[arg(short, long)]
+        name: Option<String>,
+        /// New description.
+        #[arg(short, long)]
+        description: Option<String>,
+        /// LLM backend configuration.
+        #[arg(short, long)]
+        llm_backend: Option<String>,
+        /// System prompt.
+        #[arg(short, long)]
+        system_prompt: Option<String>,
+    },
+    /// Delete agent.
+    Delete {
+        /// Agent ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Control agent status (active/paused).
+    Control {
+        /// Agent ID.
+        #[arg(required = true)]
+        id: String,
+        /// Status (active or paused).
+        #[arg(required = true)]
+        status: String,
+    },
+    /// Invoke agent with input.
+    Invoke {
+        /// Agent ID.
+        #[arg(required = true)]
+        id: String,
+        /// Input prompt.
+        #[arg(required = true)]
+        input: String,
+    },
+    /// Get agent memory.
+    Memory {
+        /// Agent ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Get agent execution history.
+    Executions {
+        /// Agent ID.
+        #[arg(required = true)]
+        id: String,
+        /// Limit number of results.
+        #[arg(short, long)]
+        limit: Option<usize>,
+        /// Offset for pagination.
+        #[arg(short, long)]
+        offset: Option<usize>,
+    },
+}
+
+/// Message subcommands.
+#[derive(Subcommand, Debug)]
+enum MessageCommand {
+    /// List messages.
+    List {
+        /// Limit number of results.
+        #[arg(short, long)]
+        limit: Option<usize>,
+        /// Offset for pagination.
+        #[arg(short, long)]
+        offset: Option<usize>,
+        /// Filter by severity.
+        #[arg(short, long)]
+        severity: Option<String>,
+        /// Filter by status.
+        #[arg(short, long)]
+        status: Option<String>,
+    },
+    /// Get message details.
+    Get {
+        /// Message ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Send a new message.
+    Send {
+        /// Message title.
+        #[arg(short, long)]
+        title: String,
+        /// Message content.
+        #[arg(short, long)]
+        message: String,
+        /// Severity level.
+        #[arg(short, long, default_value = "info")]
+        severity: String,
+        /// Source.
+        #[arg(short, long)]
+        source: Option<String>,
+    },
+    /// Acknowledge/read a message.
+    Read {
+        /// Message ID.
+        #[arg(required = true)]
+        id: String,
+    },
+}
+
 // Custom runtime with increased worker threads for better concurrent performance
 // Default is num_cpus, but we use more to handle block_in_place alternatives
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
@@ -595,6 +772,8 @@ async fn main() -> Result<()> {
         Command::Dashboard { dashboard_cmd } => run_dashboard_cmd(dashboard_cmd).await,
         Command::Rule { rule_cmd } => run_rule_cmd(rule_cmd).await,
         Command::Transform { transform_cmd } => run_transform_cmd(transform_cmd).await,
+        Command::Agent { agent_cmd } => run_agent_cmd(agent_cmd).await,
+        Command::Message { message_cmd } => run_message_cmd(message_cmd).await,
     }
 }
 
@@ -1369,6 +1548,43 @@ async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
             create_extension_scaffold(&name, &extension_type, output)?;
             Ok(())
         }
+
+        ExtensionCommand::Status { id } => {
+            let client = neomind_cli_ops::ApiClient::new();
+            let response = neomind_cli_ops::extension::get_extension_status(&client, &id).await?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+            Ok(())
+        }
+
+        ExtensionCommand::Logs { id, lines } => {
+            let client = neomind_cli_ops::ApiClient::new();
+            let response = neomind_cli_ops::extension::get_extension_logs(&client, &id, lines).await?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+            Ok(())
+        }
+
+        ExtensionCommand::Build { path } => {
+            build_extension(&path)?;
+            Ok(())
+        }
+
+        ExtensionCommand::MarketInstall { extension_id, version } => {
+            let client = neomind_cli_ops::ApiClient::new();
+            let response = neomind_cli_ops::extension::install_extension_market(
+                &client,
+                &extension_id,
+                version.as_deref(),
+            ).await?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+            Ok(())
+        }
+
+        ExtensionCommand::MarketList => {
+            let client = neomind_cli_ops::ApiClient::new();
+            let response = neomind_cli_ops::extension::list_marketplace(&client).await?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+            Ok(())
+        }
     }
 }
 
@@ -1760,6 +1976,36 @@ fn create_extension_scaffold(
     Ok(())
 }
 
+/// Build an extension from source.
+fn build_extension(path: &std::path::PathBuf) -> Result<()> {
+    use std::process::Command;
+
+    if !path.exists() {
+        anyhow::bail!("Extension path not found: {}", path.display());
+    }
+
+    println!("Building extension: {}", path.display());
+    println!();
+
+    let cargo_toml = path.join("Cargo.toml");
+    if !cargo_toml.exists() {
+        anyhow::bail!("Cargo.toml not found in extension path. Is this a Rust project?");
+    }
+
+    // Run cargo build
+    let status = Command::new("cargo")
+        .args(["build", "--release"])
+        .current_dir(path)
+        .status()?;
+
+    if status.success() {
+        println!("✅ Extension built successfully!");
+        Ok(())
+    } else {
+        anyhow::bail!("Extension build failed");
+    }
+}
+
 /// Run API key management commands.
 async fn run_api_key_cmd(cmd: ApiKeyCommand) -> Result<()> {
     match cmd {
@@ -2099,6 +2345,112 @@ async fn run_transform_cmd(cmd: TransformCommand) -> Result<()> {
         }
         TransformCommand::DataSources => {
             list_transform_data_sources(&client).await?
+        }
+    };
+
+    // Format and print output
+    format_output(&response, output_format);
+    Ok(())
+}
+
+/// Run agent management commands.
+async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
+    use neomind_cli_ops::{ApiClient, agent_cmd::*, output::format_output};
+    use neomind_cli_ops::types::OutputFormat;
+
+    // Get API base URL from environment or use default
+    let api_base = std::env::var("NEOMIND_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+
+    // Create API client
+    let client = ApiClient::with_base_url(&api_base);
+
+    // Get output format (check for --json flag in global args or environment)
+    let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+
+    let response = match cmd {
+        AgentCommand::List => {
+            list_agents(&client).await?
+        }
+        AgentCommand::Get { id } => {
+            get_agent(&client, &id).await?
+        }
+        AgentCommand::Create { name, description, llm_backend, system_prompt } => {
+            create_agent(
+                &client,
+                &name,
+                description.as_deref(),
+                llm_backend.as_deref(),
+                system_prompt.as_deref(),
+            ).await?
+        }
+        AgentCommand::Update { id, name, description, llm_backend, system_prompt } => {
+            update_agent(
+                &client,
+                &id,
+                name.as_deref(),
+                description.as_deref(),
+                llm_backend.as_deref(),
+                system_prompt.as_deref(),
+            ).await?
+        }
+        AgentCommand::Delete { id } => {
+            delete_agent(&client, &id).await?
+        }
+        AgentCommand::Control { id, status } => {
+            control_agent(&client, &id, &status).await?
+        }
+        AgentCommand::Invoke { id, input } => {
+            invoke_agent(&client, &id, &input).await?
+        }
+        AgentCommand::Memory { id } => {
+            get_agent_memory(&client, &id).await?
+        }
+        AgentCommand::Executions { id, limit, offset } => {
+            get_agent_executions(&client, &id, limit, offset).await?
+        }
+    };
+
+    // Format and print output
+    format_output(&response, output_format);
+    Ok(())
+}
+
+/// Run message management commands.
+async fn run_message_cmd(cmd: MessageCommand) -> Result<()> {
+    use neomind_cli_ops::{ApiClient, message::*, output::format_output};
+    use neomind_cli_ops::types::OutputFormat;
+
+    // Get API base URL from environment or use default
+    let api_base = std::env::var("NEOMIND_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+
+    // Create API client
+    let client = ApiClient::with_base_url(&api_base);
+
+    // Get output format (check for --json flag in global args or environment)
+    let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+
+    let response = match cmd {
+        MessageCommand::List { limit, offset, severity, status } => {
+            list_messages(&client, limit, offset, severity.as_deref(), status.as_deref()).await?
+        }
+        MessageCommand::Get { id } => {
+            get_message(&client, &id).await?
+        }
+        MessageCommand::Send { title, message, severity, source } => {
+            send_message(&client, &title, &message, &severity, source.as_deref()).await?
+        }
+        MessageCommand::Read { id } => {
+            acknowledge_message(&client, &id).await?
         }
     };
 

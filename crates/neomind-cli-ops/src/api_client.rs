@@ -85,4 +85,34 @@ impl ApiClient {
         }
         Ok(resp_body)
     }
+
+    pub async fn post_file(&self, path: &str, file_path: &str) -> Result<serde_json::Value> {
+        use std::fs::File;
+        use std::io::Read;
+        use reqwest::multipart;
+
+        let url = format!("{}{}", self.base_url, path);
+        let mut file = File::open(file_path)?;
+        let file_name = std::path::Path::new(file_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("file");
+
+        // Read file content
+        let mut file_content = Vec::new();
+        file.read_to_end(&mut file_content)?;
+
+        let part = multipart::Part::bytes(file_content)
+            .file_name(file_name.to_string());
+        let form = multipart::Form::new().part("file", part);
+
+        let resp = self.client.post(&url).multipart(form).send().await?;
+        let status = resp.status();
+        let resp_body: serde_json::Value = resp.json().await?;
+        if !status.is_success() {
+            let msg = resp_body["error"].as_str().unwrap_or("Unknown error");
+            anyhow::bail!("API error ({}): {}", status, msg);
+        }
+        Ok(resp_body)
+    }
 }
