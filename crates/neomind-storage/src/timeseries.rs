@@ -935,6 +935,78 @@ impl TimeSeriesStore {
         })
     }
 
+    /// Query data points in **descending** timestamp order (newest first).
+    ///
+    /// Uses `range().rev()` to iterate from the end of the B-tree, so the `limit`
+    /// push-down correctly returns the **newest** N points instead of the oldest.
+    pub async fn query_range_rev(
+        &self,
+        source_id: &str,
+        metric: &str,
+        start: i64,
+        end: i64,
+        limit: Option<usize>,
+    ) -> Result<TimeSeriesResult, Error> {
+        let read_txn = self.db.begin_read()?;
+
+        let table = match read_txn.open_table(TIMESERIES_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => {
+                return Ok(TimeSeriesResult {
+                    source_id: source_id.to_string(),
+                    metric: metric.to_string(),
+                    points: Vec::new(),
+                    total_count: None,
+                });
+            }
+            Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
+        };
+
+        let start_key = (source_id, metric, start);
+        let end_key = (source_id, metric, end);
+
+        let cap = limit.map(|n| n.min(1000)).unwrap_or(0);
+        let mut points = Vec::with_capacity(cap);
+        let mut collected = 0usize;
+        let mut total_count = 0u32;
+
+        // Iterate in reverse (newest first)
+        for result in table.range(start_key..=end_key)?.rev() {
+            total_count += 1;
+            let (_key, value) = result?;
+
+            if limit.is_none_or(|n| collected < n) {
+                let point: DataPoint = serde_json::from_slice(value.value())?;
+                points.push(point);
+                collected += 1;
+            } else {
+                // Continue counting total but don't collect more
+            }
+        }
+
+        // Note: total_count may be inaccurate when limit is hit because we stopped
+        // iterating early. This is acceptable for pagination (caller uses the primary
+        // path's total count). If exact total is needed, caller should query without limit.
+        if limit.is_some() && collected >= limit.unwrap_or(usize::MAX) {
+            // We may have stopped early, total_count is just the points we saw
+            // The caller will use a separate count or accept approximate total
+        }
+
+        tracing::debug!(
+            "query_range_rev: source_id={}, metric={}, found {} points",
+            source_id,
+            metric,
+            collected,
+        );
+
+        Ok(TimeSeriesResult {
+            source_id: source_id.to_string(),
+            metric: metric.to_string(),
+            points,
+            total_count: if limit.is_some() { None } else { Some(total_count as usize) },
+        })
+    }
+
     /// Aggregate data over a time range using streaming fold (no Vec materialization).
     ///
     /// Accumulates count, sum, min, max in a single pass over the redb range scan,

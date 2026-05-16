@@ -85,13 +85,16 @@ function transformTelemetryToChartData(
     let timeSeriesPoints = DataMapper.mapToTimeSeries(data, dataMapping)
 
     // Sort by timestamp ascending (oldest first) for proper time series display
-    // Use explicit sort instead of reverse to handle any data order correctly
+    // Stable sort preserves original order for equal timestamps
     if (timeSeriesPoints.length > 1) {
-      timeSeriesPoints = [...timeSeriesPoints].sort((a, b) => {
-        const at = a.timestamp ?? 0
-        const bt = b.timestamp ?? 0
-        return at - bt  // ascending: oldest first
+      const indexed = [...timeSeriesPoints].map((p, i) => ({ p, i }))
+      indexed.sort((a, b) => {
+        const at = a.p.timestamp ?? 0
+        const bt = b.p.timestamp ?? 0
+        const diff = at - bt
+        return diff !== 0 ? diff : a.i - b.i
       })
+      timeSeriesPoints = indexed.map(({ p }) => p)
     }
 
     // Extract values and format labels from timestamps

@@ -459,7 +459,7 @@ export async function fetchHistoricalTelemetry(
               return ts > 10000000000 ? Math.floor(ts / 1000) : ts
             }
           }
-          return Date.now() / 1000
+          return Math.floor(Date.now() / 1000)
         }
 
         // Extract all values
@@ -534,7 +534,7 @@ export async function fetchHistoricalTelemetry(
             if (typeof point === 'number') {
               // Pure number value - use a placeholder timestamp since we don't have the actual point timestamp
               // This shouldn't happen in normal telemetry responses
-              return { timestamp: Date.now() / 1000, value: point }
+              return { timestamp: Math.floor(Date.now() / 1000), value: point }
             }
             if (typeof point === 'object' && point !== null) {
               const p = point as unknown as Record<string, unknown>
@@ -545,13 +545,13 @@ export async function fetchHistoricalTelemetry(
                 // Convert milliseconds to seconds if needed (timestamps > 10000000000 are in ms)
                 timestamp = ts > 10000000000 ? Math.floor(ts / 1000) : ts
               } else {
-                timestamp = Date.now() / 1000
+                timestamp = Math.floor(Date.now() / 1000)
               }
               const value = p.value ?? p.v ?? 0
 
               return { timestamp, value }
             }
-            return { timestamp: Date.now() / 1000, value: point }
+            return { timestamp: Math.floor(Date.now() / 1000), value: point }
           }) : undefined
         }
 
@@ -839,10 +839,10 @@ function eventMetricMatches(eventMetric: string, widgetMetricId: string): boolea
   if (widgetMetricId.endsWith('.' + eventMetric)) return true
   if (widgetMetricId.endsWith('/' + eventMetric)) return true
 
-  // Case 3: Both have nested paths - compare the last segment
-  const eventLastSegment = eventMetric.split('.').pop() || eventMetric.split('/').pop() || eventMetric
-  const widgetLastSegment = widgetMetricId.split('.').pop() || widgetMetricId.split('/').pop() || widgetMetricId
-  if (eventLastSegment === widgetLastSegment) return true
+  // NOTE: We intentionally do NOT match based on last segment alone.
+  // Matching "foo.image" with "bar.image" is too fuzzy and causes cross-metric
+  // interference — images from one metric bleed into another metric's widget.
+  // Only Cases 1 and 2 above (direct prefix/suffix relationship) are allowed.
 
   return false
 }
@@ -1584,13 +1584,47 @@ export function useDataSource<T = unknown>(
                                                     metricId.includes('values.image')))
             const maxLimit = ds.limit ?? (isImageDataSource ? 200 : 50)
 
-            // For image data sources, check for duplicate (timestamp + value) before merging
-            if (isImageDataSource && isDuplicatePoint(currentArray, now, latestValue, getTs)) {
-              return undefined // Skip duplicate point
+            // For image data sources, check if the same image VALUE already exists at ANY timestamp.
+            // This is stricter than isDuplicatePoint which requires both timestamp AND value to match.
+            // We need value-only dedup here because the store change effect fires on EVERY device
+            // metric change (e.g., temperature updates every 5s), repeatedly stamping the same
+            // image with different timestamps — causing "interspersed images from wrong time periods".
+            if (isImageDataSource && currentArray.length > 0) {
+              const newContent = typeof latestValue === 'string' ? latestValue : JSON.stringify(latestValue)
+              if (newContent) {
+                const extractContent = (str: string): string => {
+                  if (str.startsWith('data:')) {
+                    const commaIndex = str.indexOf(',')
+                    if (commaIndex !== -1) return str.slice(commaIndex + 1)
+                  }
+                  return str
+                }
+                const newBase = extractContent(newContent)
+                const alreadyExists = currentArray.some((p) => {
+                  const val = getPointValue(p)
+                  if (val === undefined || val === null) return false
+                  const existingStr = typeof val === 'string' ? val : JSON.stringify(val)
+                  if (!existingStr) return false
+                  const existingBase = extractContent(existingStr)
+                  // For long content (base64 images), compare first and last 500 chars
+                  if (newBase.length > 1000 && existingBase.length > 1000) {
+                    return newBase.slice(0, 500) === existingBase.slice(0, 500) &&
+                           newBase.slice(-500) === existingBase.slice(-500)
+                  }
+                  return newBase === existingBase
+                })
+                if (alreadyExists) return undefined // Same image already in array, skip
+              }
             }
 
             const merged = [newPoint, ...currentArray]
-            const sorted = [...merged].sort((a, b) => getTs(b) - getTs(a))
+            // Stable sort: preserve original order for equal timestamps
+            const idx1 = merged.map((p, i) => ({ p, i }))
+            idx1.sort((a, b) => {
+              const tsDiff = getTs(b.p) - getTs(a.p)
+              return tsDiff !== 0 ? tsDiff : a.i - b.i
+            })
+            const sorted = idx1.map(({ p }) => p)
 
             // For image data sources, skip deduplication to preserve all unique images
             if (isImageDataSource) {
@@ -1876,6 +1910,15 @@ export function useDataSource<T = unknown>(
               return undefined
             }
 
+            // Time range validation: reject events outside the component's configured time range.
+            // This prevents stale/delayed events from injecting data points that don't belong
+            // in the current view (e.g., images from hours ago appearing in a "last 30 min" widget).
+            const dsTimeRange = ds.timeRange ?? 1  // hours
+            const rangeStartSec = now - Math.floor(dsTimeRange * 3600)
+            if (eventTimestamp < rangeStartSec) {
+              return undefined  // Event is outside the configured time range
+            }
+
             const metricId = ds.metricId || ds.property || 'value'
             let eventValue: unknown
 
@@ -1928,7 +1971,13 @@ export function useDataSource<T = unknown>(
 
             // Merge new point and sort by timestamp (newest first)
             const merged = [newPoint, ...currentArray]
-            const sorted = [...merged].sort((a, b) => getTs(b) - getTs(a))
+            // Stable sort: preserve original order for equal timestamps
+            const idx2 = merged.map((p, i) => ({ p, i }))
+            idx2.sort((a, b) => {
+              const tsDiff = getTs(b.p) - getTs(a.p)
+              return tsDiff !== 0 ? tsDiff : a.i - b.i
+            })
+            const sorted = idx2.map(({ p }) => p)
 
             // For image data sources, skip deduplication to preserve all unique images
             if (isImageDataSource) {
@@ -2206,6 +2255,14 @@ export function useDataSource<T = unknown>(
                         ? Math.floor(rawEventTimestamp / 1000)  // Convert ms to seconds
                         : rawEventTimestamp)  // Already in seconds
                     : Math.floor(Date.now() / 1000)  // Fallback to current time
+
+                  // Time range validation: reject events outside the component's configured time range
+                  const dsTimeRange = ds.timeRange ?? 1  // hours
+                  const rangeStartSec = Math.floor(Date.now() / 1000) - Math.floor(dsTimeRange * 3600)
+                  if (eventTimestamp < rangeStartSec) {
+                    break  // Event is outside the configured time range, skip
+                  }
+
                   const newPoint = { timestamp: eventTimestamp, time: eventTimestamp, value: eventValue }
                   const currentArray = currentDataSources.length > 1 && Array.isArray(currentData) && currentData[index] !== undefined
                     ? (Array.isArray(currentData[index]) ? (currentData[index] as unknown[]) : [])
@@ -2231,7 +2288,13 @@ export function useDataSource<T = unknown>(
                   }
 
                   const merged = [newPoint, ...currentArray]
-                  const sorted = [...merged].sort((a, b) => getTs(b) - getTs(a))
+                  // Stable sort: preserve original order for equal timestamps
+                  const idx3 = merged.map((p, i) => ({ p, i }))
+                  idx3.sort((a, b) => {
+                    const tsDiff = getTs(b.p) - getTs(a.p)
+                    return tsDiff !== 0 ? tsDiff : a.i - b.i
+                  })
+                  const sorted = idx3.map(({ p }) => p)
 
                   // For image data sources, skip deduplication to preserve all unique images
                   if (isImageDataSource) {
@@ -2632,11 +2695,21 @@ export function useDataSource<T = unknown>(
             }
           }
 
-          // 4. For image-like metrics, try to find any value that looks like an image
+          // 4. For image-like metrics, try to find a value whose key name is also image-related
+          // and looks like an image. This is more specific than matching ANY image-like value,
+          // which could cause cross-metric interference (e.g., detection image matching camera image).
           if (metricId.toLowerCase().includes('image') || metricId.toLowerCase().includes('img')) {
+            // First, prefer keys that match the metric name pattern
             for (const key of Object.keys(currentValues)) {
-              if (looksLikeImage(currentValues[key])) {
-                return { value: currentValues[key], matchedKey: key }
+              const keyLower = key.toLowerCase()
+              if ((keyLower.includes('image') || keyLower.includes('img')) && looksLikeImage(currentValues[key])) {
+                // Only match if the key is structurally similar to the target metric
+                // e.g., "image" matches "image" or "values.image", but not "detection_snapshot"
+                if (keyLower === metricId.toLowerCase() ||
+                    keyLower.endsWith('.' + metricId.toLowerCase()) ||
+                    metricId.toLowerCase().endsWith('.' + keyLower)) {
+                  return { value: currentValues[key], matchedKey: key }
+                }
               }
             }
           }
@@ -2711,16 +2784,12 @@ export function useDataSource<T = unknown>(
               if (storeItem.latestValue === undefined) continue
 
               const arr = nestedArrays[i] ?? []
-              const firstPoint = arr[0] as { timestamp?: number; time?: number; value?: unknown } | undefined
-              const firstValue = firstPoint?.value
-              const firstTimestamp = (firstPoint?.timestamp ?? firstPoint?.time ?? 0) as number
-              const firstPointAge = now - firstTimestamp
 
-              const shouldAddNewPoint = arr.length === 0 ||
-                                        !valuesEqual(firstValue, storeItem.latestValue) ||
-                                        firstPointAge > 30
-
-              if (shouldAddNewPoint) {
+              // Only add store value when API returned no data for this source.
+              // API data comes directly from the database and is always the freshest.
+              // Store values may be stale (from earlier WebSocket events) and would
+              // create a fake "now" point that displaces the real latest data.
+              if (arr.length === 0) {
                 arr.unshift({ timestamp: now, time: now, value: storeItem.latestValue })
               }
               nestedArrays[i] = arr
@@ -2733,23 +2802,13 @@ export function useDataSource<T = unknown>(
             for (const storeItem of telemetryDataSourcesWithStore) {
               if (storeItem.latestValue === undefined) continue
 
-              const latestValue = storeItem.latestValue
-              const maxLimit = telemetryDataSources[0].limit ?? 50
-
-              const firstPoint = rawDataArray[0] as { timestamp?: number; time?: number; value?: unknown } | undefined
-              const firstValue = firstPoint?.value
-              const firstTimestamp = (firstPoint?.timestamp ?? firstPoint?.time ?? 0) as number
-              const firstPointAge = now - firstTimestamp
-
-              const shouldAddNewPoint = rawDataArray.length === 0 ||
-                                        !valuesEqual(firstValue, latestValue) ||
-                                        firstPointAge > 30
-
-              if (shouldAddNewPoint) {
+              // Only add store value when API returned no data.
+              // See comment above for rationale.
+              if (rawDataArray.length === 0) {
                 const newPoint = {
                   timestamp: now,
                   time: now,
-                  value: latestValue,
+                  value: storeItem.latestValue,
                 }
                 rawDataArray.unshift(newPoint)
               }
@@ -2775,7 +2834,14 @@ export function useDataSource<T = unknown>(
               const o = p as Record<string, unknown>
               return (o.timestamp ?? o.time ?? o.t ?? 0) as number
             }
-            const sorted = [...points].sort((a, b) => getTs(b) - getTs(a))
+            // Stable sort: primary by timestamp descending, secondary by original index
+            // This prevents JavaScript's unstable sort from shuffling equal-timestamp points
+            const indexed = points.map((p, i) => ({ p, i }))
+            indexed.sort((a, b) => {
+              const tsDiff = getTs(b.p) - getTs(a.p)
+              return tsDiff !== 0 ? tsDiff : a.i - b.i  // preserve original order for same timestamp
+            })
+            const sorted = indexed.map(({ p }) => p)
 
             if (isImageDataSource) {
               const dedupedPoints: unknown[] = []

@@ -221,8 +221,13 @@ export function transformTimeSeries(
 
   let result = [...points]
 
-  // Sort by timestamp
-  result.sort((a, b) => a.timestamp - b.timestamp)
+  // Sort by timestamp ascending (stable sort to prevent shuffling equal-timestamp points)
+  const indexed = result.map((p, i) => ({ p, i }))
+  indexed.sort((a, b) => {
+    const diff = a.p.timestamp - b.p.timestamp
+    return diff !== 0 ? diff : a.i - b.i
+  })
+  result = indexed.map(({ p }) => p)
 
   // Apply aggregation if not 'raw'
   if (aggregate !== 'raw') {
@@ -230,10 +235,10 @@ export function transformTimeSeries(
     if (aggregatedValue !== null) {
       // For non-timeseries modes, return single point
       if (chartViewMode === 'snapshot' || chartViewMode === 'distribution') {
-        return [{ timestamp: result[result.length - 1]?.timestamp ?? Date.now() / 1000, value: aggregatedValue }]
+        return [{ timestamp: result[result.length - 1]?.timestamp ?? Math.floor(Date.now() / 1000), value: aggregatedValue }]
       }
       // For timeseries, keep last point with aggregated value
-      result = [{ timestamp: result[result.length - 1]?.timestamp ?? Date.now() / 1000, value: aggregatedValue }]
+      result = [{ timestamp: result[result.length - 1]?.timestamp ?? Math.floor(Date.now() / 1000), value: aggregatedValue }]
     }
   }
 

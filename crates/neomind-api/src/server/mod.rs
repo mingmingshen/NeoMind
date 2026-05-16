@@ -120,7 +120,7 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
 
     let app = app
         .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(20)))
-        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(30)));
+        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(120)));
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
 

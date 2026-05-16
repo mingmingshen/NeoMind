@@ -315,10 +315,12 @@ pub async fn get_device_telemetry_handler(
                             (paginated, total)
                         }
                         Err(_) => {
-                            // Fallback to direct telemetry query with limit
-                            let db_limit = if effective_offset == 0 { Some(limit) } else { None };
+                            // Fallback to direct telemetry query (no limit push-down)
+                            // NOTE: We must NOT push limit to storage because storage returns
+                            // ascending order (oldest first) and would give us the OLDEST N points
+                            // instead of the NEWEST. Fetch all and reverse, same as primary path.
                             match telemetry
-                                .query_with_limit(&device_source_id, &metric_name, effective_start, end, db_limit)
+                                .query_with_limit(&device_source_id, &metric_name, effective_start, end, None)
                                 .await
                             {
                                 Ok((all_points, total_from_db)) => {

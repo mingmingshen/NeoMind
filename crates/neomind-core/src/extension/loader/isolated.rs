@@ -256,9 +256,20 @@ impl IsolatedExtensionLoader {
             IsolatedExtension::new(&metadata.id, path, self.config.isolated_config.clone());
 
         // Start the extension process
+        let start_time = std::time::Instant::now();
         isolated.start().await.map_err(|e| {
-            ExtensionError::LoadFailed(format!("Failed to start isolated extension: {}", e))
+            ExtensionError::LoadFailed(format!(
+                "Failed to start isolated extension '{}' after {:.1}s: {}",
+                metadata.id,
+                start_time.elapsed().as_secs_f64(),
+                e
+            ))
         })?;
+        tracing::info!(
+            extension_id = %metadata.id,
+            elapsed_ms = start_time.elapsed().as_millis() as u64,
+            "Extension process started successfully"
+        );
 
         Ok(Arc::new(isolated))
     }

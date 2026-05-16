@@ -2042,7 +2042,10 @@ pub async fn install_marketplace_extension_handler(
     State(state): State<ServerState>,
     Json(req): Json<MarketplaceInstallRequest>,
 ) -> HandlerResult<MarketplaceInstallResponse> {
+    let install_start = std::time::Instant::now();
     let runtime = &state.extensions.runtime;
+
+    tracing::info!(extension_id = %req.id, "Starting marketplace extension install");
 
     // First fetch metadata to get download URL
     // Add cache-busting to avoid GitHub CDN serving stale content
@@ -2217,7 +2220,8 @@ pub async fn install_marketplace_extension_handler(
                     extension_id = %ext_id,
                     version = %version,
                     binary_path = %result.binary_path.display(),
-                    "Package installed successfully from marketplace"
+                    elapsed_ms = install_start.elapsed().as_millis() as u64,
+                    "Package downloaded and extracted, starting extension load"
                 );
 
                 // Check if already registered and unregister if needed

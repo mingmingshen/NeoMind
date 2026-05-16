@@ -200,12 +200,16 @@ function transformTelemetryToImages(data: unknown): ImageHistoryItem[] {
 
   // Sort by timestamp descending (newest first), items without timestamp go to the end
   // This ensures slider position 0 = newest image, sliding right goes back in time
-  result.sort((a, b) => {
-    if (a.timestamp === undefined && b.timestamp === undefined) return 0
-    if (a.timestamp === undefined) return 1
-    if (b.timestamp === undefined) return -1
-    return (b.timestamp as number) - (a.timestamp as number)
+  // Stable sort: preserve original order for equal timestamps
+  const indexed = result.map((item, i) => ({ item, i }))
+  indexed.sort((a, b) => {
+    if (a.item.timestamp === undefined && b.item.timestamp === undefined) return a.i - b.i
+    if (a.item.timestamp === undefined) return 1
+    if (b.item.timestamp === undefined) return -1
+    const tsDiff = (b.item.timestamp as number) - (a.item.timestamp as number)
+    return tsDiff !== 0 ? tsDiff : a.i - b.i
   })
+  indexed.forEach(({ item }, i) => { result[i] = item })
 
   return result
 }
@@ -256,13 +260,16 @@ function normalizeImageData(data: unknown): ImageHistoryItem[] {
     }
 
     // Sort by timestamp descending (newest first), items without timestamp go to the end
-    // This ensures slider position 0 = newest image, sliding right goes back in time
-    result.sort((a, b) => {
-      if (a.timestamp === undefined && b.timestamp === undefined) return 0
-      if (a.timestamp === undefined) return 1
-      if (b.timestamp === undefined) return -1
-      return (b.timestamp as number) - (a.timestamp as number)
+    // Stable sort: preserve original order for equal timestamps
+    const indexed = result.map((item, i) => ({ item, i }))
+    indexed.sort((a, b) => {
+      if (a.item.timestamp === undefined && b.item.timestamp === undefined) return a.i - b.i
+      if (a.item.timestamp === undefined) return 1
+      if (b.item.timestamp === undefined) return -1
+      const tsDiff = (b.item.timestamp as number) - (a.item.timestamp as number)
+      return tsDiff !== 0 ? tsDiff : a.i - b.i
     })
+    indexed.forEach(({ item }, i) => { result[i] = item })
 
     return result
   }
@@ -294,7 +301,7 @@ function normalizeImageData(data: unknown): ImageHistoryItem[] {
       if (normalizedSrc) {
         return [{
           src: normalizedSrc,
-          timestamp: (typeof obj.timestamp === 'string' || typeof obj.timestamp === 'number') ? obj.timestamp : undefined,
+          timestamp: extractTimestamp(obj as Record<string, unknown>),
           label: (typeof obj.label === 'string') ? obj.label : undefined,
           alt: (typeof obj.alt === 'string') ? obj.alt : 'Image 1',
         }]
