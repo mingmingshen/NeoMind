@@ -127,6 +127,11 @@ enum Command {
         #[command(subcommand)]
         message_cmd: MessageCommand,
     },
+    /// Widget management commands.
+    Widget {
+        #[command(subcommand)]
+        widget_cmd: WidgetCommand,
+    },
 }
 
 /// API key subcommands.
@@ -232,7 +237,7 @@ enum ExtensionCommand {
         #[arg(required = true)]
         extension_id: String,
         /// Version to install (optional, defaults to latest).
-        #[arg(short, long)]
+        #[arg(long)]
         version: Option<String>,
     },
     /// List marketplace extensions.
@@ -666,6 +671,48 @@ enum MessageCommand {
     },
 }
 
+/// Widget subcommands.
+#[derive(Subcommand, Debug)]
+enum WidgetCommand {
+    /// List installed widgets.
+    List,
+    /// Get widget details.
+    Get {
+        /// Widget ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Get widget bundle.
+    Bundle {
+        /// Widget ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Install widget from file.
+    Install {
+        /// Path to widget file (.tgz).
+        #[arg(required = true)]
+        file: String,
+    },
+    /// Uninstall widget.
+    Uninstall {
+        /// Widget ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// List marketplace widgets.
+    MarketList,
+    /// Install widget from marketplace.
+    MarketInstall {
+        /// Widget ID.
+        #[arg(required = true)]
+        id: String,
+        /// Version (optional).
+        #[arg(long)]
+        version: Option<String>,
+    },
+}
+
 // Custom runtime with increased worker threads for better concurrent performance
 // Default is num_cpus, but we use more to handle block_in_place alternatives
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
@@ -774,6 +821,7 @@ async fn main() -> Result<()> {
         Command::Transform { transform_cmd } => run_transform_cmd(transform_cmd).await,
         Command::Agent { agent_cmd } => run_agent_cmd(agent_cmd).await,
         Command::Message { message_cmd } => run_message_cmd(message_cmd).await,
+        Command::Widget { widget_cmd } => run_widget_cmd(widget_cmd).await,
     }
 }
 
@@ -2451,6 +2499,54 @@ async fn run_message_cmd(cmd: MessageCommand) -> Result<()> {
         }
         MessageCommand::Read { id } => {
             acknowledge_message(&client, &id).await?
+        }
+    };
+
+    // Format and print output
+    format_output(&response, output_format);
+    Ok(())
+}
+
+/// Run widget management commands.
+async fn run_widget_cmd(cmd: WidgetCommand) -> Result<()> {
+    use neomind_cli_ops::{ApiClient, widget::*, output::format_output};
+    use neomind_cli_ops::types::OutputFormat;
+
+    // Get API base URL from environment or use default
+    let api_base = std::env::var("NEOMIND_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+
+    // Create API client
+    let client = ApiClient::with_base_url(&api_base);
+
+    // Get output format (check for --json flag in global args or environment)
+    let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+
+    let response = match cmd {
+        WidgetCommand::List => {
+            list_widgets(&client).await?
+        }
+        WidgetCommand::Get { id } => {
+            get_widget(&client, &id).await?
+        }
+        WidgetCommand::Bundle { id } => {
+            get_widget_bundle(&client, &id).await?
+        }
+        WidgetCommand::Install { file } => {
+            install_widget_file(&client, &file).await?
+        }
+        WidgetCommand::Uninstall { id } => {
+            uninstall_widget(&client, &id).await?
+        }
+        WidgetCommand::MarketList => {
+            list_marketplace_widgets(&client).await?
+        }
+        WidgetCommand::MarketInstall { id, version } => {
+            install_widget_market(&client, &id, version.as_deref()).await?
         }
     };
 
