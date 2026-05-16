@@ -22,7 +22,7 @@ fn test_cli_help() {
         .stdout(predicate::str::contains("prompt"))
         .stdout(predicate::str::contains("chat"))
         .stdout(predicate::str::contains("list-models"))
-        .stdout(predicate::str::contains("plugin"));
+        .stdout(predicate::str::contains("extension"));
 }
 
 /// Test that the CLI shows version information.

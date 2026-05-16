@@ -24,10 +24,10 @@ fn test_list_models_custom_endpoint() {
         .arg("--endpoint")
         .arg("http://localhost:9999"); // Use unreachable port
 
-    // The command completes successfully even when Ollama is not running
+    // The command fails when Ollama is not running
     cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Ollama"));
+        .failure()
+        .stderr(predicate::str::contains("Failed to connect to Ollama"));
 }
 
 /// Test that list-models default endpoint is shown in help.
@@ -49,8 +49,8 @@ fn test_list_models_unreachable_endpoint() {
         .arg("--endpoint")
         .arg("http://localhost:9999"); // Unlikely to be running
 
-    // The command completes successfully but shows a status message on stderr
+    // The command fails with connection error
     cmd.assert()
-        .success()
-        .stderr(predicate::str::contains("Bad Gateway"));
+        .failure()
+        .stderr(predicate::str::contains("Failed to connect to Ollama"));
 }
