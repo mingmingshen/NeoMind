@@ -3,6 +3,7 @@ members = [
     "crates/neomind-core",
     "crates/neomind-api",
     "crates/neomind-cli",
+    "crates/neomind-cli-ops",
     "crates/neomind-devices",
     "crates/neomind-storage",
     "crates/neomind-rules",
