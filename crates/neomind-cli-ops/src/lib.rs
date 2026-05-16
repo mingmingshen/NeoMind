@@ -3,7 +3,7 @@ pub mod output;
 pub mod types;
 
 // Command modules will be added in subsequent tasks
-// pub mod device;
+pub mod device;
 // pub mod dashboard;
 // pub mod rule;
 // pub mod transform;

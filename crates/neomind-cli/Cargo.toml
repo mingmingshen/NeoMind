@@ -15,6 +15,7 @@ static = ["neomind-api/static"]
 neomind-core = { path = "../neomind-core" }
 neomind-agent = { path = "../neomind-agent" }
 neomind-api = { path = "../neomind-api" }
+neomind-cli-ops = { path = "../neomind-cli-ops" }
 
 tokio = { workspace = true }
 serde = { workspace = true }

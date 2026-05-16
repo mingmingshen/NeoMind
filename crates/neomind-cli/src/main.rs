@@ -97,6 +97,11 @@ enum Command {
         #[command(subcommand)]
         key_cmd: ApiKeyCommand,
     },
+    /// Device management commands.
+    Device {
+        #[command(subcommand)]
+        device_cmd: DeviceCommand,
+    },
 }
 
 /// API key subcommands.
@@ -174,6 +179,125 @@ enum ExtensionCommand {
         /// Output directory.
         #[arg(short, long)]
         output: Option<std::path::PathBuf>,
+    },
+}
+
+/// Device subcommands.
+#[derive(Subcommand, Debug)]
+enum DeviceCommand {
+    /// List all devices.
+    List {
+        /// Filter by device type.
+        #[arg(short, long)]
+        device_type: Option<String>,
+        /// Filter by status.
+        #[arg(short, long)]
+        status: Option<String>,
+    },
+    /// Get device details.
+    Get {
+        /// Device ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Create a new device.
+    Create {
+        /// Device name.
+        #[arg(short, long)]
+        name: String,
+        /// Device type.
+        #[arg(short, long)]
+        device_type: String,
+        /// Adapter type.
+        #[arg(short, long)]
+        adapter_type: String,
+        /// Connection config JSON.
+        #[arg(short, long)]
+        config: Option<String>,
+    },
+    /// Update device.
+    Update {
+        /// Device ID.
+        #[arg(required = true)]
+        id: String,
+        /// New name.
+        #[arg(short, long)]
+        name: Option<String>,
+        /// Connection config JSON.
+        #[arg(short, long)]
+        config: Option<String>,
+    },
+    /// Delete device.
+    Delete {
+        /// Device ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Get latest metrics.
+    Latest {
+        /// Device ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Get telemetry history.
+    History {
+        /// Device ID.
+        #[arg(required = true)]
+        id: String,
+        /// Metric name.
+        #[arg(short, long)]
+        metric: Option<String>,
+        /// Time range (e.g., "1h", "24h", "7d").
+        #[arg(short, long)]
+        time_range: Option<String>,
+    },
+    /// Send control command.
+    Control {
+        /// Device ID.
+        #[arg(required = true)]
+        id: String,
+        /// Command name.
+        #[arg(required = true)]
+        command: String,
+        /// Command parameters JSON.
+        #[arg(short, long)]
+        params: Option<String>,
+    },
+    /// Device type management.
+    Types {
+        #[command(subcommand)]
+        type_cmd: DeviceTypeCommand,
+    },
+}
+
+/// Device type subcommands.
+#[derive(Subcommand, Debug)]
+enum DeviceTypeCommand {
+    /// List all device types.
+    List,
+    /// Get device type details.
+    Get {
+        /// Type ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Create a new device type.
+    Create {
+        /// Type name.
+        #[arg(short, long)]
+        name: String,
+        /// Metrics definition JSON.
+        #[arg(short, long)]
+        metrics: String,
+        /// Commands definition JSON.
+        #[arg(short, long)]
+        commands: Option<String>,
+    },
+    /// Delete device type.
+    Delete {
+        /// Type ID.
+        #[arg(required = true)]
+        id: String,
     },
 }
 
@@ -279,6 +403,7 @@ async fn main() -> Result<()> {
         Command::Extension { extension_cmd } => run_extension_cmd(extension_cmd).await,
         Command::CheckUpdate => run_check_update().await,
         Command::ApiKey { key_cmd } => run_api_key_cmd(key_cmd).await,
+        Command::Device { device_cmd } => run_device_cmd(device_cmd).await,
     }
 }
 
@@ -1503,5 +1628,109 @@ async fn run_api_key_cmd(cmd: ApiKeyCommand) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+/// Run device management commands.
+async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
+    use neomind_cli_ops::{ApiClient, device::*, output::format_output};
+    use neomind_cli_ops::types::OutputFormat;
+
+    // Get API base URL from environment or use default
+    let api_base = std::env::var("NEOMIND_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+
+    // Create API client
+    let client = ApiClient::with_base_url(&api_base);
+
+    // Get output format (check for --json flag in global args or environment)
+    let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+
+    let response = match cmd {
+        DeviceCommand::List { device_type, status } => {
+            list_devices(&client, device_type.as_deref(), status.as_deref()).await?
+        }
+        DeviceCommand::Get { id } => {
+            get_device(&client, &id).await?
+        }
+        DeviceCommand::Create { name, device_type, adapter_type, config } => {
+            let connection_config = if let Some(config_str) = config {
+                Some(serde_json::from_str(&config_str)?)
+            } else {
+                None
+            };
+            create_device(&client, &name, &device_type, &adapter_type, connection_config).await?
+        }
+        DeviceCommand::Update { id, name, config } => {
+            let connection_config = if let Some(config_str) = config {
+                Some(serde_json::from_str(&config_str)?)
+            } else {
+                None
+            };
+            update_device(&client, &id, name.as_deref(), connection_config).await?
+        }
+        DeviceCommand::Delete { id } => {
+            delete_device(&client, &id).await?
+        }
+        DeviceCommand::Latest { id } => {
+            get_latest_metrics(&client, &id).await?
+        }
+        DeviceCommand::History { id, metric, time_range } => {
+            get_telemetry_history(&client, &id, metric.as_deref(), time_range.as_deref()).await?
+        }
+        DeviceCommand::Control { id, command, params } => {
+            let params_json = if let Some(params_str) = params {
+                serde_json::from_str(&params_str)?
+            } else {
+                serde_json::json!({})
+            };
+            control_device(&client, &id, &command, params_json).await?
+        }
+        DeviceCommand::Types { type_cmd } => {
+            return run_device_type_cmd(client, type_cmd, output_format).await;
+        }
+    };
+
+    // Format and print output
+    format_output(&response, output_format);
+    Ok(())
+}
+
+/// Run device type management commands.
+async fn run_device_type_cmd(
+    client: neomind_cli_ops::ApiClient,
+    cmd: DeviceTypeCommand,
+    output_format: neomind_cli_ops::types::OutputFormat,
+) -> Result<()> {
+    use neomind_cli_ops::device::*;
+    use neomind_cli_ops::output::format_output;
+
+    let response = match cmd {
+        DeviceTypeCommand::List => {
+            list_device_types(&client).await?
+        }
+        DeviceTypeCommand::Get { id } => {
+            get_device_type(&client, &id).await?
+        }
+        DeviceTypeCommand::Create { name, metrics, commands } => {
+            let metrics_json = serde_json::from_str(&metrics)?;
+            let commands_json = if let Some(cmds_str) = commands {
+                Some(serde_json::from_str(&cmds_str)?)
+            } else {
+                None
+            };
+            create_device_type(&client, &name, metrics_json, commands_json).await?
+        }
+        DeviceTypeCommand::Delete { id } => {
+            delete_device_type(&client, &id).await?
+        }
+    };
+
+    // Format and print output
+    format_output(&response, output_format);
     Ok(())
 }
