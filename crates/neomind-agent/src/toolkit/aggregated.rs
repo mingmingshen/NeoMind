@@ -292,6 +292,10 @@ impl DeviceTool {
         let device_type_filter = args["device_type"].as_str();
         let detailed = is_detailed(args);
 
+        // Fetch all device connection statuses in one call
+        let all_statuses = self.device_service.get_all_device_statuses().await;
+        let now_ts = chrono::Utc::now().timestamp();
+
         let mut result = Vec::new();
 
         for d in devices.iter() {
@@ -302,22 +306,46 @@ impl DeviceTool {
                 }
             }
 
-            // Concise mode: name/type only
+            // Concise mode: name/type/status only
             if !detailed {
+                let conn_status = all_statuses
+                    .get(&d.device_id)
+                    .map(|s| format!("{:?}", s.status).to_lowercase())
+                    .unwrap_or_else(|| "disconnected".to_string());
                 result.push(serde_json::json!({
                     "device_id": d.device_id,
                     "name": d.name,
                     "type": d.device_type,
+                    "status": conn_status,
                 }));
                 continue;
             }
 
-            // Detailed mode: device info with inline metric/command names
-            // so the LLM directly knows what it can query/control per device
+            // Detailed mode: device info with status + inline metric/command names
+            let conn_status = all_statuses
+                .get(&d.device_id)
+                .map(|s| format!("{:?}", s.status).to_lowercase())
+                .unwrap_or_else(|| "disconnected".to_string());
+            let last_seen = all_statuses
+                .get(&d.device_id)
+                .map(|s| s.last_seen)
+                .unwrap_or(0);
+            let last_seen_ago = if last_seen == 0 {
+                "never".to_string()
+            } else {
+                let elapsed = now_ts - last_seen;
+                if elapsed < 60 { format!("{}s ago", elapsed) }
+                else if elapsed < 3600 { format!("{}m ago", elapsed / 60) }
+                else if elapsed < 86400 { format!("{}h ago", elapsed / 3600) }
+                else { format!("{}d ago", elapsed / 86400) }
+            };
+
             let mut device_json = serde_json::json!({
                 "device_id": d.device_id,
                 "name": d.name,
                 "type": d.device_type,
+                "status": conn_status,
+                "last_seen_ago": last_seen_ago,
             });
 
             if let Some(template) = self.device_service.get_template(&d.device_type) {
