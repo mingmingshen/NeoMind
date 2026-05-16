@@ -245,7 +245,7 @@ enum DeviceCommand {
         #[arg(required = true)]
         id: String,
         /// Metric name.
-        #[arg(short, long)]
+        #[arg(long)]
         metric: Option<String>,
         /// Time range (e.g., "1h", "24h", "7d").
         #[arg(short, long)]
@@ -287,10 +287,10 @@ enum DeviceTypeCommand {
         #[arg(short, long)]
         name: String,
         /// Metrics definition JSON.
-        #[arg(short, long)]
+        #[arg(long)]
         metrics: String,
         /// Commands definition JSON.
-        #[arg(short, long)]
+        #[arg(long)]
         commands: Option<String>,
     },
     /// Delete device type.
