@@ -102,6 +102,11 @@ enum Command {
         #[command(subcommand)]
         device_cmd: DeviceCommand,
     },
+    /// Dashboard management commands.
+    Dashboard {
+        #[command(subcommand)]
+        dashboard_cmd: DashboardCommand,
+    },
 }
 
 /// API key subcommands.
@@ -301,6 +306,80 @@ enum DeviceTypeCommand {
     },
 }
 
+/// Dashboard subcommands.
+#[derive(Subcommand, Debug)]
+enum DashboardCommand {
+    /// List all dashboards.
+    List {
+        /// Output format (json flag for structured output).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get dashboard details.
+    Get {
+        /// Dashboard ID.
+        #[arg(required = true)]
+        id: String,
+        /// Output format (json flag for structured output).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a new dashboard.
+    Create {
+        /// Dashboard name.
+        #[arg(short, long)]
+        name: String,
+        /// Dashboard description.
+        #[arg(short, long)]
+        description: Option<String>,
+        /// Layout configuration JSON.
+        #[arg(short, long)]
+        layout: Option<String>,
+        /// Output format (json flag for structured output).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Update dashboard.
+    Update {
+        /// Dashboard ID.
+        #[arg(required = true)]
+        id: String,
+        /// New name.
+        #[arg(short, long)]
+        name: Option<String>,
+        /// New description.
+        #[arg(short, long)]
+        description: Option<String>,
+        /// New layout configuration JSON.
+        #[arg(short, long)]
+        layout: Option<String>,
+        /// Output format (json flag for structured output).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete dashboard.
+    Delete {
+        /// Dashboard ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Share dashboard.
+    Share {
+        /// Dashboard ID.
+        #[arg(required = true)]
+        id: String,
+        /// Make public.
+        #[arg(short, long)]
+        public: bool,
+        /// Expiration date/time.
+        #[arg(short, long)]
+        expires: Option<String>,
+        /// Output format (json flag for structured output).
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 // Custom runtime with increased worker threads for better concurrent performance
 // Default is num_cpus, but we use more to handle block_in_place alternatives
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
@@ -404,6 +483,7 @@ async fn main() -> Result<()> {
         Command::CheckUpdate => run_check_update().await,
         Command::ApiKey { key_cmd } => run_api_key_cmd(key_cmd).await,
         Command::Device { device_cmd } => run_device_cmd(device_cmd).await,
+        Command::Dashboard { dashboard_cmd } => run_dashboard_cmd(dashboard_cmd).await,
     }
 }
 
@@ -1727,6 +1807,76 @@ async fn run_device_type_cmd(
         }
         DeviceTypeCommand::Delete { id } => {
             delete_device_type(&client, &id).await?
+        }
+    };
+
+    // Format and print output
+    format_output(&response, output_format);
+    Ok(())
+}
+
+/// Run dashboard management commands.
+async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<()> {
+    use neomind_cli_ops::{ApiClient, dashboard::*, output::format_output};
+    use neomind_cli_ops::types::OutputFormat;
+
+    // Get API base URL from environment or use default
+    let api_base = std::env::var("NEOMIND_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+
+    // Create API client
+    let client = ApiClient::with_base_url(&api_base);
+
+    // Get output format (check for --json flag in global args or environment)
+    let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+
+    let response = match cmd {
+        DashboardCommand::List { json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let resp = list_dashboards(&client).await?;
+            format_output(&resp, fmt);
+            return Ok(());
+        }
+        DashboardCommand::Get { id, json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let resp = get_dashboard(&client, &id).await?;
+            format_output(&resp, fmt);
+            return Ok(());
+        }
+        DashboardCommand::Create { name, description, layout, json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let layout_json = if let Some(layout_str) = layout {
+                Some(serde_json::from_str(&layout_str)?)
+            } else {
+                None
+            };
+            let resp = create_dashboard(&client, &name, description.as_deref(), layout_json).await?;
+            format_output(&resp, fmt);
+            return Ok(());
+        }
+        DashboardCommand::Update { id, name, description, layout, json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let layout_json = if let Some(layout_str) = layout {
+                Some(serde_json::from_str(&layout_str)?)
+            } else {
+                None
+            };
+            let resp = update_dashboard(&client, &id, name.as_deref(), description.as_deref(), layout_json).await?;
+            format_output(&resp, fmt);
+            return Ok(());
+        }
+        DashboardCommand::Delete { id } => {
+            delete_dashboard(&client, &id).await?
+        }
+        DashboardCommand::Share { id, public, expires, json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let resp = share_dashboard(&client, &id, public, expires.as_deref()).await?;
+            format_output(&resp, fmt);
+            return Ok(());
         }
     };
 
