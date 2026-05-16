@@ -26,6 +26,11 @@ impl ApiClient {
         }
     }
 
+    #[cfg(test)]
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     pub async fn get(&self, path: &str) -> Result<serde_json::Value> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self.client.get(&url).send().await?;
@@ -114,5 +119,39 @@ impl ApiClient {
             anyhow::bail!("API error ({}): {}", status, msg);
         }
         Ok(resp_body)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_api_client_new() {
+        let client = ApiClient::new();
+        assert_eq!(client.base_url(), DEFAULT_BASE_URL);
+    }
+
+    #[test]
+    fn test_api_client_with_custom_base_url() {
+        let custom_url = "http://example.com:8080/api";
+        let client = ApiClient::with_base_url(custom_url);
+        assert_eq!(client.base_url(), custom_url);
+    }
+
+    #[test]
+    fn test_api_client_base_url_formatting() {
+        let client = ApiClient::with_base_url("http://localhost:9000/v1");
+        assert_eq!(client.base_url(), "http://localhost:9000/v1");
+    }
+
+    #[test]
+    fn test_api_client_default_url_const() {
+        assert_eq!(DEFAULT_BASE_URL, "http://localhost:9375/api");
+    }
+
+    #[test]
+    fn test_api_client_timeout_const() {
+        assert_eq!(DEFAULT_TIMEOUT_SECS, 30);
     }
 }

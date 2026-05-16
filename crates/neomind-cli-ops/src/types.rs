@@ -16,7 +16,7 @@ pub struct CliResponse {
     pub build_meta: Option<BuildMeta>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BuildMeta {
     pub r#type: String,       // "device" | "dashboard" | "rule" | ...
     pub action: String,       // "create" | "update" | "delete"
@@ -69,4 +69,94 @@ impl CliResponse {
 pub enum OutputFormat {
     Human,
     Json,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_cli_response_success() {
+        let data = json!({"id": "123", "name": "test"});
+        let response = CliResponse::success(data.clone(), "Operation successful");
+
+        assert!(response.success);
+        assert_eq!(response.message, Some("Operation successful".to_string()));
+        assert_eq!(response.data, Some(data));
+        assert!(response.error.is_none());
+        assert!(response.code.is_none());
+        assert!(response.build_meta.is_none());
+    }
+
+    #[test]
+    fn test_cli_response_error() {
+        let response = CliResponse::error("Something went wrong", "ERR_001");
+
+        assert!(!response.success);
+        assert_eq!(response.error, Some("Something went wrong".to_string()));
+        assert_eq!(response.code, Some("ERR_001".to_string()));
+        assert!(response.data.is_none());
+        assert!(response.message.is_none());
+        assert!(response.build_meta.is_none());
+    }
+
+    #[test]
+    fn test_cli_response_success_with_meta() {
+        let data = json!({"id": "456"});
+        let meta = BuildMeta {
+            r#type: "device".to_string(),
+            action: "create".to_string(),
+            entity_id: "456".to_string(),
+            entity_name: Some("Test Device".to_string()),
+            undo_command: "neomind device delete 456".to_string(),
+        };
+        let response = CliResponse::success_with_meta(data.clone(), "Created", meta.clone());
+
+        assert!(response.success);
+        assert_eq!(response.message, Some("Created".to_string()));
+        assert_eq!(response.data, Some(data));
+        assert!(response.error.is_none());
+        assert!(response.code.is_none());
+        assert_eq!(response.build_meta, Some(meta));
+    }
+
+    #[test]
+    fn test_build_meta_serialization() {
+        let meta = BuildMeta {
+            r#type: "dashboard".to_string(),
+            action: "update".to_string(),
+            entity_id: "789".to_string(),
+            entity_name: Some("My Dashboard".to_string()),
+            undo_command: "neomind dashboard update 789".to_string(),
+        };
+
+        let serialized = serde_json::to_string(&meta).unwrap();
+        let deserialized: BuildMeta = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.r#type, "dashboard");
+        assert_eq!(deserialized.action, "update");
+        assert_eq!(deserialized.entity_id, "789");
+        assert_eq!(deserialized.entity_name, Some("My Dashboard".to_string()));
+        assert_eq!(deserialized.undo_command, "neomind dashboard update 789");
+    }
+
+    #[test]
+    fn test_cli_response_serialization() {
+        let response = CliResponse::success(json!({"key": "value"}), "Success");
+
+        let serialized = serde_json::to_string(&response).unwrap();
+        let deserialized: CliResponse = serde_json::from_str(&serialized).unwrap();
+
+        assert!(deserialized.success);
+        assert_eq!(deserialized.message, Some("Success".to_string()));
+        assert_eq!(deserialized.data, Some(json!({"key": "value"})));
+    }
+
+    #[test]
+    fn test_output_format_equality() {
+        assert_eq!(OutputFormat::Human, OutputFormat::Human);
+        assert_eq!(OutputFormat::Json, OutputFormat::Json);
+        assert_ne!(OutputFormat::Human, OutputFormat::Json);
+    }
 }
