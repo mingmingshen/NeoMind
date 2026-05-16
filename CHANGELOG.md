@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.7.8] - 2026-05-16
+
+### Changed
+
+- **Extension marketplace dialogs** — Converted extension detail and install dialogs to `FullScreenDialog` for better layout on all screen sizes
+- **Transform Builder toolbar** — Redesigned Code step toolbar, removed step titles for cleaner UI
+- **Data Explorer detail view** — Optimized list layouts and detail panel styling
+- **Telemetry storage identifiers** — Unified all storage source IDs with `device:` prefix for consistency
+
+### Fixed
+
+- **Dashboard telemetry data sorting** — Fixed time-series data returning oldest points instead of newest when storage limit push-down was used. Added `query_range_rev()` for efficient descending-order queries. Applied stable sort across all telemetry transform paths to prevent JavaScript's unstable `Array.sort` from shuffling equal-timestamp points
+- **Image history cross-metric interference** — Tightened `eventMetricMatches()` to prevent `foo.image` matching `bar.image` via last-segment comparison. Image data sources in the store change path now use content-only deduplication (same image content at any timestamp is treated as duplicate) instead of timestamp+value pair matching
+- **Image history stale data injection** — Added time range validation to WebSocket and SSE event merge paths — events with timestamps outside the component's configured time range are now rejected. Fixed `findMetricValue` step 4 to require structurally similar key names instead of matching any image-like value
+- **Store merge data misalignment** — `fetchTelemetryData` now only merges store values when API returns empty, preventing stale `current_values` from being stamped with `now` and displacing real latest data
+- **Timestamp consistency** — All telemetry paths now use `Math.floor(Date.now() / 1000)` (integer seconds) instead of `Date.now() / 1000` (float). Fixed `extractTimestamp` in `ImageHistory` to correctly normalize seconds↔milliseconds
+- **Extension marketplace install timeout** — Increased HTTP request timeout from 30s to 120s and extension startup timeout from 30s to 120s to allow heavy extensions (e.g. stream-player with 70+ FFmpeg dylibs) to complete installation
+- **Update dialog reappearing after restart** — Prevented version update dialog from showing again after the app has been restarted following an update
+- **AI chat message flicker** — Eliminated brief content flash when AI streaming completes and the final message replaces the streaming state
+- **CI build warnings** — Resolved event capability test timeout and remaining build warnings
+
 ## [v0.7.7] - 2026-05-15
 
 ### Added
