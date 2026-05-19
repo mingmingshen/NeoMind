@@ -58,21 +58,23 @@ impl FallbackRule {
 /// Default fallback rules.
 pub fn default_fallback_rules() -> Vec<FallbackRule> {
     vec![
-        // List devices rule
-        FallbackRule::new(vec!["设备", "device", "列表", "list"], "device_discover")
+        // List devices rule (via shell)
+        FallbackRule::new(vec!["设备", "device", "列表", "list"], "shell")
+            .with_arguments(serde_json::json!({ "command": "list_devices" }))
             .with_response_template("找到 {count} 个设备:\n{devices}"),
-        // List rules rule
-        FallbackRule::new(vec!["规则", "rule"], "list_rules")
+        // List rules rule (via shell)
+        FallbackRule::new(vec!["规则", "rule"], "shell")
+            .with_arguments(serde_json::json!({ "command": "list_rules" }))
             .with_response_template("找到 {count} 条规则:\n{rules}"),
-        // Query data rule
-        FallbackRule::new(vec!["查询", "query", "数据", "data"], "query_data")
+        // Query data rule (via shell)
+        FallbackRule::new(vec!["查询", "query", "数据", "data"], "shell")
             .with_arguments(serde_json::json!({
-                "device_id": "sensor_1",
-                "metric": "temperature"
+                "command": "query_data --device-id sensor_1 --metric temperature"
             }))
             .with_response_template("查询到 {count} 条数据点。\n{latest}\n{earliest}"),
-        // Create rule rule
-        FallbackRule::new(vec!["创建", "create"], "create_rule")
+        // Create rule rule (via shell)
+        FallbackRule::new(vec!["创建", "create"], "shell")
+            .with_arguments(serde_json::json!({ "command": "create_rule" }))
             .with_response_template("规则创建功能需要在 LLM 配置后使用自然语言描述创建。"),
     ]
 }

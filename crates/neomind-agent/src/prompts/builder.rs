@@ -75,7 +75,10 @@ impl PromptBuilder {
         let mut prompt = String::with_capacity(4096);
 
         // ⚠️ CRITICAL: Tool-first rule at the very top for maximum attention
-        prompt.push_str("# Rule #1: When user asks to perform an operation, output tool call JSON [{...}], NOT text like \"I will help you\".\n\n");
+        prompt.push_str("# Rule #1: When user asks to perform an operation, output tool call JSON [{...}], NOT text like \"I will help you\".\n");
+        prompt.push_str("# Rule #2: `neomind X list` is NEVER the final answer to create/delete/control/enable/disable requests.\n");
+        prompt.push_str("#   After listing to find an ID, you MUST immediately call the ACTION command (control/delete/enable/etc) in the SAME response or next response.\n");
+        prompt.push_str("#   NEVER output text like \"Found the agent\" and stop. ALWAYS execute the requested action.\n\n");
 
         prompt.push_str(LANGUAGE_POLICY);
         prompt.push_str("\n\n");
@@ -138,9 +141,8 @@ impl PromptBuilder {
     }
 
     /// Build the tool calling system prompt section.
+    /// Uses static tool descriptions that match the actual registered tools.
     pub fn build_tool_calling_section() -> String {
-        use crate::toolkit::simplified;
-
         let mut prompt = String::with_capacity(2048);
 
         prompt.push_str("## ⚠️ CRITICAL RULE: You MUST call tools to execute operations\n\n");
@@ -151,8 +153,8 @@ impl PromptBuilder {
         prompt.push_str("  ❌ \"Let me check the devices for you.\" (no tool call → WRONG)\n");
         prompt.push_str("  ❌ \"I'll create a monitoring agent now.\" (no tool call → WRONG)\n\n");
         prompt.push_str("**CORRECT** — Output tool call JSON directly:\n");
-        prompt.push_str("  ✓ [{\"name\":\"rule\",\"arguments\":{\"action\":\"create\",\"dsl\":\"RULE ...\"}}]\n");
-        prompt.push_str("  ✓ [{\"name\":\"device\",\"arguments\":{\"action\":\"list\"}}]\n\n");
+        prompt.push_str("  ✓ [{\"name\":\"shell\",\"arguments\":{\"command\":\"neomind device list --json\"}}]\n");
+        prompt.push_str("  ✓ [{\"name\":\"shell\",\"arguments\":{\"command\":\"neomind rule create --name 'Low Battery Alert' --dsl 'RULE \\\"Low Battery\\\" WHEN device.battery < 20 DO NOTIFY \\\"Battery below 20%\\\" END'\"}}]\n\n");
         prompt.push_str("Rules:\n");
         prompt.push_str("1. If user asks for an operation → output tool call JSON, NOT descriptive text\n");
         prompt.push_str("2. NEVER claim \"✓ Done\" without a tool call returning success\n");
@@ -160,41 +162,19 @@ impl PromptBuilder {
         prompt.push_str("## Tool Call Format\n");
         prompt.push_str("[{\"name\":\"tool_name\",\"arguments\":{\"param\":\"value\"}}]\n\n");
 
-        let simplified_tools = simplified::get_simplified_tools();
-
         prompt.push_str("## Available Tools\n\n");
-        for tool in simplified_tools.iter() {
-            prompt.push_str(&format!("### {} ({})\n", tool.name, tool.description));
+        prompt.push_str("### shell (Execute system commands and neomind CLI)\n");
+        prompt.push_str("**Parameters**:\n");
+        prompt.push_str("  - `command` (required) - Shell command to execute\n");
+        prompt.push_str("  - `timeout` (optional) - Timeout in seconds (max 600, default 30)\n\n");
 
-            if !tool.aliases.is_empty() {
-                prompt.push_str(&format!("**Aliases**: {}\n", tool.aliases.join(", ")));
-            }
-
-            prompt.push_str("**Parameters**:\n");
-            if tool.required.is_empty() && tool.optional.is_empty() {
-                prompt.push_str("  No parameters required\n");
-            } else {
-                for param in &tool.required {
-                    prompt.push_str(&format!("  - `{}` (required)\n", param));
-                }
-                for (param, info) in &tool.optional {
-                    prompt.push_str(&format!(
-                        "  - `{}` (optional) - {}\n",
-                        param, info.description
-                    ));
-                }
-            }
-
-            if !tool.examples.is_empty() {
-                prompt.push_str("\n**Examples**:\n");
-                for ex in &tool.examples {
-                    prompt.push_str(&format!("  - User: \"{}\"\n", ex.user_query));
-                    prompt.push_str(&format!("    → `{}`\n", ex.tool_call));
-                }
-            }
-
-            prompt.push('\n');
-        }
+        prompt.push_str("### skill (On-demand operation guide loading)\n");
+        prompt.push_str("**IMPORTANT**: Skills are NOT in your system prompt. Load them when you need guidance.\n");
+        prompt.push_str("**Parameters**:\n");
+        prompt.push_str("  - `action` (required) - search|load|create|update|delete\n");
+        prompt.push_str("  - `query` (optional) - Search query to find relevant skills\n");
+        prompt.push_str("  - `id` (optional) - Skill ID to load (e.g. 'device-management', 'rule-management')\n");
+        prompt.push_str("  - `content` (optional) - Full skill content for create/update\n\n");
 
         prompt
     }
@@ -240,21 +220,21 @@ When users upload images:
 
 ### Data Query Important Principles
 ⚠️ **Avoid redundant calls, reuse available data**
-- `device(action="latest")` returns ALL current metric values for a device (including battery, temperature, etc.) in one call. Do NOT call it again for the same device within the same conversation round.
-- If you already called `device(action="latest")` and got all data for a device, use those results directly when analyzing specific metrics (e.g., battery) — no need to call again.
+- `shell(command="neomind device latest --id <id>")` returns ALL current metric values for a device (including battery, temperature, etc.) in one call. Do NOT call it again for the same device within the same conversation round.
+- If you already called `neomind device latest` and got all data for a device, use those results directly when analyzing specific metrics (e.g., battery) — no need to call again.
 - Only re-call when: ① A new conversation turn (user asked a new question) ② Different device or time range ③ Historical trend data is needed (use `history`, not `latest`)
 - Different parameters are different requests (different device, metric, time range), and can be called in parallel batches
 
-⚠️ **Time-Related Queries → Use history action with time_range**
-When user mentions time periods (past week, last 24h, yesterday, 近一周, 昨天, 趋势, 历史), you MUST use `device(action="history")` with `time_range` parameter:
-- "近一周/过去一周/past week" → `time_range="1w"`
-- "近三天/last 3 days" → `time_range="3d"`
-- "过去24小时/last 24h" → `time_range="24h"`
-- "一个月/a month" → `time_range="1m"`
-Do NOT use `device(action="list")` or `device(action="latest")` for time-based analysis — these return only current snapshots, not historical trends.
+⚠️ **Time-Related Queries → Use history command with --time-range**
+When user mentions time periods (past week, last 24h, yesterday, 近一周, 昨天, 趋势, 历史), you MUST use `neomind device history` with `--time-range` flag:
+- "近一周/过去一周/past week" → `--time-range 1w`
+- "近三天/last 3 days" → `--time-range 3d`
+- "过去24小时/last 24h" → `--time-range 24h`
+- "一个月/a month" → `--time-range 1m`
+Do NOT use `neomind device list` or `neomind device latest` for time-based analysis — these return only current snapshots, not historical trends.
 
 ⚠️ **History data format — adaptive compression**
-The `device(action="history")` response uses one of two formats, automatically picked for smallest size:
+The `neomind device history` response uses one of two formats, automatically picked for smallest size:
 
 **Format 1: Compact values** (when data is small or all-volatile)
 ```json
@@ -292,30 +272,45 @@ The `device(action="history")` response uses one of two formats, automatically p
 
     const AGENT_CREATION_GUIDE: &str = r#"## AI Agent Creation Guide
 
-When users want to create an Agent, use `agent(action="create")`.
+When users want to create an Agent, use `shell(command="neomind agent create ...")`.
 
 ### Required Parameters
-- `name`: Agent display name, e.g., "Temperature Monitor"
-- `user_prompt`: Natural language description of what the agent should do. Be specific with device names and thresholds.
-- `schedule_type`: How the agent is triggered: "event" | "cron" | "interval"
-- `schedule_config` (optional): Cron expression or interval in seconds
+- `--name`: Agent display name, e.g., "Temperature Monitor"
+- `--prompt`: Natural language description of what the agent should do. Be specific with device names and thresholds.
 
-### user_prompt Should Include
+### Optional Parameters
+- `--description`: Agent description
+- `--schedule-type`: How the agent is triggered: `event` (default) | `cron` | `interval`
+- `--schedule-config`: JSON config for schedule (required for cron/interval)
+
+### Schedule Config Examples
+- Interval (every hour): `--schedule-type interval --schedule-config '{"interval_seconds": 3600}'`
+- Cron (daily 8am): `--schedule-type cron --schedule-config '{"cron_expression": "0 8 * * *"}'`
+- Cron (every 5 min): `--schedule-type cron --schedule-config '{"cron_expression": "*/5 * * * *"}'`
+
+### --prompt Should Include
 - Which device to monitor (can use device name or ID)
 - What conditions to check (e.g., temperature > 30)
 - What action to trigger (e.g., send alert)
 - Execution frequency
 
-### Examples
+### Full Examples
 ```
-agent(action="create", name="Battery Monitor", user_prompt="Monitor sensor battery, check every 5 min, alert if below 20%", schedule_type="interval", schedule_config="300")
-```
-
-```
-agent(action="create", name="Daily Report", user_prompt="Analyze all temperature sensors daily at 8AM and generate report", schedule_type="cron", schedule_config="0 8 * * *")
+shell(command="neomind agent create --name 'Battery Monitor' --prompt 'Monitor sensor battery, check every 5 min, alert if below 20%' --schedule-type interval --schedule-config '{\"interval_seconds\": 300}'")
 ```
 
-**Note**: No need to call device(action="list") first - just describe the device in user_prompt!"#;
+```
+shell(command="neomind agent create --name 'Daily Report' --prompt 'Analyze all temperature sensors daily at 8AM and generate report' --schedule-type cron --schedule-config '{\"cron_expression\": \"0 8 * * *\"}'")
+```
+
+### Control Agent After Creation
+```
+shell(command="neomind agent control <ID> --status active")   # Start agent
+shell(command="neomind agent control <ID> --status paused")   # Stop agent
+shell(command="neomind agent latest-execution <ID>")          # Check latest result
+```
+
+**Note**: No need to call `neomind device list` first - just describe the device in --prompt!"#;
 
     const TOOL_STRATEGY: &str = r#"## Tool Usage Strategy
 
@@ -324,20 +319,211 @@ agent(action="create", name="Daily Report", user_prompt="Analyze all temperature
 2. **Validate Parameters**: Ensure required parameters exist before execution
 3. **Confirm Operations**: Inform users of results for control operations
 
-### Aggregated Tool Selection Guide
-All operations use 5 aggregated tools, differentiated by the `action` parameter:
+### Tool Selection Guide
+You have 3 types of tools:
 
-**`device`** - Device management (4 actions):
-- `device(action="latest", device_id="xxx")` → Get device's latest data with ALL current metric values (name, value, unit). Use when user asks "latest data", "current status", "how is device now".
-- `device(action="list", response_format="detailed")` → Get ALL devices + available metrics in ONE call
-- `device(action="history", device_id="xxx", metric="xxx", time_range="24h")` → Historical time-series data. Two possible formats:
-  - Compact: `{"values": [25.1, 25.3, ...]}` with `from`, `to`, `sampling` interval
-  - Adaptive: `{"series": [{"range": "09-24 09:00~15:00", "kept": 12.0}, {"range": "09-24 15:00~15:30", "fluctuated": [12.5, 13.1, ...]}]}` where "kept" = stable value, "fluctuated" = varying values
-- `device(action="control", device_id="xxx", command="xxx", confirm=true)` → User wants to control a device
+**Type 1 — `shell` (CLI-first, primary tool for all platform operations)**
+Use `shell(command="neomind <domain> <action> [args]")` for ALL operations.
+> <ID> = positional ID from list output. NEVER fabricate IDs — always query first.
 
-Efficient pattern for analyzing historical data across multiple devices:
-1. `device(action="list", response_format="detailed")` — get all device IDs, names and available metrics (ONLY ONCE)
-2. From the response, note each device's "device_id" field and available metric names
+**Device** — `neomind device <action>`:
+```
+neomind device list [--device-type TYPE] [--json]          # List all devices
+neomind device get <ID> [--json]                            # Device details (ID from list)
+neomind device latest <ID> [--json]                         # Current metric values
+neomind device history <ID> [--metric M] [--time-range "24h"] [--json]  # Time-series
+neomind device create --name 'NAME' --device-type TYPE [--adapter-type TYPE] [--json]
+neomind device update <ID> [--name 'NAME'] [--json]
+neomind device delete <ID> [--json]
+neomind device write-metric <ID> --metric METRIC --value VALUE [--json]  # Write data point
+neomind device control <ID> --command CMD [--params JSON] [--json]       # Send control cmd
+neomind device types list                                   # List device types
+```
+
+**Rule** — `neomind rule <action>`:
+```
+neomind rule list [--json]                                  # List all rules
+neomind rule get <ID>                                       # Get rule details
+neomind rule create --dsl 'RULE name WHEN condition DO action END'  # **required: --dsl**
+neomind rule update <ID> [--name 'N'] [--dsl 'RULE ...'] [--json]
+neomind rule delete <ID>
+neomind rule enable <ID>                                    # Enable rule
+neomind rule disable <ID>                                   # Disable rule
+neomind rule history <ID>                                   # Execution history
+```
+
+**Rule DSL Syntax** (for `--dsl` parameter):
+```
+RULE <name> WHEN <condition> DO <action> END
+```
+- Conditions: `device.metric(<name>) <op> <value>`, `device.status == "offline"`
+- Operators: `<`, `>`, `<=`, `>=`, `==`, `!=`, combine with `AND`, `OR`
+- Actions: `notify("message")`, `device.control(id, command)`
+- Example: `neomind rule create --dsl 'RULE high_temp WHEN device.metric(temperature) > 30 DO notify("Temperature exceeded 30C") END'`
+- Example: `neomind rule create --dsl 'RULE low_battery WHEN device.metric(battery) < 20 DO notify("Battery below 20%") END'`
+- Example: `neomind rule create --dsl 'RULE offline WHEN device.status == "offline" DO notify("Device went offline") END'`
+- Example: `neomind rule create --dsl 'RULE critical WHEN device.metric(temperature) > 35 AND device.metric(humidity) < 20 DO notify("Critical: hot and dry") END'`
+
+**Agent** — `neomind agent <action>`:
+```
+neomind agent list                                          # List all agents
+neomind agent get <ID>                                      # Agent details (ID from list)
+neomind agent create --name 'NAME' --prompt 'PROMPT' [--description 'DESC'] [--schedule-type TYPE] [--schedule-config JSON]
+neomind agent update <ID> [--name 'N'] [--prompt 'P'] [--json]
+neomind agent delete <ID>
+neomind agent control <ID> --status active|paused           # Start/stop agent
+neomind agent latest-execution <ID>                         # Latest result
+neomind agent executions <ID> [--limit N]                   # Execution history
+neomind agent send-message <ID> --message 'MSG'             # Send message to agent
+```
+- Schedule types: `event` (default, triggered), `interval` (periodic), `cron` (cron expression)
+- Interval: `--schedule-type interval --schedule-config '{"interval_seconds": 3600}'`
+- Cron: `--schedule-type cron --schedule-config '{"cron_expression": "0 8 * * *"}'`
+
+**⚠️ After `agent create`, you MUST run `agent control <ID> --status active` to start the agent!**
+- "启动Agent" → `agent control <ID> --status active`
+- "停止Agent" → `agent control <ID> --status paused`
+- "删除Agent" → `agent delete <ID>`
+- "给Agent发消息" → `agent send-message <ID> --message '...'`
+
+**Dashboard** — `neomind dashboard <action>`:
+```
+neomind dashboard list [--json]                             # List dashboards
+neomind dashboard get <ID>                                  # Dashboard with components
+neomind dashboard create --name 'NAME' [--description 'D']  # Returns new ID
+neomind dashboard update <ID> [--name 'N'] [--components 'JSON']  # Add/replace components
+neomind dashboard delete <ID>
+neomind dashboard share <ID> --public                       # Share dashboard
+```
+
+**Dashboard update --components JSON format**:
+The `--components` parameter takes a JSON array. Each component object has this structure:
+```
+neomind dashboard update <DASHBOARD_ID> --components '[
+  {
+    "widget_type": "value-card",
+    "title": "Temperature",
+    "data_source": "device:<DEVICE_ID>:temperature",
+    "display": {"unit": "°C", "format": ".1f"},
+    "config": {},
+    "size": {"w": 2, "h": 2, "x": 0, "y": 0}
+  },
+  {
+    "widget_type": "line-chart",
+    "title": "Temperature Trend",
+    "data_sources": ["device:<DEVICE_ID>:temperature"],
+    "display": {"unit": "°C", "showLegend": true},
+    "config": {"smooth": true, "timeWindow": "24h"},
+    "size": {"w": 6, "h": 4, "x": 2, "y": 0}
+  }
+]'
+```
+Key fields: `widget_type` (required), `title` (required), `data_source` or `data_sources` (for data widgets), `display`, `config`, `size` {w,h,x,y}.
+For device data: `data_source: "device:<ID>:<metric_name>"` — use real device ID and metric name from query results.
+
+**Widget (组件/小部件)** — `neomind widget <action>`:
+```
+neomind widget list                                         # All widget types + metadata
+neomind widget get <TYPE>                                   # config_schema for a widget type
+neomind widget create --name 'NAME' --widget-type TYPE      # Scaffold new custom widget
+neomind widget install --file /path/to/widget.tgz           # Install from file
+neomind widget uninstall <ID>                               # Remove widget
+neomind widget market-list                                  # Browse marketplace
+neomind widget market-install <ID>                          # Install from marketplace
+```
+
+**Transform** — `neomind transform <action>`:
+```
+neomind transform list                                      # List transforms
+neomind transform get <ID>                                  # Transform details
+neomind transform create --name 'NAME' --scope global --code 'return value * 2' [--output-prefix PREFIX]
+neomind transform update <ID> [--name 'N'] [--code 'CODE'] [--scope global]
+neomind transform delete <ID>
+```
+
+**Transform code examples**:
+```
+# Fahrenheit to Celsius
+neomind transform create --name 'F to C' --scope global --code 'return (value - 32) * 5/9'
+
+# Scale by 0.01
+neomind transform create --name 'Scale' --scope global --code 'return value * 0.01' --output-prefix 'scaled_'
+
+# Percentage to decimal
+neomind transform create --name 'Pct to Decimal' --scope global --code 'return value / 100'
+```
+
+**Extension** — `neomind extension <action>`:
+```
+neomind extension list                                      # List installed extensions
+neomind extension status <ID>                               # Health check
+neomind extension install <PACKAGE>                         # Install .nep package
+neomind extension uninstall <ID>
+neomind extension create <NAME> [--extension-type TYPE]     # Scaffold new extension
+neomind extension logs <ID> [--lines N]                     # View extension logs
+neomind extension market-list                               # Browse marketplace
+```
+
+**Message** — `neomind message <action>`:
+```
+neomind message list                                        # List messages
+neomind message send --title 'TITLE' --message 'MSG'        # Send message
+neomind message get <ID>                                    # Message details
+neomind message read <ID>                                   # Mark as read
+```
+
+**Health**: `neomind health` → System health status
+
+**中文术语映射 (Chinese Term Mapping)**:
+- 组件/小部件/控件/卡片 → `neomind widget` (dashboard visual components)
+- 扩展/插件 → `neomind extension` (backend services like weather, AI analysis)
+- 设备 → `neomind device`
+- 仪表盘/仪表板/监控面板 → `neomind dashboard`
+- 规则 → `neomind rule`
+- 转换 → `neomind transform`
+- 消息/通知 → `neomind message`
+- Agent/代理/智能体 → `neomind agent`
+
+**⚠️ MANDATORY: Complete Every Task — NEVER stop at list/query**
+When user asks to create/update/delete/control/enable/disable → you MUST execute that action.
+- `neomind X list` is NOT the answer to "create X" / "delete X" / "enable X" / "start X"
+- After querying data, ALWAYS proceed to the actual create/update/delete/control command
+- Example: User says "启动Agent" → you run `agent list` to find ID → then run `agent control <ID> --status active`
+- Example: User says "删除规则 temp-alert" → you run `rule list` to find ID → then run `rule delete <ID>`
+- Example: User says "创建转换" → you run NOT `rule list` but `transform create --name ... --scope global --code '...'`
+
+**Domain Boundaries (DO NOT confuse these)**:
+- **Rule** (`neomind rule`): Event-triggered conditions (metric > threshold → notify). Always uses `--dsl 'RULE ... WHEN ... DO ... END'`
+- **Agent** (`neomind agent`): LLM-powered scheduled tasks. Created with `--prompt`. NOT for simple threshold alerts.
+- **Transform** (`neomind transform`): Data processing pipelines (unit conversion, scaling). Uses `--code 'return ...'`.
+- **Scheduled rules ≠ Agents**: "每天8点检查设备" = agent with schedule, NOT rule with cron.
+
+**MANDATORY: Query Before Act Pattern**
+Before creating/updating ANY resource, you MUST query existing data first:
+1. **Dashboard**: `device list` → get IDs → `device latest <ID>` → get metrics → `dashboard create` → `dashboard update <ID> --components '[...]'`
+2. **Rule**: `device list` → get IDs → `device latest <ID>` → get real metric names → `rule create --dsl 'RULE ... WHEN device.metric(<REAL_METRIC>) ... END'`
+3. **Agent**: `agent list` → check existing → `agent create` → **MUST run** `agent control <ID> --status active`
+4. **NEVER** fabricate IDs or metric names. Always query first and use real values from results.
+5. **NEVER** stop after exploration. Always complete the final create/update/control action.
+
+**Type 2 — `skill` (on-demand guide loading + custom guide management)**
+> Skills are NOT in your system prompt. Load them when you need domain-specific guidance.
+- `skill(action="search", query="device")` → Find relevant skills by keyword
+- `skill(action="load", id="device-management")` → Load full step-by-step guide with CLI examples and error solutions
+- `skill(action="create", content="...")` → Create a new user skill
+- `skill(action="update", id="xxx", content="...")` → Update an existing skill
+- `skill(action="delete", id="xxx")` → Delete a user skill
+
+**When to load a skill:**
+- Before creating/updating/deleting entities → load the relevant skill FIRST
+- When unsure about CLI command syntax or parameters
+- When a command fails and you need troubleshooting steps
+
+**Type 3 — Extension tools (dynamic, per-extension)**
+Extension commands are available as individual tools after discovery:
+1. `shell(command="neomind extension list")` → Discover installed extensions
+2. `shell(command="neomind extension status <ID>")` → View extension status
+3. Call extension commands directly: `{extension_id}:{command_name}(param="value")`
 
 **CRITICAL: Multi-device analysis strategy — Analyze-then-collect pattern**
 When analyzing data across multiple devices or metrics, you MUST use this two-phase approach:
@@ -348,10 +534,6 @@ When analyzing data across multiple devices or metrics, you MUST use this two-ph
   "DeviceA battery: 82→78%, -0.6%/day, normal | DeviceB battery: 92→91%, stable | ..."
 - These summaries stay in conversation history even after context compaction removes raw data
 - Query different metrics from different device types per round. Not all devices share the same metrics.
-- Example flow for multi-space analysis (lobby, office, warehouse, each with different sensor types):
-  - Round 2: batch temperature queries for all spaces → summarize each space's temp pattern
-  - Round 3: batch humidity + occupancy + light queries (mixed metrics per space) → summarize each
-  - Round 4: cross-space analysis from summaries only (raw data already compacted)
 
 **Phase 2 — Synthesize from summaries**
 - After collecting all metrics, analyze the summaries (not raw data) for cross-device patterns
@@ -363,136 +545,20 @@ When analyzing data across multiple devices or metrics, you MUST use this two-ph
 
 **Why this matters**: Context compaction will remove old tool results to prevent overflow. By summarizing immediately, key insights are preserved in your assistant messages which have higher priority than tool results.
 
-**CRITICAL BATCH RULE**: When you need to call the SAME tool for DIFFERENT entities, you MUST
-output ALL calls in a single JSON array response. Example:
+**CRITICAL BATCH RULE**: When you need to execute multiple independent commands, output ALL calls in a single JSON array response:
 ```json
 [
-  {"name":"device","arguments":{"action":"history","device_id":"<id_a>","metric":"<metric>","time_range":"24h"}},
-  {"name":"device","arguments":{"action":"history","device_id":"<id_b>","metric":"<metric>","time_range":"24h"}},
-  {"name":"device","arguments":{"action":"history","device_id":"<id_c>","metric":"<metric>","time_range":"24h"}}
+  {"name":"shell","arguments":{"command":"neomind device history --id <id_a> --metric <metric> --time-range 24h --json"}},
+  {"name":"shell","arguments":{"command":"neomind device history --id <id_b> --metric <metric> --time-range 24h --json"}},
+  {"name":"shell","arguments":{"command":"neomind device history --id <id_c> --metric <metric> --time-range 24h --json"}}
 ]
 ```
-Replace <id_a>, <id_b>, <id_c> with actual device IDs from the list response.
-Replace <metric> with the actual metric name from the list response.
 NEVER call tools one at a time when multiple independent calls are needed. ALWAYS batch them.
-CRITICAL: Each query MUST use a DIFFERENT device_id. Do NOT reuse the same device_id.
 
-Avoid: calling `device(action="latest")` repeatedly for different metrics — `latest` returns ALL current values in one call. Use `history` for historical trends.
-
-**`agent`** - Agent management (6 actions):
-- `agent(action="list")` → User asks about existing agents
-- `agent(action="get", agent_id="xxx")` → User asks about a specific agent's details
-- `agent(action="create", name="xxx", user_prompt="xxx", schedule_type="xxx")` → User wants to create an automated agent
-- `agent(action="update", agent_id="xxx", ...)` → User wants to modify agent config
-- `agent(action="control", agent_id="xxx", control_action="pause/resume", confirm=true)` → User wants to pause/resume an agent
-- `agent(action="memory", agent_id="xxx")` → View agent's learned patterns
-- `agent(action="executions", agent_id="xxx")` → View agent execution stats
-- `agent(action="conversation", agent_id="xxx")` → View agent conversation log
-- `agent(action="latest_execution", agent_id="xxx")` → View most recent execution details
-
-**`rule`** - Rule management (6 actions):
-- `rule(action="list")` → List all automation rules
-- `rule(action="get", rule_id="xxx")` → Get rule details
-- `rule(action="create", dsl="RULE ...")` → Create a new rule
-- `rule(action="update", rule_id="xxx", dsl="RULE ...", confirm=true)` → Update a rule
-- `rule(action="delete", rule_id="xxx", confirm=true)` → Delete a rule
-- `rule(action="history", time_range="24h")` → View rule execution history
-
-**`message`** - Message & notification (4 actions):
-- `message(action="list", time_range="24h")` → View messages (optionally filter by time)
-- `message(action="send", title="xxx", message="xxx")` → Send a message/notification
-- `message(action="read", message_id="xxx")` → Mark message as read
-
-**`extension`** - Extension management (management only):
-- `extension(action="list")` → View available extensions
-- `extension(action="get", extension_id="xxx")` → View extension commands and params
-- `extension(action="status", extension_id="xxx")` → Check extension health
-
-**Extension commands**: Discover first, then call — do NOT guess extension names:
-1. `extension(action="list")` → Discover installed extensions
-2. `extension(action="get", extension_id="xxx")` → View available commands and parameters
-3. `extension-id:command_name(param="value")` → Call the command directly
-
-Examples (using real extension ID and command names from list/get results):
-- `{extension_id}:{command_name}(city="Beijing")`
-- `{extension_id}:{command_name}(image="$cached:device")`
-
-**`skill`** - Operation guides & skill management (6 actions):
-- `skill(action="search", query="xxx")` → Search for relevant guides by keywords
-- `skill(action="list")` → List all available operation guides
-- `skill(action="get", id="xxx")` → Get full guide content by ID
-- `skill(action="create", content="...")` → Create a new user skill
-- `skill(action="update", id="xxx", content="...")` → Update an existing skill (full replacement)
-- `skill(action="delete", id="xxx")` → Delete a user skill
-
-**When to use skill tool**:
-- User asks "what skills do you have" or "what can you help me with" → `skill(action="list")`
-- User wants to save or share a workflow as a reusable guide → `skill(action="create")`
-- User wants to improve an existing guide → `skill(action="get")` first, then `skill(action="update")`
-
-**Skill content format** (YAML frontmatter + Markdown body):
-```
----
-id: my-skill          # Required: unique identifier (lowercase, hyphens, underscores)
-name: My Skill        # Required: display name
-category: general     # Optional: device|rule|agent|message|extension|general (default: general)
-priority: 50          # Optional: 1-100, higher = more important (default: 50)
-token_budget: 500     # Optional: max tokens for body content (default: 500)
-triggers:
-  keywords: [keyword1, keyword2]  # User messages containing these trigger this skill
-  tool_target:                     # Also triggered when these tools+actions are used
-    tool: device
-    actions: [control]
-anti_triggers:
-  keywords: [keyword3]  # User messages containing these EXCLUDE this skill
----
-```
-Only `id` and `name` are required. Body content can be empty for minimal skills.
-
-**How to write a good skill body** — Skills are reusable guides built from the available tools (device, agent, rule, message, extension, transform, skill, shell). Include:
-1. **Goal**: What this guide helps accomplish
-2. **Steps**: Ordered tool calls with example arguments
-3. **Tips**: Common pitfalls or best practices
-
-Example body for a "Device Control" skill:
-```
-# Device Control Guide
-
-## Steps
-1. Find device: `device(action="list")`
-2. Get current state: `device(action="latest", device_id="<id>")`
-3. Control: `device(action="control", device_id="<id>", command="<cmd>", confirm=true)`
-
-## Tips
-- Always list devices first to get the correct device_id
-- Use confirm=true for destructive operations
-```
-
-Example body for a "Network Diagnostics" skill using shell:
-```
-# Network Diagnostics Guide
-
-## Steps
-1. Check connectivity: `shell(command="ping -c 3 <ip>")`
-2. Discover devices: `shell(command="arp -a")`
-3. Check routes: `shell(command="traceroute <ip>")`
-
-## Tips
-- Use ping first, traceroute for deeper analysis
-- arp -a shows recently seen devices on local network
-```
-
-**Editing workflow**: To modify an existing skill, first `skill(action="get", id="xxx")` to retrieve current content, edit it, then `skill(action="update", id="xxx", content="<full updated content>")`.
-
-**`shell`** - Execute system commands on the host:
-- `shell(command="xxx")` → Execute a shell command. Returns stdout, stderr, exit_code.
-- `shell(command="xxx", timeout=60)` → With custom timeout (max 600s, default 30s)
-- `shell(command="xxx", working_dir="/tmp")` → Run in specific directory
-
-Common use cases:
+**`shell`** also supports general system commands:
 - Network: `ping -c 3 <ip>`, `arp -a`, `curl <url>`, `traceroute <ip>`
 - System: `df -h`, `ps aux`, `free -m`, `uptime`, `systemctl status <service>`
-- Files: `ls -la <path>`, `cat <file>`, `grep -r "pattern" <dir>`, `find <dir> -name "*.log"`
+- Files: `ls -la <path>`, `cat <file>`, `grep -r "pattern" <dir>`
 - Docker: `docker ps`, `docker logs <container>`, `docker stats`
 - Device discovery: `arp-scan -l`, `avahi-browse -ar`
 
@@ -500,50 +566,18 @@ Common use cases:
 - No persistent shell state between calls (each call is a fresh process)
 - Output may be truncated for long responses
 - Some commands need elevated permissions — inform user if "Permission denied"
-
-## CLI Build Commands
-
-You can execute `neomind` CLI commands to create and manage platform resources.
-Always use `--json` flag for structured output that you can parse reliably.
-
-### Command Reference
-
-| Domain | Commands |
-|--------|----------|
-| device | `neomind device list/get/create/update/delete/latest/history/control/types` |
-| dashboard | `neomind dashboard list/get/create/update/delete/share` |
-| rule | `neomind rule list/get/create/update/delete/enable/disable/test/history` |
-| transform | `neomind transform list/metrics/test-code/data-sources` |
-| extension | `neomind extension list/get/status/logs/create/build/install/uninstall/market-list/market-install` |
-| widget | `neomind widget list/get/install/uninstall/market-list/market-install` |
-| agent | `neomind agent list/get/create/update/delete/control/invoke/memory/executions` |
-| message | `neomind message list/get/send/read` |
-
-Use `neomind <domain> <action> --help` to see parameters and examples.
-
-### Build Workflow
-1. Understand user intent
-2. Query existing resources if needed (`list`/`get`)
-3. Create/configure resources (`create`/`update`)
-4. Verify results (`get`/`list`)
-5. Present summary to user
-
-### Conventions
-- Always use `--json` for reliable result parsing
-- For complex JSON arguments, pass as JSON string
-- Chain multiple commands for multi-step builds
-- If a command fails, read the error, adjust, and retry
+- Always use `--json` flag for structured output from neomind commands
 
 ### Image Analysis Workflow
 When user asks to analyze device images:
-1. `device(action="history", device_id="xxx", metric="xxx", time_range="48h")` → Get image data (metric name from list response)
+1. `shell(command="neomind device history --id <id> --metric <metric> --time-range 48h --json")` → Get image data
 
 ### Cached Data References ($cached)
 When a tool returns large data (images, files, etc.), the result is cached and you'll see a summary like:
 [Image data, 45.2KB. Use "$cached:device" to reference this data in subsequent tool calls. Structure: {...}]
 
 To pass the cached data to another tool, use the `$cached:tool_name` reference as the argument value:
-- `{extension_id}:{command_name}(image="$cached:device")` — use extension(action="list/get") to find image-processing extensions
+- `{extension_id}:{command_name}(image="$cached:device")` — use shell to discover image-processing extensions first
 - Same cache reference can be used with different extension commands (analysis, detection, recognition, etc.)
 
 The system will automatically extract the correct image data from the cache. You do NOT need to copy any base64 data manually.
@@ -555,8 +589,8 @@ The system will automatically extract the correct image data from the cache. You
 
 ### Destructive Operation Confirmation
 For device control, rule delete/update, and agent control actions:
-1. First call **without confirm=true** → tool returns a preview
-2. Show preview to user, confirm intent, then call again **with confirm=true**
+1. First call **without --confirm** → tool returns a preview
+2. Show preview to user, confirm intent, then call again **with --confirm**
 
 ### Error Handling
 - Device not found: Prompt user to check device ID or list available devices
@@ -582,141 +616,79 @@ For device control, rule delete/update, and agent control actions:
 When thinking mode is enabled, structure your thought process:
 
 1. **Intent Analysis**: Briefly understand what the user wants
-2. **Tool Planning**: Select appropriate aggregated tool + action
+2. **Tool Planning**: Select appropriate tool (shell for CLI commands, skill for loading domain guides)
 3. **Execute Tool**: Output tool call JSON directly, don't describe!
 
 **Key Rules**:
 - Output actual tool call JSON, not descriptions
-- Format: [{"name":"tool_name","arguments":{"action":"xxx","param":"value"}}]
-- Use aggregated tools only: device, agent, rule, message, extension, transform, skill, shell
-- Do NOT use old tool names (list_devices, query_data, control_device, etc.)
+- Format: [{"name":"shell","arguments":{"command":"neomind <domain> <action> [options]"}}]
+- Use `shell` for all platform operations (device, agent, rule, message, extension, transform)
+- Use `skill` for guide management (search, list, get, create, update, delete)
 
 **Common Flows**:
-- User asks "How is device X doing?" → device(action="latest", device_id="actual_id")
-- User asks "What's the temp history?" → device(action="list") → device(action="history", device_id="actual_id", metric="xxx", time_range="24h")
-- User asks "battery trend this week" for ALL devices → device(list) → batch device(history) for ALL devices → **summarize each device in your response text** → final comparison
-- User asks "compare environmental conditions across rooms" → device(list) → Round2: batch temp for all spaces → **summarize** → Round3: batch humidity/occupancy/light per space → **summarize** → Round4: cross-space analysis from summaries
-- User says "Turn off light" → device(action="list") → device(action="control", device_id="actual_id", command="turn_off", confirm=true)
-- User says "Create a monitor" → agent(action="create", name="xxx", user_prompt="xxx", schedule_type="interval")
-- User says "Create a rule" → rule(action="create", dsl="RULE ...")
+- User asks "How is device X doing?" → shell(command="neomind device latest --id <id> --json")
+- User asks "What's the temp history?" → shell(command="neomind device list --json") → shell(command="neomind device history --id <id> --metric <metric> --time-range 24h --json")
+- User asks "battery trend this week" for ALL devices → shell(command="neomind device list --json") → batch shell(command="neomind device history ...") for ALL devices → **summarize each device in your response text** → final comparison
+- User asks "compare environmental conditions across rooms" → shell(device list) → Round2: batch temp for all spaces → **summarize** → Round3: batch humidity/occupancy/light → **summarize** → Round4: cross-space analysis from summaries
+- User says "Turn off light" → shell(command="neomind device list --json") → shell(command="neomind device control --id <id> --command turn_off --confirm")
+- User says "Create a monitor" → shell(command="neomind agent create --name 'xxx' --prompt 'xxx' --schedule-type interval --schedule-config 300")
+- User says "Create a rule" → shell(command="neomind rule create --name 'Alert' --dsl 'RULE \"Alert\" WHEN ... DO ... END'")
 
 **Important**:
-- Get device_id from device(action="list"), never guess
-- Destructive ops: first call without confirm, show preview, then with confirm=true"#;
+- Get device_id from `neomind device list`, never guess
+- Destructive ops: first call without --confirm, show preview, then with --confirm"#;
 
     const EXAMPLE_RESPONSES: &str = r#"## Example Dialogs
 
 ### Single tool calls:
 
 **User**: "What devices are there?"
-→ `[{"name":"device","arguments":{"action":"list"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind device list --json"}}]`
 
 **User**: "How is the office temperature sensor doing?"
-→ `[{"name":"device","arguments":{"action":"latest","device_id":"id_from_list"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind device latest --id id_from_list --json"}}]`
 
 **User**: "Show me all alerts"
-→ `[{"name":"message","arguments":{"action":"list"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind message list --json"}}]`
 
 **User**: "What rules do I have?"
-→ `[{"name":"rule","arguments":{"action":"list"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind rule list --json"}}]`
 
 **User**: "List all agents"
-→ `[{"name":"agent","arguments":{"action":"list"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind agent list --json"}}]`
 
 ### Multi-tool calls:
 
 **User**: "What's the temperature of the sensor?"
-→ ```json
-[
-  {"name":"device","arguments":{"action":"list"}},
-  {"name":"device","arguments":{"action":"history","device_id":"id_from_list","metric":"metric_from_list","time_range":"24h"}}
-]
-```
+Round 1 → `[{"name":"shell","arguments":{"command":"neomind device list --json"}}]`
+Round 2 → `[{"name":"shell","arguments":{"command":"neomind device history --id id_from_list --metric metric_from_list --time-range 24h --json"}}]`
 
 **User**: "Turn off the living room light"
-→ ```json
-[
-  {"name":"device","arguments":{"action":"list"}},
-  {"name":"device","arguments":{"action":"control","device_id":"id_from_list","command":"turn_off","confirm":true}}
-]
-```
+Round 1 → `[{"name":"shell","arguments":{"command":"neomind device list --json"}}]`
+Round 2 → `[{"name":"shell","arguments":{"command":"neomind device control --id id_from_list --command turn_off --confirm"}}]`
 
 **User**: "Create a temperature monitoring agent"
-→ `[{"name":"agent","arguments":{"action":"create","name":"Temp Monitor","user_prompt":"Check temperature sensor every 5 min, alert if above 30C","schedule_type":"interval","schedule_config":"300"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind agent create --name 'Temp Monitor' --prompt 'Check temperature sensor every 5 min, alert if above 30C' --schedule-type interval --schedule-config 300"}}]`
 
 **User**: "Create a rule to alert when battery < 20%"
-→ `[{"name":"rule","arguments":{"action":"create","dsl":"RULE \"Low Battery\" WHEN sensor_01.battery < 20 DO NOTIFY \"Battery below 20%\" END"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind rule create --name 'Low Battery Alert' --dsl 'RULE \"Low Battery\" WHEN device.battery < 20 DO NOTIFY \"Battery below 20%\" END'"}}]`
 
 **User**: "How is an agent performing?"
-→ `[{"name":"agent","arguments":{"action":"executions","agent_id":"id_from_agent_list"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind agent executions --id id_from_agent_list"}}]`
 
 **Multi-tool calling key principles**:
 - Call in sequence: previous tool output may feed into next tool
-- Query before act: device(action="list") first, then device(action="query"/"control")
+- Query before act: `neomind device list` first, then specific operations
 - Get device IDs from list results, never guess
-- Destructive ops: first call without confirm, show preview, then with confirm=true
-
-### Multi-device data analysis (collect-and-summarize pattern):
-
-This pattern applies when analyzing data across multiple devices with DIFFERENT metrics (e.g., comparing environmental conditions across rooms, each with different sensor types: occupancy, temp/humidity, light, CO2, etc.)
-
-**User**: "Compare environmental conditions across all rooms this week"
-Round 1 — List devices (note: different rooms have different sensor types):
-```json
-[{"name":"device","arguments":{"action":"list","response_format":"detailed"}}]
-```
-Response shows e.g.: lobby(temp, humidity, occupancy), office(temp, humidity, co2, light), warehouse(temp, humidity)
-
-Round 2 — Batch query the FIRST metric group for all devices that have it:
-```json
-[
-  {"name":"device","arguments":{"action":"history","device_id":"lobby_temp","metric":"values.temperature","time_range":"1w"}},
-  {"name":"device","arguments":{"action":"history","device_id":"office_temp","metric":"values.temperature","time_range":"1w"}},
-  {"name":"device","arguments":{"action":"history","device_id":"warehouse_temp","metric":"values.temperature","time_range":"1w"}}
-]
-```
-Round 2 response text MUST include one-line summaries per device:
-```
-Temperature (past week):
-Lobby: avg 24.2C, range 22-27C, peaks during afternoon
-Office: avg 23.8C, stable 22-25C, well-controlled
-Warehouse: avg 19.5C, range 16-23C, large swings, no HVAC
-```
-
-Round 3 — Batch query NEXT metric group:
-```json
-[
-  {"name":"device","arguments":{"action":"history","device_id":"lobby_temp","metric":"values.humidity","time_range":"1w"}},
-  {"name":"device","arguments":{"action":"history","device_id":"office_temp","metric":"values.humidity","time_range":"1w"}},
-  {"name":"device","arguments":{"action":"history","device_id":"warehouse_temp","metric":"values.humidity","time_range":"1w"}},
-  {"name":"device","arguments":{"action":"history","device_id":"lobby_occ","metric":"values.occupancy","time_range":"1w"}},
-  {"name":"device","arguments":{"action":"history","device_id":"office_light","metric":"values.lux","time_range":"1w"}}
-]
-```
-Round 3 response text includes summaries for each:
-```
-Humidity: Lobby 55-68%, Office 45-52%, Warehouse 70-85% (damp)
-Occupancy: Lobby busy 9-18h, Office steady 10-19h
-Light: Office 300-500 lux during work hours, dim otherwise
-```
-
-Round 4 — Cross-space analysis from summaries (raw data already compacted, summaries survive):
-```
-Environmental Summary:
-- Warehouse has highest humidity (70-85%) and largest temp swings (16-23C) — recommend dehumidifier and insulation check
-- Office environment is best controlled (stable temp & humidity, adequate lighting)
-- Lobby occupancy correlates with afternoon temp peaks — HVAC should adjust for peak hours
-```
-
-**Key principle**: Query DIFFERENT metrics from DIFFERENT device types in batches. Summarize EACH batch immediately. Never rely on holding all raw data — context compaction WILL remove old results.
+- Destructive ops: first call without --confirm, show preview, then with --confirm
 
 ### Scenarios NOT requiring tools:
 
 **User**: "Hello"
-→ Respond directly: "Hello! I'm NeoMind, your intelligent assistant. How can I help you?"
+→ "Hello! I'm NeoMind, your intelligent assistant. How can I help you?"
 
 **User**: "Thank you"
-→ Respond directly: "You're welcome! Feel free to ask if you have any other questions."
+→ "You're welcome! Feel free to ask if you have any other questions."
 
 **User**: "What can you do?"
 → Respond directly with capability overview, no tool call needed
@@ -735,7 +707,7 @@ Environmental Summary:
     pub fn get_intent_prompt_addon(&self, intent: &str) -> String {
         match intent {
             "device" => "\n\n## Current Task: Device Management\nFocus on device queries and control operations.".to_string(),
-            "data" => "\n\n## Current Task: Data Query and Analysis\n**MUST CALL TOOLS**: When user asks for historical data, trend analysis, or data changes, you MUST call `query_data` tool.\n\n**DO NOT make up answers**: Don't fabricate data or say \"let me analyze\" - call the tool first to get real data.".to_string(),
+            "data" => "\n\n## Current Task: Data Query and Analysis\n**MUST CALL TOOLS**: When user asks for historical data, trend analysis, or data changes, you MUST call shell tool with `neomind device history <id> --metric <name>` to get real data.\n\n**DO NOT make up answers**: Don't fabricate data or say \"let me analyze\" - call the tool first to get real data.".to_string(),
             "rule" => "\n\n## Current Task: Rule Management\nFocus on creating and modifying automation rules.".to_string(),
             "workflow" => "\n\n## Current Task: Workflow Management\nFocus on triggering and monitoring workflows.".to_string(),
             "alert" | "message" => "\n\n## Current Task: Message Management\nFocus on message queries, sending, and status updates.".to_string(),
@@ -846,7 +818,7 @@ mod tests {
         let builder = PromptBuilder::new();
         let strategy = builder.tool_strategy();
         assert!(strategy.contains("Tool Usage Strategy"));
-        assert!(strategy.contains("device(action=\"list\""));
+        assert!(strategy.contains("neomind device list"));
     }
 
     #[test]

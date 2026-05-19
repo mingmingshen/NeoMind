@@ -616,14 +616,32 @@ impl IsolatedExtension {
                 .map(|cwd| cwd.join(extension_dir))
                 .unwrap_or_else(|_| extension_dir.to_path_buf())
         };
-        let mut child = Command::new(&runner_path)
-            .arg("--extension-path")
+        let mut cmd = Command::new(&runner_path);
+        cmd.arg("--extension-path")
             .arg(&extension_path_absolute)
             .env("NEOMIND_EXTENSION_DIR", &extension_dir_absolute)
             .current_dir(extension_dir_absolute) // Set working directory to extension root
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        // On Windows, add the DLL directory to PATH so the extension can find bundled dependencies
+        // (onnxruntime.dll, ffmpeg DLLs, etc.)
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(binary_dir) = extension_path_absolute.parent() {
+                let bin_dir = binary_dir.to_string_lossy().to_string();
+                let current_path = std::env::var("PATH").unwrap_or_default();
+                cmd.env("PATH", format!("{};{}", bin_dir, current_path));
+                tracing::debug!(
+                    extension_id = %self.extension_id,
+                    bin_dir = %bin_dir,
+                    "Added extension binary directory to PATH for Windows DLL resolution"
+                );
+            }
+        }
+
+        let mut child = cmd
             .spawn()
             .map_err(|e| IsolatedExtensionError::SpawnFailed(e.to_string()))?;
 
@@ -661,8 +679,18 @@ impl IsolatedExtension {
             use std::io::{BufRead, BufReader};
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
-                trace!(extension_id = %extension_id, "{}", line);
                 let level = infer_log_level(&line);
+                match level {
+                    "ERROR" | "error" => {
+                        tracing::error!(extension_id = %extension_id, "{}", line);
+                    }
+                    "WARN" | "warning" => {
+                        tracing::warn!(extension_id = %extension_id, "{}", line);
+                    }
+                    _ => {
+                        tracing::info!(extension_id = %extension_id, "{}", line);
+                    }
+                }
                 let timestamp = chrono::Utc::now().timestamp_millis();
                 log_buffer.push(ExtensionLogEntry {
                     timestamp,
@@ -738,6 +766,8 @@ impl IsolatedExtension {
         .await?;
 
         // Wait for ready response with timeout
+        let extension_id_for_error = self.extension_id.clone();
+        let log_buffer_ref = self.log_buffer.clone();
         let response = self
             .in_flight
             .wait_with_timeout(0, rx, Duration::from_secs(self.config.startup_timeout_secs))
@@ -745,7 +775,32 @@ impl IsolatedExtension {
             .map_err(|e| match e {
                 super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
                 super::in_flight::InFlightError::ChannelClosed => {
-                    IsolatedExtensionError::IpcError("Response channel closed".to_string())
+                    // Collect recent stderr logs to help diagnose why the runner crashed
+                    let all_logs = log_buffer_ref.snapshot();
+                    let recent_logs: Vec<String> = all_logs
+                        .iter()
+                        .rev()
+                        .take(10)
+                        .cloned()
+                        .map(|entry| entry.message)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
+                    let log_suffix = if recent_logs.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\n\nRecent runner logs:\n{}", recent_logs.join("\n"))
+                    };
+                    tracing::error!(
+                        extension_id = %extension_id_for_error,
+                        recent_logs = ?recent_logs,
+                        "Extension runner process exited before sending Ready response"
+                    );
+                    IsolatedExtensionError::IpcError(format!(
+                        "Response channel closed (runner process exited unexpectedly){}",
+                        log_suffix
+                    ))
                 }
             })?;
 

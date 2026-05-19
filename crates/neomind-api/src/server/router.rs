@@ -370,6 +370,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             get(devices::get_device_telemetry_handler),
         )
         .route(
+            "/api/devices/:id/metrics",
+            post(devices::write_metric_handler),
+        )
+        .route(
             "/api/devices/:id/telemetry/summary",
             get(devices::get_device_telemetry_summary_handler),
         )
@@ -889,7 +893,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         )
         .route(
             "/api/frontend-components/:id",
-            delete(frontend_components::uninstall_component_handler),
+            get(frontend_components::get_component_handler)
+                .delete(frontend_components::uninstall_component_handler),
         )
         // Apply rate limiting middleware to all protected routes
         .route_layer(axum::middleware::from_fn_with_state(

@@ -414,7 +414,7 @@ impl AgentExecutor {
             let history_points = &result.points[start_idx..];
 
             // Use adaptive compression for compact output
-            let compressed = compress_series_adaptive(
+            let compressed = neomind_storage::compress_series_adaptive(
                 history_points,
                 device_id,
                 metric_name,
@@ -1032,33 +1032,6 @@ impl AgentExecutor {
     }
 }
 
-pub(crate) struct Stats {
-    min: f64,
-    max: f64,
-    avg: f64,
-    count: usize,
-}
-
-/// Calculate statistics for numeric data points.
-pub(crate) fn calculate_stats(points: &[neomind_storage::DataPoint]) -> Option<Stats> {
-    let nums: Vec<f64> = points.iter().filter_map(|p| p.value.as_f64()).collect();
-
-    if nums.is_empty() {
-        return None;
-    }
-
-    let min_val = nums.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-    let max_val = nums.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-    let avg_val = nums.iter().sum::<f64>() / nums.len() as f64;
-
-    Some(Stats {
-        min: min_val,
-        max: max_val,
-        avg: avg_val,
-        count: nums.len(),
-    })
-}
-
 /// Extract image data from a metric value.
 /// Returns (image_url, base64_data, mime_type).
 pub(crate) fn extract_image_data(
@@ -1162,133 +1135,4 @@ pub(crate) fn is_image_metric(metric_name: &str, value: &serde_json::Value) -> b
     } else {
         false
     }
-}
-
-/// Format a Unix timestamp as a human-readable relative time string.
-fn fmt_relative_ts(ts: i64) -> String {
-    let secs = ts % 60;
-    let mins = (ts / 60) % 60;
-    let hrs = ts / 3600;
-    format!("{}h{}m{}s", hrs, mins, secs)
-}
-
-/// Format a timestamp pair as a range string.
-fn fmt_ts_range(start_ts: i64, end_ts: i64) -> String {
-    let start_dt = chrono::DateTime::from_timestamp(start_ts, 0)
-        .map(|dt| dt.format("%m-%d %H:%M").to_string())
-        .unwrap_or_else(|| start_ts.to_string());
-    let end_dt = chrono::DateTime::from_timestamp(end_ts, 0)
-        .map(|dt| dt.format("%m-%d %H:%M").to_string())
-        .unwrap_or_else(|| end_ts.to_string());
-    format!("{}~{}", start_dt, end_dt)
-}
-
-/// Adaptive series compression for time-series data points.
-///
-/// Compresses a sequence of `neomind_storage::DataPoint` values into a compact
-/// "kept / fluctuated" representation. Long runs of identical values become a
-/// single "kept" entry; consecutive short runs of varying values are grouped
-/// into a "fluctuated" array.
-///
-/// Returns a `serde_json::Value` suitable for embedding in action results or
-/// pre-collected data.
-pub(crate) fn compress_series_adaptive(
-    points: &[neomind_storage::DataPoint],
-    source_id: &str,
-    metric: &str,
-) -> serde_json::Value {
-    if points.is_empty() {
-        return serde_json::json!({
-            "source": source_id,
-            "metric": metric,
-            "points": 0,
-            "message": "no data"
-        });
-    }
-
-    let count = points.len();
-    let first_ts = points[0].timestamp;
-    let last_ts = points[count - 1].timestamp;
-
-    let from_str = fmt_ts_range(first_ts, last_ts).split('~').next().unwrap_or("").trim().to_string();
-    let to_str = fmt_ts_range(first_ts, last_ts).split('~').nth(1).unwrap_or("").trim().to_string();
-    let duration_secs = last_ts - first_ts;
-
-    // Phase 1: identify runs of consecutive equal values
-    let mut runs: Vec<(usize, usize, serde_json::Value)> = Vec::new();
-    let mut run_start = 0;
-    for i in 1..=count {
-        let is_eq = if i < count {
-            points[i].value == points[run_start].value
-        } else {
-            false
-        };
-        if !is_eq {
-            runs.push((run_start, i, points[run_start].value.clone()));
-            run_start = i;
-        }
-    }
-
-    // Phase 2: merge runs into series entries
-    const MIN_STABLE: usize = 3;
-    let mut series: Vec<serde_json::Value> = Vec::new();
-    let mut ri = 0;
-    while ri < runs.len() {
-        let (rs, re, rv) = &runs[ri];
-        let run_len = re - rs;
-
-        if run_len >= MIN_STABLE {
-            series.push(serde_json::json!({
-                "range": fmt_ts_range(points[*rs].timestamp, points[re - 1].timestamp),
-                "kept": rv,
-            }));
-            ri += 1;
-        } else {
-            let seg_start = *rs;
-            let mut seg_end = *re;
-            let mut vals: Vec<serde_json::Value> = vec![rv.clone(); run_len];
-            ri += 1;
-
-            while ri < runs.len() {
-                let (nrs, nre, nrv) = &runs[ri];
-                if nre - nrs >= MIN_STABLE {
-                    break;
-                }
-                for _ in 0..(nre - nrs) {
-                    vals.push(nrv.clone());
-                }
-                seg_end = *nre;
-                ri += 1;
-            }
-
-            series.push(serde_json::json!({
-                "range": fmt_ts_range(points[seg_start].timestamp, points[seg_end - 1].timestamp),
-                "fluctuated": vals,
-            }));
-        }
-    }
-
-    // Calculate stats if numeric
-    let stats = calculate_stats(points).map(|s| serde_json::json!({
-        "min": s.min,
-        "max": s.max,
-        "avg": (s.avg * 100.0).round() / 100.0,
-        "count": s.count
-    }));
-
-    let mut result = serde_json::json!({
-        "source": source_id,
-        "metric": metric,
-        "from": from_str,
-        "to": to_str,
-        "duration": fmt_relative_ts(duration_secs),
-        "points": count,
-        "series": series,
-    });
-
-    if let Some(s) = stats {
-        result["stats"] = s;
-    }
-
-    result
 }

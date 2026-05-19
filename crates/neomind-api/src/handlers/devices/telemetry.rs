@@ -71,20 +71,13 @@ pub async fn get_device_telemetry_handler(
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or_else(|| chrono::Utc::now().timestamp()); // now in seconds
 
-    // Validate time range (max 30 days)
+    // Validate time range
     const MAX_TIME_RANGE_SECS: i64 = 30 * 86400;
     let time_range = end - start;
     if time_range < 0 {
         return Err(ErrorResponse::bad_request(
             "Invalid time range: end must be after start",
         ));
-    }
-    if time_range > MAX_TIME_RANGE_SECS {
-        return Err(ErrorResponse::bad_request(format!(
-            "Time range too large: {} seconds (max {} days)",
-            time_range,
-            MAX_TIME_RANGE_SECS / 86400
-        )));
     }
 
     // Validate and cap limit
@@ -110,6 +103,22 @@ pub async fn get_device_telemetry_handler(
     let offset = offset as usize;
 
     let aggregate = params.get("aggregate").cloned();
+
+    // AI compression mode: lossless adaptive series (kept/fluctuated)
+    let compress = params
+        .get("compress")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+
+    // When compress mode is active, allow up to 90 days and skip limit
+    let effective_max_range = if compress { 90 * 86400 } else { MAX_TIME_RANGE_SECS };
+    if time_range > effective_max_range {
+        return Err(ErrorResponse::bad_request(format!(
+            "Time range too large: {} seconds (max {} days)",
+            time_range,
+            effective_max_range / 86400
+        )));
+    }
 
     // Query device with template once to avoid duplicate database calls
     let device_with_template = state
@@ -257,6 +266,63 @@ pub async fn get_device_telemetry_handler(
             .collect();
 
         let results = futures::future::join_all(aggregate_futures).await;
+        let data: HashMap<String, serde_json::Value> = results
+            .iter()
+            .map(|(k, v, _)| (k.clone(), v.clone()))
+            .collect();
+        let counts: HashMap<String, usize> = results.into_iter().map(|(k, _, c)| (k, c)).collect();
+        (data, counts, None)
+    } else if compress {
+        // AI compression mode: lossless adaptive series (kept/fluctuated)
+        // Query all data points without limit, then compress
+        let compress_futures: Vec<_> = target_metrics
+            .iter()
+            .map(|metric_name| {
+                let telemetry = state.devices.telemetry.clone();
+                let device_source_id = device_source_id.clone();
+                let metric_name = metric_name.clone();
+                let semaphore = state.telemetry_query_semaphore.clone();
+                async move {
+                    let _permit = match semaphore.acquire().await {
+                        Ok(p) => p,
+                        Err(e) => {
+                            tracing::warn!(
+                                "telemetry semaphore acquire failed for {}: {}",
+                                metric_name,
+                                e
+                            );
+                            return (metric_name, json!(null), 0);
+                        }
+                    };
+
+                    // Use inner_store() to query raw storage DataPoints (serde_json::Value)
+                    // directly, avoiding MetricValue→serde_json::Value round-trip conversion.
+                    let store = telemetry.inner_store();
+                    match store.query_range(&device_source_id, &metric_name, start, end, None).await {
+                        Ok(result) => {
+                            let total = result.total_count.unwrap_or(result.points.len());
+                            let compressed = neomind_storage::compress_series_adaptive(
+                                &result.points,
+                                &device_source_id,
+                                &metric_name,
+                            );
+                            (metric_name, compressed, total)
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Telemetry query failed for {}/{}: {}",
+                                device_source_id,
+                                metric_name,
+                                e
+                            );
+                            (metric_name, json!(null), 0)
+                        }
+                    }
+                }
+            })
+            .collect();
+
+        let results = futures::future::join_all(compress_futures).await;
         let data: HashMap<String, serde_json::Value> = results
             .iter()
             .map(|(k, v, _)| (k.clone(), v.clone()))

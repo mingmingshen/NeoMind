@@ -44,37 +44,60 @@ fn test_extension_validate_verbose_flag() {
         .stderr(predicate::str::contains("not found"));
 }
 
-/// Test extension create command.
+/// Test extension create command generates scaffold files.
 #[test]
 fn test_extension_create_command() {
+    let temp_dir = TempDir::new().unwrap();
+    let output_path = temp_dir.path().join("test-extension");
+
     let mut cmd = Command::cargo_bin("neomind").unwrap();
     cmd.arg("extension")
         .arg("create")
         .arg("test-extension")
-        .arg("--extension-type")
-        .arg("tool");
+        .arg("--output")
+        .arg(&output_path);
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Creating extension"))
-        .stdout(predicate::str::contains("test-extension"))
-        .stdout(predicate::str::contains("tool"));
+        .stdout(predicate::str::contains("Extension created"));
+
+    // Verify key files were generated
+    assert!(output_path.join("Cargo.toml").exists());
+    assert!(output_path.join("src/lib.rs").exists());
+    assert!(output_path.join("manifest.json").exists());
+    assert!(output_path.join(".gitignore").exists());
 }
 
-/// Test extension create with invalid type shows valid types.
+/// Test extension create rejects invalid names (spaces, uppercase).
 #[test]
-fn test_extension_create_invalid_type() {
+fn test_extension_create_invalid_name() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
     cmd.arg("extension")
         .arg("create")
-        .arg("test-extension")
-        .arg("--extension-type")
-        .arg("invalid-type");
+        .arg("Invalid Name");
 
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Invalid extension type"))
-        .stderr(predicate::str::contains("Valid types:"));
+        .stderr(predicate::str::contains("kebab-case"));
+}
+
+/// Test extension create rejects directory that already exists.
+#[test]
+fn test_extension_create_existing_dir() {
+    let temp_dir = TempDir::new().unwrap();
+    let existing = temp_dir.path().join("my-ext");
+    std::fs::create_dir_all(&existing).unwrap();
+
+    let mut cmd = Command::cargo_bin("neomind").unwrap();
+    cmd.arg("extension")
+        .arg("create")
+        .arg("my-ext")
+        .arg("--output")
+        .arg(&existing);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("already exists"));
 }
 
 /// Test extension create help shows all valid types.

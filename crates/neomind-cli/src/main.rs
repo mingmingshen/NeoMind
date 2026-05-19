@@ -330,6 +330,10 @@ enum DeviceCommand {
         /// Time range (e.g., "1h", "24h", "7d").
         #[arg(short, long)]
         time_range: Option<String>,
+        /// AI compression mode: lossless adaptive series (kept/fluctuated).
+        /// Allows up to 90 days. Designed for AI consumption, not frontend charts.
+        #[arg(long)]
+        compress: bool,
         /// Output in JSON format.
         #[arg(long)]
         json: bool,
@@ -353,6 +357,24 @@ enum DeviceCommand {
     Types {
         #[command(subcommand)]
         type_cmd: DeviceTypeCommand,
+    },
+    /// Write a metric data point.
+    WriteMetric {
+        /// Device ID.
+        #[arg(required = true)]
+        id: String,
+        /// Metric name.
+        #[arg(short, long)]
+        metric: String,
+        /// Value (number, string, or "true"/"false").
+        #[arg(short, long)]
+        value: String,
+        /// Timestamp in milliseconds (defaults to now).
+        #[arg(long)]
+        timestamp: Option<i64>,
+        /// Output in JSON format.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -434,6 +456,9 @@ enum DashboardCommand {
         /// New layout configuration JSON.
         #[arg(short, long)]
         layout: Option<String>,
+        /// Dashboard components JSON array.
+        #[arg(short, long)]
+        components: Option<String>,
         /// Output format (json flag for structured output).
         #[arg(long)]
         json: bool,
@@ -476,16 +501,11 @@ enum RuleCommand {
     Create {
         /// Rule name.
         #[arg(short, long)]
-        name: String,
-        /// Trigger type (e.g., "schedule", "device", "threshold").
+        name: Option<String>,
+        /// Rule DSL definition.
+        /// Example: 'RULE "Low Battery" WHEN device.battery < 20 DO NOTIFY "Battery low" END'
         #[arg(short, long)]
-        trigger: String,
-        /// Actions JSON.
-        #[arg(short, long)]
-        actions: String,
-        /// Condition JSON (optional).
-        #[arg(short, long)]
-        condition: Option<String>,
+        dsl: String,
     },
     /// Update rule.
     Update {
@@ -495,15 +515,9 @@ enum RuleCommand {
         /// New name.
         #[arg(short, long)]
         name: Option<String>,
-        /// New trigger type.
+        /// New rule DSL definition.
         #[arg(short, long)]
-        trigger: Option<String>,
-        /// New actions JSON.
-        #[arg(short, long)]
-        actions: Option<String>,
-        /// New condition JSON.
-        #[arg(short, long)]
-        condition: Option<String>,
+        dsl: Option<String>,
     },
     /// Delete rule.
     Delete {
@@ -545,6 +559,63 @@ enum RuleCommand {
 enum TransformCommand {
     /// List all transforms.
     List,
+    /// Get transform details.
+    Get {
+        /// Transform ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Create a new transform.
+    Create {
+        /// Transform name.
+        #[arg(short, long)]
+        name: String,
+        /// Scope (global, device_type:TypeName, or device:DeviceId).
+        #[arg(short, long)]
+        scope: String,
+        /// JavaScript transform code.
+        #[arg(short, long)]
+        code: String,
+        /// Output prefix for virtual metrics.
+        #[arg(short, long)]
+        output_prefix: Option<String>,
+        /// Description.
+        #[arg(short, long)]
+        description: Option<String>,
+        /// Whether to enable immediately.
+        #[arg(long)]
+        enabled: Option<bool>,
+    },
+    /// Update transform.
+    Update {
+        /// Transform ID.
+        #[arg(required = true)]
+        id: String,
+        /// New name.
+        #[arg(short, long)]
+        name: Option<String>,
+        /// New description.
+        #[arg(short, long)]
+        description: Option<String>,
+        /// New JavaScript code.
+        #[arg(short, long)]
+        code: Option<String>,
+        /// New scope.
+        #[arg(short, long)]
+        scope: Option<String>,
+        /// New output prefix.
+        #[arg(short, long)]
+        output_prefix: Option<String>,
+        /// Enable/disable.
+        #[arg(long)]
+        enabled: Option<bool>,
+    },
+    /// Delete transform.
+    Delete {
+        /// Transform ID.
+        #[arg(required = true)]
+        id: String,
+    },
     /// List virtual metrics from transforms.
     Metrics,
     /// Test transform code.
@@ -576,9 +647,18 @@ enum AgentCommand {
         /// Agent name.
         #[arg(short, long)]
         name: String,
+        /// What the agent should do (natural language). Required.
+        #[arg(short, long)]
+        prompt: String,
         /// Description.
         #[arg(short, long)]
         description: Option<String>,
+        /// Schedule type: interval | cron | event.
+        #[arg(long)]
+        schedule_type: Option<String>,
+        /// Interval in seconds (for interval type) or cron expression (for cron type).
+        #[arg(long)]
+        schedule_config: Option<String>,
         /// LLM backend configuration.
         #[arg(short, long)]
         llm_backend: Option<String>,
@@ -594,6 +674,9 @@ enum AgentCommand {
         /// New name.
         #[arg(short, long)]
         name: Option<String>,
+        /// New user prompt.
+        #[arg(short, long)]
+        prompt: Option<String>,
         /// New description.
         #[arg(short, long)]
         description: Option<String>,
@@ -645,6 +728,33 @@ enum AgentCommand {
         /// Offset for pagination.
         #[arg(short, long)]
         offset: Option<usize>,
+    },
+    /// Get latest agent execution.
+    LatestExecution {
+        /// Agent ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Get agent conversation (messages).
+    Conversation {
+        /// Agent ID.
+        #[arg(required = true)]
+        id: String,
+        /// Limit number of messages.
+        #[arg(short, long)]
+        limit: Option<usize>,
+    },
+    /// Send message to agent.
+    SendMessage {
+        /// Agent ID.
+        #[arg(required = true)]
+        id: String,
+        /// Message content.
+        #[arg(required = true)]
+        message: String,
+        /// Message type (e.g., instruction, correction).
+        #[arg(short, long)]
+        message_type: Option<String>,
     },
 }
 
@@ -699,18 +809,43 @@ enum MessageCommand {
 #[derive(Subcommand, Debug)]
 enum WidgetCommand {
     /// List installed widgets.
-    List,
+    List {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Get widget details.
     Get {
         /// Widget ID.
         #[arg(required = true)]
         id: String,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
     },
     /// Get widget bundle.
     Bundle {
         /// Widget ID.
         #[arg(required = true)]
         id: String,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Scaffold a new widget component (generates manifest.json + bundle.js).
+    Create {
+        /// Widget display name.
+        #[arg(required = true)]
+        name: String,
+        /// Widget type: chart, gauge, stat, table, image, custom.
+        #[arg(long, default_value = "custom")]
+        widget_type: String,
+        /// Output directory (defaults to widget ID).
+        #[arg(long)]
+        output: Option<String>,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
     },
     /// Install widget from file.
     Install {
@@ -725,7 +860,11 @@ enum WidgetCommand {
         id: String,
     },
     /// List marketplace widgets.
-    MarketList,
+    MarketList {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Install widget from marketplace.
     MarketInstall {
         /// Widget ID.
@@ -2009,41 +2148,204 @@ fn read_nep_manifest(path: &std::path::PathBuf) -> Result<serde_json::Value> {
     anyhow::bail!("No manifest.json found in package")
 }
 
-/// Create a new extension scaffold.
+/// Create a new extension scaffold with a complete, compilable project.
 fn create_extension_scaffold(
     name: &str,
-    extension_type: &str,
-    _output: Option<std::path::PathBuf>,
+    _extension_type: &str,
+    output: Option<std::path::PathBuf>,
 ) -> Result<()> {
-    let valid_types = [
-        "tool",
-        "llm_backend",
-        "storage_backend",
-        "device_adapter",
-        "integration",
-        "alert_channel",
-        "rule_engine",
-        "workflow_engine",
-    ];
+    use std::fs;
 
-    if !valid_types.contains(&extension_type) {
+    // Validate name is kebab-case (lowercase, digits, hyphens, no spaces)
+    if !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
         anyhow::bail!(
-            "Invalid extension type '{}'. Valid types: {}",
-            extension_type,
-            valid_types.join(", ")
+            "Extension name must be kebab-case (lowercase letters, digits, and hyphens only). Got: '{}'",
+            name
         );
     }
+    if name.starts_with('-') || name.ends_with('-') {
+        anyhow::bail!("Extension name must not start or end with a hyphen. Got: '{}'", name);
+    }
 
-    println!("Creating extension: {} (type: {})", name, extension_type);
+    // Derive Rust identifiers
+    let crate_name = format!("neomind_{}", name.replace('-', "_"));
+    // Strip optional "neomind-" prefix for struct name, then PascalCase
+    let struct_base = name.strip_prefix("neomind-").unwrap_or(name);
+    let struct_name = struct_base
+        .split('-')
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<String>();
+
+    // Resolve output directory
+    let out_dir = output.unwrap_or_else(|| std::path::PathBuf::from(name));
+    if out_dir.exists() {
+        anyhow::bail!("Output directory already exists: {}", out_dir.display());
+    }
+
+    // SDK version — use the version of this binary's SDK dependency
+    let sdk_version = "0.6.3";
+
+    // Create directory structure
+    let src_dir = out_dir.join("src");
+    fs::create_dir_all(&src_dir)?;
+
+    // --- Cargo.toml ---
+    let cargo_toml = format!(
+        r#"[package]
+name = "{crate_name}"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+neomind-extension-sdk = "{sdk_version}"
+async-trait = "0.1"
+serde_json = "1.0"
+tokio = {{ version = "1", features = ["rt-multi-thread", "sync"] }}
+"#,
+    );
+    fs::write(out_dir.join("Cargo.toml"), cargo_toml)?;
+
+    // --- src/lib.rs ---
+    let lib_rs = format!(
+        r#"use async_trait::async_trait;
+use neomind_extension_sdk::{{
+    neomind_export, Extension, ExtensionCommand, ExtensionError, ExtensionMetadata,
+    ExtensionMetricValue, MetricDataType, MetricDescriptor, ParamMetricValue,
+    ParameterDefinition, Result,
+}};
+use serde_json::json;
+
+pub struct {struct_name};
+
+impl {struct_name} {{
+    pub fn new() -> Self {{
+        Self
+    }}
+}}
+
+impl Default for {struct_name} {{
+    fn default() -> Self {{
+        Self::new()
+    }}
+}}
+
+#[async_trait]
+impl Extension for {struct_name} {{
+    fn metadata(&self) -> &ExtensionMetadata {{
+        static META: std::sync::OnceLock<ExtensionMetadata> = std::sync::OnceLock::new();
+        META.get_or_init(|| {{
+            ExtensionMetadata::new("{name}", "{struct_name}", "0.1.0")
+                .with_description("A NeoMind extension")
+        }})
+    }}
+
+    fn commands(&self) -> Vec<ExtensionCommand> {{
+        vec![ExtensionCommand {{
+            name: "hello".to_string(),
+            display_name: "Hello".to_string(),
+            description: "Returns a greeting".to_string(),
+            payload_template: String::new(),
+            parameters: vec![ParameterDefinition {{
+                name: "name".to_string(),
+                display_name: "Name".to_string(),
+                description: "Who to greet".to_string(),
+                param_type: MetricDataType::String,
+                required: true,
+                default_value: None,
+                min: None,
+                max: None,
+                options: Vec::new(),
+            }}],
+            fixed_values: std::collections::HashMap::new(),
+            samples: vec![json!({{"name": "world"}})],
+            parameter_groups: Vec::new(),
+        }}]
+    }}
+
+    fn metrics(&self) -> Vec<MetricDescriptor> {{
+        vec![MetricDescriptor {{
+            name: "invocations".to_string(),
+            display_name: "Invocations".to_string(),
+            data_type: MetricDataType::Integer,
+            unit: "count".to_string(),
+            min: Some(0.0),
+            max: None,
+            required: false,
+        }}]
+    }}
+
+    async fn execute_command(
+        &self,
+        command: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value> {{
+        match command {{
+            "hello" => {{
+                let name = args
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("world");
+                Ok(json!({{"greeting": format!("Hello, {{}}!", name)}}))
+            }}
+            _ => Err(ExtensionError::CommandNotFound(command.to_string())),
+        }}
+    }}
+
+    fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>> {{
+        Ok(vec![ExtensionMetricValue::new(
+            "invocations",
+            ParamMetricValue::Integer(1),
+        )])
+    }}
+
+    fn as_any(&self) -> &dyn std::any::Any {{
+        self
+    }}
+}}
+
+neomind_export!({struct_name});
+"#,
+    );
+    fs::write(src_dir.join("lib.rs"), lib_rs)?;
+
+    // --- manifest.json ---
+    let manifest = serde_json::json!({
+        "format": "neomind-extension-package",
+        "abi_version": 3,
+        "type": "native",
+        "id": name,
+        "name": struct_name,
+        "version": "0.1.0",
+        "capabilities": {
+            "commands": ["hello"],
+            "metrics": ["invocations"]
+        }
+    });
+    fs::write(
+        out_dir.join("manifest.json"),
+        serde_json::to_string_pretty(&manifest)?,
+    )?;
+
+    // --- .gitignore ---
+    fs::write(out_dir.join(".gitignore"), "/target/\n")?;
+
+    println!("Extension created: {}", out_dir.display());
     println!();
-    println!("Please use the extension SDK for full scaffold generation:");
-    println!("  See: https://github.com/camthink-ai/NeoMind-Extensions");
-    println!();
-    println!("Or manually create the extension structure:");
-    println!("  mkdir -p extensions/{}", name);
-    println!("  cd extensions/{}", name);
-    println!("  cargo init --lib");
-    println!("  # Add neomind-extension-sdk dependency and implement Extension trait");
+    println!("Next steps:");
+    println!("  cd {}", name);
+    println!("  cargo build");
+    println!("  neomind extension build ./{}", name);
 
     Ok(())
 }
@@ -2187,9 +2489,9 @@ async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
             let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
             (get_latest_metrics(&client, &id).await?, output_format)
         }
-        DeviceCommand::History { id, metric, time_range, json } => {
+        DeviceCommand::History { id, metric, time_range, compress, json } => {
             let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
-            (get_telemetry_history(&client, &id, metric.as_deref(), time_range.as_deref()).await?, output_format)
+            (get_telemetry_history(&client, &id, metric.as_deref(), time_range.as_deref(), compress).await?, output_format)
         }
         DeviceCommand::Control { id, command, params, json } => {
             let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
@@ -2205,6 +2507,18 @@ async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
             // (they don't have --json flag in this change)
             let output_format = OutputFormat::Human;
             return run_device_type_cmd(client, type_cmd, output_format).await;
+        }
+        DeviceCommand::WriteMetric { id, metric, value, timestamp, json } => {
+            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            // Try parsing value as number, bool, then fallback to string
+            let value_json = if let Ok(n) = value.parse::<f64>() {
+                serde_json::json!(n)
+            } else if let Ok(b) = value.parse::<bool>() {
+                serde_json::json!(b)
+            } else {
+                serde_json::json!(value)
+            };
+            (write_metric(&client, &id, &metric, value_json, timestamp).await?, output_format)
         }
     };
 
@@ -2291,14 +2605,19 @@ async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<()> {
             format_output(&resp, fmt);
             return Ok(());
         }
-        DashboardCommand::Update { id, name, description, layout, json } => {
+        DashboardCommand::Update { id, name, description, layout, components, json } => {
             let fmt = if json { OutputFormat::Json } else { output_format };
             let layout_json = if let Some(layout_str) = layout {
                 Some(serde_json::from_str(&layout_str)?)
             } else {
                 None
             };
-            let resp = update_dashboard(&client, &id, name.as_deref(), description.as_deref(), layout_json).await?;
+            let components_json = if let Some(components_str) = components {
+                Some(serde_json::from_str(&components_str)?)
+            } else {
+                None
+            };
+            let resp = update_dashboard(&client, &id, name.as_deref(), description.as_deref(), layout_json, components_json).await?;
             format_output(&resp, fmt);
             return Ok(());
         }
@@ -2344,27 +2663,11 @@ async fn run_rule_cmd(cmd: RuleCommand) -> Result<()> {
         RuleCommand::Get { id } => {
             get_rule(&client, &id).await?
         }
-        RuleCommand::Create { name, trigger, actions, condition } => {
-            let actions_json = serde_json::from_str(&actions)?;
-            let condition_json = if let Some(cond_str) = condition {
-                Some(serde_json::from_str(&cond_str)?)
-            } else {
-                None
-            };
-            create_rule(&client, &name, &trigger, actions_json, condition_json).await?
+        RuleCommand::Create { name, dsl } => {
+            create_rule(&client, name.as_deref(), &dsl).await?
         }
-        RuleCommand::Update { id, name, trigger, actions, condition } => {
-            let actions_json = if let Some(actions_str) = actions {
-                Some(serde_json::from_str(&actions_str)?)
-            } else {
-                None
-            };
-            let condition_json = if let Some(cond_str) = condition {
-                Some(serde_json::from_str(&cond_str)?)
-            } else {
-                None
-            };
-            update_rule(&client, &id, name.as_deref(), trigger.as_deref(), actions_json, condition_json).await?
+        RuleCommand::Update { id, name, dsl } => {
+            update_rule(&client, &id, name.as_deref(), dsl.as_deref()).await?
         }
         RuleCommand::Delete { id } => {
             delete_rule(&client, &id).await?
@@ -2412,6 +2715,25 @@ async fn run_transform_cmd(cmd: TransformCommand) -> Result<()> {
         TransformCommand::List => {
             list_transforms(&client).await?
         }
+        TransformCommand::Get { id } => {
+            get_transform(&client, &id).await?
+        }
+        TransformCommand::Create { name, scope, code, output_prefix, description, enabled } => {
+            create_transform(
+                &client, &name, &scope, &code,
+                output_prefix.as_deref(), description.as_deref(), enabled,
+            ).await?
+        }
+        TransformCommand::Update { id, name, description, code, scope, output_prefix, enabled } => {
+            update_transform(
+                &client, &id,
+                name.as_deref(), description.as_deref(), code.as_deref(),
+                scope.as_deref(), output_prefix.as_deref(), enabled,
+            ).await?
+        }
+        TransformCommand::Delete { id } => {
+            delete_transform(&client, &id).await?
+        }
         TransformCommand::Metrics => {
             list_virtual_metrics(&client).await?
         }
@@ -2455,16 +2777,19 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
         AgentCommand::Get { id } => {
             get_agent(&client, &id).await?
         }
-        AgentCommand::Create { name, description, llm_backend, system_prompt } => {
+        AgentCommand::Create { name, prompt, description, schedule_type, schedule_config, llm_backend, system_prompt } => {
             create_agent(
                 &client,
                 &name,
+                &prompt,
                 description.as_deref(),
+                schedule_type.as_deref(),
+                schedule_config.as_deref(),
                 llm_backend.as_deref(),
                 system_prompt.as_deref(),
             ).await?
         }
-        AgentCommand::Update { id, name, description, llm_backend, system_prompt } => {
+        AgentCommand::Update { id, name, prompt, description, llm_backend, system_prompt } => {
             update_agent(
                 &client,
                 &id,
@@ -2472,6 +2797,7 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
                 description.as_deref(),
                 llm_backend.as_deref(),
                 system_prompt.as_deref(),
+                prompt.as_deref(),
             ).await?
         }
         AgentCommand::Delete { id } => {
@@ -2488,6 +2814,15 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
         }
         AgentCommand::Executions { id, limit, offset } => {
             get_agent_executions(&client, &id, limit, offset).await?
+        }
+        AgentCommand::LatestExecution { id } => {
+            get_latest_execution(&client, &id).await?
+        }
+        AgentCommand::Conversation { id, limit } => {
+            get_conversation(&client, &id, limit).await?
+        }
+        AgentCommand::SendMessage { id, message, message_type } => {
+            send_message(&client, &id, &message, message_type.as_deref()).await?
         }
     };
 
@@ -2555,14 +2890,29 @@ async fn run_widget_cmd(cmd: WidgetCommand) -> Result<()> {
     };
 
     let response = match cmd {
-        WidgetCommand::List => {
-            list_widgets(&client).await?
+        WidgetCommand::List { json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let resp = list_widgets(&client).await?;
+            format_output(&resp, fmt);
+            return Ok(());
         }
-        WidgetCommand::Get { id } => {
-            get_widget(&client, &id).await?
+        WidgetCommand::Get { id, json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let resp = get_widget(&client, &id).await?;
+            format_output(&resp, fmt);
+            return Ok(());
         }
-        WidgetCommand::Bundle { id } => {
-            get_widget_bundle(&client, &id).await?
+        WidgetCommand::Bundle { id, json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let resp = get_widget_bundle(&client, &id).await?;
+            format_output(&resp, fmt);
+            return Ok(());
+        }
+        WidgetCommand::Create { name, widget_type, output, json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let resp = create_widget(&name, &widget_type, output.as_deref())?;
+            format_output(&resp, fmt);
+            return Ok(());
         }
         WidgetCommand::Install { file } => {
             install_widget_file(&client, &file).await?
@@ -2570,15 +2920,18 @@ async fn run_widget_cmd(cmd: WidgetCommand) -> Result<()> {
         WidgetCommand::Uninstall { id } => {
             uninstall_widget(&client, &id).await?
         }
-        WidgetCommand::MarketList => {
-            list_marketplace_widgets(&client).await?
+        WidgetCommand::MarketList { json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let resp = list_marketplace_widgets(&client).await?;
+            format_output(&resp, fmt);
+            return Ok(());
         }
         WidgetCommand::MarketInstall { id, version } => {
             install_widget_market(&client, &id, version.as_deref()).await?
         }
     };
 
-    // Format and print output
+    // Format and print output (for commands without --json flag)
     format_output(&response, output_format);
     Ok(())
 }

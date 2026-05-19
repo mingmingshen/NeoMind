@@ -15,21 +15,17 @@ pub async fn get_rule(client: &ApiClient, id: &str) -> Result<CliResponse> {
     Ok(CliResponse::success(data, "Rule retrieved"))
 }
 
-/// Create a new rule
+/// Create a new rule via DSL
 pub async fn create_rule(
     client: &ApiClient,
-    name: &str,
-    trigger: &str,
-    actions: serde_json::Value,
-    condition: Option<serde_json::Value>,
+    name: Option<&str>,
+    dsl: &str,
 ) -> Result<CliResponse> {
     let mut body = json!({
-        "name": name,
-        "trigger": trigger,
-        "actions": actions,
+        "dsl": dsl,
     });
-    if let Some(cond) = condition {
-        body["condition"] = cond;
+    if let Some(n) = name {
+        body["name"] = json!(n);
     }
 
     let data = client.post("/rules", &body).await?;
@@ -43,34 +39,26 @@ pub async fn create_rule(
         r#type: "rule".to_string(),
         action: "create".to_string(),
         entity_id: rule_id.clone(),
-        entity_name: Some(name.to_string()),
+        entity_name: name.map(|s| s.to_string()),
         undo_command: format!("neomind rule delete {}", rule_id),
     };
 
     Ok(CliResponse::success_with_meta(data, "Rule created", meta))
 }
 
-/// Update rule
+/// Update rule via DSL
 pub async fn update_rule(
     client: &ApiClient,
     id: &str,
     name: Option<&str>,
-    trigger: Option<&str>,
-    actions: Option<serde_json::Value>,
-    condition: Option<serde_json::Value>,
+    dsl: Option<&str>,
 ) -> Result<CliResponse> {
     let mut body = json!({});
     if let Some(n) = name {
         body["name"] = json!(n);
     }
-    if let Some(t) = trigger {
-        body["trigger"] = json!(t);
-    }
-    if let Some(a) = actions {
-        body["actions"] = a;
-    }
-    if let Some(c) = condition {
-        body["condition"] = c;
+    if let Some(d) = dsl {
+        body["dsl"] = json!(d);
     }
 
     let data = client.put(&format!("/rules/{}", id), &body).await?;

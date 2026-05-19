@@ -103,8 +103,13 @@ impl Skill {
         if self.body.len() <= budget_chars {
             self.body.clone()
         } else {
-            // Find a natural break point (double newline)
-            let truncated = &self.body[..budget_chars];
+            // Find correct UTF-8 byte boundary for budget_chars characters
+            let byte_cutoff = self.body
+                .char_indices()
+                .nth(budget_chars)
+                .map(|(i, _)| i)
+                .unwrap_or(self.body.len());
+            let truncated = &self.body[..byte_cutoff];
             if let Some(pos) = truncated.rfind("\n\n") {
                 self.body[..pos].to_string()
             } else {
@@ -137,8 +142,10 @@ impl TokenBudgetConfig {
             400
         } else if context_size <= 8000 {
             800
+        } else if context_size <= 16000 {
+            4000
         } else {
-            1500
+            8000
         };
         Self { max_tokens }
     }

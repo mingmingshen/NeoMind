@@ -36,6 +36,16 @@ pub struct DashboardLayout {
     pub breakpoints: LayoutBreakpoints,
 }
 
+impl Default for DashboardLayout {
+    fn default() -> Self {
+        Self {
+            columns: 12,
+            rows: RowsValue::String("auto".to_string()),
+            breakpoints: LayoutBreakpoints::default(),
+        }
+    }
+}
+
 /// Rows value - can be "auto" string or a number
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -50,6 +60,12 @@ pub struct LayoutBreakpoints {
     pub md: u32,
     pub sm: u32,
     pub xs: u32,
+}
+
+impl Default for LayoutBreakpoints {
+    fn default() -> Self {
+        Self { lg: 1200, md: 996, sm: 768, xs: 480 }
+    }
 }
 
 /// Component position on the grid
@@ -131,7 +147,9 @@ pub struct Dashboard {
 #[derive(Debug, Deserialize)]
 pub struct CreateDashboardRequest {
     pub name: String,
+    #[serde(default)]
     pub layout: DashboardLayout,
+    #[serde(default)]
     pub components: Vec<CreateDashboardComponent>,
 }
 

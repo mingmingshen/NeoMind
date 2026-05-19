@@ -35,71 +35,6 @@ use crate::server::state::{
 #[cfg(feature = "embedded-broker")]
 use neomind_devices::EmbeddedBroker;
 
-/// Implementation of AgentInvoker that delegates to AiAgentManager.
-struct AgentInvokerImpl {
-    manager: AgentManager,
-}
-
-#[async_trait::async_trait]
-impl neomind_agent::toolkit::aggregated::AgentInvoker for AgentInvokerImpl {
-    async fn invoke_agent(
-        &self,
-        agent_id: &str,
-        input: Option<neomind_agent::AgentInput>,
-    ) -> std::result::Result<neomind_agent::toolkit::aggregated::AgentInvokeResult, String> {
-        let summary = self
-            .manager
-            .execute_agent_now(agent_id, input)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        // Fetch execution by ID to avoid race condition under concurrent load
-        let execution = self
-            .manager
-            .executor()
-            .store()
-            .get_execution(&summary.execution_id)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let (conclusion, confidence, actions) = match &execution {
-            Some(record) => {
-                let conclusion = record.decision_process.conclusion.clone();
-                let confidence = record.decision_process.confidence as f64;
-                let actions: Vec<serde_json::Value> = record
-                    .decision_process
-                    .decisions
-                    .iter()
-                    .map(|d| {
-                        serde_json::json!({
-                            "action": d.action,
-                            "reasoning": d.rationale,
-                            "description": d.description,
-                        })
-                    })
-                    .collect();
-                (conclusion, confidence, actions)
-            }
-            None => (summary.summary.clone(), 0.0, vec![]),
-        };
-
-        Ok(neomind_agent::toolkit::aggregated::AgentInvokeResult {
-            execution_id: summary.execution_id,
-            agent_name: summary.agent_name,
-            status: if summary.has_error {
-                "Failed".to_string()
-            } else {
-                "Completed".to_string()
-            },
-            duration_ms: summary.duration_ms,
-            conclusion,
-            confidence,
-            actions,
-            error: None,
-        })
-    }
-}
-
 /// Maximum request body size (10 MB)
 pub const MAX_REQUEST_BODY_SIZE: usize = 10 * 1024 * 1024;
 
@@ -1273,69 +1208,68 @@ impl ServerState {
         }
     }
 
-    /// Initialize tool registry with real service connections.
+    /// Initialize tool registry with CLI-first design.
+    /// Domain tools (device, agent, rule, message, etc.) are handled via `neomind` CLI
+    /// commands through the shell tool. Built-in skills guide the LLM on CLI usage.
     pub async fn init_tools(&self) {
         use neomind_agent::toolkit::ToolRegistryBuilder;
         use std::sync::Arc;
 
-        // Build transform store from automation store
-        let transform_store: Option<Arc<dyn neomind_agent::toolkit::aggregated::TransformStore>> =
-            self.automation.automation_store.as_ref().map(|s| {
-                let store: Arc<dyn neomind_agent::toolkit::aggregated::TransformStore> =
-                    Arc::new((**s).clone());
-                store
-            });
-
-        // Try to initialize agent manager for the invoke action
-        let agent_invoker: Option<Arc<dyn neomind_agent::toolkit::aggregated::AgentInvoker>> =
-            match self.get_or_init_agent_manager().await {
-                Ok(manager) => Some(Arc::new(AgentInvokerImpl { manager })),
-                Err(e) => {
-                    tracing::warn!("Agent invoker not available: {}", e);
-                    None
-                }
-            };
-
-        // Build tool registry with aggregated tools (action-based design for token efficiency)
-        // This consolidates 34+ individual tools into 5 aggregated tools
-        let registry = ToolRegistryBuilder::new()
+        let mut registry = ToolRegistryBuilder::new()
             // Extension registry for scanning extension-provided tools
             .with_extension_registry(self.extensions.registry.clone())
-            // Aggregated tools with full dependencies including message_manager
-            .with_aggregated_tools_full(
-                self.devices.service.clone(),
-                self.devices.telemetry.clone(),
-                self.agents.agent_store.clone(),
-                agent_invoker,
-                self.automation.rule_engine.clone(),
-                None,                                               // rule_history
-                Some(self.core.message_manager.clone()), // message_manager for alert tool
-                transform_store,                         // transform store for transform tool
-                Some(self.agents.session_manager.skill_registry()), // skill registry
-                Some(self.data_dir.clone()),             // data_dir for skill persistence
-                Some(self.agents.ai_metrics_registry.clone()), // ai_metrics_registry
-                self.core.event_bus.clone(),             // event_bus for AI metric events
-            )
-            // Shell tool for system command execution (enabled by default for edge scenarios)
+            // Shell tool — CLI-first: domain operations via `neomind` commands
             .with_shell_tool(Some(neomind_agent::toolkit::ShellConfig {
                 enabled: true,
                 timeout_secs: 30,
                 max_output_chars: 10000,
-                internal_cli_execution: false,
+                internal_cli_execution: true,
             }))
-            // Scan extensions and register their tools
+            // Scan extensions and register their tools (dynamic, keep)
             .with_extensions_scanned()
             .await
             .build();
+
+        // Register standalone tools that don't map to CLI commands
+        // Session search — searches conversation history
+        let session_store = self.agents.session_manager.session_store();
+        registry.register(Arc::new(
+            neomind_agent::toolkit::SessionSearchTool::new(session_store),
+        ));
+
+        // Skill tool — manages skill CRUD (not CLI-replaceable)
+        let skill_registry = self.agents.session_manager.skill_registry();
+        {
+            let tool = neomind_agent::toolkit::skill_tool::SkillTool::with_data_dir(
+                skill_registry.clone(),
+                self.data_dir.clone(),
+            );
+            registry.register(Arc::new(tool));
+        }
+
+        // AI metric tool — collects metrics into time-series storage
+        {
+            let storage = self.devices.telemetry.clone();
+            let ai_registry = self.agents.ai_metrics_registry.clone();
+            let mut ai_tool = neomind_agent::toolkit::ai_metric::AiMetricTool::new(
+                storage,
+                ai_registry,
+            );
+            if let Some(bus) = &self.core.event_bus {
+                ai_tool = ai_tool.with_event_bus(bus.clone());
+            }
+            registry.register(Arc::new(ai_tool));
+        }
 
         let tool_registry = Arc::new(registry);
         self.agents
             .session_manager
             .set_tool_registry(tool_registry.clone())
             .await;
+
         tracing::info!(
             category = "ai",
-            "Tool registry initialized with {} tools (aggregated + extension + API tools)",
+            "Tool registry initialized with {} tools (CLI-first + extensions + meta)",
             tool_registry.len()
         );
     }
@@ -1350,44 +1284,46 @@ impl ServerState {
         use neomind_agent::toolkit::ToolRegistryBuilder;
         use std::sync::Arc;
 
-        // Rebuild the entire registry with extensions now loaded
-
-        // Build transform store from automation store
-        let transform_store: Option<Arc<dyn neomind_agent::toolkit::aggregated::TransformStore>> =
-            self.automation.automation_store.as_ref().map(|s| {
-                let store: Arc<dyn neomind_agent::toolkit::aggregated::TransformStore> =
-                    Arc::new((**s).clone());
-                store
-            });
-
-        let registry = ToolRegistryBuilder::new()
+        // Rebuild the registry with extensions now loaded
+        let mut registry = ToolRegistryBuilder::new()
             .with_extension_registry(self.extensions.registry.clone())
-            .with_aggregated_tools_full(
-                self.devices.service.clone(),
-                self.devices.telemetry.clone(),
-                self.agents.agent_store.clone(),
-                self.get_or_init_agent_manager().await.ok().map(|m| {
-                    Arc::new(AgentInvokerImpl { manager: m })
-                        as Arc<dyn neomind_agent::toolkit::aggregated::AgentInvoker>
-                }),
-                self.automation.rule_engine.clone(),
-                None,
-                Some(self.core.message_manager.clone()),
-                transform_store,
-                Some(self.agents.session_manager.skill_registry()),
-                Some(self.data_dir.clone()),
-                Some(self.agents.ai_metrics_registry.clone()), // ai_metrics_registry
-                self.core.event_bus.clone(),                   // event_bus for AI metric events
-            )
             .with_shell_tool(Some(neomind_agent::toolkit::ShellConfig {
                 enabled: true,
                 timeout_secs: 30,
                 max_output_chars: 10000,
-                internal_cli_execution: false,
+                internal_cli_execution: true,
             }))
             .with_extensions_scanned()
             .await
             .build();
+
+        // Re-register standalone tools
+        let session_store = self.agents.session_manager.session_store();
+        registry.register(Arc::new(
+            neomind_agent::toolkit::SessionSearchTool::new(session_store),
+        ));
+
+        let skill_registry = self.agents.session_manager.skill_registry();
+        {
+            let tool = neomind_agent::toolkit::skill_tool::SkillTool::with_data_dir(
+                skill_registry.clone(),
+                self.data_dir.clone(),
+            );
+            registry.register(Arc::new(tool));
+        }
+
+        {
+            let storage = self.devices.telemetry.clone();
+            let ai_registry = self.agents.ai_metrics_registry.clone();
+            let mut ai_tool = neomind_agent::toolkit::ai_metric::AiMetricTool::new(
+                storage,
+                ai_registry,
+            );
+            if let Some(bus) = &self.core.event_bus {
+                ai_tool = ai_tool.with_event_bus(bus.clone());
+            }
+            registry.register(Arc::new(ai_tool));
+        }
 
         let tool_registry = Arc::new(registry);
         let tool_count = tool_registry.len();
@@ -1395,6 +1331,7 @@ impl ServerState {
             .session_manager
             .set_tool_registry(tool_registry)
             .await;
+
         tracing::info!(
             category = "ai",
             "Tool registry refreshed with {} tools (extensions now loaded)",

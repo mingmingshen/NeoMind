@@ -28,7 +28,11 @@ fn format_human(resp: &CliResponse) -> String {
         }
         out
     } else {
-        format!("❌ {}\n", resp.error.as_deref().unwrap_or("Unknown error"))
+        let mut out = format!("❌ {}\n", resp.error.as_deref().unwrap_or("Unknown error"));
+        if let Some(suggestion) = &resp.suggestion {
+            out.push_str(&format!("💡 Suggestion: {}\n", suggestion));
+        }
+        out
     }
 }
 
@@ -67,6 +71,21 @@ mod tests {
 
         assert!(output.contains("❌"));
         assert!(output.contains("Something failed"));
+    }
+
+    #[test]
+    fn test_format_output_human_error_with_suggestion() {
+        let response = CliResponse::error_with_suggestion(
+            "Device not found",
+            "NOT_FOUND",
+            "Run 'neomind device list' to see available devices",
+        );
+        let output = format_output(&response, OutputFormat::Human);
+
+        assert!(output.contains("❌"));
+        assert!(output.contains("Device not found"));
+        assert!(output.contains("Suggestion"));
+        assert!(output.contains("neomind device list"));
     }
 
     #[test]

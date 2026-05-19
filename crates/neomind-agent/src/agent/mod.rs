@@ -1201,75 +1201,15 @@ impl Agent {
     }
 
     /// Update tool definitions in the LLM interface.
-    /// Uses simplified tool definitions for better LLM understanding.
+    /// Uses tool definitions from the actual tool registry.
     /// Also dynamically updates the system prompt to include tool descriptions.
     pub async fn update_tool_definitions(&self) {
-        use crate::toolkit::simplified;
         use neomind_core::llm::backend::ToolDefinition as CoreToolDefinition;
 
-        // Use simplified tool definitions for LLM function calling
-        let simplified_tools = simplified::get_simplified_tools();
-        let mut core_defs: Vec<CoreToolDefinition> = simplified_tools
-            .iter()
-            .map(|tool| {
-                // Build simplified parameters schema
-                let mut properties = serde_json::Map::new();
-                let mut required = Vec::new();
-
-                for param in &tool.required {
-                    required.push(param.clone());
-
-                    // Build parameter description with enum constraint for "action"
-                    let prop = if param == "action" && !tool.actions.is_empty() {
-                        serde_json::json!({
-                            "type": "string",
-                            "description": format!("Action to perform. Options: {}", tool.actions.join(", ")),
-                            "enum": tool.actions,
-                        })
-                    } else {
-                        serde_json::json!({
-                            "type": "string",
-                            "description": param
-                        })
-                    };
-                    properties.insert(param.clone(), prop);
-                }
-                for (param, info) in &tool.optional {
-                    properties.insert(
-                        param.clone(),
-                        serde_json::json!({
-                            "type": "string",
-                            "description": info.description,
-                            "default": info.default
-                        }),
-                    );
-                }
-
-                CoreToolDefinition {
-                    name: tool.name.clone(),
-                    description: format!(
-                        "{} (别名: {})",
-                        tool.description,
-                        tool.aliases.join(", ")
-                    ),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": properties,
-                        "required": required
-                    }),
-                }
-            })
-            .collect();
-
-        // Add tools from the registry that are not already in simplified definitions
-        let simplified_names: std::collections::HashSet<String> =
-            simplified_tools.iter().map(|t| t.name.clone()).collect();
-        let mut extra_count = 0usize;
+        // Build tool definitions from the actual tool registry
+        let mut core_defs: Vec<CoreToolDefinition> = Vec::new();
 
         for tool_name in self.tools.list() {
-            if simplified_names.contains(&tool_name) {
-                continue;
-            }
             if let Some(tool) = self.tools.get(&tool_name) {
                 let def = tool.definition();
                 core_defs.push(CoreToolDefinition {
@@ -1277,7 +1217,6 @@ impl Agent {
                     description: def.description.clone(),
                     parameters: def.parameters.clone(),
                 });
-                extra_count += 1;
             }
         }
 
@@ -1285,14 +1224,12 @@ impl Agent {
         self.llm_interface.set_tool_definitions(core_defs).await;
 
         // Dynamically update system prompt with tool descriptions
-        let dynamic_prompt = self.generate_dynamic_system_prompt(&simplified_tools).await;
+        let dynamic_prompt = self.generate_dynamic_system_prompt().await;
         self.llm_interface.set_system_prompt(&dynamic_prompt).await;
 
         tracing::debug!(
-            "Updated {} tool definitions for LLM ({} core + {} extra)",
-            tool_count,
-            tool_count - extra_count,
-            extra_count
+            "Updated {} tool definitions for LLM (from registry)",
+            tool_count
         );
     }
 
@@ -1300,10 +1237,9 @@ impl Agent {
     /// This ensures the prompt always reflects the currently available tools.
     async fn generate_dynamic_system_prompt(
         &self,
-        simplified_tools: &[crate::toolkit::simplified::LlmToolDefinition],
     ) -> String {
         // Generate base prompt (static parts: system_prompt + tools)
-        let mut prompt = self.generate_base_prompt(simplified_tools);
+        let mut prompt = self.generate_base_prompt();
 
         // === 动态注入系统资源上下文 ===
         // 这确保 LLM 能够感知当前系统中的实际设备、规则和工作流
@@ -1328,38 +1264,33 @@ impl Agent {
     /// This avoids rebuilding tool descriptions on every request.
     fn generate_base_prompt(
         &self,
-        simplified_tools: &[crate::toolkit::simplified::LlmToolDefinition],
     ) -> String {
         let mut prompt = String::from(self.config.system_prompt.trim());
 
         prompt.push_str("\n\n## Available Tools (Quick Reference)\n\n");
 
-        // Concise tool reference table — detailed usage is in TOOL_STRATEGY
-        for tool in simplified_tools {
-            prompt.push_str(&format!(
-                "**{}**: {} [aliases: {}]\n",
-                tool.name,
-                tool.description,
-                tool.aliases.join(", ")
-            ));
+        // Build tool reference from the actual registry
+        let tool_names = self.tools.list();
+        let mut extension_tools: Vec<String> = Vec::new();
+
+        for tool_name in &tool_names {
+            if let Some(tool) = self.tools.get(tool_name) {
+                let def = tool.definition();
+                if tool_name.contains(':') {
+                    extension_tools.push(tool_name.clone());
+                } else {
+                    prompt.push_str(&format!("**{}**: {}\n", def.name, def.description));
+                }
+            }
         }
 
-        // Add extension tools from the tool registry
-        let extension_tools: Vec<_> = self
-            .tools
-            .list()
-            .into_iter()
-            .filter(|name| name.contains(':'))
-            .collect();
-
         if !extension_tools.is_empty() {
-            prompt.push_str("### Extension Tools\n");
+            prompt.push_str("\n### Extension Tools\n");
             prompt.push_str("These tools are provided by installed extensions. Use them when users ask about related functionality.\n\n");
             for ext_name in &extension_tools {
                 if let Some(tool) = self.tools.get(ext_name) {
                     let def = tool.definition();
                     prompt.push_str(&format!("**{}**: {}\n", def.name, def.description));
-                    // Add parameter info
                     if let Some(params) = def.parameters.get("properties") {
                         prompt.push_str("  Parameters:\n");
                         if let Some(obj) = params.as_object() {
@@ -1377,29 +1308,9 @@ impl Agent {
             }
         }
 
-        // Add usage guidance with chain instructions
-        prompt.push_str("## Tool Calling Rules\n\n");
-
-        prompt.push_str("### Device Data Query Chain\n");
-        prompt.push_str("**Quick Path** (Recommended):\n");
-        prompt.push_str("- **get_device_data(device_id='device_name')** -> Tool auto-resolves name to ID, returns all current metrics\n");
-        prompt.push_str("- **query_data(device_id='device_name', metric='actual_metric_name')** -> Query historical trends (must confirm metric name with get_device_data first)\n\n");
-
-        prompt.push_str("**Full Path** (When user asks \"what devices are there\"):\n");
-        prompt.push_str("- **device_discover** -> Show all device list\n");
-        prompt.push_str("- **get_device_data(device_id)** -> Get device detailed data\n\n");
-
-        prompt.push_str("Key Points:\n");
-        prompt.push_str("- get_device_data and query_data both support using device names directly (e.g., 'ne101', 'ne101 test')\n");
-        prompt
-            .push_str("- Do NOT skip get_device_data and call query_data directly (need to confirm metric name first)\n");
-        prompt.push_str("- query_data's metric parameter must be the actual metric name (e.g., values.battery), NOT 'battery' or 'temperature'\n\n");
-
         prompt.push_str("## Usage Guide\n");
+        prompt.push_str("- Use `shell` tool with `neomind` CLI commands for all platform operations\n");
         prompt.push_str("- Multiple tool calls can be executed in parallel for faster response\n");
-        prompt.push_str(
-            "- Device aliases and tool aliases are supported, system will auto-recognize\n",
-        );
 
         prompt
     }
@@ -3239,21 +3150,21 @@ mod tests {
     use crate::toolkit::{Result, Tool, ToolOutput};
     use serde_json::json;
 
-    /// Simple mock device_discover tool for testing
-    struct MockDeviceDiscoverTool;
+    /// Simple mock shell tool for testing (replaces individual mock tools)
+    struct MockShellTool;
     #[async_trait::async_trait]
-    impl Tool for MockDeviceDiscoverTool {
+    impl Tool for MockShellTool {
         fn name(&self) -> &str {
-            "device_discover"
+            "shell"
         }
         fn description(&self) -> &str {
-            "List all devices (mock for testing)"
+            "Execute CLI commands (mock for testing)"
         }
         fn parameters(&self) -> serde_json::Value {
-            json!({})
+            json!({"type": "object", "properties": {"command": {"type": "string"}}})
         }
         async fn execute(&self, _args: serde_json::Value) -> Result<ToolOutput> {
-            let data = json!({"devices": [{"id": "mock_device_1", "name": "模拟设备"}]});
+            let data = json!({"devices": [{"id": "mock_device_1", "name": "模拟设备"}], "count": 1});
             Ok(ToolOutput::success(data))
         }
     }
@@ -3273,25 +3184,6 @@ mod tests {
         }
         async fn execute(&self, _args: serde_json::Value) -> Result<ToolOutput> {
             let data = json!({"rules": [{"id": "mock_rule_1", "name": "Mock Rule"}]});
-            Ok(ToolOutput::success(data))
-        }
-    }
-
-    /// Simple mock query_data tool for testing
-    struct MockQueryDataTool;
-    #[async_trait::async_trait]
-    impl Tool for MockQueryDataTool {
-        fn name(&self) -> &str {
-            "query_data"
-        }
-        fn description(&self) -> &str {
-            "Query metric data (mock for testing)"
-        }
-        fn parameters(&self) -> serde_json::Value {
-            json!({"type": "object"})
-        }
-        async fn execute(&self, _args: serde_json::Value) -> Result<ToolOutput> {
-            let data = json!({"data": [{"metric": "temperature", "value": 25.5}]});
             Ok(ToolOutput::success(data))
         }
     }
@@ -3322,9 +3214,8 @@ mod tests {
         let mut registry = ToolRegistryBuilder::new().build();
 
         // Register mock tools
-        registry.register(std::sync::Arc::new(MockDeviceDiscoverTool));
+        registry.register(std::sync::Arc::new(MockShellTool));
         registry.register(std::sync::Arc::new(MockListRulesTool));
-        registry.register(std::sync::Arc::new(MockQueryDataTool));
         registry.register(std::sync::Arc::new(MockGreetTool));
 
         // Add default agent tools
@@ -3380,7 +3271,7 @@ mod tests {
         let tools = agent.available_tools();
 
         assert!(!tools.is_empty());
-        assert!(tools.contains(&"device_discover".to_string()));
+        assert!(tools.contains(&"shell".to_string()));
         assert!(tools.contains(&"list_rules".to_string()));
     }
 
@@ -3390,7 +3281,7 @@ mod tests {
         let response = agent.process("列出所有设备").await.unwrap();
 
         assert!(response.message.content.contains("设备"));
-        assert!(response.tools_used.contains(&"device_discover".to_string()));
+        assert!(response.tools_used.contains(&"shell".to_string()));
     }
 
     #[tokio::test]
@@ -3399,7 +3290,7 @@ mod tests {
         let response = agent.process("列出规则").await.unwrap();
 
         assert!(response.message.content.contains("规则"));
-        assert!(response.tools_used.contains(&"list_rules".to_string()));
+        assert!(response.tools_used.contains(&"shell".to_string()));
     }
 
     #[tokio::test]
@@ -3408,7 +3299,7 @@ mod tests {
         let response = agent.process("查询温度数据").await.unwrap();
 
         assert!(response.message.content.contains("数据"));
-        assert!(response.tools_used.contains(&"query_data".to_string()));
+        assert!(response.tools_used.contains(&"shell".to_string()));
     }
 
     #[tokio::test]

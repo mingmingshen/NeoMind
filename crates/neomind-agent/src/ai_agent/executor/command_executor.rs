@@ -258,7 +258,7 @@ impl AgentExecutor {
         // Execute the actual query if time_series_storage is available
         let query_result = if let Some(storage) = &self.time_series_storage {
             let default_secs = 24 * 3600; // 24h
-            let range_secs = crate::toolkit::aggregated::parse_time_range(time_spec)
+            let range_secs = crate::toolkit::time_utils::parse_time_range(time_spec)
                 .unwrap_or(default_secs);
             let end_time = chrono::Utc::now().timestamp();
             let start_time = end_time - range_secs;
@@ -275,7 +275,7 @@ impl AgentExecutor {
                         )
                     } else {
                         // Use adaptive compression for compact output
-                        let compressed = super::data_collector::compress_series_adaptive(
+                        let compressed = neomind_storage::compress_series_adaptive(
                             &ts_result.points,
                             device_id,
                             metric,

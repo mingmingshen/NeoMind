@@ -178,5 +178,27 @@
   },
   "suggestions": {
     "badge": "推荐"
+  },
+  "build": {
+    "view": "查看",
+    "undo": "撤销",
+    "showDetails": "详情",
+    "hideDetails": "收起",
+    "types": {
+      "device": "设备",
+      "dashboard": "仪表盘",
+      "rule": "规则",
+      "extension": "扩展",
+      "widget": "组件",
+      "transform": "转换",
+      "agent": "Agent",
+      "message": "消息"
+    },
+    "actions": {
+      "create": "已创建",
+      "update": "已更新",
+      "delete": "已删除",
+      "install": "已安装"
+    }
   }
 }

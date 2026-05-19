@@ -555,15 +555,757 @@ pub async fn list_components_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
     let store = state.frontend_component_store.clone();
-    let components = tokio::task::spawn_blocking(move || store.list_all())
+    let mut components = tokio::task::spawn_blocking(move || store.list_all())
         .await
         .map_err(|e| ErrorResponse::internal(format!("List task failed: {}", e)))?
         .map_err(|e| ErrorResponse::internal(format!("Failed to list components: {}", e)))?;
+
+    // Merge built-in components (not stored in DB, defined in RESERVED_IDS)
+    components.extend(builtin_component_list());
 
     ok(json!({
         "components": components,
         "total": components.len(),
     }))
+}
+
+/// GET `/api/frontend-components/:id`
+///
+/// Get a single component manifest by ID.
+/// Checks built-in components first, then installed community components.
+/// Protected endpoint — requires authentication.
+pub async fn get_component_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<serde_json::Value> {
+    // Check built-in components first
+    if let Some(builtin) = builtin_component_list().into_iter().find(|c| c.id == id) {
+        return ok(json!({ "component": builtin }));
+    }
+
+    // Check installed community components
+    let store = state.frontend_component_store.clone();
+    let id_clone = id.clone();
+    let manifest = tokio::task::spawn_blocking(move || store.load_manifest(&id_clone))
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("Task failed: {}", e)))?
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load component: {}", e)))?;
+
+    match manifest {
+        Some(m) => ok(json!({ "component": m })),
+        None => Err(ErrorResponse::not_found(format!(
+            "Component '{}' not found",
+            id
+        ))),
+    }
+}
+
+/// Return metadata for all built-in (static) dashboard components.
+/// These are hardcoded in the frontend and never stored in the database.
+fn builtin_component_list() -> Vec<ComponentManifest> {
+    use neomind_storage::frontend_components::SizeConstraints;
+
+    let sc = |min_w, min_h, def_w, def_h, max_w, max_h| SizeConstraints {
+        min_w,
+        min_h,
+        default_w: def_w,
+        default_h: def_h,
+        max_w,
+        max_h,
+    };
+
+    // -- Indicators --
+    let value_card = ComponentManifest {
+        id: "value-card".into(),
+        name: json!("Value Card"),
+        description: json!("Display a single value with optional unit and trend"),
+        icon: "box".into(),
+        category: "indicators".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(2, 1, 2, 2, 6, 4),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "unit": {"type": "string", "description": "Display unit (e.g. °C, %, V)"},
+                    "format": {"type": "string", "description": "Number format (e.g. .1f, .0f)"},
+                    "color": {"type": "string", "description": "Primary color"},
+                    "showTrend": {"type": "boolean", "description": "Show trend indicator"}
+                }
+            },
+            "config": {
+                "type": "object",
+                "properties": {
+                    "variant": {"type": "string", "description": "Card variant style"}
+                }
+            }
+        })),
+        default_config: Some(json!({"display": {"showTrend": true}})),
+        variants: None,
+        global_name: "value_card".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let led_indicator = ComponentManifest {
+        id: "led-indicator".into(),
+        name: json!("LED Indicator"),
+        description: json!("Binary status indicator with color states"),
+        icon: "box".into(),
+        category: "indicators".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(1, 1, 2, 1, 4, 2),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "color": {"type": "string", "description": "Primary color"},
+                    "valueMap": {"type": "object", "description": "Map data values to display states"},
+                    "defaultState": {"type": "string", "description": "Default display state"}
+                }
+            },
+            "config": {"type": "object", "properties": {}}
+        })),
+        default_config: None,
+        variants: None,
+        global_name: "led_indicator".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let sparkline = ComponentManifest {
+        id: "sparkline".into(),
+        name: json!("Sparkline"),
+        description: json!("Mini trend chart showing recent data history"),
+        icon: "box".into(),
+        category: "indicators".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(2, 1, 4, 2, 8, 4),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "color": {"type": "string", "description": "Line color"},
+                    "fill": {"type": "boolean", "description": "Fill area under the line"},
+                    "showThreshold": {"type": "boolean", "description": "Show threshold line"},
+                    "threshold": {"type": "number", "description": "Threshold value"}
+                }
+            },
+            "config": {
+                "type": "object",
+                "properties": {
+                    "curved": {"type": "boolean", "description": "Use curved line"}
+                }
+            }
+        })),
+        default_config: Some(json!({"display": {"fill": true}, "config": {"curved": true}})),
+        variants: None,
+        global_name: "sparkline".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let progress_bar = ComponentManifest {
+        id: "progress-bar".into(),
+        name: json!("Progress Bar"),
+        description: json!("Progress indicator with min/max range"),
+        icon: "box".into(),
+        category: "indicators".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(2, 1, 4, 1, 12, 2),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "color": {"type": "string", "description": "Bar color"},
+                    "max": {"type": "number", "description": "Maximum value (default 100)"},
+                    "warningThreshold": {"type": "number", "description": "Warning threshold percentage"},
+                    "dangerThreshold": {"type": "number", "description": "Danger threshold percentage"}
+                }
+            },
+            "config": {
+                "type": "object",
+                "properties": {
+                    "variant": {"type": "string", "description": "Bar variant style"}
+                }
+            }
+        })),
+        default_config: Some(json!({"display": {"max": 100}})),
+        variants: None,
+        global_name: "progress_bar".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    // -- Charts --
+    let line_chart = ComponentManifest {
+        id: "line-chart".into(),
+        name: json!("Line Chart"),
+        description: json!("Time-series line chart for telemetry data"),
+        icon: "box".into(),
+        category: "charts".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(3, 2, 6, 4, 12, 8),
+        has_data_source: true,
+        max_data_sources: Some(5),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "unit": {"type": "string", "description": "Axis unit label"},
+                    "showLegend": {"type": "boolean", "description": "Show legend"},
+                    "showGrid": {"type": "boolean", "description": "Show grid lines"},
+                    "showTooltip": {"type": "boolean", "description": "Show tooltip on hover"},
+                    "fillArea": {"type": "boolean", "description": "Fill area under lines"}
+                }
+            },
+            "config": {
+                "type": "object",
+                "properties": {
+                    "smooth": {"type": "boolean", "description": "Use smooth (curved) lines"},
+                    "timeWindow": {"type": "string", "description": "Default time window for data"},
+                    "aggregate": {"type": "string", "description": "Aggregation method (raw, avg, min, max)"}
+                }
+            }
+        })),
+        default_config: Some(json!({"display": {"showLegend": true, "showGrid": true}, "config": {"smooth": true}})),
+        variants: None,
+        global_name: "line_chart".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let area_chart = ComponentManifest {
+        id: "area-chart".into(),
+        name: json!("Area Chart"),
+        description: json!("Filled area chart for trend visualization"),
+        icon: "box".into(),
+        category: "charts".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(3, 2, 6, 4, 12, 8),
+        has_data_source: true,
+        max_data_sources: Some(5),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "unit": {"type": "string", "description": "Axis unit label"},
+                    "showLegend": {"type": "boolean", "description": "Show legend"},
+                    "showGrid": {"type": "boolean", "description": "Show grid lines"},
+                    "showTooltip": {"type": "boolean", "description": "Show tooltip on hover"},
+                    "fillArea": {"type": "boolean", "description": "Fill area under lines"}
+                }
+            },
+            "config": {
+                "type": "object",
+                "properties": {
+                    "smooth": {"type": "boolean", "description": "Use smooth (curved) lines"},
+                    "timeWindow": {"type": "string", "description": "Default time window for data"},
+                    "aggregate": {"type": "string", "description": "Aggregation method"}
+                }
+            }
+        })),
+        default_config: Some(json!({"display": {"showLegend": true, "fillArea": true}, "config": {"smooth": true}})),
+        variants: None,
+        global_name: "area_chart".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let bar_chart = ComponentManifest {
+        id: "bar-chart".into(),
+        name: json!("Bar Chart"),
+        description: json!("Bar chart for categorical or time-series data"),
+        icon: "box".into(),
+        category: "charts".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(3, 2, 6, 4, 12, 8),
+        has_data_source: true,
+        max_data_sources: Some(5),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "unit": {"type": "string", "description": "Axis unit label"},
+                    "showLegend": {"type": "boolean", "description": "Show legend"},
+                    "showGrid": {"type": "boolean", "description": "Show grid lines"},
+                    "showTooltip": {"type": "boolean", "description": "Show tooltip on hover"},
+                    "horizontal": {"type": "boolean", "description": "Horizontal bar orientation"}
+                }
+            },
+            "config": {"type": "object", "properties": {}}
+        })),
+        default_config: Some(json!({"display": {"showLegend": true, "showGrid": true}})),
+        variants: None,
+        global_name: "bar_chart".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let pie_chart = ComponentManifest {
+        id: "pie-chart".into(),
+        name: json!("Pie Chart"),
+        description: json!("Pie chart for distribution/proportion data"),
+        icon: "box".into(),
+        category: "charts".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(2, 2, 4, 4, 8, 8),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "showLabels": {"type": "boolean", "description": "Show labels on slices"},
+                    "showLegend": {"type": "boolean", "description": "Show legend"},
+                    "showTooltip": {"type": "boolean", "description": "Show tooltip on hover"},
+                    "innerRadius": {"type": "number", "description": "Inner radius for donut (0-1)"}
+                }
+            },
+            "config": {"type": "object", "properties": {}}
+        })),
+        default_config: Some(json!({"display": {"showLabels": true, "showLegend": true}})),
+        variants: None,
+        global_name: "pie_chart".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let radar_chart = ComponentManifest {
+        id: "radar-chart".into(),
+        name: json!("Radar Chart"),
+        description: json!("Radar chart for multi-dimensional data"),
+        icon: "box".into(),
+        category: "charts".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(3, 3, 4, 4, 8, 8),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "showLegend": {"type": "boolean", "description": "Show legend"},
+                    "showTooltip": {"type": "boolean", "description": "Show tooltip on hover"}
+                }
+            },
+            "config": {"type": "object", "properties": {}}
+        })),
+        default_config: None,
+        variants: None,
+        global_name: "radar_chart".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    // -- Controls --
+    let toggle_switch = ComponentManifest {
+        id: "toggle-switch".into(),
+        name: json!("Toggle Switch"),
+        description: json!("On/off switch for device control"),
+        icon: "box".into(),
+        category: "controls".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(1, 1, 2, 1, 4, 2),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: true,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string", "description": "Switch label text"}
+                }
+            },
+            "config": {"type": "object", "properties": {}}
+        })),
+        default_config: None,
+        variants: None,
+        global_name: "toggle_switch".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    // -- Display --
+    let markdown_display = ComponentManifest {
+        id: "markdown-display".into(),
+        name: json!("Markdown Display"),
+        description: json!("Render markdown content in dashboard"),
+        icon: "box".into(),
+        category: "display".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(2, 2, 4, 3, 12, 8),
+        has_data_source: false,
+        max_data_sources: Some(0),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {"type": "object", "properties": {}},
+            "config": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "Markdown content to render"}
+                }
+            }
+        })),
+        default_config: Some(json!({"config": {"content": "# Title\n\nContent here"}})),
+        variants: None,
+        global_name: "markdown_display".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let image_display = ComponentManifest {
+        id: "image-display".into(),
+        name: json!("Image Display"),
+        description: json!("Display images from URL or data source"),
+        icon: "box".into(),
+        category: "display".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(2, 2, 4, 3, 12, 8),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "fit": {"type": "string", "description": "Image fit mode (cover, contain, fill)"},
+                    "caption": {"type": "string", "description": "Image caption text"}
+                }
+            },
+            "config": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Static image URL"}
+                }
+            }
+        })),
+        default_config: None,
+        variants: None,
+        global_name: "image_display".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let image_history = ComponentManifest {
+        id: "image-history".into(),
+        name: json!("Image History"),
+        description: json!("Browse historical images with timeline"),
+        icon: "box".into(),
+        category: "display".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(3, 3, 6, 5, 12, 8),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "fit": {"type": "string", "description": "Image fit mode"},
+                    "showTimestamp": {"type": "boolean", "description": "Show timestamp on images"}
+                }
+            },
+            "config": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "number", "description": "Max images to display"},
+                    "timeRange": {"type": "string", "description": "Time range for history"}
+                }
+            }
+        })),
+        default_config: None,
+        variants: None,
+        global_name: "image_history".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let web_display = ComponentManifest {
+        id: "web-display".into(),
+        name: json!("Web Display"),
+        description: json!("Embed external web pages in dashboard"),
+        icon: "box".into(),
+        category: "display".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(3, 2, 6, 4, 12, 8),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "sandbox": {"type": "string", "description": "Sandbox restrictions for iframe"},
+                    "allowFullscreen": {"type": "boolean", "description": "Allow fullscreen mode"}
+                }
+            },
+            "config": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to embed"}
+                }
+            }
+        })),
+        default_config: None,
+        variants: None,
+        global_name: "web_display".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    // -- Spatial --
+    let map_display = ComponentManifest {
+        id: "map-display".into(),
+        name: json!("Map Display"),
+        description: json!("Display locations on an interactive map"),
+        icon: "box".into(),
+        category: "spatial".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(3, 3, 6, 4, 12, 8),
+        has_data_source: true,
+        max_data_sources: Some(10),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "center": {"type": "object", "description": "Map center {lat, lng}"},
+                    "zoom": {"type": "number", "description": "Initial zoom level"},
+                    "markerColor": {"type": "string", "description": "Default marker color"}
+                }
+            },
+            "config": {"type": "object", "properties": {}}
+        })),
+        default_config: None,
+        variants: None,
+        global_name: "map_display".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let video_display = ComponentManifest {
+        id: "video-display".into(),
+        name: json!("Video Display"),
+        description: json!("Display live video or RTSP stream"),
+        icon: "box".into(),
+        category: "spatial".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(3, 2, 6, 4, 12, 8),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "description": "Video source type (rtsp, hls, webrtc)"},
+                    "autoplay": {"type": "boolean", "description": "Auto-play video"},
+                    "muted": {"type": "boolean", "description": "Mute audio"},
+                    "controls": {"type": "boolean", "description": "Show video controls"}
+                }
+            },
+            "config": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Video stream URL"}
+                }
+            }
+        })),
+        default_config: None,
+        variants: None,
+        global_name: "video_display".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let custom_layer = ComponentManifest {
+        id: "custom-layer".into(),
+        name: json!("Custom Layer"),
+        description: json!("Custom overlay layer with icons and text"),
+        icon: "box".into(),
+        category: "spatial".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(3, 3, 6, 4, 12, 8),
+        has_data_source: true,
+        max_data_sources: Some(20),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {
+                "type": "object",
+                "properties": {
+                    "backgroundType": {"type": "string", "description": "Background type (image, color, map)"},
+                    "gridSize": {"type": "number", "description": "Grid cell size in pixels"}
+                }
+            },
+            "config": {"type": "object", "properties": {}}
+        })),
+        default_config: None,
+        variants: None,
+        global_name: "custom_layer".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    // -- Business --
+    let agent_monitor_widget = ComponentManifest {
+        id: "agent-monitor-widget".into(),
+        name: json!("Agent Monitor"),
+        description: json!("AI agent activity monitor with conversation view"),
+        icon: "box".into(),
+        category: "business".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(3, 3, 6, 5, 12, 8),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: false,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {"type": "object", "properties": {}},
+            "config": {"type": "object", "properties": {}}
+        })),
+        default_config: None,
+        variants: None,
+        global_name: "agent_monitor_widget".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    let ai_analyst = ComponentManifest {
+        id: "ai-analyst".into(),
+        name: json!("AI Analyst"),
+        description: json!("AI-powered data analysis and insights"),
+        icon: "box".into(),
+        category: "business".into(),
+        version: "1.0.0".into(),
+        author: Some("NeoMind".into()),
+        size_constraints: sc(3, 3, 4, 5, 12, 8),
+        has_data_source: true,
+        max_data_sources: Some(1),
+        has_display_config: true,
+        has_actions: false,
+        has_device_binding: false,
+        device_type_filter: vec![],
+        config_schema: Some(json!({
+            "display": {"type": "object", "properties": {}},
+            "config": {"type": "object", "properties": {}}
+        })),
+        default_config: None,
+        variants: None,
+        global_name: "ai_analyst".into(),
+        export_name: None,
+        installed_at: 0,
+    };
+
+    vec![
+        value_card,
+        led_indicator,
+        sparkline,
+        progress_bar,
+        line_chart,
+        area_chart,
+        bar_chart,
+        pie_chart,
+        radar_chart,
+        toggle_switch,
+        markdown_display,
+        image_display,
+        image_history,
+        web_display,
+        map_display,
+        video_display,
+        custom_layer,
+        agent_monitor_widget,
+        ai_analyst,
+    ]
 }
 
 /// GET `/api/frontend-components/:id/bundle`

@@ -1,4 +1,5 @@
 pub mod api_client;
+pub mod auto_auth;
 pub mod output;
 pub mod types;
 

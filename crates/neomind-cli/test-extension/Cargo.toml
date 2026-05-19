@@ -1,0 +1,15 @@
+[package]
+name = "neomind_test_extension"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+neomind-extension-sdk = "0.6.3"
+async-trait = "0.1"
+serde_json = "1.0"
+tokio = { version = "1", features = ["rt-multi-thread", "sync"] }

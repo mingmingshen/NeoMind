@@ -23,6 +23,121 @@ use super::types::{
 use crate::error::{NeoMindError, Result};
 use crate::llm::LlmInterface;
 
+// ---------------------------------------------------------------------------
+// "List-only dead end" detection helpers
+// ---------------------------------------------------------------------------
+
+/// Action verbs (in Chinese and English) that indicate the user wants a mutation,
+/// not just a query. When the original user message contains these but all executed
+/// tool calls were read-only (list/get/latest/history), we detect a "list-only dead end"
+/// and inject a forced continuation prompt.
+const ACTION_VERBS: &[&str] = &[
+    // Chinese
+    "创建", "新建", "删除", "控制", "启用", "禁用", "启动", "停止", "更新", "修改",
+    "开启", "关闭", "打开", "发送", "写入", "分享", "安装", "卸载", "移除",
+    "批量启用", "批量删除", "批量创建", "全部启动",
+    // English
+    "create", "delete", "control", "enable", "disable", "start", "stop",
+    "update", "turn on", "turn off", "switch", "send", "write", "share",
+    "install", "uninstall", "remove",
+];
+
+/// Check if the user message requests a mutation/action (not just a query).
+fn user_message_requires_action(msg: &str) -> bool {
+    let msg_lower = msg.to_lowercase();
+    ACTION_VERBS.iter().any(|verb| msg_lower.contains(verb))
+}
+
+/// Check if ALL executed tool calls so far were read-only (list/get/query).
+/// Takes the actual shell command strings (not tool names) for accurate detection.
+/// Returns true if no mutation command was found in any tool call.
+fn all_tools_were_read_only(executed_commands: &[&str], _all_results: &[(String, String)]) -> bool {
+    // Mutation command patterns — if ANY of these appear, it's NOT read-only
+    const MUTATION_COMMANDS: &[&str] = &[
+        " create", " delete", " update", " control", " enable", " disable",
+        " write-metric", " send-message", " share", " install ", " uninstall ",
+        " control ", " send ",
+    ];
+
+    // If no commands were executed, we can't determine — assume not read-only
+    if executed_commands.is_empty() {
+        return false;
+    }
+
+    for cmd in executed_commands {
+        let cmd_lower = cmd.to_lowercase();
+        // Check if this command is a mutation
+        let is_mutation = MUTATION_COMMANDS.iter().any(|m| cmd_lower.contains(m));
+        if is_mutation {
+            return false;
+        }
+    }
+
+    // All commands were read-only (list/get/latest/history/etc.)
+    true
+}
+
+/// Extract the domain and expected action from the user message for the forced prompt.
+fn extract_action_hint(msg: &str) -> String {
+    let msg_lower = msg.to_lowercase();
+
+    // Domain detection
+    let domain = if msg_lower.contains("规则") || msg_lower.contains("rule") {
+        "rule"
+    } else if msg_lower.contains("agent") || msg_lower.contains("代理") || msg_lower.contains("智能体") {
+        "agent"
+    } else if msg_lower.contains("设备") || msg_lower.contains("device") || msg_lower.contains("sensor") {
+        "device"
+    } else if msg_lower.contains("仪表盘") || msg_lower.contains("仪表板") || msg_lower.contains("dashboard") || msg_lower.contains("面板") {
+        "dashboard"
+    } else if msg_lower.contains("转换") || msg_lower.contains("transform") {
+        "transform"
+    } else if msg_lower.contains("组件") || msg_lower.contains("widget") || msg_lower.contains("小部件") {
+        "widget"
+    } else if msg_lower.contains("扩展") || msg_lower.contains("extension") || msg_lower.contains("插件") {
+        "extension"
+    } else if msg_lower.contains("消息") || msg_lower.contains("message") || msg_lower.contains("通知") {
+        "message"
+    } else {
+        ""
+    };
+
+    // Action detection
+    let action = if msg_lower.contains("创建") || msg_lower.contains("create") || msg_lower.contains("新建") {
+        "create"
+    } else if msg_lower.contains("删除") || msg_lower.contains("delete") || msg_lower.contains("移除") {
+        "delete"
+    } else if msg_lower.contains("控制") || msg_lower.contains("control") || msg_lower.contains("打开") || msg_lower.contains("关闭") || msg_lower.contains("开启") {
+        "control"
+    } else if msg_lower.contains("启用") || msg_lower.contains("enable") || msg_lower.contains("启动") || msg_lower.contains("start") {
+        "enable/start"
+    } else if msg_lower.contains("禁用") || msg_lower.contains("disable") || msg_lower.contains("停止") || msg_lower.contains("stop") {
+        "disable/stop"
+    } else if msg_lower.contains("更新") || msg_lower.contains("update") || msg_lower.contains("修改") {
+        "update"
+    } else if msg_lower.contains("发送") || msg_lower.contains("send") || msg_lower.contains("写入") || msg_lower.contains("write") {
+        "send/write"
+    } else if msg_lower.contains("安装") || msg_lower.contains("install") {
+        "install"
+    } else if msg_lower.contains("卸载") || msg_lower.contains("uninstall") {
+        "uninstall"
+    } else if msg_lower.contains("分享") || msg_lower.contains("share") {
+        "share"
+    } else {
+        ""
+    };
+
+    if domain.is_empty() && action.is_empty() {
+        String::new()
+    } else if domain.is_empty() {
+        format!("the {} action", action)
+    } else if action.is_empty() {
+        format!("neomind {}", domain)
+    } else {
+        format!("neomind {} {}", domain, action)
+    }
+}
+
 // Type aliases to reduce complexity
 pub type SharedLlm = Arc<RwLock<LlmInterface>>;
 pub type ToolResultStream = Pin<Box<dyn Stream<Item = (String, String)> + Send>>;
@@ -257,20 +372,42 @@ fn detect_json_tool_calls(buffer: &str) -> Option<(usize, String, String)> {
     // Find the first '[' that might start a JSON array
     let start = buffer.find('[')?;
 
-    // Find the matching closing ']' by counting brackets
-    let mut bracket_count = 0;
+    // Find the matching closing ']' while properly handling:
+    // 1. String literals (skip brackets inside "...")
+    // 2. Escape sequences (skip escaped characters like \")
+    let chars: Vec<char> = buffer[start..].chars().collect();
+    let mut bracket_count = 0isize;
+    let mut in_string = false;
     let mut end = None;
+    let mut i = 0;
 
-    for (i, c) in buffer[start..].char_indices() {
-        if c == '[' {
-            bracket_count += 1;
-        } else if c == ']' {
-            bracket_count -= 1;
-            if bracket_count == 0 {
-                end = Some(start + i + 1);
-                break;
+    while i < chars.len() {
+        let c = chars[i];
+        if in_string {
+            if c == '\\' {
+                // Skip escaped character
+                i += 2;
+                continue;
+            } else if c == '"' {
+                in_string = false;
+            }
+        } else {
+            match c {
+                '"' => in_string = true,
+                '[' => bracket_count += 1,
+                ']' => {
+                    bracket_count -= 1;
+                    if bracket_count == 0 {
+                        // Calculate byte offset from char index
+                        let byte_offset: usize = chars[..=i].iter().map(|c| c.len_utf8()).sum();
+                        end = Some(start + byte_offset);
+                        break;
+                    }
+                }
+                _ => {}
             }
         }
+        i += 1;
     }
 
     let end = end?;
@@ -1735,6 +1872,8 @@ pub async fn process_stream_events_with_safeguards(
 
         // === SAFEGUARD: Track recently executed tools for multi-round context ===
         let mut recently_executed_tools: VecDeque<String> = VecDeque::new();
+        // Track actual shell command strings (for list-only dead end detection)
+        let mut recently_executed_commands: VecDeque<String> = VecDeque::new();
         // Track tool signatures to detect consecutive duplicate rounds
         let mut prev_round_signatures: Vec<Vec<String>> = Vec::new();
         let mut prev_round_results: Vec<(String, String)> = Vec::new();
@@ -1753,6 +1892,10 @@ pub async fn process_stream_events_with_safeguards(
         let mut round_contents_map: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         // Accumulate ALL rounds' thinking for the message's thinking field
         let mut all_rounds_thinking = String::new();
+
+        // Track whether an incomplete tool call JSON was suppressed
+        // (LLM stopped mid-JSON, e.g. hit backend token limit)
+        let mut incomplete_tool_json = false;
 
         // === INTENT & PLAN VISUALIZATION ===
         // Send intent and plan events first to show user what's happening
@@ -1792,39 +1935,102 @@ pub async fn process_stream_events_with_safeguards(
                         tool_iteration_count + 1
                     )
                 } else {
-                    let executed_summary = recently_executed.iter()
-                        .map(|s| format!("- {}", s))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    let mut msg = format!(
-                        "Round {} of processing.\n\n\
-                        Previously executed tools (results are in context above):\n{}\n\n\
-                        STOP AND THINK: Do you need MORE tools, or can you answer from the results above?\n\
-                        - If tools above already returned the data you need → give the final response NOW. Do NOT call them again.\n\
-                        - If you need different tools → call them in ONE batch using JSON array: [{{\"name\":\"tool\",\"arguments\":{{...}}}}]\n\
-                        - NEVER call the same tool with the same arguments — results are already in context.",
-                        tool_iteration_count + 1,
-                        executed_summary
-                    );
-                    // Inject duplicate warning so the LLM knows it's repeating
-                    if consecutive_duplicate_rounds > 0 {
-                        let prev_results_summary: Vec<String> = prev_round_results.iter()
-                            .take(3)
-                            .map(|(name, result)| format!("- {}: {}", name, result.chars().take(200).collect::<String>()))
-                            .collect();
+                    let executed_summary = if recently_executed_commands.is_empty() {
+                        recently_executed.iter()
+                            .map(|s| format!("- {}", s))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    } else {
+                        recently_executed_commands.iter()
+                            .map(|s| format!("- {}", s))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    };
+
+                    // === "LIST-ONLY DEAD END" DETECTION ===
+                    // If the user asked for an action (create/delete/control/enable/etc)
+                    // but all executed tools were read-only (list/get/latest/history),
+                    // inject a FORCED continuation prompt to push the LLM to complete the task.
+                    let commands_ref: Vec<&str> = recently_executed_commands.iter().map(|s| s.as_str()).collect();
+                    let list_only_dead_end = user_message_requires_action(&user_message)
+                        && all_tools_were_read_only(&commands_ref, &all_round_tool_results);
+
+                    if list_only_dead_end {
+                        let action_hint = extract_action_hint(&user_message);
+                        tracing::warn!(
+                            "List-only dead end detected! User wants action '{}' but only list/query tools were called. Injecting forced continuation.",
+                            action_hint
+                        );
+
+                        let mut msg = format!(
+                            "⚠️ CRITICAL: The user asked you to perform an ACTION, but you ONLY ran list/query commands.\n\
+                            You MUST now execute the actual action command.\n\n\
+                            Previously executed (read-only):\n{}\n\n",
+                            executed_summary
+                        );
+
+                        if !action_hint.is_empty() {
+                            msg.push_str(&format!(
+                                "The user's original request requires: {}\n\
+                                You MUST output a tool call NOW to complete this action.\n\
+                                Use the IDs/data from the list results above to construct the command.\n\n",
+                                action_hint
+                            ));
+                        }
+
                         msg.push_str(&format!(
-                            "\n\n⚠️ DUPLICATE WARNING: You have called the same tool with the same arguments {} time(s) already. \
-                            The previous results were:\n{}\n\n\
-                            IMPORTANT: Do NOT repeat the same call. Either:\n\
-                            1. Use DIFFERENT arguments if the previous ones were wrong, OR\n\
-                            2. Give your final text response based on the results above, OR\n\
-                            3. Ask the user for clarification.\n\
-                            If you repeat the same call again, the system will force-stop and generate a response without tools.",
-                            consecutive_duplicate_rounds,
-                            prev_results_summary.join("\n")
+                            "Examples of what you MUST do next:\n\
+                            - If user said '创建规则' → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind rule create --dsl 'RULE ...'\"}}}}]\n\
+                            - If user said '启动Agent' → use agent ID from list results → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind agent control <ID> --status active\"}}}}]\n\
+                            - If user said '删除规则' → use rule ID from list results → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind rule delete <ID>\"}}}}]\n\
+                            - If user said '控制设备' → use device ID from list results → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind device control <ID> --command <CMD>\"}}}}]\n\
+                            - If user said '创建转换' → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind transform create --name '...' --scope global --code '...'\"}}}}]\n\
+                            - If user said '创建仪表盘' → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind dashboard create --name '...'\"}}}}]\n\
+                            - If user said '启用/禁用' → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind <domain> enable/disable <ID>\"}}}}]\n\n\
+                            DO NOT output text. DO NOT summarize the list results. DO NOT say 'I found the ...'.\n\
+                            OUTPUT A TOOL CALL JSON ARRAY NOW to execute the action."
                         ));
+
+                        // Inject duplicate warning on top of the list-only prompt
+                        if consecutive_duplicate_rounds > 0 {
+                            msg.push_str(&format!(
+                                "\n\n⚠️ DUPLICATE WARNING: {} consecutive duplicate rounds. Do NOT repeat previous calls.",
+                                consecutive_duplicate_rounds
+                            ));
+                        }
+                        msg
+                    } else {
+                        // Normal context message — no list-only dead end detected
+                        let mut msg = format!(
+                            "Round {} of processing.\n\n\
+                            Previously executed tools (results are in context above):\n{}\n\n\
+                            STOP AND THINK: Do you need MORE tools, or can you answer from the results above?\n\
+                            - If tools above already returned the data you need → give the final response NOW. Do NOT call them again.\n\
+                            - If you need different tools → call them in ONE batch using JSON array: [{{\"name\":\"tool\",\"arguments\":{{...}}}}]\n\
+                            - NEVER call the same tool with the same arguments — results are already in context.",
+                            tool_iteration_count + 1,
+                            executed_summary
+                        );
+                        // Inject duplicate warning so the LLM knows it's repeating
+                        if consecutive_duplicate_rounds > 0 {
+                            let prev_results_summary: Vec<String> = prev_round_results.iter()
+                                .take(3)
+                                .map(|(name, result)| format!("- {}: {}", name, result.chars().take(200).collect::<String>()))
+                                .collect();
+                            msg.push_str(&format!(
+                                "\n\n⚠️ DUPLICATE WARNING: You have called the same tool with the same arguments {} time(s) already. \
+                                The previous results were:\n{}\n\n\
+                                IMPORTANT: Do NOT repeat the same call. Either:\n\
+                                1. Use DIFFERENT arguments if the previous ones were wrong, OR\n\
+                                2. Give your final text response based on the results above, OR\n\
+                                3. Ask the user for clarification.\n\
+                                If you repeat the same call again, the system will force-stop and generate a response without tools.",
+                                consecutive_duplicate_rounds,
+                                prev_results_summary.join("\n")
+                            ));
+                        }
+                        msg
                     }
-                    msg
                 };
 
                 tracing::debug!("Multi-round context: {}", context_msg);
@@ -1855,7 +2061,54 @@ pub async fn process_stream_events_with_safeguards(
                     Ok(s) => s,
                     Err(e) => {
                         tracing::error!("Round {} LLM call failed: {}", tool_iteration_count + 1, e);
-                        yield AgentEvent::error(format!("Tool call failed: {}", e));
+
+                        // Instead of just erroring out, try to summarize what we have so far.
+                        // This gives the user a meaningful response instead of a blank cutoff.
+                        if !all_round_tool_results.is_empty() {
+                            let deduped_results = deduplicate_tool_results(&all_round_tool_results);
+                            let has_errors = deduped_results.iter().any(|(_, result)| {
+                                let lower = result.to_lowercase();
+                                lower.contains("error") || lower.contains("failed") || lower.contains("invalid")
+                            });
+
+                            let fallback_prompt = if has_errors {
+                                "The tool calls above encountered errors and the LLM failed to generate a follow-up response. \
+                                Summarize what was attempted and explain the errors to the user in plain language. \
+                                Suggest what the user can do next. Do NOT output any tool calls."
+                            } else {
+                                "The tool calls above completed but the LLM failed to generate a follow-up response. \
+                                Summarize the results for the user. Do NOT output any tool calls."
+                            };
+
+                            let summary_history: Vec<neomind_core::Message> = {
+                                let state_guard = internal_state.read().await;
+                                let compacted = super::compact_tool_results(&state_guard.memory, 2);
+                                compacted.iter().map(|msg| msg.to_core()).collect()
+                            };
+
+                            let summary_result = llm_interface.chat_stream_summary(
+                                fallback_prompt,
+                                &summary_history,
+                            ).await;
+
+                            match summary_result {
+                                Ok(s) => {
+                                    let mut pin = Box::pin(s);
+                                    while let Some(chunk) = pin.next().await {
+                                        match chunk {
+                                            Ok((text, _)) => { yield AgentEvent::content(text); }
+                                            Err(_) => break,
+                                        }
+                                    }
+                                }
+                                Err(se) => {
+                                    tracing::error!("Fallback summary also failed: {}", se);
+                                    yield AgentEvent::error(format!("Processing failed: {}", e));
+                                }
+                            }
+                        } else {
+                            yield AgentEvent::error(format!("Processing failed: {}", e));
+                        }
                         break 'multi_round_loop;
                     }
                 };
@@ -2183,9 +2436,21 @@ pub async fn process_stream_events_with_safeguards(
             // and should be discarded (it will not be displayed).
             if !tool_calls_detected && yielded_up_to < buffer.len() {
                 let remaining = &buffer[yielded_up_to..];
-                if !remaining.is_empty() {
+                // Filter out incomplete tool call JSON patterns that leaked through
+                // (happens when LLM hits max_tokens mid-tool-call or stream ends abruptly)
+                let should_suppress = remaining.trim_start().starts_with('[')
+                    && (remaining.contains("\"name\"") || remaining.contains("\"arguments\""))
+                    && !remaining.trim_end().ends_with(']');
+                if !remaining.is_empty() && !should_suppress {
                     content_before_tools.push_str(remaining);
                     yield AgentEvent::content(remaining);
+                } else if should_suppress {
+                    tracing::warn!(
+                        "Detected incomplete tool call JSON ({} chars) — LLM stopped mid-output. \
+                         Will trigger summary to guide next step.",
+                        remaining.len()
+                    );
+                    incomplete_tool_json = true;
                 }
                 yielded_up_to = buffer.len();
             }
@@ -2311,6 +2576,17 @@ pub async fn process_stream_events_with_safeguards(
                             recently_executed_tools.pop_front();
                         }
                         tracing::debug!("Added '{}' to recently executed tools (now: {:?})", name, recently_executed_tools);
+                    }
+                }
+                // Track actual shell commands for list-only dead end detection
+                for tc in &tool_calls_to_execute {
+                    if tc.name == "shell" {
+                        if let Some(cmd) = tc.arguments.get("command").and_then(|v| v.as_str()) {
+                            recently_executed_commands.push_back(cmd.to_string());
+                            if recently_executed_commands.len() > 20 {
+                                recently_executed_commands.pop_front();
+                            }
+                        }
                     }
                 }
 
@@ -2475,13 +2751,23 @@ pub async fn process_stream_events_with_safeguards(
                     None
                 };
 
-                // Fallback: if LLM didn't produce content before tools, try a summary call.
+                // Fallback: try a summary call when the last round had errors,
+                // OR when LLM didn't produce content before tools.
                 // Without tool definitions, the model must output text instead of more tool calls.
-                if content_before_tools.is_empty() {
-                    let deduped_results = deduplicate_tool_results(&all_round_tool_results);
+                let deduped_results = deduplicate_tool_results(&all_round_tool_results);
+                let last_round_has_errors = deduped_results.iter().any(|(_, result)| {
+                    let lower = result.to_lowercase();
+                    lower.contains("error") || lower.contains("failed") || lower.contains("invalid")
+                        || lower.contains("unauthorized") || lower.contains("401")
+                });
+                // The preamble "Let me check..." is NOT a final answer.
+                // Force summary when tool errors exist, regardless of content_before_tools.
+                let content_is_preamble = content_before_tools.trim().len() < 200;
+
+                if content_before_tools.is_empty() || (last_round_has_errors && content_is_preamble) {
 
                     // Notify user that we're generating a final response
-                    if should_break_for_duplicate {
+                    if should_break_for_duplicate || last_round_has_errors {
                         yield AgentEvent::progress(
                             "Generating final response...".to_string(),
                             "summarizing",
@@ -2599,6 +2885,71 @@ pub async fn process_stream_events_with_safeguards(
                 } else {
                     content_before_tools.clone()
                 };
+
+                // === RECOVERY: Incomplete tool call JSON ===
+                // LLM stopped mid-tool-call (e.g. backend token limit).
+                // Use summary call to explain the situation and guide the user.
+                if incomplete_tool_json {
+                    tracing::info!(
+                        round = tool_iteration_count + 1,
+                        "Triggering summary for incomplete tool call JSON"
+                    );
+                    yield AgentEvent::progress(
+                        "Generating response from partial results...".to_string(),
+                        "summarizing",
+                        0,
+                    );
+
+                    let summary_history: Vec<neomind_core::Message> = {
+                        let state_guard = internal_state.read().await;
+                        let compacted = super::compact_tool_results(&state_guard.memory, 2);
+                        compacted.iter().map(|msg| msg.to_core()).collect()
+                    };
+
+                    let deduped_results = deduplicate_tool_results(&all_round_tool_results);
+                    let summary_prompt = if deduped_results.is_empty() {
+                        "The previous tool call was interrupted mid-execution. \
+                         Summarize what you were trying to do and ask the user \
+                         if they want you to continue. \
+                         Do NOT output any tool calls — give a direct text response."
+                    } else {
+                        "Based on the tool execution results gathered so far, \
+                         provide a concise summary of what was accomplished. \
+                         If the task is incomplete, explain what still needs to be done \
+                         and ask the user if they want to continue. \
+                         Do NOT output any tool calls — give a direct text response."
+                    };
+
+                    let summary_result = llm_interface.chat_stream_summary(
+                        summary_prompt,
+                        &summary_history,
+                    ).await;
+
+                    match summary_result {
+                        Ok(stream) => {
+                            let mut summary_content = String::new();
+                            let mut pin = Box::pin(stream);
+                            while let Some(chunk) = pin.next().await {
+                                match chunk {
+                                    Ok((text, _)) => {
+                                        summary_content.push_str(&text);
+                                        yield AgentEvent::content(text);
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Incomplete JSON summary stream error: {}", e);
+                                        break;
+                                    }
+                                }
+                            }
+                            if !summary_content.trim().is_empty() {
+                                raw_response = summary_content;
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Incomplete JSON summary call failed: {}", e);
+                        }
+                    }
+                }
 
                 // === RECOVERY: Retry without thinking when content is empty ===
                 // This handles the case where thinking models consume all generation

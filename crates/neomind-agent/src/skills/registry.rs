@@ -51,7 +51,17 @@ impl SkillRegistry {
 
     /// Load builtin skills embedded in the binary.
     fn load_builtin_skills(&mut self) {
-        let builtin_skills = vec![include_str!("../skills/builtins/system-info.md")];
+        let builtin_skills = vec![
+            include_str!("../skills/builtins/system-info.md"),
+            include_str!("../skills/builtins/device-management.md"),
+            include_str!("../skills/builtins/agent-management.md"),
+            include_str!("../skills/builtins/rule-management.md"),
+            include_str!("../skills/builtins/message-management.md"),
+            include_str!("../skills/builtins/transform-management.md"),
+            include_str!("../skills/builtins/dashboard-management.md"),
+            include_str!("../skills/builtins/extension-management.md"),
+            include_str!("../skills/builtins/component-development.md"),
+        ];
 
         let mut count = 0;
         for content in builtin_skills {

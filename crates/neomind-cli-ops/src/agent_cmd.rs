@@ -19,18 +19,44 @@ pub async fn get_agent(client: &ApiClient, id: &str) -> Result<CliResponse> {
 pub async fn create_agent(
     client: &ApiClient,
     name: &str,
+    user_prompt: &str,
     description: Option<&str>,
+    schedule_type: Option<&str>,
+    schedule_config: Option<&str>,
     llm_backend: Option<&str>,
     system_prompt: Option<&str>,
 ) -> Result<CliResponse> {
+    let schedule_type_val = schedule_type.unwrap_or("event");
+    let mut schedule = json!({
+        "schedule_type": schedule_type_val,
+    });
+    match schedule_type_val {
+        "interval" => {
+            if let Some(config) = schedule_config {
+                if let Ok(secs) = config.parse::<u64>() {
+                    schedule["interval_seconds"] = json!(secs);
+                }
+            }
+        }
+        "cron" => {
+            if let Some(config) = schedule_config {
+                schedule["cron_expression"] = json!(config);
+            }
+        }
+        _ => {}
+    }
+
     let mut body = json!({
         "name": name,
+        "user_prompt": user_prompt,
+        "schedule": schedule,
+        "execution_mode": "free",
     });
     if let Some(desc) = description {
         body["description"] = json!(desc);
     }
     if let Some(backend) = llm_backend {
-        body["llm_backend"] = json!(backend);
+        body["llm_backend_id"] = json!(backend);
     }
     if let Some(prompt) = system_prompt {
         body["system_prompt"] = json!(prompt);
@@ -62,6 +88,7 @@ pub async fn update_agent(
     description: Option<&str>,
     llm_backend: Option<&str>,
     system_prompt: Option<&str>,
+    user_prompt: Option<&str>,
 ) -> Result<CliResponse> {
     let mut body = json!({});
     if let Some(n) = name {
@@ -71,10 +98,13 @@ pub async fn update_agent(
         body["description"] = json!(desc);
     }
     if let Some(backend) = llm_backend {
-        body["llm_backend"] = json!(backend);
+        body["llm_backend_id"] = json!(backend);
     }
     if let Some(prompt) = system_prompt {
         body["system_prompt"] = json!(prompt);
+    }
+    if let Some(prompt) = user_prompt {
+        body["user_prompt"] = json!(prompt);
     }
 
     let data = client.put(&format!("/agents/{}", id), &body).await?;
@@ -143,4 +173,38 @@ pub async fn get_agent_executions(
 
     let data = client.get(&path).await?;
     Ok(CliResponse::success(data, "Agent executions retrieved"))
+}
+
+/// Get latest agent execution
+pub async fn get_latest_execution(client: &ApiClient, id: &str) -> Result<CliResponse> {
+    let path = format!("/agents/{}/executions?limit=1", id);
+    let data = client.get(&path).await?;
+    Ok(CliResponse::success(data, "Latest execution retrieved"))
+}
+
+/// Get agent conversation (user messages)
+pub async fn get_conversation(client: &ApiClient, id: &str, limit: Option<usize>) -> Result<CliResponse> {
+    let mut path = format!("/agents/{}/messages", id);
+    if let Some(l) = limit {
+        path.push_str(&format!("?limit={}", l));
+    }
+    let data = client.get(&path).await?;
+    Ok(CliResponse::success(data, "Agent conversation retrieved"))
+}
+
+/// Send message to agent
+pub async fn send_message(
+    client: &ApiClient,
+    id: &str,
+    message: &str,
+    message_type: Option<&str>,
+) -> Result<CliResponse> {
+    let mut body = json!({
+        "content": message,
+    });
+    if let Some(mt) = message_type {
+        body["type"] = json!(mt);
+    }
+    let data = client.post(&format!("/agents/{}/messages", id), &body).await?;
+    Ok(CliResponse::success(data, "Message sent"))
 }

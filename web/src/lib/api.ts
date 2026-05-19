@@ -453,11 +453,12 @@ export const api = {
   getDevices: () => fetchAPI<{ devices: Device[]; count: number }>('/devices'),
   getDevice: (id: string) => fetchAPI<Device>(`/devices/${id}`),
   getDeviceCurrent: (id: string) => fetchAPI<DeviceCurrentStateResponse>(`/devices/${id}/current`),
-  getDevicesCurrentBatch: (deviceIds: string[]) =>
+  getDevicesCurrentBatch: (deviceIds: string[], signal?: AbortSignal) =>
     fetchAPI<BatchCurrentValuesResponse>('/devices/current-batch', {
       method: 'POST',
       body: JSON.stringify({ device_ids: deviceIds }),
       skipErrorToast: true, // Skip error toast if endpoint not implemented
+      signal,
     }),
   addDevice: (req: AddDeviceRequest) =>
     fetchAPI<{ device_id: string; added: boolean }>('/devices', {

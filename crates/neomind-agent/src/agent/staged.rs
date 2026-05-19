@@ -398,9 +398,9 @@ impl ToolFilter {
 
         // Helper to derive namespace from tool name
         let derive_namespace = |name: &str| -> &str {
-            if name.starts_with("list_")
+            if name == "shell"
+                || name.starts_with("list_")
                 || name.starts_with("get_")
-                || name == "control_device"
                 || name.contains("device")
             {
                 "device"
@@ -449,8 +449,8 @@ impl ToolFilter {
                 .iter()
                 .filter(|tool| {
                     let name = tool["name"].as_str().unwrap_or("");
-                    // Include list_* tools for general queries
-                    name.starts_with("list_") || name == "query_data"
+                    // Include list_* and shell tools for general queries
+                    name.starts_with("list_") || name == "shell"
                 })
                 .cloned()
                 .collect();
@@ -468,16 +468,16 @@ impl ToolFilter {
     pub fn intent_prompt(&self, intent: &IntentResult) -> String {
         match intent.category {
             IntentCategory::Device => {
-                "用户想查询或控制设备。可用工具: list_devices, control_device, get_device_metrics。直接调用合适的工具。".to_string()
+                "用户想查询或控制设备。可用工具: shell。直接调用合适的工具。".to_string()
             }
             IntentCategory::Rule => {
-                "用户想管理自动化规则。可用工具: list_rules, create_rule, query_rule_history。直接调用合适的工具。".to_string()
+                "用户想管理自动化规则。可用工具: shell。直接调用合适的工具。".to_string()
             }
             IntentCategory::Workflow => {
-                "用户想执行工作流。可用工具: list_workflows, trigger_workflow, query_workflow_status。直接调用合适的工具。".to_string()
+                "用户想执行工作流。可用工具: shell。直接调用合适的工具。".to_string()
             }
             IntentCategory::Data => {
-                "用户想查询数据。可用工具: query_data, get_device_metrics。直接调用合适的工具。".to_string()
+                "用户想查询数据。可用工具: shell。直接调用合适的工具。".to_string()
             }
             IntentCategory::Alert => {
                 "用户想查询告警信息。可用工具: list_alerts, acknowledge_alert, get_alert_status。直接调用合适的工具。".to_string()
@@ -555,12 +555,11 @@ mod tests {
             json!({"name": "think", "namespace": "system"}),
             json!({"name": "tool_search", "namespace": "system"}),
             json!({"name": "list_devices", "namespace": "device"}),
-            json!({"name": "control_device", "namespace": "device"}),
+            json!({"name": "shell", "namespace": "device"}),
             json!({"name": "list_rules", "namespace": "rule"}),
             json!({"name": "create_rule", "namespace": "rule"}),
             json!({"name": "list_workflows", "namespace": "workflow"}),
             json!({"name": "trigger_workflow", "namespace": "workflow"}),
-            json!({"name": "query_data", "namespace": "data"}),
         ];
 
         let device_intent = IntentResult {
@@ -573,7 +572,7 @@ mod tests {
         assert!(filtered.len() <= 5);
         // Should have system tools + device tools
         assert!(filtered.iter().any(|t| t["name"] == "list_devices"));
-        assert!(filtered.iter().any(|t| t["name"] == "control_device"));
+        assert!(filtered.iter().any(|t| t["name"] == "shell"));
     }
 
     #[test]

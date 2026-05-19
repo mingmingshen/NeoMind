@@ -19,13 +19,26 @@ use crate::Error;
 /// Size constraints for a frontend component on the dashboard grid.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SizeConstraints {
+    #[serde(default = "default_min_w")]
     pub min_w: u32,
+    #[serde(default = "default_min_h")]
     pub min_h: u32,
+    #[serde(default = "default_default_w")]
     pub default_w: u32,
+    #[serde(default = "default_default_h")]
     pub default_h: u32,
+    #[serde(default = "default_max_w")]
     pub max_w: u32,
+    #[serde(default = "default_max_h")]
     pub max_h: u32,
 }
+
+fn default_min_w() -> u32 { 1 }
+fn default_min_h() -> u32 { 1 }
+fn default_default_w() -> u32 { 2 }
+fn default_default_h() -> u32 { 2 }
+fn default_max_w() -> u32 { 12 }
+fn default_max_h() -> u32 { 12 }
 
 impl Default for SizeConstraints {
     fn default() -> Self {

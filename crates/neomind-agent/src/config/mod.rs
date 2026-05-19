@@ -80,7 +80,7 @@ fn default_max_content() -> usize {
     50_000
 }
 fn default_max_tool_iterations() -> usize {
-    10
+    20
 }
 fn default_max_tools_per_request() -> usize {
     10
@@ -224,9 +224,9 @@ impl StreamingConfig {
             return Err("max_tools_per_request must be at least 1".to_string());
         }
 
-        if self.max_tool_iterations > 20 {
+        if self.max_tool_iterations > 50 {
             return Err(
-                "max_tool_iterations should not exceed 20 to prevent excessive loops".to_string(),
+                "max_tool_iterations should not exceed 50 to prevent excessive loops".to_string(),
             );
         }
 
@@ -263,7 +263,7 @@ mod tests {
         let config = StreamingConfig::default();
         assert_eq!(config.max_stream_duration_secs, 1200);
         assert_eq!(config.heartbeat_interval_secs, 30);
-        assert_eq!(config.max_tool_iterations, 10);
+        assert_eq!(config.max_tool_iterations, 20);
     }
 
     #[test]

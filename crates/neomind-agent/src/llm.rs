@@ -838,9 +838,9 @@ impl LlmInterface {
 
         // Helper to derive namespace from tool name
         let derive_namespace = |name: &str| -> &str {
-            if name.starts_with("list_")
+            if name == "shell"
+                || name.starts_with("list_")
                 || name.starts_with("get_")
-                || name == "control_device"
                 || name.contains("device")
             {
                 "device"
@@ -1015,26 +1015,25 @@ impl LlmInterface {
             }
         }
 
-        // Inject lightweight skill hints (not full content) to guide the model to use the skill tool
+        // Auto-load top matched skill guides into context
+        // Only auto-inject the BEST match (score > threshold) to avoid wasting tokens
         if let Some(msg) = user_message {
             let registry_opt = self.skill_registry.read().await.clone();
             if let Some(registry) = registry_opt {
                 let registry_guard = registry.read().await;
                 let budget = crate::skills::TokenBudgetConfig::for_context(self.max_tokens);
                 let matches = crate::skills::match_skills(&registry_guard, msg, budget);
-                // Filter out pinned skills from auto-matched hints (already injected above)
+                // Filter out pinned skills from auto-matched (already injected above)
                 let auto_matches: Vec<_> = matches
                     .into_iter()
                     .filter(|m| !pinned.contains(&m.skill_id))
                     .collect();
-                if !auto_matches.is_empty() {
-                    let names: Vec<&str> =
-                        auto_matches.iter().map(|m| m.skill_name.as_str()).collect();
-                    prompt.push_str(&format!(
-                        "\n## Skill Hints\nThis conversation may involve the following operation domains: {}. \
-                         For detailed steps and parameter formats, use the skill tool to search for relevant guides.\n",
-                        names.join(", ")
-                    ));
+                // Only inject if there's a strong match (score >= 1.0)
+                if let Some(best) = auto_matches.first() {
+                    if best.score >= 1.0 {
+                        let skill_content = crate::skills::format_skill_matches(&auto_matches[..1]);
+                        prompt.push_str(&skill_content);
+                    }
                 }
             }
         }
@@ -1245,13 +1244,16 @@ impl LlmInterface {
         );
 
         // Get effective parameters from backend instance or local config
-        let (eff_temp, eff_top_p, eff_top_k, eff_max_tokens) = self.get_effective_params().await;
+        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) = self.get_effective_params().await;
+
+        // Don't set max_tokens — let the LLM backend use its own default.
+        // Backends (Ollama, OpenAI-compatible) have their own num_predict limits.
 
         let params = neomind_core::llm::backend::GenerationParams {
             temperature: Some(eff_temp),
             top_p: Some(eff_top_p),
             top_k: Some(eff_top_k as u32),
-            max_tokens: Some(eff_max_tokens),
+            max_tokens: None,
             stop: None,
             frequency_penalty: None,
             presence_penalty: None,
@@ -1436,13 +1438,16 @@ impl LlmInterface {
         };
 
         // Get effective parameters from backend instance or local config
-        let (eff_temp, eff_top_p, eff_top_k, eff_max_tokens) = self.get_effective_params().await;
+        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) = self.get_effective_params().await;
+
+        // Don't set max_tokens — let the LLM backend use its own default.
+        // Backends (Ollama, OpenAI-compatible) have their own num_predict limits.
 
         let params = neomind_core::llm::backend::GenerationParams {
             temperature: Some(eff_temp),
             top_p: Some(eff_top_p),
             top_k: Some(eff_top_k as u32),
-            max_tokens: Some(eff_max_tokens),
+            max_tokens: None,
             stop: None,
             frequency_penalty: None,
             presence_penalty: None,
@@ -1693,13 +1698,16 @@ impl LlmInterface {
         );
 
         // Get effective parameters from backend instance or local config
-        let (eff_temp, eff_top_p, eff_top_k, eff_max_tokens) = self.get_effective_params().await;
+        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) = self.get_effective_params().await;
+
+        // Don't set max_tokens — let the LLM backend use its own default.
+        // Backends (Ollama, OpenAI-compatible) have their own num_predict limits.
 
         let params = neomind_core::llm::backend::GenerationParams {
             temperature: Some(eff_temp),
             top_p: Some(eff_top_p),
             top_k: Some(eff_top_k as u32),
-            max_tokens: Some(eff_max_tokens),
+            max_tokens: None,
             stop: None,
             frequency_penalty: None,
             presence_penalty: None,
@@ -1961,13 +1969,18 @@ impl LlmInterface {
         };
 
         // Get effective parameters from backend instance or local config
-        let (eff_temp, eff_top_p, eff_top_k, eff_max_tokens) = self.get_effective_params().await;
+        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) = self.get_effective_params().await;
+
+        // Don't set max_tokens — let the LLM backend use its own default.
+        // Setting a generation budget caused LLM to stop mid-tool-call JSON,
+        // producing incomplete output that gets silently discarded.
+        // Backends (Ollama, OpenAI-compatible) have their own num_predict limits.
 
         let params = neomind_core::llm::backend::GenerationParams {
             temperature: Some(eff_temp),
             top_p: Some(eff_top_p),
             top_k: Some(eff_top_k as u32),
-            max_tokens: Some(eff_max_tokens),
+            max_tokens: None,
             stop: None,
             frequency_penalty: None,
             presence_penalty: None,
@@ -1977,6 +1990,12 @@ impl LlmInterface {
 
         let system_msg = Message::system(&system_prompt);
         let user_msg = Message::user(&user_message);
+
+        tracing::info!(
+            max_ctx,
+            prompt_budget,
+            "Prompt budget for chat_stream_internal (max_tokens delegated to backend)"
+        );
 
         // Prepare fallback strategies for context overflow retry
         // Strategy 1: Compact fallback - keep user message + last tool round (if any)
@@ -2164,7 +2183,7 @@ impl LlmInterface {
                                     temperature: Some(eff_temp),
                                     top_p: Some(eff_top_p),
                                     top_k: Some(eff_top_k as u32),
-                                    max_tokens: Some(eff_max_tokens),
+                                    max_tokens: None,
                                     stop: None,
                                     frequency_penalty: None,
                                     presence_penalty: None,
@@ -2429,7 +2448,7 @@ mod tests {
         };
 
         let prompt = interface.get_intent_prompt(&result);
-        assert!(prompt.contains("device"));
+        assert!(prompt.contains("设备"));
     }
 
     #[tokio::test]
@@ -2445,18 +2464,13 @@ mod tests {
                 parameters: serde_json::json!({}),
             },
             neomind_core::llm::backend::ToolDefinition {
-                name: "control_device".to_string(),
-                description: "Control a device".to_string(),
+                name: "shell".to_string(),
+                description: "Execute CLI commands for device control and data queries".to_string(),
                 parameters: serde_json::json!({}),
             },
             neomind_core::llm::backend::ToolDefinition {
                 name: "list_rules".to_string(),
                 description: "List all rules".to_string(),
-                parameters: serde_json::json!({}),
-            },
-            neomind_core::llm::backend::ToolDefinition {
-                name: "query_data".to_string(),
-                description: "Query time series data".to_string(),
                 parameters: serde_json::json!({}),
             },
         ];

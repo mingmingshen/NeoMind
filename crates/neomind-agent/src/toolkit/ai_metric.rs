@@ -382,7 +382,7 @@ impl AiMetricTool {
         // Use seconds-level timestamps to match telemetry system convention.
         let now = chrono::Utc::now().timestamp();
         let start = if let Some(tr) = args["time_range"].as_str() {
-            now - super::aggregated::parse_time_range(tr).unwrap_or(86400)
+            now - super::time_utils::parse_time_range(tr).unwrap_or(86400)
         } else {
             args["start_time"]
                 .as_i64()

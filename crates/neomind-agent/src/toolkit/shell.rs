@@ -11,13 +11,9 @@
 //! a separate process. This optimization is useful for Tauri/Web environments where
 //! process spawning overhead is significant.
 //!
-//! TODO: Implement full internal execution for all neomind CLI commands.
-//! Current implementation is a placeholder that always falls back to process spawning.
-//! To complete this feature:
-//! 1. Parse CLI arguments (handle quotes, flags, values)
-//! 2. Map to appropriate cli-ops functions
-//! 3. Convert CliResponse to CommandOutput
-//! 4. Handle all command variants (device, dashboard, rule, transform, extension, widget, agent, message)
+//! Supported domains: device, dashboard, rule, extension, widget, transform, agent, message.
+//! All domains route to their respective cli-ops handler functions.
+//! Non-neomind commands fall through to process spawning.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -106,30 +102,475 @@ impl ShellTool {
             return None;
         }
 
-        // Parse the command to extract domain and action
-        // This is a simple implementation - full arg parsing would be more complex
-        let parts: Vec<&str> = command.split_whitespace().collect();
-        if parts.len() < 2 {
+        // Create an API client for internal calls
+        let api_base = std::env::var("NEOMIND_API_BASE")
+            .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+        let client = neomind_cli_ops::ApiClient::with_base_url(&api_base);
+
+        // Parse the CLI command
+        let args = match shell_words::split(command) {
+            Ok(a) => a,
+            Err(e) => {
+                return Some(Err(ToolError::Execution(format!(
+                    "Failed to parse command: {}", e
+                ))))
+            }
+        };
+
+        if args.len() < 2 {
             return None;
         }
 
-        let domain = parts[1];
-        let action = parts.get(2).map(|s| *s).unwrap_or("");
+        let domain = args[1].as_str();
+        tracing::debug!(domain = domain, "Attempting internal CLI execution");
 
-        // For now, we'll use process spawning for all commands
-        // A full implementation would:
-        // 1. Parse arguments (handle quotes, flags, values)
-        // 2. Map to the appropriate cli-ops function
-        // 3. Handle the result and convert to CommandOutput
-        //
-        // This is a placeholder for future optimization in Tauri/Web environments
-        tracing::debug!(
-            domain = domain,
-            action = action,
-            "Internal CLI execution not yet implemented, using process spawning"
-        );
+        let result = match domain {
+            "device" => Self::exec_device(&client, &args).await,
+            "dashboard" => Self::exec_dashboard(&client, &args).await,
+            "rule" => Self::exec_rule(&client, &args).await,
+            "extension" => Self::exec_extension(&client, &args).await,
+            "widget" => Self::exec_widget(&client, &args).await,
+            "transform" => Self::exec_transform(&client, &args).await,
+            "agent" => Self::exec_agent(&client, &args).await,
+            "message" => Self::exec_message(&client, &args).await,
+            _ => return None, // Unknown domain, fall through to process spawning
+        };
 
-        None
+        match result {
+            Ok(response) => {
+                let output = serde_json::to_string(&response).unwrap_or_default();
+                tracing::debug!(domain = domain, "Internal CLI execution succeeded");
+                Some(Ok(CommandOutput {
+                    exit_code: Some(if response.success { 0 } else { 1 }),
+                    stdout: output,
+                    stderr: String::new(),
+                    timed_out: false,
+                }))
+            }
+            Err(e) => {
+                tracing::warn!(domain = domain, error = %e, "Internal CLI execution failed");
+                Some(Err(ToolError::Execution(format!(
+                    "Internal CLI error: {}", e
+                ))))
+            }
+        }
+    }
+
+    /// Extract value for a flag like --name <value> from args
+    fn get_flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+        args.iter().position(|a| a == flag)
+            .and_then(|i| args.get(i + 1))
+            .map(|s| s.as_str())
+    }
+
+    /// Resolve entity ID: supports both positional (args[3]) and `--id` flag.
+    fn resolve_id(args: &[String]) -> &str {
+        Self::get_flag_value(args, "--id").unwrap_or_else(|| args.get(3).map(|s| s.as_str()).unwrap_or(""))
+    }
+
+    // ---- Domain executors ----
+
+    async fn exec_device(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        match action {
+            "list" => {
+                let device_type = Self::get_flag_value(args, "--device-type").map(|s| s.to_string());
+                let status = Self::get_flag_value(args, "--status").map(|s| s.to_string());
+                neomind_cli_ops::device::list_devices(client, device_type.as_deref(), status.as_deref()).await
+            }
+            "get" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::device::get_device(client, id).await
+            }
+            "create" => {
+                let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
+                let type_id = Self::get_flag_value(args, "--type").unwrap_or("").to_string();
+                let adapter = Self::get_flag_value(args, "--adapter").unwrap_or("mqtt").to_string();
+                let config = Self::get_flag_value(args, "--config")
+                    .map(|s| serde_json::from_str(s).unwrap_or(serde_json::json!(s)));
+                neomind_cli_ops::device::create_device(client, &name, &type_id, &adapter, config).await
+            }
+            "update" => {
+                let id = Self::resolve_id(args).to_string();
+                let name = Self::get_flag_value(args, "--name").map(|s| s.to_string());
+                let config = Self::get_flag_value(args, "--config")
+                    .map(|s| serde_json::from_str(s).unwrap_or(serde_json::json!(s)));
+                neomind_cli_ops::device::update_device(client, &id, name.as_deref(), config).await
+            }
+            "delete" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::device::delete_device(client, id).await
+            }
+            "latest" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::device::get_latest_metrics(client, id).await
+            }
+            "history" => {
+                let id = Self::resolve_id(args);
+                let metric = Self::get_flag_value(args, "--metric");
+                let time_range = Self::get_flag_value(args, "--time-range");
+                let compress = args.iter().any(|a| a == "--compress");
+                neomind_cli_ops::device::get_telemetry_history(client, id, metric, time_range, compress).await
+            }
+            "control" => {
+                let id = Self::resolve_id(args).to_string();
+                let command = Self::get_flag_value(args, "--command").unwrap_or("").to_string();
+                let params_str = Self::get_flag_value(args, "--params").unwrap_or("{}");
+                let params = serde_json::from_str(params_str).unwrap_or(serde_json::json!({}));
+                neomind_cli_ops::device::control_device(client, &id, &command, params).await
+            }
+            "types" => {
+                let sub = args.get(3).map(|s| s.as_str()).unwrap_or("");
+                match sub {
+                    "list" => neomind_cli_ops::device::list_device_types(client).await,
+                    "get" => {
+                        let type_id = args.get(4).map(|s| s.as_str()).unwrap_or("");
+                        neomind_cli_ops::device::get_device_type(client, type_id).await
+                    }
+                    "create" => {
+                        let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
+                        let metrics_str = Self::get_flag_value(args, "--metrics").unwrap_or("[]");
+                        let metrics = serde_json::from_str(metrics_str).unwrap_or(serde_json::json!([]));
+                        let commands = Self::get_flag_value(args, "--commands")
+                            .map(|s| serde_json::from_str(s).unwrap_or(serde_json::json!(null)));
+                        neomind_cli_ops::device::create_device_type(client, &name, metrics, commands).await
+                    }
+                    _ => anyhow::bail!("Unknown device types subcommand: {}", sub),
+                }
+            }
+            "write-metric" => {
+                let id = Self::resolve_id(args).to_string();
+                let metric = Self::get_flag_value(args, "--metric").unwrap_or("").to_string();
+                let value_str = Self::get_flag_value(args, "--value").unwrap_or("");
+                let value = if let Ok(n) = value_str.parse::<f64>() {
+                    serde_json::json!(n)
+                } else if let Ok(b) = value_str.parse::<bool>() {
+                    serde_json::json!(b)
+                } else {
+                    serde_json::json!(value_str)
+                };
+                let timestamp = Self::get_flag_value(args, "--timestamp").and_then(|s| s.parse::<i64>().ok());
+                neomind_cli_ops::device::write_metric(client, &id, &metric, value, timestamp).await
+            }
+            _ => anyhow::bail!("Unknown device action: {}", action),
+        }
+    }
+
+    async fn exec_dashboard(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        match action {
+            "list" => neomind_cli_ops::dashboard::list_dashboards(client).await,
+            "get" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::dashboard::get_dashboard(client, id).await
+            }
+            "create" => {
+                let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
+                let description = Self::get_flag_value(args, "--description").map(|s| s.to_string());
+                let layout = Self::get_flag_value(args, "--layout")
+                    .map(|s| serde_json::from_str(s).unwrap_or(serde_json::json!(s)));
+                neomind_cli_ops::dashboard::create_dashboard(client, &name, description.as_deref(), layout).await
+            }
+            "update" => {
+                let id = Self::resolve_id(args).to_string();
+                let name = Self::get_flag_value(args, "--name").map(|s| s.to_string());
+                let description = Self::get_flag_value(args, "--description").map(|s| s.to_string());
+                let layout = Self::get_flag_value(args, "--layout")
+                    .map(|s| serde_json::from_str(s).unwrap_or(serde_json::json!(s)));
+                let components = Self::get_flag_value(args, "--components")
+                    .map(|s| serde_json::from_str(s).unwrap_or(serde_json::json!(s)));
+                neomind_cli_ops::dashboard::update_dashboard(client, &id, name.as_deref(), description.as_deref(), layout, components).await
+            }
+            "delete" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::dashboard::delete_dashboard(client, id).await
+            }
+            "share" => {
+                let id = Self::resolve_id(args).to_string();
+                let public = args.iter().any(|a| a == "--public");
+                let expires = Self::get_flag_value(args, "--expires").map(|s| s.to_string());
+                neomind_cli_ops::dashboard::share_dashboard(client, &id, public, expires.as_deref()).await
+            }
+            _ => anyhow::bail!("Unknown dashboard action: {}", action),
+        }
+    }
+
+    async fn exec_rule(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        match action {
+            "list" => neomind_cli_ops::rule::list_rules(client).await,
+            "get" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::rule::get_rule(client, id).await
+            }
+            "create" => {
+                let name = Self::get_flag_value(args, "--name").map(|s| s.to_string());
+                let dsl = Self::get_flag_value(args, "--dsl").unwrap_or("").to_string();
+                neomind_cli_ops::rule::create_rule(client, name.as_deref(), &dsl).await
+            }
+            "update" => {
+                let id = Self::resolve_id(args).to_string();
+                let name = Self::get_flag_value(args, "--name").map(|s| s.to_string());
+                let dsl = Self::get_flag_value(args, "--dsl").map(|s| s.to_string());
+                neomind_cli_ops::rule::update_rule(client, &id, name.as_deref(), dsl.as_deref()).await
+            }
+            "delete" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::rule::delete_rule(client, id).await
+            }
+            "enable" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::rule::enable_rule(client, id).await
+            }
+            "disable" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::rule::disable_rule(client, id).await
+            }
+            "test" => {
+                let id = Self::resolve_id(args).to_string();
+                let input_str = Self::get_flag_value(args, "--input").unwrap_or("{}");
+                let input = serde_json::from_str(input_str).unwrap_or(serde_json::json!({}));
+                neomind_cli_ops::rule::test_rule(client, &id, input).await
+            }
+            "history" => {
+                let id = Self::resolve_id(args).to_string();
+                neomind_cli_ops::rule::get_rule_history(client, &id).await
+            }
+            _ => anyhow::bail!("Unknown rule action: {}", action),
+        }
+    }
+
+    async fn exec_extension(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        match action {
+            "list" => neomind_cli_ops::extension::list_extensions(client).await,
+            "get" | "info" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::extension::get_extension(client, id).await
+            }
+            "status" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::extension::get_extension_status(client, id).await
+            }
+            "logs" => {
+                let id = Self::resolve_id(args).to_string();
+                let limit = Self::get_flag_value(args, "--limit").and_then(|s| s.parse::<usize>().ok());
+                neomind_cli_ops::extension::get_extension_logs(client, &id, limit).await
+            }
+            "install" => {
+                let path = args.get(3).map(|s| s.as_str()).unwrap_or("");
+                neomind_cli_ops::extension::install_extension_file(client, path).await
+            }
+            "uninstall" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::extension::uninstall_extension(client, id).await
+            }
+            "market-list" => neomind_cli_ops::extension::list_marketplace(client).await,
+            "market-install" => {
+                let ext_id = Self::resolve_id(args).to_string();
+                let version = Self::get_flag_value(args, "--version").map(|s| s.to_string());
+                neomind_cli_ops::extension::install_extension_market(client, &ext_id, version.as_deref()).await
+            }
+            _ => anyhow::bail!("Unknown extension action: {}", action),
+        }
+    }
+
+    async fn exec_widget(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        match action {
+            "list" => neomind_cli_ops::widget::list_widgets(client).await,
+            "get" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::widget::get_widget(client, id).await
+            }
+            "bundle" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::widget::get_widget_bundle(client, id).await
+            }
+            "create" => {
+                let name = args.get(3).map(|s| s.as_str()).unwrap_or("").to_string();
+                let widget_type = Self::get_flag_value(args, "--widget-type").unwrap_or("custom").to_string();
+                let output = Self::get_flag_value(args, "--output").map(|s| s.to_string());
+                // create_widget is synchronous (file system only), wrap it
+                neomind_cli_ops::widget::create_widget(&name, &widget_type, output.as_deref())
+            }
+            "install" => {
+                let path = args.get(3).map(|s| s.as_str()).unwrap_or("");
+                neomind_cli_ops::widget::install_widget_file(client, path).await
+            }
+            "uninstall" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::widget::uninstall_widget(client, id).await
+            }
+            "market-list" => neomind_cli_ops::widget::list_marketplace_widgets(client).await,
+            "market-install" => {
+                let id = Self::resolve_id(args).to_string();
+                let version = Self::get_flag_value(args, "--version").map(|s| s.to_string());
+                neomind_cli_ops::widget::install_widget_market(client, &id, version.as_deref()).await
+            }
+            _ => anyhow::bail!("Unknown widget action: {}", action),
+        }
+    }
+
+    async fn exec_transform(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        match action {
+            "list" => neomind_cli_ops::transform::list_transforms(client).await,
+            "get" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::transform::get_transform(client, id).await
+            }
+            "create" => {
+                let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
+                let scope = Self::get_flag_value(args, "--scope").unwrap_or("global").to_string();
+                let code = Self::get_flag_value(args, "--code").unwrap_or("").to_string();
+                let output_prefix = Self::get_flag_value(args, "--output-prefix").map(|s| s.to_string());
+                let description = Self::get_flag_value(args, "--description").map(|s| s.to_string());
+                let enabled = Self::get_flag_value(args, "--enabled").and_then(|s| s.parse::<bool>().ok());
+                neomind_cli_ops::transform::create_transform(
+                    client, &name, &scope, &code,
+                    output_prefix.as_deref(), description.as_deref(), enabled,
+                ).await
+            }
+            "update" => {
+                let id = Self::resolve_id(args).to_string();
+                let name = Self::get_flag_value(args, "--name").map(|s| s.to_string());
+                let description = Self::get_flag_value(args, "--description").map(|s| s.to_string());
+                let code = Self::get_flag_value(args, "--code").map(|s| s.to_string());
+                let scope = Self::get_flag_value(args, "--scope").map(|s| s.to_string());
+                let output_prefix = Self::get_flag_value(args, "--output-prefix").map(|s| s.to_string());
+                let enabled = Self::get_flag_value(args, "--enabled").and_then(|s| s.parse::<bool>().ok());
+                neomind_cli_ops::transform::update_transform(
+                    client, &id,
+                    name.as_deref(), description.as_deref(), code.as_deref(),
+                    scope.as_deref(), output_prefix.as_deref(), enabled,
+                ).await
+            }
+            "delete" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::transform::delete_transform(client, id).await
+            }
+            "metrics" => {
+                neomind_cli_ops::transform::list_virtual_metrics(client).await
+            }
+            "test" => {
+                let code = Self::get_flag_value(args, "--code").unwrap_or("").to_string();
+                let input_str = Self::get_flag_value(args, "--input").unwrap_or("{}");
+                let input_data = serde_json::from_str(input_str).unwrap_or(serde_json::json!({}));
+                neomind_cli_ops::transform::test_transform_code(client, &code, input_data).await
+            }
+            "data-sources" => neomind_cli_ops::transform::list_transform_data_sources(client).await,
+            _ => anyhow::bail!("Unknown transform action: {}", action),
+        }
+    }
+
+    async fn exec_agent(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        match action {
+            "list" => neomind_cli_ops::agent_cmd::list_agents(client).await,
+            "get" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::agent_cmd::get_agent(client, id).await
+            }
+            "create" => {
+                let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
+                let prompt = Self::get_flag_value(args, "--prompt").unwrap_or("").to_string();
+                let description = Self::get_flag_value(args, "--description").map(|s| s.to_string());
+                let schedule_type = Self::get_flag_value(args, "--schedule-type").map(|s| s.to_string());
+                let schedule_config = Self::get_flag_value(args, "--schedule-config").map(|s| s.to_string());
+                let llm_backend = Self::get_flag_value(args, "--model").map(|s| s.to_string());
+                let system_prompt = Self::get_flag_value(args, "--system-prompt").map(|s| s.to_string());
+                neomind_cli_ops::agent_cmd::create_agent(
+                    client, &name, &prompt, description.as_deref(),
+                    schedule_type.as_deref(), schedule_config.as_deref(),
+                    llm_backend.as_deref(), system_prompt.as_deref(),
+                ).await
+            }
+            "delete" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::agent_cmd::delete_agent(client, id).await
+            }
+            "control" => {
+                let id = Self::resolve_id(args).to_string();
+                // Support both --action (legacy from prompt) and positional status arg
+                let action = Self::get_flag_value(args, "--action")
+                    .or_else(|| Self::get_flag_value(args, "--status"))
+                    .unwrap_or("").to_string();
+                neomind_cli_ops::agent_cmd::control_agent(client, &id, &action).await
+            }
+            "update" => {
+                let id = Self::resolve_id(args).to_string();
+                let name = Self::get_flag_value(args, "--name").map(|s| s.to_string());
+                let prompt = Self::get_flag_value(args, "--prompt").map(|s| s.to_string());
+                let description = Self::get_flag_value(args, "--description").map(|s| s.to_string());
+                let llm_backend = Self::get_flag_value(args, "--model").map(|s| s.to_string());
+                let system_prompt = Self::get_flag_value(args, "--system-prompt").map(|s| s.to_string());
+                neomind_cli_ops::agent_cmd::update_agent(
+                    client, &id, name.as_deref(), description.as_deref(),
+                    llm_backend.as_deref(), system_prompt.as_deref(), prompt.as_deref(),
+                ).await
+            }
+            "invoke" => {
+                let id = Self::resolve_id(args).to_string();
+                let input = Self::get_flag_value(args, "--input").unwrap_or("").to_string();
+                neomind_cli_ops::agent_cmd::invoke_agent(client, &id, &input).await
+            }
+            "memory" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::agent_cmd::get_agent_memory(client, id).await
+            }
+            "executions" => {
+                let id = Self::resolve_id(args).to_string();
+                let limit = Self::get_flag_value(args, "--limit").and_then(|s| s.parse::<usize>().ok());
+                let offset = Self::get_flag_value(args, "--offset").and_then(|s| s.parse::<usize>().ok());
+                neomind_cli_ops::agent_cmd::get_agent_executions(client, &id, limit, offset).await
+            }
+            "latest-execution" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::agent_cmd::get_latest_execution(client, id).await
+            }
+            "conversation" => {
+                let id = Self::resolve_id(args).to_string();
+                let limit = Self::get_flag_value(args, "--limit").and_then(|s| s.parse::<usize>().ok());
+                neomind_cli_ops::agent_cmd::get_conversation(client, &id, limit).await
+            }
+            "send-message" => {
+                let id = Self::resolve_id(args).to_string();
+                let message = Self::get_flag_value(args, "--message").unwrap_or("").to_string();
+                let message_type = Self::get_flag_value(args, "--type").map(|s| s.to_string());
+                neomind_cli_ops::agent_cmd::send_message(client, &id, &message, message_type.as_deref()).await
+            }
+            _ => anyhow::bail!("Unknown agent action: {}", action),
+        }
+    }
+
+    async fn exec_message(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        match action {
+            "list" => {
+                let limit = Self::get_flag_value(args, "--limit").and_then(|s| s.parse::<usize>().ok());
+                let offset = Self::get_flag_value(args, "--offset").and_then(|s| s.parse::<usize>().ok());
+                let severity = Self::get_flag_value(args, "--severity").map(|s| s.to_string());
+                let status = Self::get_flag_value(args, "--status").map(|s| s.to_string());
+                neomind_cli_ops::message::list_messages(client, limit, offset, severity.as_deref(), status.as_deref()).await
+            }
+            "get" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::message::get_message(client, id).await
+            }
+            "send" => {
+                let title = Self::get_flag_value(args, "--title").unwrap_or("").to_string();
+                let message_body = Self::get_flag_value(args, "--message").unwrap_or("").to_string();
+                let severity = Self::get_flag_value(args, "--severity").unwrap_or("info").to_string();
+                let source = Self::get_flag_value(args, "--source").map(|s| s.to_string());
+                neomind_cli_ops::message::send_message(client, &title, &message_body, &severity, source.as_deref()).await
+            }
+            "read" | "ack" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::message::acknowledge_message(client, id).await
+            }
+            _ => anyhow::bail!("Unknown message action: {}", action),
+        }
     }
 
     /// Build a platform-appropriate shell command.
@@ -348,6 +789,122 @@ fn find_safe_truncation_point(s: &str, max_bytes: usize) -> usize {
     pos
 }
 
+// ============================================================================
+// Error Recovery Hints
+// ============================================================================
+
+impl ShellTool {
+    /// Generate a recovery hint when a neomind CLI command fails.
+    fn recovery_hint(command: &str, stdout: &str, stderr: &str) -> Option<String> {
+        let cmd = command.trim();
+        if !cmd.starts_with("neomind ") {
+            return None;
+        }
+
+        let parts: Vec<&str> = cmd.splitn(4, ' ').collect();
+        let domain = parts.get(1).copied().unwrap_or("");
+        let action = parts.get(2).copied().unwrap_or("");
+        let combined = format!("{} {}", stdout, stderr).to_lowercase();
+
+        let is_not_found = combined.contains("not found")
+            || combined.contains("404")
+            || combined.contains("does not exist")
+            || combined.contains("no such");
+        let is_validation = combined.contains("validation")
+            || combined.contains("invalid")
+            || combined.contains("missing")
+            || combined.contains("required")
+            || combined.contains("400")
+            || combined.contains("422");
+
+        match domain {
+            "device" => {
+                if is_not_found {
+                    Some("Run 'neomind device list' to see available devices, then retry with a valid ID.".to_string())
+                } else if action == "create" && is_validation {
+                    Some("Required fields: --name, --type. Use 'neomind device types list' to see valid device types.".to_string())
+                } else if action == "control" && is_not_found {
+                    Some("Device not found. Run 'neomind device list' first, then use 'neomind device control <ID> --command <CMD>'.".to_string())
+                } else {
+                    Some("Available actions: list, get, create, update, delete, latest, history, control, write-metric, types".to_string())
+                }
+            }
+            "dashboard" => {
+                if is_not_found {
+                    Some("Run 'neomind dashboard list' to see available dashboards.".to_string())
+                } else if action == "create" && is_validation {
+                    Some("Required field: --name. Example: neomind dashboard create --name \"My Dashboard\"".to_string())
+                } else if action == "update" {
+                    Some("Use --components to update widgets. Run 'neomind widget list' to see available widget types, and 'neomind dashboard get <ID>' to see current layout.".to_string())
+                } else {
+                    Some("Available actions: list, get, create, update, delete, share".to_string())
+                }
+            }
+            "rule" => {
+                if is_not_found {
+                    Some("Run 'neomind rule list' to see available rules.".to_string())
+                } else if action == "create" && (is_validation || combined.contains("dsl") || combined.contains("parse")) {
+                    Some("Rule DSL syntax: RULE <name> WHEN <condition> DO <action> END. Example: RULE temp_alert WHEN device.temperature > 30 DO send_notification(\"Temperature too high\") END".to_string())
+                } else if action == "enable" || action == "disable" {
+                    Some("Run 'neomind rule list' to find the rule ID, then 'neomind rule <enable|disable> <ID>'.".to_string())
+                } else {
+                    Some("Available actions: list, get, create, update, delete, enable, disable, test, history".to_string())
+                }
+            }
+            "agent" => {
+                if is_not_found {
+                    Some("Run 'neomind agent list' to see available agents.".to_string())
+                } else if action == "create" && is_validation {
+                    Some("Required fields: --name, --prompt, --schedule-type (event|interval|cron). Example: neomind agent create --name \"monitor\" --prompt \"Check devices\" --schedule-type event".to_string())
+                } else if action == "control" && is_validation {
+                    Some("Valid status values: active, paused. Example: neomind agent control <ID> --action active".to_string())
+                } else {
+                    Some("Available actions: list, get, create, update, delete, control, invoke, memory, executions, latest-execution, conversation, send-message".to_string())
+                }
+            }
+            "extension" => {
+                if is_not_found {
+                    Some("Run 'neomind extension list' to see installed extensions.".to_string())
+                } else if action == "install" && is_validation {
+                    Some("Provide the extension zip file path. Use 'neomind extension market-list' to browse marketplace.".to_string())
+                } else {
+                    Some("Available actions: list, get, status, logs, install, uninstall, market-list, market-install".to_string())
+                }
+            }
+            "transform" => {
+                if is_not_found {
+                    Some("Run 'neomind transform list' to see available transforms.".to_string())
+                } else if action == "create" && is_validation {
+                    Some("Required fields: --name, --code (JavaScript function). Use --scope to set input scope. Example: neomind transform create --name \"celsius\" --code \"return value * 9/5 + 32\" --scope global".to_string())
+                } else {
+                    Some("Available actions: list, get, create, update, delete, test, metrics, data-sources".to_string())
+                }
+            }
+            "widget" => {
+                if is_not_found {
+                    Some("Run 'neomind widget list' to see available widgets (built-in + custom).".to_string())
+                } else if action == "create" && is_validation {
+                    Some("Valid widget types: chart, gauge, stat, table, image, custom. Example: neomind widget create \"My Chart\" --widget-type chart".to_string())
+                } else if action == "install" && is_validation {
+                    Some("Provide the widget directory path containing manifest.json and bundle.js. Use 'neomind widget market-list' to browse.".to_string())
+                } else {
+                    Some("Available actions: list, get, bundle, create, install, uninstall, market-list, market-install".to_string())
+                }
+            }
+            "message" => {
+                if is_not_found {
+                    Some("Run 'neomind message list' to see all messages.".to_string())
+                } else if action == "send" && is_validation {
+                    Some("Required fields: --title, --message, --severity (info|warning|error|critical). Example: neomind message send --title \"Alert\" --message \"High temp\" --severity warning".to_string())
+                } else {
+                    Some("Available actions: list, get, send, read".to_string())
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
 #[async_trait]
 impl Tool for ShellTool {
     fn name(&self) -> &str {
@@ -357,27 +914,92 @@ impl Tool for ShellTool {
     fn description(&self) -> &str {
         r#"Execute shell commands on the host system.
 
-Use this tool to:
-- Network diagnostics: ping, traceroute, curl, arp, nmap
-- System monitoring: ps, df, free, top, uptime, systemctl status
-- File inspection: ls, cat, head, tail, grep, find, wc
-- Device discovery: arp-scan, avahi-browse, bluetoothctl
-- Container management: docker ps, docker logs
-- Any other system command available on the host
+Use this tool to run any system command. For NeoMind platform operations, use the `neomind` CLI.
+
+## NeoMind CLI Commands
+
+### Device Management
+- `neomind device list [--device-type TYPE] [--status STATUS]` — List all devices
+- `neomind device get <ID>` — Get device details
+- `neomind device create --name NAME --type TYPE --adapter ADAPTER [--config JSON]` — Create device
+- `neomind device update <ID> [--name NAME] [--config JSON]` — Update device
+- `neomind device delete <ID>` — Delete device
+- `neomind device latest <ID>` — Get latest metrics
+- `neomind device history <ID> [--metric M] [--time-range 1h|24h|7d]` — Get telemetry history
+- `neomind device control <ID> --command CMD [--params JSON]` — Send control command
+- `neomind device write-metric <ID> --metric NAME --value VALUE` — Write metric data point
+- `neomind device types list` — List device types
+- `neomind device types create --name NAME --metrics JSON` — Create device type
+
+### Dashboard Management
+- `neomind dashboard list` — List dashboards
+- `neomind dashboard get <ID>` — Get dashboard details (includes components/layout)
+- `neomind dashboard create --name NAME [--description DESC] [--layout JSON]` — Create dashboard
+- `neomind dashboard update <ID> [--name NAME] [--components JSON] [--layout JSON]` — Update dashboard
+- `neomind dashboard delete <ID>` — Delete dashboard
+- `neomind dashboard share <ID> [--public] [--expires TIME]` — Share dashboard
+
+### Widget/Component Management
+- `neomind widget list` — List all available widgets (includes config_schema, size_constraints)
+- `neomind widget get <TYPE>` — Get widget details and configuration schema
+- `neomind widget create NAME --widget-type TYPE` — Scaffold new widget
+- `neomind widget install <PATH>` — Install widget from directory/zip
+- `neomind widget uninstall <ID>` — Uninstall custom widget
+
+### Rule Management
+- `neomind rule list` — List rules
+- `neomind rule get <ID>` — Get rule details
+- `neomind rule create --name NAME --dsl "RULE name WHEN condition DO action END"` — Create rule via DSL
+- `neomind rule update <ID> [--name NAME] [--dsl DSL]` — Update rule
+- `neomind rule delete <ID>` — Delete rule
+- `neomind rule enable <ID>` — Enable rule
+- `neomind rule disable <ID>` — Disable rule
+
+### Agent Management
+- `neomind agent list` — List agents
+- `neomind agent get <ID>` — Get agent details
+- `neomind agent create --name NAME --prompt "instruction" --schedule-type event|interval|cron [--description DESC] [--model ID]` — Create agent
+- `neomind agent update <ID> [--name NAME] [--prompt "instruction"]` — Update agent
+- `neomind agent delete <ID>` — Delete agent
+- `neomind agent control <ID> --action active|paused` — Start/pause agent
+- `neomind agent invoke <ID> --input "message"` — Invoke agent manually
+- `neomind agent executions <ID> [--limit N]` — Get execution history
+- `neomind agent conversation <ID>` — Get conversation messages
+- `neomind agent send-message <ID> --message "text"` — Send message to agent
+
+### Transform Management
+- `neomind transform list` — List transforms
+- `neomind transform create --name NAME --code "JS code" [--scope global]` — Create transform
+- `neomind transform update <ID> [--code CODE] [--enabled true|false]` — Update transform
+- `neomind transform delete <ID>` — Delete transform
+- `neomind transform test --code "JS code" --input JSON` — Test transform code
+- `neomind transform data-sources` — List available data sources for transforms
+
+### Message/Notification
+- `neomind message list [--severity LEVEL] [--status STATUS]` — List messages
+- `neomind message send --title TITLE --message TEXT --severity info|warning|error|critical` — Send message
+- `neomind message read <ID>` — Mark message as read
+
+### Extension Management
+- `neomind extension list` — List extensions
+- `neomind extension get <ID>` — Get extension details
+- `neomind extension status <ID>` — Get extension health
+- `neomind extension logs <ID> [--limit N]` — Get extension logs
+- `neomind extension install <PATH>` — Install from zip
+- `neomind extension uninstall <ID>` — Uninstall extension
+- `neomind extension market-list` — Browse marketplace
+- `neomind extension market-install <ID>` — Install from marketplace
+
+## System Commands
+- Network: ping, traceroute, curl, arp, nmap
+- Monitoring: ps, df, free, top, uptime, systemctl status
+- Files: ls, cat, head, tail, grep, find, wc
+- Discovery: arp-scan, avahi-browse, bluetoothctl
+- Containers: docker ps, docker logs
 
 Commands run in a separate process — no persistent shell state between calls.
 Output may be truncated for very long responses.
-
-NOTE: Some commands (docker, systemctl, nmap, etc.) may require elevated permissions.
-If you see "Permission denied" or "Operation not permitted" in stderr, inform the user
-that the command needs to be run with appropriate privileges or the user needs to be
-added to the relevant group (e.g., docker group for docker commands).
-
-Examples:
-- List network devices: {"command": "arp -a"}
-- Check disk usage: {"command": "df -h"}
-- Ping a device: {"command": "ping -c 3 192.168.1.1"}
-- Check running services: {"command": "systemctl status"}"#
+On failure, check the "suggestion" field for recovery hints."#
     }
 
     fn parameters(&self) -> Value {
@@ -468,6 +1090,14 @@ Examples:
             result["description"] = serde_json::Value::String(desc.to_string());
         }
 
+        // Enrich error responses with recovery hints for neomind CLI commands
+        let is_error = output.exit_code.unwrap_or(1) != 0;
+        if is_error {
+            if let Some(hint) = Self::recovery_hint(command, &stdout, &stderr) {
+                result["suggestion"] = serde_json::Value::String(hint);
+            }
+        }
+
         Ok(ToolOutput::success(result))
     }
 }
@@ -481,6 +1111,7 @@ mod tests {
             enabled: true,
             timeout_secs: 10,
             max_output_chars: 5000,
+            internal_cli_execution: false,
         }
     }
 
@@ -526,6 +1157,7 @@ mod tests {
             enabled: true,
             timeout_secs: 1,
             max_output_chars: 5000,
+            internal_cli_execution: false,
         };
         let tool = ShellTool::new(config);
         let result = tool

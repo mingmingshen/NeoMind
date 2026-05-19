@@ -219,23 +219,10 @@ pub fn format_summary(tool_name: &str, result: &serde_json::Map<String, Value>) 
             let count = result.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
             format!("📱 找到 {} 个设备", count)
         }
-        "query_data" => {
-            let count = result.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
-            let device_id = result
-                .get("device_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("未知设备");
-            let metric = result
-                .get("metric")
-                .and_then(|v| v.as_str())
-                .unwrap_or("指标");
-            format!("📊 查询到 {} 的 {} 条{}数据", device_id, count, metric)
-        }
         "list_rules" => {
             let count = result.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
             format!("📜 找到 {} 条规则", count)
         }
-        "control_device" => "✅ 设备控制命令已发送".to_string(),
         "create_rule" => "➕ 自动化规则已创建".to_string(),
         "trigger_workflow" => "⚡ 工作流已触发".to_string(),
         "query_rule_history" => {

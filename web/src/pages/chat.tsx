@@ -504,19 +504,20 @@ export function ChatPage() {
         }
 
         case "Error":
-          setIsStreaming(false)
-          // Reset captured ref on error too
-          capturedStreamingRef.current = { content: "", thinking: "", toolCalls: [] }
-
+          // Don't immediately stop streaming — the backend may send a fallback
+          // summary after the error (e.g., when tool calls failed). The End
+          // event will finalize the streaming state.
           // Display error message to user with error styling
-          const errorMessage = data.message || "An error occurred during processing"
-          const errorMsg: Message = {
-            id: generateId(),
-            role: "assistant",
-            content: `❌ **Error**: ${errorMessage}`,
-            timestamp: Date.now(),
+          {
+            const errorMessage = data.message || "An error occurred during processing"
+            const errorMsg: Message = {
+              id: generateId(),
+              role: "assistant",
+              content: `❌ **Error**: ${errorMessage}`,
+              timestamp: Date.now(),
+            }
+            addMessage(errorMsg)
           }
-          addMessage(errorMsg)
           break
 
         case "Warning":

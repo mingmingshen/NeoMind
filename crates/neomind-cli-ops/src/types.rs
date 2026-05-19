@@ -12,6 +12,10 @@ pub struct CliResponse {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+    /// Recovery hint to help LLM correct its next action.
+    /// e.g. "Run 'neomind device list' to see available devices"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub build_meta: Option<BuildMeta>,
 }
@@ -33,6 +37,7 @@ impl CliResponse {
             message: Some(message.into()),
             error: None,
             code: None,
+            suggestion: None,
             build_meta: None,
         }
     }
@@ -48,6 +53,7 @@ impl CliResponse {
             message: Some(message.into()),
             error: None,
             code: None,
+            suggestion: None,
             build_meta: Some(meta),
         }
     }
@@ -59,8 +65,31 @@ impl CliResponse {
             message: None,
             error: Some(error.into()),
             code: Some(code.into()),
+            suggestion: None,
             build_meta: None,
         }
+    }
+
+    pub fn error_with_suggestion(
+        error: impl Into<String>,
+        code: impl Into<String>,
+        suggestion: impl Into<String>,
+    ) -> Self {
+        Self {
+            success: false,
+            data: None,
+            message: None,
+            error: Some(error.into()),
+            code: Some(code.into()),
+            suggestion: Some(suggestion.into()),
+            build_meta: None,
+        }
+    }
+
+    /// Add a suggestion to an existing response (mutates in place).
+    pub fn with_suggestion(mut self, suggestion: impl Into<String>) -> Self {
+        self.suggestion = Some(suggestion.into());
+        self
     }
 }
 
@@ -86,6 +115,7 @@ mod tests {
         assert_eq!(response.data, Some(data));
         assert!(response.error.is_none());
         assert!(response.code.is_none());
+        assert!(response.suggestion.is_none());
         assert!(response.build_meta.is_none());
     }
 
@@ -98,7 +128,19 @@ mod tests {
         assert_eq!(response.code, Some("ERR_001".to_string()));
         assert!(response.data.is_none());
         assert!(response.message.is_none());
-        assert!(response.build_meta.is_none());
+        assert!(response.suggestion.is_none());
+    }
+
+    #[test]
+    fn test_cli_response_error_with_suggestion() {
+        let response = CliResponse::error_with_suggestion(
+            "Device not found",
+            "NOT_FOUND",
+            "Run 'neomind device list' to see available devices",
+        );
+        assert!(!response.success);
+        assert_eq!(response.error, Some("Device not found".to_string()));
+        assert_eq!(response.suggestion, Some("Run 'neomind device list' to see available devices".to_string()));
     }
 
     #[test]
@@ -118,6 +160,7 @@ mod tests {
         assert_eq!(response.data, Some(data));
         assert!(response.error.is_none());
         assert!(response.code.is_none());
+        assert!(response.suggestion.is_none());
         assert_eq!(response.build_meta, Some(meta));
     }
 

@@ -970,11 +970,7 @@ mod tests {
     #[tokio::test]
     async fn test_event_integrated_registry() {
         let registry = ToolRegistryBuilder::new()
-            .with_tool(Arc::new(MockTool::new("query_data", "Query data tool")))
-            .with_tool(Arc::new(MockTool::new(
-                "control_device",
-                "Control device tool",
-            )))
+            .with_tool(Arc::new(MockTool::new("shell", "Shell tool for CLI commands")))
             .with_tool(Arc::new(MockTool::new("list_devices", "List devices tool")))
             .with_tool(Arc::new(MockTool::new("create_rule", "Create rule tool")))
             .with_tool(Arc::new(MockTool::new("list_rules", "List rules tool")))
@@ -984,8 +980,8 @@ mod tests {
         let integrated = EventIntegratedToolRegistry::new(registry, event_bus);
 
         assert!(integrated.has("list_devices"));
-        // 5 tools were added (query_data, control_device, list_devices, create_rule, list_rules)
-        assert_eq!(integrated.list().len(), 5);
+        // 4 tools were added (shell, list_devices, create_rule, list_rules)
+        assert_eq!(integrated.list().len(), 4);
     }
 
     #[tokio::test]

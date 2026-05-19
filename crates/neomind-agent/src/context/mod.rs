@@ -5,7 +5,6 @@
 
 mod business_context;
 mod device_registry;
-mod dynamic_tools;
 mod health;
 mod meta_tools;
 mod resource_index;
@@ -14,7 +13,6 @@ mod state_provider;
 
 pub use business_context::{BusinessContext, ContextRelevance, ContextScope};
 pub use device_registry::{DeviceAlias, DeviceCapability, DeviceLocation, DeviceRegistry};
-pub use dynamic_tools::DynamicToolGenerator;
 pub use health::{
     calculate_health, calculate_health_with_config, ContextHealth, HealthCheckConfig, HealthStatus,
 };

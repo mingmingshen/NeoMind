@@ -5,9 +5,10 @@ use axum::{
     Json,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use serde::Deserialize;
 use serde_json::json;
 
-use neomind_devices::MetricValue;
+use neomind_devices::{DataPoint, MetricValue};
 
 use super::models::{SendCommandRequest, TimeRangeQuery};
 use crate::handlers::{
@@ -166,5 +167,63 @@ pub fn value_to_json(value: &MetricValue) -> serde_json::Value {
             json!(json_arr)
         }
         MetricValue::Null => json!(null),
+    }
+}
+
+/// Request body for writing a metric data point.
+#[derive(Debug, Deserialize)]
+pub struct WriteMetricRequest {
+    /// Metric name.
+    pub metric: String,
+    /// Value (number, string, boolean, or null).
+    pub value: serde_json::Value,
+    /// Timestamp in milliseconds (defaults to now).
+    pub timestamp: Option<i64>,
+}
+
+/// Write a metric data point for a device.
+///
+/// POST /api/devices/:id/metrics
+pub async fn write_metric_handler(
+    Path(device_id): Path<String>,
+    State(state): State<ServerState>,
+    Json(req): Json<WriteMetricRequest>,
+) -> HandlerResult<serde_json::Value> {
+    let metric_value = json_to_metric_value(&req.value);
+    let timestamp = req.timestamp.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+    let source_id = format!("device:{}", device_id);
+    let point = DataPoint::new(timestamp, metric_value);
+
+    state
+        .devices
+        .telemetry
+        .write(&source_id, &req.metric, point)
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("Failed to write metric: {:?}", e)))?;
+
+    ok(json!({
+        "device_id": device_id,
+        "metric": req.metric,
+        "timestamp": timestamp,
+        "written": true,
+    }))
+}
+
+/// Convert a JSON value to MetricValue.
+fn json_to_metric_value(value: &serde_json::Value) -> MetricValue {
+    match value {
+        serde_json::Value::Null => MetricValue::Null,
+        serde_json::Value::Bool(b) => MetricValue::Boolean(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                MetricValue::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                MetricValue::Float(f)
+            } else {
+                MetricValue::Null
+            }
+        }
+        serde_json::Value::String(s) => MetricValue::String(s.clone()),
+        _ => MetricValue::String(value.to_string()),
     }
 }

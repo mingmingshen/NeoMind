@@ -57,6 +57,7 @@ pub async fn update_dashboard(
     name: Option<&str>,
     description: Option<&str>,
     layout: Option<serde_json::Value>,
+    components: Option<serde_json::Value>,
 ) -> Result<CliResponse> {
     let mut body = json!({});
     if let Some(n) = name {
@@ -67,6 +68,9 @@ pub async fn update_dashboard(
     }
     if let Some(layout_value) = layout {
         body["layout"] = layout_value;
+    }
+    if let Some(components_value) = components {
+        body["components"] = components_value;
     }
 
     let data = client.put(&format!("/dashboards/{}", id), &body).await?;

@@ -217,12 +217,8 @@ mod tests {
                 "Get details of a specific device".to_string(),
             ),
             (
-                "control_device".to_string(),
-                "Control a device by sending commands".to_string(),
-            ),
-            (
-                "query_data".to_string(),
-                "Query time series data from devices".to_string(),
+                "shell".to_string(),
+                "Execute CLI commands for device control and data queries".to_string(),
             ),
         ];
         ToolSearchTool::new(

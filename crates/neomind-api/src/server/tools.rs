@@ -10,7 +10,7 @@ use crate::automation::types::{
     Automation, AutomationMetadata, TransformAutomation, TransformScope,
 };
 use async_trait::async_trait;
-use neomind_agent::toolkit::aggregated::TransformStore;
+use neomind_agent::toolkit::time_utils::TransformStore;
 use neomind_agent::toolkit::{
     object_schema, string_property, Tool, ToolCategory, ToolDefinition, ToolError, ToolExample,
     ToolOutput, ToolRelationships, UsageScenario,

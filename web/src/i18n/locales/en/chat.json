@@ -175,5 +175,27 @@
     "title": "LLM Not Configured",
     "description": "Please configure LLM backend to use chat feature",
     "goToSettings": "Go to Settings"
+  },
+  "build": {
+    "view": "View",
+    "undo": "Undo",
+    "showDetails": "Details",
+    "hideDetails": "Hide details",
+    "types": {
+      "device": "Device",
+      "dashboard": "Dashboard",
+      "rule": "Rule",
+      "extension": "Extension",
+      "widget": "Widget",
+      "transform": "Transform",
+      "agent": "Agent",
+      "message": "Message"
+    },
+    "actions": {
+      "create": "Created",
+      "update": "Updated",
+      "delete": "Deleted",
+      "install": "Installed"
+    }
   }
 }

@@ -66,7 +66,7 @@ impl CloudProvider {
             Self::Custom => "",
             Self::Qwen => "https://dashscope.aliyuncs.com/compatible-mode/v1",
             Self::DeepSeek => "https://api.deepseek.com/v1",
-            Self::GLM => "https://open.bigmodel.cn/api/paas/v4",
+            Self::GLM => "https://open.bigmodel.cn/api/coding/paas/v4",
             Self::MiniMax => "https://api.minimax.chat/v1",
         }
     }
@@ -581,12 +581,14 @@ impl CloudRuntime {
             self.config.provider.chat_path()
         );
 
-        // Handle max_tokens: cap at reasonable limit for cloud APIs
-        const MAX_TOKENS_CAP: u32 = 32768; // 32k tokens - reasonable for most models
+        // Handle max_tokens for cloud APIs.
+        // MUST set explicitly — many providers (DeepSeek, GLM) default to only ~4096
+        // when this field is omitted, which silently truncates tool call JSON mid-output.
+        const MAX_TOKENS_CAP: u32 = 32768; // 32k — sufficient for agent reasoning + tool call JSON
         let max_tokens = match input.params.max_tokens {
             Some(v) if v >= usize::MAX - 1000 => Some(MAX_TOKENS_CAP),
             Some(v) => Some((v as u32).min(MAX_TOKENS_CAP)),
-            None => None, // Let API use its default
+            None => Some(MAX_TOKENS_CAP),
         };
 
         let request = ChatCompletionRequest {
@@ -908,12 +910,14 @@ impl CloudRuntime {
         let inner_client = self.client.inner().clone();
         let provider = self.config.provider;
 
-        // Handle max_tokens: cap at reasonable limit for cloud APIs
-        const MAX_TOKENS_CAP: u32 = 32768;
+        // Handle max_tokens for cloud APIs.
+        // MUST set explicitly — many providers (DeepSeek, GLM) default to only ~4096
+        // when this field is omitted, which silently truncates tool call JSON mid-output.
+        const MAX_TOKENS_CAP: u32 = 32768; // 32k — sufficient for agent reasoning + tool call JSON
         let max_tokens = match input.params.max_tokens {
             Some(v) if v >= usize::MAX - 1000 => Some(MAX_TOKENS_CAP),
             Some(v) => Some((v as u32).min(MAX_TOKENS_CAP)),
-            None => None,
+            None => Some(MAX_TOKENS_CAP),
         };
 
         let request = ChatCompletionRequest {
@@ -952,8 +956,10 @@ impl CloudRuntime {
                 Ok(response) => {
                     let status = response.status();
 
-                    // Handle rate limit response
+                    // Handle rate limit response — read body for debugging
                     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                        let body = response.text().await.unwrap_or_default();
+                        tracing::warn!("Rate limited (429) response body: {}", &body[..body.len().min(500)]);
                         let _ = tx
                             .send(Err(LlmError::Generation("Rate limited by API".to_string())))
                             .await;
@@ -1089,11 +1095,15 @@ impl CloudRuntime {
                                                         }
                                                     }
 
-                                                    // Check for finish reason - flush tool calls
-                                                    if choice.finish_reason.as_deref()
-                                                        == Some("tool_calls")
-                                                        && !accumulated_tool_calls.is_empty()
-                                                    {
+                                                    // Check for finish reason - flush tool calls.
+                                                    // Also flush on "length" (truncation) to recover
+                                                    // partial tool calls instead of silently dropping them.
+                                                    let should_flush = matches!(
+                                                        choice.finish_reason.as_deref(),
+                                                        Some("tool_calls") | Some("length")
+                                                    ) && !accumulated_tool_calls.is_empty();
+
+                                                    if should_flush {
                                                         let tool_calls_json: Vec<
                                                             serde_json::Value,
                                                         > = accumulated_tool_calls
@@ -1172,6 +1182,8 @@ impl CloudRuntime {
                     let status = response.status();
 
                     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                        let body = response.text().await.unwrap_or_default();
+                        tracing::warn!("Rate limited (429) non-streaming body: {}", &body[..body.len().min(500)]);
                         let _ = tx
                             .send(Err(LlmError::Generation("Rate limited by API".to_string())))
                             .await;

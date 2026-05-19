@@ -1550,12 +1550,18 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   // Separate polling for missing telemetry — uses stable ref to avoid
   // cascade: batch fetch → store update → deps change → re-fetch.
   const batchFetchControllerRef = useRef<{ deviceIds: string[]; interval: ReturnType<typeof setInterval> | null }>({ deviceIds: [], interval: null })
+  const batchAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (devicesLength === 0 || !dashboardDeviceIdsKey) return
 
     const deviceIds = dashboardDeviceIdsKey.split(',').filter(Boolean)
     if (deviceIds.length === 0) return
+
+    // Abort any in-flight requests from previous effect run
+    batchAbortRef.current?.abort()
+    const abortController = new AbortController()
+    batchAbortRef.current = abortController
 
     // Clear previous polling if device set changed
     const ctrl = batchFetchControllerRef.current
@@ -1566,11 +1572,12 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     ctrl.deviceIds = deviceIds
 
     // Initial fetch
-    fetchDevicesCurrentBatch(deviceIds)
+    fetchDevicesCurrentBatch(deviceIds, abortController.signal)
 
     // Check if telemetry is missing — read directly from store (not from React state)
     // to avoid cascading re-renders when the batch result updates the store.
     const checkAndPoll = () => {
+      if (abortController.signal.aborted) return
       const freshDevices = useStore.getState().devices
       const ids = new Set(deviceIds)
       const stillMissing = freshDevices.some((d) =>
@@ -1578,7 +1585,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         (!d.current_values || Object.keys(d.current_values).length === 0)
       )
       if (stillMissing) {
-        fetchDevicesCurrentBatch(deviceIds)
+        fetchDevicesCurrentBatch(deviceIds, abortController.signal)
       } else if (ctrl.interval) {
         // All telemetry arrived — stop polling
         clearInterval(ctrl.interval)
@@ -1592,6 +1599,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     setTimeout(checkAndPoll, 1500)
 
     return () => {
+      abortController.abort()
       if (ctrl.interval) {
         clearInterval(ctrl.interval)
         ctrl.interval = null

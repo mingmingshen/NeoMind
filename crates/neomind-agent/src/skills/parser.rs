@@ -96,6 +96,17 @@ fn parse_frontmatter(yaml: &str) -> Result<SkillMetadata, ParseError> {
                 "anti_triggers" => {
                     anti_trigger_keywords.push(item.to_string());
                 }
+                "tool_target" => {
+                    // Parse "- tool: name" as a new ToolTarget entry
+                    if let Some((key, value)) = parse_kv(item) {
+                        if key == "tool" {
+                            tool_targets.push(ToolTarget {
+                                tool: value.to_string(),
+                                actions: Vec::new(),
+                            });
+                        }
+                    }
+                }
                 _ => {}
             }
             continue;

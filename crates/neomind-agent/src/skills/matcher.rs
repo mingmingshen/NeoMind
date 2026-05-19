@@ -78,19 +78,52 @@ pub fn match_skills(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // Apply token budget
+    // Apply token budget — truncate individual skills to fit remaining budget
     let mut result = Vec::new();
     let mut used_tokens = 0;
 
-    for candidate in candidates {
-        if used_tokens + candidate.token_count <= budget.max_tokens {
+    for mut candidate in candidates {
+        let remaining = budget.max_tokens.saturating_sub(used_tokens);
+        if remaining == 0 {
+            break;
+        }
+        if candidate.token_count <= remaining {
             used_tokens += candidate.token_count;
             result.push(candidate);
+        } else {
+            // Truncate body to fit remaining budget
+            let max_chars = remaining * 4;
+            let truncated = truncate_at_boundary(&candidate.body, max_chars);
+            let new_tokens = truncated.len() / 4;
+            used_tokens += new_tokens;
+            candidate.body = truncated;
+            candidate.token_count = new_tokens;
+            result.push(candidate);
         }
-        // Skip skills that don't fit in budget rather than truncating further
     }
 
     result
+}
+
+/// Truncate a string at a natural boundary (double newline) to stay within max_chars.
+fn truncate_at_boundary(text: &str, max_chars: usize) -> String {
+    if text.len() <= max_chars {
+        return text.to_string();
+    }
+    // Use char_indices to find the correct byte boundary for max_chars characters
+    let byte_cutoff = text
+        .char_indices()
+        .nth(max_chars)
+        .map(|(i, _)| i)
+        .unwrap_or(text.len());
+    let truncated = &text[..byte_cutoff];
+    if let Some(pos) = truncated.rfind("\n\n") {
+        text[..pos].to_string()
+    } else if let Some(pos) = truncated.rfind('\n') {
+        text[..pos].to_string()
+    } else {
+        truncated.to_string()
+    }
 }
 
 /// Format matched skills into a prompt section for injection.
@@ -210,7 +243,8 @@ Step 2: ONE action (delete/update/enable)"#;
         assert_eq!(TokenBudgetConfig::for_context(4000).max_tokens, 400);
         assert_eq!(TokenBudgetConfig::for_context(5000).max_tokens, 800);
         assert_eq!(TokenBudgetConfig::for_context(8000).max_tokens, 800);
-        assert_eq!(TokenBudgetConfig::for_context(10000).max_tokens, 1500);
+        assert_eq!(TokenBudgetConfig::for_context(16000).max_tokens, 4000);
+        assert_eq!(TokenBudgetConfig::for_context(128000).max_tokens, 8000);
     }
 
     #[test]

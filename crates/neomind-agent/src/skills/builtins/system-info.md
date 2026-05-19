@@ -4,7 +4,7 @@ name: System Information Query
 category: agent
 origin: builtin
 priority: 60
-token_budget: 600
+token_budget: 10000
 triggers:
   keywords: [system info, system time, device info, system language, os version, platform info, hostname, cpu info, memory usage, disk usage, uptime, system status, what time, current time, get time, system details, environment info]
 ---
@@ -137,3 +137,11 @@ When unsure, use fallback chains: `command1 2>/dev/null || command2 2>/dev/null 
 - On Tauri desktop (NeoMind Edge), the shell tool runs commands on the host machine
 - Detect the OS first with `uname -s` to pick the right commands
 - Combine multiple small commands into one shell call when possible to reduce round trips
+
+## Common Errors & Solutions
+
+- **"command not found"**: The shell tool runs commands on the host machine. If a command is not available, the OS may not support it. Use `uname -s` to detect the OS, then pick platform-appropriate commands (Linux vs macOS vs Windows).
+- **API unreachable (port 9375)**: Verify the NeoMind service is running. Use `ps aux | grep neomind` or `systemctl status neomind` (Linux) to check. The API server listens on port 9375 by default.
+- **Permission denied on system files**: Some commands (e.g., reading certain `/proc` entries or hardware info) may need elevated privileges. Use fallback commands like `cat /proc/meminfo 2>/dev/null || echo "not available"`.
+- **`free` or `lscpu` not found on macOS**: These are Linux-only tools. On macOS, use `vm_stat` for memory and `sysctl -n machdep.cpu.brand_string` for CPU info.
+- **Incorrect timezone in date output**: Use `date -u` for UTC or check `timedatectl` (Linux) / `systemsetup -gettimezone` (macOS) for timezone configuration.

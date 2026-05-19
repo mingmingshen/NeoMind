@@ -101,14 +101,22 @@ pub async fn get_telemetry_history(
     id: &str,
     metric: Option<&str>,
     time_range: Option<&str>,
+    compress: bool,
 ) -> Result<CliResponse> {
     let mut path = format!("/devices/{}/telemetry", id);
     let mut params = Vec::new();
     if let Some(m) = metric {
         params.push(format!("metric={}", m));
     }
+    // Parse --time-range (e.g., "1h", "24h", "7d", "30d") to Unix seconds and set start
     if let Some(tr) = time_range {
-        params.push(format!("time_range={}", tr));
+        let end = chrono::Utc::now().timestamp();
+        let start = parse_time_range_to_timestamp(tr, end).unwrap_or(end - 86400);
+        params.push(format!("start={}", start));
+        params.push(format!("end={}", end));
+    }
+    if compress {
+        params.push("compress=true".to_string());
     }
     if !params.is_empty() {
         path.push('?');
@@ -117,6 +125,31 @@ pub async fn get_telemetry_history(
 
     let data = client.get(&path).await?;
     Ok(CliResponse::success(data, "Telemetry history retrieved"))
+}
+
+/// Parse a human-readable time range string (e.g., "1h", "24h", "7d", "30d") to a start timestamp.
+fn parse_time_range_to_timestamp(range: &str, now_ts: i64) -> Option<i64> {
+    let range = range.trim();
+    if range.is_empty() {
+        return None;
+    }
+    // Extract number suffix: last char(s)
+    let num_end = range.len()
+        - range.chars().last().map_or(0, |c| {
+            if c.is_ascii_alphabetic() { 1 } else { 0 }
+        });
+    let num: i64 = range[..num_end].parse().ok()?;
+    let unit = &range[num_end..];
+    let secs = match unit {
+        "s" => num,
+        "m" | "min" | "mins" => num * 60,
+        "h" | "hr" | "hrs" => num * 3600,
+        "d" | "day" | "days" => num * 86400,
+        "w" | "wk" | "wks" => num * 7 * 86400,
+        "mo" | "month" | "months" => num * 30 * 86400,
+        _ => return None,
+    };
+    Some(now_ts - secs)
 }
 
 /// Send control command to a device
@@ -185,4 +218,23 @@ pub async fn delete_device_type(client: &ApiClient, id: &str) -> Result<CliRespo
         json!({ "id": id }),
         "Device type deleted",
     ))
+}
+
+/// Write metric data point for a device
+pub async fn write_metric(
+    client: &ApiClient,
+    id: &str,
+    metric: &str,
+    value: serde_json::Value,
+    timestamp: Option<i64>,
+) -> Result<CliResponse> {
+    let mut body = json!({
+        "metric": metric,
+        "value": value,
+    });
+    if let Some(ts) = timestamp {
+        body["timestamp"] = json!(ts);
+    }
+    let data = client.post(&format!("/devices/{}/metrics", id), &body).await?;
+    Ok(CliResponse::success(data, "Metric written"))
 }

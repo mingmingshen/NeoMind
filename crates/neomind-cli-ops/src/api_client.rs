@@ -17,7 +17,10 @@ impl ApiClient {
     }
 
     pub fn with_base_url(base_url: &str) -> Self {
-        let api_key = std::env::var("NEOMIND_API_KEY").ok();
+        // 1. Try env var first
+        let api_key = std::env::var("NEOMIND_API_KEY").ok()
+            // 2. Fall back to auto-reading from local redb
+            .or_else(crate::auto_auth::read_default_api_key);
         let client = Client::builder()
             .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
             .build()
@@ -49,7 +52,7 @@ impl ApiClient {
         let status = resp.status();
         let body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
-            let msg = body["error"].as_str().unwrap_or("Unknown error");
+            let msg = extract_error_message(&body);
             anyhow::bail!("API error ({}): {}", status, msg);
         }
         Ok(body)
@@ -62,7 +65,7 @@ impl ApiClient {
         let status = resp.status();
         let resp_body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
-            let msg = resp_body["error"].as_str().unwrap_or("Unknown error");
+            let msg = extract_error_message(&resp_body);
             anyhow::bail!("API error ({}): {}", status, msg);
         }
         Ok(resp_body)
@@ -75,7 +78,7 @@ impl ApiClient {
         let status = resp.status();
         let resp_body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
-            let msg = resp_body["error"].as_str().unwrap_or("Unknown error");
+            let msg = extract_error_message(&resp_body);
             anyhow::bail!("API error ({}): {}", status, msg);
         }
         Ok(resp_body)
@@ -88,7 +91,7 @@ impl ApiClient {
         let status = resp.status();
         let resp_body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
-            let msg = resp_body["error"].as_str().unwrap_or("Unknown error");
+            let msg = extract_error_message(&resp_body);
             anyhow::bail!("API error ({}): {}", status, msg);
         }
         Ok(resp_body)
@@ -101,7 +104,7 @@ impl ApiClient {
         let status = resp.status();
         let resp_body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
-            let msg = resp_body["error"].as_str().unwrap_or("Unknown error");
+            let msg = extract_error_message(&resp_body);
             anyhow::bail!("API error ({}): {}", status, msg);
         }
         Ok(resp_body)
@@ -132,11 +135,27 @@ impl ApiClient {
         let status = resp.status();
         let resp_body: serde_json::Value = resp.json().await?;
         if !status.is_success() {
-            let msg = resp_body["error"].as_str().unwrap_or("Unknown error");
+            let msg = extract_error_message(&resp_body);
             anyhow::bail!("API error ({}): {}", status, msg);
         }
         Ok(resp_body)
     }
+}
+
+/// Extract error message from API response body.
+/// Handles multiple response formats:
+/// - {"error":{"message":"..."}} (standard ErrorResponse wrapped)
+/// - {"error":{"code":"...","message":"..."}} (standard ErrorResponse)
+/// - {"message":"..."} (flat message)
+/// - {"error":"..."} (legacy string error)
+fn extract_error_message(body: &serde_json::Value) -> String {
+    // Nested: body.error.message
+    body.get("error")
+        .and_then(|e| e.get("message").and_then(|v| v.as_str()))
+        .or_else(|| body.get("message").and_then(|v| v.as_str()))
+        .or_else(|| body.get("error").and_then(|v| v.as_str()))
+        .unwrap_or("Unknown error")
+        .to_string()
 }
 
 #[cfg(test)]

@@ -86,8 +86,9 @@ pub mod vector;
 pub use error::{Error, Result};
 
 pub use timeseries::{
-    BatchWriteRequest, DataPoint, PerformanceStats, RetentionPolicy, RetentionPolicyCleanupResult,
-    TimeSeriesBucket, TimeSeriesConfig, TimeSeriesResult, TimeSeriesStore,
+    compress_series_adaptive, BatchWriteRequest, DataPoint, PerformanceStats, RetentionPolicy,
+    RetentionPolicyCleanupResult, TimeSeriesBucket, TimeSeriesConfig, TimeSeriesResult,
+    TimeSeriesStore,
 };
 
 pub use vector::{

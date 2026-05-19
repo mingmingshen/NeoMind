@@ -43,7 +43,7 @@ import {
 import { ThemeToggle } from "./ThemeToggle"
 import { InstanceSelector } from "./InstanceSelector"
 import { InstanceManagerDialog } from "@/components/instances/InstanceManagerDialog"
-import { useState, useEffect, useRef, useCallback, forwardRef } from "react"
+import { useState, useEffect, useRef, useCallback, forwardRef, startTransition } from "react"
 import { setTopNavHeight } from "@/hooks/useVisualViewport"
 import { useIsMobile } from "@/hooks/useMobile"
 
@@ -180,9 +180,9 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
 
     const currentIndex = navItems.findIndex(item => isItemActive(item))
     if (deltaX < 0 && currentIndex >= 0 && currentIndex < navItems.length - 1) {
-      navigate(navItems[currentIndex + 1].path)
+      startTransition(() => navigate(navItems[currentIndex + 1].path))
     } else if (deltaX > 0 && currentIndex > 0) {
-      navigate(navItems[currentIndex - 1].path)
+      startTransition(() => navigate(navItems[currentIndex - 1].path))
     }
   }, [isItemActive, navigate])
 
@@ -209,20 +209,19 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
               return (
                 <Tooltip key={item.id}>
                   <TooltipTrigger asChild>
-                    <Link to={item.path}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                          "w-11 h-11 rounded-lg transition-all",
-                          isActive
-                            ? "bg-muted text-primary hover:bg-muted-50"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted-50"
-                        )}
-                      >
-                        <Icon className="h-5 w-5" />
-                      </Button>
-                    </Link>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        "w-11 h-11 rounded-lg transition-all",
+                        isActive
+                          ? "bg-muted text-primary hover:bg-muted-50"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted-50"
+                      )}
+                      onClick={() => startTransition(() => navigate(item.path))}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="text-xs px-2 py-1">
                     {t(item.labelKey)}
@@ -388,9 +387,8 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
               {navItems.map((item) => {
                 const isActive = isItemActive(item)
                 return (
-                  <Link
+                  <button
                     key={item.id}
-                    to={item.path}
                     data-active={isActive || undefined}
                     className={cn(
                       "flex-shrink-0 px-4 py-2.5 text-base whitespace-nowrap transition-all select-none",
@@ -398,9 +396,10 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
                         ? "text-foreground font-bold"
                         : "text-muted-foreground active:text-foreground"
                     )}
+                    onClick={() => startTransition(() => navigate(item.path))}
                   >
                     {t(item.mobileLabelKey || item.labelKey)}
-                  </Link>
+                  </button>
                 )
               })}
               {/* Animated underline indicator */}

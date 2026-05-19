@@ -45,7 +45,7 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
   fetchTelemetryData: (deviceId: string, metric?: string, start?: number, end?: number, limit?: number, offset?: number) => Promise<void>
   fetchTelemetrySummary: (deviceId: string, hours?: number) => Promise<void>
   fetchDeviceCurrentState: (deviceId: string) => Promise<void>  // New: unified device + metrics
-  fetchDevicesCurrentBatch: (deviceIds: string[]) => Promise<void>  // Batch fetch for dashboard
+  fetchDevicesCurrentBatch: (deviceIds: string[], signal?: AbortSignal) => Promise<void>  // Batch fetch for dashboard
   fetchCommandHistory: (deviceId: string, limit?: number) => Promise<void>
 
   // Device status update from events
@@ -403,13 +403,16 @@ export const createDeviceSlice: StateCreator<
   // Batch fetch current values for multiple devices
   // Optimized for dashboard - fetches all device current_values in one API call
   // Note: Silently skip if backend doesn't support this endpoint (405 error)
-  fetchDevicesCurrentBatch: async (deviceIds) => {
+  fetchDevicesCurrentBatch: async (deviceIds, signal) => {
     if (!deviceIds || deviceIds.length === 0) {
       return
     }
 
     try {
-      const data = await api.getDevicesCurrentBatch(deviceIds)
+      const data = await api.getDevicesCurrentBatch(deviceIds, signal)
+
+      // Check if request was aborted before updating state
+      if (signal?.aborted) return
 
       // Helper function to build nested object from flat key paths
       const buildNestedValues = (metrics: Record<string, unknown>) => {
