@@ -6,26 +6,19 @@
  * and routes data into the correct query cache entries.
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { dashboardKeys } from '../hooks/queries'
 import { appendDataPoint } from '../utils/telemetryTransform'
 import type { TelemetryPoint } from '../api/telemetry'
-import type { DataSource } from '../types'
-
-interface DashboardEventBridgeProps {
-  /** Data sources from all widgets in the current dashboard */
-  dataSources: DataSource[]
-}
 
 /**
  * Renderless component that bridges real-time events into TanStack Query cache.
+ * Subscribes to WebSocket events and routes them to the correct query cache entries.
  * Returns null (no UI).
  */
-export function DashboardEventBridge({ dataSources }: DashboardEventBridgeProps) {
+export function DashboardEventBridge() {
   const queryClient = useQueryClient()
-  const dataSourcesRef = useRef(dataSources)
-  dataSourcesRef.current = dataSources
 
   useEffect(() => {
     // Subscribe to WebSocket events for device telemetry
