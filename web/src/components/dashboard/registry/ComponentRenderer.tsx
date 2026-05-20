@@ -19,34 +19,34 @@ import { dynamicRegistry, dtoToComponentMeta } from './DynamicRegistry'
 import { communityRegistry } from './CommunityRegistry'
 
 // ============================================================================
-// Lazy Import Components
+// Static imports — avoids lazy() + Suspense fragility in WKWebView
 // ============================================================================
 
 // Indicators
-const ValueCard = lazy(() => import('../generic/ValueCard').then(m => ({ default: m.ValueCard })))
-const LEDIndicator = lazy(() => import('../generic/LEDIndicator').then(m => ({ default: m.LEDIndicator })))
-const Sparkline = lazy(() => import('../generic/Sparkline').then(m => ({ default: m.Sparkline })))
-const ProgressBar = lazy(() => import('../generic/ProgressBar').then(m => ({ default: m.ProgressBar })))
+import { ValueCard } from '../generic/ValueCard'
+import { LEDIndicator } from '../generic/LEDIndicator'
+import { Sparkline } from '../generic/Sparkline'
+import { ProgressBar } from '../generic/ProgressBar'
 
 // Charts
-const LineChart = lazy(() => import('../generic/LineChart').then(m => ({ default: m.LineChart })))
-const AreaChart = lazy(() => import('../generic/LineChart').then(m => ({ default: m.AreaChart })))
-const BarChart = lazy(() => import('../generic/BarChart').then(m => ({ default: m.BarChart })))
-const PieChart = lazy(() => import('../generic/PieChart').then(m => ({ default: m.PieChart })))
+import { LineChart } from '../generic/LineChart'
+import { AreaChart } from '../generic/LineChart'
+import { BarChart } from '../generic/BarChart'
+import { PieChart } from '../generic/PieChart'
 
 // Controls
-const ToggleSwitch = lazy(() => import('../generic/ToggleSwitch').then(m => ({ default: m.ToggleSwitch })))
+import { ToggleSwitch } from '../generic/ToggleSwitch'
 
 // Display & Content
-const ImageDisplay = lazy(() => import('../generic/ImageDisplay').then(m => ({ default: m.ImageDisplay })))
-const ImageHistory = lazy(() => import('../generic/ImageHistory').then(m => ({ default: m.ImageHistory })))
-const WebDisplay = lazy(() => import('../generic/WebDisplay').then(m => ({ default: m.WebDisplay })))
-const MarkdownDisplay = lazy(() => import('../generic/MarkdownDisplay').then(m => ({ default: m.MarkdownDisplay })))
+import { ImageDisplay } from '../generic/ImageDisplay'
+import { ImageHistory } from '../generic/ImageHistory'
+import { WebDisplay } from '../generic/WebDisplay'
+import { MarkdownDisplay } from '../generic/MarkdownDisplay'
 
 // Spatial & Media
-const MapDisplay = lazy(() => import('../generic/MapDisplay').then(m => ({ default: m.MapDisplay })))
-const VideoDisplay = lazy(() => import('../generic/VideoDisplay').then(m => ({ default: m.VideoDisplay })))
-const CustomLayer = lazy(() => import('../generic/CustomLayer').then(m => ({ default: m.CustomLayer })))
+import { MapDisplay } from '../generic/MapDisplay'
+import { VideoDisplay } from '../generic/VideoDisplay'
+import { CustomLayer } from '../generic/CustomLayer'
 
 // ============================================================================
 // Component Map
@@ -142,6 +142,38 @@ function UnknownComponent({ type, className }: UnknownComponentProps) {
 }
 
 // ============================================================================
+// Deep Equal Utility (module-level to avoid re-allocation on every comparison)
+// ============================================================================
+
+// Recursive shallow comparison — avoids JSON.stringify GC pressure
+// for 20+ components on every parent re-render.
+const deepEqual = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true
+  if (a == null || b == null) return a === b
+  if (typeof a !== typeof b) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  if (Array.isArray(a)) {
+    if (a.length !== (b as unknown[]).length) return false
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], (b as unknown[])[i])) return false
+    }
+    return true
+  }
+  if (typeof a === 'object') {
+    const aObj = a as Record<string, unknown>
+    const bObj = b as Record<string, unknown>
+    const keysA = Object.keys(aObj)
+    const keysB = Object.keys(bObj)
+    if (keysA.length !== keysB.length) return false
+    for (const key of keysA) {
+      if (!deepEqual(aObj[key], bObj[key])) return false
+    }
+    return true
+  }
+  return a === b
+}
+
+// ============================================================================
 // Main Renderer
 // ============================================================================
 
@@ -202,8 +234,11 @@ const ComponentRenderer = memo(function ComponentRenderer({
   closeFullscreen,
 }: RenderComponentProps) {
   const componentType = component.type
-  const isDynamic = dynamicRegistry.isDynamic(componentType)
-  const isCommunity = communityRegistry.isCommunity(componentType)
+  // Built-in types take priority — community components may share the same ID
+  // (e.g., a community "toggle-switch" should NOT override the built-in one)
+  const isBuiltIn = !!(componentMap[componentType as GenericComponentType] || businessComponentMap[componentType])
+  const isDynamic = !isBuiltIn && dynamicRegistry.isDynamic(componentType)
+  const isCommunity = !isBuiltIn && communityRegistry.isCommunity(componentType)
 
   // State for dynamic component loading
   const [DynamicComponent, setDynamicComponent] = useState<React.ComponentType<any> | null>(null)
@@ -212,9 +247,8 @@ const ComponentRenderer = memo(function ComponentRenderer({
   const [attemptCount, setAttemptCount] = useState(0)
   const [registrationPollCount, setRegistrationPollCount] = useState(0)
 
-  // Heuristic: check if this looks like an extension component (not in static registry)
-  const isUnknownType = !componentMap[componentType as GenericComponentType] &&
-                        !businessComponentMap[componentType]
+  // Heuristic: check if this looks like an extension component (not in any registry)
+  const isUnknownType = !isBuiltIn
   const mightBeExtension = isUnknownType && !isDynamic && !isCommunity
 
   // Max auto-retry attempts
@@ -564,27 +598,6 @@ const ComponentRenderer = memo(function ComponentRenderer({
   if (prevProps.component.title !== nextProps.component.title) return false
   if (prevProps.className !== nextProps.className) return false
   if (prevProps.style !== nextProps.style) return false
-
-  // Helper for stable deep comparison of objects
-  const deepEqual = (a: unknown, b: unknown): boolean => {
-    // Reference equality
-    if (a === b) return true
-    // Both null/undefined
-    if (a == null || b == null) return a === b
-    // Type mismatch
-    if (typeof a !== typeof b) return false
-    // One is array, other isn't
-    if (Array.isArray(a) !== Array.isArray(b)) return false
-
-    // For arrays and objects, use JSON.stringify with sorted keys
-    // This handles property order differences
-    try {
-      return JSON.stringify(a) === JSON.stringify(b)
-    } catch {
-      // Fallback for circular references or non-serializable values
-      return false
-    }
-  }
 
   // Deep compare complex objects
   if (!deepEqual(prevComp.dataSource, nextComp.dataSource)) return false

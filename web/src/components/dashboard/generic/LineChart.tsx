@@ -11,7 +11,7 @@
  * - Chart view modes: timeseries, snapshot
  */
 
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   LineChart as RechartsLineChart,
@@ -453,6 +453,7 @@ const LineChartInner = function LineChart({
                       dataKey={`series${i}`}
                       stroke="none"
                       fill={`url(#gradient-${i})`}
+                      isAnimationActive={false}
                     />
                   )}
                   <Line
@@ -462,6 +463,7 @@ const LineChartInner = function LineChart({
                     stroke={seriesColor}
                     strokeWidth={2}
                     dot={false}
+                    isAnimationActive={false}
                     activeDot={{ r: 4, className: 'fill-background stroke-[2px]' }}
                     strokeLinejoin="round"
                     strokeLinecap="round"
@@ -476,7 +478,7 @@ const LineChartInner = function LineChart({
   )
 }
 
-export const LineChart = LineChartInner
+export const LineChart = memo(LineChartInner)
 
 /**
  * Area Chart Component
@@ -525,7 +527,7 @@ export interface AreaChartProps {
   className?: string
 }
 
-export function AreaChart({
+export const AreaChart = memo(function AreaChart({
   dataSource,
   series: propSeries,
   labels,
@@ -775,6 +777,7 @@ export function AreaChart({
                   strokeWidth={2}
                   fill={seriesColor}
                   fillOpacity={0.3}
+                  isAnimationActive={false}
                 />
               )
             })}
@@ -783,4 +786,4 @@ export function AreaChart({
       </ChartContainer>
     </div>
   )
-}
+})

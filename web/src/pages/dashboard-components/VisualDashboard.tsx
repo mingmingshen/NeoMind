@@ -167,40 +167,11 @@ import { IconPicker } from '@/components/ui/icon-picker'
 import { EntityIconPicker } from '@/components/ui/entity-icon-picker'
 
 // Dashboard components
-import {
-  DashboardGrid,
-  // Indicators
-  ValueCard,
-  LEDIndicator,
-  Sparkline,
-  ProgressBar,
-  // Charts
-  LineChart,
-  AreaChart,
-  BarChart,
-  PieChart,
-  // Controls
-  ToggleSwitch,
-  // Display & Content
-  ImageDisplay,
-  ImageHistory,
-  WebDisplay,
-  MarkdownDisplay,
-  // Spatial & Media
-  MapDisplay,
-  VideoDisplay,
-  CustomLayer,
-  LayerEditorDialog,
-  MapEditorDialog,
-  CenterPickerDialog,
-  // Business Components
-  AgentMonitorWidget,
-  type MapBinding,
-  type MapBindingType,
-  type MapMarker,
-  type LayerBinding,
-  type LayerBindingType,
-} from '@/components/dashboard'
+import { DashboardGrid } from '@/components/dashboard/DashboardGrid'
+import { LayerEditorDialog } from '@/components/dashboard/generic/LayerEditorDialog'
+import { MapEditorDialog, type MapBinding, type MapBindingType } from '@/components/dashboard/generic/MapEditorDialog'
+import { CenterPickerDialog } from '@/components/dashboard/generic/CenterPickerDialog'
+import type { LayerBinding, LayerBindingType } from '@/components/dashboard/generic/CustomLayer'
 import { DashboardListSidebar } from '@/components/dashboard/DashboardListSidebar'
 import { ShareManagerDialog } from '@/components/dashboard/ShareManagerDialog'
 import { InstallComponentDialog } from '@/pages/dashboard-components/InstallComponentDialog'
@@ -233,6 +204,26 @@ import ComponentRenderer from '@/components/dashboard/registry/ComponentRenderer
 const telemetryCache: Record<string, any> = {}
 const MAX_CACHE_SIZE = 100  // Prevent memory leaks by limiting cache size
 const cacheKeys: string[] = []  // Track insertion order for LRU eviction
+
+function scheduleDashboardIdleTask(task: () => void, timeout = 1500): () => void {
+  if (typeof window === 'undefined') {
+    task()
+    return () => {}
+  }
+
+  const requestIdle = (window as any).requestIdleCallback as
+    | ((cb: () => void, options?: { timeout: number }) => number)
+    | undefined
+  const cancelIdle = (window as any).cancelIdleCallback as ((id: number) => void) | undefined
+
+  if (requestIdle && cancelIdle) {
+    const id = requestIdle(task, { timeout })
+    return () => cancelIdle(id)
+  }
+
+  const timer = window.setTimeout(task, Math.min(timeout, 300))
+  return () => window.clearTimeout(timer)
+}
 
 /**
  * Convert device data source to telemetry with caching to prevent infinite re-renders
@@ -510,7 +501,30 @@ export function renderDashboardComponent(
   closeFullscreen?: () => void
 ) {
   const config = (component as any).config || {}
-  // dataSource is a separate property on GenericComponent, not part of config
+  const normalizedComponent = {
+    ...component,
+    config: {
+      ...config,
+      editMode,
+      height: config.height ?? getChartHeight(component),
+    },
+  } as DashboardComponent
+
+  return (
+    <ComponentRenderer
+      component={normalizedComponent}
+      className="w-full h-full"
+      onDataSourceChange={onDataSourceChange}
+      onConfigChange={onConfigChange}
+      openFullscreen={openFullscreen}
+      closeFullscreen={closeFullscreen}
+    />
+  )
+
+  /*
+  // Legacy direct renderer kept temporarily for reference. It is intentionally
+  // disabled so VisualDashboard no longer statically imports every dashboard
+  // widget module before the first dashboard shell can paint.
   const dataSource = (component as any).dataSource
 
   const commonProps = getCommonDisplayProps(component)
@@ -785,16 +799,21 @@ export function renderDashboardComponent(
       // Read devices directly from store to avoid parameter coupling
       // (devices change every 3s from batch polling, would cause gridComponents memo invalidation)
       const storeDevices = useStore.getState().devices
+      const storeDeviceMap = new Map<string, Device>()
+      for (const device of storeDevices) {
+        storeDeviceMap.set(device.id, device)
+        if (device.device_id) storeDeviceMap.set(device.device_id, device)
+      }
 
       // Helper to get device name
       const getDeviceName = (deviceId: string) => {
-        const device = storeDevices.find(d => d.id === deviceId || d.device_id === deviceId)
+        const device = storeDeviceMap.get(deviceId)
         return device?.name || device?.device_id || deviceId
       }
 
       // Helper to get device status
       const getDeviceStatus = (deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
-        const device = storeDevices.find(d => d.id === deviceId || d.device_id === deviceId)
+        const device = storeDeviceMap.get(deviceId)
         if (!device) return undefined
         return device.online ? 'online' : 'offline'
       }
@@ -805,11 +824,12 @@ export function renderDashboardComponent(
         const ds = binding.dataSource as any
 
         // Get the device for this binding (used for status, metric values, names)
-        const device = getSourceId(ds) ? storeDevices.find(d => d.id === getSourceId(ds) || d.device_id === getSourceId(ds)) : undefined
+        const sourceId = getSourceId(ds)
+        const device = sourceId ? storeDeviceMap.get(sourceId) : undefined
 
         // Get metric value for metric bindings
         let metricValue: string | undefined = undefined
-        if (binding.type === 'metric' && getSourceId(ds)) {
+        if (binding.type === 'metric' && sourceId) {
           const metricKey = ds.metricId || ds.property
           if (device?.current_values && metricKey) {
             const rawValue = device.current_values[metricKey]
@@ -832,15 +852,15 @@ export function renderDashboardComponent(
           label: binding.name,
           markerType,
           // Device-specific fields - use actual device status
-          deviceId: getSourceId(ds),
-          sourceId: getSourceId(ds),
-          status: binding.type === 'device' ? getDeviceStatus(getSourceId(ds)!) : undefined,
+          deviceId: sourceId,
+          sourceId,
+          status: binding.type === 'device' && sourceId ? getDeviceStatus(sourceId) : undefined,
           // Metric-specific fields
           metricValue: binding.type === 'metric' ? (metricValue || '-') : undefined,
           // Command-specific fields
           command: binding.type === 'command' ? ds?.command : undefined,
           // Names for display
-          deviceName: getSourceId(ds) ? getDeviceName(getSourceId(ds)!) : undefined,
+          deviceName: sourceId ? getDeviceName(sourceId) : undefined,
           metricName: ds?.metricId || ds?.property,
           commandName: binding.type === 'command' ? ds?.command : undefined,
         }
@@ -935,6 +955,7 @@ export function renderDashboardComponent(
       </div>
     )
   }
+  */
 }
 
 // ============================================================================
@@ -1193,38 +1214,42 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     componentLibraryOpen: s.componentLibraryOpen,
   }), shallow)
 
-  // Subscribe to devices separately — only triggers re-render when length changes
+  // Subscribe to devices LENGTH only — avoids re-rendering every 3s on batch polling
   // (component data comes from useDataSource, not this prop)
-  const devices = useStore((s) => s.devices)
-  const devicesLength = devices.length
+  const devicesLength = useStore((s) => s.devices.length)
+  // Read devices directly from store when needed (not reactive)
+  const devicesRef = useRef<Device[]>([])
+  devicesRef.current = useStore.getState().devices
 
-  // Action selectors (stable function references, no shallow needed)
-  const setEditMode = useStore((s) => s.setEditMode)
-  const addComponent = useStore((s) => s.addComponent)
-  const updateComponent = useStore((s) => s.updateComponent)
-  const batchUpdatePositions = useStore((s) => s.batchUpdatePositions)
-  const removeComponent = useStore((s) => s.removeComponent)
-  const duplicateComponent = useStore((s) => s.duplicateComponent)
-  const createDashboard = useStore((s) => s.createDashboard)
-  const updateDashboard = useStore((s) => s.updateDashboard)
-  const deleteDashboard = useStore((s) => s.deleteDashboard)
-  const persistDashboard = useStore((s) => s.persistDashboard)
-  const setCurrentDashboard = useStore((s) => s.setCurrentDashboard)
-  const setComponentLibraryOpen = useStore((s) => s.setComponentLibraryOpen)
-  const fetchDashboards = useStore((s) => s.fetchDashboards)
-  const fetchDevices = useStore((s) => s.fetchDevices)
-  const fetchDeviceTypes = useStore((s) => s.fetchDeviceTypes)
-  const fetchDevicesCurrentBatch = useStore((s) => s.fetchDevicesCurrentBatch)
-  const sendCommand = useStore((s) => s.sendCommand)
+  // Action selectors — single subscription for all actions (stable references)
+  const {
+    setEditMode, addComponent, updateComponent, batchUpdatePositions,
+    removeComponent, duplicateComponent, createDashboard, updateDashboard,
+    deleteDashboard, persistDashboard, setCurrentDashboard, setComponentLibraryOpen,
+    fetchDashboards, fetchDevices, fetchDeviceTypes, fetchDevicesCurrentBatch,
+    sendCommand,
+  } = useStore((s) => ({
+    setEditMode: s.setEditMode, addComponent: s.addComponent, updateComponent: s.updateComponent,
+    batchUpdatePositions: s.batchUpdatePositions, removeComponent: s.removeComponent,
+    duplicateComponent: s.duplicateComponent, createDashboard: s.createDashboard,
+    updateDashboard: s.updateDashboard, deleteDashboard: s.deleteDashboard,
+    persistDashboard: s.persistDashboard, setCurrentDashboard: s.setCurrentDashboard,
+    setComponentLibraryOpen: s.setComponentLibraryOpen,
+    fetchDashboards: s.fetchDashboards, fetchDevices: s.fetchDevices,
+    fetchDeviceTypes: s.fetchDeviceTypes, fetchDevicesCurrentBatch: s.fetchDevicesCurrentBatch,
+    sendCommand: s.sendCommand,
+  }))
 
-  // Marketplace store selectors — use individual selectors to avoid subscribing to entire store
-  const marketComponents = useStore((s) => s.marketComponents)
-  const marketLoading = useStore((s) => s.marketLoading)
-  const installedComponents = useStore((s) => s.installed)
-  const fetchMarket = useStore((s) => s.fetchMarket)
-  const fetchInstalled = useStore((s) => s.fetchInstalled)
-  const installFromMarket = useStore((s) => s.installFromMarket)
-  const uninstallComponent = useStore((s) => s.uninstall)
+  // Marketplace store selectors — single subscription
+  const {
+    marketComponents, marketLoading, installed: installedComponents,
+    fetchMarket, fetchInstalled, installFromMarket, uninstall: uninstallComponent,
+  } = useStore((s) => ({
+    marketComponents: s.marketComponents, marketLoading: s.marketLoading,
+    installed: s.installed, fetchMarket: s.fetchMarket,
+    fetchInstalled: s.fetchInstalled, installFromMarket: s.installFromMarket,
+    uninstall: s.uninstall,
+  }))
 
   // Extension lifecycle management for hot updates
   const { refreshVersion } = useExtensionLifecycle({
@@ -1257,7 +1282,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   // Fetch installed components on mount (needed for community registry sync)
   // and when component library opens
   useEffect(() => {
-    fetchInstalled()
+    return scheduleDashboardIdleTask(() => {
+      fetchInstalled()
+    }, 2500)
   }, [fetchInstalled])
 
   const filteredLibrary = useMemo(() => {
@@ -1345,7 +1372,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   // Dashboard interaction handlers
   const handleDeviceClick = useCallback(async (deviceId: string) => {
-    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+    const device = devicesRef.current.find(d => d.id === deviceId || d.device_id === deviceId)
     if (device) {
       // Navigate to device detail page
       navigate(`/devices/${device.id}`)
@@ -1356,7 +1383,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         variant: 'destructive',
       })
     }
-  }, [devices, navigate, t])
+  }, [navigate, t])
 
   const handleMetricClick = useCallback(async (metricId: string, deviceId?: string) => {
     // Show metric info in toast
@@ -1440,7 +1467,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   // Use a counter to force refresh when config changes in dialog
   // Must be declared before componentsStableKey which depends on it
-  const [configVersion, setConfigVersion] = useState(0)
 
   // Create a stable key for components to detect actual changes
   // This key only changes when component data actually changes, not on every render
@@ -1454,7 +1480,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       return `changed-${components.length}`
     }
 
-    // Deep check: compare each component's key properties
+    // Shallow check each component's key properties (avoid JSON.stringify)
     for (let i = 0; i < components.length; i++) {
       const curr = components[i]
       const prev = prevComponents[i]
@@ -1464,20 +1490,28 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         return `new-${curr.id}-${curr.type}`
       }
 
-      // Check each property separately (including title and dataSource)
-      const currDataSource = (curr as any).dataSource
-      const prevDataSource = (prev as any).dataSource
-      const dataSourceChanged = JSON.stringify(currDataSource) !== JSON.stringify(prevDataSource)
-
+      // Check primitives first (fast path)
       if (curr.id !== prev.id ||
           curr.type !== prev.type ||
           curr.title !== prev.title ||
           curr.position.x !== prev.position.x ||
           curr.position.y !== prev.position.y ||
           curr.position.w !== prev.position.w ||
-          curr.position.h !== prev.position.h ||
-          JSON.stringify(curr.config) !== JSON.stringify(prev.config) ||
-          dataSourceChanged) {
+          curr.position.h !== prev.position.h) {
+        prevComponentsRef.current = components
+        return `changed-${curr.id}`
+      }
+
+      // Check config by reference first (most common case: no change)
+      if (curr.config !== prev.config && JSON.stringify(curr.config) !== JSON.stringify(prev.config)) {
+        prevComponentsRef.current = components
+        return `changed-${curr.id}`
+      }
+
+      // Check dataSource by reference first
+      const currDS = (curr as any).dataSource
+      const prevDS = (prev as any).dataSource
+      if (currDS !== prevDS && JSON.stringify(currDS) !== JSON.stringify(prevDS)) {
         prevComponentsRef.current = components
         return `changed-${curr.id}`
       }
@@ -1492,11 +1526,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     if (hasInitialized.current) return
     hasInitialized.current = true
 
-    // Fetch dashboards (handles both localStorage and API)
+    // Fetch dashboards first so the shell and saved layout can paint quickly.
     fetchDashboards()
-    // Fetch devices and device types so they're available for data binding
-    fetchDevices()
-    fetchDeviceTypes()
+
+    // Device metadata is needed for bindings, but it should not compete with
+    // the first dashboard paint in Tauri/WKWebView.
+    const cancelIdleFetch = scheduleDashboardIdleTask(() => {
+      fetchDevices()
+      fetchDeviceTypes()
+    }, 2000)
+
+    return cancelIdleFetch
   }, [fetchDashboards, fetchDevices, fetchDeviceTypes])
 
   // Retry device fetching when devices are empty (backend DB may still be loading)
@@ -1516,7 +1556,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       }
       attempts++
       fetchDevices()
-    }, 3000)
+    }, 5000)
 
     return () => clearInterval(interval)
   }, [devicesLength, currentDashboard, dashboardsLoading, fetchDevices])
@@ -1547,8 +1587,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   }, [currentDashboard])
 
   // Fetch batch current values when device set changes.
-  // Separate polling for missing telemetry — uses stable ref to avoid
-  // cascade: batch fetch → store update → deps change → re-fetch.
+  // Strategy: initial fetch → up to 3 fast retries (2s) for missing data →
+  // switch to slow refresh (120s) for real-time updates. Stops early if all data arrives.
   const batchFetchControllerRef = useRef<{ deviceIds: string[]; interval: ReturnType<typeof setInterval> | null }>({ deviceIds: [], interval: null })
   const batchAbortRef = useRef<AbortController | null>(null)
 
@@ -1574,29 +1614,40 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     // Initial fetch
     fetchDevicesCurrentBatch(deviceIds, abortController.signal)
 
-    // Check if telemetry is missing — read directly from store (not from React state)
-    // to avoid cascading re-renders when the batch result updates the store.
-    const checkAndPoll = () => {
+    // Phase 1: Fast retries for missing telemetry (up to 3 attempts at 2s intervals)
+    let fastRetries = 0
+    const FAST_RETRY_MAX = 3
+    const FAST_RETRY_MS = 2000
+    // Phase 2: Slow background refresh (120s)
+    const SLOW_REFRESH_MS = 120_000
+
+    const checkAndRefresh = () => {
       if (abortController.signal.aborted) return
+
       const freshDevices = useStore.getState().devices
       const ids = new Set(deviceIds)
       const stillMissing = freshDevices.some((d) =>
         ids.has(d.id || d.device_id) &&
         (!d.current_values || Object.keys(d.current_values).length === 0)
       )
-      if (stillMissing) {
+
+      if (stillMissing && fastRetries < FAST_RETRY_MAX) {
+        // Phase 1: fast retry for missing data
+        fastRetries++
         fetchDevicesCurrentBatch(deviceIds, abortController.signal)
-      } else if (ctrl.interval) {
-        // All telemetry arrived — stop polling
-        clearInterval(ctrl.interval)
-        ctrl.interval = null
+      } else {
+        // All data arrived or fast retries exhausted — switch to slow refresh
+        if (ctrl.interval) {
+          clearInterval(ctrl.interval)
+        }
+        ctrl.interval = setInterval(checkAndRefresh, SLOW_REFRESH_MS)
+        // Fetch once more at the transition point
+        fetchDevicesCurrentBatch(deviceIds, abortController.signal)
       }
     }
 
-    // Start polling (reads store directly, so no deps on React state)
-    ctrl.interval = setInterval(checkAndPoll, 3000)
-    // Also check immediately after first fetch settles
-    setTimeout(checkAndPoll, 1500)
+    // Start with fast retry interval
+    ctrl.interval = setInterval(checkAndRefresh, FAST_RETRY_MS)
 
     return () => {
       abortController.abort()
@@ -2155,12 +2206,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       // Create callbacks for this component to persist configuration changes
       const handleDataSourceChange = (newDataSource: any) => {
         updateComponent(component.id, { dataSource: newDataSource as DataSource }, false)
-        setConfigVersion(v => v + 1)
       }
 
       const handleConfigChange = (newConfig: Record<string, any>) => {
         updateComponent(component.id, { config: newConfig }, false)
-        setConfigVersion(v => v + 1)
       }
 
       return {
@@ -2188,7 +2237,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         ),
       }
     }) ?? []
-  }, [componentsStableKey, configVersion, editMode, isMobile])
+  }, [componentsStableKey, editMode, isMobile])
 
   // Track initial config load to avoid unnecessary updates
   const initialConfigRef = useRef<any>(null)
@@ -2233,7 +2282,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           // Update the component with current config for live preview (don't persist yet)
           updateComponent(selectedComponent.id, updateData, false)
           // Increment version to force re-render
-          setConfigVersion(v => v + 1)
           livePreviewTimerRef.current = null
         }, 300)
 
@@ -2324,8 +2372,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
       updateComponent(selectedComponent.id, updateData, false)
 
-      // Force immediate re-render by incrementing configVersion
-      setConfigVersion(v => v + 1)
+
 
       // Verify after update
       setTimeout(() => {
@@ -2383,8 +2430,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       // Update the store with both config and dataSource
       updateComponent(selectedComponent.id, updateData, false)
 
-      // Force immediate re-render by incrementing configVersion
-      setConfigVersion(v => v + 1)
+
 
       // Update local config state
       setComponentConfig(prev => ({ ...prev, bindings: fixedBindings }))
@@ -2425,7 +2471,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       updateComponent(selectedComponent.id, updateData, false)
 
       // Force re-render
-      setConfigVersion(v => v + 1)
 
       // Update local config state
       setComponentConfig(prev => ({ ...prev, bindings }))
@@ -2459,7 +2504,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       updateComponent(selectedComponent.id, updateData, false)
 
       // Force re-render
-      setConfigVersion(v => v + 1)
 
       // Update local config state
       setComponentConfig(prev => ({ ...prev, center: newCenter }))

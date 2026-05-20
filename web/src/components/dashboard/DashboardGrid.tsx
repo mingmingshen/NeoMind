@@ -31,7 +31,8 @@ export interface DashboardGridProps {
   components: Array<{
     id: string
     position: { x: number; y: number; w: number; h: number; minW?: number; minH?: number; maxW?: number; maxH?: number }
-    children: ReactElement
+    children?: ReactElement
+    render?: () => ReactElement
   }>
   rowHeight?: number
   margin?: [number, number]
@@ -208,16 +209,14 @@ export const DashboardGrid = memo(function DashboardGrid({
     }
   }, [width, transitionsEnabled])
 
-  return (
-    <div ref={containerRef} className={cn('w-full', className)}>
-      <style>{`
+  const gridStyles = useMemo(() => `
         .react-grid-layout {
           display: block !important;
           isolation: isolate;
         }
         .react-grid-item {
           ${editMode && transitionsEnabled ? 'transition: transform 200ms ease;' : 'transition: none !important;'}
-          contain: layout style;
+          contain: paint;
         }
         ${touchEnabled ? `
         .react-grid-item { touch-action: none; }
@@ -281,7 +280,11 @@ export const DashboardGrid = memo(function DashboardGrid({
         .react-grid-layout:not(.edit-mode) > .react-grid-item {
           transition: none !important;
         }
-      `}</style>
+      `, [editMode, transitionsEnabled, touchEnabled, isMobile])
+
+  return (
+    <div ref={containerRef} className={cn('w-full', className)}>
+      <style>{gridStyles}</style>
       {width > 0 && (
         <ResponsiveGridLayout
           className={cn('dashboard-grid', editMode && 'edit-mode')}
@@ -316,7 +319,7 @@ export const DashboardGrid = memo(function DashboardGrid({
                 maxH: component.position.maxH,
               }}
             >
-              {component.children}
+              {component.children ?? component.render?.()}
             </div>
           ))}
         </ResponsiveGridLayout>

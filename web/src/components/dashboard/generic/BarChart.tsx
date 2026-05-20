@@ -11,7 +11,7 @@
  * - Chart view modes: timeseries, snapshot, comparison
  */
 
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -194,7 +194,7 @@ export interface BarChartProps {
   className?: string
 }
 
-export function BarChart({
+export const BarChart = memo(function BarChart({
   dataSource,
   data: propData,
   title,
@@ -216,29 +216,29 @@ export function BarChart({
   const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
 
+  // Normalize data sources once - reuse across all memoized calculations
+  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
+
   // Get effective aggregate from dataSource or props
   const effectiveAggregate = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     if (sources.length > 0 && sources[0].aggregateExt) {
       return sources[0].aggregateExt
     }
     return aggregate
-  }, [dataSource, aggregate])
+  }, [sources, aggregate])
 
   // Get effective chart view mode
   const effectiveViewMode = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     if (sources.length > 0 && sources[0].chartViewMode) {
       return sources[0].chartViewMode
     }
     return chartViewMode
-  }, [dataSource, chartViewMode])
+  }, [sources, chartViewMode])
 
   // Normalize data sources for historical data
   const telemetrySources = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     return sources.map(ds => toTelemetrySource(ds, limit, timeRange)).filter((ds): ds is DataSource => ds !== undefined)
-  }, [dataSource, limit, timeRange])
+  }, [sources, limit, timeRange])
 
   const { data, loading } = useDataSource<BarData[] | number[] | number[][]>(
     telemetrySources.length > 0 ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources) : undefined,
@@ -269,7 +269,6 @@ export function BarChart({
 
   // For multi-series bar chart, transform data to recharts format
   const chartData = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
 
     // Helper to extract numeric value from data point
     const extractNumericValue = (item: unknown): number => {
@@ -404,11 +403,10 @@ export function BarChart({
       { name: t('chart.may'), value: 19 },
       { name: t('chart.jun'), value: 25 },
     ]
-  }, [data, propData, dataSource, loading, dataMapping, effectiveAggregate])
+  }, [data, propData, dataSource, sources, loading, dataMapping, effectiveAggregate])
 
   // Get series info for multi-source rendering
   const seriesInfo = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     if (sources.length > 1 && Array.isArray(data) && data.length === sources.length) {
       return sources.map((ds, i) => {
         return {
@@ -418,7 +416,7 @@ export function BarChart({
       }})
     }
     return null
-  }, [dataSource, data, color, t])
+  }, [sources, data, color, t])
 
   // Show loading skeleton when fetching data
   if (dataSource && showLoading) {
@@ -476,6 +474,7 @@ export function BarChart({
                   name={info.name}
                   fill={info.color}
                   radius={4}
+                  isAnimationActive={false}
                 />
               ))
             ) : (
@@ -484,6 +483,7 @@ export function BarChart({
                 dataKey="value"
                 fill={color || fallbackColors[0]}
                 radius={4}
+                isAnimationActive={false}
               >
                 {/* Only use different colors per bar for categorical/distribution data */}
                 {chartData.some(d => d.color) && chartData.map((entry, index) => (
@@ -499,4 +499,4 @@ export function BarChart({
       </ChartContainer>
     </div>
   )
-}
+})

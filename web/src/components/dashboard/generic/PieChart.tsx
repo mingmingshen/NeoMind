@@ -10,7 +10,7 @@
  * - Time window selection for data scope
  */
 
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   PieChart as RechartsPieChart,
@@ -184,7 +184,7 @@ export interface PieChartProps {
   className?: string
 }
 
-export function PieChart({
+export const PieChart = memo(function PieChart({
   dataSource,
   data: propData,
   title,
@@ -207,20 +207,21 @@ export function PieChart({
   const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
 
+  // Normalize data sources once - reuse across all memoized calculations
+  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
+
   // Get effective aggregate from dataSource or props
   const effectiveAggregate = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     if (sources.length > 0 && sources[0].aggregateExt) {
       return sources[0].aggregateExt
     }
     return aggregate
-  }, [dataSource, aggregate])
+  }, [sources, aggregate])
 
   // Normalize data sources for telemetry
   const telemetrySources = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     return sources.map(ds => toTelemetrySource(ds, limit, timeRange)).filter((ds): ds is DataSource => ds !== undefined)
-  }, [dataSource, limit, timeRange])
+  }, [sources, limit, timeRange])
 
   const { data, loading } = useDataSource<PieData[] | number[] | number[][]>(
     telemetrySources.length > 0 ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources) : undefined,
@@ -255,7 +256,6 @@ export function PieChart({
 
   // Normalize data to PieData[] format
   const chartData: PieData[] = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     const chartColors = colors || fallbackColors
 
     // Multi-source data - combine into single pie chart
@@ -371,7 +371,7 @@ export function PieChart({
       { name: t('chart.categoryB'), value: 45 },
       { name: t('chart.categoryC'), value: 25 },
     ]
-  }, [data, propData, dataSource, dataMapping, effectiveAggregate, loading, t, colors])
+  }, [data, propData, dataSource, sources, dataMapping, effectiveAggregate, loading, t, colors])
 
   if (showLoading) {
     return (
@@ -407,6 +407,7 @@ export function PieChart({
               innerRadius={variant === 'donut' ? innerRadius : 0}
               outerRadius={outerRadius}
               dataKey="value"
+              isAnimationActive={false}
             >
               {chartData.map((entry, index) => (
                 <Cell
@@ -423,4 +424,4 @@ export function PieChart({
       </ChartContainer>
     </div>
   )
-}
+})
