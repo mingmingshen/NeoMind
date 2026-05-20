@@ -17,6 +17,8 @@ import { DashboardEventBridge } from './DashboardEventBridge'
 import { WidgetConfigPanel } from './config/WidgetConfigPanel'
 import { InstallWidgetDialog } from './InstallWidgetDialog'
 import { WidgetShell } from './WidgetShell'
+import { getWidgetComponent } from '../widgets/adapters'
+import { useWidgetDataSource } from '../hooks/useWidgetDataSource'
 
 export function VisualDashboard() {
   const { t } = useTranslation()
@@ -113,21 +115,32 @@ export function VisualDashboard() {
             components={currentDashboard.components}
             editMode={editMode}
           >
-            {currentDashboard.components.map((component) => (
-              <div key={component.id}>
-                <WidgetShell
-                  widgetId={component.id}
-                  title={component.title}
-                  isEditing={editMode}
-                  onOpenConfig={() => setConfigPanelOpen(true, component.id)}
-                >
-                  {/* Widget content will be rendered by Phase 4 widget adapters */}
-                  <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
-                    {component.type}
-                  </div>
-                </WidgetShell>
-              </div>
-            ))}
+            {currentDashboard.components.map((component) => {
+              const WidgetComponent = getWidgetComponent(component.type)
+              return (
+                <div key={component.id}>
+                  <WidgetShell
+                    widgetId={component.id}
+                    title={component.title}
+                    isEditing={editMode}
+                    onOpenConfig={() => setConfigPanelOpen(true, component.id)}
+                  >
+                    {WidgetComponent ? (
+                      <WidgetComponent
+                        widgetId={component.id}
+                        dataSource={null}
+                        isEditing={editMode}
+                        title={component.title}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
+                        {component.type}
+                      </div>
+                    )}
+                  </WidgetShell>
+                </div>
+              )
+            })}
           </DashboardGrid>
         </div>
       </div>
