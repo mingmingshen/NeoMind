@@ -22,7 +22,7 @@ import { createStableKey } from '@/lib/stable-key'
 import { useEvents } from '@/hooks/useEvents'
 import {
   extractValueFromData, safeExtractValue, eventMetricMatches,
-  getPointTimestamp, getPointValue, isImageDataSource, getDataSourceLimit,
+  getPointValue, isImageDataSource, getDataSourceLimit,
   isDuplicatePoint, dedupeTelemetryPoints, sortAndDedup,
 } from './helpers'
 import {

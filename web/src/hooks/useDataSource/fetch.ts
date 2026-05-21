@@ -212,14 +212,6 @@ export async function fetchHistoricalTelemetry(
   return fetchPromise
 }
 
-/** Sync cache read for prefetch. */
-export function readTelemetryCacheSync(
-  deviceId: string, metricId: string, timeRange: number = 1,
-  limit: number = 50, aggregate: TelemetryAggregate = 'raw'
-): { data: number[]; raw?: unknown[] } | null {
-  return telemetryCache.get(`${deviceId}|${metricId}|${timeRange}|${limit}|${aggregate}`) ?? null
-}
-
 // Expose cache for event processing (telemetry cache refresh scheduling)
 export { telemetryCache }
 

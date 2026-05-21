@@ -76,7 +76,7 @@ export function extractValueFromData(rawData: string | unknown, property: string
 }
 
 /** Extract value from a parsed JSON object (no alias matching, just key + dot + case-insensitive). */
-export function extractValueFromParsed(parsed: unknown, property: string): unknown {
+function extractValueFromParsed(parsed: unknown, property: string): unknown {
   if (parsed === null || parsed === undefined) return undefined
   if (typeof parsed !== 'object') return parsed
 
@@ -133,7 +133,7 @@ export function safeExtractValue(data: unknown, fallback: number | string | bool
 
 const TRANSFORM_NAMESPACES = ['transform.', 'virtual.', 'computed.', 'derived.', 'aggregated.']
 
-export function isVirtualMetric(metricId: string): boolean {
+function isVirtualMetric(metricId: string): boolean {
   return TRANSFORM_NAMESPACES.some(ns => metricId.startsWith(ns))
 }
 
@@ -163,13 +163,6 @@ export function eventMetricMatches(eventMetric: string, targetMetric: string): b
 // Dedup helpers (from dedup.ts)
 // ============================================================================
 
-/** Get timestamp from a data point. */
-export function getPointTimestamp(p: unknown): number {
-  if (p == null) return 0
-  const o = p as Record<string, unknown>
-  return (o.timestamp ?? o.time ?? o.t ?? 0) as number
-}
-
 /** Get value from a data point. */
 export function getPointValue(p: unknown): unknown {
   if (p == null) return undefined
@@ -194,7 +187,7 @@ export function isImageData(p: unknown): boolean {
 }
 
 /** Check if metric is image-related. */
-export function isImageMetric(metricId: string | undefined): boolean {
+function isImageMetric(metricId: string | undefined): boolean {
   if (!metricId) return false
   const lower = metricId.toLowerCase()
   return lower.includes('image') || lower.includes('img') || metricId.includes('values.image')
