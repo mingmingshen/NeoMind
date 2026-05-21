@@ -12,6 +12,9 @@ pub mod extension;
 pub mod agent_cmd;
 pub mod message;
 pub mod widget;
+pub mod system;
+pub mod broker;
+pub mod help;
 
 pub use api_client::ApiClient;
 pub use types::{BuildMeta, CliResponse, OutputFormat};

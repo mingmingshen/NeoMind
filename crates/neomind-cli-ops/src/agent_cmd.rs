@@ -89,6 +89,8 @@ pub async fn update_agent(
     llm_backend: Option<&str>,
     system_prompt: Option<&str>,
     user_prompt: Option<&str>,
+    schedule_type: Option<&str>,
+    schedule_config: Option<&str>,
 ) -> Result<CliResponse> {
     let mut body = json!({});
     if let Some(n) = name {
@@ -105,6 +107,25 @@ pub async fn update_agent(
     }
     if let Some(prompt) = user_prompt {
         body["user_prompt"] = json!(prompt);
+    }
+    if let Some(st) = schedule_type {
+        let mut schedule = json!({"schedule_type": st});
+        match st {
+            "interval" => {
+                if let Some(config) = schedule_config {
+                    if let Ok(secs) = config.parse::<u64>() {
+                        schedule["interval_seconds"] = json!(secs);
+                    }
+                }
+            }
+            "cron" => {
+                if let Some(config) = schedule_config {
+                    schedule["cron_expression"] = json!(config);
+                }
+            }
+            _ => {}
+        }
+        body["schedule"] = schedule;
     }
 
     let data = client.put(&format!("/agents/{}", id), &body).await?;

@@ -54,6 +54,7 @@ impl SkillRegistry {
         let builtin_skills = vec![
             include_str!("../skills/builtins/system-info.md"),
             include_str!("../skills/builtins/device-management.md"),
+            include_str!("../skills/builtins/device-onboarding.md"),
             include_str!("../skills/builtins/agent-management.md"),
             include_str!("../skills/builtins/rule-management.md"),
             include_str!("../skills/builtins/message-management.md"),

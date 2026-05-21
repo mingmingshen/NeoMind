@@ -85,3 +85,81 @@ pub async fn acknowledge_message(client: &ApiClient, id: &str) -> Result<CliResp
         "Message acknowledged",
     ))
 }
+
+// ---- Message Channel operations ----
+
+/// List all message channels
+pub async fn list_channels(client: &ApiClient) -> Result<CliResponse> {
+    let data = client.get("/messages/channels").await?;
+    Ok(CliResponse::success(data, "Channels listed"))
+}
+
+/// Get channel by name
+pub async fn get_channel(client: &ApiClient, name: &str) -> Result<CliResponse> {
+    let data = client.get(&format!("/messages/channels/{}", name)).await?;
+    Ok(CliResponse::success(data, "Channel retrieved"))
+}
+
+/// List available channel types
+pub async fn list_channel_types(client: &ApiClient) -> Result<CliResponse> {
+    let data = client.get("/messages/channels/types").await?;
+    Ok(CliResponse::success(data, "Channel types listed"))
+}
+
+/// Get channel type schema
+pub async fn get_channel_type_schema(client: &ApiClient, channel_type: &str) -> Result<CliResponse> {
+    let data = client.get(&format!("/messages/channels/types/{}/schema", channel_type)).await?;
+    Ok(CliResponse::success(data, "Channel type schema retrieved"))
+}
+
+/// Create a message channel
+pub async fn create_channel(
+    client: &ApiClient,
+    name: &str,
+    channel_type: &str,
+    config: &str,
+) -> Result<CliResponse> {
+    let config_value = serde_json::from_str(config).unwrap_or(json!(config));
+    let body = json!({
+        "name": name,
+        "channel_type": channel_type,
+    });
+    // Merge config into body (flattened)
+    let mut body = body;
+    if let serde_json::Value::Object(mut map) = config_value {
+        body.as_object_mut().unwrap().append(&mut map);
+    }
+    let data = client.post("/messages/channels", &body).await?;
+    let meta = BuildMeta {
+        r#type: "channel".to_string(),
+        action: "create".to_string(),
+        entity_id: name.to_string(),
+        entity_name: Some(name.to_string()),
+        undo_command: format!("neomind message channel-delete {}", name),
+    };
+    Ok(CliResponse::success_with_meta(data, "Channel created", meta))
+}
+
+/// Update a channel's configuration
+pub async fn update_channel(
+    client: &ApiClient,
+    name: &str,
+    config: &str,
+) -> Result<CliResponse> {
+    let config_value = serde_json::from_str(config).unwrap_or(json!(config));
+    let body = json!({ "config": config_value });
+    let data = client.put(&format!("/messages/channels/{}", name), &body).await?;
+    Ok(CliResponse::success(data, "Channel updated"))
+}
+
+/// Delete a message channel
+pub async fn delete_channel(client: &ApiClient, name: &str) -> Result<CliResponse> {
+    let data = client.delete(&format!("/messages/channels/{}", name)).await?;
+    Ok(CliResponse::success(data, "Channel deleted"))
+}
+
+/// Test a channel
+pub async fn test_channel(client: &ApiClient, name: &str) -> Result<CliResponse> {
+    let data = client.post(&format!("/messages/channels/{}/test", name), &json!({})).await?;
+    Ok(CliResponse::success(data, "Channel test completed"))
+}

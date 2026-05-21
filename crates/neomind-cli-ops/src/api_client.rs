@@ -32,7 +32,6 @@ impl ApiClient {
         }
     }
 
-    #[cfg(test)]
     pub fn base_url(&self) -> &str {
         &self.base_url
     }

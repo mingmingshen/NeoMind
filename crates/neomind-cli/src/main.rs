@@ -36,6 +36,15 @@ struct Args {
 /// Available commands.
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Show detailed guide for a domain (e.g., neomind guide device).
+    ///
+    /// Available domains: device, dashboard, rule, agent, transform, extension,
+    /// message, widget, onboarding, system. Run without args to list all.
+    Guide {
+        /// Domain name (e.g., device, dashboard, rule, agent, transform, extension,
+        /// message, widget, onboarding, system).
+        domain: Option<String>,
+    },
     /// Start the web server.
     Serve {
         /// Host to bind to.
@@ -131,6 +140,16 @@ enum Command {
     Widget {
         #[command(subcommand)]
         widget_cmd: WidgetCommand,
+    },
+    /// System information and infrastructure.
+    System {
+        #[command(subcommand)]
+        system_cmd: SystemCommand,
+    },
+    /// External MQTT broker management.
+    Broker {
+        #[command(subcommand)]
+        broker_cmd: BrokerCommand,
     },
 }
 
@@ -269,17 +288,22 @@ enum DeviceCommand {
         json: bool,
     },
     /// Create a new device.
+    ///
+    /// First run `neomind device types list` to see available device types,
+    /// or use any custom name. Default adapter is "mqtt".
     Create {
         /// Device name.
         #[arg(short, long)]
         name: String,
-        /// Device type.
+        /// Device type name. Run `neomind device types list` to see built-in types,
+        /// or use any custom name (e.g., "sensor", "camera", "switch").
         #[arg(short, long)]
         device_type: String,
-        /// Adapter type.
+        /// Adapter type: mqtt (default) | webhook.
         #[arg(short, long)]
         adapter_type: String,
-        /// Connection config JSON.
+        /// Connection config JSON. For MQTT: '{"topic":"sensor/data"}'.
+        /// For webhook: omit (auto-generated URL).
         #[arg(short, long)]
         config: Option<String>,
         /// Output in JSON format.
@@ -324,10 +348,10 @@ enum DeviceCommand {
         /// Device ID.
         #[arg(required = true)]
         id: String,
-        /// Metric name.
+        /// Metric name to filter (optional, returns all metrics if omitted).
         #[arg(long)]
         metric: Option<String>,
-        /// Time range (e.g., "1h", "24h", "7d").
+        /// Time range: "1h", "24h", "7d", "30d" (default: 24h).
         #[arg(short, long)]
         time_range: Option<String>,
         /// AI compression mode: lossless adaptive series (kept/fluctuated).
@@ -339,14 +363,17 @@ enum DeviceCommand {
         json: bool,
     },
     /// Send control command.
+    ///
+    /// Check device type for available commands: `neomind device get <ID>`.
+    /// Example: `neomind device control <ID> toggle --params '{"state":true}'`
     Control {
         /// Device ID.
         #[arg(required = true)]
         id: String,
-        /// Command name.
+        /// Command name (e.g., "toggle", "set_speed", "reboot").
         #[arg(required = true)]
         command: String,
-        /// Command parameters JSON.
+        /// Command parameters JSON. Example: '{"state":true}'
         #[arg(short, long)]
         params: Option<String>,
         /// Output in JSON format.
@@ -359,11 +386,13 @@ enum DeviceCommand {
         type_cmd: DeviceTypeCommand,
     },
     /// Write a metric data point.
+    ///
+    /// Example: `neomind device write-metric <ID> --metric temperature --value 25.5`
     WriteMetric {
         /// Device ID.
         #[arg(required = true)]
         id: String,
-        /// Metric name.
+        /// Metric name (must match device type definition).
         #[arg(short, long)]
         metric: String,
         /// Value (number, string, or "true"/"false").
@@ -390,14 +419,16 @@ enum DeviceTypeCommand {
         id: String,
     },
     /// Create a new device type.
+    ///
+    /// Example: `neomind device types create --name TempSensor --metrics '[{"key":"temperature","name":"Temperature","unit":"°C","type":"number"}]'`
     Create {
         /// Type name.
         #[arg(short, long)]
         name: String,
-        /// Metrics definition JSON.
+        /// Metrics definition JSON array. Each metric: {"key":"temp","name":"Temperature","unit":"°C","type":"number"}
         #[arg(long)]
         metrics: String,
-        /// Commands definition JSON.
+        /// Commands definition JSON array (optional). Each command: {"id":"on","name":"Turn On","params":[]}
         #[arg(long)]
         commands: Option<String>,
     },
@@ -428,6 +459,9 @@ enum DashboardCommand {
         json: bool,
     },
     /// Create a new dashboard.
+    ///
+    /// Create first, then use `dashboard update --components` to add widgets.
+    /// Run `neomind widget list` to see available widget types and their config_schema.
     Create {
         /// Dashboard name.
         #[arg(short, long)]
@@ -435,7 +469,7 @@ enum DashboardCommand {
         /// Dashboard description.
         #[arg(short, long)]
         description: Option<String>,
-        /// Layout configuration JSON.
+        /// Layout configuration JSON (optional, auto-generated if omitted).
         #[arg(short, long)]
         layout: Option<String>,
         /// Output format (json flag for structured output).
@@ -456,7 +490,9 @@ enum DashboardCommand {
         /// New layout configuration JSON.
         #[arg(short, long)]
         layout: Option<String>,
-        /// Dashboard components JSON array.
+        /// Dashboard components JSON array. WARNING: Replaces ALL existing components.
+        /// Get current with `dashboard get <ID>`, modify the array, then pass back.
+        /// Each component: {"type":"widget-type","data_source":{"..."},"display":{...},"config":{...}}
         #[arg(short, long)]
         components: Option<String>,
         /// Output format (json flag for structured output).
@@ -498,12 +534,16 @@ enum RuleCommand {
         id: String,
     },
     /// Create a new rule.
+    ///
+    /// Uses NeoMind DSL syntax. Must include RULE...WHEN...DO...END structure.
+    /// Example: `neomind rule create --dsl 'RULE "Alert" WHEN device.temperature > 30 DO NOTIFY "Too hot" END'`
     Create {
-        /// Rule name.
+        /// Rule name (optional, can be set in DSL).
         #[arg(short, long)]
         name: Option<String>,
-        /// Rule DSL definition.
-        /// Example: 'RULE "Low Battery" WHEN device.battery < 20 DO NOTIFY "Battery low" END'
+        /// Rule DSL definition. Syntax: RULE "name" WHEN <condition> DO <action> END
+        /// Conditions: device.<metric> <op> <value>, AND/OR for compound.
+        /// Actions: NOTIFY "message", device.<metric>.write(<value>)
         #[arg(short, long)]
         dsl: String,
     },
@@ -566,14 +606,19 @@ enum TransformCommand {
         id: String,
     },
     /// Create a new transform.
+    ///
+    /// Code receives `input` object with metric data, must return transformed value.
+    /// Example: --code 'return input * 1.8 + 32' (Celsius to Fahrenheit).
     Create {
         /// Transform name.
         #[arg(short, long)]
         name: String,
-        /// Scope (global, device_type:TypeName, or device:DeviceId).
+        /// Scope: "global" (all devices) or "device_type:TypeName" or "device:DeviceId".
+        /// Most transforms use "global".
         #[arg(short, long)]
         scope: String,
-        /// JavaScript transform code.
+        /// JavaScript transform code. Use `input` to access the value.
+        /// Example: 'return input * 1.8 + 32'
         #[arg(short, long)]
         code: String,
         /// Output prefix for virtual metrics.
@@ -643,6 +688,9 @@ enum AgentCommand {
         id: String,
     },
     /// Create a new agent.
+    ///
+    /// After creating, run `agent control <ID> --status active` to start it.
+    /// Schedule is required: --schedule-type interval|cron|event.
     Create {
         /// Agent name.
         #[arg(short, long)]
@@ -653,10 +701,11 @@ enum AgentCommand {
         /// Description.
         #[arg(short, long)]
         description: Option<String>,
-        /// Schedule type: interval | cron | event.
+        /// Schedule type: interval | cron | event. Required.
         #[arg(long)]
         schedule_type: Option<String>,
         /// Interval in seconds (for interval type) or cron expression (for cron type).
+        /// Example: --schedule-config "300" (5min interval) or "0 8 * * *" (daily 8am).
         #[arg(long)]
         schedule_config: Option<String>,
         /// LLM backend configuration.
@@ -693,7 +742,10 @@ enum AgentCommand {
         #[arg(required = true)]
         id: String,
     },
-    /// Control agent status (active/paused).
+    /// Control agent status.
+    ///
+    /// Status values: "active" (start running) or "paused" (stop).
+    /// Must run `control --status active` after creating a new agent.
     Control {
         /// Agent ID.
         #[arg(required = true)]
@@ -787,10 +839,10 @@ enum MessageCommand {
         /// Message title.
         #[arg(short, long)]
         title: String,
-        /// Message content.
+        /// Message content (supports markdown).
         #[arg(short, long)]
         message: String,
-        /// Severity level.
+        /// Severity level: info | warning | error | critical.
         #[arg(short, long, default_value = "info")]
         severity: String,
         /// Source.
@@ -873,6 +925,118 @@ enum WidgetCommand {
         /// Version (optional).
         #[arg(long)]
         version: Option<String>,
+    },
+}
+
+/// System information subcommands.
+#[derive(Subcommand, Debug)]
+enum SystemCommand {
+    /// Show system infrastructure info (MQTT broker, webhook URL, network).
+    Info {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// External MQTT broker subcommands.
+#[derive(Subcommand, Debug)]
+enum BrokerCommand {
+    /// List all external MQTT brokers.
+    List {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get broker details and connection status.
+    Get {
+        /// Broker ID.
+        #[arg(required = true)]
+        id: String,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a new external MQTT broker.
+    Create {
+        /// Broker display name.
+        #[arg(long)]
+        name: String,
+        /// Broker hostname or IP.
+        #[arg(long)]
+        host: String,
+        /// Broker port (default: 1883).
+        #[arg(long, default_value_t = 1883)]
+        port: u16,
+        /// Enable TLS.
+        #[arg(long)]
+        tls: bool,
+        /// Username for authentication.
+        #[arg(long)]
+        username: Option<String>,
+        /// Password for authentication.
+        #[arg(long)]
+        password: Option<String>,
+        /// Comma-separated topic subscriptions (default: # for all).
+        #[arg(long)]
+        topics: Option<String>,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Update broker configuration.
+    Update {
+        /// Broker ID.
+        #[arg(required = true)]
+        id: String,
+        /// Broker display name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Broker hostname or IP.
+        #[arg(long)]
+        host: Option<String>,
+        /// Comma-separated topic subscriptions.
+        #[arg(long)]
+        topics: Option<String>,
+        /// Disable the broker (stop connection).
+        #[arg(long)]
+        disable: bool,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a broker.
+    Delete {
+        /// Broker ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Test broker connectivity with real MQTT handshake.
+    Test {
+        /// Broker ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// List all MQTT topic subscriptions.
+    Subscriptions {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Subscribe to a custom MQTT topic.
+    Subscribe {
+        /// Topic pattern to subscribe to.
+        #[arg(long)]
+        topic: String,
+        /// QoS level (0, 1, or 2). Default: 1.
+        #[arg(long, default_value_t = 1)]
+        qos: u8,
+    },
+    /// Unsubscribe from an MQTT topic.
+    Unsubscribe {
+        /// Topic to unsubscribe from.
+        #[arg(long)]
+        topic: String,
     },
 }
 
@@ -960,6 +1124,30 @@ async fn main() -> Result<()> {
 
     // Run the appropriate command
     match args.command {
+        Command::Guide { domain } => {
+            match domain {
+                Some(d) => {
+                    match neomind_cli_ops::help::get_help(&d) {
+                        Some(content) => println!("{}", content),
+                        None => {
+                            eprintln!("Unknown domain: '{}'. Available domains:", d);
+                            for info in neomind_cli_ops::help::list_domains() {
+                                eprintln!("  {:<12} {}", info.name, info.description);
+                            }
+                        }
+                    }
+                }
+                None => {
+                    println!("NeoMind CLI — Available Guide Domains:\n");
+                    for info in neomind_cli_ops::help::list_domains() {
+                        println!("  {:<12} {}", info.name, info.description);
+                    }
+                    println!("\nUsage: neomind guide <domain>");
+                    println!("Example: neomind guide device");
+                }
+            }
+            Ok(())
+        }
         Command::Serve { host, port } => run_server(host, port).await,
         Command::Prompt {
             prompt,
@@ -985,6 +1173,8 @@ async fn main() -> Result<()> {
         Command::Agent { agent_cmd } => run_agent_cmd(agent_cmd).await,
         Command::Message { message_cmd } => run_message_cmd(message_cmd).await,
         Command::Widget { widget_cmd } => run_widget_cmd(widget_cmd).await,
+        Command::System { system_cmd } => run_system_cmd(system_cmd).await,
+        Command::Broker { broker_cmd } => run_broker_cmd(broker_cmd).await,
     }
 }
 
@@ -2798,6 +2988,8 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
                 llm_backend.as_deref(),
                 system_prompt.as_deref(),
                 prompt.as_deref(),
+                None,
+                None,
             ).await?
         }
         AgentCommand::Delete { id } => {
@@ -2933,5 +3125,78 @@ async fn run_widget_cmd(cmd: WidgetCommand) -> Result<()> {
 
     // Format and print output (for commands without --json flag)
     format_output(&response, output_format);
+    Ok(())
+}
+
+async fn run_system_cmd(cmd: SystemCommand) -> Result<()> {
+    use neomind_cli_ops::output::format_output;
+    use neomind_cli_ops::types::OutputFormat;
+    let client = neomind_cli_ops::ApiClient::new();
+
+    match cmd {
+        SystemCommand::Info { json } => {
+            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let resp = neomind_cli_ops::system::system_info(&client).await?;
+            format_output(&resp, fmt);
+        }
+    }
+    Ok(())
+}
+
+async fn run_broker_cmd(cmd: BrokerCommand) -> Result<()> {
+    use neomind_cli_ops::output::format_output;
+    use neomind_cli_ops::types::OutputFormat;
+    let client = neomind_cli_ops::ApiClient::new();
+
+    match cmd {
+        BrokerCommand::List { json } => {
+            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let resp = neomind_cli_ops::broker::list_brokers(&client).await?;
+            format_output(&resp, fmt);
+        }
+        BrokerCommand::Get { id, json } => {
+            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let resp = neomind_cli_ops::broker::get_broker(&client, &id).await?;
+            format_output(&resp, fmt);
+        }
+        BrokerCommand::Create { name, host, port, tls, username, password, topics, json } => {
+            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let resp = neomind_cli_ops::broker::create_broker(
+                &client, &name, &host, port, tls,
+                username.as_deref(), password.as_deref(), topics.as_deref(),
+            ).await?;
+            format_output(&resp, fmt);
+        }
+        BrokerCommand::Update { id, name, host, topics, disable, json } => {
+            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let enabled = if disable { Some(false) } else { None };
+            let resp = neomind_cli_ops::broker::update_broker(
+                &client, &id, name.as_deref(), host.as_deref(), None, None,
+                None, None, topics.as_deref(), enabled,
+            ).await?;
+            format_output(&resp, fmt);
+        }
+        BrokerCommand::Delete { id } => {
+            let resp = neomind_cli_ops::broker::delete_broker(&client, &id).await?;
+            format_output(&resp, OutputFormat::Human);
+        }
+        BrokerCommand::Test { id } => {
+            let resp = neomind_cli_ops::broker::test_broker(&client, &id).await?;
+            format_output(&resp, OutputFormat::Human);
+        }
+        BrokerCommand::Subscriptions { json } => {
+            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let resp = neomind_cli_ops::broker::list_subscriptions(&client).await?;
+            format_output(&resp, fmt);
+        }
+        BrokerCommand::Subscribe { topic, qos } => {
+            let resp = neomind_cli_ops::broker::subscribe_topic(&client, &topic, Some(qos)).await?;
+            format_output(&resp, OutputFormat::Human);
+        }
+        BrokerCommand::Unsubscribe { topic } => {
+            let resp = neomind_cli_ops::broker::unsubscribe_topic(&client, &topic).await?;
+            format_output(&resp, OutputFormat::Human);
+        }
+    }
     Ok(())
 }

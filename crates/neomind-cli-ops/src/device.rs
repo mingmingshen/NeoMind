@@ -38,15 +38,18 @@ pub async fn create_device(
         "name": name,
         "device_type": device_type,
         "adapter_type": adapter_type,
+        "connection_config": {}
     });
     if let Some(config) = connection_config {
         body["connection_config"] = config;
     }
 
     let data = client.post("/devices", &body).await?;
-    let device_id = data["id"]
-        .as_str()
+    let device_id = data.get("data")
+        .and_then(|d| d.get("device_id"))
+        .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+        .or_else(|| data["id"].as_str().map(|s| s.to_string()))
         .or_else(|| data["id"].as_i64().map(|i| i.to_string()))
         .unwrap_or_else(|| "unknown".to_string());
 
@@ -194,9 +197,11 @@ pub async fn create_device_type(
     }
 
     let data = client.post("/device-types", &body).await?;
-    let type_id = data["id"]
-        .as_str()
+    let type_id = data.get("data")
+        .and_then(|d| d.get("id"))
+        .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+        .or_else(|| data["id"].as_str().map(|s| s.to_string()))
         .or_else(|| data["id"].as_i64().map(|i| i.to_string()))
         .unwrap_or_else(|| "unknown".to_string());
 

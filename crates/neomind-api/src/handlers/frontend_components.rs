@@ -555,13 +555,10 @@ pub async fn list_components_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
     let store = state.frontend_component_store.clone();
-    let mut components = tokio::task::spawn_blocking(move || store.list_all())
+    let components = tokio::task::spawn_blocking(move || store.list_all())
         .await
         .map_err(|e| ErrorResponse::internal(format!("List task failed: {}", e)))?
         .map_err(|e| ErrorResponse::internal(format!("Failed to list components: {}", e)))?;
-
-    // Merge built-in components (not stored in DB, defined in RESERVED_IDS)
-    components.extend(builtin_component_list());
 
     ok(json!({
         "components": components,

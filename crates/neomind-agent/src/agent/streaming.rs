@@ -35,11 +35,12 @@ const ACTION_VERBS: &[&str] = &[
     // Chinese
     "创建", "新建", "删除", "控制", "启用", "禁用", "启动", "停止", "更新", "修改",
     "开启", "关闭", "打开", "发送", "写入", "分享", "安装", "卸载", "移除",
-    "批量启用", "批量删除", "批量创建", "全部启动",
+    "批量启用", "批量删除", "批量创建", "全部启动", "添加", "替换", "绑定",
+    "检查", "巡检",
     // English
     "create", "delete", "control", "enable", "disable", "start", "stop",
     "update", "turn on", "turn off", "switch", "send", "write", "share",
-    "install", "uninstall", "remove",
+    "install", "uninstall", "remove", "add", "replace", "bind",
 ];
 
 /// Check if the user message requests a mutation/action (not just a query).
@@ -56,7 +57,7 @@ fn all_tools_were_read_only(executed_commands: &[&str], _all_results: &[(String,
     const MUTATION_COMMANDS: &[&str] = &[
         " create", " delete", " update", " control", " enable", " disable",
         " write-metric", " send-message", " share", " install ", " uninstall ",
-        " control ", " send ",
+        " control ", " send ", " channel-create", " channel-update", " channel-delete",
     ];
 
     // If no commands were executed, we can't determine — assume not read-only
@@ -96,7 +97,7 @@ fn extract_action_hint(msg: &str) -> String {
         "widget"
     } else if msg_lower.contains("扩展") || msg_lower.contains("extension") || msg_lower.contains("插件") {
         "extension"
-    } else if msg_lower.contains("消息") || msg_lower.contains("message") || msg_lower.contains("通知") {
+    } else if msg_lower.contains("消息") || msg_lower.contains("message") || msg_lower.contains("通知") || msg_lower.contains("通道") || msg_lower.contains("channel") {
         "message"
     } else {
         ""
@@ -113,10 +114,12 @@ fn extract_action_hint(msg: &str) -> String {
         "enable/start"
     } else if msg_lower.contains("禁用") || msg_lower.contains("disable") || msg_lower.contains("停止") || msg_lower.contains("stop") {
         "disable/stop"
-    } else if msg_lower.contains("更新") || msg_lower.contains("update") || msg_lower.contains("修改") {
+    } else if msg_lower.contains("更新") || msg_lower.contains("update") || msg_lower.contains("修改") || msg_lower.contains("替换") {
         "update"
-    } else if msg_lower.contains("发送") || msg_lower.contains("send") || msg_lower.contains("写入") || msg_lower.contains("write") {
-        "send/write"
+    } else if msg_lower.contains("写入") || msg_lower.contains("write") || msg_lower.contains("发送") || msg_lower.contains("send") {
+        "write/send"
+    } else if msg_lower.contains("添加") || msg_lower.contains("add") {
+        "add"
     } else if msg_lower.contains("安装") || msg_lower.contains("install") {
         "install"
     } else if msg_lower.contains("卸载") || msg_lower.contains("uninstall") {
@@ -1978,18 +1981,10 @@ pub async fn process_stream_events_with_safeguards(
                             ));
                         }
 
-                        msg.push_str(&format!(
-                            "Examples of what you MUST do next:\n\
-                            - If user said '创建规则' → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind rule create --dsl 'RULE ...'\"}}}}]\n\
-                            - If user said '启动Agent' → use agent ID from list results → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind agent control <ID> --status active\"}}}}]\n\
-                            - If user said '删除规则' → use rule ID from list results → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind rule delete <ID>\"}}}}]\n\
-                            - If user said '控制设备' → use device ID from list results → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind device control <ID> --command <CMD>\"}}}}]\n\
-                            - If user said '创建转换' → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind transform create --name '...' --scope global --code '...'\"}}}}]\n\
-                            - If user said '创建仪表盘' → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind dashboard create --name '...'\"}}}}]\n\
-                            - If user said '启用/禁用' → output: [{{\"name\":\"shell\",\"arguments\":{{\"command\":\"neomind <domain> enable/disable <ID>\"}}}}]\n\n\
-                            DO NOT output text. DO NOT summarize the list results. DO NOT say 'I found the ...'.\n\
+                        msg.push_str(
+                            "DO NOT output text. DO NOT summarize the list results. DO NOT say 'I found the ...'.\n\
                             OUTPUT A TOOL CALL JSON ARRAY NOW to execute the action."
-                        ));
+                        );
 
                         // Inject duplicate warning on top of the list-only prompt
                         if consecutive_duplicate_rounds > 0 {

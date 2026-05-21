@@ -6,10 +6,10 @@ origin: builtin
 priority: 80
 token_budget: 10000
 triggers:
-  keywords: [message, 消息, 通知, notification, message list, list message, message send, 发送消息, message read, 已读, unread, 未读, alert, 警报, acknowledge, ack]
+  keywords: [message, 消息, 通知, notification, message list, list message, message send, 发送消息, message read, 已读, unread, 未读, alert, 警报, acknowledge, ack, channel, 通道, 通知通道, webhook, dingtalk, 钉钉, email, 邮件]
   tool_target:
     - tool: message
-      actions: [list, get, send, read, ack]
+      actions: [list, get, send, read, ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-types, channel-test]
 anti_triggers:
   keywords: [device, 设备, rule, 规则, agent, 代理, dashboard, 仪表盘]
 ---
@@ -228,6 +228,81 @@ neomind message send --title 'Devices Registered' --message '5 new devices added
 - Pagination uses `--limit` (page size) and `--offset` (skip count); typical page size is 10-20
 - All severity levels are lowercase: `info`, `warning`, `error`, `critical`
 
+---
+
+## Notification Channels
+
+Messages can be routed through notification channels (webhook, email, etc.).
+
+### List Channels
+
+```bash
+neomind message channel-list
+```
+
+### Get Channel Details
+
+```bash
+neomind message channel-get <NAME>
+```
+
+### List Available Channel Types
+
+```bash
+neomind message channel-types
+```
+
+Returns all supported channel types (e.g., `webhook`, `email`) with their configuration schemas.
+
+### Create Channel
+
+```bash
+neomind message channel-create --name '<name>' --type <TYPE> --config '<json>'
+```
+
+**Required flags**: `--name`, `--type`, `--config`
+
+**Examples:**
+
+```bash
+# Webhook channel
+neomind message channel-create --name 'my-webhook' --type webhook --config '{"url": "https://example.com/webhook"}'
+
+# DingTalk (钉钉) webhook
+neomind message channel-create --name 'dingtalk' --type webhook --config '{"url": "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN"}'
+
+# Email channel
+neomind message channel-create --name 'alerts' --type email --config '{"smtp_host": "smtp.example.com", "smtp_port": 587, "from": "alert@example.com", "to": ["admin@example.com"]}'
+```
+
+Use `neomind message channel-types` to see all available types and their config schemas.
+
+### Update Channel
+
+```bash
+neomind message channel-update <NAME> --config '<new_json>'
+```
+
+**Example:**
+
+```bash
+neomind message channel-update my-webhook --config '{"url": "https://new-url.example.com/hook"}'
+```
+
+### Delete Channel
+
+```bash
+neomind message channel-delete <NAME>
+```
+
+### Test Channel Connectivity
+
+```bash
+neomind message channel-test <NAME>
+```
+
+Sends a test message through the channel to verify connectivity and configuration.
+
 ## Common Errors & Solutions
 
 - **"Message not found"**: Run `neomind message list` to find valid message IDs. Use the exact ID from the output.
@@ -235,3 +310,6 @@ neomind message send --title 'Devices Registered' --message '5 new devices added
 - **Invalid severity level**: Valid values are `info`, `warning`, `error`, `critical` (all lowercase). Other values like `normal`, `high`, `low` are not accepted.
 - **Message still showing as unread after ack**: Ensure you are using the correct message ID from `neomind message list`. Both `read` and `ack` subcommands work identically.
 - **Pagination returns no results**: The offset is zero-based. If a list returns fewer results than expected, try reducing the offset or removing filters to confirm messages exist.
+- **Channel creation fails**: Use `neomind message channel-types` to check supported channel types and their required config fields. Each channel type has a specific config schema.
+- **Webhook test fails**: Verify the URL is accessible. Use `neomind message channel-test <NAME>` to diagnose connectivity.
+- **"Channel not found"**: Run `neomind message channel-list` to see all channels. Use the exact channel name (not ID).

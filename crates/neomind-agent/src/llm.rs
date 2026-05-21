@@ -1015,28 +1015,10 @@ impl LlmInterface {
             }
         }
 
-        // Auto-load top matched skill guides into context
-        // Only auto-inject the BEST match (score > threshold) to avoid wasting tokens
-        if let Some(msg) = user_message {
-            let registry_opt = self.skill_registry.read().await.clone();
-            if let Some(registry) = registry_opt {
-                let registry_guard = registry.read().await;
-                let budget = crate::skills::TokenBudgetConfig::for_context(self.max_tokens);
-                let matches = crate::skills::match_skills(&registry_guard, msg, budget);
-                // Filter out pinned skills from auto-matched (already injected above)
-                let auto_matches: Vec<_> = matches
-                    .into_iter()
-                    .filter(|m| !pinned.contains(&m.skill_id))
-                    .collect();
-                // Only inject if there's a strong match (score >= 1.0)
-                if let Some(best) = auto_matches.first() {
-                    if best.score >= 1.0 {
-                        let skill_content = crate::skills::format_skill_matches(&auto_matches[..1]);
-                        prompt.push_str(&skill_content);
-                    }
-                }
-            }
-        }
+        // Auto-load skill guides — DISABLED: TOOL_STRATEGY already contains complete CLI reference.
+        // Skills are only loaded on-demand via the skill tool (search/load) when the LLM needs
+        // domain-specific guidance beyond what TOOL_STRATEGY provides (complex workflows, error troubleshooting).
+        // This saves ~3000 tokens per turn by avoiding duplication with the always-present TOOL_STRATEGY.
 
         // Inject transient skill context (from skill tool calls in current turn's multi-round loop)
         // This content is NOT in session history — only available during the current turn.
