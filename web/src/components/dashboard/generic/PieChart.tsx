@@ -396,7 +396,7 @@ export const PieChart = memo(function PieChart({
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
       <ChartContainer>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" debounce={100}>
           <RechartsPieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
             <Pie
               data={chartData}
