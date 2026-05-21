@@ -572,7 +572,7 @@ export function ImageDisplay({
     return (
       <div className={cn(
         dashboardCardBase,
-        'flex flex-col items-center justify-center gap-3 bg-muted-30',
+        'h-full flex flex-col items-center justify-center gap-3 bg-muted-30',
         sizeConfig.padding,
         className
       )}>

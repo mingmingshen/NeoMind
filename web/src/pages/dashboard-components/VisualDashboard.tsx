@@ -1219,7 +1219,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const devicesLength = useStore((s) => s.devices.length)
   // Read devices directly from store when needed (not reactive)
   const devicesRef = useRef<Device[]>([])
-  devicesRef.current = useStore.getState().devices
 
   // Action selectors — single subscription for all actions (stable references)
   const {
@@ -1534,7 +1533,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     const cancelIdleFetch = scheduleDashboardIdleTask(() => {
       fetchDevices()
       fetchDeviceTypes()
-    }, 2000)
+    }, 500)
 
     return cancelIdleFetch
   }, [fetchDashboards, fetchDevices, fetchDeviceTypes])
@@ -1657,6 +1656,22 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       }
     }
   }, [devicesLength, dashboardDeviceIdsKey, fetchDevicesCurrentBatch])
+
+  // Fix 3: Update devicesRef only when devices actually change (not on every render)
+  useEffect(() => {
+    devicesRef.current = useStore.getState().devices
+  }, [devicesLength])
+
+  // Fix 2: On dashboard switch, abort in-flight batch requests and clear polling
+  useEffect(() => {
+    // Abort any stale batch requests
+    batchAbortRef.current?.abort()
+    const ctrl = batchFetchControllerRef.current
+    if (ctrl.interval) {
+      clearInterval(ctrl.interval)
+      ctrl.interval = null
+    }
+  }, [currentDashboardId])
 
   // Re-load dashboards if array becomes empty but we have a current ID
   useEffect(() => {

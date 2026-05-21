@@ -93,8 +93,7 @@ function transformTelemetryToBarData(
     }
 
     // Check if values are categorical (strings) OR if aggregate is 'count' - group and count for distribution
-    const firstValue = telemetryPoints[0]?.value
-    const isCategorical = typeof firstValue === 'string'
+    const isCategorical = telemetryPoints.some((p) => typeof p.value === 'string')
     const forceCounting = aggregate === 'count'
 
     if (isCategorical || forceCounting) {
@@ -421,7 +420,7 @@ export const BarChart = memo(function BarChart({
   // Show loading skeleton when fetching data
   if (dataSource && showLoading) {
     return (
-      <div className={cn(dashboardCardBase, config.padding, className)}>
+      <div className={cn(dashboardCardBase, 'h-full flex flex-col', config.padding, className)}>
         {title && (
           <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
         )}

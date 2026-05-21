@@ -118,10 +118,10 @@ function extractValue(data: unknown): string | number | null {
     return data ? 1 : 0
   }
 
-  // Array - take last element (most recent)
+  // Array - take first element (data is sorted newest-first)
   if (Array.isArray(data)) {
     if (data.length > 0) {
-      return extractValue(data[data.length - 1])
+      return extractValue(data[0])
     }
     return null
   }
@@ -258,7 +258,7 @@ export function LEDIndicator({
   // Loading state
   if (showLoading) {
     return (
-      <div className={cn(dashboardCardBase, 'flex-row items-center', dashboardComponentSize[size].contentGap, dashboardComponentSize[size].padding, className)}>
+      <div className={cn(dashboardCardBase, 'h-full flex flex-row items-center', dashboardComponentSize[size].contentGap, dashboardComponentSize[size].padding, className)}>
         <Skeleton className={cn(dashboardComponentSize[size].iconContainer, 'rounded-full')} />
         <Skeleton className={cn('h-4 w-20 rounded')} />
       </div>

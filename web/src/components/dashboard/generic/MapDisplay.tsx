@@ -1043,7 +1043,7 @@ export function MapDisplay({
   const showLoading = loading && !!dataSource && markers.length === 0
   if (showLoading) {
     return (
-      <div className={cn(dashboardCardBase, 'flex items-center justify-center', sizeConfig.padding, className)}>
+      <div className={cn(dashboardCardBase, 'h-full flex items-center justify-center', sizeConfig.padding, className)}>
         <Skeleton className={cn('w-full h-full rounded-lg')} />
       </div>
     )

@@ -253,9 +253,10 @@ const LineChartInner = function LineChart({
   const normalizedSeries: SeriesData[] = useMemo(() => {
 
     // Multi-source case - data should be array of arrays from useDataSource with preserveMultiple
-    if (sources.length > 1 && Array.isArray(data) && data.length === sources.length) {
-      return sources.map((ds, idx) => {
-        const sourceData = data[idx]
+    // Use Math.min to handle length mismatches (some sources may return empty)
+    if (sources.length > 1 && Array.isArray(data) && data.length > 0) {
+      const seriesResult = sources.map((ds, idx) => {
+        const sourceData = idx < data.length ? data[idx] : []
         // Transform telemetry points for this source
         let values: number[] = []
         if (Array.isArray(sourceData)) {
@@ -275,6 +276,13 @@ const LineChartInner = function LineChart({
           color: undefined,
         } as SeriesData
       })
+
+      // If ALL series have empty data, fall through to fallback/sample data
+      const hasAnyData = seriesResult.some(s => s.data.length > 0)
+      if (hasAnyData) {
+        return seriesResult
+      }
+      // Fall through to use fallback or sample data below
     }
 
     // Handle telemetry raw data FIRST (when dataSource is provided)
@@ -387,7 +395,7 @@ const LineChartInner = function LineChart({
   // Loading state
   if (showLoading) {
     return (
-      <div className={cn(dashboardCardBase, config.padding, className)}>
+      <div className={cn(dashboardCardBase, 'h-full flex flex-col', config.padding, className)}>
         {title && (
           <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
         )}
@@ -401,8 +409,15 @@ const LineChartInner = function LineChart({
     return <ErrorState size={size} className={className} />
   }
 
-  // Empty state - only when dataSource is configured but no data available
-  if (dataSource && (series.length === 0 || chartData.length === 0)) {
+  // Empty state - only when dataSource is configured, data finished loading, and no data at all
+  // Note: if multi-source all returned null, we already fell through to fallback data above,
+  // so series will have sample data. Only show empty state when we have a dataSource but
+  // the single-source case produced nothing.
+  if (dataSource && !loading && series.length === 0) {
+    return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
+  }
+
+  if (chartData.length === 0) {
     return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
@@ -720,7 +735,7 @@ export const AreaChart = memo(function AreaChart({
   // Loading state
   if (showLoading) {
     return (
-      <div className={cn(dashboardCardBase, config.padding, className)}>
+      <div className={cn(dashboardCardBase, 'h-full flex flex-col', config.padding, className)}>
         {title && (
           <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
         )}
@@ -734,8 +749,12 @@ export const AreaChart = memo(function AreaChart({
     return <ErrorState size={size} className={className} />
   }
 
-  // Empty state - only when dataSource is configured but no data available
-  if (dataSource && (series.length === 0 || chartData.length === 0)) {
+  // Empty state - only when dataSource is configured, data finished loading, and no data at all
+  if (dataSource && !loading && series.length === 0) {
+    return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
+  }
+
+  if (chartData.length === 0) {
     return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
@@ -747,6 +766,17 @@ export const AreaChart = memo(function AreaChart({
       <ChartContainer>
         <ResponsiveContainer width="100%" height="100%">
           <RechartsAreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }} accessibilityLayer>
+            <defs>
+              {series.map((s, i) => {
+                const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
+                return (
+                  <linearGradient key={i} id={`area-gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={seriesColor} stopOpacity={0.35} />
+                    <stop offset="95%" stopColor={seriesColor} stopOpacity={0.02} />
+                  </linearGradient>
+                )
+              })}
+            </defs>
             {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
             <XAxis
               dataKey="name"
@@ -775,9 +805,10 @@ export const AreaChart = memo(function AreaChart({
                   name={s.name}
                   stroke={seriesColor}
                   strokeWidth={2}
-                  fill={seriesColor}
-                  fillOpacity={0.3}
+                  fill={`url(#area-gradient-${i})`}
                   isAnimationActive={false}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
                 />
               )
             })}

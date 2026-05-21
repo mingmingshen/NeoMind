@@ -375,7 +375,7 @@ export const PieChart = memo(function PieChart({
 
   if (showLoading) {
     return (
-      <div className={cn(dashboardCardBase, config.padding, className)}>
+      <div className={cn(dashboardCardBase, 'h-full flex flex-col', config.padding, className)}>
         {title && (
           <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
         )}

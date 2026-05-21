@@ -103,16 +103,12 @@ interface ComponentSkeletonProps {
 
 function ComponentSkeleton({ meta, className }: ComponentSkeletonProps) {
   if (!meta) {
-    return <Skeleton className={cn('w-full h-48', className)} />
+    return <Skeleton className={cn('w-full h-full', className)} />
   }
-
-  const { sizeConstraints } = meta
-  const minHeight = sizeConstraints.minH * 40 // Approximate grid row height
 
   return (
     <Skeleton
-      className={cn('w-full', className)}
-      style={{ minHeight: `${minHeight}px` }}
+      className={cn('w-full h-full', className)}
     />
   )
 }

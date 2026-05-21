@@ -666,7 +666,7 @@ export function VideoDisplay({
   // usable source arrives; refreshes should keep the existing video surface.
   if (loading && isLoading && !rawSrc) {
     return (
-      <div className={cn(dashboardCardBase, 'flex items-center justify-center', sizeConfig.padding, className)}>
+      <div className={cn(dashboardCardBase, 'h-full flex items-center justify-center', sizeConfig.padding, className)}>
         <Skeleton className={cn('w-full h-full', rounded && 'rounded-lg')} />
       </div>
     )

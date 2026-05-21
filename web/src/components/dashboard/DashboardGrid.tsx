@@ -216,7 +216,6 @@ export const DashboardGrid = memo(function DashboardGrid({
         }
         .react-grid-item {
           ${editMode && transitionsEnabled ? 'transition: transform 200ms ease;' : 'transition: none !important;'}
-          contain: paint;
         }
         ${touchEnabled ? `
         .react-grid-item { touch-action: none; }

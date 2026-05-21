@@ -527,12 +527,12 @@ function SparklineComponent({
   // Loading state - show skeleton while fetching initial data
   if (showLoading && hasDataSource && chartData.length < 2) {
     return (
-      <div className={cn(dashboardCardBase, 'flex flex-col', sizeConfig.padding, className)}>
+      <div className={cn(dashboardCardBase, 'h-full flex flex-col', sizeConfig.padding, className)}>
         <div className="flex items-center justify-between mb-2">
           {title && <Skeleton className="h-4 w-20" />}
           {showValue && <Skeleton className="h-5 w-12" />}
         </div>
-        <Skeleton className="flex-1 w-full" style={{ height: chartHeight }} />
+        <Skeleton className="flex-1 w-full min-h-0" />
       </div>
     )
   }

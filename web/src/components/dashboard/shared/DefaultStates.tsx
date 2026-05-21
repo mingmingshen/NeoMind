@@ -122,11 +122,10 @@ export function ErrorState({
  */
 export function LoadingState({ size = 'md', className }: StateProps) {
   const sizeConfig = dashboardComponentSize[size]
-  const height = size === 'sm' ? 60 : size === 'md' ? 80 : 120
 
   return (
-    <div className={cn(dashboardCardBase, sizeConfig.padding, className)}>
-      <div className={cn('w-full rounded-md bg-muted animate-pulse')} style={{ height }} />
+    <div className={cn(dashboardCardBase, 'h-full flex flex-col', sizeConfig.padding, className)}>
+      <div className={cn('flex-1 w-full rounded-md bg-muted animate-pulse min-h-8')} />
     </div>
   )
 }
