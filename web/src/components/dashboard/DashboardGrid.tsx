@@ -214,6 +214,9 @@ export const DashboardGrid = memo(function DashboardGrid({
           display: block !important;
           isolation: isolate;
         }
+        .react-grid-layout:not(.edit-mode) {
+          transition: none !important;
+        }
         .react-grid-item {
           ${editMode && transitionsEnabled ? 'transition: transform 200ms ease;' : 'transition: none !important;'}
         }
@@ -230,7 +233,6 @@ export const DashboardGrid = memo(function DashboardGrid({
         .dashboard-item {
           width: 100%; height: 100%;
           display: flex; flex-direction: column; overflow: hidden;
-          overflow-anchor: none;
           background-color: var(--card);
           border-radius: var(--radius);
         }
@@ -273,9 +275,6 @@ export const DashboardGrid = memo(function DashboardGrid({
           width: 8px; height: 8px;
         }
         .react-grid-layout:not(.edit-mode) .react-resizable-handle { display: none; }
-        .react-grid-layout:not(.edit-mode) {
-          transition: none !important;
-        }
         .react-grid-layout:not(.edit-mode) > .react-grid-item {
           transition: none !important;
         }

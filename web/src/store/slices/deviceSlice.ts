@@ -434,19 +434,46 @@ export const createDeviceSlice: StateCreator<
 
       // Update devices array with fetched current_values
       const deviceDataMap = data.devices || {}
-      set((state) => ({
-        devices: state.devices.map((device) => {
+
+      // Shallow equality check for current_values — avoids expensive JSON.stringify
+      // while still catching the vast majority of no-change cases
+      const shallowEqualValues = (a: Record<string, unknown>, b: Record<string, unknown>): boolean => {
+        const keysA = Object.keys(a)
+        const keysB = Object.keys(b)
+        if (keysA.length !== keysB.length) return false
+        for (const key of keysA) {
+          if (a[key] !== b[key]) return false
+        }
+        return true
+      }
+
+      set((state) => {
+        let changed = false
+        const updatedDevices = state.devices.map((device) => {
           const deviceData = deviceDataMap[device.id || device.device_id]
           if (!deviceData) {
             return device
           }
 
+          const newValues = buildNestedValues(deviceData.current_values)
+
+          // Skip update if current_values haven't actually changed
+          if (device.current_values && shallowEqualValues(device.current_values, newValues)) {
+            return device
+          }
+
+          changed = true
           return {
             ...device,
-            current_values: buildNestedValues(deviceData.current_values),
+            current_values: newValues,
           }
-        }),
-      }))
+        })
+
+        // Only create new state if something actually changed
+        if (!changed) return state as any
+
+        return { devices: updatedDevices }
+      })
 
       // Invalidate fetch cache so callers can retry if needed
       fetchCache.invalidate('devicesCurrentBatch')
