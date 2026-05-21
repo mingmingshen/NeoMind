@@ -327,7 +327,7 @@ neomind agent delete <AGENT_ID>
 ## Notes
 
 - Agent IDs are returned by `neomind agent create` and visible in `neomind agent list`
-- Use `--model` (not `--llm-backend`) when creating or updating agents
+- Both `--model` and `--llm-backend` are accepted when creating or updating agents
 - `control` accepts both `--action` and `--status` flags interchangeably
 - `invoke` runs the agent immediately regardless of schedule; for recurring tasks use `create` with `--schedule-type`
 - `memory` contains knowledge automatically extracted from past conversations

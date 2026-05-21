@@ -11,7 +11,7 @@
 //! a separate process. This optimization is useful for Tauri/Web environments where
 //! process spawning overhead is significant.
 //!
-//! Supported domains: device, dashboard, rule, extension, widget, transform, agent, message.
+//! Supported domains: device, dashboard, rule, extension, widget, transform, agent, message, system.
 //! All domains route to their respective cli-ops handler functions.
 //! Non-neomind commands fall through to process spawning.
 
@@ -133,6 +133,9 @@ impl ShellTool {
             "transform" => Self::exec_transform(&client, &args).await,
             "agent" => Self::exec_agent(&client, &args).await,
             "message" => Self::exec_message(&client, &args).await,
+            "system" => Self::exec_system(&client, &args).await,
+            "broker" => Self::exec_broker(&client, &args).await,
+            "guide" => Self::exec_guide(&client, &args).await,
             _ => return None, // Unknown domain, fall through to process spawning
         };
 
@@ -148,6 +151,11 @@ impl ShellTool {
                 }))
             }
             Err(e) => {
+                // Check if this is a fallthrough signal — let external process handle it
+                if e.to_string() == "__FALLTHROUGH__" {
+                    tracing::debug!(domain = domain, "Internal CLI falling through to external process");
+                    return None;
+                }
                 tracing::warn!(domain = domain, error = %e, "Internal CLI execution failed");
                 Some(Err(ToolError::Execution(format!(
                     "Internal CLI error: {}", e
@@ -184,8 +192,12 @@ impl ShellTool {
             }
             "create" => {
                 let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
-                let type_id = Self::get_flag_value(args, "--type").unwrap_or("").to_string();
-                let adapter = Self::get_flag_value(args, "--adapter").unwrap_or("mqtt").to_string();
+                let type_id = Self::get_flag_value(args, "--type")
+                    .or_else(|| Self::get_flag_value(args, "--device-type"))
+                    .unwrap_or("").to_string();
+                let adapter = Self::get_flag_value(args, "--adapter")
+                    .or_else(|| Self::get_flag_value(args, "--adapter-type"))
+                    .unwrap_or("mqtt").to_string();
                 let config = Self::get_flag_value(args, "--config")
                     .map(|s| serde_json::from_str(s).unwrap_or(serde_json::json!(s)));
                 neomind_cli_ops::device::create_device(client, &name, &type_id, &adapter, config).await
@@ -214,7 +226,10 @@ impl ShellTool {
             }
             "control" => {
                 let id = Self::resolve_id(args).to_string();
-                let command = Self::get_flag_value(args, "--command").unwrap_or("").to_string();
+                // Support both --command flag and positional arg (args[4])
+                let command = Self::get_flag_value(args, "--command")
+                    .or_else(|| args.get(4).map(|s| s.as_str()).filter(|s| !s.starts_with("--")))
+                    .unwrap_or("").to_string();
                 let params_str = Self::get_flag_value(args, "--params").unwrap_or("{}");
                 let params = serde_json::from_str(params_str).unwrap_or(serde_json::json!({}));
                 neomind_cli_ops::device::control_device(client, &id, &command, params).await
@@ -371,7 +386,11 @@ impl ShellTool {
                 let version = Self::get_flag_value(args, "--version").map(|s| s.to_string());
                 neomind_cli_ops::extension::install_extension_market(client, &ext_id, version.as_deref()).await
             }
-            _ => anyhow::bail!("Unknown extension action: {}", action),
+            // create/validate/build are local filesystem operations — let them fall through to external CLI
+            "create" | "validate" | "build" => {
+                Err(anyhow::anyhow!("__FALLTHROUGH__"))
+            }
+            _ => Err(anyhow::anyhow!("__FALLTHROUGH__")),
         }
     }
 
@@ -478,7 +497,9 @@ impl ShellTool {
                 let description = Self::get_flag_value(args, "--description").map(|s| s.to_string());
                 let schedule_type = Self::get_flag_value(args, "--schedule-type").map(|s| s.to_string());
                 let schedule_config = Self::get_flag_value(args, "--schedule-config").map(|s| s.to_string());
-                let llm_backend = Self::get_flag_value(args, "--model").map(|s| s.to_string());
+                let llm_backend = Self::get_flag_value(args, "--model")
+                    .or_else(|| Self::get_flag_value(args, "--llm-backend"))
+                    .map(|s| s.to_string());
                 let system_prompt = Self::get_flag_value(args, "--system-prompt").map(|s| s.to_string());
                 neomind_cli_ops::agent_cmd::create_agent(
                     client, &name, &prompt, description.as_deref(),
@@ -492,9 +513,10 @@ impl ShellTool {
             }
             "control" => {
                 let id = Self::resolve_id(args).to_string();
-                // Support both --action (legacy from prompt) and positional status arg
+                // Support --action, --status flags and positional status arg (args[4])
                 let action = Self::get_flag_value(args, "--action")
                     .or_else(|| Self::get_flag_value(args, "--status"))
+                    .or_else(|| args.get(4).map(|s| s.as_str()).filter(|s| !s.starts_with("--")))
                     .unwrap_or("").to_string();
                 neomind_cli_ops::agent_cmd::control_agent(client, &id, &action).await
             }
@@ -503,11 +525,16 @@ impl ShellTool {
                 let name = Self::get_flag_value(args, "--name").map(|s| s.to_string());
                 let prompt = Self::get_flag_value(args, "--prompt").map(|s| s.to_string());
                 let description = Self::get_flag_value(args, "--description").map(|s| s.to_string());
-                let llm_backend = Self::get_flag_value(args, "--model").map(|s| s.to_string());
+                let llm_backend = Self::get_flag_value(args, "--model")
+                    .or_else(|| Self::get_flag_value(args, "--llm-backend"))
+                    .map(|s| s.to_string());
                 let system_prompt = Self::get_flag_value(args, "--system-prompt").map(|s| s.to_string());
+                let schedule_type = Self::get_flag_value(args, "--schedule-type").map(|s| s.to_string());
+                let schedule_config = Self::get_flag_value(args, "--schedule-config").map(|s| s.to_string());
                 neomind_cli_ops::agent_cmd::update_agent(
                     client, &id, name.as_deref(), description.as_deref(),
                     llm_backend.as_deref(), system_prompt.as_deref(), prompt.as_deref(),
+                    schedule_type.as_deref(), schedule_config.as_deref(),
                 ).await
             }
             "invoke" => {
@@ -569,7 +596,130 @@ impl ShellTool {
                 let id = Self::resolve_id(args);
                 neomind_cli_ops::message::acknowledge_message(client, id).await
             }
+            "channel-list" => {
+                neomind_cli_ops::message::list_channels(client).await
+            }
+            "channel-get" => {
+                let name = Self::resolve_id(args);
+                neomind_cli_ops::message::get_channel(client, name).await
+            }
+            "channel-types" => {
+                neomind_cli_ops::message::list_channel_types(client).await
+            }
+            "channel-create" => {
+                let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
+                let channel_type = Self::get_flag_value(args, "--type").unwrap_or("").to_string();
+                let config = Self::get_flag_value(args, "--config").unwrap_or("{}");
+                neomind_cli_ops::message::create_channel(client, &name, &channel_type, config).await
+            }
+            "channel-update" => {
+                let name = Self::resolve_id(args).to_string();
+                let config = Self::get_flag_value(args, "--config").unwrap_or("{}");
+                neomind_cli_ops::message::update_channel(client, &name, config).await
+            }
+            "channel-delete" => {
+                let name = Self::resolve_id(args);
+                neomind_cli_ops::message::delete_channel(client, name).await
+            }
+            "channel-test" => {
+                let name = Self::resolve_id(args).to_string();
+                neomind_cli_ops::message::test_channel(client, &name).await
+            }
             _ => anyhow::bail!("Unknown message action: {}", action),
+        }
+    }
+
+    /// Execute `neomind system <action>` commands internally.
+    async fn exec_system(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("info");
+        match action {
+            "info" => neomind_cli_ops::system::system_info(client).await,
+            _ => anyhow::bail!("Unknown system action: {}", action),
+        }
+    }
+
+    /// Execute `neomind broker <action>` commands internally.
+    async fn exec_broker(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        match action {
+            "list" => neomind_cli_ops::broker::list_brokers(client).await,
+            "get" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::broker::get_broker(client, id).await
+            }
+            "create" => {
+                let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
+                let host = Self::get_flag_value(args, "--host").unwrap_or("").to_string();
+                let port = Self::get_flag_value(args, "--port")
+                    .and_then(|s| s.parse::<u16>().ok())
+                    .unwrap_or(1883);
+                let tls = Self::get_flag_value(args, "--tls").is_some();
+                let username = Self::get_flag_value(args, "--username").map(|s| s.to_string());
+                let password = Self::get_flag_value(args, "--password").map(|s| s.to_string());
+                let topics = Self::get_flag_value(args, "--topics").map(|s| s.to_string());
+                neomind_cli_ops::broker::create_broker(
+                    client, &name, &host, port, tls,
+                    username.as_deref(), password.as_deref(), topics.as_deref(),
+                ).await
+            }
+            "update" => {
+                let id = Self::resolve_id(args);
+                let name = Self::get_flag_value(args, "--name").map(|s| s.to_string());
+                let host = Self::get_flag_value(args, "--host").map(|s| s.to_string());
+                let port = Self::get_flag_value(args, "--port").and_then(|s| s.parse::<u16>().ok());
+                let tls = Self::get_flag_value(args, "--tls").is_some().then_some(true);
+                let username = Self::get_flag_value(args, "--username").map(|s| s.to_string());
+                let password = Self::get_flag_value(args, "--password").map(|s| s.to_string());
+                let topics = Self::get_flag_value(args, "--topics").map(|s| s.to_string());
+                let enabled = if Self::get_flag_value(args, "--disable").is_some() { Some(false) } else { None };
+                neomind_cli_ops::broker::update_broker(
+                    client, id, name.as_deref(), host.as_deref(), port, tls,
+                    username.as_deref(), password.as_deref(), topics.as_deref(), enabled,
+                ).await
+            }
+            "delete" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::broker::delete_broker(client, id).await
+            }
+            "test" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::broker::test_broker(client, id).await
+            }
+            "subscriptions" => {
+                neomind_cli_ops::broker::list_subscriptions(client).await
+            }
+            "subscribe" => {
+                let topic = Self::get_flag_value(args, "--topic").unwrap_or("").to_string();
+                let qos = Self::get_flag_value(args, "--qos").and_then(|s| s.parse::<u8>().ok());
+                neomind_cli_ops::broker::subscribe_topic(client, &topic, qos).await
+            }
+            "unsubscribe" => {
+                let topic = Self::get_flag_value(args, "--topic").unwrap_or("").to_string();
+                neomind_cli_ops::broker::unsubscribe_topic(client, &topic).await
+            }
+            _ => anyhow::bail!("Unknown broker action: {}", action),
+        }
+    }
+
+    /// Execute `neomind guide <domain>` — returns the full help manual as a CliResponse.
+    async fn exec_guide(_client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let domain = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        if domain.is_empty() {
+            let domains: Vec<serde_json::Value> = neomind_cli_ops::help::list_domains()
+                .into_iter()
+                .map(|d| serde_json::json!({"domain": d.name, "description": d.description}))
+                .collect();
+            return Ok(neomind_cli_ops::CliResponse::success(
+                serde_json::json!({"domains": domains}),
+                "Available guide domains",
+            ));
+        }
+        match neomind_cli_ops::help::get_help(domain) {
+            Some(content) => Ok(neomind_cli_ops::CliResponse::success(
+                serde_json::json!({"domain": domain, "content": content}),
+                &format!("Guide for '{}'", domain),
+            )),
+            None => anyhow::bail!("Unknown guide domain: '{}'. Run `neomind guide` to see available domains.", domain),
         }
     }
 
@@ -897,7 +1047,7 @@ impl ShellTool {
                 } else if action == "send" && is_validation {
                     Some("Required fields: --title, --message, --severity (info|warning|error|critical). Example: neomind message send --title \"Alert\" --message \"High temp\" --severity warning".to_string())
                 } else {
-                    Some("Available actions: list, get, send, read".to_string())
+                    Some("Available actions: list, get, send, read, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-types, channel-test".to_string())
                 }
             }
             _ => None,
@@ -916,79 +1066,22 @@ impl Tool for ShellTool {
 
 Use this tool to run any system command. For NeoMind platform operations, use the `neomind` CLI.
 
-## NeoMind CLI Commands
+## NeoMind CLI Domains
 
-### Device Management
-- `neomind device list [--device-type TYPE] [--status STATUS]` — List all devices
-- `neomind device get <ID>` — Get device details
-- `neomind device create --name NAME --type TYPE --adapter ADAPTER [--config JSON]` — Create device
-- `neomind device update <ID> [--name NAME] [--config JSON]` — Update device
-- `neomind device delete <ID>` — Delete device
-- `neomind device latest <ID>` — Get latest metrics
-- `neomind device history <ID> [--metric M] [--time-range 1h|24h|7d]` — Get telemetry history
-- `neomind device control <ID> --command CMD [--params JSON]` — Send control command
-- `neomind device write-metric <ID> --metric NAME --value VALUE` — Write metric data point
-- `neomind device types list` — List device types
-- `neomind device types create --name NAME --metrics JSON` — Create device type
+| Domain | Key Actions | Description |
+|--------|------------|-------------|
+| device | list, get, create, update, delete, latest, history, control, write-metric, types | Device management, telemetry, control commands |
+| dashboard | list, get, create, update, delete, share | Dashboard CRUD; `--components` replaces ALL components |
+| widget | list, get, create, install, uninstall, market-list | Widget schemas; `get <TYPE>` returns config_schema |
+| rule | list, get, create, update, delete, enable, disable, history | Rules use DSL: `RULE ... WHEN ... DO ... END` |
+| agent | list, get, create, update, delete, control, executions, send-message | Must `control --status active` after create |
+| transform | list, get, create, update, delete, test, data-sources | JS code transforms; uses `input` variable |
+| extension | list, get, status, install, uninstall, logs, market-list | `get <ID>` returns commands, metrics, config details |
+| message | list, send, read, channel-list/create/update/delete | Send requires `--title` + `--message` |
+| system | info | MQTT broker, webhook URL, network info |
+| broker | list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe | External MQTT broker management |
 
-### Dashboard Management
-- `neomind dashboard list` — List dashboards
-- `neomind dashboard get <ID>` — Get dashboard details (includes components/layout)
-- `neomind dashboard create --name NAME [--description DESC] [--layout JSON]` — Create dashboard
-- `neomind dashboard update <ID> [--name NAME] [--components JSON] [--layout JSON]` — Update dashboard
-- `neomind dashboard delete <ID>` — Delete dashboard
-- `neomind dashboard share <ID> [--public] [--expires TIME]` — Share dashboard
-
-### Widget/Component Management
-- `neomind widget list` — List all available widgets (includes config_schema, size_constraints)
-- `neomind widget get <TYPE>` — Get widget details and configuration schema
-- `neomind widget create NAME --widget-type TYPE` — Scaffold new widget
-- `neomind widget install <PATH>` — Install widget from directory/zip
-- `neomind widget uninstall <ID>` — Uninstall custom widget
-
-### Rule Management
-- `neomind rule list` — List rules
-- `neomind rule get <ID>` — Get rule details
-- `neomind rule create --name NAME --dsl "RULE name WHEN condition DO action END"` — Create rule via DSL
-- `neomind rule update <ID> [--name NAME] [--dsl DSL]` — Update rule
-- `neomind rule delete <ID>` — Delete rule
-- `neomind rule enable <ID>` — Enable rule
-- `neomind rule disable <ID>` — Disable rule
-
-### Agent Management
-- `neomind agent list` — List agents
-- `neomind agent get <ID>` — Get agent details
-- `neomind agent create --name NAME --prompt "instruction" --schedule-type event|interval|cron [--description DESC] [--model ID]` — Create agent
-- `neomind agent update <ID> [--name NAME] [--prompt "instruction"]` — Update agent
-- `neomind agent delete <ID>` — Delete agent
-- `neomind agent control <ID> --action active|paused` — Start/pause agent
-- `neomind agent invoke <ID> --input "message"` — Invoke agent manually
-- `neomind agent executions <ID> [--limit N]` — Get execution history
-- `neomind agent conversation <ID>` — Get conversation messages
-- `neomind agent send-message <ID> --message "text"` — Send message to agent
-
-### Transform Management
-- `neomind transform list` — List transforms
-- `neomind transform create --name NAME --code "JS code" [--scope global]` — Create transform
-- `neomind transform update <ID> [--code CODE] [--enabled true|false]` — Update transform
-- `neomind transform delete <ID>` — Delete transform
-- `neomind transform test --code "JS code" --input JSON` — Test transform code
-- `neomind transform data-sources` — List available data sources for transforms
-
-### Message/Notification
-- `neomind message list [--severity LEVEL] [--status STATUS]` — List messages
-- `neomind message send --title TITLE --message TEXT --severity info|warning|error|critical` — Send message
-- `neomind message read <ID>` — Mark message as read
-
-### Extension Management
-- `neomind extension list` — List extensions
-- `neomind extension get <ID>` — Get extension details
-- `neomind extension status <ID>` — Get extension health
-- `neomind extension logs <ID> [--limit N]` — Get extension logs
-- `neomind extension install <PATH>` — Install from zip
-- `neomind extension uninstall <ID>` — Uninstall extension
-- `neomind extension market-list` — Browse marketplace
-- `neomind extension market-install <ID>` — Install from marketplace
+> **Discover command details**: run `neomind <domain> <action> --help` to see all flags, examples, and usage notes.
 
 ## System Commands
 - Network: ping, traceroute, curl, arp, nmap

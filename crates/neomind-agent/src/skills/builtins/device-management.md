@@ -16,9 +16,7 @@ anti_triggers:
 
 # Device Management CLI Commands
 
-All device commands are executed via the `shell` tool using `neomind device <action>`. The AI agent uses internal CLI execution (shell.rs), so the flag names documented below are what the agent actually parses -- these may differ from the standalone CLI binary flags.
-
-**Important**: When the AI agent runs these commands, they go through shell.rs internal routing, NOT the CLI binary. This means shell.rs flag names take precedence. For example, `create` uses `--type` (not `--device-type`) and `--adapter` (not `--adapter-type`).
+All device commands are executed via the `shell` tool using `neomind device <action>`.
 
 ## ⚠️ CRITICAL: Common Operations Checklist
 
@@ -28,13 +26,13 @@ All device commands are executed via the `shell` tool using `neomind device <act
 | 设备详情 | `neomind device get <ID>` |
 | 最新指标 | `neomind device latest <ID>` |
 | 历史数据 | `neomind device history <ID> --metric <M> --time-range 24h` |
-| 创建设备 | `neomind device create --name 'NAME' --type 'TYPE'` |
+| 创建设备 | `neomind device create --name 'NAME' --device-type 'TYPE'` |
 | 控制设备 | `neomind device control <ID> --command <CMD> --params '{"state": true}'` |
 | 写入指标 | `neomind device write-metric <ID> --metric <M> --value <V>` |
 | 删除设备 | `neomind device delete <ID>` |
 | 更新设备 | `neomind device update <ID> --name 'NEW_NAME'` |
 
-> **Note**: `--type` NOT `--device-type`. Use `device latest <ID>` to discover real metric names before creating dashboards/rules.
+> **Note**: Both `--device-type` and `--type` work. Use `device latest <ID>` to discover real metric names before creating dashboards/rules.
 
 ---
 
@@ -58,14 +56,12 @@ neomind device get <ID>
 ### Create Device
 
 ```bash
-neomind device create --name '<name>' --type '<device_type>' [--adapter '<adapter>'] [--config '<json>']
+neomind device create --name '<name>' --device-type '<device_type>' [--adapter-type '<adapter>'] [--config '<json>']
 ```
 
-**Note**: shell.rs uses `--type` and `--adapter` (NOT `--device-type` and `--adapter-type`).
-
 ```bash
-neomind device create --name 'Sensor-01' --type 'temperature-sensor'
-neomind device create --name 'LivingRoom' --type 'temperature-sensor' --adapter mqtt --config '{"topic":"sensors/livingroom/temp"}'
+neomind device create --name 'Sensor-01' --device-type 'temperature-sensor'
+neomind device create --name 'LivingRoom' --device-type 'temperature-sensor' --adapter-type mqtt --config '{"topic":"sensors/livingroom/temp"}'
 ```
 
 ### Update Device
@@ -140,7 +136,7 @@ neomind device types create --name 'weather-station' --metrics '[{"name":"temper
 
 ## Important Notes
 
-- **shell.rs uses `--type` and `--adapter`** (NOT `--device-type` / `--adapter-type`)
+- **Both `--device-type`/`--type` and `--adapter-type`/`--adapter` work** — either flag name is accepted
 - **Metric names must match exactly** — use `device latest <ID>` to discover available metrics
 - **Value auto-detection**: numbers (23.5), booleans (true/false), strings (fallback)
 - **MQTT is default adapter** — omit `--adapter` for MQTT devices
@@ -151,8 +147,8 @@ neomind device types create --name 'weather-station' --metrics '[{"name":"temper
 ## Common Errors & Solutions
 
 - **"Device not found"**: Run `neomind device list --json` to list all valid device IDs. Use the exact ID from the output.
-- **Create fails with missing fields**: Both `--name` and `--type` are required. Use `neomind device types list` to see valid device types.
+- **Create fails with missing fields**: Both `--name` and `--device-type` are required. Use `neomind device types list` to see valid device types.
 - **Control command fails**: Not all device types support every command. Run `neomind device get <ID>` to check the device type and adapter, then verify the command is supported.
 - **No telemetry data returned**: The device may be offline. Run `neomind device list --status` to check connectivity. Offline devices have no recent metrics.
 - **Write metric fails**: The metric name must match a field defined in the device type schema. Use `neomind device latest <ID>` to see which metric names actually exist for that device.
-- **`--type` vs `--device-type`**: shell.rs uses `--type` (NOT `--device-type`). Using the wrong flag silently ignores it and the command fails.
+- **Flag aliases**: Both `--type`/`--device-type` and `--adapter`/`--adapter-type` are accepted. Either works.
