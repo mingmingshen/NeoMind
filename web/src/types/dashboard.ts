@@ -210,7 +210,6 @@ export type GenericComponentType =
   | 'area-chart'
   | 'bar-chart'
   | 'pie-chart'
-  | 'radar-chart'
   // Controls
   | 'toggle-switch'
   // Display & Content
@@ -356,7 +355,6 @@ export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType
   'area-chart': { minW: 4, minH: 3, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
   'bar-chart': { minW: 4, minH: 3, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
   'pie-chart': { minW: 3, minH: 3, defaultW: 4, defaultH: 4, maxW: 8, maxH: 8, preserveAspect: true },
-  'radar-chart': { minW: 3, minH: 3, defaultW: 4, defaultH: 4, maxW: 8, maxH: 8, preserveAspect: true },
 
   // Controls - very compact
   'toggle-switch': { minW: 1, minH: 1, defaultW: 2, defaultH: 1, maxW: 4, maxH: 2 },
