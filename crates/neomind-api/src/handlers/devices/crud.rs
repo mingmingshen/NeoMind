@@ -545,17 +545,29 @@ pub async fn get_devices_current_batch_handler(
             let template = state.devices.service.get_template(&device_id);
 
             if let Some(template) = template {
+                // PERFORMANCE FIX: Use batch query instead of sequential N+1 queries
+                // Fetch latest values for all template metrics concurrently
+                let latest_futures: Vec<_> = template
+                    .metrics
+                    .iter()
+                    .map(|metric| {
+                        let telemetry = state.devices.telemetry.clone();
+                        let device_source_id = device_source_id.clone();
+                        let metric_name = metric.name.clone();
+                        async move {
+                            let result = telemetry.latest(&device_source_id, &metric_name).await;
+                            (metric_name, result)
+                        }
+                    })
+                    .collect();
+
+                let results = futures::future::join_all(latest_futures).await;
+
                 let mut values = std::collections::HashMap::new();
-                // Fetch latest value for each template metric
-                for metric in &template.metrics {
-                    if let Ok(Some(point)) = state
-                        .devices
-                        .telemetry
-                        .latest(&device_source_id, &metric.name)
-                        .await
-                    {
+                for (metric_name, result) in results {
+                    if let Ok(Some(point)) = result {
                         values.insert(
-                            metric.name.clone(),
+                            metric_name,
                             super::metrics::value_to_json(&point.value),
                         );
                     }

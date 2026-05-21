@@ -10,6 +10,7 @@ pub mod mdl;
 pub mod metrics;
 pub mod models;
 pub mod telemetry;
+pub mod telemetry_stats;
 pub mod types;
 pub mod webhook;
 
@@ -20,5 +21,6 @@ pub use crud::*;
 pub use mdl::*;
 pub use metrics::*;
 pub use telemetry::*;
+pub use telemetry_stats::*;
 pub use types::*;
 pub use webhook::*;

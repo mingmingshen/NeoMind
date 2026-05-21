@@ -484,6 +484,16 @@ impl TimeSeriesStorage {
     pub fn inner_store(&self) -> Arc<StorageTimeSeriesStore> {
         self.store()
     }
+
+    /// Get performance statistics from the underlying storage.
+    pub async fn get_stats(&self) -> neomind_storage::timeseries::PerformanceStats {
+        self.store().get_stats().await
+    }
+
+    /// Reset performance statistics in the underlying storage.
+    pub async fn reset_stats(&self) {
+        self.store().reset_stats().await;
+    }
 }
 
 /// In-memory cache for recent metric values

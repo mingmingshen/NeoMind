@@ -224,6 +224,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         // === Telemetry & Data (moved from public for security) ===
         .route("/api/telemetry", get(data::query_telemetry_handler))
         .route(
+            "/api/telemetry/stats",
+            get(devices::get_telemetry_stats_handler),
+        )
+        .route(
             "/api/data/sources",
             get(data::list_all_data_sources_handler),
         )

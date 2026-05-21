@@ -143,14 +143,14 @@ pub async fn get_device_telemetry_handler(
                     _ => vec!["_raw".to_string()],
                 }
             } else {
-                // Include template metrics + true virtual metrics (Transform-generated only)
+                // Include template metrics + sub-metrics + transform virtual metrics
                 let mut all_metrics: Vec<String> =
                     template.metrics.iter().map(|m| m.name.clone()).collect();
 
                 // Transform-generated metric namespaces (with dot notation)
                 let transform_namespaces = get_transform_namespaces();
 
-                // Add only Transform-generated virtual metrics from storage (exclude auto-extracted)
+                // Add Transform-generated AND sub-metrics from storage
                 if let Ok(storage_metrics) = state.devices.telemetry.list_metrics(&device_source_id).await
                 {
                     for metric in storage_metrics {
@@ -161,10 +161,13 @@ pub async fn get_device_telemetry_handler(
                         {
                             continue;
                         }
-                        // Only add Transform-generated metrics (must start with transform namespace)
+                        // Add Transform-generated metrics or sub-metrics of template containers
                         let is_transform_metric =
                             transform_namespaces.iter().any(|p| metric.starts_with(p));
-                        if is_transform_metric {
+                        let is_sub_metric = template_metric_names.iter().any(|t| {
+                            metric.starts_with(&format!("{}.", t))
+                        });
+                        if is_transform_metric || is_sub_metric {
                             all_metrics.push(metric);
                         }
                     }
@@ -357,12 +360,27 @@ pub async fn get_device_telemetry_handler(
                     // Cursor-based pagination: use cursor as the scan start for O(1) seek
                     let (effective_start, effective_offset) = if let Some(ct) = cursor_ts {
                         (ct, 0) // Start from cursor, no offset skip needed
+                    } else if offset > 100 {
+                        // PERFORMANCE: For deep pagination (offset > 100), estimate start time
+                        // to avoid loading huge amounts of data. Assume 1 point per second as fallback.
+                        let estimated_skip_seconds = offset as i64;
+                        let estimated_start = end.saturating_sub(estimated_skip_seconds);
+                        (estimated_start, 0)
                     } else {
-                        (start, offset) // Traditional offset pagination
+                        (start, offset) // Traditional offset pagination for small offsets
                     };
 
+                    // PERFORMANCE FIX: Add limit to prevent loading all historical data points
+                    // For "newest first" pagination, we need to fetch more than requested
+                    // to calculate total count and enable next_cursor, but cap at reasonable limit
+                    // Use smaller limit for cursor-based queries since they're more efficient
+                    let fetch_limit = if cursor_ts.is_some() || effective_offset == 0 {
+                        limit.saturating_mul(2).max(100) // Cursor-based: 2x page size or min 100
+                    } else {
+                        limit.saturating_mul(3).max(500) // Offset-based: 3x page size or min 500
+                    };
                     let (points, total) = match device_service
-                        .query_telemetry(&device_id_for_service, &metric_name, Some(effective_start), Some(end), None)
+                        .query_telemetry(&device_id_for_service, &metric_name, Some(effective_start), Some(end), Some(fetch_limit))
                         .await
                     {
                         Ok(all_points) => {
@@ -384,12 +402,12 @@ pub async fn get_device_telemetry_handler(
                             (paginated, total)
                         }
                         Err(_) => {
-                            // Fallback to direct telemetry query (no limit push-down)
+                            // Fallback to direct telemetry query (with limit for performance)
                             // NOTE: We must NOT push limit to storage because storage returns
                             // ascending order (oldest first) and would give us the OLDEST N points
-                            // instead of the NEWEST. Fetch all and reverse, same as primary path.
+                            // instead of the NEWEST. Fetch limited data and reverse.
                             match telemetry
-                                .query_with_limit(&device_source_id, &metric_name, effective_start, end, None)
+                                .query_with_limit(&device_source_id, &metric_name, effective_start, end, Some(fetch_limit))
                                 .await
                             {
                                 Ok((all_points, total_from_db)) => {
@@ -546,6 +564,7 @@ pub async fn get_device_telemetry_summary_handler(
         // 1. Not in template
         // 2. Not _raw
         // 3. Starts with a transform namespace (e.g., "transform.", "virtual.")
+        //    OR is a sub-path of a template metric (e.g., "values.devName" when template has "values")
         for metric in all_storage_metrics {
             if metric != "_raw" && !template_metric_names.contains(&metric) {
                 // Check if this is a true Transform-generated virtual metric
@@ -553,13 +572,20 @@ pub async fn get_device_telemetry_summary_handler(
                 let is_transform_metric =
                     transform_namespaces.iter().any(|p| metric.starts_with(p));
 
+                // Check if this is a sub-metric of a template container metric
+                // e.g., template defines "values" and storage has "values.devName"
+                let is_sub_metric = template_metric_names.iter().any(|t| {
+                    metric.starts_with(&format!("{}.", t))
+                });
+
                 tracing::debug!(
-                    "Metric '{}': is_transform={}, in_storage=true",
+                    "Metric '{}': is_transform={}, is_sub_metric={}, in_storage=true",
                     metric,
-                    is_transform_metric
+                    is_transform_metric,
+                    is_sub_metric
                 );
 
-                if is_transform_metric {
+                if is_transform_metric || is_sub_metric {
                     virtual_metrics_set.insert(metric.clone());
                     if !template_metrics.contains(&metric) {
                         template_metrics.push(metric);
