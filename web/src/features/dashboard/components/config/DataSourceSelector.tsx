@@ -2,12 +2,13 @@
  * DataSourceSelector — picks data source type and entity
  */
 
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { useDevices, useExtensions } from '@/lib/react-query-hooks'
+import { useStore } from '@/store'
 import type { DataSource, DataSourceType } from '../../types'
 
 interface DataSourceSelectorProps {
@@ -32,11 +33,33 @@ const SOURCE_TYPES: { value: DataSourceType; label: string }[] = [
 
 export function DataSourceSelector({ value, onChange }: DataSourceSelectorProps) {
   const { t } = useTranslation()
-  const { data: devices } = useDevices()
-  const { data: extensions } = useExtensions()
+  const { data: devicesData } = useDevices()
+  const { data: extensionsData } = useExtensions()
+  const deviceTypeList = useStore((s) => s.deviceTypes) ?? []
 
-  const deviceList = Array.isArray(devices) ? devices : []
-  const extensionList = Array.isArray(extensions) ? extensions : []
+  // API returns { devices: [...] } wrapped in { success, data }
+  const deviceList = (Array.isArray(devicesData) ? devicesData : (devicesData as any)?.devices) ?? []
+  const extensionList = (Array.isArray(extensionsData) ? extensionsData : (extensionsData as any)?.extensions) ?? []
+
+  // Build available metrics for the currently selected device
+  const availableMetrics = useMemo(() => {
+    if (!value?.sourceId) return []
+    const device = deviceList.find((d: any) => (d.id || d.device_id) === value.sourceId)
+    if (!device) return []
+
+    // Look up device type template for metric definitions
+    const dt = deviceTypeList.find((t: any) => t.device_type === device.device_type)
+    if (dt?.metrics && dt.metrics.length > 0) {
+      return dt.metrics.map((m: any) => ({ name: m.name, label: m.display_name || m.name, unit: m.unit || '' }))
+    }
+
+    // Fallback: use current_values keys
+    if (device.current_values && typeof device.current_values === 'object') {
+      return Object.keys(device.current_values).map(key => ({ name: key, label: key, unit: '' }))
+    }
+
+    return []
+  }, [value?.sourceId, deviceList, deviceTypeList])
 
   const handleTypeChange = useCallback((type: string) => {
     onChange({ ...value, type: type as DataSourceType } as DataSource)
@@ -92,11 +115,29 @@ export function DataSourceSelector({ value, onChange }: DataSourceSelectorProps)
           </Select>
           <div className="space-y-1.5">
             <Label className="text-xs">{t('dashboard.property', 'Property/Metric')}</Label>
-            <Input
-              value={value?.property ?? value?.metricId ?? ''}
-              onChange={(e) => handlePropertyChange(e.target.value)}
-              placeholder="e.g., temperature, humidity"
-            />
+            {availableMetrics.length > 0 ? (
+              <Select
+                value={value?.property ?? value?.metricId ?? ''}
+                onValueChange={handlePropertyChange}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select metric" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableMetrics.map((m: { name: string; label: string; unit: string }) => (
+                    <SelectItem key={m.name} value={m.name}>
+                      {m.label}{m.unit ? ` (${m.unit})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                value={value?.property ?? value?.metricId ?? ''}
+                onChange={(e) => handlePropertyChange(e.target.value)}
+                placeholder="e.g., temperature, humidity"
+              />
+            )}
           </div>
         </div>
       )}

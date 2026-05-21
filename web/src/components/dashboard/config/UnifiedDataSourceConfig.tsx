@@ -490,6 +490,13 @@ export function UnifiedDataSourceConfig({
   const storeRef = useRef(store)
   storeRef.current = store
 
+  // Ensure devices and deviceTypes are loaded when config opens
+  // (dashboard page may delay loading, causing empty metrics on first render)
+  useEffect(() => {
+    if (devices.length === 0) storeRef.current.fetchDevices()
+    if (deviceTypes.length === 0) storeRef.current.fetchDeviceTypes()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Data availability checking - now includes summaries with virtual metrics
   const { availability, summaries, loading: checkingData, checkDevice } = useDataAvailability()
 
@@ -953,6 +960,20 @@ export function UnifiedDataSourceConfig({
 
       const items: Item[] = []
 
+      // Helper to resolve dot-notation path in nested objects (e.g., "values.devName" → current_values.values.devName)
+      const resolvePath = (obj: unknown, path: string): unknown => {
+        if (!obj || typeof obj !== 'object') return undefined
+        let current: unknown = obj
+        for (const part of path.split('.')) {
+          if (current && typeof current === 'object' && part in (current as Record<string, unknown>)) {
+            current = (current as Record<string, unknown>)[part]
+          } else {
+            return undefined
+          }
+        }
+        return current
+      }
+
       // Add template metrics
       for (const metric of metrics) {
         const itemKey = `device-metric:${selectedDevice.id}:${metric.name}` as SelectedItem
@@ -962,7 +983,7 @@ export function UnifiedDataSourceConfig({
           key: itemKey,
           propertyName: metric.name,
           propertyDisplayName: metric.display_name || metric.name,
-          currentValue: selectedDevice.current_values?.[metric.name],
+          currentValue: resolvePath(selectedDevice.current_values, metric.name),
           isSelected: selectedItems.has(itemKey),
           hasData: metricAvailability?.hasData ?? null,
           dataPointCount: metricAvailability?.dataPointCount,
