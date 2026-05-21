@@ -95,7 +95,8 @@ export default defineConfig({
                 proxyReq.socket.setTimeout(300000)  // 5 minutes
               }
             } else {
-              console.log('[Proxy]', req.method, req.url, '->', proxyReq.getHeader('host') + proxyReq.path)
+              // PERF: Disable regular proxy logging in development to reduce console overhead
+              // console.log('[Proxy]', req.method, req.url, '->', proxyReq.getHeader('host') + proxyReq.path)
             }
           })
           proxy.on('proxyReqWs', (proxyReq, req, socket, options, head) => {
