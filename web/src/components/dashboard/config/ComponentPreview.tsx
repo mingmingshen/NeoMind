@@ -175,26 +175,18 @@ export const ComponentPreview = memo(function ComponentPreview({
     dataSource,
   }
 
-  // Calculate ideal pixel dimensions from grid
-  const idealWidth = defaultW * GRID_CELL_WIDTH
-  const idealHeight = defaultH * GRID_CELL_HEIGHT
-  const aspectRatio = idealWidth / idealHeight
-
-  // Measure container to compute the correct rendering dimensions
+  // Calculate display dimensions — use container's actual size instead of
+  // forcing grid-pixel ratios that cause distortion.
   const updateContainerSize = useCallback(() => {
     if (!containerRef.current) return
 
-    const containerWidth = containerRef.current.clientWidth - 16
-    const containerHeight = containerRef.current.clientHeight - 16
+    const containerWidth = containerRef.current.clientWidth
+    const containerHeight = containerRef.current.clientHeight
 
     if (containerWidth <= 0 || containerHeight <= 0) return
 
-    // Fit component with correct aspect ratio into the container
-    const scaledWidth = Math.min(containerWidth, containerHeight * aspectRatio)
-    const scaledHeight = scaledWidth / aspectRatio
-
-    setContainerSize({ width: Math.round(scaledWidth), height: Math.round(scaledHeight) })
-  }, [aspectRatio])
+    setContainerSize({ width: containerWidth, height: containerHeight })
+  }, [])
 
   // Update size on mount and when container/props change
   useEffect(() => {
@@ -235,20 +227,16 @@ export const ComponentPreview = memo(function ComponentPreview({
         </div>
       )}
 
-      {/* Preview area - sized to match grid aspect ratio */}
+      {/* Preview area — fills available space, no forced aspect ratio */}
       <div
         ref={containerRef}
         className={cn(
-          'min-h-0 bg-muted overflow-hidden relative mx-auto',
+          'w-full bg-muted overflow-hidden relative',
           'transition-opacity duration-200',
           isTransitioning && 'opacity-60',
-          fillContainer ? 'flex-1' : ''
+          fillContainer ? 'flex-1 min-h-0' : ''
         )}
-        style={fillContainer ? undefined : {
-          width: `${idealWidth}px`,
-          maxWidth: '100%',
-          height: `${idealHeight}px`,
-        }}
+        style={!fillContainer ? { height: `${maxContentHeight}px` } : undefined}
       >
         {showLoading ? (
           <div className="w-full h-full flex items-center justify-center">
@@ -261,23 +249,17 @@ export const ComponentPreview = memo(function ComponentPreview({
             <p className="text-xs text-muted-foreground mt-1">{t('componentPreview.usingStaticData')}</p>
           </div>
         ) : (
-          <div className="w-full h-full flex items-center justify-center overflow-hidden">
-            {/* Component rendered at correct aspect-ratio dimensions (no CSS transform) */}
-            <div
-              className={cn(
-                'transition-all duration-200 ease-out',
-                isTransitioning && 'blur-[1px]'
-              )}
-              style={containerSize ? {
-                width: `${containerSize.width}px`,
-                height: `${containerSize.height}px`,
-              } : undefined}
-            >
-              <ComponentRenderer
-                key={`preview-${componentType}-${(config.backgroundType as string) || 'default'}`}
-                component={mockComponent}
-              />
-            </div>
+          <div
+            className={cn(
+              'w-full h-full',
+              'transition-all duration-200 ease-out',
+              isTransitioning && 'blur-[1px]'
+            )}
+          >
+            <ComponentRenderer
+              key={`preview-${componentType}-${(config.backgroundType as string) || 'default'}`}
+              component={mockComponent}
+            />
           </div>
         )}
       </div>

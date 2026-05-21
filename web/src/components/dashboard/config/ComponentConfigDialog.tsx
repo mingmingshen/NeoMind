@@ -255,6 +255,7 @@ export function ComponentConfigDialog({
                         dataSource={livePreviewDataSource}
                         title={title}
                         showHeader={true}
+                        maxContentHeight={280}
                       />
                     </div>
                   </MobileConfigCard>
@@ -417,12 +418,7 @@ export function ComponentConfigDialog({
           <div className="flex-1 flex flex-col bg-muted-20 overflow-hidden border-r min-w-0">
             <div className="flex-1 flex items-center justify-center p-4 min-h-0">
               <div
-                className="rounded-lg overflow-hidden border bg-background shadow-sm"
-                style={{
-                  width: `${previewGridW * 100}px`,
-                  maxWidth: '100%',
-                  height: `${previewGridH * 80}px`,
-                }}
+                className="rounded-lg overflow-hidden border bg-background shadow-sm w-full h-full max-w-lg"
               >
                 <ComponentRenderer
                   key={`${previewKey}-${previewGridW}x${previewGridH}`}
