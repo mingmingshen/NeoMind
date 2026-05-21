@@ -418,7 +418,8 @@ export function ComponentConfigDialog({
           <div className="flex-1 flex flex-col bg-muted-20 overflow-hidden border-r min-w-0">
             <div className="flex-1 flex items-center justify-center p-4 min-h-0">
               <div
-                className="rounded-lg overflow-hidden border bg-background shadow-sm w-full h-full max-w-lg"
+                className="rounded-lg overflow-hidden border bg-background shadow-sm max-w-lg max-h-full"
+                style={{ aspectRatio: `${previewGridW} / ${previewGridH}`, width: '100%' }}
               >
                 <ComponentRenderer
                   key={`${previewKey}-${previewGridW}x${previewGridH}`}

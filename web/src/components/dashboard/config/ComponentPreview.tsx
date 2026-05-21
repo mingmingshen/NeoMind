@@ -175,8 +175,11 @@ export const ComponentPreview = memo(function ComponentPreview({
     dataSource,
   }
 
-  // Calculate display dimensions — use container's actual size instead of
-  // forcing grid-pixel ratios that cause distortion.
+  // Calculate display dimensions based on grid aspect ratio.
+  // The component's natural proportion is defaultW:defaultH grid units.
+  // We fit it inside the container while preserving this ratio.
+  const aspectRatio = defaultW / defaultH
+
   const updateContainerSize = useCallback(() => {
     if (!containerRef.current) return
 
@@ -185,8 +188,12 @@ export const ComponentPreview = memo(function ComponentPreview({
 
     if (containerWidth <= 0 || containerHeight <= 0) return
 
-    setContainerSize({ width: containerWidth, height: containerHeight })
-  }, [])
+    // Fit component proportion into container: pick the dimension that constrains
+    const fitWidth = Math.min(containerWidth, containerHeight * aspectRatio)
+    const fitHeight = fitWidth / aspectRatio
+
+    setContainerSize({ width: Math.round(fitWidth), height: Math.round(fitHeight) })
+  }, [aspectRatio])
 
   // Update size on mount and when container/props change
   useEffect(() => {
@@ -227,11 +234,12 @@ export const ComponentPreview = memo(function ComponentPreview({
         </div>
       )}
 
-      {/* Preview area — fills available space, no forced aspect ratio */}
+      {/* Preview area — outer container fills space, inner is proportionally sized */}
       <div
         ref={containerRef}
         className={cn(
           'w-full bg-muted overflow-hidden relative',
+          'flex items-center justify-center',
           'transition-opacity duration-200',
           isTransitioning && 'opacity-60',
           fillContainer ? 'flex-1 min-h-0' : ''
@@ -251,10 +259,13 @@ export const ComponentPreview = memo(function ComponentPreview({
         ) : (
           <div
             className={cn(
-              'w-full h-full',
               'transition-all duration-200 ease-out',
               isTransitioning && 'blur-[1px]'
             )}
+            style={containerSize ? {
+              width: containerSize.width,
+              height: containerSize.height,
+            } : undefined}
           >
             <ComponentRenderer
               key={`preview-${componentType}-${(config.backgroundType as string) || 'default'}`}
