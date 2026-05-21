@@ -1462,63 +1462,21 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const isSyncingFromStore = useRef(false)
 
   // Track previous components to detect actual changes (not just reference changes)
-  const prevComponentsRef = useRef<DashboardComponent[]>([])
-
-  // Use a counter to force refresh when config changes in dialog
-  // Must be declared before componentsStableKey which depends on it
-
   // Create a stable key for components to detect actual changes
   // This key only changes when component data actually changes, not on every render
   const componentsStableKey = useMemo(() => {
     const components = currentDashboard?.components ?? []
-    const prevComponents = prevComponentsRef.current ?? []
-
-    // Quick check: if length changed, definitely different
-    if (components.length !== prevComponents.length) {
-      prevComponentsRef.current = components
-      return `changed-${components.length}`
-    }
-
-    // Shallow check each component's key properties (avoid JSON.stringify)
-    for (let i = 0; i < components.length; i++) {
-      const curr = components[i]
-      const prev = prevComponents[i]
-
-      if (!prev) {
-        prevComponentsRef.current = components
-        return `new-${curr.id}-${curr.type}`
-      }
-
-      // Check primitives first (fast path)
-      if (curr.id !== prev.id ||
-          curr.type !== prev.type ||
-          curr.title !== prev.title ||
-          curr.position.x !== prev.position.x ||
-          curr.position.y !== prev.position.y ||
-          curr.position.w !== prev.position.w ||
-          curr.position.h !== prev.position.h) {
-        prevComponentsRef.current = components
-        return `changed-${curr.id}`
-      }
-
-      // Check config by reference first (most common case: no change)
-      if (curr.config !== prev.config && JSON.stringify(curr.config) !== JSON.stringify(prev.config)) {
-        prevComponentsRef.current = components
-        return `changed-${curr.id}`
-      }
-
-      // Check dataSource by reference first
-      const currDS = (curr as any).dataSource
-      const prevDS = (prev as any).dataSource
-      if (currDS !== prevDS && JSON.stringify(currDS) !== JSON.stringify(prevDS)) {
-        prevComponentsRef.current = components
-        return `changed-${curr.id}`
-      }
-    }
-
-    // No actual changes detected - return stable key
-    return `stable-${components.length}`
-  }, [currentDashboard?.components])
+    // Use JSON.stringify for a reliable content-based comparison.
+    // This is cheaper than it looks — components array is typically <20 items.
+    return JSON.stringify(components.map((c) => ({
+      id: c.id,
+      type: c.type,
+      title: c.title,
+      position: c.position,
+      config: c.config,
+      dataSource: (c as any).dataSource,
+    })))
+  }, [currentDashboard])
 
   // Initialize dashboards on mount
   useEffect(() => {
@@ -2258,10 +2216,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const initialConfigRef = useRef<any>(null)
   const isInitialLoad = useRef(false)
   const lastSyncedConfigRef = useRef<string>('')
-  const livePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Live preview: update component in real-time as config changes
-  // Schema regenerates immediately for responsive input, but store updates are debounced
+  // Applies changes to the store immediately so the grid preview updates.
+  // Schema is regenerated so the dialog's own inputs stay responsive.
   useEffect(() => {
     if (configOpen && selectedComponent) {
       // Skip initial load - don't update store with same config
@@ -2279,29 +2237,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         // Regenerate schema immediately so input values update
         setConfigSchema(generateConfigSchema(selectedComponent.type, componentConfig))
 
-        // Debounce the store update to prevent cascading re-renders that break input
-        if (livePreviewTimerRef.current) {
-          clearTimeout(livePreviewTimerRef.current)
-        }
-        livePreviewTimerRef.current = setTimeout(() => {
-          // Separate dataSource from config for proper update
-          const { dataSource, ...configOnly } = componentConfig
-          const currentDS = (selectedComponent as any).dataSource
-          const updateData: any = { config: configOnly }
-          // Include dataSource if:
-          // 1. It's defined (has a value), OR
-          // 2. It's undefined but the component previously had a dataSource (need to clear it)
-          if (dataSource !== undefined || currentDS !== undefined) {
-            updateData.dataSource = dataSource
-          }
-          // Update the component with current config for live preview (don't persist yet)
-          updateComponent(selectedComponent.id, updateData, false)
-          // Increment version to force re-render
-          livePreviewTimerRef.current = null
-        }, 300)
-
         // Update last synced config
         lastSyncedConfigRef.current = currentJSON
+
+        // Apply to store immediately for live preview in the grid
+        const { dataSource, ...configOnly } = componentConfig
+        const currentDS = (selectedComponent as any).dataSource
+        const updateData: any = { config: configOnly }
+        if (dataSource !== undefined || currentDS !== undefined) {
+          updateData.dataSource = dataSource
+        }
+        updateComponent(selectedComponent.id, updateData, false)
       }
     } else {
       // Reset when dialog closes
@@ -2310,15 +2256,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       lastSyncedConfigRef.current = ''
     }
   }, [componentConfig, configOpen, selectedComponent?.id, selectedComponent?.type, updateComponent, setConfigSchema])
-
-  // Clean up live preview timer
-  useEffect(() => {
-    return () => {
-      if (livePreviewTimerRef.current) {
-        clearTimeout(livePreviewTimerRef.current)
-      }
-    }
-  }, [])
 
   // Handle canceling component config - revert to original
   const handleCancelConfig = useCallback(() => {
