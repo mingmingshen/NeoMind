@@ -24,7 +24,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use tokio::sync::broadcast;
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 use super::in_flight::InFlightRequests;
 use super::{ErrorKind, IpcFrame, IpcMessage, IpcResponse, IsolatedExtensionError, IsolatedResult};
