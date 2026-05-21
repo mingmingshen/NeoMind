@@ -1,0 +1,323 @@
+---
+id: device-onboarding
+name: Device Onboarding & Connection Guide
+category: device
+origin: builtin
+priority: 90
+token_budget: 12000
+triggers:
+  keywords: [设备接入, 接入, onboarding, 连接设备, connect device, MQTT, mqtt, broker, webhook, 传感器, sensor, 如何连接, how to connect, 怎么接入, 设备配置, device setup, device connect, 设备上线, provision, 配置设备, device provisioning, 串口, serial, modbus, BLE, bluetooth, Zigbee, LoRa, 网关, gateway, 接入方式, connection method, 接入协议, protocol, broker地址, broker address, 服务器地址, server address, topic, 主题, 订阅, subscribe, 发布, publish]
+  tool_target:
+    - tool: system
+      actions: [info]
+    - tool: device
+      actions: [create, list, types, control, latest]
+anti_triggers:
+  keywords: [rule, 规则, agent, 代理, dashboard, 仪表盘, transform, 转换]
+---
+
+# Device Onboarding & Connection Guide
+
+## Overview
+
+NeoMind supports multiple ways to connect IoT devices. Before helping users, **always check current infrastructure**:
+
+```bash
+neomind system info
+```
+
+This returns:
+- **MQTT broker address** and connection status
+- **Webhook URL** for HTTP-based devices
+- **Network info** (server IP, WiFi SSID)
+- **Device connection details** (topics, payload formats)
+
+To see all configured external brokers and their connection status:
+
+```bash
+neomind broker list
+```
+
+To see all active MQTT topic subscriptions:
+
+```bash
+neomind broker subscriptions
+```
+
+---
+
+## Connection Methods
+
+### Method 1: MQTT (Recommended)
+
+MQTT is the primary device connection protocol. NeoMind includes an **embedded MQTT broker** — no external broker needed.
+
+**Broker Info** (from `neomind system info`):
+- Address: `tcp://<SERVER_IP>:1883`
+- Protocol: MQTT 3.1.1
+- No authentication required (by default)
+- Auto-discovery enabled
+
+**How devices connect:**
+
+1. Device connects to MQTT broker at `<SERVER_IP>:1883`
+2. Device publishes data to **any topic**
+3. NeoMind auto-discovers the device and creates a draft entry
+4. User approves the device in "Pending Devices"
+
+**MQTT Topic Format:**
+
+Devices can publish to any topic. Common patterns:
+```
+devices/{device_id}/temperature
+devices/{device_id}/humidity
+sensors/{sensor_id}/{metric_name}
+```
+
+**MQTT Payload Format:**
+
+Simple JSON:
+```json
+{"value": 23.5}
+```
+
+Or with metadata:
+```json
+{
+  "temperature": 23.5,
+  "humidity": 65.0,
+  "timestamp": 1716200000
+}
+```
+
+**Auto-Discovery:**
+
+When a device publishes to any MQTT topic, NeoMind:
+1. Detects the new data source
+2. Analyzes the payload structure
+3. Creates a **draft device** in "Pending Devices" tab
+4. User can approve, rename, and configure the device
+
+---
+
+### Method 2: HTTP Webhook
+
+For devices that support HTTP but not MQTT.
+
+**Webhook URL** (from `neomind system info`):
+```
+POST http://<SERVER_IP>:9375/api/devices/webhook/{device_id}
+```
+
+**Payload Format:**
+```json
+{
+  "timestamp": 1716200000,
+  "quality": 1.0,
+  "data": {
+    "temperature": 23.5,
+    "humidity": 65
+  }
+}
+```
+
+**Steps:**
+1. Create a device first: `neomind device create <name> <type> <adapter>`
+2. Use the returned device ID in the webhook URL
+3. Device sends HTTP POST with data payload
+
+---
+
+### Method 3: Manual Registration
+
+For devices that need manual setup:
+
+```bash
+# Step 1: Check available device types
+neomind device types list
+
+# Step 2: Create device with specific type and adapter
+neomind device create <name> <device_type> <adapter_type>
+
+# adapter_type options:
+#   mqtt        - MQTT protocol (default)
+#   webhook     - HTTP webhook
+#   http-poll   - HTTP polling (for web APIs)
+#   ble         - Bluetooth Low Energy
+#   modbus-tcp  - Modbus TCP/IP
+#   serial      - Serial port (RS-232/485)
+
+# Step 3: Verify device was created
+neomind device get <DEVICE_ID>
+```
+
+---
+
+## Step-by-Step Onboarding Guide
+
+### Scenario A: ESP32/Arduino with MQTT
+
+**User wants to connect an ESP32 temperature sensor.**
+
+1. **Check infrastructure:**
+```bash
+neomind system info
+```
+→ Note the MQTT broker address (e.g., `tcp://192.168.1.100:1883`)
+
+2. **Give the user the connection info:**
+   - Broker: `192.168.1.100`
+   - Port: `1883`
+   - Topic: any (e.g., `sensors/esp32-01/temperature`)
+   - No auth needed
+
+3. **Example Arduino code to share with user:**
+```cpp
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+const char* ssid = "YOUR_WIFI";
+const char* password = "YOUR_PASSWORD";
+const char* mqtt_server = "192.168.1.100";  // NeoMind server IP
+const int mqtt_port = 1883;
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void setup() {
+  WiFi.begin(ssid, password);
+  client.setServer(mqtt_server, mqtt_port);
+  client.connect("esp32-sensor-01");
+}
+
+void loop() {
+  float temp = readTemperature();  // your sensor reading
+  char msg[32];
+  snprintf(msg, 32, "{\"value\": %.1f}", temp);
+  client.publish("sensors/esp32-01/temperature", msg);
+  delay(5000);
+}
+```
+
+4. **After device sends data, it appears as a draft.** Help user find and approve it:
+```bash
+# Check if device appeared
+neomind device list
+```
+
+---
+
+### Scenario B: Python Script with MQTT
+
+**User wants to send data from a Python application.**
+
+```python
+import paho.mqtt.client as mqtt
+import json, time
+
+client = mqtt.Client("python-sensor-01")
+client.connect("192.168.1.100", 1883)  # NeoMind MQTT broker
+
+while True:
+    data = {"temperature": 25.3, "humidity": 60.5}
+    client.publish("sensors/python-01/data", json.dumps(data))
+    time.sleep(10)
+```
+
+---
+
+### Scenario C: HTTP Webhook Device
+
+**User has a system that can only send HTTP requests.**
+
+1. Create the device first:
+```bash
+neomind device create "Weather Station" weather-station webhook
+```
+
+2. Tell user the webhook URL:
+```
+POST http://192.168.1.100:9375/api/devices/webhook/{DEVICE_ID}
+Content-Type: application/json
+
+{
+  "data": {
+    "temperature": 23.5,
+    "humidity": 65
+  }
+}
+```
+
+3. User configures their system to POST to this URL.
+
+---
+
+### Scenario D: Existing MQTT Broker
+
+**User already has an MQTT broker (e.g., EMQX, Mosquitto).**
+
+1. NeoMind supports connecting to external brokers.
+2. The external broker can be configured via the Web UI (Settings > MQTT).
+3. Once configured, NeoMind subscribes to the external broker and auto-discovers devices.
+
+---
+
+## Common Questions & Answers
+
+### "What's the MQTT broker address?"
+Run `neomind system info` and check `mqtt.broker_address`. By default it's `<SERVER_IP>:1883`.
+
+### "Do I need to install an MQTT broker?"
+No. NeoMind includes an embedded MQTT broker. Devices can connect directly.
+
+### "Does MQTT require authentication?"
+By default, no. The embedded broker accepts anonymous connections. TLS and auth can be configured for production.
+
+### "How do I know if my device is connected?"
+```bash
+neomind system info    # Check mqtt.connected and mqtt.devices_connected
+neomind device list    # See all registered devices
+neomind device latest <ID>  # Check latest data from a device
+```
+
+### "My device sends data but it doesn't appear"
+1. Check MQTT broker is connected: `neomind system info` → `mqtt.connected`
+2. Check the device is publishing to the correct broker IP
+3. Check network connectivity (same WiFi/LAN)
+4. The device may appear in "Pending Devices" — check the Web UI
+
+### "Can I use a custom MQTT topic?"
+Yes! Any topic works. NeoMind auto-discovers data from any topic.
+
+### "How do I send commands to a device?"
+```bash
+neomind device control <ID> <command> --params '<json>'
+```
+Commands are sent via MQTT to `{device_topic}/command` or `{device_topic}/downlink`.
+
+### "What about Modbus/Serial/Zigbee/LoRa devices?"
+These typically require a **gateway** that translates the protocol to MQTT or HTTP. The gateway sends data to NeoMind via MQTT or webhook.
+
+---
+
+## Quick Reference Card
+
+| Item | Value |
+|------|-------|
+| MQTT Broker | `<SERVER_IP>:1883` (embedded) |
+| MQTT Protocol | MQTT 3.1.1 |
+| MQTT Auth | None (default) |
+| Auto-Discovery | Enabled (`neomind/discovery/#`) |
+| Webhook URL | `POST http://<SERVER_IP>:9375/api/devices/webhook/{device_id}` |
+| API Base | `http://<SERVER_IP>:9375/api` |
+| Check System | `neomind system info` |
+
+---
+
+## Common Errors & Solutions
+
+- **"MQTT broker not connected"**: The server may not be running. Check with `neomind system info`. If `mqtt.connected` is false, restart the server.
+- **"Device not appearing after sending data"**: Verify the device is sending to the correct broker IP/port. Check network connectivity. Run `neomind device list` to see registered devices.
+- **"Webhook returns 404"**: The device must be created first via `neomind device create` before sending webhook data. Use the exact device ID from the create response.
+- **"Connection refused"**: Check if the server is running and the port (1883 for MQTT, 9375 for HTTP) is accessible. Firewall may be blocking the port.
+- **"Data not updating"**: Run `neomind device latest <ID>` to check latest readings. If stale, verify the device is still publishing. Check `neomind system info` for MQTT connection status.
