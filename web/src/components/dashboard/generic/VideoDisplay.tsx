@@ -71,26 +71,25 @@ interface VideoPlayerProps {
   onError: (error: boolean, message?: string) => void
 }
 
-// HLS configuration - optimized to prevent bufferAppendError
+// HLS configuration - optimized for WKWebView performance
 const createHlsConfig = () => ({
   enableWorker: true,
-  lowLatencyMode: true,
-  backBufferLength: 90,
-  
-  // Buffer configuration to prevent append errors
-  maxBufferLength: 30,
-  maxMaxBufferLength: 600,
-  maxBufferSize: 60 * 1000 * 1000,
+  lowLatencyMode: false,  // Disabled: reduces CPU usage, not needed for dashboard
+
+  // Buffer configuration - reduced for lower memory/CPU footprint
+  maxBufferLength: 15,
+  maxMaxBufferLength: 300,
+  maxBufferSize: 30 * 1000 * 1000,
   maxBufferHole: 0.5,
-  
-  // Force key frame on discontinuity - helps with buffer errors
+
+  // Force key frame on discontinuity
   forceKeyFrameOnDiscontinuity: true,
-  
-  // Handle video integrity errors - skip corrupted data
+
+  // Handle video integrity errors
   handleMpegTsVideoIntegrityErrors: 'skip',
-  
+
   // Append error retry
-  appendErrorMaxRetry: 5,
+  appendErrorMaxRetry: 3,
   
   // Increase retry counts for better reliability
   fragLoadPolicy: {
@@ -355,11 +354,17 @@ function VideoPlayer({
     const handleCanPlay = () => onLoadingChange(false)
     const handlePlay = () => setIsPlaying(true)
     const handlePause = () => setIsPlaying(false)
+
+    // Throttle time updates to 4fps — 60fps setState causes massive main thread pressure
+    let lastTimeUpdate = 0
     const handleTimeUpdate = () => {
-      if (!isSeeking) {
-        setCurrentTime(video.currentTime)
-      }
+      if (isSeeking) return
+      const now = performance.now()
+      if (now - lastTimeUpdate < 250) return
+      lastTimeUpdate = now
+      setCurrentTime(video.currentTime)
     }
+
     const handleLoadedMetadata = () => setDuration(video.duration)
     const handleEnded = () => {
       // For live streams, try to reconnect
@@ -529,7 +534,7 @@ function VideoPlayer({
           <Button
             variant="secondary"
             size="icon"
-            className="h-12 w-12 rounded-full bg-white/20 backdrop-blur hover:bg-white/30"
+            className="h-12 w-12 rounded-full bg-white/20 hover:bg-white/30"
             onClick={togglePlay}
           >
             <Play className="h-6 w-6 text-white ml-0.5" />
@@ -729,7 +734,7 @@ export function VideoDisplay({
           <Button
             variant="secondary"
             size="icon"
-            className="absolute top-2 right-2 h-6 w-6 bg-bg-80 backdrop-blur"
+            className="absolute top-2 right-2 h-6 w-6 bg-bg-80"
             onClick={() => setIsFullscreen(true)}
           >
             <Maximize2 className="h-4 w-4" />
@@ -738,7 +743,7 @@ export function VideoDisplay({
 
         {/* Type indicator */}
         {rawSrc && (
-          <div className="absolute top-2 left-2 px-2 py-0.5 bg-bg-80 backdrop-blur rounded text-xs text-muted-foreground">
+          <div className="absolute top-2 left-2 px-2 py-0.5 bg-bg-80 rounded text-xs text-muted-foreground">
             {detectedType === 'hls' && 'HLS'}
             {detectedType === 'device-camera' && 'Camera'}
             {detectedType === 'file' && 'Video'}

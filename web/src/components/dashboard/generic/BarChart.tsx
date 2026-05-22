@@ -22,7 +22,6 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
   Cell,
 } from 'recharts'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -35,7 +34,7 @@ import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors, chartColorsHex } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate, ChartViewMode } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
-import { ChartContainer, ChartTooltip, EmptyState } from '../shared'
+import { ChartContainer, ChartTooltip, EmptyState, useChartDimensions, useStaggeredData, createMemoRenderer } from '../shared'
 import {
   getEffectiveAggregate,
   getEffectiveTimeWindow,
@@ -439,63 +438,64 @@ export const BarChart = memo(function BarChart({
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
       <ChartContainer>
-        <ResponsiveContainer width="100%" height="100%" debounce={100}>
-          <RechartsBarChart
-            data={chartData}
-            margin={{ top: 5, right: 5, bottom: 0, left: 0 }}
-            accessibilityLayer
-          >
-            {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
-            <XAxis
-              dataKey="name"
-              axisLine={false}
-              tickLine={false}
-              tickMargin={10}
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              axisLine={false}
-              tickLine={false}
-              tickMargin={10}
-              width={32}
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-            />
-            {showTooltip && <Tooltip content={<ChartTooltip />} />}
-            {showLegend && <Legend />}
-
-            {/* Multi-series bars */}
-            {seriesInfo ? (
-              seriesInfo.map((info) => (
-                <Bar
-                  key={info.dataKey}
-                  dataKey={info.dataKey}
-                  name={info.name}
-                  fill={info.color}
-                  radius={4}
-                  isAnimationActive={false}
-                />
-              ))
-            ) : (
-              /* Single series bar */
-              <Bar
-                dataKey="value"
-                fill={color || fallbackColors[0]}
-                radius={4}
-                isAnimationActive={false}
-              >
-                {/* Only use different colors per bar for categorical/distribution data */}
-                {chartData.some(d => d.color) && chartData.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={entry.color || color || fallbackColors[index % fallbackColors.length]}
-                  />
-                ))}
-              </Bar>
-            )}
-          </RechartsBarChart>
-        </ResponsiveContainer>
+        <BarChartWithDimensions data={chartData} seriesInfo={seriesInfo} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} chartData={chartData} />
       </ChartContainer>
     </div>
   )
 })
+
+const BarChartRenderer = createMemoRenderer(({ data, seriesInfo, showGrid, showTooltip, showLegend, color, chartData, width, height }: {
+  data: any[]
+  seriesInfo: { dataKey: string; name: string; color: string }[] | null
+  showGrid: boolean
+  showTooltip: boolean
+  showLegend: boolean
+  color?: string
+  chartData: any[]
+  width: number
+  height: number
+}) => {
+  const fallbackColors = chartColorsHex
+  return (
+    <RechartsBarChart width={width} height={height} data={data} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
+      {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
+      <XAxis dataKey="name" axisLine={false} tickLine={false} tickMargin={10} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} interval="preserveStartEnd" />
+      <YAxis axisLine={false} tickLine={false} tickMargin={10} width={32} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} />
+      {showTooltip && <Tooltip content={<ChartTooltip />} />}
+      {showLegend && <Legend />}
+      {seriesInfo ? (
+        seriesInfo.map((info) => (
+          <Bar key={info.dataKey} dataKey={info.dataKey} name={info.name} fill={info.color} radius={4} isAnimationActive={false} />
+        ))
+      ) : (
+        <Bar dataKey="value" fill={color || fallbackColors[0]} radius={4} isAnimationActive={false}>
+          {chartData.some(d => d.color) && chartData.map((entry, index) => (
+            <Cell key={`cell-${index}`} fill={entry.color || color || fallbackColors[index % fallbackColors.length]} />
+          ))}
+        </Bar>
+      )}
+    </RechartsBarChart>
+  )
+})
+
+function BarChartWithDimensions({ data, seriesInfo, showGrid, showTooltip, showLegend, color, chartData }: {
+  data: any[]
+  seriesInfo: { dataKey: string; name: string; color: string }[] | null
+  showGrid: boolean
+  showTooltip: boolean
+  showLegend: boolean
+  color?: string
+  chartData: any[]
+}) {
+  const { ref, width, height, turn } = useChartDimensions()
+  const staggeredData = useStaggeredData(data, turn)
+  const staggeredSeriesInfo = useStaggeredData(seriesInfo, turn)
+  const staggeredChartData = useStaggeredData(chartData, turn)
+  return (
+    <div ref={ref} style={{ width: '100%', height: '100%' }}>
+      {width > 0 && height > 0 && (
+        <BarChartRenderer data={staggeredData} seriesInfo={staggeredSeriesInfo} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} chartData={staggeredChartData} width={width} height={height} />
+      )}
+    </div>
+  )
+}

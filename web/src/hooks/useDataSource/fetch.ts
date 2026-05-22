@@ -105,26 +105,34 @@ export async function fetchHistoricalTelemetry(
       const startSec = Math.floor(start / 1000)
       const endSec = Math.floor(now / 1000)
 
-      const response = await api.getDeviceTelemetry(deviceId, metricId, startSec, endSec, fetchLimit)
-
-      // Find metric data — exact match, then case-insensitive
+      // Use unified telemetry endpoint for transform/ai sources, device endpoint otherwise
+      const isUnifiedSource = deviceId.startsWith('transform:') || deviceId.startsWith('ai:')
       let metricData: unknown[] | undefined
-      if (response?.data && typeof response.data === 'object') {
-        const dataObj = response.data as Record<string, unknown>
-        if (Array.isArray(dataObj[metricId])) {
-          metricData = dataObj[metricId] as unknown[]
-        } else {
-          const lowerMetricId = metricId.toLowerCase()
-          for (const key of Object.keys(dataObj)) {
-            if (key.toLowerCase() === lowerMetricId && Array.isArray(dataObj[key])) {
-              metricData = dataObj[key] as unknown[]
-              break
+
+      if (isUnifiedSource) {
+        const response = await api.queryTelemetry(deviceId, metricId, startSec, endSec, fetchLimit)
+        metricData = response?.data as unknown[] | undefined
+      } else {
+        const response = await api.getDeviceTelemetry(deviceId, metricId, startSec, endSec, fetchLimit)
+
+        // Find metric data — exact match, then case-insensitive
+        if (response?.data && typeof response.data === 'object') {
+          const dataObj = response.data as Record<string, unknown>
+          if (Array.isArray(dataObj[metricId])) {
+            metricData = dataObj[metricId] as unknown[]
+          } else {
+            const lowerMetricId = metricId.toLowerCase()
+            for (const key of Object.keys(dataObj)) {
+              if (key.toLowerCase() === lowerMetricId && Array.isArray(dataObj[key])) {
+                metricData = dataObj[key] as unknown[]
+                break
+              }
             }
           }
         }
       }
 
-      if (response?.data && typeof response.data === 'object' && Array.isArray(metricData) && metricData.length > 0) {
+      if (Array.isArray(metricData) && metricData.length > 0) {
         const extractValue = (point: unknown): number => {
           if (typeof point === 'number') return point
           if (typeof point === 'object' && point !== null) {

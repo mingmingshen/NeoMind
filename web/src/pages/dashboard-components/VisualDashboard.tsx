@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react'
+import '@/lib/debug-scroll' // Auto-inits if DEBUG_SCROLL=true in localStorage
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useStore } from '@/store'
@@ -190,8 +191,94 @@ import { api, fetchAPI } from '@/lib/api'
 import { notifySuccess, notifyError } from '@/lib/notify'
 import { confirm } from '@/hooks/use-confirm'
 
-// Import ComponentRenderer for extension components
+// Import ComponentRenderer for extension/community components only
 import ComponentRenderer from '@/components/dashboard/registry/ComponentRenderer'
+
+// Direct imports for built-in components (bypass ComponentRenderer to avoid
+// its store subscriptions causing blank frames during scroll)
+import { ValueCard } from '@/components/dashboard/generic/ValueCard'
+import { LEDIndicator } from '@/components/dashboard/generic/LEDIndicator'
+import { Sparkline } from '@/components/dashboard/generic/Sparkline'
+import { ProgressBar } from '@/components/dashboard/generic/ProgressBar'
+import { LineChart } from '@/components/dashboard/generic/LineChart'
+import { AreaChart } from '@/components/dashboard/generic/LineChart'
+import { BarChart } from '@/components/dashboard/generic/BarChart'
+import { PieChart } from '@/components/dashboard/generic/PieChart'
+import { ToggleSwitch } from '@/components/dashboard/generic/ToggleSwitch'
+import { ImageDisplay } from '@/components/dashboard/generic/ImageDisplay'
+import { ImageHistory } from '@/components/dashboard/generic/ImageHistory'
+import { WebDisplay } from '@/components/dashboard/generic/WebDisplay'
+import { MarkdownDisplay } from '@/components/dashboard/generic/MarkdownDisplay'
+import { MapDisplay } from '@/components/dashboard/generic/MapDisplay'
+import { VideoDisplay } from '@/components/dashboard/generic/VideoDisplay'
+import { CustomLayer } from '@/components/dashboard/generic/CustomLayer'
+
+const builtInTypes = new Set([
+  'value-card', 'led-indicator', 'sparkline', 'progress-bar',
+  'line-chart', 'area-chart', 'bar-chart', 'pie-chart',
+  'toggle-switch', 'image-display', 'image-history',
+  'web-display', 'markdown-display', 'map-display', 'video-display', 'custom-layer',
+])
+
+const builtInComponentMap: Record<string, React.ComponentType<any>> = {
+  'value-card': ValueCard,
+  'led-indicator': LEDIndicator,
+  'sparkline': Sparkline,
+  'progress-bar': ProgressBar,
+  'line-chart': LineChart,
+  'area-chart': AreaChart,
+  'bar-chart': BarChart,
+  'pie-chart': PieChart,
+  'toggle-switch': ToggleSwitch,
+  'image-display': ImageDisplay,
+  'image-history': ImageHistory,
+  'web-display': WebDisplay,
+  'markdown-display': MarkdownDisplay,
+  'map-display': MapDisplay,
+  'video-display': VideoDisplay,
+  'custom-layer': CustomLayer,
+}
+
+/**
+ * Lightweight renderer for built-in components.
+ * No useStore, useEvents, or Suspense — just props + component.
+ * Matches v0.6.9's direct rendering approach.
+ */
+const BuiltInComponent = memo(function BuiltInComponent({
+  component,
+  config,
+  dataSource,
+  display,
+  editMode,
+  className,
+}: {
+  component: DashboardComponent
+  config: Record<string, any>
+  dataSource: any
+  display: Record<string, any>
+  editMode?: boolean
+  className?: string
+}) {
+  const Comp = builtInComponentMap[component.type]
+  if (!Comp) return null
+
+  // Destructure config: remove keys that are NOT component props
+  const { editMode: _em, transform: _t, ...restConfig } = config
+
+  // Filter display: remove keys that conflict with hook options
+  const { transform: _dt, ...restDisplay } = display
+
+  return (
+    <Comp
+      dataSource={dataSource}
+      editMode={editMode}
+      {...restConfig}
+      {...restDisplay}
+      title={component.title || config.title}
+      className={className}
+    />
+  )
+})
 
 // ============================================================================
 // Helper Functions
@@ -501,23 +588,42 @@ export function renderDashboardComponent(
   closeFullscreen?: () => void
 ) {
   const config = (component as any).config || {}
-  const normalizedComponent = {
-    ...component,
-    config: {
-      ...config,
-      editMode,
-      height: config.height ?? getChartHeight(component),
-    },
-  } as DashboardComponent
+  const dataSource = (component as any).dataSource
+  const display = (component as any).display || {}
 
+  // Use ComponentRenderer for dynamic/extension/community components
+  if (!builtInTypes.has(component.type)) {
+    const normalizedComponent = {
+      ...component,
+      config: {
+        ...config,
+        editMode,
+        height: config.height ?? getChartHeight(component),
+      },
+    } as DashboardComponent
+
+    return (
+      <ComponentRenderer
+        component={normalizedComponent}
+        className="w-full h-full"
+        onDataSourceChange={onDataSourceChange}
+        onConfigChange={onConfigChange}
+        openFullscreen={openFullscreen}
+        closeFullscreen={closeFullscreen}
+      />
+    )
+  }
+
+  // Built-in components: render directly (like v0.6.9) to avoid
+  // ComponentRenderer's store subscriptions causing blank frames during scroll
   return (
-    <ComponentRenderer
-      component={normalizedComponent}
+    <BuiltInComponent
+      component={component}
+      config={config}
+      dataSource={dataSource}
+      display={display}
+      editMode={editMode}
       className="w-full h-full"
-      onDataSourceChange={onDataSourceChange}
-      onConfigChange={onConfigChange}
-      openFullscreen={openFullscreen}
-      closeFullscreen={closeFullscreen}
     />
   )
 
@@ -1026,7 +1132,7 @@ const ComponentWrapper = memo(function ComponentWrapper({
   return (
     <div
       className={cn(
-        'relative h-full transition-all duration-200'
+        'relative h-full'
       )}
       {...(!isMobile ? hoverProps : {})}
     >
@@ -1544,8 +1650,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   }, [currentDashboard])
 
   // Fetch batch current values when device set changes.
-  // Strategy: initial fetch → up to 3 fast retries (2s) for missing data →
-  // switch to slow refresh (120s) for real-time updates. Stops early if all data arrives.
+  // v0.7.0 approach: single initial fetch + slow background refresh (120s).
+  // NO 2-second fast retry polling — it blocks the main thread during scroll
+  // in WKWebView (Tauri), causing white screen frames.
   const batchFetchControllerRef = useRef<{ deviceIds: string[]; interval: ReturnType<typeof setInterval> | null }>({ deviceIds: [], interval: null })
   const batchAbortRef = useRef<AbortController | null>(null)
 
@@ -1568,43 +1675,16 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     }
     ctrl.deviceIds = deviceIds
 
-    // Initial fetch
+    // Initial fetch (like v0.7.0)
     fetchDevicesCurrentBatch(deviceIds, abortController.signal)
 
-    // Phase 1: Fast retries for missing telemetry (up to 3 attempts at 2s intervals)
-    let fastRetries = 0
-    const FAST_RETRY_MAX = 3
-    const FAST_RETRY_MS = 2000
-    // Phase 2: Slow background refresh (120s)
+    // Slow background refresh only (120s) — no fast retry polling
     const SLOW_REFRESH_MS = 120_000
-
-    const checkAndRefresh = () => {
-      if (abortController.signal.aborted) return
-
-      const freshDevices = useStore.getState().devices
-      const ids = new Set(deviceIds)
-      const stillMissing = freshDevices.some((d) =>
-        ids.has(d.id || d.device_id) &&
-        (!d.current_values || Object.keys(d.current_values).length === 0)
-      )
-
-      if (stillMissing && fastRetries < FAST_RETRY_MAX) {
-        // Phase 1: fast retry for missing data
-        fastRetries++
-        fetchDevicesCurrentBatch(deviceIds, abortController.signal)
-      } else {
-        // All data arrived or fast retries exhausted — switch to slow refresh
-        if (ctrl.interval) {
-          clearInterval(ctrl.interval)
-        }
-        ctrl.interval = setInterval(checkAndRefresh, SLOW_REFRESH_MS)
-        // Fetch once more at the transition point
+    ctrl.interval = setInterval(() => {
+      if (!abortController.signal.aborted) {
         fetchDevicesCurrentBatch(deviceIds, abortController.signal)
       }
-    }
-
-    // Start with fast retry interval
-    ctrl.interval = setInterval(checkAndRefresh, FAST_RETRY_MS)
+    }, SLOW_REFRESH_MS)
 
     return () => {
       abortController.abort()
@@ -5463,7 +5543,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 ) : (
                   <>
                     <Settings2 className="h-4 w-4 mr-1" />
-                    <span className="hidden sm:inline">Edit</span>
+                    <span className="hidden sm:inline">Edit Dashboard</span>
                     <span className="sm:hidden">Edit</span>
                   </>
                 )}
@@ -5695,7 +5775,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           </header>
 
         {/* Dashboard Grid */}
-        <div className="flex-1 overflow-auto p-4 relative">
+        <div className={cn("flex-1 overflow-auto p-4 relative")}>
 
           {(currentDashboard.components?.length ?? 0) === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground">

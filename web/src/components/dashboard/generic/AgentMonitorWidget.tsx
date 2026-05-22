@@ -7,7 +7,7 @@
  * - Bottom: User input for adding task hints
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Bot,
@@ -42,6 +42,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { AiAgent, AgentExecution, DataCollected } from '@/types'
@@ -346,6 +347,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
               <span>#{execution.id.slice(-6)}</span>
               <Badge variant="outline" className={textNano}>{execution.trigger_type}</Badge>
             </DialogTitle>
+            <DialogDescription className="sr-only">Execution details</DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 overflow-auto space-y-4">
@@ -501,6 +503,10 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
       {fullscreenImage && (
         <Dialog open={!!fullscreenImage} onOpenChange={() => setFullscreenImage(null)}>
           <DialogContent className="max-w-4xl p-2 z-[110]">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Fullscreen Image</DialogTitle>
+              <DialogDescription>Image preview</DialogDescription>
+            </DialogHeader>
             <img
               src={fullscreenImage}
               alt="Fullscreen"
@@ -522,11 +528,14 @@ interface FlowNodeProps {
   detail?: any
 }
 
-function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeProps) {
-  const dp = detail?.decision_process ? normalizeDecisionProcess(detail.decision_process) : null
+const FlowNode = memo(function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeProps) {
+  const dp = useMemo(() =>
+    detail?.decision_process ? normalizeDecisionProcess(detail.decision_process) : null,
+    [detail?.decision_process]
+  )
   const dataCollected = detail?.decision_process?.data_collected || []
-  const images = extractImagesFromData(dataCollected)
-  const metricTags = extractMetricTags(dataCollected)
+  const images = useMemo(() => extractImagesFromData(dataCollected), [dataCollected])
+  const metricTags = useMemo(() => extractMetricTags(dataCollected), [dataCollected])
 
   const formatTime = (timestamp: string | number) => {
     const date = typeof timestamp === 'number'
@@ -643,7 +652,7 @@ function FlowNode({ execution, isLatest, isRunning, onClick, detail }: FlowNodeP
       )}
     </button>
   )
-}
+})
 
 // Main Component
 export function AgentMonitorWidget({
@@ -708,7 +717,7 @@ export function AgentMonitorWidget({
   const loadExecutions = useCallback(async () => {
     if (!agentId || agentNotFoundRef.current) return
     try {
-      const data = await api.getAgentExecutions(agentId, 50)
+      const data = await api.getAgentExecutions(agentId, 20)
       setExecutions(data.executions || [])
     } catch (error) {
       if (!agentNotFoundRef.current) {
@@ -769,7 +778,8 @@ export function AgentMonitorWidget({
   useEffect(() => {
     if (!agentId) return
     const loaded = executionDetailsRef.current
-    const toLoad = executions.filter(exec => !loaded[exec.id])
+    // Only load details for the latest 10 executions to reduce payload
+    const toLoad = executions.slice(0, 10).filter(exec => !loaded[exec.id])
     if (toLoad.length === 0) return
 
     const ids = toLoad.map(exec => exec.id)
@@ -860,6 +870,27 @@ export function AgentMonitorWidget({
   const avgDurationMs = agent?.avg_duration_ms || 0
   const successRate = executionCount > 0 ? Math.round((successCount / executionCount) * 100) : 0
   const currentlyExecuting = isExecuting || agent?.status === 'Executing'
+
+  // Memoize sorted timeline items — prevents re-sorting on every render
+  const sortedItems = useMemo(() => {
+    const all: Array<{
+      type: 'execution' | 'message'
+      timestamp: number
+      data: any
+    }> = [
+      ...executions.map(e => ({
+        type: 'execution' as const,
+        timestamp: typeof e.timestamp === 'number' ? e.timestamp : new Date(e.timestamp).getTime() / 1000,
+        data: e
+      })),
+      ...userMessages.map(m => ({
+        type: 'message' as const,
+        timestamp: m.timestamp,
+        data: m
+      }))
+    ].sort((a, b) => b.timestamp - a.timestamp)
+    return all
+  }, [executions, userMessages])
 
   // Empty state
   if (!agentId && !loading && !editMode) {
@@ -1034,25 +1065,7 @@ export function AgentMonitorWidget({
 
               {/* Data Flow: Interleaved messages and executions */}
               {(() => {
-                // Combine and sort by timestamp
-                const items: Array<{
-                  type: 'execution' | 'message'
-                  timestamp: number
-                  data: any
-                }> = [
-                  ...executions.map(e => ({
-                    type: 'execution' as const,
-                    timestamp: typeof e.timestamp === 'number' ? e.timestamp : new Date(e.timestamp).getTime() / 1000,
-                    data: e
-                  })),
-                  ...userMessages.map(m => ({
-                    type: 'message' as const,
-                    timestamp: m.timestamp,
-                    data: m
-                  }))
-                ].sort((a, b) => b.timestamp - a.timestamp)
-
-                if (items.length === 0) {
+                if (sortedItems.length === 0) {
                   return (
                     <div className="flex flex-col items-center justify-center py-8 text-center">
                       <CircleDot className="h-8 w-8 text-muted-foreground opacity-30 mb-2" />
@@ -1061,7 +1074,7 @@ export function AgentMonitorWidget({
                   )
                 }
 
-                return items.map((item, idx) => {
+                return sortedItems.map((item, idx) => {
                   if (item.type === 'message') {
                     const msg = item.data
                     return (

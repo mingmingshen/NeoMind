@@ -6,7 +6,7 @@
  */
 
 import { getPortalRoot } from '@/lib/portal'
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { createPortal } from 'react-dom'
@@ -117,9 +117,9 @@ interface MapMarkerDotProps {
   t: (key: string) => string
 }
 
-function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotProps) {
-  // Marker type config for colors and icons
-  const getMarkerConfig = () => {
+const MapMarkerDot = memo(function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotProps) {
+  // Marker type config for colors and icons — memoized
+  const config = useMemo(() => {
     const type = marker.markerType || 'device'
     switch (type) {
       case 'device':
@@ -153,9 +153,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
           icon: MapPin,
         }
     }
-  }
-
-  const markerConfig = getMarkerConfig()
+  }, [marker.markerType])
 
   // Status indicator color helper
   const getStatusColor = (status?: string) => {
@@ -169,8 +167,8 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
   }
 
   const statusColor = getStatusColor(marker.status)
-  const finalBgColor = statusColor || markerConfig.bgColor
-  const Icon = markerConfig.icon
+  const finalBgColor = statusColor || config.bgColor
+  const Icon = config.icon
 
   return (
     <>
@@ -189,7 +187,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
         {marker.status === 'online' && (
           <span className={cn(
             "absolute inline-flex h-full w-full animate-ping opacity-75 rounded-full",
-            markerConfig.pingColor
+            config.pingColor
           )} />
         )}
 
@@ -232,7 +230,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
 
           {/* Header with icon and type */}
           <div className="flex items-center gap-2 mb-2 pb-2 border-b">
-            <div className={cn('p-1.5 rounded-md', markerConfig.bgColor)}>
+            <div className={cn('p-1.5 rounded-md', config.bgColor)}>
               <Icon className={cn('h-4 w-4 text-primary-foreground')} />
             </div>
             <div className="flex-1 min-w-0">
@@ -350,7 +348,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
       )}
     </>
   )
-}
+})
 
 // ============================================================================
 // Simple SVG Map (embedded solution without external deps)
@@ -550,11 +548,16 @@ function SimpleSvgMap({
     mouseDownRef.current = { x: e.clientX, y: e.clientY }
   }
 
+  const dragRafRef = useRef<number | null>(null)
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging || !interactive) return
-    setDragOffset({
-      x: e.clientX - dragStartRef.current.x,
-      y: e.clientY - dragStartRef.current.y,
+    if (dragRafRef.current !== null) return
+    dragRafRef.current = requestAnimationFrame(() => {
+      dragRafRef.current = null
+      setDragOffset({
+        x: e.clientX - dragStartRef.current.x,
+        y: e.clientY - dragStartRef.current.y,
+      })
     })
   }
 

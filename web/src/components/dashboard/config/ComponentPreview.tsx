@@ -17,6 +17,7 @@ import { getComponentMeta } from '@/components/dashboard/registry/registry'
 import type { DashboardComponent, DataSource, ImplementedComponentType } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
 import { createStableKey } from '@/lib/stable-key'
+import { responsiveCols } from '@/design-system/tokens/size'
 
 /**
  * Create a simple key to detect dataSource changes
@@ -43,9 +44,11 @@ export interface ComponentPreviewProps {
   gridH?: number
 }
 
-// Grid dimensions (matching dashboard grid)
-const GRID_CELL_WIDTH = 100
-const GRID_CELL_HEIGHT = 80
+// Match DashboardGrid's exact rendering configuration
+const GRID_ROW_HEIGHT = 60
+const GRID_MARGIN: [number, number] = [4, 4]
+const GRID_CONTAINER_PADDING: [number, number] = [4, 4]
+const GRID_COLS = responsiveCols.lg  // 12
 
 // Variant-aware height overrides for components whose variants need different sizes
 function getVariantAwareHeight(componentType: string, config: Record<string, unknown>, baseH: number): number {
@@ -175,11 +178,6 @@ export const ComponentPreview = memo(function ComponentPreview({
     dataSource,
   }
 
-  // Calculate display dimensions based on grid aspect ratio.
-  // The component's natural proportion is defaultW:defaultH grid units.
-  // We fit it inside the container while preserving this ratio.
-  const aspectRatio = defaultW / defaultH
-
   const updateContainerSize = useCallback(() => {
     if (!containerRef.current) return
 
@@ -188,12 +186,26 @@ export const ComponentPreview = memo(function ComponentPreview({
 
     if (containerWidth <= 0 || containerHeight <= 0) return
 
-    // Fit component proportion into container: pick the dimension that constrains
+    // Use the actual dashboard width (viewport width) as reference,
+    // not the preview container width — the preview is narrow but the
+    // dashboard is wide, so using the preview width would give wrong proportions.
+    const dashboardWidth = typeof window !== 'undefined' ? window.innerWidth : 1200
+
+    // Match react-grid-layout's exact pixel calculation:
+    //   colWidth = (containerWidth - margin*(cols-1) - padding*2) / cols
+    //   itemWidth = colWidth * w + (w-1) * margin
+    //   itemHeight = rowHeight * h + (h-1) * margin
+    const colWidth = (dashboardWidth - GRID_MARGIN[0] * (GRID_COLS - 1) - GRID_CONTAINER_PADDING[0] * 2) / GRID_COLS
+    const pixelW = colWidth * defaultW + Math.max(0, defaultW - 1) * GRID_MARGIN[0]
+    const pixelH = GRID_ROW_HEIGHT * defaultH + Math.max(0, defaultH - 1) * GRID_MARGIN[1]
+    const aspectRatio = pixelW / pixelH
+
+    // Fit component proportion into preview container
     const fitWidth = Math.min(containerWidth, containerHeight * aspectRatio)
     const fitHeight = fitWidth / aspectRatio
 
     setContainerSize({ width: Math.round(fitWidth), height: Math.round(fitHeight) })
-  }, [aspectRatio])
+  }, [defaultW, defaultH])
 
   // Update size on mount and when container/props change
   useEffect(() => {

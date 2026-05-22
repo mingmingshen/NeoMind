@@ -578,6 +578,11 @@ const ComponentRenderer = memo(function ComponentRenderer({
     return <UnknownComponent type={component.type} className={className} />
   }
 
+  // Built-in components: render directly without Suspense (they're statically imported)
+  if (isBuiltIn) {
+    return <Component key={component.id} {...props} />
+  }
+
   return (
     <Suspense fallback={<ComponentSkeleton meta={meta} className={className} />}>
       <Component key={component.id} {...props} />

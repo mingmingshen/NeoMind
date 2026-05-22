@@ -447,6 +447,7 @@ export const createDeviceSlice: StateCreator<
         return true
       }
 
+      const _t0 = performance.now()
       set((state) => {
         let changed = false
         const updatedDevices = state.devices.map((device) => {
@@ -474,16 +475,16 @@ export const createDeviceSlice: StateCreator<
 
         return { devices: updatedDevices }
       })
+      const _dt = performance.now() - _t0
+      if (_dt > 100) console.warn(`[perf] fetchDevicesCurrentBatch set(): ${Math.round(_dt)}ms`)
 
       // Invalidate fetch cache so callers can retry if needed
       fetchCache.invalidate('devicesCurrentBatch')
     } catch (error) {
       const errorMessage = (error as Error).message
-      // Silently ignore 405 errors - backend doesn't support this endpoint yet
-      if (errorMessage.includes('405') || errorMessage.includes('Method Not Allowed')) {
-        // Endpoint not implemented in backend - skip silently
-        return
-      }
+      // Silently ignore expected errors
+      if (errorMessage.includes('405') || errorMessage.includes('Method Not Allowed')) return
+      if (errorMessage.includes('aborted') || (error as Error).name === 'AbortError') return
       logError(error, { operation: 'Fetch devices current batch' })
       fetchCache.invalidate('devicesCurrentBatch')
     }

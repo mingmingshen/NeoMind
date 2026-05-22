@@ -284,15 +284,17 @@ export function AiAnalyst({
   }, [editMode, hasDataSource, hasAgent, sessionError, initSession])
 
   // ---- Stats ----
-  const aiMessages = messages.filter((m) => m.type === 'ai')
+  const aiMessages = useMemo(() => messages.filter((m) => m.type === 'ai'), [messages])
   const messageCount = messages.length
-  const avgDuration =
+  const avgDuration = useMemo(() =>
     aiMessages.length > 0
       ? Math.round(
           aiMessages.reduce((sum, m) => sum + (m.duration ?? 0), 0) /
             aiMessages.length,
         )
-      : 0
+      : 0,
+    [aiMessages]
+  )
 
   // ---- Render: Empty state ----
   if (!hasDataSource && !editMode) {

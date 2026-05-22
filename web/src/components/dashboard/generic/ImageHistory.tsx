@@ -5,7 +5,7 @@
  * Supports base64 images, URLs, and data URLs.
  */
 
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, memo } from 'react'
 import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
@@ -376,7 +376,7 @@ function normalizeDataSourceForImages(
   return ds
 }
 
-export function ImageHistory({
+export const ImageHistory = memo(function ImageHistory({
   dataSource,
   images: propImages,
   title,
@@ -661,4 +661,4 @@ export function ImageHistory({
       </div>
     </div>
   )
-}
+})

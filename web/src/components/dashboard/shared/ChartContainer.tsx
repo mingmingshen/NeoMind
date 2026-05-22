@@ -1,24 +1,144 @@
 /**
  * Chart Container Component
  *
- * Pure CSS layout container for chart components.
- * Provides minimum height so ResponsiveContainer always has positive dimensions,
- * eliminating "width(-1)" warnings from Recharts.
- *
- * IMPORTANT: Must use inline style for minHeight because dashboard-components.css
- * overrides class-based min-height with `min-height: 0 !important`.
- * Inline style with `minHeight` takes precedence over CSS class rules.
+ * Pure CSS approach: the container fills available space via flex,
+ * and children use absolute positioning to get explicit dimensions.
  */
 
-import type { ReactNode } from 'react'
+import { type ReactNode, useState, useEffect, useRef, memo } from 'react'
 
 export function ChartContainer({ children }: { children: ReactNode }) {
   return (
-    <div
-      className="w-full flex-1"
-      style={{ minHeight: 120, height: '100%', position: 'relative' }}
-    >
-      {children}
+    <div className="relative w-full flex-1 min-h-0">
+      <div className="absolute inset-0">
+        {children}
+      </div>
     </div>
   )
+}
+
+/**
+ * Hook to get chart container dimensions.
+ *
+ * Staggers initial measurement across animation frames to prevent
+ * all charts from rendering SVG in the same frame (which causes
+ * 6000ms+ frame spikes in WKWebView/Tauri).
+ *
+ * Each chart instance gets a turn: 0, 1, 2, ...
+ * Chart 0 measures in the next RAF, chart 1 in the one after, etc.
+ * This spreads SVG rendering across multiple frames.
+ */
+
+// Global stagger counter — each chart gets a unique turn
+let chartTurn = 0
+
+export function useChartDimensions() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [dims, setDims] = useState({ width: 0, height: 0 })
+
+  // Each instance claims a turn on first render
+  const turnRef = useRef(-1)
+  if (turnRef.current === -1) {
+    turnRef.current = chartTurn++
+  }
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+
+    const measure = () => {
+      const w = el.clientWidth
+      const h = el.clientHeight
+      if (w > 0 && h > 0) {
+        setDims(prev => {
+          if (prev.width === w && prev.height === h) return prev
+          return { width: w, height: h }
+        })
+      }
+    }
+
+    // Stagger initial measurement: wait for (turn + 1) RAFs
+    // This prevents all charts from rendering SVG in the same frame
+    let rafId: number | null = null
+    let remaining = turnRef.current + 1
+
+    const scheduleMeasure = () => {
+      if (remaining > 0) {
+        remaining--
+        rafId = requestAnimationFrame(scheduleMeasure)
+      } else {
+        measure()
+      }
+    }
+    rafId = requestAnimationFrame(scheduleMeasure)
+
+    // After initial measurement, use ResizeObserver for size changes
+    let initialDone = false
+    const ro = new ResizeObserver(() => {
+      if (!initialDone) return // Skip RO during stagger phase
+      measure()
+    })
+    ro.observe(el)
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      ro.disconnect()
+      // Reset turn counter when all charts unmount
+      // (approximation: decrement on unmount)
+      if (chartTurn > 0) chartTurn--
+    }
+  }, [])
+
+  return { ref, width: dims.width, height: dims.height, turn: turnRef.current }
+}
+
+/**
+ * Staggers data updates across animation frames.
+ *
+ * When data changes (e.g. from API), each chart waits (turn + 1) RAFs
+ * before rendering the new data. This prevents all charts from rendering
+ * SVG in the same frame, which causes 6000ms+ frame spikes in WKWebView.
+ */
+export function useStaggeredData<T>(data: T, turn: number): T {
+  const [rendered, setRendered] = useState(data)
+
+  useEffect(() => {
+    let remaining = turn + 1
+    let rafId: number
+    const schedule = () => {
+      if (remaining > 0) {
+        remaining--
+        rafId = requestAnimationFrame(schedule)
+      } else {
+        setRendered(data)
+      }
+    }
+    rafId = requestAnimationFrame(schedule)
+    return () => cancelAnimationFrame(rafId)
+  }, [data, turn])
+
+  return rendered
+}
+
+/**
+ * Creates a memoized chart renderer.
+ *
+ * The problem: when the store updates, ALL parent chart components re-render.
+ * Even though useStaggeredData delays the data, React still re-renders the
+ * *WithDimensions child → Recharts re-renders SVG unnecessarily (Recharts
+ * doesn't use React.memo internally).
+ *
+ * Solution: wrap the Recharts render in a memo'd component. When staggered
+ * data hasn't changed (same reference from useState), React.memo skips the
+ * entire render — no Recharts execution, no SVG reconciliation.
+ *
+ * Usage:
+ *   const MyRenderer = createMemoRenderer(function MyRenderer(props) {
+ *     return <RechartsChart data={props.data} ... />
+ *   })
+ */
+export function createMemoRenderer<P extends object>(
+  render: (props: P) => ReactNode
+) {
+  return memo(render)
 }

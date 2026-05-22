@@ -6,7 +6,7 @@
  * Uses raw data values directly.
  */
 
-import { useMemo } from 'react'
+import { useMemo, memo } from 'react'
 import { ArrowUpRight, ArrowDownRight, Minus, Activity, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn, getIconForEntity } from '@/lib/utils'
 import { chartColors, indicatorFontWeight, indicatorColors, dashboardCardBase, dashboardCardHorizontal } from '@/design-system'
@@ -171,7 +171,7 @@ function ValueIcon({ icon, title, iconType = 'entity', size, className, iconColo
 // Main Component
 // ============================================================================
 
-export function ValueCard({
+export const ValueCard = memo(function ValueCard({
   dataSource,
   title,
   unit,
@@ -540,4 +540,4 @@ export function ValueCard({
       </div>
     </div>
   )
-}
+})

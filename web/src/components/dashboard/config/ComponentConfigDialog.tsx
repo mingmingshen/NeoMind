@@ -42,7 +42,7 @@ import type { ComponentConfigSchema } from './ComponentConfigBuilder'
 import type { DataSource, DataSourceOrList, ComponentPosition, ImplementedComponentType, DashboardComponent } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import { cn } from '@/lib/utils'
-import { dialogHeader } from '@/design-system/tokens/size'
+import { dialogHeader, responsiveCols } from '@/design-system/tokens/size'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 
@@ -103,6 +103,20 @@ export function ComponentConfigDialog({
     config: { ...previewConfig, editMode: true },
     dataSource: previewDataSource,
   }), [componentType, previewGridW, previewGridH, title, previewConfig, previewDataSource])
+
+  // Calculate the pixel-based aspect ratio matching react-grid-layout's actual rendering.
+  // Grid unit ratio (4/3) is wrong because width scales with container width while height is fixed.
+  const previewPixelAspectRatio = useMemo(() => {
+    const GRID_ROW_HEIGHT = 60
+    const MARGIN = 4
+    const PADDING = 4
+    const COLS = responsiveCols.lg  // 12
+    const dashboardWidth = typeof window !== 'undefined' ? window.innerWidth : 1200
+    const colWidth = (dashboardWidth - MARGIN * (COLS - 1) - PADDING * 2) / COLS
+    const pixelW = colWidth * previewGridW + Math.max(0, previewGridW - 1) * MARGIN
+    const pixelH = GRID_ROW_HEIGHT * previewGridH + Math.max(0, previewGridH - 1) * MARGIN
+    return pixelW / pixelH
+  }, [previewGridW, previewGridH])
 
   // Tab states
   const [mobileDataSourceTab, setMobileDataSourceTab] = useState<'datasource' | 'transform'>('datasource')
@@ -419,7 +433,7 @@ export function ComponentConfigDialog({
             <div className="flex-1 flex items-center justify-center p-4 min-h-0">
               <div
                 className="rounded-lg overflow-hidden border bg-background shadow-sm max-w-lg max-h-full"
-                style={{ aspectRatio: `${previewGridW} / ${previewGridH}`, width: '100%' }}
+                style={{ aspectRatio: `${previewPixelAspectRatio}`, width: '100%' }}
               >
                 <ComponentRenderer
                   key={`${previewKey}-${previewGridW}x${previewGridH}`}

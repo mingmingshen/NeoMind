@@ -229,10 +229,10 @@ export type DashboardComponentSize = keyof typeof dashboardComponentSize
 export const dashboardCardBase = [
   // Layout
   'flex flex-col h-full w-full overflow-hidden',
-  // Background & border
-  'bg-card backdrop-blur',
-  // Border & shadow
-  'border border-border shadow-sm hover:shadow-md transition-shadow',
+  // Background & border (no backdrop-blur — creates GPU compositing layers in WKWebView)
+  'bg-card',
+  // Border & shadow (no hover:shadow-md transition — creates layers on hover)
+  'border border-border shadow-sm',
   // Radius
   'rounded-lg',
 ].join(' ')
@@ -244,10 +244,10 @@ export const dashboardCardBase = [
 export const dashboardCardHorizontal = [
   // Layout - horizontal instead of vertical
   'flex flex-row h-full w-full overflow-hidden',
-  // Background & border
-  'bg-card backdrop-blur',
+  // Background & border (no backdrop-blur — WKWebView performance)
+  'bg-card',
   // Border & shadow
-  'border border-border shadow-sm hover:shadow-md transition-shadow',
+  'border border-border shadow-sm',
   // Radius
   'rounded-lg',
 ].join(' ')

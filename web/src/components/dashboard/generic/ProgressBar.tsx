@@ -10,7 +10,7 @@
  * - Telemetry data support with DataMapper integration
  */
 
-import { useMemo } from 'react'
+import { useMemo, useId } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { DataMapper } from '@/lib/dataMapping'
@@ -73,6 +73,7 @@ export function ProgressBar({
   backgroundColor,
   className,
 }: ProgressBarProps) {
+  const stableId = useId()
   // Check if dataSource is configured
   const hasDataSource = dataSource !== undefined
 
@@ -133,7 +134,7 @@ export function ProgressBar({
   // ============================================================================
 
   if (variant === 'icon') {
-    const uniqueId = Math.random().toString(36).substring(2, 9)
+    const uniqueId = `icon-${stableId}`
 
     // Get fill color based on state
     const fillColor = iconColor || progressColor
@@ -247,7 +248,7 @@ export function ProgressBar({
     const strokeWidth = 3.5
     const circumference = 2 * Math.PI * (radius - strokeWidth / 2)
     const offset = circumference - (percentage / 100) * circumference
-    const gradientId = `circular-gradient-${Math.random().toString(36).substring(2, 9)}`
+    const gradientId = `circular-gradient-${stableId}`
 
     const content = (
       <div className="relative flex items-center justify-center w-full h-full">

@@ -23,7 +23,6 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
 } from 'recharts'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -34,7 +33,7 @@ import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors, chartColorsHex } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate, ChartViewMode } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
-import { ChartContainer, ChartTooltip, EmptyState, ErrorState } from '../shared'
+import { ChartContainer, ChartTooltip, EmptyState, ErrorState, useChartDimensions, useStaggeredData, createMemoRenderer } from '../shared'
 import {
   getEffectiveAggregate,
   getEffectiveTimeWindow,
@@ -103,7 +102,7 @@ function transformTelemetryToChartData(
       if (p.timestamp) {
         const date = new Date(p.timestamp > 10000000000 ? p.timestamp : p.timestamp * 1000)
         if (!isNaN(date.getTime())) {
-          return date.toLocaleTimeString('en-US', {
+          return date.toLocaleTimeString(undefined, {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
@@ -325,61 +324,84 @@ const LineChartInner = function LineChart({
     } as SeriesData]
   }, [data, propSeries, dataSource, dataMapping])
 
-  // Extract raw labels from telemetry data before any transformation
-  // This must be computed before normalizedSeries to access raw timestamps
-  const rawChartLabels = useMemo(() => {
-    // Multi-source case - extract labels from first series raw telemetry data
+  // Extract timestamp-aligned data for multi-source, or sorted labels for single-source
+  const { chartLabels, alignedSeries } = useMemo(() => {
+    // --- Multi-source with timestamps: align by timestamp ---
     if (sources.length > 1 && Array.isArray(data) && data.length > 0) {
-      const firstSeriesData = data[0]
-      if (Array.isArray(firstSeriesData) && firstSeriesData.length > 0) {
-        const first = firstSeriesData[0]
-        // Check if it's raw telemetry points (has timestamp field)
-        if (typeof first === 'object' && first !== null && ('timestamp' in first || 't' in first || 'time' in first)) {
-          return (firstSeriesData as any[]).map(item => {
-            const ts = item.timestamp ?? item.t ?? item.time
-            if (typeof ts === 'number') {
-              const date = new Date(ts * 1000)
-              return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-            }
-            return String(ts ?? '')
-          })
+      const sourceTimeValues = sources.map((_, idx) => {
+        const sourceData = idx < data.length ? data[idx] : []
+        if (!Array.isArray(sourceData) || sourceData.length === 0) return []
+        if (typeof sourceData[0] === 'number') return []
+        return DataMapper.mapToTimeSeries(sourceData, dataMapping)
+      })
+
+      const allHaveTimestamps = sourceTimeValues.every(arr => arr.length > 0)
+
+      if (allHaveTimestamps) {
+        // Collect all unique timestamps, sorted ascending
+        const allTimestamps = new Set<number>()
+        for (const points of sourceTimeValues) {
+          for (const p of points) {
+            if (p.timestamp !== undefined) allTimestamps.add(p.timestamp)
+          }
         }
+        const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
+
+        // Format timestamps as labels using browser locale
+        const labels = sortedTimestamps.map(ts => {
+          const date = new Date(ts > 10000000000 ? ts : ts * 1000)
+          if (!isNaN(date.getTime())) {
+            return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          }
+          return String(ts)
+        })
+
+        // For each source, build timestamp → value map for O(1) lookup
+        const seriesData = sources.map((ds, idx) => {
+          const tsMap = new Map<number, number>()
+          for (const p of sourceTimeValues[idx]) {
+            if (p.timestamp !== undefined) tsMap.set(p.timestamp, p.value)
+          }
+          return {
+            name: getSeriesName(ds, idx),
+            data: sortedTimestamps.map(ts => tsMap.get(ts) ?? null) as number[],
+            color: undefined,
+          } as SeriesData
+        })
+
+        return { chartLabels: labels, alignedSeries: seriesData }
       }
     }
 
-    // Single source case - extract labels from telemetry data
+    // --- Single source with timestamps ---
     if (dataSource && Array.isArray(data) && data.length > 0) {
       const first = data[0]
-      // Check if it's raw telemetry points
       if (typeof first === 'object' && first !== null && ('timestamp' in first || 't' in first || 'time' in first)) {
-        const { labels: telemetryLabels } = transformTelemetryToChartData(data, dataMapping)
+        const { labels: telemetryLabels, values } = transformTelemetryToChartData(data, dataMapping)
         if (telemetryLabels.length > 0) {
-          return telemetryLabels
+          const singleSource = sources[0]
+          const seriesName = singleSource ? getSeriesName(singleSource, 0) : 'Value'
+          return {
+            chartLabels: telemetryLabels,
+            alignedSeries: [{ name: seriesName, data: values, color: undefined } as SeriesData],
+          }
         }
       }
     }
 
-    return null // Signal that we couldn't extract raw labels
-  }, [data, sources, dataMapping])
-
-  // Generate labels from telemetry or use provided labels
-  const chartLabels = useMemo(() => {
-    // If we extracted raw labels from telemetry, use them
-    if (rawChartLabels && rawChartLabels.length > 0) {
-      return rawChartLabels
-    }
-
-    // If no dataSource, use propLabels (static labels)
+    // --- Fallback: index-based labels ---
     if (!dataSource && propLabels && propLabels.length > 0) {
-      return propLabels
+      return { chartLabels: propLabels, alignedSeries: normalizedSeries }
     }
 
-    // Default indexed labels based on the longest series
     const maxDataLength = Math.max(...normalizedSeries.map(s => s.data.length), 0)
-    return Array.from({ length: maxDataLength }, (_, i) => `${i}`)
-  }, [rawChartLabels, propLabels, normalizedSeries, dataSource])
+    return {
+      chartLabels: Array.from({ length: maxDataLength }, (_, i) => `${i}`),
+      alignedSeries: normalizedSeries,
+    }
+  }, [data, sources, dataMapping, normalizedSeries, dataSource, propLabels])
 
-  const series = normalizedSeries
+  const series = alignedSeries.length > 0 ? alignedSeries : normalizedSeries
 
   // Build chart data for recharts
   const chartData = useMemo(() => {
@@ -427,73 +449,139 @@ const LineChartInner = function LineChart({
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
       <ChartContainer>
-        <ResponsiveContainer width="100%" height="100%" debounce={100}>
-          <RechartsLineChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }} accessibilityLayer>
-            <defs>
-              {series.map((s, i) => {
-                const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
-                return (
-                  <linearGradient key={i} id={`gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={seriesColor} stopOpacity={0.2} />
-                    <stop offset="95%" stopColor={seriesColor} stopOpacity={0} />
-                  </linearGradient>
-                )
-              })}
-            </defs>
-            {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
-            <XAxis
-              dataKey="name"
-              axisLine={false}
-              tickLine={false}
-              tickMargin={10}
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              axisLine={false}
-              tickLine={false}
-              tickMargin={10}
-              width={32}
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-            />
-            {showTooltip && <Tooltip content={<ChartTooltip />} />}
-            {showLegend && <Legend />}
-            {series.map((s, i) => {
-              const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
-              return (
-                <g key={i}>
-                  {fillArea && (
-                    <Area
-                      type={smooth ? 'monotone' : 'linear'}
-                      dataKey={`series${i}`}
-                      stroke="none"
-                      fill={`url(#gradient-${i})`}
-                      isAnimationActive={false}
-                    />
-                  )}
-                  <Line
-                    type={smooth ? 'monotone' : 'linear'}
-                    dataKey={`series${i}`}
-                    name={s.name}
-                    stroke={seriesColor}
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                    activeDot={{ r: 4, className: 'fill-background stroke-[2px]' }}
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                  />
-                </g>
-              )
-            })}
-          </RechartsLineChart>
-        </ResponsiveContainer>
+        <LineChartWithDimensions data={chartData} series={series} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} smooth={smooth} fillArea={fillArea} />
       </ChartContainer>
     </div>
   )
 }
 
 export const LineChart = memo(LineChartInner)
+
+// Memoized Recharts renderers — skip re-render when staggered data hasn't changed.
+// This is critical because Recharts doesn't use React.memo internally, so every
+// parent re-render causes a full SVG re-render even with identical data.
+
+const LineChartRenderer = createMemoRenderer(({ data, series, showGrid, showTooltip, showLegend, color, smooth, fillArea, width, height }: {
+  data: any[]
+  series: SeriesData[]
+  showGrid: boolean
+  showTooltip: boolean
+  showLegend: boolean
+  color?: string
+  smooth: boolean
+  fillArea: boolean
+  width: number
+  height: number
+}) => (
+  <RechartsLineChart width={width} height={height} data={data} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
+    <defs>
+      {series.map((s, i) => {
+        const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
+        return (
+          <linearGradient key={i} id={`gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={seriesColor} stopOpacity={0.2} />
+            <stop offset="95%" stopColor={seriesColor} stopOpacity={0} />
+          </linearGradient>
+        )
+      })}
+    </defs>
+    {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
+    <XAxis dataKey="name" axisLine={false} tickLine={false} tickMargin={10} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} interval="preserveStartEnd" />
+    <YAxis axisLine={false} tickLine={false} tickMargin={10} width={32} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} />
+    {showTooltip && <Tooltip content={<ChartTooltip />} />}
+    {showLegend && <Legend />}
+    {series.map((s, i) => {
+      const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
+      return (
+        <g key={i}>
+          {fillArea && <Area type={smooth ? 'monotone' : 'linear'} dataKey={`series${i}`} stroke="none" fill={`url(#gradient-${i})`} isAnimationActive={false} />}
+          <Line type={smooth ? 'monotone' : 'linear'} dataKey={`series${i}`} name={s.name} stroke={seriesColor} strokeWidth={2} dot={false} isAnimationActive={false} activeDot={{ r: 4, className: 'fill-background stroke-[2px]' }} strokeLinejoin="round" strokeLinecap="round" />
+        </g>
+      )
+    })}
+  </RechartsLineChart>
+))
+
+const AreaChartRenderer = createMemoRenderer(({ data, series, showGrid, showTooltip, showLegend, color, smooth, width, height }: {
+  data: any[]
+  series: SeriesData[]
+  showGrid: boolean
+  showTooltip: boolean
+  showLegend: boolean
+  color?: string
+  smooth: boolean
+  width: number
+  height: number
+}) => (
+  <RechartsAreaChart width={width} height={height} data={data} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
+    <defs>
+      {series.map((s, i) => {
+        const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
+        return (
+          <linearGradient key={i} id={`area-gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={seriesColor} stopOpacity={0.35} />
+            <stop offset="95%" stopColor={seriesColor} stopOpacity={0.02} />
+          </linearGradient>
+        )
+      })}
+    </defs>
+    {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
+    <XAxis dataKey="name" axisLine={false} tickLine={false} tickMargin={10} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} interval="preserveStartEnd" />
+    <YAxis axisLine={false} tickLine={false} tickMargin={10} width={32} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} />
+    {showTooltip && <Tooltip content={<ChartTooltip />} />}
+    {showLegend && <Legend />}
+    {series.map((s, i) => {
+      const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
+      return <Area key={i} type={smooth ? 'monotone' : 'linear'} dataKey={`series${i}`} name={s.name} stroke={seriesColor} strokeWidth={2} fill={`url(#area-gradient-${i})`} isAnimationActive={false} strokeLinejoin="round" strokeLinecap="round" />
+    })}
+  </RechartsAreaChart>
+))
+
+// Stable chart wrappers that use useChartDimensions instead of ResponsiveContainer
+// to prevent blank frames during scroll
+
+function LineChartWithDimensions({ data, series, showGrid, showTooltip, showLegend, color, smooth, fillArea }: {
+  data: any[]
+  series: SeriesData[]
+  showGrid: boolean
+  showTooltip: boolean
+  showLegend: boolean
+  color?: string
+  smooth: boolean
+  fillArea: boolean
+}) {
+  const { ref, width, height, turn } = useChartDimensions()
+  const staggeredData = useStaggeredData(data, turn)
+  const staggeredSeries = useStaggeredData(series, turn)
+  return (
+    <div ref={ref} style={{ width: '100%', height: '100%' }}>
+      {width > 0 && height > 0 && (
+        <LineChartRenderer data={staggeredData} series={staggeredSeries} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} smooth={smooth} fillArea={fillArea} width={width} height={height} />
+      )}
+    </div>
+  )
+}
+
+function AreaChartWithDimensions({ data, series, showGrid, showTooltip, showLegend, color, smooth }: {
+  data: any[]
+  series: SeriesData[]
+  showGrid: boolean
+  showTooltip: boolean
+  showLegend: boolean
+  color?: string
+  smooth: boolean
+}) {
+  const { ref, width, height, turn } = useChartDimensions()
+  const staggeredData = useStaggeredData(data, turn)
+  const staggeredSeries = useStaggeredData(series, turn)
+  return (
+    <div ref={ref} style={{ width: '100%', height: '100%' }}>
+      {width > 0 && height > 0 && (
+        <AreaChartRenderer data={staggeredData} series={staggeredSeries} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} smooth={smooth} width={width} height={height} />
+      )}
+    </div>
+  )
+}
 
 /**
  * Area Chart Component
@@ -669,68 +757,91 @@ export const AreaChart = memo(function AreaChart({
 
   const series = normalizedSeries
 
-  // Extract raw labels from telemetry data before any transformation
-  const rawChartLabels = useMemo(() => {
-    // Multi-source case - extract labels from first series raw telemetry data
-    if (sources.length > 1 && Array.isArray(rawData) && rawData.length > 0) {
-      const firstSeriesData = rawData[0]
-      if (Array.isArray(firstSeriesData) && firstSeriesData.length > 0) {
-        const first = firstSeriesData[0]
-        // Check if it's raw telemetry points (has timestamp field)
-        if (typeof first === 'object' && first !== null && ('timestamp' in first || 't' in first || 'time' in first)) {
-          return (firstSeriesData as any[]).map(item => {
-            const ts = item.timestamp ?? item.t ?? item.time
-            if (typeof ts === 'number') {
-              const date = new Date(ts * 1000)
-              return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-            }
-            return String(ts ?? '')
-          })
+  // Extract timestamp-aligned labels and series data
+  const { chartLabels, alignedSeries } = useMemo(() => {
+    // --- Multi-source with timestamps: align by timestamp ---
+    if (sources.length > 1 && Array.isArray(rawData) && rawData.length === sources.length) {
+      const sourceTimeValues = sources.map((_, idx) => {
+        const sourceData = rawData[idx]
+        if (!Array.isArray(sourceData) || sourceData.length === 0) return []
+        if (typeof sourceData[0] === 'number') return []
+        return DataMapper.mapToTimeSeries(sourceData, dataMapping)
+      })
+
+      const allHaveTimestamps = sourceTimeValues.every(arr => arr.length > 0)
+
+      if (allHaveTimestamps) {
+        const allTimestamps = new Set<number>()
+        for (const points of sourceTimeValues) {
+          for (const p of points) {
+            if (p.timestamp !== undefined) allTimestamps.add(p.timestamp)
+          }
         }
+        const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
+
+        const labelArr = sortedTimestamps.map(ts => {
+          const date = new Date(ts > 10000000000 ? ts : ts * 1000)
+          if (!isNaN(date.getTime())) {
+            return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          }
+          return String(ts)
+        })
+
+        const seriesData = sources.map((ds, idx) => {
+          const tsMap = new Map<number, number>()
+          for (const p of sourceTimeValues[idx]) {
+            if (p.timestamp !== undefined) tsMap.set(p.timestamp, p.value)
+          }
+          return {
+            name: getSeriesName(ds, idx),
+            data: sortedTimestamps.map(ts => tsMap.get(ts) ?? null) as number[],
+            color: undefined,
+          } as SeriesData
+        })
+
+        return { chartLabels: labelArr, alignedSeries: seriesData }
       }
     }
 
-    // Single source case - extract labels from telemetry data
+    // --- Single source with timestamps ---
     if (dataSource && Array.isArray(rawData) && rawData.length > 0) {
       const first = rawData[0]
-      // Check if it's raw telemetry points
       if (typeof first === 'object' && first !== null && ('timestamp' in first || 't' in first || 'time' in first)) {
-        const { labels: telemetryLabels } = transformTelemetryToChartData(rawData, dataMapping)
+        const { labels: telemetryLabels, values } = transformTelemetryToChartData(rawData, dataMapping)
         if (telemetryLabels.length > 0) {
-          return telemetryLabels
+          const singleSource = sources[0]
+          const seriesName = singleSource ? getSeriesName(singleSource, 0) : 'Value'
+          return {
+            chartLabels: telemetryLabels,
+            alignedSeries: [{ name: seriesName, data: values, color: undefined } as SeriesData],
+          }
         }
       }
     }
 
-    return null // Signal that we couldn't extract raw labels
-  }, [rawData, sources, dataMapping])
-
-  // Generate labels
-  const chartLabels = useMemo(() => {
-    // If we extracted raw labels from telemetry, use them
-    if (rawChartLabels && rawChartLabels.length > 0) {
-      return rawChartLabels
-    }
-
-    // If no dataSource, use propLabels (static labels)
+    // --- Fallback ---
     if (!dataSource && labels && labels.length > 0) {
-      return labels
+      return { chartLabels: labels, alignedSeries: series }
     }
 
-    // Default indexed labels based on the longest series
     const maxDataLength = Math.max(...series.map(s => s.data.length), 0)
-    return Array.from({ length: maxDataLength }, (_, i) => `${i}`)
-  }, [rawChartLabels, labels, series, dataSource])
+    return {
+      chartLabels: Array.from({ length: maxDataLength }, (_, i) => `${i}`),
+      alignedSeries: series,
+    }
+  }, [rawData, sources, dataMapping, series, dataSource, labels])
+
+  const finalSeries = alignedSeries.length > 0 ? alignedSeries : series
 
   const chartData = useMemo(() => {
     return chartLabels.map((label, idx) => {
       const point: any = { name: label }
-      series.forEach((s, i) => {
+      finalSeries.forEach((s, i) => {
         point[`series${i}`] = s.data[idx] ?? null
       })
       return point
     })
-  }, [chartLabels, series])
+  }, [chartLabels, finalSeries])
 
   // Loading state
   if (showLoading) {
@@ -764,56 +875,7 @@ export const AreaChart = memo(function AreaChart({
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
       <ChartContainer>
-        <ResponsiveContainer width="100%" height="100%" debounce={100}>
-          <RechartsAreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }} accessibilityLayer>
-            <defs>
-              {series.map((s, i) => {
-                const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
-                return (
-                  <linearGradient key={i} id={`area-gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={seriesColor} stopOpacity={0.35} />
-                    <stop offset="95%" stopColor={seriesColor} stopOpacity={0.02} />
-                  </linearGradient>
-                )
-              })}
-            </defs>
-            {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
-            <XAxis
-              dataKey="name"
-              axisLine={false}
-              tickLine={false}
-              tickMargin={10}
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              axisLine={false}
-              tickLine={false}
-              tickMargin={10}
-              width={32}
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-            />
-            {showTooltip && <Tooltip content={<ChartTooltip />} />}
-            {showLegend && <Legend />}
-            {series.map((s, i) => {
-              const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
-              return (
-                <Area
-                  key={i}
-                  type={smooth ? 'monotone' : 'linear'}
-                  dataKey={`series${i}`}
-                  name={s.name}
-                  stroke={seriesColor}
-                  strokeWidth={2}
-                  fill={`url(#area-gradient-${i})`}
-                  isAnimationActive={false}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              )
-            })}
-          </RechartsAreaChart>
-        </ResponsiveContainer>
+        <AreaChartWithDimensions data={chartData} series={finalSeries} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} smooth={smooth} />
       </ChartContainer>
     </div>
   )

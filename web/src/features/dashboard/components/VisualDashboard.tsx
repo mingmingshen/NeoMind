@@ -103,7 +103,7 @@ export function VisualDashboard() {
             ) : (
               <>
                 <Pencil className="h-3.5 w-3.5" />
-                {t('dashboard.edit', 'Edit')}
+                {t('dashboard.editDashboard', 'Edit Dashboard')}
               </>
             )}
           </Button>

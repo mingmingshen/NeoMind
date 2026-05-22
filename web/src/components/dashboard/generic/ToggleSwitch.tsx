@@ -16,15 +16,7 @@ import type { DataSource } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
 import type { ParameterDefinition } from '@/types'
 import { api } from '@/lib/api'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
+import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -34,9 +26,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { useToast } from '@/hooks/use-toast'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
+import { useStore } from '@/store'
 
 export interface CommandButtonProps {
   // Command data source
@@ -295,10 +287,20 @@ export function ToggleSwitch({
   const config = dashboardComponentSize[size]
   const Icon = getIconForTitle(title)
 
+  // Look up device name from store for display
+  const storeDeviceName = useStore(useCallback(
+    (state) => {
+      if (!isDeviceCommand || !deviceId) return null
+      const device = state.devices.find(d => d.id === deviceId || d.device_id === deviceId)
+      return device?.name || null
+    },
+    [isDeviceCommand, deviceId]
+  ))
+
   // Determine button label
   const buttonLabel = title || t('commandButton.defaultLabel')
   const buttonSubtext = isDeviceCommand
-    ? (deviceId || t('commandButton.deviceCommand'))
+    ? (storeDeviceName || t('commandButton.deviceCommand'))
     : isExtensionCommand
       ? (extensionCommand || t('commandButton.extensionCommand'))
       : t('commandButton.notConfigured')
@@ -315,7 +317,6 @@ export function ToggleSwitch({
           config.padding,
           'transition-all duration-200',
           'relative overflow-hidden group',
-          !disabled && !sending && hasCommand && !editMode && 'hover:scale-[1.02] active:scale-[0.98]',
           !disabled && !sending && hasCommand && !editMode && 'hover:shadow-md hover:bg-accent',
           (disabled || sending || !hasCommand || editMode) && 'opacity-50 cursor-not-allowed',
           editMode && 'pointer-events-none',
@@ -359,107 +360,77 @@ export function ToggleSwitch({
       </button>
 
       {/* Command Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md z-[110]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Icon className="h-5 w-5" />
-              {title || commandDisplayName || t('commandButton.sendCommand')}
-            </DialogTitle>
-            <DialogDescription>
-              {isDeviceCommand && (
-                <>
-                  {t('commandButton.deviceCommandDesc')}
-                  {deviceId && <span className="font-medium ml-1">({deviceId})</span>}
-                </>
-              )}
-              {isExtensionCommand && (
-                <>
-                  {t('commandButton.extensionCommandDesc')}
-                  {extensionCommand && <span className="font-medium ml-1">({extensionCommand})</span>}
-                </>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-
-          <ScrollArea className="max-h-[60vh] pr-4">
-            <div className="space-y-4 py-4">
-              {/* Parameter inputs - skip parameters with default values (fixed values) */}
-              {!loadingParams && parameterDefinitions.filter(p => p.default_value === undefined).length > 0 && (
-                <div className="space-y-4">
-                  <div className="text-sm font-medium">{t('commandButton.parameters')}</div>
-                  {parameterDefinitions
-                    .filter(param => param.default_value === undefined)
-                    .map(param => (
-                    <div key={param.name} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-sm">
-                          {param.display_name || param.name}
-                          {param.required && <span className="text-error ml-1">*</span>}
-                        </Label>
-                        {(param.min !== undefined && param.min !== null || param.max !== undefined && param.max !== null) && (
-                          <span className="text-xs text-muted-foreground">
-                            {param.min !== undefined && param.min !== null && `${t('range.min')} ${param.min}`}
-                            {param.min !== undefined && param.min !== null && param.max !== undefined && param.max !== null && ' | '}
-                            {param.max !== undefined && param.max !== null && `${t('range.max')} ${param.max}`}
-                          </span>
-                        )}
-                      </div>
-                      {renderParameterInput(param)}
-                      {param.help_text && (
-                        <p className="text-xs text-muted-foreground">{param.help_text}</p>
-                      )}
-                    </div>
-                  ))}
+      <UnifiedFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={title || commandDisplayName || t('commandButton.sendCommand')}
+        icon={<Icon className="h-5 w-5" />}
+        width="sm"
+        loading={loadingParams}
+        isSubmitting={sending}
+        onSubmit={handleConfirmSend}
+        submitLabel={sending ? t('commandButton.sending') : t('commandButton.send')}
+        submitDisabled={loadingParams}
+        description={
+          isDeviceCommand
+            ? `${t('commandButton.deviceCommandDesc')}${deviceId ? ` (${deviceId})` : ''}`
+            : isExtensionCommand
+              ? `${t('commandButton.extensionCommandDesc')}${extensionCommand ? ` (${extensionCommand})` : ''}`
+              : undefined
+        }
+      >
+        <div className="space-y-4">
+          {/* Parameter inputs - skip parameters with default values (fixed values) */}
+          {!loadingParams && parameterDefinitions.filter(p => p.default_value === undefined).length > 0 && (
+            <div className="space-y-4">
+              <div className="text-sm font-medium">{t('commandButton.parameters')}</div>
+              {parameterDefinitions
+                .filter(param => param.default_value === undefined)
+                .map(param => (
+                <div key={param.name} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">
+                      {param.display_name || param.name}
+                      {param.required && <span className="text-error ml-1">*</span>}
+                    </Label>
+                    {(param.min !== undefined && param.min !== null || param.max !== undefined && param.max !== null) && (
+                      <span className="text-xs text-muted-foreground">
+                        {param.min !== undefined && param.min !== null && `${t('range.min')} ${param.min}`}
+                        {param.min !== undefined && param.min !== null && param.max !== undefined && param.max !== null && ' | '}
+                        {param.max !== undefined && param.max !== null && `${t('range.max')} ${param.max}`}
+                      </span>
+                    )}
+                  </div>
+                  {renderParameterInput(param)}
+                  {param.help_text && (
+                    <p className="text-xs text-muted-foreground">{param.help_text}</p>
+                  )}
                 </div>
-              )}
-
-              {/* All parameters have fixed values */}
-              {!loadingParams && parameterDefinitions.length > 0 && parameterDefinitions.filter(p => p.default_value === undefined).length === 0 && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-success-light border border-success-light">
-                  <Info className="h-4 w-4 text-success dark:text-success" />
-                  <span className="text-sm text-success dark:text-success">
-                    {t('commandButton.allParametersFixed')}
-                  </span>
-                </div>
-              )}
-
-              {/* No parameters */}
-              {!loadingParams && parameterDefinitions.length === 0 && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted-50">
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">
-                    {t('commandButton.noParameters')}
-                  </span>
-                </div>
-              )}
-
-              {/* Loading params */}
-              {loadingParams && (
-                <div className="text-sm text-muted-foreground text-center py-4">
-                  {t('commandButton.loadingParameters')}
-                </div>
-              )}
+              ))}
             </div>
-          </ScrollArea>
+          )}
 
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => setDialogOpen(false)}
-              disabled={sending}
-            >
-              {t('commandButton.cancel')}
-            </Button>
-            <Button
-              onClick={handleConfirmSend}
-              disabled={sending || loadingParams}
-            >
-              {sending ? t('commandButton.sending') : t('commandButton.send')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          {/* All parameters have fixed values */}
+          {!loadingParams && parameterDefinitions.length > 0 && parameterDefinitions.filter(p => p.default_value === undefined).length === 0 && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-success-light border border-success-light">
+              <Info className="h-4 w-4 text-success dark:text-success" />
+              <span className="text-sm text-success dark:text-success">
+                {t('commandButton.allParametersFixed')}
+              </span>
+            </div>
+          )}
+
+          {/* No parameters */}
+          {!loadingParams && parameterDefinitions.length === 0 && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted-50">
+              <Info className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">
+                {t('commandButton.noParameters')}
+              </span>
+            </div>
+          )}
+        </div>
+      </UnifiedFormDialog>
     </>
   )
 }

@@ -16,7 +16,6 @@ import {
   PieChart as RechartsPieChart,
   Pie,
   Cell,
-  ResponsiveContainer,
   Tooltip,
   Legend,
 } from 'recharts'
@@ -29,7 +28,7 @@ import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors, chartColorsHex } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
-import { ChartContainer, ChartTooltip, EmptyState } from '../shared'
+import { ChartContainer, ChartTooltip, EmptyState, useChartDimensions, useStaggeredData, createMemoRenderer } from '../shared'
 import {
   getEffectiveAggregate,
   getEffectiveTimeWindow,
@@ -396,32 +395,62 @@ export const PieChart = memo(function PieChart({
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
       <ChartContainer>
-        <ResponsiveContainer width="100%" height="100%" debounce={100}>
-          <RechartsPieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-            <Pie
-              data={chartData}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={showLabels ? (entry) => `${entry.name}` : false}
-              innerRadius={variant === 'donut' ? innerRadius : 0}
-              outerRadius={outerRadius}
-              dataKey="value"
-              isAnimationActive={false}
-            >
-              {chartData.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={entry.color || effectiveColors[index % effectiveColors.length]}
-                  stroke="none"
-                />
-              ))}
-            </Pie>
-            {showTooltip && <Tooltip content={<ChartTooltip />} />}
-            {showLegend && <Legend />}
-          </RechartsPieChart>
-        </ResponsiveContainer>
+        <PieChartWithDimensions chartData={chartData} showTooltip={showTooltip} showLegend={showLegend} showLabels={showLabels} variant={variant} innerRadius={innerRadius} outerRadius={outerRadius} effectiveColors={effectiveColors} />
       </ChartContainer>
     </div>
   )
 })
+
+const PieChartRenderer = createMemoRenderer(({ chartData, showTooltip, showLegend, showLabels, variant, innerRadius, outerRadius, effectiveColors, width, height }: {
+  chartData: PieData[]
+  showTooltip: boolean
+  showLegend: boolean
+  showLabels: boolean
+  variant: string
+  innerRadius: number | string
+  outerRadius: number | string
+  effectiveColors: readonly string[]
+  width: number
+  height: number
+}) => (
+  <RechartsPieChart width={width} height={height} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+    <Pie
+      data={chartData}
+      cx="50%"
+      cy="50%"
+      labelLine={false}
+      label={showLabels ? (entry) => `${entry.name}` : false}
+      innerRadius={variant === 'donut' ? innerRadius : 0}
+      outerRadius={outerRadius}
+      dataKey="value"
+      isAnimationActive={false}
+    >
+      {chartData.map((entry, index) => (
+        <Cell key={`cell-${index}`} fill={entry.color || effectiveColors[index % effectiveColors.length]} stroke="none" />
+      ))}
+    </Pie>
+    {showTooltip && <Tooltip content={<ChartTooltip />} />}
+    {showLegend && <Legend />}
+  </RechartsPieChart>
+))
+
+function PieChartWithDimensions({ chartData, showTooltip, showLegend, showLabels, variant, innerRadius, outerRadius, effectiveColors }: {
+  chartData: PieData[]
+  showTooltip: boolean
+  showLegend: boolean
+  showLabels: boolean
+  variant: string
+  innerRadius: number | string
+  outerRadius: number | string
+  effectiveColors: readonly string[]
+}) {
+  const { ref, width, height, turn } = useChartDimensions()
+  const staggeredChartData = useStaggeredData(chartData, turn)
+  return (
+    <div ref={ref} style={{ width: '100%', height: '100%' }}>
+      {width > 0 && height > 0 && (
+        <PieChartRenderer chartData={staggeredChartData} showTooltip={showTooltip} showLegend={showLegend} showLabels={showLabels} variant={variant} innerRadius={innerRadius} outerRadius={outerRadius} effectiveColors={effectiveColors} width={width} height={height} />
+      )}
+    </div>
+  )
+}

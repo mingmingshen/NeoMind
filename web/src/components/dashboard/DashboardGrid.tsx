@@ -12,7 +12,7 @@
  *   (react-grid-layout#1984: onLayoutChange fires twice)
  */
 
-import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect, memo } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { ReactElement } from 'react'
 import { ResponsiveGridLayout } from 'react-grid-layout'
 import { cn } from '@/lib/utils'
@@ -44,7 +44,7 @@ export interface DashboardGridProps {
   className?: string
 }
 
-export const DashboardGrid = memo(function DashboardGrid({
+export function DashboardGrid({
   components,
   rowHeight = 60,
   margin = [4, 4],
@@ -57,7 +57,6 @@ export const DashboardGrid = memo(function DashboardGrid({
 }: DashboardGridProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
-  const widthRef = useRef(0)
   const isMobile = useIsMobile()
   const touchEnabled = isTouchDevice()
 
@@ -68,9 +67,6 @@ export const DashboardGrid = memo(function DashboardGrid({
   const componentIdKey = useMemo(() => components.map(c => c.id).join(','), [components])
 
   // Keep a synchronous ref to components for use in the layouts memo.
-  // Updated during render (before useMemo check), so it's always current
-  // when the memo callback runs. This avoids putting `components` in memo deps,
-  // which would cause jitter from frequent reference changes.
   const componentsRef = useRef(components)
   componentsRef.current = components
 
@@ -81,18 +77,15 @@ export const DashboardGrid = memo(function DashboardGrid({
   const [settleVersion, setSettleVersion] = useState(0)
 
   // Detect new components SYNCHRONOUSLY during render (not in useEffect).
-  // This must happen before handleLayoutChange fires, otherwise settle never triggers.
   const prevComponentIdKeyRef = useRef(componentIdKey)
   if (componentIdKey !== prevComponentIdKeyRef.current) {
     prevComponentIdKeyRef.current = componentIdKey
     needsSettleRef.current = true
-    // Clear stale layout data from previous dashboard — prevents
-    // cross-dashboard position leakage when switching between dashboards.
+    // Clear stale layout data from previous dashboard
     latestLayoutRef.current = {}
   }
 
   // Build layouts using latestLayoutRef for settled positions.
-  // Only recalculates when components change or settle occurs.
   const layouts = useMemo(() => {
     const layout = componentsRef.current.map((c) => {
       const current = latestLayoutRef.current[c.id]
@@ -120,40 +113,28 @@ export const DashboardGrid = memo(function DashboardGrid({
     })
     latestLayoutRef.current = newPositions
 
-    // After new component compact, do ONE settle bump so layouts picks up
-    // the corrected positions (instead of stale y:9999). After this, no more bumps.
     if (needsSettleRef.current) {
       needsSettleRef.current = false
       setSettleVersion(v => v + 1)
     }
   }, [])
 
-  const isDraggingRef = useRef(false)
-
-  const handleDragStart = useCallback(() => {
-    isDraggingRef.current = true
-  }, [])
+  const handleDragStart = useCallback(() => {}, [])
 
   const handleDragStop = useCallback((layout: any) => {
-    isDraggingRef.current = false
-    // Update ref with final positions
     const positions: Record<string, { x: number; y: number; w: number; h: number }> = {}
     layout.forEach((item: any) => {
       positions[item.i] = { x: item.x, y: item.y, w: item.w, h: item.h }
     })
     latestLayoutRef.current = positions
-    // Sync to parent
     if (onLayoutChange && editMode) {
       onLayoutChange(layout as readonly any[])
     }
   }, [onLayoutChange, editMode])
 
-  const handleResizeStart = useCallback(() => {
-    isDraggingRef.current = true
-  }, [])
+  const handleResizeStart = useCallback(() => {}, [])
 
   const handleResizeStop = useCallback((layout: any) => {
-    isDraggingRef.current = false
     const positions: Record<string, { x: number; y: number; w: number; h: number }> = {}
     layout.forEach((item: any) => {
       positions[item.i] = { x: item.x, y: item.y, w: item.w, h: item.h }
@@ -164,33 +145,25 @@ export const DashboardGrid = memo(function DashboardGrid({
     }
   }, [onLayoutChange, editMode])
 
-  // Debounced container width
+  // Debounced container width (matching v0.6.9's simple approach)
   const updateWidth = useCallback(() => {
     if (containerRef.current) {
-      const nextWidth = Math.round(containerRef.current.offsetWidth)
-      if (nextWidth <= 0 || nextWidth === widthRef.current) return
-      widthRef.current = nextWidth
-      setWidth(nextWidth)
+      setWidth(containerRef.current.offsetWidth)
     }
   }, [])
 
   const resizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Synchronous measurement — fires before paint so the first frame has correct width.
-  // Eliminates the blank frame from width=0 → measure → re-render.
-  useLayoutEffect(() => {
-    updateWidth()
-  }, [updateWidth])
-
   useEffect(() => {
+    updateWidth()
     const resizeObserver = new ResizeObserver(() => {
       if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current)
-      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 250)
+      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 100)
     })
     if (containerRef.current) resizeObserver.observe(containerRef.current)
     const handleWindowResize = () => {
       if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current)
-      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 250)
+      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 100)
     }
     window.addEventListener('resize', handleWindowResize)
     return () => {
@@ -209,16 +182,12 @@ export const DashboardGrid = memo(function DashboardGrid({
     }
   }, [width, transitionsEnabled])
 
-  const gridStyles = useMemo(() => `
-        .react-grid-layout {
-          display: block !important;
-          isolation: isolate;
-        }
-        .react-grid-layout:not(.edit-mode) {
-          transition: none !important;
-        }
+  return (
+    <div ref={containerRef} className={cn('w-full', className)}>
+      <style>{`
+        .react-grid-layout { display: block !important; }
         .react-grid-item {
-          ${editMode && transitionsEnabled ? 'transition: transform 200ms ease;' : 'transition: none !important;'}
+          ${transitionsEnabled ? 'transition: transform 200ms ease;' : 'transition: none;'}
         }
         ${touchEnabled ? `
         .react-grid-item { touch-action: none; }
@@ -233,8 +202,10 @@ export const DashboardGrid = memo(function DashboardGrid({
         .dashboard-item {
           width: 100%; height: 100%;
           display: flex; flex-direction: column; overflow: hidden;
-          background-color: var(--card);
-          border-radius: var(--radius);
+        }
+        .dashboard-item > * {
+          height: 100%; min-height: 0;
+          display: flex; flex-direction: column;
         }
         .react-grid-placeholder {
           background: rgba(148, 163, 184, 0.15) !important;
@@ -278,11 +249,7 @@ export const DashboardGrid = memo(function DashboardGrid({
         .react-grid-layout:not(.edit-mode) > .react-grid-item {
           transition: none !important;
         }
-      `, [editMode, transitionsEnabled, touchEnabled, isMobile])
-
-  return (
-    <div ref={containerRef} className={cn('w-full', className)}>
-      <style>{gridStyles}</style>
+      `}</style>
       {width > 0 && (
         <ResponsiveGridLayout
           className={cn('dashboard-grid', editMode && 'edit-mode')}
@@ -325,4 +292,4 @@ export const DashboardGrid = memo(function DashboardGrid({
       {editMode && <div className="h-48" />}
     </div>
   )
-})
+}

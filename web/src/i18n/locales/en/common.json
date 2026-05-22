@@ -235,6 +235,7 @@
   },
   "add": "Add",
   "edit": "Edit",
+  "editDashboard": "Edit Dashboard",
   "delete": "Delete",
   "save": "Save",
   "cancel": "Cancel",
