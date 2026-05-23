@@ -75,6 +75,11 @@ export function clearGlobalCacheIntervals() {
   if (cacheCleanupInterval) { clearInterval(cacheCleanupInterval); cacheCleanupInterval = null }
 }
 
+/** Clear all telemetry cache entries — forces fresh fetch on next data request */
+export function clearTelemetryCache() {
+  telemetryCache.deleteWhere(() => true)
+}
+
 // ============================================================================
 // Telemetry fetching (from telemetryFetch.ts)
 // ============================================================================
@@ -105,11 +110,10 @@ export async function fetchHistoricalTelemetry(
       const api = (await import('@/lib/api')).api
       const now = Date.now()
 
-      // Calculate precise start/end using getTimeRange for absolute windows (today, yesterday, this_week)
-      // Fall back to relative timeRange for relative windows (last_1hour, etc.)
+      // Calculate precise start/end using getTimeRange for all window types
       let startSec: number
       let endSec: number
-      if (timeWindow && ['today', 'yesterday', 'this_week', 'custom', 'now'].includes(timeWindow.type)) {
+      if (timeWindow) {
         const range = getTimeRange(timeWindow)
         startSec = range.start
         endSec = range.end
@@ -119,10 +123,13 @@ export async function fetchHistoricalTelemetry(
         endSec = Math.floor(now / 1000)
       }
 
-      // Always fetch significantly more than the display limit so we can select
-      // the newest N points client-side. Device API returns newest-first;
-      // unified (transform/ai) source may differ, so we sort before truncation.
-      const fetchLimit = Math.max(limit * 5, 200)
+      // Scale fetch limit based on time range for adequate coverage.
+      // Backend caps at 1000 and internally fetches 2x (so 2000 DB points).
+      // For time-window queries, always request max to cover the full range.
+      // For default/short queries, scale based on timeRange.
+      const fetchLimit = timeWindow
+        ? 1000  // Max backend limit — ensure full time range coverage
+        : Math.max(limit * 2, timeRange <= 1 ? 100 : Math.min(Math.ceil(timeRange * 17), 1000))
 
       // Use unified telemetry endpoint for transform/ai sources, device endpoint otherwise
       const isUnifiedSource = deviceId.startsWith('transform:') || deviceId.startsWith('ai:')
@@ -217,15 +224,28 @@ export async function fetchHistoricalTelemetry(
           const aggVal = allValues.length
           values = [aggVal]
           if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
+        } else if (aggregate === 'rate') {
+          const firstTs = extractTimestamp(metricData[metricData.length - 1] ?? metricData[0])
+          const lastTs = extractTimestamp(metricData[0])
+          const timeDiff = lastTs - firstTs
+          const aggVal = (timeDiff > 0 && allValues.length >= 2)
+            ? ((allValues[0] ?? 0) - (allValues[allValues.length - 1] ?? 0)) / timeDiff
+            : 0
+          values = [aggVal]
+          if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else {
-          // raw — Device API returns newest-first, so slice(0, limit) keeps the newest points.
-          // Sort by timestamp descending first for robustness across all API types.
+          // raw — Backend now returns newest points first (via reverse scan).
+          // API handler returns them newest-first after its rev().take() logic.
+          // Sort by timestamp descending as a safety net.
           const sorted = [...metricData].sort((a, b) => {
             const tsA = extractTimestamp(a)
             const tsB = extractTimestamp(b)
             return tsB - tsA // descending (newest first)
           })
-          const rawData = sorted.length > limit ? sorted.slice(0, limit) : sorted
+          // Use all fetched points for time-window queries to cover the full range.
+          // Only apply user's display `limit` for default queries without a timeWindow.
+          const effectiveLimit = timeWindow ? Infinity : limit
+          const rawData = sorted.length > effectiveLimit ? sorted.slice(0, effectiveLimit) : sorted
           values = rawData.map(extractValue).filter((v: number) => typeof v === 'number' && !isNaN(v))
           rawPoints = includeRawPoints ? rawData.map((point) => {
             if (typeof point === 'number') return { timestamp: Math.floor(Date.now() / 1000), value: point }

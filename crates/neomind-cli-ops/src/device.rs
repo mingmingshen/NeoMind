@@ -181,36 +181,72 @@ pub async fn get_device_type(client: &ApiClient, id: &str) -> Result<CliResponse
     Ok(CliResponse::success(data, "Device type retrieved"))
 }
 
+/// Convert a display name to a snake_case device type ID.
+/// E.g., "温湿度传感器" -> "wen_shi_du_chuan_gan_qi", "TempSensor" -> "temp_sensor"
+fn name_to_type_id(name: &str) -> String {
+    // Use a simple approach: lowercase, replace non-alphanumeric with underscore, collapse
+    let id: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    // Collapse multiple underscores
+    let mut result = String::new();
+    let mut prev_underscore = false;
+    for ch in id.chars() {
+        if ch == '_' {
+            if !prev_underscore {
+                result.push(ch);
+            }
+            prev_underscore = true;
+        } else {
+            result.push(ch);
+            prev_underscore = false;
+        }
+    }
+    // Trim leading/trailing underscores
+    result.trim_matches('_').to_string()
+}
+
 /// Create a new device type
 pub async fn create_device_type(
     client: &ApiClient,
+    id: Option<&str>,
     name: &str,
     metrics: serde_json::Value,
     commands: Option<serde_json::Value>,
 ) -> Result<CliResponse> {
+    let device_type = id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| name_to_type_id(name));
+
     let mut body = json!({
+        "device_type": device_type,
         "name": name,
+        "description": "",
+        "categories": [],
+        "mode": "simple",
         "metrics": metrics,
+        "uplink_samples": [],
+        "parameters": [],
+        "commands": [],
     });
     if let Some(cmds) = commands {
         body["commands"] = cmds;
     }
 
     let data = client.post("/device-types", &body).await?;
-    let type_id = data.get("data")
-        .and_then(|d| d.get("id"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| data["id"].as_str().map(|s| s.to_string()))
-        .or_else(|| data["id"].as_i64().map(|i| i.to_string()))
-        .unwrap_or_else(|| "unknown".to_string());
-
     let meta = BuildMeta {
         r#type: "device_type".to_string(),
         action: "create".to_string(),
-        entity_id: type_id.clone(),
+        entity_id: device_type.clone(),
         entity_name: Some(name.to_string()),
-        undo_command: format!("neomind device types delete {}", type_id),
+        undo_command: format!("neomind device types delete {}", device_type),
     };
 
     Ok(CliResponse::success_with_meta(data, "Device type created", meta))

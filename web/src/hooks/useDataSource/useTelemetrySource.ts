@@ -46,6 +46,7 @@ export function useTelemetrySource(
   const deferredByDevicesLoadingRef = useRef(false)
   const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const prevTelemetryKeyRef = useRef('')
+  const fetchGenerationRef = useRef(0)
 
   // ============================================================================
   // Devices loading watcher
@@ -79,8 +80,20 @@ export function useTelemetrySource(
     }
 
     const configChanged = prevTelemetryKeyRef.current !== telemetryKey
-    if (configChanged && telemetryKey) initialTelemetryFetchDoneRef.current = false
+    if (configChanged && telemetryKey) {
+      initialTelemetryFetchDoneRef.current = false
+      // Invalidate cache for changed sources to prevent stale data
+      telemetrySources.forEach(ds => {
+        const deviceId = getSourceId(ds)
+        if (deviceId && ds.metricId) {
+          telemetryCache.deleteWhere((_, key) => key.startsWith(`${deviceId}|${ds.metricId}|`))
+        }
+      })
+    }
     prevTelemetryKeyRef.current = telemetryKey
+
+    // Bump generation so stale in-flight fetches can be discarded
+    const currentGeneration = ++fetchGenerationRef.current
 
     const fetchTelemetryData = async () => {
       const isInitialFetch = !initialTelemetryFetchDoneRef.current
@@ -99,7 +112,10 @@ export function useTelemetrySource(
               const isImg = isImageDataSource(ds.params, ds.transform, ds.metricId)
               const actualTimeRange = ds.timeRange ?? (isImg ? 48 : 1)
               const actualLimit = ds.limit ?? (isImg ? 200 : 50)
-              const actualAggregate = ds.aggregateExt ?? 'raw'
+              // Charts (includeRawPoints=true) must always fetch raw data to preserve
+              // timestamps for time-series rendering. Value components (includeRawPoints=false)
+              // use aggregateExt for single-value aggregation.
+              const actualAggregate = includeRawPoints ? 'raw' : (ds.aggregateExt ?? 'raw')
 
               const response = await fetchHistoricalTelemetry(
                 getSourceId(ds)!, ds.metricId, actualTimeRange, actualLimit, actualAggregate, includeRawPoints, bypassCache,
@@ -111,6 +127,9 @@ export function useTelemetrySource(
           ),
           timeoutPromise
         ]) as Array<{ data: unknown[]; raw?: unknown[]; success: boolean }>
+
+        // Discard stale results if config changed while fetching
+        if (fetchGenerationRef.current !== currentGeneration) return
 
         let finalData: unknown
         const pm = state.optionsRef.current.preserveMultiple
@@ -179,6 +198,8 @@ export function useTelemetrySource(
           emptyRetryCountRef.current = 0
         }
       } catch (err) {
+        // Discard stale error if config changed while fetching
+        if (fetchGenerationRef.current !== currentGeneration) return
         logError(err, { operation: 'Fetch telemetry data' })
         state.setError(err instanceof Error ? err.message : 'Failed to fetch telemetry')
         // Preserve previous data on error
@@ -193,7 +214,7 @@ export function useTelemetrySource(
         }
         initialTelemetryFetchDoneRef.current = true
       } finally {
-        if (!deferredByDevicesLoadingRef.current) state.setLoading(false)
+        if (fetchGenerationRef.current === currentGeneration && !deferredByDevicesLoadingRef.current) state.setLoading(false)
       }
     }
 

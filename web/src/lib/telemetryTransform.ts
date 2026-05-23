@@ -184,6 +184,13 @@ export function aggregateData(
  * Designed as a factory: call `createChartTimeFormatter(allTimestamps)` once,
  * then use the returned function for each label.
  */
+/**
+ * Pad a number to 2 digits.
+ */
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n)
+}
+
 export function createChartTimeFormatter(
   timestamps: number[],
   now: Date = new Date()
@@ -204,34 +211,32 @@ export function createChartTimeFormatter(
   const allToday = sameDay && dates[0].toDateString() === now.toDateString()
 
   if (allToday) {
-    // Same day, today → just time
+    // Same day, today → just time (HH:mm)
     return (ts: number) => {
       const ms = ts > 10000000000 ? ts : ts * 1000
       const d = new Date(ms)
-      return isNaN(d.getTime()) ? String(ts) : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+      return isNaN(d.getTime()) ? String(ts) : `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
     }
   }
 
   if (sameDay) {
-    // Same day, not today → show short date + time on first call, time only otherwise
-    const dateStr = dates[0].toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    // Same day, not today → date + time (M/D HH:mm)
+    const ref = dates[0]
+    const dateStr = `${ref.getMonth() + 1}/${ref.getDate()}`
     return (ts: number) => {
       const ms = ts > 10000000000 ? ts : ts * 1000
       const d = new Date(ms)
       if (isNaN(d.getTime())) return String(ts)
-      const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-      return `${dateStr} ${time}`
+      return `${dateStr} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
     }
   }
 
-  // Multiple days → always show date + time
+  // Multiple days → always show date + time (M/D HH:mm)
   return (ts: number) => {
     const ms = ts > 10000000000 ? ts : ts * 1000
     const d = new Date(ms)
     if (isNaN(d.getTime())) return String(ts)
-    const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-    const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-    return `${date} ${time}`
+    return `${d.getMonth() + 1}/${d.getDate()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
   }
 }
 

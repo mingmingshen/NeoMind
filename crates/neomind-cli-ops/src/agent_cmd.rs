@@ -23,8 +23,19 @@ pub async fn create_agent(
     description: Option<&str>,
     schedule_type: Option<&str>,
     schedule_config: Option<&str>,
+    event_filter: Option<&str>,
+    timezone: Option<&str>,
     llm_backend: Option<&str>,
     system_prompt: Option<&str>,
+    execution_mode: Option<&str>,
+    device_ids: Option<&str>,
+    resources: Option<&str>,
+    metrics: Option<&str>,
+    commands: Option<&str>,
+    enable_tool_chaining: Option<bool>,
+    max_chain_depth: Option<usize>,
+    priority: Option<u8>,
+    context_window_size: Option<usize>,
 ) -> Result<CliResponse> {
     let schedule_type_val = schedule_type.unwrap_or("event");
     let mut schedule = json!({
@@ -45,12 +56,22 @@ pub async fn create_agent(
         }
         _ => {}
     }
+    if let Some(ef) = event_filter {
+        schedule["event_filter"] = json!(ef);
+    }
+    if let Some(tz) = timezone {
+        schedule["timezone"] = json!(tz);
+    }
+
+    let exec_mode = execution_mode.unwrap_or("free");
+    let has_resources = resources.is_some()
+        || device_ids.map(|d| !d.is_empty()).unwrap_or(false);
 
     let mut body = json!({
         "name": name,
         "user_prompt": user_prompt,
         "schedule": schedule,
-        "execution_mode": "free",
+        "execution_mode": exec_mode,
     });
     if let Some(desc) = description {
         body["description"] = json!(desc);
@@ -60,6 +81,44 @@ pub async fn create_agent(
     }
     if let Some(prompt) = system_prompt {
         body["system_prompt"] = json!(prompt);
+    }
+    if let Some(ids) = device_ids {
+        let id_list: Vec<&str> = ids.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if !id_list.is_empty() {
+            body["device_ids"] = json!(id_list);
+        }
+    }
+    if let Some(res_str) = resources {
+        if let Ok(res_val) = serde_json::from_str::<serde_json::Value>(res_str) {
+            body["resources"] = res_val;
+        }
+    }
+    if let Some(etc) = enable_tool_chaining {
+        body["enable_tool_chaining"] = json!(etc);
+    }
+    if let Some(mcd) = max_chain_depth {
+        body["max_chain_depth"] = json!(mcd);
+    }
+    if let Some(p) = priority {
+        body["priority"] = json!(p);
+    }
+    if let Some(cws) = context_window_size {
+        body["context_window_size"] = json!(cws);
+    }
+    if let Some(metrics_str) = metrics {
+        if let Ok(metrics_val) = serde_json::from_str::<serde_json::Value>(metrics_str) {
+            body["metrics"] = metrics_val;
+        }
+    }
+    if let Some(commands_str) = commands {
+        if let Ok(commands_val) = serde_json::from_str::<serde_json::Value>(commands_str) {
+            body["commands"] = commands_val;
+        }
+    }
+
+    // focused mode requires resources
+    if exec_mode == "focused" && !has_resources {
+        anyhow::bail!("Focused mode requires --resources or --device-ids to bind at least one resource");
     }
 
     let data = client.post("/agents", &body).await?;
@@ -91,6 +150,15 @@ pub async fn update_agent(
     user_prompt: Option<&str>,
     schedule_type: Option<&str>,
     schedule_config: Option<&str>,
+    execution_mode: Option<&str>,
+    device_ids: Option<&str>,
+    resources: Option<&str>,
+    metrics: Option<&str>,
+    commands: Option<&str>,
+    enable_tool_chaining: Option<bool>,
+    max_chain_depth: Option<usize>,
+    priority: Option<u8>,
+    context_window_size: Option<usize>,
 ) -> Result<CliResponse> {
     let mut body = json!({});
     if let Some(n) = name {
@@ -126,6 +194,40 @@ pub async fn update_agent(
             _ => {}
         }
         body["schedule"] = schedule;
+    }
+    if let Some(em) = execution_mode {
+        body["execution_mode"] = json!(em);
+    }
+    if let Some(ids) = device_ids {
+        let id_list: Vec<&str> = ids.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        body["device_ids"] = json!(id_list);
+    }
+    if let Some(res_str) = resources {
+        if let Ok(res_val) = serde_json::from_str::<serde_json::Value>(res_str) {
+            body["resources"] = res_val;
+        }
+    }
+    if let Some(etc) = enable_tool_chaining {
+        body["enable_tool_chaining"] = json!(etc);
+    }
+    if let Some(mcd) = max_chain_depth {
+        body["max_chain_depth"] = json!(mcd);
+    }
+    if let Some(p) = priority {
+        body["priority"] = json!(p);
+    }
+    if let Some(cws) = context_window_size {
+        body["context_window_size"] = json!(cws);
+    }
+    if let Some(metrics_str) = metrics {
+        if let Ok(metrics_val) = serde_json::from_str::<serde_json::Value>(metrics_str) {
+            body["metrics"] = metrics_val;
+        }
+    }
+    if let Some(commands_str) = commands {
+        if let Ok(commands_val) = serde_json::from_str::<serde_json::Value>(commands_str) {
+            body["commands"] = commands_val;
+        }
     }
 
     let data = client.put(&format!("/agents/{}", id), &body).await?;

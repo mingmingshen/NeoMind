@@ -6,7 +6,7 @@ import { useEffect, useRef, useMemo } from 'react'
 import type { DataSource } from '@/types/dashboard'
 import { logError } from '@/lib/errors'
 import { useEvents } from '@/hooks/useEvents'
-import { getTimeRange, timeWindowToHours } from '@/lib/telemetryTransform'
+import { getTimeRange, getEffectiveTimeWindow } from '@/lib/telemetryTransform'
 import { extensionDataCache } from './fetch'
 import { normalizeOutputName } from './eventProcessors'
 
@@ -72,9 +72,7 @@ export function useExtensionSource(
 
             // Compute time range from dataSource's timeWindow, falling back to timeRange
             const effectiveTimeWindow = ds.timeWindow ?? (
-              ds.timeRange != null
-                ? { type: 'last_24hours' as const }
-                : undefined
+              ds.timeRange != null ? getEffectiveTimeWindow(ds) : undefined
             )
             let startMs: number
             let endMs: number
@@ -87,11 +85,14 @@ export function useExtensionSource(
               endMs = Date.now()
               startMs = endMs - hours * 60 * 60 * 1000
             }
-            const fetchLimit = ds.limit ?? 100
+            const userLimit = ds.limit ?? 100
+            // When user explicitly set a timeWindow, keep all returned points to cover
+            // the full time range. Only truncate for default/relative queries.
+            const hasExplicitTimeWindow = !!effectiveTimeWindow
 
             // Cache key includes time bucket so stale data doesn't persist
             const timeBucket = Math.floor(Date.now() / 30000)
-            const extCacheKey = `${extensionId}|${metric}|${effectiveTimeWindow?.type ?? 'rel'}|${fetchLimit}|${timeBucket}`
+            const extCacheKey = `${extensionId}|${metric}|${effectiveTimeWindow?.type ?? 'rel'}|${userLimit}|${timeBucket}`
             const extCached = extensionDataCache.get(extCacheKey)
             if (extCached !== undefined) return { data: extCached, success: true }
 
@@ -104,10 +105,16 @@ export function useExtensionSource(
                 const command = parts[0]
                 const field = parts[1]
 
-                if (command !== 'produce') {
+                // When a timeWindow is configured, the user expects historical data.
+                // Skip executeExtensionCommand (which ignores time range) and go
+                // straight to queryData so the time range is respected.
+                const needsTimeRange = !!effectiveTimeWindow
+
+                if (command !== 'produce' && !needsTimeRange) {
                   try {
                     const result = await api.executeExtensionCommand(extensionId, command, {})
                     const resultData = (result as Record<string, unknown>).result ?? result
+
                     if (field === 'result') return { data: resultData, success: true }
                     if (typeof resultData === 'object' && resultData !== null) {
                       const fieldValue = (resultData as Record<string, unknown>)[field]
@@ -122,25 +129,46 @@ export function useExtensionSource(
                       start_time: startMs, end_time: endMs,
                     })
                     if (result?.data_points?.length > 0) {
-                      // Truncate to newest N points (API returns oldest-first)
                       const points = result.data_points
-                      const truncated = points.length > fetchLimit ? points.slice(-fetchLimit) : points
+                      // Keep all points for time-window queries, truncate only for defaults
+                      const truncated = (!hasExplicitTimeWindow && points.length > userLimit) ? points.slice(-userLimit) : points
                       return { data: truncated, success: true }
                     }
                     return { data: null, success: false }
                   }
                 }
 
-                // produce:* format
+                // produce:* format OR timeWindow configured — use queryData with time range
                 const result = await api.queryData({
                   extension_id: extensionId, command, field,
                   start_time: startMs, end_time: endMs,
                 })
+
                 if (result?.data_points?.length > 0) {
                   const points = result.data_points
-                  const truncated = points.length > fetchLimit ? points.slice(-fetchLimit) : points
+                  // Keep all points for time-window queries to cover the full range.
+                  // Only apply userLimit for default/no-window queries.
+                  const truncated = (!hasExplicitTimeWindow && points.length > userLimit) ? points.slice(-userLimit) : points
                   return { data: truncated, success: true }
                 }
+
+                // queryData returned nothing — try executeExtensionCommand as fallback
+                // (some extensions don't store in time-series DB but respond to commands)
+                if (command !== 'produce') {
+                  try {
+                    const cmdResult = await api.executeExtensionCommand(extensionId, command, {})
+                    const resultData = (cmdResult as Record<string, unknown>).result ?? cmdResult
+                    if (field === 'result') return { data: resultData, success: true }
+                    if (typeof resultData === 'object' && resultData !== null) {
+                      const fieldValue = (resultData as Record<string, unknown>)[field]
+                      return { data: fieldValue ?? resultData, success: true }
+                    }
+                    return { data: resultData, success: true }
+                  } catch {
+                    // Both paths failed
+                  }
+                }
+
                 return { data: null, success: false }
               } else {
                 return { data: null, success: false }
@@ -154,7 +182,7 @@ export function useExtensionSource(
         // Cache successful results (rebuild cache key to match the fetch key)
         extensionSources.forEach((ds, i) => {
           if (ds.extensionId && ds.extensionMetric && results[i]?.success) {
-            const tw = ds.timeWindow ?? (ds.timeRange != null ? { type: 'last_24hours' as const } : undefined)
+            const tw = ds.timeWindow ?? (ds.timeRange != null ? getEffectiveTimeWindow(ds) : undefined)
             const timeBucket = Math.floor(Date.now() / 30000)
             const key = `${ds.extensionId}|${ds.extensionMetric}|${tw?.type ?? 'rel'}|${ds.limit ?? 100}|${timeBucket}`
             extensionDataCache.set(key, results[i].data)
@@ -365,18 +393,19 @@ export function useExtensionSource(
               const parts = (ds.extensionMetric ?? '').split(':')
               const metricName = parts.length > 1 ? parts[1] : parts[0]
               if (ds.extensionId === eventExtensionId && (metricName === normalizedOutput || metricName === eventOutputName)) {
-                // Prepend new point and truncate to limit
+                // Append new point (chronological order: oldest→newest, left→right)
                 const maxLimit = ds.limit ?? 100
-                const prepended = [newPoint, ...(Array.isArray(arr) ? arr : [])]
-                return prepended.length > maxLimit ? prepended.slice(0, maxLimit) : prepended
+                const appended = [...(Array.isArray(arr) ? arr : []), newPoint]
+                return appended.length > maxLimit ? appended.slice(-maxLimit) : appended
               }
               return arr
             })
             newData = nested
           } else if (Array.isArray(currentData)) {
             const maxLimit = (matchingSources[0] as any)?.limit ?? 100
-            const prepended = [newPoint, ...currentData]
-            newData = prepended.length > maxLimit ? prepended.slice(0, maxLimit) : prepended
+            // Append new point (chronological order: oldest→newest, left→right)
+            const appended = [...currentData, newPoint]
+            newData = appended.length > maxLimit ? appended.slice(-maxLimit) : appended
           } else {
             newData = [newPoint]
           }

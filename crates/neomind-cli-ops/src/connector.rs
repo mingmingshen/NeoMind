@@ -3,22 +3,23 @@ use serde_json::json;
 use crate::types::CliResponse;
 use crate::ApiClient;
 
-/// List all external MQTT brokers
-pub async fn list_brokers(client: &ApiClient) -> Result<CliResponse> {
+/// List all data connectors (external MQTT brokers, etc.)
+pub async fn list_connectors(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/brokers").await?;
-    Ok(CliResponse::success(data, "Brokers listed"))
+    Ok(CliResponse::success(data, "Connectors listed"))
 }
 
-/// Get broker by ID
-pub async fn get_broker(client: &ApiClient, id: &str) -> Result<CliResponse> {
+/// Get connector by ID
+pub async fn get_connector(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let data = client.get(&format!("/brokers/{}", id)).await?;
-    Ok(CliResponse::success(data, "Broker retrieved"))
+    Ok(CliResponse::success(data, "Connector retrieved"))
 }
 
-/// Create a new external MQTT broker
-pub async fn create_broker(
+/// Create a new data connector
+pub async fn create_connector(
     client: &ApiClient,
     name: &str,
+    connector_type: Option<&str>,
     host: &str,
     port: u16,
     tls: bool,
@@ -50,17 +51,18 @@ pub async fn create_broker(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let type_label = connector_type.unwrap_or("mqtt");
     let msg = if connected {
-        "Broker created and connected"
+        format!("{} connector created and connected", type_label)
     } else {
-        "Broker created (connection pending or failed)"
+        format!("{} connector created (connection pending or failed)", type_label)
     };
 
-    Ok(CliResponse::success(data, msg))
+    Ok(CliResponse::success(data, &msg))
 }
 
-/// Update an existing broker
-pub async fn update_broker(
+/// Update an existing connector
+pub async fn update_connector(
     client: &ApiClient,
     id: &str,
     name: Option<&str>,
@@ -72,7 +74,7 @@ pub async fn update_broker(
     subscribe_topics: Option<&str>,
     enabled: Option<bool>,
 ) -> Result<CliResponse> {
-    // First get existing broker to preserve required fields
+    // First get existing connector to preserve required fields
     let existing = client.get(&format!("/brokers/{}", id)).await?;
     let broker_data = existing.get("broker").cloned().unwrap_or(json!({}));
 
@@ -96,20 +98,20 @@ pub async fn update_broker(
     }
 
     let data = client.put(&format!("/brokers/{}", id), &body).await?;
-    Ok(CliResponse::success(data, "Broker updated"))
+    Ok(CliResponse::success(data, "Connector updated"))
 }
 
-/// Delete a broker
-pub async fn delete_broker(client: &ApiClient, id: &str) -> Result<CliResponse> {
+/// Delete a connector
+pub async fn delete_connector(client: &ApiClient, id: &str) -> Result<CliResponse> {
     client.delete(&format!("/brokers/{}", id)).await?;
-    Ok(CliResponse::success(json!({ "id": id }), "Broker deleted"))
+    Ok(CliResponse::success(json!({ "id": id }), "Connector deleted"))
 }
 
-/// Test broker connection
-pub async fn test_broker(client: &ApiClient, id: &str) -> Result<CliResponse> {
+/// Test connector connection
+pub async fn test_connector(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let data = client.post(&format!("/brokers/{}/test", id), &json!({})).await?;
     let success = data.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-    let msg = if success { "Broker connection successful" } else { "Broker connection failed" };
+    let msg = if success { "Connector connection successful" } else { "Connector connection failed" };
     Ok(CliResponse::success(data, msg))
 }
 

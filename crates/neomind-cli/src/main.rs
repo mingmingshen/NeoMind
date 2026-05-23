@@ -96,6 +96,11 @@ enum Command {
     },
     /// Check for updates.
     CheckUpdate,
+    /// LLM backend management commands.
+    Llm {
+        #[command(subcommand)]
+        llm_cmd: LlmCommand,
+    },
     /// Extension management commands.
     Extension {
         #[command(subcommand)]
@@ -146,10 +151,16 @@ enum Command {
         #[command(subcommand)]
         system_cmd: SystemCommand,
     },
-    /// External MQTT broker management.
+    /// Data connector management (MQTT, webhook, HTTP, etc.).
+    Connector {
+        #[command(subcommand)]
+        connector_cmd: ConnectorCommand,
+    },
+    /// Deprecated: use 'connector' instead.
+    #[command(hide = true)]
     Broker {
         #[command(subcommand)]
-        broker_cmd: BrokerCommand,
+        broker_cmd: BrokerAliasCommand,
     },
 }
 
@@ -157,6 +168,9 @@ enum Command {
 #[derive(Subcommand, Debug)]
 enum ApiKeyCommand {
     /// Create a new API key.
+    ///
+    /// Generates an API key for authenticating external requests.
+    /// Example: `neomind api-key create --name my-app`
     Create {
         /// Name for the key.
         #[arg(short, long, default_value = "default")]
@@ -166,12 +180,18 @@ enum ApiKeyCommand {
         data_dir: String,
     },
     /// List all API keys.
+    ///
+    /// Shows all registered API key names (values are masked).
+    /// Example: `neomind api-key list`
     List {
         /// Data directory path.
         #[arg(long, default_value = "data")]
         data_dir: String,
     },
     /// Delete an API key by name.
+    ///
+    /// Removes the key immediately; all requests using it will be rejected.
+    /// Example: `neomind api-key delete my-app`
     Delete {
         /// Key name to delete.
         name: String,
@@ -181,10 +201,52 @@ enum ApiKeyCommand {
     },
 }
 
+/// LLM backend subcommands.
+#[derive(Subcommand, Debug)]
+enum LlmCommand {
+    /// List configured LLM backends.
+    ///
+    /// Shows all registered LLM backend instances with their ID, type, and model.
+    /// Use the ID as --llm-backend value in agent create/update.
+    ///
+    /// Example: `neomind llm list`
+    List {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get LLM backend details.
+    ///
+    /// Shows full backend config including endpoint, model, and parameters.
+    ///
+    /// Example: `neomind llm get ollama-default`
+    Get {
+        /// Backend ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// List available models from Ollama.
+    ///
+    /// Queries the Ollama server for models that can be pulled and used.
+    /// Use model names when configuring LLM backends.
+    ///
+    /// Example: `neomind llm models`
+    Models {
+        /// Ollama endpoint.
+        #[arg(long, default_value = "http://localhost:11434")]
+        endpoint: String,
+    },
+}
+
 /// Extension subcommands.
 #[derive(Subcommand, Debug)]
 enum ExtensionCommand {
     /// Validate a .nep extension package.
+    ///
+    /// Checks manifest, binary compatibility, and schema before installing.
+    /// Always validate before `extension install` to catch issues early.
+    /// Use -v for detailed output including all metrics and commands.
+    /// Example: `neomind extension validate ./my-extension.nep -v`
     Validate {
         /// Path to the .nep file.
         #[arg(required = true)]
@@ -194,30 +256,46 @@ enum ExtensionCommand {
         verbose: bool,
     },
     /// List installed extensions.
+    ///
+    /// Shows all installed extensions with their ID, version, and status.
+    /// Use -v for detailed metrics and commands info.
+    /// Example: `neomind extension list -v`
     List {
         /// Show detailed information.
         #[arg(short, long)]
         verbose: bool,
     },
     /// Show extension information.
+    ///
+    /// Displays manifest details: version, description, metrics, commands.
+    /// Example: `neomind extension info weather-forecast`
     Info {
         /// Extension ID or .nep file path.
         #[arg(required = true)]
         id_or_path: String,
     },
     /// Install a .nep extension package.
+    ///
+    /// Installs from a local file path. The extension is loaded immediately.
+    /// Example: `neomind extension install ./weather-forecast-v2.nep`
     Install {
         /// Path to the .nep file or URL.
         #[arg(required = true)]
         package: String,
     },
     /// Uninstall an extension.
+    ///
+    /// Stops the extension process and removes all files. This is irreversible.
+    /// Example: `neomind extension uninstall weather-forecast`
     Uninstall {
         /// Extension ID.
         #[arg(required = true)]
         id: String,
     },
     /// Create a new extension scaffold.
+    ///
+    /// Generates a complete extension project with Cargo.toml, lib.rs, and manifest.
+    /// Example: `neomind extension create my-extension --extension-type tool -o ./extensions`
     Create {
         /// Extension ID (lowercase, hyphens only).
         #[arg(required = true)]
@@ -230,12 +308,18 @@ enum ExtensionCommand {
         output: Option<std::path::PathBuf>,
     },
     /// Get extension health status.
+    ///
+    /// Shows process status, uptime, last error, and resource usage.
+    /// Example: `neomind extension status weather-forecast`
     Status {
         /// Extension ID.
         #[arg(required = true)]
         id: String,
     },
     /// Get extension logs.
+    ///
+    /// Retrieves recent log output from the extension's isolated process.
+    /// Example: `neomind extension logs weather-forecast --lines 50`
     Logs {
         /// Extension ID.
         #[arg(required = true)]
@@ -245,12 +329,25 @@ enum ExtensionCommand {
         lines: Option<usize>,
     },
     /// Build an extension from source.
+    ///
+    /// Compiles the extension in release mode and produces a .nep package.
+    ///
+    /// Workflow:
+    ///   1. `extension create my-extension` — scaffold
+    ///   2. Edit code in the generated project
+    ///   3. `extension build ./my-extension` — compile
+    ///   4. `extension validate ./my-extension.nep` — check
+    ///   5. `extension install ./my-extension.nep` — deploy
+    /// Example: `neomind extension build ./extensions/weather-forecast`
     Build {
         /// Extension directory path.
         #[arg(required = true)]
         path: std::path::PathBuf,
     },
     /// Install from marketplace.
+    ///
+    /// Downloads and installs an extension from the marketplace registry.
+    /// Example: `neomind extension market-install weather-forecast --version 2.0.0`
     MarketInstall {
         /// Extension ID in marketplace.
         #[arg(required = true)]
@@ -260,6 +357,9 @@ enum ExtensionCommand {
         version: Option<String>,
     },
     /// List marketplace extensions.
+    ///
+    /// Shows all extensions available in the marketplace registry.
+    /// Example: `neomind extension market-list`
     MarketList,
 }
 
@@ -267,6 +367,15 @@ enum ExtensionCommand {
 #[derive(Subcommand, Debug)]
 enum DeviceCommand {
     /// List all devices.
+    ///
+    /// Shows device ID, name, type, status, and last seen time.
+    /// Use --device-type or --status to filter results.
+    /// Use --json for structured output suitable for scripting.
+    ///
+    /// Workflow: Use this to find device IDs needed by other commands
+    /// (get, update, delete, latest, history, control, write-metric).
+    ///
+    /// Example: `neomind device list --device-type temp_sensor --status online`
     List {
         /// Filter by device type.
         #[arg(short, long)]
@@ -279,6 +388,13 @@ enum DeviceCommand {
         json: bool,
     },
     /// Get device details.
+    ///
+    /// Shows full device info including type, connection config, metrics, and commands.
+    /// Use this to check which commands a device supports before using `device control`.
+    ///
+    /// Workflow: Find ID with `device list`, then inspect with `device get <ID>`.
+    ///
+    /// Example: `neomind device get device-001`
     Get {
         /// Device ID.
         #[arg(required = true)]
@@ -291,6 +407,12 @@ enum DeviceCommand {
     ///
     /// First run `neomind device types list` to see available device types,
     /// or use any custom name. Default adapter is "mqtt".
+    ///
+    /// Workflow:
+    ///   1. `neomind device types list` — pick a device type
+    ///   2. `neomind device create --name "My Sensor" --device-type temp_sensor --adapter-type mqtt`
+    ///   3. Send data via MQTT to the configured topic, or use `device write-metric`
+    ///   4. Verify with `device latest <ID>`
     Create {
         /// Device name.
         #[arg(short, long)]
@@ -311,6 +433,13 @@ enum DeviceCommand {
         json: bool,
     },
     /// Update device.
+    ///
+    /// Modify device name or connection config.
+    ///
+    /// Workflow: Find ID with `device list`, update fields as needed.
+    /// To change MQTT topic: `device update <ID> --config '{"topic":"new/topic"}'`.
+    ///
+    /// Example: `neomind device update device-001 --name "Kitchen Sensor"`
     Update {
         /// Device ID.
         #[arg(required = true)]
@@ -326,6 +455,11 @@ enum DeviceCommand {
         json: bool,
     },
     /// Delete device.
+    ///
+    /// Removes the device and ALL associated telemetry data. This is irreversible.
+    /// Consider exporting data first with `device history` if needed.
+    ///
+    /// Example: `neomind device delete device-001`
     Delete {
         /// Device ID.
         #[arg(required = true)]
@@ -335,6 +469,12 @@ enum DeviceCommand {
         json: bool,
     },
     /// Get latest metrics.
+    ///
+    /// Returns the most recent metric values reported by the device.
+    /// Useful for quick health checks or dashboards.
+    /// For historical data, use `device history` instead.
+    ///
+    /// Example: `neomind device latest device-001`
     Latest {
         /// Device ID.
         #[arg(required = true)]
@@ -344,6 +484,17 @@ enum DeviceCommand {
         json: bool,
     },
     /// Get telemetry history.
+    ///
+    /// Retrieves time-series metric data. Use --time-range to specify period
+    /// (1h, 24h, 7d, 30d). Use --compress for AI-friendly compressed series
+    /// that retains trends and allows up to 90 days of data.
+    ///
+    /// Workflow:
+    ///   1. `device history <ID>` — all metrics, last 24h
+    ///   2. `device history <ID> --metric temperature --time-range 7d` — specific metric
+    ///   3. `device history <ID> --compress` — compact for AI consumption
+    ///
+    /// Example: `neomind device history device-001 --metric temperature --time-range 24h`
     History {
         /// Device ID.
         #[arg(required = true)]
@@ -364,7 +515,13 @@ enum DeviceCommand {
     },
     /// Send control command.
     ///
-    /// Check device type for available commands: `neomind device get <ID>`.
+    /// Sends a command to a device (e.g., toggle switch, set speed, reboot).
+    /// Check available commands first: `neomind device get <ID>` shows supported commands.
+    ///
+    /// Workflow:
+    ///   1. `device get <ID>` — check available commands
+    ///   2. `device control <ID> <command> --params '<json>'`
+    ///
     /// Example: `neomind device control <ID> toggle --params '{"state":true}'`
     Control {
         /// Device ID.
@@ -387,16 +544,25 @@ enum DeviceCommand {
     },
     /// Write a metric data point.
     ///
+    /// Manually push a metric value to a device. Useful for testing or
+    /// feeding data from custom sources. The metric name must match the
+    /// device type definition.
+    ///
+    /// Workflow:
+    ///   1. `device types get <type>` — check valid metric names
+    ///   2. `device write-metric <ID> --metric temp --value 23.5`
+    ///   3. `device latest <ID>` — verify the value was recorded
+    ///
     /// Example: `neomind device write-metric <ID> --metric temperature --value 25.5`
     WriteMetric {
         /// Device ID.
         #[arg(required = true)]
         id: String,
         /// Metric name (must match device type definition).
-        #[arg(short, long)]
+        #[arg(long)]
         metric: String,
         /// Value (number, string, or "true"/"false").
-        #[arg(short, long)]
+        #[arg(long)]
         value: String,
         /// Timestamp in milliseconds (defaults to now).
         #[arg(long)]
@@ -411,8 +577,19 @@ enum DeviceCommand {
 #[derive(Subcommand, Debug)]
 enum DeviceTypeCommand {
     /// List all device types.
+    ///
+    /// Shows all registered device types including built-in and custom ones.
+    /// Use this before `device create` to pick the right --device-type value.
+    ///
+    /// Example: `neomind device types list`
     List,
     /// Get device type details.
+    ///
+    /// Shows metrics, commands, and sample data for a device type.
+    /// Use this to discover valid metric names for `device write-metric`
+    /// or available commands for `device control`.
+    ///
+    /// Example: `neomind device types get temp_sensor`
     Get {
         /// Type ID.
         #[arg(required = true)]
@@ -420,19 +597,30 @@ enum DeviceTypeCommand {
     },
     /// Create a new device type.
     ///
-    /// Example: `neomind device types create --name TempSensor --metrics '[{"key":"temperature","name":"Temperature","unit":"°C","type":"number"}]'`
+    /// Example:
+    ///   neomind device types create --name "TempSensor" --metrics '[{"name":"temp","display_name":"Temperature","data_type":"Float","unit":"°C"}]'
+    ///   neomind device types create --id temp_humidity --name "TempHumidity Sensor" --metrics '[{"name":"temp","display_name":"Temperature","data_type":"Float","unit":"°C"},{"name":"rh","display_name":"Humidity","data_type":"String","unit":"%"}]'
     Create {
-        /// Type name.
+        /// Unique type ID (auto-generated from name if omitted, e.g., "TempSensor" -> "temp_sensor").
+        #[arg(short, long)]
+        id: Option<String>,
+        /// Type display name (e.g., "Temperature Sensor").
         #[arg(short, long)]
         name: String,
-        /// Metrics definition JSON array. Each metric: {"key":"temp","name":"Temperature","unit":"°C","type":"number"}
+        /// Metrics JSON array. Each: {"name":"temp","display_name":"Temperature","data_type":"Float","unit":"°C"}
         #[arg(long)]
         metrics: String,
-        /// Commands definition JSON array (optional). Each command: {"id":"on","name":"Turn On","params":[]}
+        /// Commands JSON array (optional). Each: {"id":"on","name":"Turn On","params":[]}
         #[arg(long)]
         commands: Option<String>,
     },
     /// Delete device type.
+    ///
+    /// Removes the type template. Devices already using this type will continue
+    /// to work, but new devices cannot be created with this type.
+    /// Check usage first: `neomind device list --device-type <type>`.
+    ///
+    /// Example: `neomind device types delete temp_sensor`
     Delete {
         /// Type ID.
         #[arg(required = true)]
@@ -444,12 +632,24 @@ enum DeviceTypeCommand {
 #[derive(Subcommand, Debug)]
 enum DashboardCommand {
     /// List all dashboards.
+    ///
+    /// Shows dashboard ID, name, description, and component count.
+    /// Use --json for structured output.
+    ///
+    /// Workflow: Use this to find dashboard IDs for get/update/delete/share commands.
+    ///
+    /// Example: `neomind dashboard list --json`
     List {
         /// Output format (json flag for structured output).
         #[arg(long)]
         json: bool,
     },
     /// Get dashboard details.
+    ///
+    /// Shows full dashboard config including layout and all widget components.
+    /// Use --json to get the exact format needed for `dashboard update --components`.
+    ///
+    /// Example: `neomind dashboard get dash-001`
     Get {
         /// Dashboard ID.
         #[arg(required = true)]
@@ -460,8 +660,13 @@ enum DashboardCommand {
     },
     /// Create a new dashboard.
     ///
-    /// Create first, then use `dashboard update --components` to add widgets.
-    /// Run `neomind widget list` to see available widget types and their config_schema.
+    /// Creates an empty dashboard. Add widgets in a second step using
+    /// `dashboard update --components`.
+    ///
+    /// Workflow:
+    ///   1. `neomind dashboard create --name "My Dashboard"`
+    ///   2. `neomind widget list` — see available widget types
+    ///   3. `neomind dashboard update <ID> --components '[...]'` — add widgets
     Create {
         /// Dashboard name.
         #[arg(short, long)]
@@ -477,6 +682,10 @@ enum DashboardCommand {
         json: bool,
     },
     /// Update dashboard.
+    ///
+    /// Modify name, description, layout, or components.
+    /// WARNING: --components replaces ALL existing components.
+    /// Workflow: `dashboard get <ID>` → edit JSON → `dashboard update <ID> --components '...'`
     Update {
         /// Dashboard ID.
         #[arg(required = true)]
@@ -500,12 +709,21 @@ enum DashboardCommand {
         json: bool,
     },
     /// Delete dashboard.
+    ///
+    /// Removes the dashboard and all its widget configurations. This is irreversible.
+    /// Shared links will stop working immediately.
+    ///
+    /// Example: `neomind dashboard delete dash-001`
     Delete {
         /// Dashboard ID.
         #[arg(required = true)]
         id: String,
     },
     /// Share dashboard.
+    ///
+    /// Generates a shareable link for the dashboard. Use --public for open access
+    /// or --expires to set a time-limited link.
+    /// Example: `neomind dashboard share dash-001 --public --expires "2025-12-31"`
     Share {
         /// Dashboard ID.
         #[arg(required = true)]
@@ -526,8 +744,18 @@ enum DashboardCommand {
 #[derive(Subcommand, Debug)]
 enum RuleCommand {
     /// List all rules.
+    ///
+    /// Shows rule ID, name, status (enabled/disabled), and trigger count.
+    /// Use this to find rule IDs for get/update/enable/disable commands.
+    ///
+    /// Example: `neomind rule list`
     List,
     /// Get rule details.
+    ///
+    /// Shows the full DSL definition, condition, action, and execution stats.
+    /// Use this to inspect a rule before modifying or testing it.
+    ///
+    /// Example: `neomind rule get rule-001`
     Get {
         /// Rule ID.
         #[arg(required = true)]
@@ -548,6 +776,11 @@ enum RuleCommand {
         dsl: String,
     },
     /// Update rule.
+    ///
+    /// Modify rule name or DSL definition. The rule is re-evaluated immediately.
+    /// Test first with `rule test <ID> --input '...'` to verify new conditions.
+    ///
+    /// Example: `neomind rule update rule-001 --dsl 'RULE "Alert" WHEN device.temp > 25 DO NOTIFY "Warm" END'`
     Update {
         /// Rule ID.
         #[arg(required = true)]
@@ -560,24 +793,50 @@ enum RuleCommand {
         dsl: Option<String>,
     },
     /// Delete rule.
+    ///
+    /// Removes the rule permanently. This is irreversible.
+    /// Consider disabling first with `rule disable <ID>` if unsure.
+    ///
+    /// Example: `neomind rule delete rule-001`
     Delete {
         /// Rule ID.
         #[arg(required = true)]
         id: String,
     },
     /// Enable rule.
+    ///
+    /// Activates a disabled rule so it starts evaluating conditions again.
+    /// After enabling, verify with `rule list` to confirm status change.
+    ///
+    /// Example: `neomind rule enable rule-001`
     Enable {
         /// Rule ID.
         #[arg(required = true)]
         id: String,
     },
     /// Disable rule.
+    ///
+    /// Pauses rule evaluation without deleting it. Can be re-enabled later.
+    /// Prefer this over deleting if you want to temporarily stop a rule.
+    ///
+    /// Example: `neomind rule disable rule-001`
     Disable {
         /// Rule ID.
         #[arg(required = true)]
         id: String,
     },
     /// Test rule.
+    ///
+    /// Evaluates a rule against sample input data without triggering actions.
+    /// Input must be a JSON object with metric values matching device field names.
+    /// Use before enabling a new rule to verify it behaves correctly.
+    ///
+    /// Workflow:
+    ///   1. `rule test <ID> --input '{"temperature": 32}'` — should trigger
+    ///   2. `rule test <ID> --input '{"temperature": 20}'` — should not trigger
+    ///   3. `rule enable <ID>` — activate if tests pass
+    ///
+    /// Example: `neomind rule test rule-001 --input '{"temperature": 32}'`
     Test {
         /// Rule ID.
         #[arg(required = true)]
@@ -587,6 +846,11 @@ enum RuleCommand {
         input: String,
     },
     /// Get rule execution history.
+    ///
+    /// Shows recent rule evaluations with timestamps, input data, and results.
+    /// Useful for debugging why a rule did or did not trigger.
+    ///
+    /// Example: `neomind rule history rule-001`
     History {
         /// Rule ID.
         #[arg(required = true)]
@@ -598,8 +862,18 @@ enum RuleCommand {
 #[derive(Subcommand, Debug)]
 enum TransformCommand {
     /// List all transforms.
+    ///
+    /// Shows transform ID, name, scope, and enabled status.
+    /// Use this to find transform IDs for get/update/delete commands.
+    ///
+    /// Example: `neomind transform list`
     List,
     /// Get transform details.
+    ///
+    /// Shows the full JavaScript code, input/output mapping, and execution stats.
+    /// Use this to inspect code before modifying with `transform update`.
+    ///
+    /// Example: `neomind transform get transform-001`
     Get {
         /// Transform ID.
         #[arg(required = true)]
@@ -632,6 +906,11 @@ enum TransformCommand {
         enabled: Option<bool>,
     },
     /// Update transform.
+    ///
+    /// Modify transform code, scope, or enabled status. Changes take effect immediately.
+    /// Test new code first with `transform test-code` before applying.
+    ///
+    /// Example: `neomind transform update transform-001 --code 'return input * 2' --enabled true`
     Update {
         /// Transform ID.
         #[arg(required = true)]
@@ -656,14 +935,34 @@ enum TransformCommand {
         enabled: Option<bool>,
     },
     /// Delete transform.
+    ///
+    /// Removes the transform and its virtual metrics permanently. This is irreversible.
+    /// Dashboards using the virtual metrics will show errors.
+    ///
+    /// Example: `neomind transform delete transform-001`
     Delete {
         /// Transform ID.
         #[arg(required = true)]
         id: String,
     },
     /// List virtual metrics from transforms.
+    ///
+    /// Shows all metrics produced by transforms with their data source mappings.
+    /// Use this to discover available data source IDs for dashboards or rules.
+    ///
+    /// Example: `neomind transform metrics`
     Metrics,
     /// Test transform code.
+    ///
+    /// Evaluates JavaScript code against sample input without creating a transform.
+    /// Always test before creating: write code, test, then `transform create`.
+    ///
+    /// Workflow:
+    ///   1. `transform test-code --code 'return input * 1.8 + 32' --input '{"value": 100}'`
+    ///   2. Verify output is correct
+    ///   3. `transform create --name "Celsius to Fahrenheit" --scope global --code 'return input * 1.8 + 32'`
+    ///
+    /// Example: `neomind transform test-code --code 'return input * 1.8 + 32' --input '{"value": 100}'`
     TestCode {
         /// Transform code (JavaScript).
         #[arg(short, long)]
@@ -673,6 +972,9 @@ enum TransformCommand {
         input: String,
     },
     /// List transform data sources.
+    ///
+    /// Shows available data source IDs and their types (device, extension, etc.).
+    /// Example: `neomind transform data-sources`
     DataSources,
 }
 
@@ -680,8 +982,18 @@ enum TransformCommand {
 #[derive(Subcommand, Debug)]
 enum AgentCommand {
     /// List all agents.
+    ///
+    /// Shows agent ID, name, status, schedule type, and last execution time.
+    /// Use this to find agent IDs for all other agent commands.
+    ///
+    /// Example: `neomind agent list`
     List,
     /// Get agent details.
+    ///
+    /// Shows full agent config: prompt, schedule, LLM backend, and resources.
+    /// Use this to inspect an agent before updating or debugging.
+    ///
+    /// Example: `neomind agent get agent-001`
     Get {
         /// Agent ID.
         #[arg(required = true)]
@@ -689,33 +1001,90 @@ enum AgentCommand {
     },
     /// Create a new agent.
     ///
-    /// After creating, run `agent control <ID> --status active` to start it.
-    /// Schedule is required: --schedule-type interval|cron|event.
+    /// Creates an agent in paused state. You MUST activate it with
+    /// `agent control <ID> active` after creation.
+    ///
+    /// Schedule is required. Use --schedule-type and --schedule-config together:
+    ///   - interval: `--schedule-type interval --schedule-config "300"` (every 5 min)
+    ///   - cron:     `--schedule-type cron --schedule-config "0 8 * * *"` (daily 8am)
+    ///   - event:    `--schedule-type event` (triggered by device data)
+    ///
+    /// Workflow:
+    ///   1. `agent create --name "Monitor" --prompt "Check sensors" --schedule-type interval --schedule-config "300"`
+    ///   2. `agent control <ID> active` — start the agent
+    ///   3. `agent latest-execution <ID>` — check results
     Create {
-        /// Agent name.
+        /// Agent name (1-100 chars).
         #[arg(short, long)]
         name: String,
-        /// What the agent should do (natural language). Required.
+        /// What the agent should do (natural language, 1-10000 chars). Required.
         #[arg(short, long)]
         prompt: String,
-        /// Description.
+        /// Description (0-500 chars).
         #[arg(short, long)]
         description: Option<String>,
         /// Schedule type: interval | cron | event. Required.
+        ///   - interval: runs every N seconds (--schedule-config "300" = every 5min)
+        ///   - cron:     runs on schedule (--schedule-config "0 8 * * *" = daily 8am)
+        ///   - event:    runs when device data arrives (--event-filter optional)
         #[arg(long)]
         schedule_type: Option<String>,
-        /// Interval in seconds (for interval type) or cron expression (for cron type).
-        /// Example: --schedule-config "300" (5min interval) or "0 8 * * *" (daily 8am).
+        /// Schedule config: interval seconds or cron expression.
+        /// Example: "300" (5min interval) or "0 8 * * *" (daily 8am).
         #[arg(long)]
         schedule_config: Option<String>,
-        /// LLM backend configuration.
+        /// Event filter for event schedule type (e.g., "device_type:temp_sensor").
+        #[arg(long)]
+        event_filter: Option<String>,
+        /// Timezone for cron schedule (e.g., "Asia/Shanghai", "UTC"). Default: system timezone.
+        #[arg(long)]
+        timezone: Option<String>,
+        /// LLM backend ID. Run `neomind system info` to see available backends.
         #[arg(short, long)]
         llm_backend: Option<String>,
-        /// System prompt.
+        /// System prompt for the LLM (overrides default agent system prompt).
         #[arg(short, long)]
         system_prompt: Option<String>,
+        /// Execution mode: "free" (multi-round tool calling) or "focused" (single-pass with bound resources).
+        /// "focused" requires --resources or --device-ids. Default: "free".
+        #[arg(long)]
+        execution_mode: Option<String>,
+        /// Device IDs to bind (comma-separated). Used in focused mode.
+        /// Example: --device-ids "device-001,device-002"
+        #[arg(long)]
+        device_ids: Option<String>,
+        /// Resources JSON array (unified format). Each: {"resource_id":"...","resource_type":"device|extension","name":"..."}
+        /// Prefer this over --device-ids for new agents.
+        /// Example: --resources '[{"resource_id":"device-001","resource_type":"device","name":"Temp Sensor"}]'
+        #[arg(long)]
+        resources: Option<String>,
+        /// Metrics to bind (JSON array). Each: {"device_id":"...","metric_name":"...","display_name":"..."}
+        /// Example: --metrics '[{"device_id":"sensor-001","metric_name":"temperature","display_name":"Temperature"}]'
+        #[arg(long)]
+        metrics: Option<String>,
+        /// Commands to bind (JSON array). Each: {"device_id":"...","command_name":"...","display_name":"...","parameters":{}}
+        /// Example: --commands '[{"device_id":"switch-001","command_name":"toggle","display_name":"Toggle","parameters":{}}]'
+        #[arg(long)]
+        commands: Option<String>,
+        /// Enable tool chaining (agent can call multiple tools in sequence). Default: false.
+        #[arg(long)]
+        enable_tool_chaining: Option<bool>,
+        /// Maximum tool chain depth (1-20). Only used when --enable-tool-chaining is true. Default: 3.
+        #[arg(long)]
+        max_chain_depth: Option<usize>,
+        /// Agent priority (0-255, higher = more important). Default: 128.
+        #[arg(long)]
+        priority: Option<u8>,
+        /// Context window size (number of conversation turns to keep). Default: 10.
+        #[arg(long)]
+        context_window_size: Option<usize>,
     },
     /// Update agent.
+    ///
+    /// Modify agent configuration. Changes apply to the next scheduled execution.
+    /// Check current config first with `agent get <ID>`.
+    ///
+    /// Example: `neomind agent update agent-001 --prompt "Monitor temperature and alert if above 30"`
     Update {
         /// Agent ID.
         #[arg(required = true)]
@@ -729,14 +1098,54 @@ enum AgentCommand {
         /// New description.
         #[arg(short, long)]
         description: Option<String>,
-        /// LLM backend configuration.
+        /// LLM backend ID.
         #[arg(short, long)]
         llm_backend: Option<String>,
         /// System prompt.
         #[arg(short, long)]
         system_prompt: Option<String>,
+        /// New schedule type: interval | cron | event.
+        #[arg(long)]
+        schedule_type: Option<String>,
+        /// New schedule config (seconds for interval, cron expression for cron).
+        #[arg(long)]
+        schedule_config: Option<String>,
+        /// New execution mode: "free" or "focused".
+        #[arg(long)]
+        execution_mode: Option<String>,
+        /// New device IDs (comma-separated). Replaces existing bindings.
+        #[arg(long)]
+        device_ids: Option<String>,
+        /// New resources JSON array. Replaces existing resources.
+        #[arg(long)]
+        resources: Option<String>,
+        /// Metrics to bind (JSON array). Each: {"device_id":"...","metric_name":"...","display_name":"..."}
+        /// Example: --metrics '[{"device_id":"sensor-001","metric_name":"temperature","display_name":"Temperature"}]'
+        #[arg(long)]
+        metrics: Option<String>,
+        /// Commands to bind (JSON array). Each: {"device_id":"...","command_name":"...","display_name":"...","parameters":{}}
+        /// Example: --commands '[{"device_id":"switch-001","command_name":"toggle","display_name":"Toggle","parameters":{}}]'
+        #[arg(long)]
+        commands: Option<String>,
+        /// Enable/disable tool chaining.
+        #[arg(long)]
+        enable_tool_chaining: Option<bool>,
+        /// Max tool chain depth.
+        #[arg(long)]
+        max_chain_depth: Option<usize>,
+        /// Agent priority (0-255).
+        #[arg(long)]
+        priority: Option<u8>,
+        /// Context window size.
+        #[arg(long)]
+        context_window_size: Option<usize>,
     },
     /// Delete agent.
+    ///
+    /// Removes the agent and ALL execution history. This is irreversible.
+    /// Consider pausing first with `agent control <ID> paused` if unsure.
+    ///
+    /// Example: `neomind agent delete agent-001`
     Delete {
         /// Agent ID.
         #[arg(required = true)]
@@ -745,7 +1154,12 @@ enum AgentCommand {
     /// Control agent status.
     ///
     /// Status values: "active" (start running) or "paused" (stop).
-    /// Must run `control --status active` after creating a new agent.
+    /// New agents are created in paused state — you MUST run this to start them.
+    ///
+    /// Workflow:
+    ///   - Start: `agent control <ID> active`
+    ///   - Stop:  `agent control <ID> paused`
+    ///   - Verify: `agent list` or `agent get <ID>`
     Control {
         /// Agent ID.
         #[arg(required = true)]
@@ -755,6 +1169,13 @@ enum AgentCommand {
         status: String,
     },
     /// Invoke agent with input.
+    ///
+    /// Runs a one-time agent execution with custom input, bypassing the schedule.
+    /// Returns the agent's response directly. Useful for testing or ad-hoc queries.
+    ///
+    /// Workflow: `agent invoke <ID> "your question"` → see immediate response.
+    ///
+    /// Example: `neomind agent invoke agent-001 "Check all sensor readings"`
     Invoke {
         /// Agent ID.
         #[arg(required = true)]
@@ -764,12 +1185,24 @@ enum AgentCommand {
         input: String,
     },
     /// Get agent memory.
+    ///
+    /// Shows extracted facts and context stored by the agent across executions.
+    /// Memory helps the agent maintain context between runs.
+    /// Check this if the agent seems to forget important information.
+    ///
+    /// Example: `neomind agent memory agent-001`
     Memory {
         /// Agent ID.
         #[arg(required = true)]
         id: String,
     },
     /// Get agent execution history.
+    ///
+    /// Shows past execution records with timestamps, status, and duration.
+    /// Use --limit and --offset for pagination.
+    /// For just the latest result, use `agent latest-execution` instead.
+    ///
+    /// Example: `neomind agent executions agent-001 --limit 10`
     Executions {
         /// Agent ID.
         #[arg(required = true)]
@@ -782,12 +1215,23 @@ enum AgentCommand {
         offset: Option<usize>,
     },
     /// Get latest agent execution.
+    ///
+    /// Shows the most recent execution result including tool calls and response.
+    /// Quick way to check if the agent is working correctly.
+    ///
+    /// Example: `neomind agent latest-execution agent-001`
     LatestExecution {
         /// Agent ID.
         #[arg(required = true)]
         id: String,
     },
     /// Get agent conversation (messages).
+    ///
+    /// Shows the full conversation thread between the agent and LLM.
+    /// Use --limit to control the number of messages returned.
+    /// Useful for debugging: see exactly what the agent sent and received.
+    ///
+    /// Example: `neomind agent conversation agent-001 --limit 20`
     Conversation {
         /// Agent ID.
         #[arg(required = true)]
@@ -797,6 +1241,16 @@ enum AgentCommand {
         limit: Option<usize>,
     },
     /// Send message to agent.
+    ///
+    /// Sends an inline message to an active agent. The agent processes it
+    /// in its next execution cycle. Use --message-type to categorize
+    /// (instruction, correction, etc.).
+    ///
+    /// Workflow:
+    ///   - Correction: `agent send-message <ID> "The threshold should be 35 not 30" --message-type correction`
+    ///   - Instruction: `agent send-message <ID> "Focus on temperature sensors only" --message-type instruction`
+    ///
+    /// Example: `neomind agent send-message agent-001 "Increase alert threshold to 35"`
     SendMessage {
         /// Agent ID.
         #[arg(required = true)]
@@ -805,7 +1259,7 @@ enum AgentCommand {
         #[arg(required = true)]
         message: String,
         /// Message type (e.g., instruction, correction).
-        #[arg(short, long)]
+        #[arg(long)]
         message_type: Option<String>,
     },
 }
@@ -814,6 +1268,13 @@ enum AgentCommand {
 #[derive(Subcommand, Debug)]
 enum MessageCommand {
     /// List messages.
+    ///
+    /// Shows system notifications, alerts, and user messages.
+    /// Use --severity or --status to filter. Default limit is 20.
+    ///
+    /// Workflow: `message list` → `message get <ID>` → `message read <ID>` (acknowledge).
+    ///
+    /// Example: `neomind message list --severity error --limit 50`
     List {
         /// Limit number of results.
         #[arg(short, long)]
@@ -822,38 +1283,125 @@ enum MessageCommand {
         #[arg(short, long)]
         offset: Option<usize>,
         /// Filter by severity.
-        #[arg(short, long)]
+        #[arg(long)]
         severity: Option<String>,
         /// Filter by status.
-        #[arg(short, long)]
+        #[arg(long)]
         status: Option<String>,
     },
     /// Get message details.
+    ///
+    /// Shows full message content, metadata, and acknowledgment status.
+    /// Use this to read the full body of truncated messages from `message list`.
+    ///
+    /// Example: `neomind message get msg-001`
     Get {
         /// Message ID.
         #[arg(required = true)]
         id: String,
     },
     /// Send a new message.
+    ///
+    /// Creates a system message with severity level. Supports markdown content.
+    /// Severity levels: info, warning, error, critical.
+    ///
+    /// Workflow: `message send --title "Alert" --message "Check sensor #3" --severity warning`
+    /// Messages appear in the UI notification center and can trigger rules.
+    ///
+    /// Example: `neomind message send --title "Deploy Notice" --message "Version 2.0 deployed" --severity info`
     Send {
         /// Message title.
         #[arg(short, long)]
         title: String,
         /// Message content (supports markdown).
-        #[arg(short, long)]
+        #[arg(long)]
         message: String,
         /// Severity level: info | warning | error | critical.
         #[arg(short, long, default_value = "info")]
         severity: String,
         /// Source.
-        #[arg(short, long)]
+        #[arg(long)]
         source: Option<String>,
     },
     /// Acknowledge/read a message.
+    ///
+    /// Marks a message as read. Used to clear unread notifications.
+    /// Batch acknowledge: list IDs from `message list`, then read each one.
+    ///
+    /// Example: `neomind message read msg-001`
     Read {
         /// Message ID.
         #[arg(required = true)]
         id: String,
+    },
+    /// List message channels.
+    ///
+    /// Shows all notification channels (webhook, email, etc.) and their status.
+    /// Example: `neomind message channel-list`
+    ChannelList,
+    /// Get channel details.
+    ///
+    /// Shows channel type, config, and delivery status.
+    /// Example: `neomind message channel-get slack-alerts`
+    ChannelGet {
+        /// Channel name.
+        #[arg(required = true)]
+        name: String,
+    },
+    /// List available channel types.
+    ///
+    /// Shows channel types that can be created (webhook, email, etc.).
+    /// Example: `neomind message channel-types`
+    ChannelTypes,
+    /// Create a message channel.
+    ///
+    /// Registers a notification channel. Config is JSON specific to the channel type.
+    /// Workflow:
+    ///   1. `message channel-types` — see available types
+    ///   2. `message channel-create --name "slack" --type webhook --config '{"url":"https://..."}'`
+    ///   3. `message channel-test slack` — verify it works
+    ///
+    /// Example: `neomind message channel-create --name "alerts" --type webhook --config '{"url":"https://hooks.slack.com/..."}'`
+    ChannelCreate {
+        /// Channel name (unique).
+        #[arg(long)]
+        name: String,
+        /// Channel type (e.g., webhook, email).
+        #[arg(long)]
+        channel_type: String,
+        /// Channel config (JSON string).
+        #[arg(long)]
+        config: String,
+    },
+    /// Update channel configuration.
+    ///
+    /// Updates the channel's configuration. Does not change the channel type.
+    /// Example: `neomind message channel-update --name "alerts" --config '{"url":"https://new-url.com"}'`
+    ChannelUpdate {
+        /// Channel name.
+        #[arg(long)]
+        name: String,
+        /// New config (JSON string).
+        #[arg(long)]
+        config: String,
+    },
+    /// Delete a message channel.
+    ///
+    /// Removes the channel. Pending messages will not be delivered.
+    /// Example: `neomind message channel-delete slack-alerts`
+    ChannelDelete {
+        /// Channel name.
+        #[arg(required = true)]
+        name: String,
+    },
+    /// Test a message channel.
+    ///
+    /// Sends a test message through the channel to verify configuration.
+    /// Example: `neomind message channel-test slack-alerts`
+    ChannelTest {
+        /// Channel name.
+        #[arg(required = true)]
+        name: String,
     },
 }
 
@@ -861,12 +1409,18 @@ enum MessageCommand {
 #[derive(Subcommand, Debug)]
 enum WidgetCommand {
     /// List installed widgets.
+    ///
+    /// Shows widget ID, name, type, and version.
+    /// Example: `neomind widget list --json`
     List {
         /// Output as JSON.
         #[arg(long)]
         json: bool,
     },
     /// Get widget details.
+    ///
+    /// Shows widget manifest, config schema, and supported data sources.
+    /// Example: `neomind widget get line-chart`
     Get {
         /// Widget ID.
         #[arg(required = true)]
@@ -876,6 +1430,9 @@ enum WidgetCommand {
         json: bool,
     },
     /// Get widget bundle.
+    ///
+    /// Returns the compiled JavaScript bundle for a widget.
+    /// Example: `neomind widget bundle line-chart`
     Bundle {
         /// Widget ID.
         #[arg(required = true)]
@@ -885,6 +1442,10 @@ enum WidgetCommand {
         json: bool,
     },
     /// Scaffold a new widget component (generates manifest.json + bundle.js).
+    ///
+    /// Creates a widget project with all required files.
+    /// Widget types: chart, gauge, stat, table, image, custom.
+    /// Example: `neomind widget create "My Chart" --widget-type chart -o ./my-widgets`
     Create {
         /// Widget display name.
         #[arg(required = true)]
@@ -900,24 +1461,36 @@ enum WidgetCommand {
         json: bool,
     },
     /// Install widget from file.
+    ///
+    /// Installs a widget from a .tgz package file.
+    /// Example: `neomind widget install ./my-chart.tgz`
     Install {
         /// Path to widget file (.tgz).
         #[arg(required = true)]
         file: String,
     },
     /// Uninstall widget.
+    ///
+    /// Removes the widget. Dashboards using this widget will show an error.
+    /// Example: `neomind widget uninstall my-chart`
     Uninstall {
         /// Widget ID.
         #[arg(required = true)]
         id: String,
     },
     /// List marketplace widgets.
+    ///
+    /// Shows all widgets available in the marketplace registry.
+    /// Example: `neomind widget market-list`
     MarketList {
         /// Output as JSON.
         #[arg(long)]
         json: bool,
     },
     /// Install widget from marketplace.
+    ///
+    /// Downloads and installs a widget from the marketplace registry.
+    /// Example: `neomind widget market-install line-chart --version 1.2.0`
     MarketInstall {
         /// Widget ID.
         #[arg(required = true)]
@@ -939,33 +1512,51 @@ enum SystemCommand {
     },
 }
 
-/// External MQTT broker subcommands.
+/// Data connector subcommands (MQTT, webhook, HTTP, etc.).
 #[derive(Subcommand, Debug)]
-enum BrokerCommand {
-    /// List all external MQTT brokers.
+enum ConnectorCommand {
+    /// List all data connectors.
+    ///
+    /// Shows connector ID, name, host, port, type, and connection status.
+    /// Example: `neomind connector list --json`
     List {
         /// Output as JSON.
         #[arg(long)]
         json: bool,
     },
-    /// Get broker details and connection status.
+    /// Get connector details and connection status.
+    ///
+    /// Shows connection state, subscriptions, and message statistics.
+    /// Example: `neomind connector get connector-001`
     Get {
-        /// Broker ID.
+        /// Connector ID.
         #[arg(required = true)]
         id: String,
         /// Output as JSON.
         #[arg(long)]
         json: bool,
     },
-    /// Create a new external MQTT broker.
+    /// Create a new data connector.
+    ///
+    /// Registers an external data source for data ingestion.
+    /// Currently supports MQTT connectors; more types coming soon.
+    ///
+    /// Workflow:
+    ///   1. `connector create --name "Factory MQTT" --host 192.168.1.100 --port 1883`
+    ///   2. `connector test <ID>` — verify connectivity
+    ///   3. Devices sending to the connector's topics will auto-appear in NeoMind
+    /// Example: `neomind connector create --type mqtt --name "Factory MQTT" --host 192.168.1.100 --port 1883 --topics "sensor/#,device/#"`
     Create {
-        /// Broker display name.
+        /// Connector type (mqtt, webhook, http). Default: mqtt.
+        #[arg(long, default_value = "mqtt")]
+        connector_type: String,
+        /// Connector display name.
         #[arg(long)]
         name: String,
-        /// Broker hostname or IP.
+        /// Connector hostname or IP.
         #[arg(long)]
         host: String,
-        /// Broker port (default: 1883).
+        /// Connector port (default: 1883).
         #[arg(long, default_value_t = 1883)]
         port: u16,
         /// Enable TLS.
@@ -984,46 +1575,76 @@ enum BrokerCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Update broker configuration.
+    /// Update connector configuration.
+    ///
+    /// Modify connector settings. Use --disable to stop, omit to keep current values.
+    /// Example: `neomind connector update connector-001 --topics "sensor/+/data" --password "newpass"`
     Update {
-        /// Broker ID.
+        /// Connector ID.
         #[arg(required = true)]
         id: String,
-        /// Broker display name.
+        /// Connector display name.
         #[arg(long)]
         name: Option<String>,
-        /// Broker hostname or IP.
+        /// Connector hostname or IP.
         #[arg(long)]
         host: Option<String>,
+        /// Connector port.
+        #[arg(long)]
+        port: Option<u16>,
+        /// Enable TLS.
+        #[arg(long)]
+        tls: bool,
+        /// Username for authentication.
+        #[arg(long)]
+        username: Option<String>,
+        /// Password for authentication.
+        #[arg(long)]
+        password: Option<String>,
         /// Comma-separated topic subscriptions.
         #[arg(long)]
         topics: Option<String>,
-        /// Disable the broker (stop connection).
+        /// Disable the connector (stop connection).
         #[arg(long)]
         disable: bool,
         /// Output as JSON.
         #[arg(long)]
         json: bool,
     },
-    /// Delete a broker.
+    /// Delete a connector.
+    ///
+    /// Removes the connector and disconnects. All subscriptions are lost.
+    /// Example: `neomind connector delete connector-001`
     Delete {
-        /// Broker ID.
+        /// Connector ID.
         #[arg(required = true)]
         id: String,
     },
-    /// Test broker connectivity with real MQTT handshake.
+    /// Test connector connectivity with real MQTT handshake.
+    ///
+    /// Attempts to connect, subscribe, and publish a test message.
+    /// Run this after creating or updating a connector to verify settings.
+    /// If it fails, check host, port, credentials, and firewall rules.
+    /// Example: `neomind connector test connector-001`
     Test {
-        /// Broker ID.
+        /// Connector ID.
         #[arg(required = true)]
         id: String,
     },
     /// List all MQTT topic subscriptions.
+    ///
+    /// Shows all active topic subscriptions across all connectors.
+    /// Example: `neomind connector subscriptions`
     Subscriptions {
         /// Output as JSON.
         #[arg(long)]
         json: bool,
     },
     /// Subscribe to a custom MQTT topic.
+    ///
+    /// Adds a new topic subscription to the embedded broker.
+    /// Supports MQTT wildcards: + (single level) and # (multi level).
+    /// Example: `neomind connector subscribe --topic "factory/+/temperature" --qos 1`
     Subscribe {
         /// Topic pattern to subscribe to.
         #[arg(long)]
@@ -1033,11 +1654,22 @@ enum BrokerCommand {
         qos: u8,
     },
     /// Unsubscribe from an MQTT topic.
+    ///
+    /// Removes a topic subscription from the embedded broker.
+    /// Example: `neomind connector unsubscribe --topic "factory/+/temperature"`
     Unsubscribe {
         /// Topic to unsubscribe from.
         #[arg(long)]
         topic: String,
     },
+}
+
+/// Hidden backward-compatible alias — delegates to ConnectorCommand.
+#[derive(Subcommand, Debug)]
+#[command(hide = true)]
+enum BrokerAliasCommand {
+    #[command(flatten)]
+    Connector(ConnectorCommand),
 }
 
 // Custom runtime with increased worker threads for better concurrent performance
@@ -1166,6 +1798,7 @@ async fn main() -> Result<()> {
         Command::Extension { extension_cmd } => run_extension_cmd(extension_cmd).await,
         Command::CheckUpdate => run_check_update().await,
         Command::ApiKey { key_cmd } => run_api_key_cmd(key_cmd).await,
+        Command::Llm { llm_cmd } => run_llm_cmd(llm_cmd).await,
         Command::Device { device_cmd } => run_device_cmd(device_cmd).await,
         Command::Dashboard { dashboard_cmd } => run_dashboard_cmd(dashboard_cmd).await,
         Command::Rule { rule_cmd } => run_rule_cmd(rule_cmd).await,
@@ -1174,7 +1807,13 @@ async fn main() -> Result<()> {
         Command::Message { message_cmd } => run_message_cmd(message_cmd).await,
         Command::Widget { widget_cmd } => run_widget_cmd(widget_cmd).await,
         Command::System { system_cmd } => run_system_cmd(system_cmd).await,
-        Command::Broker { broker_cmd } => run_broker_cmd(broker_cmd).await,
+        Command::Connector { connector_cmd } => run_connector_cmd(connector_cmd).await,
+        Command::Broker { broker_cmd } => {
+            // Hidden backward-compatible alias: delegate to connector handler
+            match broker_cmd {
+                BrokerAliasCommand::Connector(cmd) => run_connector_cmd(cmd).await,
+            }
+        }
     }
 }
 
@@ -2571,6 +3210,33 @@ fn build_extension(path: &std::path::PathBuf) -> Result<()> {
 }
 
 /// Run API key management commands.
+/// Run LLM backend management commands.
+async fn run_llm_cmd(cmd: LlmCommand) -> Result<()> {
+    use neomind_cli_ops::llm::*;
+    use neomind_cli_ops::output::format_output;
+    use neomind_cli_ops::types::OutputFormat;
+
+    let api_base = std::env::var("NEOMIND_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+    let client = neomind_cli_ops::ApiClient::with_base_url(&api_base);
+    let output_format = OutputFormat::Human;
+
+    let response = match cmd {
+        LlmCommand::List { json: _ } => {
+            list_backends(&client).await?
+        }
+        LlmCommand::Get { id } => {
+            get_backend(&client, &id).await?
+        }
+        LlmCommand::Models { endpoint: _ } => {
+            list_ollama_models(&client).await?
+        }
+    };
+
+    format_output(&response, output_format);
+    Ok(())
+}
+
 async fn run_api_key_cmd(cmd: ApiKeyCommand) -> Result<()> {
     match cmd {
         ApiKeyCommand::Create { name, data_dir } => {
@@ -2733,14 +3399,14 @@ async fn run_device_type_cmd(
         DeviceTypeCommand::Get { id } => {
             get_device_type(&client, &id).await?
         }
-        DeviceTypeCommand::Create { name, metrics, commands } => {
+        DeviceTypeCommand::Create { id, name, metrics, commands } => {
             let metrics_json = serde_json::from_str(&metrics)?;
             let commands_json = if let Some(cmds_str) = commands {
                 Some(serde_json::from_str(&cmds_str)?)
             } else {
                 None
             };
-            create_device_type(&client, &name, metrics_json, commands_json).await?
+            create_device_type(&client, id.as_deref(), &name, metrics_json, commands_json).await?
         }
         DeviceTypeCommand::Delete { id } => {
             delete_device_type(&client, &id).await?
@@ -2967,7 +3633,7 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
         AgentCommand::Get { id } => {
             get_agent(&client, &id).await?
         }
-        AgentCommand::Create { name, prompt, description, schedule_type, schedule_config, llm_backend, system_prompt } => {
+        AgentCommand::Create { name, prompt, description, schedule_type, schedule_config, event_filter, timezone, llm_backend, system_prompt, execution_mode, device_ids, resources, metrics, commands, enable_tool_chaining, max_chain_depth, priority, context_window_size } => {
             create_agent(
                 &client,
                 &name,
@@ -2975,11 +3641,22 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
                 description.as_deref(),
                 schedule_type.as_deref(),
                 schedule_config.as_deref(),
+                event_filter.as_deref(),
+                timezone.as_deref(),
                 llm_backend.as_deref(),
                 system_prompt.as_deref(),
+                execution_mode.as_deref(),
+                device_ids.as_deref(),
+                resources.as_deref(),
+                metrics.as_deref(),
+                commands.as_deref(),
+                enable_tool_chaining,
+                max_chain_depth,
+                priority,
+                context_window_size,
             ).await?
         }
-        AgentCommand::Update { id, name, prompt, description, llm_backend, system_prompt } => {
+        AgentCommand::Update { id, name, prompt, description, llm_backend, system_prompt, schedule_type, schedule_config, execution_mode, device_ids, resources, metrics, commands, enable_tool_chaining, max_chain_depth, priority, context_window_size } => {
             update_agent(
                 &client,
                 &id,
@@ -2988,8 +3665,17 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
                 llm_backend.as_deref(),
                 system_prompt.as_deref(),
                 prompt.as_deref(),
-                None,
-                None,
+                schedule_type.as_deref(),
+                schedule_config.as_deref(),
+                execution_mode.as_deref(),
+                device_ids.as_deref(),
+                resources.as_deref(),
+                metrics.as_deref(),
+                commands.as_deref(),
+                enable_tool_chaining,
+                max_chain_depth,
+                priority,
+                context_window_size,
             ).await?
         }
         AgentCommand::Delete { id } => {
@@ -3054,6 +3740,27 @@ async fn run_message_cmd(cmd: MessageCommand) -> Result<()> {
         }
         MessageCommand::Read { id } => {
             acknowledge_message(&client, &id).await?
+        }
+        MessageCommand::ChannelList => {
+            list_channels(&client).await?
+        }
+        MessageCommand::ChannelGet { name } => {
+            get_channel(&client, &name).await?
+        }
+        MessageCommand::ChannelTypes => {
+            list_channel_types(&client).await?
+        }
+        MessageCommand::ChannelCreate { name, channel_type, config } => {
+            create_channel(&client, &name, &channel_type, &config).await?
+        }
+        MessageCommand::ChannelUpdate { name, config } => {
+            update_channel(&client, &name, &config).await?
+        }
+        MessageCommand::ChannelDelete { name } => {
+            delete_channel(&client, &name).await?
+        }
+        MessageCommand::ChannelTest { name } => {
+            test_channel(&client, &name).await?
         }
     };
 
@@ -3143,58 +3850,59 @@ async fn run_system_cmd(cmd: SystemCommand) -> Result<()> {
     Ok(())
 }
 
-async fn run_broker_cmd(cmd: BrokerCommand) -> Result<()> {
+async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<()> {
     use neomind_cli_ops::output::format_output;
     use neomind_cli_ops::types::OutputFormat;
     let client = neomind_cli_ops::ApiClient::new();
 
     match cmd {
-        BrokerCommand::List { json } => {
+        ConnectorCommand::List { json } => {
             let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
-            let resp = neomind_cli_ops::broker::list_brokers(&client).await?;
+            let resp = neomind_cli_ops::connector::list_connectors(&client).await?;
             format_output(&resp, fmt);
         }
-        BrokerCommand::Get { id, json } => {
+        ConnectorCommand::Get { id, json } => {
             let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
-            let resp = neomind_cli_ops::broker::get_broker(&client, &id).await?;
+            let resp = neomind_cli_ops::connector::get_connector(&client, &id).await?;
             format_output(&resp, fmt);
         }
-        BrokerCommand::Create { name, host, port, tls, username, password, topics, json } => {
+        ConnectorCommand::Create { connector_type, name, host, port, tls, username, password, topics, json } => {
             let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
-            let resp = neomind_cli_ops::broker::create_broker(
-                &client, &name, &host, port, tls,
+            let resp = neomind_cli_ops::connector::create_connector(
+                &client, &name, Some(&connector_type), &host, port, tls,
                 username.as_deref(), password.as_deref(), topics.as_deref(),
             ).await?;
             format_output(&resp, fmt);
         }
-        BrokerCommand::Update { id, name, host, topics, disable, json } => {
+        ConnectorCommand::Update { id, name, host, port, tls, username, password, topics, disable, json } => {
             let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
             let enabled = if disable { Some(false) } else { None };
-            let resp = neomind_cli_ops::broker::update_broker(
-                &client, &id, name.as_deref(), host.as_deref(), None, None,
-                None, None, topics.as_deref(), enabled,
+            let tls_val = if tls { Some(true) } else { None };
+            let resp = neomind_cli_ops::connector::update_connector(
+                &client, &id, name.as_deref(), host.as_deref(), port, tls_val,
+                username.as_deref(), password.as_deref(), topics.as_deref(), enabled,
             ).await?;
             format_output(&resp, fmt);
         }
-        BrokerCommand::Delete { id } => {
-            let resp = neomind_cli_ops::broker::delete_broker(&client, &id).await?;
+        ConnectorCommand::Delete { id } => {
+            let resp = neomind_cli_ops::connector::delete_connector(&client, &id).await?;
             format_output(&resp, OutputFormat::Human);
         }
-        BrokerCommand::Test { id } => {
-            let resp = neomind_cli_ops::broker::test_broker(&client, &id).await?;
+        ConnectorCommand::Test { id } => {
+            let resp = neomind_cli_ops::connector::test_connector(&client, &id).await?;
             format_output(&resp, OutputFormat::Human);
         }
-        BrokerCommand::Subscriptions { json } => {
+        ConnectorCommand::Subscriptions { json } => {
             let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
-            let resp = neomind_cli_ops::broker::list_subscriptions(&client).await?;
+            let resp = neomind_cli_ops::connector::list_subscriptions(&client).await?;
             format_output(&resp, fmt);
         }
-        BrokerCommand::Subscribe { topic, qos } => {
-            let resp = neomind_cli_ops::broker::subscribe_topic(&client, &topic, Some(qos)).await?;
+        ConnectorCommand::Subscribe { topic, qos } => {
+            let resp = neomind_cli_ops::connector::subscribe_topic(&client, &topic, Some(qos)).await?;
             format_output(&resp, OutputFormat::Human);
         }
-        BrokerCommand::Unsubscribe { topic } => {
-            let resp = neomind_cli_ops::broker::unsubscribe_topic(&client, &topic).await?;
+        ConnectorCommand::Unsubscribe { topic } => {
+            let resp = neomind_cli_ops::connector::unsubscribe_topic(&client, &topic).await?;
             format_output(&resp, OutputFormat::Human);
         }
     }

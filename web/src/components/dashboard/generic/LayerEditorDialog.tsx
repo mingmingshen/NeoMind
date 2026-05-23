@@ -29,7 +29,6 @@ import {
   X,
 } from 'lucide-react'
 import { CustomLayer, type LayerBinding, type LayerItem } from './CustomLayer'
-import { getSourceId } from '@/types/dashboard'
 import { useStore } from '@/store'
 import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 
@@ -182,7 +181,7 @@ export function LayerEditorDialog({
         : binding.position
 
       const ds = binding.dataSource
-      const deviceId = getSourceId(ds)
+      const deviceId = ds.sourceId || (ds as any).deviceId || (ds.metricId ? ds.metricId.split(':')[0] : undefined)
 
       const item: LayerItem = {
         id: binding.id,

@@ -39,7 +39,6 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
 import { useStore } from '@/store'
 
 // ============================================================================
@@ -773,18 +772,21 @@ export function CustomLayer({
 
   // Helper functions for device data - use devices directly to get real-time updates
   const getDeviceName = useCallback((deviceId: string) => {
-    const device = devices.find(d => d.id === deviceId)
+    if (!deviceId) return deviceId
+    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
     return device?.name || deviceId
   }, [devices])
 
   const getDeviceStatus = useCallback((deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
-    const device = devices.find(d => d.id === deviceId)
+    if (!deviceId) return undefined
+    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
     if (!device) return undefined
     return device.online ? 'online' : 'offline'
   }, [devices])
 
   const getDeviceMetricValue = useCallback((deviceId: string, metricId: string): string | number | undefined => {
-    const device = devices.find(d => d.id === deviceId)
+    if (!deviceId) return undefined
+    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
     if (!device?.current_values) return undefined
     const value = findMetricValue(device.current_values, metricId)
     if (value !== undefined && value !== null) {
@@ -804,7 +806,7 @@ export function CustomLayer({
         : binding.position
 
       const ds = binding.dataSource
-      const deviceId = getSourceId(ds)
+      const deviceId = ds.sourceId || (ds as any).deviceId || (ds.metricId ? ds.metricId.split(':')[0] : undefined)
 
       const item: LayerItem = {
         id: binding.id,
@@ -942,11 +944,11 @@ export function CustomLayer({
     // Update items with fresh data from store
     const updateItemFromDevice = (binding: LayerBinding) => {
       const ds = binding.dataSource
-      const deviceId = getSourceId(ds)
+      const deviceId = ds.sourceId || (ds as any).deviceId || (ds.metricId ? ds.metricId.split(':')[0] : undefined)
 
       if (binding.type === 'metric' && deviceId) {
         const metricId = ds.metricId || ds.property
-        const device = devices.find(d => d.id === deviceId)
+        const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
         const metricValue = device?.current_values ? findMetricValue(device.current_values, metricId || '') : undefined
 
         setInternalItems(prev =>
@@ -958,7 +960,7 @@ export function CustomLayer({
           })
         )
       } else if (binding.type === 'device' && deviceId) {
-        const device = devices.find(d => d.id === deviceId)
+        const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
         const status = device?.online ? 'online' : 'offline'
 
         setInternalItems(prev =>

@@ -21,10 +21,15 @@ import { responsiveCols } from '@/design-system/tokens/size'
 
 /**
  * Create a simple key to detect dataSource changes
+ * Includes transform fields (timeWindow, aggregateExt, limit) so that
+ * config changes in the Transform tab trigger a preview re-render.
  */
 function createDataSourceKey(ds: DataSource | undefined): string {
   if (!ds) return 'no-ds'
-  return `${ds.type}:${getSourceId(ds) || ''}:${ds.metricId || ds.property || ds.infoProperty || ''}:${ds.command || ''}`
+  const tw = ds.timeWindow
+    ? `${ds.timeWindow.type}:${ds.timeWindow.startTime ?? ''}:${ds.timeWindow.endTime ?? ''}`
+    : ''
+  return `${ds.type}:${getSourceId(ds) || ''}:${ds.metricId || ds.property || ds.infoProperty || ''}:${ds.command || ''}:${ds.aggregateExt ?? ''}:${tw}:${ds.limit ?? ''}:${ds.timeRange ?? ''}`
 }
 
 export interface ComponentPreviewProps {

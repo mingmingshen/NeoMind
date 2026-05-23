@@ -228,6 +228,11 @@ impl TimeSeriesStorage {
     }
 
     /// Query data points with optional limit pushed down to storage.
+    ///
+    /// When `limit` is `Some(n)`, uses a reverse (DESC) scan so the limit
+    /// caps the **newest** N points instead of the oldest N (which is what
+    /// the forward ASC scan would return).  The result is always returned
+    /// in ascending timestamp order (oldest-first) for caller compatibility.
     pub async fn query_limited(
         &self,
         source_id: &str,
@@ -236,56 +241,58 @@ impl TimeSeriesStorage {
         end_timestamp: i64,
         limit: Option<usize>,
     ) -> Result<Vec<DataPoint>, DeviceError> {
-        // Debug log for troubleshooting, not needed in production
         tracing::debug!(
             "TimeSeriesStorage::query: source_id={}, metric={}, start={}, end={}, limit={:?}",
-            source_id,
-            metric,
-            start_timestamp,
-            end_timestamp,
-            limit,
+            source_id, metric, start_timestamp, end_timestamp, limit,
         );
 
-        let result = self.store()
-            .query_range(source_id, metric, start_timestamp, end_timestamp, limit)
-            .await
-            .map_err(|e| {
-                tracing::error!("query_range failed for {}/{}: {}", source_id, metric, e);
-                DeviceError::Io(std::io::Error::other(e.to_string()))
-            })?;
+        let result = if limit.is_some() {
+            // Reverse scan → newest N points, then reverse to ASC for callers.
+            let rev = self.store()
+                .query_range_rev(source_id, metric, start_timestamp, end_timestamp, limit)
+                .await
+                .map_err(|e| {
+                    tracing::error!("query_range_rev failed for {}/{}: {}", source_id, metric, e);
+                    DeviceError::Io(std::io::Error::other(e.to_string()))
+                })?;
+            let mut pts: Vec<DataPoint> = rev.points.into_iter()
+                .filter_map(DataPoint::from_storage)
+                .collect();
+            pts.reverse(); // DESC → ASC
+            pts
+        } else {
+            // No limit → standard ASC scan (unchanged behaviour).
+            let fwd = self.store()
+                .query_range(source_id, metric, start_timestamp, end_timestamp, None)
+                .await
+                .map_err(|e| {
+                    tracing::error!("query_range failed for {}/{}: {}", source_id, metric, e);
+                    DeviceError::Io(std::io::Error::other(e.to_string()))
+                })?;
+            fwd.points.into_iter().filter_map(DataPoint::from_storage).collect()
+        };
 
-        // Only log if no points found (might indicate missing data)
-        if result.points.is_empty() {
+        if result.is_empty() {
             tracing::debug!(
                 "No points found for {}/{} (timestamp range {} to {})",
-                source_id,
-                metric,
-                start_timestamp,
-                end_timestamp
+                source_id, metric, start_timestamp, end_timestamp
             );
         }
 
-        let filtered: Vec<DataPoint> = result
-            .points
-            .into_iter()
-            .filter_map(DataPoint::from_storage)
-            .collect();
-
         tracing::debug!(
             "query result: {} points for {}/{}",
-            filtered.len(),
-            source_id,
-            metric
+            result.len(), source_id, metric
         );
 
-        Ok(filtered)
+        Ok(result)
     }
 
     /// Query data points for a time range with an optional limit.
     ///
-    /// When `limit` is `Some(n)`, at most `n` data points are collected and the
-    /// returned tuple includes the total count of matching points.
-    /// When `limit` is `None`, all points are returned (backward compatible).
+    /// When `limit` is `Some(n)`, uses a reverse (DESC) scan so the limit
+    /// caps the **newest** N points.  The result is always returned in
+    /// ascending timestamp order for caller compatibility.
+    /// The returned tuple includes the total count of matching points.
     pub async fn query_with_limit(
         &self,
         source_id: &str,
@@ -296,34 +303,39 @@ impl TimeSeriesStorage {
     ) -> Result<(Vec<DataPoint>, Option<usize>), DeviceError> {
         tracing::debug!(
             "TimeSeriesStorage::query_with_limit: source_id={}, metric={}, start={}, end={}, limit={:?}",
-            source_id,
-            metric,
-            start_timestamp,
-            end_timestamp,
-            limit
+            source_id, metric, start_timestamp, end_timestamp, limit
         );
 
-        let result = self.store()
-            .query_range(source_id, metric, start_timestamp, end_timestamp, limit)
-            .await
-            .map_err(|e| {
-                tracing::error!("query_range failed for {}/{}: {}", source_id, metric, e);
-                DeviceError::Io(std::io::Error::other(e.to_string()))
-            })?;
-
-        let total_count = result.total_count;
-        let filtered: Vec<DataPoint> = result
-            .points
-            .into_iter()
-            .filter_map(DataPoint::from_storage)
-            .collect();
+        let (filtered, total_count) = if limit.is_some() {
+            let rev = self.store()
+                .query_range_rev(source_id, metric, start_timestamp, end_timestamp, limit)
+                .await
+                .map_err(|e| {
+                    tracing::error!("query_range_rev failed for {}/{}: {}", source_id, metric, e);
+                    DeviceError::Io(std::io::Error::other(e.to_string()))
+                })?;
+            let total = rev.total_count;
+            let mut pts: Vec<DataPoint> = rev.points.into_iter()
+                .filter_map(DataPoint::from_storage)
+                .collect();
+            pts.reverse(); // DESC → ASC
+            (pts, total)
+        } else {
+            let fwd = self.store()
+                .query_range(source_id, metric, start_timestamp, end_timestamp, None)
+                .await
+                .map_err(|e| {
+                    tracing::error!("query_range failed for {}/{}: {}", source_id, metric, e);
+                    DeviceError::Io(std::io::Error::other(e.to_string()))
+                })?;
+            let total = fwd.total_count;
+            let pts = fwd.points.into_iter().filter_map(DataPoint::from_storage).collect();
+            (pts, total)
+        };
 
         tracing::debug!(
             "query_with_limit result: {} points for {}/{} (total_count={:?})",
-            filtered.len(),
-            source_id,
-            metric,
-            total_count
+            filtered.len(), source_id, metric, total_count
         );
 
         Ok((filtered, total_count))

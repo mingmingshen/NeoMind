@@ -77,8 +77,7 @@ export function useDataSource<T = unknown>(
     setData(d as T)
   }, [])
 
-  const dataSourceKey = useMemo(() => createStableKey(dataSource), [dataSource])
-  const dataSources = useMemo(() => dataSource ? normalizeDataSource(dataSource) : [], [dataSourceKey])
+  const dataSources = useMemo(() => dataSource ? normalizeDataSource(dataSource) : [], [dataSource])
 
   const relevantDeviceIds = useMemo(() => {
     return new Set(
@@ -107,9 +106,10 @@ export function useDataSource<T = unknown>(
   // ============================================================================
   // Keep previous data visible while new fetch is in progress to avoid
   // chart flicker. Only reset error and loading states.
-  const prevDataSourceKeyRef = useRef(dataSourceKey)
-  if (prevDataSourceKeyRef.current !== dataSourceKey) {
-    prevDataSourceKeyRef.current = dataSourceKey
+  const currentKey = useMemo(() => createStableKey(dataSource), [dataSource])
+  const prevDataSourceKeyRef = useRef(currentKey)
+  if (prevDataSourceKeyRef.current !== currentKey) {
+    prevDataSourceKeyRef.current = currentKey
     setLoading(true)
     setError(null)
   }
@@ -125,6 +125,7 @@ export function useDataSource<T = unknown>(
     dataSources.filter((ds) => ds.type === 'telemetry' || ds.type === 'transform' || ds.type === 'ai-metric'),
     [dataSources]
   )
+
   const systemSources = useMemo(() => dataSources.filter((ds) => ds.type === 'system'), [dataSources])
   const extensionSources = useMemo(() => dataSources.filter((ds) => ds.type === 'extension'), [dataSources])
 
@@ -144,8 +145,10 @@ export function useDataSource<T = unknown>(
         const actualTimeRange = ds.timeRange ?? (isImg ? 48 : 1)
         const actualLimit = ds.limit ?? (isImg ? 200 : 50)
         const actualAggregate = ds.aggregateExt ?? 'raw'
-        const tw = ds.timeWindow?.type ?? ''
-        return createStableKey({ deviceId: getSourceId(ds), metricId: ds.metricId, timeRange: actualTimeRange, limit: actualLimit, aggregate: actualAggregate, timeWindow: tw })
+        const tw = ds.timeWindow
+          ? `${ds.timeWindow.type}:${ds.timeWindow.startTime ?? ''}:${ds.timeWindow.endTime ?? ''}`
+          : ''
+        return `${getSourceId(ds)}|${ds.metricId}|${actualTimeRange}|${actualLimit}|${actualAggregate}|${tw}`
       })
       .join('|')
   }, [telemetrySources])
@@ -156,7 +159,10 @@ export function useDataSource<T = unknown>(
 
   const extensionKey = useMemo(() => {
     return extensionSources
-      .map((ds) => createStableKey({ extensionId: ds.extensionId, extensionMetric: ds.extensionMetric }))
+      .map((ds) => {
+        const tw = ds.timeWindow ? `${ds.timeWindow.type}:${ds.timeWindow.startTime ?? ''}:${ds.timeWindow.endTime ?? ''}` : ''
+        return createStableKey({ extensionId: ds.extensionId, extensionMetric: ds.extensionMetric, timeRange: ds.timeRange, limit: ds.limit, timeWindow: tw })
+      })
       .join('|')
   }, [extensionSources])
 
@@ -206,7 +212,7 @@ export function useDataSource<T = unknown>(
   // ============================================================================
 
   const { readDataFromStore } = useStoreSource<T>(
-    dataSources, dataSourceKey, enabled,
+    dataSources, currentKey, enabled,
     relevantDeviceIds, deviceInfoIds, hasTelemetrySource, needsWebSocket,
     {
       data, setData, setDataRaw, setLoading, setError, setLastUpdate,
@@ -236,7 +242,7 @@ export function useDataSource<T = unknown>(
   // I+K. Extension fetch + WebSocket (delegated to useExtensionSource)
   // ============================================================================
 
-  useExtensionSource(extensionSources, extensionKey, enabled, dataSourceKey, relevantExtensionIds, {
+  useExtensionSource(extensionSources, extensionKey, enabled, currentKey, relevantExtensionIds, {
     setData: (updater) => setData((prev) => typeof updater === 'function' ? (updater as (p: unknown) => unknown)(prev) as T : updater as T),
     setDataRaw, setLoading, setError, setLastUpdate, dataSourcesRef, optionsRef,
   })

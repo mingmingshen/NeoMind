@@ -11,7 +11,7 @@
 //! a separate process. This optimization is useful for Tauri/Web environments where
 //! process spawning overhead is significant.
 //!
-//! Supported domains: device, dashboard, rule, extension, widget, transform, agent, message, system.
+//! Supported domains: device, dashboard, rule, extension, widget, transform, agent, message, system, connector.
 //! All domains route to their respective cli-ops handler functions.
 //! Non-neomind commands fall through to process spawning.
 
@@ -134,7 +134,8 @@ impl ShellTool {
             "agent" => Self::exec_agent(&client, &args).await,
             "message" => Self::exec_message(&client, &args).await,
             "system" => Self::exec_system(&client, &args).await,
-            "broker" => Self::exec_broker(&client, &args).await,
+            "connector" | "broker" => Self::exec_connector(&client, &args).await,
+            "llm" => Self::exec_llm(&client, &args).await,
             "guide" => Self::exec_guide(&client, &args).await,
             _ => return None, // Unknown domain, fall through to process spawning
         };
@@ -243,12 +244,13 @@ impl ShellTool {
                         neomind_cli_ops::device::get_device_type(client, type_id).await
                     }
                     "create" => {
+                        let id = Self::get_flag_value(args, "--id").map(|s| s.to_string());
                         let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
                         let metrics_str = Self::get_flag_value(args, "--metrics").unwrap_or("[]");
                         let metrics = serde_json::from_str(metrics_str).unwrap_or(serde_json::json!([]));
                         let commands = Self::get_flag_value(args, "--commands")
                             .map(|s| serde_json::from_str(s).unwrap_or(serde_json::json!(null)));
-                        neomind_cli_ops::device::create_device_type(client, &name, metrics, commands).await
+                        neomind_cli_ops::device::create_device_type(client, id.as_deref(), &name, metrics, commands).await
                     }
                     _ => anyhow::bail!("Unknown device types subcommand: {}", sub),
                 }
@@ -497,14 +499,29 @@ impl ShellTool {
                 let description = Self::get_flag_value(args, "--description").map(|s| s.to_string());
                 let schedule_type = Self::get_flag_value(args, "--schedule-type").map(|s| s.to_string());
                 let schedule_config = Self::get_flag_value(args, "--schedule-config").map(|s| s.to_string());
+                let event_filter = Self::get_flag_value(args, "--event-filter").map(|s| s.to_string());
+                let timezone = Self::get_flag_value(args, "--timezone").map(|s| s.to_string());
                 let llm_backend = Self::get_flag_value(args, "--model")
                     .or_else(|| Self::get_flag_value(args, "--llm-backend"))
                     .map(|s| s.to_string());
                 let system_prompt = Self::get_flag_value(args, "--system-prompt").map(|s| s.to_string());
+                let execution_mode = Self::get_flag_value(args, "--execution-mode").map(|s| s.to_string());
+                let device_ids = Self::get_flag_value(args, "--device-ids").map(|s| s.to_string());
+                let resources = Self::get_flag_value(args, "--resources").map(|s| s.to_string());
+                let metrics = Self::get_flag_value(args, "--metrics").map(|s| s.to_string());
+                let commands = Self::get_flag_value(args, "--commands").map(|s| s.to_string());
+                let enable_tool_chaining = Self::get_flag_value(args, "--enable-tool-chaining").and_then(|s| s.parse::<bool>().ok());
+                let max_chain_depth = Self::get_flag_value(args, "--max-chain-depth").and_then(|s| s.parse::<usize>().ok());
+                let priority = Self::get_flag_value(args, "--priority").and_then(|s| s.parse::<u8>().ok());
+                let context_window_size = Self::get_flag_value(args, "--context-window-size").and_then(|s| s.parse::<usize>().ok());
                 neomind_cli_ops::agent_cmd::create_agent(
                     client, &name, &prompt, description.as_deref(),
                     schedule_type.as_deref(), schedule_config.as_deref(),
+                    event_filter.as_deref(), timezone.as_deref(),
                     llm_backend.as_deref(), system_prompt.as_deref(),
+                    execution_mode.as_deref(), device_ids.as_deref(), resources.as_deref(),
+                    metrics.as_deref(), commands.as_deref(),
+                    enable_tool_chaining, max_chain_depth, priority, context_window_size,
                 ).await
             }
             "delete" => {
@@ -531,10 +548,22 @@ impl ShellTool {
                 let system_prompt = Self::get_flag_value(args, "--system-prompt").map(|s| s.to_string());
                 let schedule_type = Self::get_flag_value(args, "--schedule-type").map(|s| s.to_string());
                 let schedule_config = Self::get_flag_value(args, "--schedule-config").map(|s| s.to_string());
+                let execution_mode = Self::get_flag_value(args, "--execution-mode").map(|s| s.to_string());
+                let device_ids = Self::get_flag_value(args, "--device-ids").map(|s| s.to_string());
+                let resources = Self::get_flag_value(args, "--resources").map(|s| s.to_string());
+                let metrics = Self::get_flag_value(args, "--metrics").map(|s| s.to_string());
+                let commands = Self::get_flag_value(args, "--commands").map(|s| s.to_string());
+                let enable_tool_chaining = Self::get_flag_value(args, "--enable-tool-chaining").and_then(|s| s.parse::<bool>().ok());
+                let max_chain_depth = Self::get_flag_value(args, "--max-chain-depth").and_then(|s| s.parse::<usize>().ok());
+                let priority = Self::get_flag_value(args, "--priority").and_then(|s| s.parse::<u8>().ok());
+                let context_window_size = Self::get_flag_value(args, "--context-window-size").and_then(|s| s.parse::<usize>().ok());
                 neomind_cli_ops::agent_cmd::update_agent(
                     client, &id, name.as_deref(), description.as_deref(),
                     llm_backend.as_deref(), system_prompt.as_deref(), prompt.as_deref(),
                     schedule_type.as_deref(), schedule_config.as_deref(),
+                    execution_mode.as_deref(), device_ids.as_deref(), resources.as_deref(),
+                    metrics.as_deref(), commands.as_deref(),
+                    enable_tool_chaining, max_chain_depth, priority, context_window_size,
                 ).await
             }
             "invoke" => {
@@ -638,16 +667,19 @@ impl ShellTool {
         }
     }
 
-    /// Execute `neomind broker <action>` commands internally.
-    async fn exec_broker(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+    /// Execute `neomind connector <action>` commands internally.
+    async fn exec_connector(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
         let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
         match action {
-            "list" => neomind_cli_ops::broker::list_brokers(client).await,
+            "list" => neomind_cli_ops::connector::list_connectors(client).await,
             "get" => {
                 let id = Self::resolve_id(args);
-                neomind_cli_ops::broker::get_broker(client, id).await
+                neomind_cli_ops::connector::get_connector(client, id).await
             }
             "create" => {
+                let connector_type = Self::get_flag_value(args, "--type")
+                    .or_else(|| Self::get_flag_value(args, "--connector-type"))
+                    .map(|s| s.to_string());
                 let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
                 let host = Self::get_flag_value(args, "--host").unwrap_or("").to_string();
                 let port = Self::get_flag_value(args, "--port")
@@ -657,8 +689,8 @@ impl ShellTool {
                 let username = Self::get_flag_value(args, "--username").map(|s| s.to_string());
                 let password = Self::get_flag_value(args, "--password").map(|s| s.to_string());
                 let topics = Self::get_flag_value(args, "--topics").map(|s| s.to_string());
-                neomind_cli_ops::broker::create_broker(
-                    client, &name, &host, port, tls,
+                neomind_cli_ops::connector::create_connector(
+                    client, &name, connector_type.as_deref(), &host, port, tls,
                     username.as_deref(), password.as_deref(), topics.as_deref(),
                 ).await
             }
@@ -672,32 +704,45 @@ impl ShellTool {
                 let password = Self::get_flag_value(args, "--password").map(|s| s.to_string());
                 let topics = Self::get_flag_value(args, "--topics").map(|s| s.to_string());
                 let enabled = if Self::get_flag_value(args, "--disable").is_some() { Some(false) } else { None };
-                neomind_cli_ops::broker::update_broker(
+                neomind_cli_ops::connector::update_connector(
                     client, id, name.as_deref(), host.as_deref(), port, tls,
                     username.as_deref(), password.as_deref(), topics.as_deref(), enabled,
                 ).await
             }
             "delete" => {
                 let id = Self::resolve_id(args);
-                neomind_cli_ops::broker::delete_broker(client, id).await
+                neomind_cli_ops::connector::delete_connector(client, id).await
             }
             "test" => {
                 let id = Self::resolve_id(args);
-                neomind_cli_ops::broker::test_broker(client, id).await
+                neomind_cli_ops::connector::test_connector(client, id).await
             }
             "subscriptions" => {
-                neomind_cli_ops::broker::list_subscriptions(client).await
+                neomind_cli_ops::connector::list_subscriptions(client).await
             }
             "subscribe" => {
                 let topic = Self::get_flag_value(args, "--topic").unwrap_or("").to_string();
                 let qos = Self::get_flag_value(args, "--qos").and_then(|s| s.parse::<u8>().ok());
-                neomind_cli_ops::broker::subscribe_topic(client, &topic, qos).await
+                neomind_cli_ops::connector::subscribe_topic(client, &topic, qos).await
             }
             "unsubscribe" => {
                 let topic = Self::get_flag_value(args, "--topic").unwrap_or("").to_string();
-                neomind_cli_ops::broker::unsubscribe_topic(client, &topic).await
+                neomind_cli_ops::connector::unsubscribe_topic(client, &topic).await
             }
-            _ => anyhow::bail!("Unknown broker action: {}", action),
+            _ => anyhow::bail!("Unknown connector action: {}", action),
+        }
+    }
+
+    async fn exec_llm(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        match action {
+            "list" => neomind_cli_ops::llm::list_backends(client).await,
+            "get" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::llm::get_backend(client, id).await
+            }
+            "models" => neomind_cli_ops::llm::list_ollama_models(client).await,
+            _ => anyhow::bail!("Unknown llm action: {}. Available: list, get, models", action),
         }
     }
 
@@ -1079,7 +1124,9 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 | extension | list, get, status, install, uninstall, logs, market-list | `get <ID>` returns commands, metrics, config details |
 | message | list, send, read, channel-list/create/update/delete | Send requires `--title` + `--message` |
 | system | info | MQTT broker, webhook URL, network info |
-| broker | list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe | External MQTT broker management |
+| connector | list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe | Data connectors (MQTT, webhook, etc.) |
+| broker | *(alias for connector)* | Deprecated, use `connector` instead |
+| llm | list, get, models | LLM backend management; `models` lists Ollama models |
 
 > **Discover command details**: run `neomind <domain> <action> --help` to see all flags, examples, and usage notes.
 

@@ -13,6 +13,7 @@ pub fn get_help(domain: &str) -> Option<&'static str> {
         "widget" => Some(include_str!("../../neomind-agent/src/skills/builtins/component-development.md")),
         "onboarding" => Some(include_str!("../../neomind-agent/src/skills/builtins/device-onboarding.md")),
         "system" => Some(include_str!("../../neomind-agent/src/skills/builtins/system-info.md")),
+        "connector" => Some(include_str!("../../neomind-agent/src/skills/builtins/connector-management.md")),
         _ => None,
     }
 }
@@ -36,5 +37,6 @@ pub fn list_domains() -> Vec<DomainInfo> {
         DomainInfo { name: "widget", description: "Widget/component development (create, install, marketplace)" },
         DomainInfo { name: "onboarding", description: "Device onboarding guide (MQTT, webhook, connection methods)" },
         DomainInfo { name: "system", description: "System info & infrastructure (MQTT status, network, settings)" },
+        DomainInfo { name: "connector", description: "Data connectors (MQTT brokers, webhook, HTTP polling)" },
     ]
 }

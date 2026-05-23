@@ -221,6 +221,9 @@ export function DataTransformConfig({
   // Initialize aggregate to correct default for card/progress when not explicitly set
   // Also backfill timeWindow from legacy timeRange when timeWindow is missing
   useEffect(() => {
+    // Skip if source already has all resolved fields
+    if (firstSource?.timeWindow && firstSource?.aggregateExt) return
+
     const updates: Partial<DataSource> = {}
 
     const shouldDefaultToLatest = (chartType === 'card' || chartType === 'progress') &&
@@ -254,7 +257,7 @@ export function DataTransformConfig({
     if (Object.keys(updates).length > 0) {
       onChange(updates)
     }
-  }, [chartType, firstSource, onChange])
+  }, [chartType, firstSource?.aggregateExt, firstSource?.timeWindow?.type, firstSource?.timeRange, onChange])
 
   // Update handlers
   const handleAggregateChange = (value: string) => {

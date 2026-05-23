@@ -16,6 +16,7 @@ import { useExtensionLifecycle } from '@/hooks/useExtensionLifecycle'
 import { useCommunityComponentLifecycle } from '@/hooks/useCommunityComponentLifecycle'
 import { useDashboardPrefetch } from '@/hooks/useDashboardPrefetch'
 import { logError } from '@/lib/errors'
+import { clearTelemetryCache } from '@/hooks/useDataSource/fetch'
 import { fetchCache } from '@/lib/utils/async'
 import { cn } from '@/lib/utils'
 import { chartColorsHex } from '@/design-system/tokens/color'
@@ -2408,19 +2409,26 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         updateData.dataSource = finalDataSource
       }
 
+      // 1. Save clean data (without _saveTs) to the store for persistence
       updateComponent(selectedComponent.id, updateData, false)
 
+      // 2. Persist to storage — clean dataSource is saved
+      await persistDashboard()
 
+      // 3. Force telemetry cache refresh so dashboard components re-fetch with new settings
+      clearTelemetryCache()
 
-      // Verify after update
-      setTimeout(() => {
-        const verifyDashboard = useStore.getState().currentDashboard
-        const verifyComponent = verifyDashboard?.components.find(c => c.id === selectedComponent.id)
-        // Component updated successfully
-      }, 50)
+      // 4. Stamp dataSource with a unique timestamp to force re-render.
+      //    This is done AFTER persist so _saveTs is not stored to backend.
+      //    The stamp triggers: componentsStableKey change → gridComponents rebuild → useDataSource re-fetch.
+      if (finalDataSource !== undefined) {
+        const saveTs = Date.now()
+        const stampedDataSource = Array.isArray(finalDataSource)
+          ? finalDataSource.map((ds: any) => ({ ...ds, _saveTs: saveTs }))
+          : { ...(finalDataSource as any), _saveTs: saveTs }
+        updateComponent(selectedComponent.id, { dataSource: stampedDataSource }, false)
+      }
     }
-    // Persist all changes to localStorage
-    await persistDashboard()
     setConfigOpen(false)
   }
 

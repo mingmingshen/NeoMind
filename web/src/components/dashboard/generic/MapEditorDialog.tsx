@@ -24,7 +24,6 @@ import {
 } from 'lucide-react'
 import { MapDisplay, type MapMarker } from './MapDisplay'
 import type { DataSource } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
 import { useStore } from '@/store'
 import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 
@@ -163,7 +162,7 @@ export function MapEditorDialog({
     const markers = bindings.map((binding): MapMarker => {
       const itemConfig = typeConfig[binding.icon || binding.type]
       const ds = binding.dataSource
-      const sourceId = getSourceId(ds)
+      const sourceId = ds.sourceId || (ds as any).deviceId || (ds.metricId ? ds.metricId.split(':')[0] : undefined)
       const lat = binding.position === 'auto' || !binding.position
         ? center.lat
         : binding.position.lat

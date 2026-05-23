@@ -180,7 +180,10 @@ export function ComponentConfigDialog({
   const coreIdentifier = useMemo(() => {
     if (!previewDataSource) return 'preview-no-ds'
     const sources = normalizeDataSource(previewDataSource)
-    return sources.map(s => `${s.type}:${getSourceId(s) || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}`).join('|')
+    return sources.map(s => {
+      const tw = s.timeWindow ? `${s.timeWindow.type}:${s.timeWindow.startTime ?? ''}:${s.timeWindow.endTime ?? ''}` : ''
+      return `${s.type}:${getSourceId(s) || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}:${s.aggregateExt ?? ''}:${tw}:${s.limit ?? ''}`
+    }).join('|')
   }, [previewDataSource])
 
   useEffect(() => {

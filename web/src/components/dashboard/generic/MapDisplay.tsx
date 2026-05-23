@@ -30,7 +30,6 @@ import {
   Monitor,
 } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
 import { EmptyState } from '../shared'
 import type { MapBinding } from './MapEditorDialog'
 import { useStore } from '@/store'
@@ -802,7 +801,8 @@ export function MapDisplay({
 
   // Helper function to get device metric value with fuzzy matching
   const getDeviceMetricValue = useCallback((deviceId: string, metricId: string): string | number | undefined => {
-    const device = devices.find(d => d.id === deviceId)
+    if (!deviceId) return undefined
+    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
     if (!device?.current_values) return undefined
     const value = findMetricValue(device.current_values, metricId)
     if (value !== undefined && value !== null) {
@@ -813,7 +813,8 @@ export function MapDisplay({
 
   // Helper function to get device status
   const getDeviceStatus = useCallback((deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
-    const device = devices.find(d => d.id === deviceId)
+    if (!deviceId) return undefined
+    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
     if (!device) return undefined
     return device.online ? 'online' : 'offline'
   }, [devices])
@@ -825,7 +826,7 @@ export function MapDisplay({
     // Get devices from store for name lookup
     const storeDevices = useStore.getState().devices
     const getDeviceName = (deviceId: string) => {
-      const device = storeDevices.find(d => d.id === deviceId)
+      const device = storeDevices.find(d => d.id === deviceId || d.device_id === deviceId)
       return device?.name || deviceId
     }
 
@@ -835,7 +836,8 @@ export function MapDisplay({
         : binding.position
 
       const ds = binding.dataSource
-      const deviceId = getSourceId(ds)
+      // Resolve device ID from dataSource: try sourceId, then deviceId field, then metricId prefix
+      const deviceId = ds.sourceId || (ds as any).deviceId || (ds.metricId ? ds.metricId.split(':')[0] : undefined)
 
       const marker: MapMarker = {
         id: binding.id,
@@ -862,7 +864,8 @@ export function MapDisplay({
         marker.deviceName = getDeviceName(deviceId || '')
         marker.commandName = ds?.command || ''
       } else if (binding.type === 'device') {
-        marker.status = getDeviceStatus(deviceId || '') || 'online'
+        const status = getDeviceStatus(deviceId || '')
+        marker.status = status || (deviceId ? 'offline' : undefined)
         marker.markerType = 'device'
         marker.deviceName = getDeviceName(deviceId || '')
       } else if (binding.type === 'marker') {
