@@ -3,9 +3,10 @@
  * Consolidates telemetryFetch.ts, systemFetch.ts, cache.ts, and batchFetch.ts.
  */
 
-import type { TelemetryAggregate } from '@/types/dashboard'
+import type { TelemetryAggregate, TimeWindowConfig } from '@/types/dashboard'
 import { useStore } from '@/store'
 import { logError } from '@/lib/errors'
+import { getTimeRange } from '@/lib/telemetryTransform'
 
 // ============================================================================
 // Cache (replaces TypedCache class instances)
@@ -87,9 +88,13 @@ export async function fetchHistoricalTelemetry(
   limit: number = 50,
   aggregate: TelemetryAggregate = 'raw',
   includeRawPoints: boolean = false,
-  bypassCache: boolean = false
+  bypassCache: boolean = false,
+  timeWindow?: TimeWindowConfig
 ): Promise<{ data: number[]; raw?: unknown[]; success: boolean }> {
-  const cacheKey = `${deviceId}|${metricId}|${timeRange}|${limit}|${aggregate}`
+  // Include a time bucket (minute-aligned) in the cache key so that stale data
+  // from a previous time period is never served when fresh data is available.
+  const timeBucket = Math.floor(Date.now() / 30000) // changes every 30s
+  const cacheKey = `${deviceId}|${metricId}|${timeRange}|${limit}|${aggregate}|${timeWindow?.type ?? 'rel'}|${timeBucket}`
   const cached = telemetryCache.get(cacheKey)
 
   if (!bypassCache && cached) return { data: cached.data, raw: cached.raw, success: true }
@@ -99,11 +104,25 @@ export async function fetchHistoricalTelemetry(
     try {
       const api = (await import('@/lib/api')).api
       const now = Date.now()
-      const effectiveTimeRange = timeRange > 0 ? timeRange : 5 / 60
-      const start = now - effectiveTimeRange * 60 * 60 * 1000
-      const fetchLimit = aggregate === 'raw' ? limit : Math.max(limit, 100)
-      const startSec = Math.floor(start / 1000)
-      const endSec = Math.floor(now / 1000)
+
+      // Calculate precise start/end using getTimeRange for absolute windows (today, yesterday, this_week)
+      // Fall back to relative timeRange for relative windows (last_1hour, etc.)
+      let startSec: number
+      let endSec: number
+      if (timeWindow && ['today', 'yesterday', 'this_week', 'custom', 'now'].includes(timeWindow.type)) {
+        const range = getTimeRange(timeWindow)
+        startSec = range.start
+        endSec = range.end
+      } else {
+        const effectiveTimeRange = timeRange > 0 ? timeRange : 5 / 60
+        startSec = Math.floor((now - effectiveTimeRange * 60 * 60 * 1000) / 1000)
+        endSec = Math.floor(now / 1000)
+      }
+
+      // Always fetch significantly more than the display limit so we can select
+      // the newest N points client-side. Device API returns newest-first;
+      // unified (transform/ai) source may differ, so we sort before truncation.
+      const fetchLimit = Math.max(limit * 5, 200)
 
       // Use unified telemetry endpoint for transform/ai sources, device endpoint otherwise
       const isUnifiedSource = deviceId.startsWith('transform:') || deviceId.startsWith('ai:')
@@ -175,21 +194,40 @@ export async function fetchHistoricalTelemetry(
             rawPoints = [{ timestamp: extractTimestamp(pt), value: rv }]
           }
         } else if (aggregate === 'avg') {
-          values = [allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0]
+          const aggVal = allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0
+          values = [aggVal]
+          if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else if (aggregate === 'min') {
-          values = [Math.min(...allValues)]
+          const aggVal = Math.min(...allValues)
+          values = [aggVal]
+          if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else if (aggregate === 'max') {
-          values = [Math.max(...allValues)]
+          const aggVal = Math.max(...allValues)
+          values = [aggVal]
+          if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else if (aggregate === 'sum') {
-          values = [allValues.reduce((a, b) => a + b, 0)]
+          const aggVal = allValues.reduce((a, b) => a + b, 0)
+          values = [aggVal]
+          if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else if (aggregate === 'delta') {
-          values = [(allValues[0] ?? 0) - (allValues[allValues.length - 1] ?? 0)]
+          const aggVal = (allValues[0] ?? 0) - (allValues[allValues.length - 1] ?? 0)
+          values = [aggVal]
+          if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else if (aggregate === 'count') {
-          values = [allValues.length]
+          const aggVal = allValues.length
+          values = [aggVal]
+          if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else {
-          // raw
-          values = allValues
-          rawPoints = includeRawPoints ? metricData.map((point) => {
+          // raw — Device API returns newest-first, so slice(0, limit) keeps the newest points.
+          // Sort by timestamp descending first for robustness across all API types.
+          const sorted = [...metricData].sort((a, b) => {
+            const tsA = extractTimestamp(a)
+            const tsB = extractTimestamp(b)
+            return tsB - tsA // descending (newest first)
+          })
+          const rawData = sorted.length > limit ? sorted.slice(0, limit) : sorted
+          values = rawData.map(extractValue).filter((v: number) => typeof v === 'number' && !isNaN(v))
+          rawPoints = includeRawPoints ? rawData.map((point) => {
             if (typeof point === 'number') return { timestamp: Math.floor(Date.now() / 1000), value: point }
             if (typeof point === 'object' && point !== null) {
               const p = point as Record<string, unknown>
@@ -201,7 +239,7 @@ export async function fetchHistoricalTelemetry(
           }) : undefined
         }
 
-        telemetryCache.set(cacheKey, { data: values, raw: rawPoints })
+        telemetryCache.set(cacheKey, { data: values, raw: rawPoints }, { cachedAt: Date.now() })
         return { data: values, raw: rawPoints, success: true }
       }
 
@@ -318,7 +356,8 @@ async function flushBatch() {
         resolvers.delete(id)
       }
     }
-  } catch {
+  } catch (error) {
+    logError(error, { operation: 'Batch fetch devices, falling back to individual' })
     // Fallback to individual fetches
     try {
       const api = (await import('@/lib/api')).api
@@ -351,7 +390,8 @@ async function flushBatch() {
         resolvers.get(id)?.forEach(r => r(result))
         resolvers.delete(id)
       }
-    } catch {
+    } catch (innerError) {
+      logError(innerError, { operation: 'Individual device fetch fallback failed' })
       for (const id of ids) {
         activeFetches.delete(id)
         resolvers.get(id)?.forEach(r => r({ success: false, metricsCount: 0 }))

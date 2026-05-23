@@ -204,7 +204,7 @@ import { LineChart } from '@/components/dashboard/generic/LineChart'
 import { AreaChart } from '@/components/dashboard/generic/LineChart'
 import { BarChart } from '@/components/dashboard/generic/BarChart'
 import { PieChart } from '@/components/dashboard/generic/PieChart'
-import { ToggleSwitch } from '@/components/dashboard/generic/ToggleSwitch'
+import { CommandButton } from '@/components/dashboard/generic/CommandButton'
 import { ImageDisplay } from '@/components/dashboard/generic/ImageDisplay'
 import { ImageHistory } from '@/components/dashboard/generic/ImageHistory'
 import { WebDisplay } from '@/components/dashboard/generic/WebDisplay'
@@ -229,7 +229,7 @@ const builtInComponentMap: Record<string, React.ComponentType<any>> = {
   'area-chart': AreaChart,
   'bar-chart': BarChart,
   'pie-chart': PieChart,
-  'toggle-switch': ToggleSwitch,
+  'toggle-switch': CommandButton,
   'image-display': ImageDisplay,
   'image-history': ImageHistory,
   'web-display': WebDisplay,
@@ -339,13 +339,15 @@ function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataS
 
     // Convert device type to telemetry for Sparkline
     if (ds.type === 'device' && getSourceId(ds) && ds.property) {
+      const agg = ds.aggregateExt ?? 'raw'
       return {
         type: 'telemetry',
         sourceId: getSourceId(ds),
         metricId: ds.property,
         timeRange: ds.timeRange ?? 1,
         limit: ds.limit ?? 50,
-        aggregate: ds.aggregate ?? 'raw',
+        aggregate: (agg === 'raw' || agg === 'avg' || agg === 'min' || agg === 'max' || agg === 'sum') ? agg : 'raw',
+        aggregateExt: agg,
         refresh: ds.refresh ?? 10,
       }
     }
@@ -814,7 +816,7 @@ export function renderDashboardComponent(
     // Controls
     case 'toggle-switch':
       return (
-        <ToggleSwitch
+        <CommandButton
           {...spreadableProps}
           size={config.size || commonProps.size === 'xs' ? 'sm' : commonProps.size}
           dataSource={dataSource}
@@ -1633,8 +1635,12 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     for (const component of currentDashboard.components) {
       const genericComponent = component as GenericComponent
       const dataSource = genericComponent.dataSource
-      if (dataSource && getSourceId(dataSource)) {
-        deviceIds.add(getSourceId(dataSource)!)
+      if (dataSource) {
+        const sources = Array.isArray(dataSource) ? dataSource : [dataSource]
+        for (const ds of sources) {
+          const sid = getSourceId(ds)
+          if (sid) deviceIds.add(sid)
+        }
       }
       if (genericComponent.type === 'map-display') {
         const bindings = (genericComponent.config as any)?.bindings as MapBinding[] || []

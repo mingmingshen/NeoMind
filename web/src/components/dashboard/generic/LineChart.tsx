@@ -11,7 +11,7 @@
  * - Chart view modes: timeseries, snapshot
  */
 
-import { useMemo, useCallback, memo } from 'react'
+import { useMemo, memo, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   LineChart as RechartsLineChart,
@@ -27,21 +27,15 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { DataMapper, type TimeSeriesMappingConfig } from '@/lib/dataMapping'
-import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors, chartColorsHex } from '@/design-system/tokens/color'
-import type { DataSource, DataSourceOrList, TelemetryAggregate, ChartViewMode } from '@/types/dashboard'
-import { normalizeDataSource, getSourceId } from '@/types/dashboard'
-import { ChartContainer, ChartTooltip, EmptyState, ErrorState, useChartDimensions, useStaggeredData, createMemoRenderer } from '../shared'
+import type { DataSource, DataSourceOrList, TelemetryAggregate } from '@/types/dashboard'
+import { ChartContainer, ChartTooltip, EmptyState, ErrorState, useChartDimensions, useStaggeredData, createMemoRenderer, useChartPipeline } from '../shared'
+import { isSeriesDataArray, isNumberArray, isMultiSourceData, alignMultiSource, type SeriesData } from '../shared'
 import {
-  getEffectiveAggregate,
-  getEffectiveTimeWindow,
-  timeWindowToHours,
-  type TimeSeriesData,
+  createChartTimeFormatter,
 } from '@/lib/telemetryTransform'
-import { toTelemetrySource } from '@/lib/chartTelemetry'
-import { getDeviceName as _getDeviceName, getPropertyDisplayName as _getPropertyDisplayName, getSeriesName as _getSeriesName } from '@/lib/chartDisplay'
 
 // Use design system chart colors
 const chartColors = designChartColors
@@ -81,35 +75,19 @@ function transformTelemetryToChartData(
     }
 
     // Use DataMapper to map to time series
-    let timeSeriesPoints = DataMapper.mapToTimeSeries(data, dataMapping)
-
-    // Sort by timestamp ascending (oldest first) for proper time series display
-    // Stable sort preserves original order for equal timestamps
-    if (timeSeriesPoints.length > 1) {
-      const indexed = [...timeSeriesPoints].map((p, i) => ({ p, i }))
-      indexed.sort((a, b) => {
-        const at = a.p.timestamp ?? 0
-        const bt = b.p.timestamp ?? 0
-        const diff = at - bt
-        return diff !== 0 ? diff : a.i - b.i
-      })
-      timeSeriesPoints = indexed.map(({ p }) => p)
-    }
+    // Data is already sorted ascending (oldest-first) by useDataSource pipeline
+    const timeSeriesPoints = DataMapper.mapToTimeSeries(data, dataMapping)
 
     // Extract values and format labels from timestamps
     const values = timeSeriesPoints.map(p => p.value)
-    const labels = timeSeriesPoints.map(p => {
+    const timestamps = timeSeriesPoints.map(p => p.timestamp).filter((t): t is number => t !== undefined)
+    const fmtTime = createChartTimeFormatter(timestamps)
+    const labels = timeSeriesPoints.map((p, idx) => {
       if (p.timestamp) {
-        const date = new Date(p.timestamp > 10000000000 ? p.timestamp : p.timestamp * 1000)
-        if (!isNaN(date.getTime())) {
-          return date.toLocaleTimeString(undefined, {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-          })
-        }
+        const formatted = fmtTime(p.timestamp)
+        if (formatted) return formatted
       }
-      return p.label || `${timeSeriesPoints.indexOf(p) + 1}`
+      return p.label || `${idx + 1}`
     })
 
     return { labels, values }
@@ -132,12 +110,6 @@ function formatTimestamp(timestamp: string | number | undefined): string {
     minute: '2-digit',
     second: '2-digit',
   })
-}
-
-export interface SeriesData {
-  name: string
-  data: number[]
-  color?: string
 }
 
 export interface LineChartProps {
@@ -167,8 +139,6 @@ export interface LineChartProps {
   // === New: Data transformation options ===
   // How to aggregate time-series data
   aggregate?: TelemetryAggregate
-  // Chart view mode - how to interpret data
-  chartViewMode?: ChartViewMode
 
   // Data mapping configuration
   dataMapping?: TimeSeriesMappingConfig
@@ -192,77 +162,37 @@ const LineChartInner = function LineChart({
   limit = 50,
   timeRange = 1,
   aggregate = 'raw',  // Default to raw for line charts (show time series)
-  chartViewMode = 'timeseries',
   dataMapping,
   className,
 }: LineChartProps) {
   const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
 
-  // Normalize data sources once - reuse across all memoized calculations
-  // This prevents repeated normalizeDataSource calls
-  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
-
-  // Get effective aggregate from dataSource or props
-  const effectiveAggregate = useMemo(() => {
-    if (sources.length > 0 && sources[0].aggregateExt) {
-      return sources[0].aggregateExt
-    }
-    return aggregate
-  }, [sources, aggregate])
-
-  // Get effective chart view mode
-  const effectiveViewMode = useMemo(() => {
-    if (sources.length > 0 && sources[0].chartViewMode) {
-      return sources[0].chartViewMode
-    }
-    return chartViewMode
-  }, [sources, chartViewMode])
-
-  // Normalize data sources for historical data
-  // Convert single DataSource or DataSource[] to array of telemetry sources
-  const telemetrySources = useMemo(() => {
-    return sources.map(ds => toTelemetrySource(ds, limit, timeRange)).filter((ds): ds is DataSource => ds !== undefined)
-  }, [sources, limit, timeRange])
-
-  const { data, loading, error } = useDataSource<any>(
-    telemetrySources.length > 0 ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources) : undefined,
-    {
-      fallback: propSeries ?? [],
-      preserveMultiple: true,  // Keep multiple data sources separate
-    }
-  )
-
-  // Prevent loading flash: only show skeleton when loading AND no data exists yet
-  const hasData = data !== null && data !== undefined && (Array.isArray(data) ? data.length > 0 : true)
-  const showLoading = loading && !hasData
-
-  // Get device names for series labels
-  const getDeviceName = useCallback((deviceId?: string): string => _getDeviceName(deviceId, t), [t])
-
-  // Get property name for series labels
-  const getPropertyDisplayName = useCallback((property?: string): string => _getPropertyDisplayName(property, t), [t])
-
-  // Get series display name from data source, handling extension sources
-  const getSeriesName = useCallback((ds: DataSource, idx: number): string => {
-    return _getSeriesName(ds, idx, { getDeviceName, getPropertyDisplayName, t })
-  }, [getDeviceName, getPropertyDisplayName, t])
+  // Shared data pipeline
+  const {
+    sources, data, loading, error,
+    hasData, showLoading, getSeriesName,
+  } = useChartPipeline<any>({
+    dataSource,
+    aggregate,
+    limit,
+    timeRange,
+    fallback: propSeries ?? [],
+    preserveMultiple: true,
+  })
 
   // Transform data to series format
   const normalizedSeries: SeriesData[] = useMemo(() => {
 
     // Multi-source case - data should be array of arrays from useDataSource with preserveMultiple
-    // Use Math.min to handle length mismatches (some sources may return empty)
-    if (sources.length > 1 && Array.isArray(data) && data.length > 0) {
+    if (isMultiSourceData(data, sources.length)) {
       const seriesResult = sources.map((ds, idx) => {
         const sourceData = idx < data.length ? data[idx] : []
-        // Transform telemetry points for this source
         let values: number[] = []
         if (Array.isArray(sourceData)) {
-          if (typeof sourceData[0] === 'number') {
+          if (isNumberArray(sourceData)) {
             values = sourceData as number[]
           } else {
-            // Transform telemetry points - sourceData is raw telemetry points with timestamps
             const { values: v } = transformTelemetryToChartData(sourceData, dataMapping)
             values = v
           }
@@ -285,12 +215,11 @@ const LineChartInner = function LineChart({
     }
 
     // Handle telemetry raw data FIRST (when dataSource is provided)
-    if (dataSource && Array.isArray(data) && data.length > 0) {
-      // Check if it's already SeriesData format
-      const first = data[0]
-      if (typeof first === 'object' && first !== null && 'data' in first && Array.isArray(first.data)) {
-        return data as SeriesData[]
-      }
+    if (dataSource && isSeriesDataArray(data)) {
+      return data
+    }
+
+    if (dataSource && Array.isArray(data) && data.length > 0 && !isSeriesDataArray(data)) {
 
       // Single source - transform telemetry points
       const { labels, values } = transformTelemetryToChartData(data, dataMapping)
@@ -307,7 +236,7 @@ const LineChartInner = function LineChart({
     }
 
     // Handle number array from data source
-    if (dataSource && Array.isArray(data) && data.length > 0 && typeof data[0] === 'number') {
+    if (dataSource && isNumberArray(data)) {
       return [{ name: 'Value', data: data as number[], color: undefined } as SeriesData]
     }
 
@@ -327,50 +256,9 @@ const LineChartInner = function LineChart({
   // Extract timestamp-aligned data for multi-source, or sorted labels for single-source
   const { chartLabels, alignedSeries } = useMemo(() => {
     // --- Multi-source with timestamps: align by timestamp ---
-    if (sources.length > 1 && Array.isArray(data) && data.length > 0) {
-      const sourceTimeValues = sources.map((_, idx) => {
-        const sourceData = idx < data.length ? data[idx] : []
-        if (!Array.isArray(sourceData) || sourceData.length === 0) return []
-        if (typeof sourceData[0] === 'number') return []
-        return DataMapper.mapToTimeSeries(sourceData, dataMapping)
-      })
-
-      const allHaveTimestamps = sourceTimeValues.every(arr => arr.length > 0)
-
-      if (allHaveTimestamps) {
-        // Collect all unique timestamps, sorted ascending
-        const allTimestamps = new Set<number>()
-        for (const points of sourceTimeValues) {
-          for (const p of points) {
-            if (p.timestamp !== undefined) allTimestamps.add(p.timestamp)
-          }
-        }
-        const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
-
-        // Format timestamps as labels using browser locale
-        const labels = sortedTimestamps.map(ts => {
-          const date = new Date(ts > 10000000000 ? ts : ts * 1000)
-          if (!isNaN(date.getTime())) {
-            return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-          }
-          return String(ts)
-        })
-
-        // For each source, build timestamp → value map for O(1) lookup
-        const seriesData = sources.map((ds, idx) => {
-          const tsMap = new Map<number, number>()
-          for (const p of sourceTimeValues[idx]) {
-            if (p.timestamp !== undefined) tsMap.set(p.timestamp, p.value)
-          }
-          return {
-            name: getSeriesName(ds, idx),
-            data: sortedTimestamps.map(ts => tsMap.get(ts) ?? null) as number[],
-            color: undefined,
-          } as SeriesData
-        })
-
-        return { chartLabels: labels, alignedSeries: seriesData }
-      }
+    if (sources.length > 1 && isMultiSourceData(data, sources.length)) {
+      const aligned = alignMultiSource(data, sources, getSeriesName, dataMapping)
+      if (aligned) return { chartLabels: aligned.chartLabels, alignedSeries: aligned.series }
     }
 
     // --- Single source with timestamps ---
@@ -486,8 +374,8 @@ const LineChartRenderer = createMemoRenderer(({ data, series, showGrid, showTool
       })}
     </defs>
     {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
-    <XAxis dataKey="name" axisLine={false} tickLine={false} tickMargin={10} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} interval="preserveStartEnd" />
-    <YAxis axisLine={false} tickLine={false} tickMargin={10} width={32} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} />
+    <XAxis dataKey="name" axisLine={false} tickLine={false} tickMargin={10} tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} interval="preserveStartEnd" />
+    <YAxis axisLine={false} tickLine={false} tickMargin={10} width={32} tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} />
     {showTooltip && <Tooltip content={<ChartTooltip />} />}
     {showLegend && <Legend />}
     {series.map((s, i) => {
@@ -502,7 +390,7 @@ const LineChartRenderer = createMemoRenderer(({ data, series, showGrid, showTool
   </RechartsLineChart>
 ))
 
-const AreaChartRenderer = createMemoRenderer(({ data, series, showGrid, showTooltip, showLegend, color, smooth, width, height }: {
+const AreaChartRenderer = createMemoRenderer(({ data, series, showGrid, showTooltip, showLegend, color, smooth, width, height, uid }: {
   data: any[]
   series: SeriesData[]
   showGrid: boolean
@@ -512,27 +400,28 @@ const AreaChartRenderer = createMemoRenderer(({ data, series, showGrid, showTool
   smooth: boolean
   width: number
   height: number
+  uid: string
 }) => (
   <RechartsAreaChart width={width} height={height} data={data} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
     <defs>
       {series.map((s, i) => {
         const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
         return (
-          <linearGradient key={i} id={`area-gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={seriesColor} stopOpacity={0.35} />
+          <linearGradient key={i} id={`area-grad-${uid}-${i}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={seriesColor} stopOpacity={0.3} />
             <stop offset="95%" stopColor={seriesColor} stopOpacity={0.02} />
           </linearGradient>
         )
       })}
     </defs>
     {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
-    <XAxis dataKey="name" axisLine={false} tickLine={false} tickMargin={10} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} interval="preserveStartEnd" />
-    <YAxis axisLine={false} tickLine={false} tickMargin={10} width={32} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} />
+    <XAxis dataKey="name" axisLine={false} tickLine={false} tickMargin={10} tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} interval="preserveStartEnd" />
+    <YAxis axisLine={false} tickLine={false} tickMargin={10} width={32} tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} />
     {showTooltip && <Tooltip content={<ChartTooltip />} />}
     {showLegend && <Legend />}
     {series.map((s, i) => {
       const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
-      return <Area key={i} type={smooth ? 'monotone' : 'linear'} dataKey={`series${i}`} name={s.name} stroke={seriesColor} strokeWidth={2} fill={`url(#area-gradient-${i})`} isAnimationActive={false} strokeLinejoin="round" strokeLinecap="round" />
+      return <Area key={i} type={smooth ? 'monotone' : 'linear'} dataKey={`series${i}`} name={s.name} stroke={seriesColor} strokeWidth={2} fill={`url(#area-grad-${uid}-${i})`} isAnimationActive={false} strokeLinejoin="round" strokeLinecap="round" connectNulls />
     })}
   </RechartsAreaChart>
 ))
@@ -574,10 +463,11 @@ function AreaChartWithDimensions({ data, series, showGrid, showTooltip, showLege
   const { ref, width, height, turn } = useChartDimensions()
   const staggeredData = useStaggeredData(data, turn)
   const staggeredSeries = useStaggeredData(series, turn)
+  const uid = useId().replace(/:/g, '')
   return (
     <div ref={ref} style={{ width: '100%', height: '100%' }}>
       {width > 0 && height > 0 && (
-        <AreaChartRenderer data={staggeredData} series={staggeredSeries} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} smooth={smooth} width={width} height={height} />
+        <AreaChartRenderer uid={uid} data={staggeredData} series={staggeredSeries} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} smooth={smooth} width={width} height={height} />
       )}
     </div>
   )
@@ -621,8 +511,6 @@ export interface AreaChartProps {
   // === New: Data transformation options ===
   // How to aggregate time-series data
   aggregate?: TelemetryAggregate
-  // Chart view mode - how to interpret data
-  chartViewMode?: ChartViewMode
 
   // Data mapping configuration
   dataMapping?: TimeSeriesMappingConfig
@@ -644,7 +532,6 @@ export const AreaChart = memo(function AreaChart({
   limit = 50,
   timeRange = 1,
   aggregate = 'raw',  // Default to raw for area charts (show time series)
-  chartViewMode = 'timeseries',
   dataMapping,
   className,
 }: AreaChartProps) {
@@ -652,62 +539,32 @@ export const AreaChart = memo(function AreaChart({
   const config = dashboardComponentSize[size]
   const effectiveSeries = propSeries || DEFAULT_AREA_DATA
 
-  // Normalize data sources once - reuse across all memoized calculations
-  // This prevents repeated normalizeDataSource calls
-  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
+  // Shared data pipeline
+  const {
+    sources, data: sourceData, loading, error,
+    hasData, showLoading, getSeriesName,
+  } = useChartPipeline<SeriesData[] | number | number[] | SeriesData[][]>({
+    dataSource,
+    aggregate,
+    limit,
+    timeRange,
+    fallback: effectiveSeries,
+    preserveMultiple: true,
+  })
 
-  // Get effective aggregate from dataSource or props
-  const effectiveAggregate = useMemo(() => {
-    if (sources.length > 0 && sources[0].aggregateExt) {
-      return sources[0].aggregateExt
-    }
-    return aggregate
-  }, [sources, aggregate])
-
-  // Get effective chart view mode
-  const effectiveViewMode = useMemo(() => {
-    if (sources.length > 0 && sources[0].chartViewMode) {
-      return sources[0].chartViewMode
-    }
-    return chartViewMode
-  }, [sources, chartViewMode])
-
-  // Normalize data sources for historical data
-  const telemetrySources = useMemo(() => {
-    return sources.map(ds => toTelemetrySource(ds, limit, timeRange)).filter((ds): ds is DataSource => ds !== undefined)
-  }, [sources, limit, timeRange])
-
-  const shouldFetch = telemetrySources.length > 0
-  const { data: sourceData, loading, error } = useDataSource<SeriesData[] | number | number[]>(
-    shouldFetch ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources) : undefined,
-    shouldFetch ? { fallback: effectiveSeries, preserveMultiple: true } : undefined
-  )
+  const shouldFetch = sources.length > 0
   const rawData = shouldFetch ? sourceData : effectiveSeries
 
-  // Prevent loading flash: only show skeleton when loading AND no data exists yet
-  const hasData = rawData !== null && rawData !== undefined && (Array.isArray(rawData) ? rawData.length > 0 : true)
-  const showLoading = loading && !hasData
-
-  // Get device names for series labels
-  const getDeviceName = useCallback((deviceId?: string): string => _getDeviceName(deviceId, t), [t])
-
-  const getPropertyDisplayName = useCallback((property?: string): string => _getPropertyDisplayName(property, t), [t])
-
-  // Get series display name from data source, handling extension sources
-  const getSeriesName = useCallback((ds: DataSource, idx: number): string => {
-    return _getSeriesName(ds, idx, { getDeviceName, getPropertyDisplayName, t })
-  }, [getDeviceName, getPropertyDisplayName, t])
-
   const normalizedSeries: SeriesData[] = useMemo(() => {
-    // Multi-source case - data should be array of arrays from useDataSource with preserveMultiple
-    if (sources.length > 1 && Array.isArray(rawData) && rawData.length === sources.length) {
+    // Multi-source case
+    if (isMultiSourceData(rawData, sources.length)) {
       return sources.map((ds, idx) => {
         const sourceData = rawData[idx]
         // Transform telemetry points for this source
         let values: number[] = []
         if (Array.isArray(sourceData)) {
           if (typeof sourceData[0] === 'number') {
-            values = sourceData as number[]
+            values = sourceData as unknown as number[]
           } else {
             // Transform telemetry points
             const { values: v } = transformTelemetryToChartData(sourceData, dataMapping)
@@ -753,54 +610,16 @@ export const AreaChart = memo(function AreaChart({
     }
 
     return DEFAULT_AREA_DATA
-  }, [rawData, propSeries, sources, dataMapping, getDeviceName, getPropertyDisplayName])
+  }, [rawData, propSeries, sources, dataMapping, getSeriesName])
 
   const series = normalizedSeries
 
   // Extract timestamp-aligned labels and series data
   const { chartLabels, alignedSeries } = useMemo(() => {
     // --- Multi-source with timestamps: align by timestamp ---
-    if (sources.length > 1 && Array.isArray(rawData) && rawData.length === sources.length) {
-      const sourceTimeValues = sources.map((_, idx) => {
-        const sourceData = rawData[idx]
-        if (!Array.isArray(sourceData) || sourceData.length === 0) return []
-        if (typeof sourceData[0] === 'number') return []
-        return DataMapper.mapToTimeSeries(sourceData, dataMapping)
-      })
-
-      const allHaveTimestamps = sourceTimeValues.every(arr => arr.length > 0)
-
-      if (allHaveTimestamps) {
-        const allTimestamps = new Set<number>()
-        for (const points of sourceTimeValues) {
-          for (const p of points) {
-            if (p.timestamp !== undefined) allTimestamps.add(p.timestamp)
-          }
-        }
-        const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
-
-        const labelArr = sortedTimestamps.map(ts => {
-          const date = new Date(ts > 10000000000 ? ts : ts * 1000)
-          if (!isNaN(date.getTime())) {
-            return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-          }
-          return String(ts)
-        })
-
-        const seriesData = sources.map((ds, idx) => {
-          const tsMap = new Map<number, number>()
-          for (const p of sourceTimeValues[idx]) {
-            if (p.timestamp !== undefined) tsMap.set(p.timestamp, p.value)
-          }
-          return {
-            name: getSeriesName(ds, idx),
-            data: sortedTimestamps.map(ts => tsMap.get(ts) ?? null) as number[],
-            color: undefined,
-          } as SeriesData
-        })
-
-        return { chartLabels: labelArr, alignedSeries: seriesData }
-      }
+    if (isMultiSourceData(rawData, sources.length)) {
+      const aligned = alignMultiSource(rawData, sources, getSeriesName, dataMapping)
+      if (aligned) return { chartLabels: aligned.chartLabels, alignedSeries: aligned.series }
     }
 
     // --- Single source with timestamps ---

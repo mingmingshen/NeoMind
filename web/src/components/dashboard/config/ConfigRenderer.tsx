@@ -61,38 +61,17 @@ const ConfigSectionItem = function ConfigSectionItem({ section }: { section: Con
     case 'value': {
       const props = (section as ValueSection).props
       return (
-        <div className="space-y-3">
-          <Field>
-            <Label>{props.label || t('configRenderer.value')} ({props.min ?? 0} - {props.max ?? 100})</Label>
-            <Input
-              type="number"
-              min={props.min}
-              max={props.max}
-              step={props.step}
-              value={props.value ?? 0}
-              onChange={(e) => props.onChange?.(parseFloat(e.target.value) || 0)}
-            />
-          </Field>
-          {props.unit !== undefined && (
-            <Field>
-              <Label>{t('configRenderer.unit')}</Label>
-              <Input
-                value={props.unit}
-                onChange={() => {}}
-                placeholder={t('configRenderer.unitPlaceholder')}
-              />
-            </Field>
-          )}
-          {props.showValue !== undefined && (
-            <div className="flex items-center justify-between">
-              <Label>{t('configRenderer.showValue')}</Label>
-              <Switch
-                checked={props.showValue}
-                onCheckedChange={() => {}}
-              />
-            </div>
-          )}
-        </div>
+        <Field>
+          <Label>{props.label || t('configRenderer.value')} ({props.min ?? 0} - {props.max ?? 100})</Label>
+          <Input
+            type="number"
+            min={props.min}
+            max={props.max}
+            step={props.step}
+            value={props.value ?? 0}
+            onChange={(e) => props.onChange?.(parseFloat(e.target.value) || 0)}
+          />
+        </Field>
       )
     }
 
@@ -203,7 +182,7 @@ const ConfigSectionItem = function ConfigSectionItem({ section }: { section: Con
       return (
         <div className="space-y-3">
           <Field>
-            <Label>{t('configRenderer.label')}</Label>
+            <Label>{t('configRenderer.prefix')}</Label>
             <Input
               value={props.prefix}
               onChange={(e) => props.onChange?.('prefix', e.target.value)}
@@ -211,7 +190,7 @@ const ConfigSectionItem = function ConfigSectionItem({ section }: { section: Con
             />
           </Field>
           <Field>
-            <Label>{t('configRenderer.label')}</Label>
+            <Label>{t('configRenderer.suffix')}</Label>
             <Input
               value={props.suffix}
               onChange={(e) => props.onChange?.('suffix', e.target.value)}

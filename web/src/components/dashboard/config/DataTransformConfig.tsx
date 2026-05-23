@@ -166,7 +166,23 @@ export function DataTransformConfig({
   }, [firstSource, chartType])
 
   const currentTimeWindow = useMemo(() => {
-    return firstSource?.timeWindow?.type ?? 'last_24hours'
+    // Use the same logic as the data pipeline to ensure UI matches actual behavior
+    if (firstSource?.timeWindow?.type) return firstSource.timeWindow.type
+    // Derive from timeRange using the same mapping as getEffectiveTimeWindow
+    const hours = firstSource?.timeRange ?? 1
+    if (hours === 0) return 'now'
+    const mapping: Array<{ threshold: number; type: TimeWindowType }> = [
+      { threshold: 5 / 60, type: 'last_5min' },
+      { threshold: 15 / 60, type: 'last_15min' },
+      { threshold: 30 / 60, type: 'last_30min' },
+      { threshold: 1, type: 'last_1hour' },
+      { threshold: 6, type: 'last_6hours' },
+      { threshold: 24, type: 'last_24hours' },
+    ]
+    for (const { threshold, type } of mapping) {
+      if (hours <= threshold) return type
+    }
+    return 'last_24hours'
   }, [firstSource])
 
   const currentLimit = useMemo(() => {
@@ -203,13 +219,40 @@ export function DataTransformConfig({
     : getAggregateOptions(t, chartType)
 
   // Initialize aggregate to correct default for card/progress when not explicitly set
+  // Also backfill timeWindow from legacy timeRange when timeWindow is missing
   useEffect(() => {
+    const updates: Partial<DataSource> = {}
+
     const shouldDefaultToLatest = (chartType === 'card' || chartType === 'progress') &&
       !firstSource?.aggregateExt &&
       firstSource?.aggregate === 'raw'
-
     if (shouldDefaultToLatest) {
-      onChange({ aggregateExt: 'latest' })
+      updates.aggregateExt = 'latest'
+    }
+
+    // If dataSource has timeRange but no timeWindow, derive timeWindow from timeRange
+    // so the fetch pipeline can use absolute time calculations where appropriate
+    if (firstSource && firstSource.timeRange != null && !firstSource.timeWindow) {
+      const hours = firstSource.timeRange
+      if (hours === 0) {
+        updates.timeWindow = { type: 'now' }
+      } else if (hours <= 5 / 60) {
+        updates.timeWindow = { type: 'last_5min' }
+      } else if (hours <= 15 / 60) {
+        updates.timeWindow = { type: 'last_15min' }
+      } else if (hours <= 30 / 60) {
+        updates.timeWindow = { type: 'last_30min' }
+      } else if (hours <= 1) {
+        updates.timeWindow = { type: 'last_1hour' }
+      } else if (hours <= 6) {
+        updates.timeWindow = { type: 'last_6hours' }
+      } else {
+        updates.timeWindow = { type: 'last_24hours' }
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      onChange(updates)
     }
   }, [chartType, firstSource, onChange])
 

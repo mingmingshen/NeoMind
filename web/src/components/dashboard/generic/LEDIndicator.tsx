@@ -118,10 +118,10 @@ function extractValue(data: unknown): string | number | null {
     return data ? 1 : 0
   }
 
-  // Array - take first element (data is sorted newest-first)
+  // Array - take last element (pipeline sorts ascending, oldest-first)
   if (Array.isArray(data)) {
     if (data.length > 0) {
-      return extractValue(data[0])
+      return extractValue(data[data.length - 1])
     }
     return null
   }

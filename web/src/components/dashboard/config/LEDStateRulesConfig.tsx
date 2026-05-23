@@ -37,6 +37,14 @@ function getStateOptions(t: (key: string) => string) {
 // Condition type
 type ConditionType = 'threshold' | 'values' | 'pattern' | 'always'
 
+// Generate a stable key from rule content
+function getRuleKey(rule: StateRule): string {
+  if (rule.threshold) return `t:${rule.threshold.operator}:${rule.threshold.value}:${rule.state}`
+  if (rule.values) return `v:${rule.values}:${rule.state}`
+  if (rule.pattern) return `p:${rule.pattern}:${rule.state}`
+  return `a:${rule.state}`
+}
+
 function getConditionType(rule: StateRule): ConditionType {
   if (rule.threshold) return 'threshold'
   if (rule.pattern) return 'pattern'
@@ -158,11 +166,12 @@ export function LEDStateRulesConfig({
           rules.map((rule, index) => {
             const conditionType = getConditionType(rule)
             const info = stateInfo.get(rule.state)
-            const isCollapsed = collapsedIds.has(String(index))
+            const ruleKey = getRuleKey(rule)
+            const isCollapsed = collapsedIds.has(ruleKey)
 
             return (
               <div
-                key={index}
+                key={ruleKey}
                 className="rounded-md border bg-background overflow-hidden"
               >
                 {/* Header */}
@@ -171,7 +180,7 @@ export function LEDStateRulesConfig({
                     "flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors",
                     !isCollapsed && "bg-muted-30"
                   )}
-                  onClick={() => toggleCollapse(String(index))}
+                  onClick={() => toggleCollapse(ruleKey)}
                 >
                   {/* Drag handle */}
                   <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />

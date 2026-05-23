@@ -5,8 +5,8 @@
  * Supports multiple storage backends (localStorage, API, hybrid).
  */
 
-import type { Dashboard, DashboardComponent, ComponentPosition, GenericComponent, BusinessComponent, DataSource, ActionConfig, DisplayConfig } from '@/types/dashboard'
-import { isGenericComponent } from '@/types/dashboard'
+import type { Dashboard, DashboardComponent, ComponentPosition, GenericComponent, BusinessComponent, DataSource, DataSourceOrList, ActionConfig, DisplayConfig } from '@/types/dashboard'
+import { isGenericComponent, normalizeDataSource } from '@/types/dashboard'
 
 // ============================================================================
 // Storage Operation Result
@@ -98,7 +98,7 @@ export interface ComponentDTO {
     max_h?: number
   }
   title?: string
-  data_source?: Record<string, unknown>
+  data_source?: Record<string, unknown> | Record<string, unknown>[]
   display?: Record<string, unknown>
   config?: Record<string, unknown>
   actions?: Array<Record<string, unknown>>
@@ -161,7 +161,7 @@ function componentToDTO(c: DashboardComponent): ComponentDTO {
     type: c.type,
     position: positionToDTO(c.position),
     title: c.title,
-    data_source: (isGeneric ? (c as GenericComponent).dataSource : (c as BusinessComponent).dataSource) as Record<string, unknown> | undefined,
+    data_source: (isGeneric ? (c as GenericComponent).dataSource : (c as BusinessComponent).dataSource) as (Record<string, unknown> | Record<string, unknown>[]) | undefined,
     display: isGeneric ? ((c as GenericComponent).display as Record<string, unknown> | undefined) : undefined,
     config: 'config' in c ? ((c as GenericComponent).config as Record<string, unknown> | undefined) : undefined,
     actions: isGeneric && (c as GenericComponent).actions
@@ -216,6 +216,16 @@ export function fromDashboardDTO(dto: DashboardDTO): Dashboard {
     .map((c) => {
     const dataSource = c.data_source
 
+    // Normalize data sources to resolve legacy fields (aggregate→aggregateExt, timeRange→timeWindow)
+    const normalizedDS = dataSource
+      ? normalizeDataSource(dataSource as unknown as DataSourceOrList)
+      : undefined
+
+    // Preserve single vs array format: 1 source → DataSource, 2+ sources → DataSource[]
+    const dsValue = normalizedDS && normalizedDS.length > 0
+      ? (normalizedDS.length === 1 ? normalizedDS[0] : normalizedDS)
+      : undefined
+
     const base = {
       id: c.id,
       type: c.type as DashboardComponent['type'],
@@ -227,7 +237,7 @@ export function fromDashboardDTO(dto: DashboardDTO): Dashboard {
       const comp: GenericComponent = {
         ...base,
         type: c.type as GenericComponent['type'],
-        ...(dataSource ? { dataSource: dataSource as unknown as DataSource } : {}),
+        ...(dsValue ? { dataSource: dsValue } : {}),
         ...(c.display ? { display: c.display as unknown as DisplayConfig } : {}),
         ...(c.config ? { config: c.config } : {}),
         ...(c.actions ? { actions: c.actions as unknown as ActionConfig[] } : {}),
@@ -239,7 +249,7 @@ export function fromDashboardDTO(dto: DashboardDTO): Dashboard {
     const comp: BusinessComponent = {
       ...base,
       type: c.type as BusinessComponent['type'],
-      ...(dataSource ? { dataSource: dataSource as unknown as DataSource } : {}),
+      ...(dsValue ? { dataSource: dsValue } : {}),
       ...(c.config ? { config: c.config } : {}),
     }
     return comp

@@ -14,6 +14,7 @@ import {
   BarChart3,
   PieChart as PieChartIcon,
   ToggleLeft,
+  Send,
   Image,
   Play,
   Globe,
@@ -126,10 +127,10 @@ const WIDGET_REGISTRY: Record<string, WidgetRegistryEntry> = {
   // Controls
   'toggle-switch': {
     type: 'toggle-switch',
-    displayName: 'Toggle Switch',
-    description: 'On/off toggle for device commands',
+    displayName: 'Command Button',
+    description: 'Trigger button for device or extension commands',
     category: 'controls',
-    icon: ToggleLeft,
+    icon: Send,
     defaultSize: { w: 2, h: 2 },
     sizeConstraints: getSizeConstraints('toggle-switch'),
   },

@@ -10,7 +10,7 @@
  * - Time window selection for data scope
  */
 
-import { useMemo, useCallback, memo } from 'react'
+import { useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   PieChart as RechartsPieChart,
@@ -22,24 +22,16 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { DataMapper, type CategoricalMappingConfig } from '@/lib/dataMapping'
-import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors, chartColorsHex } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate } from '@/types/dashboard'
-import { normalizeDataSource, getSourceId } from '@/types/dashboard'
-import { ChartContainer, ChartTooltip, EmptyState, useChartDimensions, useStaggeredData, createMemoRenderer } from '../shared'
+import { getSourceId } from '@/types/dashboard'
+import { ChartContainer, ChartTooltip, EmptyState, useChartDimensions, useStaggeredData, createMemoRenderer, useChartPipeline } from '../shared'
+import { isNameValueData, isNumberArray, isMultiSourceData } from '../shared'
 import {
-  getEffectiveAggregate,
-  getEffectiveTimeWindow,
-  timeWindowToHours,
-  parseTelemetryResponse,
   aggregateData,
-  transformToPieData,
-  type TimeSeriesData,
 } from '@/lib/telemetryTransform'
-import { toTelemetrySource } from '@/lib/chartTelemetry'
-import { getDeviceName as _getDeviceName, getPropertyDisplayName as _getPropertyDisplayName, getSeriesName as _getSeriesName } from '@/lib/chartDisplay'
 
 // Use design system chart colors
 const chartColors = designChartColors
@@ -206,60 +198,29 @@ export const PieChart = memo(function PieChart({
   const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
 
-  // Normalize data sources once - reuse across all memoized calculations
-  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
-
-  // Get effective aggregate from dataSource or props
-  const effectiveAggregate = useMemo(() => {
-    if (sources.length > 0 && sources[0].aggregateExt) {
-      return sources[0].aggregateExt
-    }
-    return aggregate
-  }, [sources, aggregate])
-
-  // Normalize data sources for telemetry
-  const telemetrySources = useMemo(() => {
-    return sources.map(ds => toTelemetrySource(ds, limit, timeRange)).filter((ds): ds is DataSource => ds !== undefined)
-  }, [sources, limit, timeRange])
-
-  const { data, loading } = useDataSource<PieData[] | number[] | number[][]>(
-    telemetrySources.length > 0 ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources) : undefined,
-    {
-      fallback: propData ?? [
-        { name: t('chart.categoryA'), value: 30 },
-        { name: t('chart.categoryB'), value: 45 },
-        { name: t('chart.categoryC'), value: 25 },
-      ],
-      preserveMultiple: true,
-    }
-  )
-
-  // Prevent loading flash: only show skeleton when loading AND no data exists yet
-  const hasData = data !== null && data !== undefined && (Array.isArray(data) ? data.length > 0 : true)
-  const showLoading = loading && !hasData
-
-  // Get device names for labels
-  const getDeviceName = useCallback((deviceId?: string): string => _getDeviceName(deviceId, t), [t])
-
-  const getPropertyDisplayName = useCallback((property?: string): string => _getPropertyDisplayName(property, t), [t])
-
-  // Get series display name from data source, handling extension sources
-  const getSeriesName = useCallback((ds: DataSource, idx: number): string => {
-    return _getSeriesName(ds, idx, { getDeviceName, getPropertyDisplayName, t })
-  }, [getDeviceName, getPropertyDisplayName, t])
-
-  // Check if data is multi-source (array of arrays)
-  const isMultiSource = (data: unknown): boolean => {
-    return Array.isArray(data) && data.length > 0 && Array.isArray(data[0])
-  }
+  // Shared data pipeline
+  const {
+    sources, data, loading, effectiveAggregate,
+    hasData, showLoading, getSeriesName, getDeviceName,
+  } = useChartPipeline<PieData[] | number[] | number[][]>({
+    dataSource,
+    aggregate,
+    limit,
+    timeRange,
+    fallback: propData ?? [
+      { name: t('chart.categoryA'), value: 30 },
+      { name: t('chart.categoryB'), value: 45 },
+      { name: t('chart.categoryC'), value: 25 },
+    ],
+    preserveMultiple: true,
+  })
 
   // Normalize data to PieData[] format
   const chartData: PieData[] = useMemo(() => {
     const chartColors = colors || fallbackColors
 
     // Multi-source data - combine into single pie chart
-    // preserveMultiple returns array of arrays where length equals sources length
-    if (sources.length > 1 && Array.isArray(data) && data.length === sources.length) {
+    if (isMultiSourceData(data, sources.length)) {
       return sources.map((ds, i) => {
         const arr = data[i]
         const seriesLabel = getSeriesName(ds, i)
@@ -324,15 +285,12 @@ export const PieChart = memo(function PieChart({
     }
 
     // Handle telemetry data FIRST (when dataSource is provided)
-    if (dataSource && Array.isArray(data) && data.length > 0) {
-      const first = data[0]
-      // Check if already in PieData format (has both 'name' AND 'value')
-      if (typeof first === 'object' && first !== null && 'value' in first && 'name' in first) {
-        return data as PieData[]
-      }
+    if (dataSource && isNameValueData(data)) {
+      return data as PieData[]
+    }
 
-      // Transform telemetry points (handles both numeric and categorical data)
-      // Pass aggregate setting to influence transformation behavior
+    // Transform telemetry points (handles both numeric and categorical data)
+    if (dataSource && Array.isArray(data) && data.length > 0 && !isNameValueData(data)) {
       const transformed = transformTelemetryToPieData(data, dataMapping, effectiveAggregate, t)
       if (transformed.length > 0) {
         return transformed
@@ -340,7 +298,7 @@ export const PieChart = memo(function PieChart({
     }
 
     // Handle number array from data source - apply aggregation
-    if (dataSource && Array.isArray(data) && data.length > 0 && typeof data[0] === 'number') {
+    if (dataSource && isNumberArray(data)) {
       const values = data as number[]
       const timePoints = values.map((v, idx) => ({
         timestamp: Date.now() / 1000 - (values.length - idx) * 60,

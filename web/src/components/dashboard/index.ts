@@ -34,7 +34,7 @@ export { BarChart } from './generic/BarChart'
 export { PieChart } from './generic/PieChart'
 
 // Generic components - Controls
-export { ToggleSwitch } from './generic/ToggleSwitch'
+export { CommandButton, ToggleSwitch } from './generic/CommandButton'
 
 // Generic components - Display & Content
 export { ImageDisplay } from './generic/ImageDisplay'

@@ -497,7 +497,7 @@ export function createProgressConfig(config: {
 
 /**
  * Create a standard schema for control components
- * (Slider, ToggleSwitch, ButtonGroup, etc.)
+ * (Slider, CommandButton, ButtonGroup, etc.)
  */
 export function createControlConfig(config: {
   dataSource?: DataSourceOrList

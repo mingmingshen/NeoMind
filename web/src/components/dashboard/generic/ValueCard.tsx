@@ -11,56 +11,22 @@ import { ArrowUpRight, ArrowDownRight, Minus, Activity, TrendingUp, TrendingDown
 import { cn, getIconForEntity } from '@/lib/utils'
 import { chartColors, indicatorFontWeight, indicatorColors, dashboardCardBase, dashboardCardHorizontal } from '@/design-system'
 import { valueCardSize, type ValueCardSize } from '@/design-system/tokens/size'
-import type { DataSourceOrList } from '@/types/dashboard'
+import type { DataSourceOrList, DataSource, TelemetryAggregate } from '@/types/dashboard'
+import { normalizeDataSource } from '@/types/dashboard'
 import { useDataSource } from '@/hooks/useDataSource'
+import { aggregateData, getEffectiveAggregate } from '@/lib/telemetryTransform'
 import { ErrorState, LoadingState } from '../shared'
+import { useTrendCache } from '../shared/useTrendCache'
 
 // ============================================================================
-// Module-level cache for trend data (persists across component remounts)
-// Similar to telemetryCache in useDataSource.ts
+// Trend cache key helper
 // ============================================================================
-interface TrendCacheEntry {
-  direction: 'up' | 'down' | 'neutral' | null
-  value: number
-  timestamp: number
-  dataHash: string  // Hash of current+previous values to detect real changes
-}
-
-const trendCache = new Map<string, TrendCacheEntry>()
-const TREND_CACHE_TTL = 60000 // 60 seconds - longer than telemetry cache
-const MAX_TREND_CACHE_SIZE = 100
 
 function getTrendCacheKey(dataSource: DataSourceOrList | undefined): string {
   if (!dataSource) return ''
   if (Array.isArray(dataSource)) return `multi:${dataSource.length}`
   if (typeof dataSource === 'string') return `ref:${dataSource}`
   return JSON.stringify(dataSource)
-}
-
-function getCachedTrend(cacheKey: string, dataHash: string): TrendCacheEntry | null {
-  if (!cacheKey) return null
-  const cached = trendCache.get(cacheKey)
-  if (cached && cached.dataHash === dataHash && Date.now() - cached.timestamp < TREND_CACHE_TTL) {
-    return cached
-  }
-  return null
-}
-
-function setCachedTrend(cacheKey: string, dataHash: string, direction: 'up' | 'down' | 'neutral' | null, value: number): void {
-  if (!cacheKey) return
-
-  // Enforce cache size limit
-  if (trendCache.size >= MAX_TREND_CACHE_SIZE) {
-    const firstKey = trendCache.keys().next().value
-    if (firstKey) trendCache.delete(firstKey)
-  }
-
-  trendCache.set(cacheKey, {
-    direction,
-    value,
-    timestamp: Date.now(),
-    dataHash
-  })
 }
 
 // ============================================================================
@@ -186,6 +152,7 @@ export const ValueCard = memo(function ValueCard({
   valueColor,
   className,
 }: ValueCardProps) {
+  const trendCache = useTrendCache()
   const { data, loading, error } = useDataSource<unknown>(dataSource, {
     fallback: null,
   })
@@ -198,9 +165,26 @@ export const ValueCard = memo(function ValueCard({
   // Check if dataSource is configured
   const hasDataSource = dataSource !== undefined
 
+  // Get effective aggregate from dataSource (after resolveDataSource normalization)
+  const effectiveAggregate = useMemo<TelemetryAggregate>(() => {
+    const sources = normalizeDataSource(dataSource)
+    return sources.length > 0 ? getEffectiveAggregate(sources[0]) : 'latest'
+  }, [dataSource])
+
   // Extract numeric value from data for calculations
   const extractNumericValue = useMemo(() => {
     if (data === null || data === undefined) return null
+
+    // When data is an array of raw telemetry points with timestamps,
+    // apply aggregateExt before extracting the value
+    if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object' && data[0] !== null && 'timestamp' in (data[0] as object)) {
+      const timePoints = data.map((p: unknown) => {
+        const obj = p as Record<string, unknown>
+        return { timestamp: (obj.timestamp ?? obj.time ?? 0) as number, value: (obj.value ?? obj.v ?? 0) as number }
+      })
+      const aggregated = aggregateData(timePoints, effectiveAggregate)
+      if (aggregated !== null) return aggregated
+    }
 
     let rawValue: unknown = data
     if (Array.isArray(data) && data.length > 0) {
@@ -221,7 +205,7 @@ export const ValueCard = memo(function ValueCard({
       if (!isNaN(parsed)) return parsed
     }
     return null
-  }, [data])
+  }, [data, effectiveAggregate])
 
   // Calculate trend using module-level cache (like useDataSource does)
   const { trendDirection, trendValue, hasValidTrend } = useMemo(() => {
@@ -255,12 +239,12 @@ export const ValueCard = memo(function ValueCard({
     let previousVal: number | null = null
 
     if (Array.isArray(data) && data.length >= 1) {
-      // Current value is always the first element (latest)
-      currentVal = extractValue(data[0])
+      // Data is sorted ascending (oldest first), so last element is latest
+      currentVal = extractValue(data[data.length - 1])
 
       // Find a different value for comparison (skip identical adjacent values)
       if (data.length >= 2) {
-        for (let i = 1; i < data.length; i++) {
+        for (let i = data.length - 2; i >= 0; i--) {
           const val = extractValue(data[i])
           if (val !== null && val !== currentVal) {
             previousVal = val
@@ -269,9 +253,9 @@ export const ValueCard = memo(function ValueCard({
         }
       }
 
-      // If all values are the same, use the last element as previous
+      // If all values are the same, use the first element as previous
       if (previousVal === null && data.length >= 2) {
-        previousVal = extractValue(data[data.length - 1])
+        previousVal = extractValue(data[0])
       }
     }
 
@@ -281,7 +265,7 @@ export const ValueCard = memo(function ValueCard({
       : ''
 
     // First, try to get cached trend with matching dataHash
-    const cached = getCachedTrend(cacheKey, dataHash)
+    const cached = trendCache.getCached(cacheKey, dataHash)
     if (cached) {
       return {
         trendDirection: cached.direction,
@@ -296,14 +280,14 @@ export const ValueCard = memo(function ValueCard({
       const direction = percentChange > 0 ? 'up' : percentChange < 0 ? 'down' : 'neutral'
       const value = Math.round(percentChange * 10) / 10
 
-      // Store in module-level cache
-      setCachedTrend(cacheKey, dataHash, direction, value)
+      // Store in cache
+      trendCache.setCached(cacheKey, dataHash, direction, value)
 
       return { trendDirection: direction, trendValue: value, hasValidTrend: true }
     }
 
     // Data is insufficient right now, try to return last cached trend for this dataSource
-    const lastCached = trendCache.get(cacheKey)
+    const lastCached = trendCache.getLastCached(cacheKey)
     if (lastCached && lastCached.direction !== null) {
       return {
         trendDirection: lastCached.direction,
@@ -324,11 +308,11 @@ export const ValueCard = memo(function ValueCard({
       return '-'
     }
 
-    // If data is an array, get the first value (latest)
-    // Backend returns telemetry data sorted DESCENDING (newest first)
+    // If data is an array, get the last value (latest)
+    // Pipeline sorts telemetry data ascending (oldest first), so last element is newest
     let rawValue: unknown = data
     if (Array.isArray(data) && data.length > 0) {
-      rawValue = data[0]
+      rawValue = data[data.length - 1]
     }
 
     // If rawValue is an object, extract the value from various possible formats

@@ -35,7 +35,7 @@ import { BarChart } from '../generic/BarChart'
 import { PieChart } from '../generic/PieChart'
 
 // Controls
-import { ToggleSwitch } from '../generic/ToggleSwitch'
+import { CommandButton } from '../generic/CommandButton'
 
 // Display & Content
 import { ImageDisplay } from '../generic/ImageDisplay'
@@ -66,7 +66,7 @@ const componentMap: Record<GenericComponentType, React.ComponentType<any>> = {
   'pie-chart': PieChart,
 
   // Controls
-  'toggle-switch': ToggleSwitch,
+  'toggle-switch': CommandButton,
 
   // Display & Content
   'image-display': ImageDisplay,
@@ -303,8 +303,10 @@ const ComponentRenderer = memo(function ComponentRenderer({
 
       // Auto-retry if we haven't exceeded max attempts
       if (attempt < MAX_LOAD_RETRIES) {
+        const retryType = componentType // capture current type
         setTimeout(() => {
-          setAttemptCount(attempt + 1)
+          // Only retry if the component type hasn't changed during the delay
+          setAttemptCount(prev => prev === attempt ? attempt + 1 : prev)
         }, LOAD_RETRY_DELAY)
       } else {
         setLoadError(err instanceof Error ? err : new Error(String(err)))

@@ -495,11 +495,20 @@ pub async fn update_dashboard_handler(
         dashboard.layout = api_to_stored_layout(&layout);
     }
     if let Some(components) = req.components {
-        // Parse components from JSON
-        dashboard.components = components
+        // Parse components from JSON — fail if any component is invalid
+        let parsed: Result<Vec<StoredComponent>, _> = components
             .iter()
-            .filter_map(|c| serde_json::from_value::<StoredComponent>(c.clone()).ok())
+            .map(|c| serde_json::from_value::<StoredComponent>(c.clone()))
             .collect();
+        match parsed {
+            Ok(parsed_components) => dashboard.components = parsed_components,
+            Err(e) => {
+                return Err(ErrorResponse::bad_request(format!(
+                    "Invalid component data: {}",
+                    e
+                )))
+            }
+        }
     }
     dashboard.updated_at = chrono::Utc::now().timestamp();
 
@@ -650,7 +659,7 @@ pub async fn create_share_handler(
     let now = chrono::Utc::now().timestamp();
     let expires_at = req
         .expires_in_hours
-        .map(|h| now + h * 3600);
+        .and_then(|h| h.checked_mul(3600).and_then(|seconds| now.checked_add(seconds)));
 
     let share = StoredShareToken {
         token: token_str.clone(),

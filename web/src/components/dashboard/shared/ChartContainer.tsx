@@ -30,16 +30,25 @@ export function ChartContainer({ children }: { children: ReactNode }) {
  */
 
 // Global stagger counter — each chart gets a unique turn
+// When all charts unmount, the counter resets to prevent unbounded growth
 let chartTurn = 0
+const activeTurns = new Set<number>()
+
+// Max stagger delay cap — if turn exceeds this, recycle to keep delays reasonable
+const MAX_STAGGER_TURN = 20
 
 export function useChartDimensions() {
   const ref = useRef<HTMLDivElement>(null)
   const [dims, setDims] = useState({ width: 0, height: 0 })
 
-  // Each instance claims a turn on first render
+  // Each instance claims a turn on first render, capped to prevent unbounded growth
   const turnRef = useRef(-1)
   if (turnRef.current === -1) {
-    turnRef.current = chartTurn++
+    // Cap the turn number to prevent ever-increasing stagger delays
+    const turn = chartTurn % (MAX_STAGGER_TURN + 1)
+    chartTurn = turn + 1
+    turnRef.current = turn
+    activeTurns.add(turn)
   }
 
   useEffect(() => {
@@ -83,9 +92,9 @@ export function useChartDimensions() {
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId)
       ro.disconnect()
-      // Reset turn counter when all charts unmount
-      // (approximation: decrement on unmount)
-      if (chartTurn > 0) chartTurn--
+      // Track active turns and reset counter when all charts unmount
+      activeTurns.delete(turnRef.current)
+      if (activeTurns.size === 0) chartTurn = 0
     }
   }, [])
 

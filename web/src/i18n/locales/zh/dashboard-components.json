@@ -277,6 +277,8 @@
     "step": "步长",
     "size": "尺寸",
     "label": "标签",
+    "prefix": "前缀",
+    "suffix": "后缀",
     "showLabel": "显示标签",
     "enabled": "已启用",
     "disabled": "已禁用",
@@ -720,15 +722,7 @@
     "selectTimeRange": "选择时间范围",
     "aggregation": "聚合方式",
     "selectAggregation": "选择聚合方式",
-    "chartView": "图表视图",
-    "chartViewTimeseries": "时序图",
-    "chartViewSnapshot": "快照对比",
-    "chartViewDistribution": "分布图",
-    "chartViewHistogram": "直方图",
-    "selectChartView": "选择图表视图",
     "dataPointLimit": "数据点数量",
-    "sampleIntervalLabel": "采样间隔（秒）",
-    "fillMissingLabel": "缺失值处理",
     "timeWindow": {
       "now": "当前值",
       "last5min": "最近5分钟",
@@ -753,33 +747,12 @@
       "rate": "变化率",
       "raw": "原始数据"
     },
-    "chartView": {
-      "timeseries": "时序图",
-      "snapshot": "快照对比",
-      "distribution": "分布图",
-      "histogram": "直方图"
-    },
     "dataPoints": {
       "12": "12点",
       "24": "24点",
       "50": "50点",
       "100": "100点",
       "200": "200点"
-    },
-    "fillMissing": {
-      "none": "无",
-      "zero": "填充零",
-      "previous": "前向填充",
-      "linear": "线性插值"
-    },
-    "sampleInterval": {
-      "30": "30秒",
-      "60": "1分钟",
-      "300": "5分钟",
-      "600": "10分钟",
-      "900": "15分钟",
-      "1800": "30分钟",
-      "3600": "1小时"
     },
     "appliesToAll": "应用于全部 {{count}} 个数据源",
     "mixedValues": "不同值"

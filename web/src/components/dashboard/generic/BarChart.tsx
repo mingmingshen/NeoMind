@@ -11,7 +11,7 @@
  * - Chart view modes: timeseries, snapshot, comparison
  */
 
-import { useMemo, useCallback, memo } from 'react'
+import { useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -28,23 +28,18 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { DataMapper, type CategoricalMappingConfig } from '@/lib/dataMapping'
-import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors, chartColorsHex } from '@/design-system/tokens/color'
-import type { DataSource, DataSourceOrList, TelemetryAggregate, ChartViewMode } from '@/types/dashboard'
-import { normalizeDataSource, getSourceId } from '@/types/dashboard'
-import { ChartContainer, ChartTooltip, EmptyState, useChartDimensions, useStaggeredData, createMemoRenderer } from '../shared'
+import type { DataSource, DataSourceOrList, TelemetryAggregate } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
+import { ChartContainer, ChartTooltip, EmptyState, useChartDimensions, useStaggeredData, createMemoRenderer, useChartPipeline } from '../shared'
+import { isNameValueData, isNumberArray, isMultiSourceData, extractNumericValue } from '../shared'
 import {
-  getEffectiveAggregate,
-  getEffectiveTimeWindow,
-  timeWindowToHours,
+  createChartTimeFormatter,
   aggregateData,
-  transformToBarData,
-  type TimeSeriesData,
 } from '@/lib/telemetryTransform'
-import { toTelemetrySource } from '@/lib/chartTelemetry'
-import { getDeviceName as _getDeviceName, getPropertyDisplayName as _getPropertyDisplayName, getSeriesName as _getSeriesName } from '@/lib/chartDisplay'
+import type { TimePoint } from '@/lib/telemetryTransform'
 
 // Use design system chart colors
 const chartColors = designChartColors
@@ -54,12 +49,15 @@ const fallbackColors = chartColorsHex
 
 /**
  * Transform raw telemetry points to chart data using DataMapper
- * For categorical data (strings) or when aggregate is 'count', groups by value and counts occurrences
+ * - 'count': groups by value and counts occurrences
+ * - 'raw': shows all time-series points as bars
+ * - 'latest'/'avg'/'sum'/etc.: aggregates to a single value
  */
 function transformTelemetryToBarData(
   data: unknown,
   dataMapping?: CategoricalMappingConfig,
-  aggregate?: TelemetryAggregate
+  aggregate?: TelemetryAggregate,
+  label?: string
 ): { name: string; value: number; color?: string }[] {
   if (!data || !Array.isArray(data)) return []
 
@@ -79,17 +77,8 @@ function transformTelemetryToBarData(
   // Handle raw telemetry points format: [{ timestamp, value }, ...]
   // Only has 'value' but not 'name' → this is telemetry data
   if (data.length > 0 && typeof data[0] === 'object' && data[0] !== null && 'value' in data[0]) {
-    let telemetryPoints = data as Array<{ timestamp?: number; value: unknown }>
-
-    // Sort by timestamp ascending (oldest first) for proper time series display
-    // Use explicit sort instead of reverse to handle any data order correctly
-    if (telemetryPoints.length > 1) {
-      telemetryPoints = [...telemetryPoints].sort((a, b) => {
-        const at = a.timestamp ?? 0
-        const bt = b.timestamp ?? 0
-        return at - bt  // ascending: oldest first
-      })
-    }
+    // Data is already sorted ascending (oldest-first) by useDataSource pipeline
+    const telemetryPoints = data as Array<{ timestamp?: number; value: unknown }>
 
     // Check if values are categorical (strings) OR if aggregate is 'count' - group and count for distribution
     const isCategorical = telemetryPoints.some((p) => typeof p.value === 'string')
@@ -119,14 +108,27 @@ function transformTelemetryToBarData(
         }))
     }
 
-    // For numeric telemetry data without count aggregation, create time-based labels
+    // For non-raw aggregates (latest, avg, sum, min, max, etc.), aggregate to single value
+    if (aggregate && aggregate !== 'raw') {
+      const now = Date.now() / 1000
+      const timePoints: TimePoint[] = telemetryPoints.map((p, idx) => ({
+        timestamp: p.timestamp ?? (now - (telemetryPoints.length - idx) * 60),
+        value: typeof p.value === 'number' ? p.value : 0,
+      }))
+      const aggregated = aggregateData(timePoints, aggregate)
+      if (aggregated !== null) {
+        return [{ name: label || 'Value', value: aggregated }]
+      }
+    }
+
+    // For raw aggregate, show all time-series points as bars
+    const timestamps = telemetryPoints.map(p => p.timestamp).filter((t): t is number => t !== undefined)
+    const fmtTime = createChartTimeFormatter(timestamps)
     return telemetryPoints.map((point, index) => {
       let name = `${index + 1}`
       if (point.timestamp) {
-        const date = new Date(point.timestamp > 10000000000 ? point.timestamp : point.timestamp * 1000)
-        if (!isNaN(date.getTime())) {
-          name = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-        }
+        const formatted = fmtTime(point.timestamp)
+        if (formatted) name = formatted
       }
       return {
         name,
@@ -168,7 +170,6 @@ export interface BarChartProps {
 
   // Layout
   layout?: 'vertical' | 'horizontal'
-  stacked?: boolean
 
   // === Telemetry options ===
   // Legacy options (kept for backward compatibility)
@@ -180,8 +181,6 @@ export interface BarChartProps {
   aggregate?: TelemetryAggregate
   // Time window for data
   timeWindow?: 'now' | 'last_5min' | 'last_15min' | 'last_30min' | 'last_1hour' | 'last_6hours' | 'last_24hours'
-  // Chart view mode - how to interpret data
-  chartViewMode?: ChartViewMode
 
   // Data mapping configuration
   dataMapping?: CategoricalMappingConfig
@@ -207,192 +206,108 @@ export const BarChart = memo(function BarChart({
   timeRange = 1,
   aggregate = 'raw',  // Default to raw for bar charts (show time series)
   timeWindow,
-  chartViewMode = 'timeseries',
   dataMapping,
   className,
 }: BarChartProps) {
   const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
 
-  // Normalize data sources once - reuse across all memoized calculations
-  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
+  // Shared data pipeline
+  const {
+    sources, data, loading, effectiveAggregate,
+    hasData, showLoading, getSeriesName,
+  } = useChartPipeline<BarData[] | number[] | number[][]>({
+    dataSource,
+    aggregate,
+    limit,
+    timeRange,
+    fallback: undefined,
+    preserveMultiple: true,
+  })
 
-  // Get effective aggregate from dataSource or props
-  const effectiveAggregate = useMemo(() => {
-    if (sources.length > 0 && sources[0].aggregateExt) {
-      return sources[0].aggregateExt
-    }
-    return aggregate
-  }, [sources, aggregate])
+  // Multi-source chart data: one bar per source with aggregated value (like PieChart)
+  const multiSourceChartData = useMemo(() => {
+    if (!isMultiSourceData(data, sources.length)) return null
 
-  // Get effective chart view mode
-  const effectiveViewMode = useMemo(() => {
-    if (sources.length > 0 && sources[0].chartViewMode) {
-      return sources[0].chartViewMode
-    }
-    return chartViewMode
-  }, [sources, chartViewMode])
+    const sourceArrays = data as unknown[][]
+    const chartColors = color ? [color] : fallbackColors
 
-  // Normalize data sources for historical data
-  const telemetrySources = useMemo(() => {
-    return sources.map(ds => toTelemetrySource(ds, limit, timeRange)).filter((ds): ds is DataSource => ds !== undefined)
-  }, [sources, limit, timeRange])
+    return sources.map((ds, i) => {
+      const arr = sourceArrays[i]
+      const seriesName = getSeriesName(ds, i)
 
-  const { data, loading } = useDataSource<BarData[] | number[] | number[][]>(
-    telemetrySources.length > 0 ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources) : undefined,
-    {
-      fallback: undefined,
-      preserveMultiple: true,
-    }
-  )
-
-  // Prevent loading flash: only show skeleton when loading AND no data exists yet
-  const hasData = data !== null && data !== undefined && (Array.isArray(data) ? data.length > 0 : true)
-  const showLoading = loading && !hasData
-
-  // Get device names for series labels
-  const getDeviceName = useCallback((deviceId?: string): string => _getDeviceName(deviceId, t), [t])
-
-  const getPropertyDisplayName = useCallback((property?: string): string => _getPropertyDisplayName(property, t), [t])
-
-  // Get series display name from data source, handling extension sources
-  const getSeriesName = useCallback((ds: DataSource, idx: number): string => {
-    return _getSeriesName(ds, idx, { getDeviceName, getPropertyDisplayName, t })
-  }, [getDeviceName, getPropertyDisplayName, t])
-
-  // Check if data is multi-source (array of arrays)
-  const isMultiSource = (data: unknown): boolean => {
-    return Array.isArray(data) && data.length > 0 && Array.isArray(data[0])
-  }
-
-  // For multi-series bar chart, transform data to recharts format
-  const chartData = useMemo(() => {
-
-    // Helper to extract numeric value from data point
-    const extractNumericValue = (item: unknown): number => {
-      if (typeof item === 'number') return item
-      if (typeof item === 'object' && item !== null && 'value' in item) {
-        const val = (item as { value: unknown }).value
-        return typeof val === 'number' ? val : 0
+      if (!Array.isArray(arr) || arr.length === 0) {
+        return { name: seriesName, value: 0 }
       }
-      return 0
-    }
 
-    // Multi-source data - create grouped bar chart
-    // preserveMultiple returns array of arrays where length equals sources length
-    if (sources.length > 1 && Array.isArray(data) && data.length === sources.length) {
-      // Check if any source contains categorical data (string values)
-      const hasCategoricalData = data.some((arr: unknown) => {
-        if (Array.isArray(arr) && arr.length > 0) {
-          const first = arr[0]
-          return typeof first === 'object' && first !== null && 'value' in first && typeof first.value === 'string'
-        }
-        return false
-      })
-      const forceCounting = effectiveAggregate === 'count'
+      // Check if data contains telemetry points with value property
+      const firstItem = arr[0] as { value?: unknown; timestamp?: number } | undefined
+      const hasTelemetryPoints = typeof firstItem === 'object' && firstItem !== null && 'value' in firstItem
 
-      // If categorical data or count aggregate, combine all sources and show distribution
-      if (hasCategoricalData || forceCounting) {
-        const combinedCounts = new Map<string, number>()
+      if (hasTelemetryPoints) {
+        // Extract values from telemetry points
+        const values = (arr as Array<{ value?: unknown }>).map(item => {
+          const val = item.value
+          return typeof val === 'number' ? val : parseFloat(String(val)) || 0
+        }).filter(v => !isNaN(v))
 
-        // Process all data sources and count occurrences
-        for (const arr of data as unknown[][]) {
-          if (!Array.isArray(arr)) continue
-          for (const item of arr) {
-            if (typeof item === 'object' && item !== null && 'value' in item) {
-              const key = String(item.value ?? 'unknown')
-              combinedCounts.set(key, (combinedCounts.get(key) ?? 0) + 1)
-            }
-          }
-        }
-
-        // Convert to BarData format, sorted by count descending
-        return Array.from(combinedCounts.entries())
-          .sort((a, b) => b[1] - a[1])
-          .map(([name, value]) => ({
-            name,
-            value,
+        if (values.length > 0) {
+          // Create timePoints for aggregation
+          const now = Date.now() / 1000
+          const timePoints = (arr as Array<{ value?: unknown; timestamp?: number }>).map((item, idx) => ({
+            timestamp: item.timestamp || (now - (values.length - idx) * 60),
+            value: values[idx],
           }))
+
+          const aggregatedValue = aggregateData(timePoints, effectiveAggregate)
+          return { name: seriesName, value: aggregatedValue ?? 0 }
+        }
       }
 
-      // Numeric data - create grouped bar chart
-      // Handle both number[][] and Array<{timestamp, value}> formats
-      const sourceArrays = data as unknown[][]
-      const maxLength = Math.max(...sourceArrays.map(arr => Array.isArray(arr) ? arr.length : 0))
+      // Handle simple number array
+      const numericValues = (arr as unknown[]).filter(v => typeof v === 'number')
+      if (numericValues.length > 0) {
+        const now = Date.now() / 1000
+        const timePoints = numericValues.map((v, idx) => ({
+          timestamp: now - (numericValues.length - idx) * 60,
+          value: v as number,
+        }))
+        const aggregatedValue = aggregateData(timePoints, effectiveAggregate)
+        return { name: seriesName, value: aggregatedValue ?? 0 }
+      }
 
-      // Determine if we should use timestamps for labels
-      const useTimestampLabels = sourceArrays.some(arr =>
-        Array.isArray(arr) && arr.length > 0 &&
-        typeof arr[0] === 'object' && arr[0] !== null && 'timestamp' in arr[0]
-      )
+      return { name: seriesName, value: 0 }
+    })
+  }, [data, sources, effectiveAggregate, getSeriesName, color])
 
-      return Array.from({ length: maxLength }, (_, idx) => {
-        const point: any = {}
-        sources.forEach((ds, i) => {
-          const sourceArray = sourceArrays[i]
-          if (!Array.isArray(sourceArray)) {
-            point[`series${i}`] = 0
-            return
-          }
-          const item = sourceArray[idx]
-          const arrValue = extractNumericValue(item)
-
-          // Use timestamp-based labels if available
-          if (idx === 0) {
-            if (useTimestampLabels && typeof item === 'object' && item !== null && 'timestamp' in item) {
-              const ts = (item as { timestamp: number }).timestamp
-              const date = new Date(ts > 10000000000 ? ts : ts * 1000)
-              point.name = !isNaN(date.getTime())
-                ? date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                : `${idx + 1}`
-            } else {
-              point.name = `${idx + 1}`
-            }
-            // Store series names for legend
-            point.seriesNames = sources.map((ds, si) => getSeriesName(ds, si))
-          }
-
-          point[`series${i}`] = arrValue
-        })
-        return point
-      })
+  // Single-source chart data
+  const singleSourceChartData = useMemo(() => {
+    if (dataSource && isNameValueData(data)) {
+      return data as BarData[]
     }
 
-    // Single source - handle as before
-    if (dataSource && Array.isArray(data) && data.length > 0) {
-      const first = data[0]
-      // Check if already in BarData format (has both 'name' AND 'value')
-      if (typeof first === 'object' && first !== null && 'value' in first && 'name' in first) {
-        return data as BarData[]
-      }
-
-      // Transform telemetry points (handles both numeric and categorical data)
-      // Pass aggregate setting to influence transformation behavior
-      const transformed = transformTelemetryToBarData(data, dataMapping, effectiveAggregate)
-      if (transformed.length > 0) {
-        return transformed
-      }
+    if (dataSource && Array.isArray(data) && data.length > 0 && !isNameValueData(data)) {
+      const seriesName = sources[0] ? getSeriesName(sources[0], 0) : title
+      const transformed = transformTelemetryToBarData(data, dataMapping, effectiveAggregate, seriesName)
+      if (transformed.length > 0) return transformed
     }
 
-    // Handle number array from data source
-    if (dataSource && Array.isArray(data) && data.length > 0 && typeof data[0] === 'number') {
+    if (dataSource && isNumberArray(data)) {
       return (data as number[]).map((value, index) => ({
         name: `${index + 1}`,
         value,
       }))
     }
 
-    // If no dataSource, use propData (static data)
     if (!dataSource && propData && Array.isArray(propData) && propData.length > 0) {
       return propData
     }
 
-    // If dataSource is set but data is empty, return empty array (will show EmptyState)
     if (dataSource && !loading && Array.isArray(data) && data.length === 0) {
       return []
     }
 
-    // Return default sample data for preview only (no dataSource)
+    // Default sample data for preview
     return [
       { name: t('chart.jan'), value: 12 },
       { name: t('chart.feb'), value: 18 },
@@ -401,20 +316,13 @@ export const BarChart = memo(function BarChart({
       { name: t('chart.may'), value: 19 },
       { name: t('chart.jun'), value: 25 },
     ]
-  }, [data, propData, dataSource, sources, loading, dataMapping, effectiveAggregate])
+  }, [data, propData, dataSource, loading, dataMapping, effectiveAggregate, t])
 
-  // Get series info for multi-source rendering
-  const seriesInfo = useMemo(() => {
-    if (sources.length > 1 && Array.isArray(data) && data.length === sources.length) {
-      return sources.map((ds, i) => {
-        return {
-        dataKey: `series${i}`,
-        name: getSeriesName(ds, i),
-        color: color || fallbackColors[i % fallbackColors.length],
-      }})
-    }
-    return null
-  }, [sources, data, color, t])
+  // Select between multi-source and single-source
+  const chartData = multiSourceChartData ?? singleSourceChartData
+
+  // Multi-source now uses standard { name, value } format, no grouped series needed
+  const seriesInfo = useMemo(() => null, [])
 
   // Show loading skeleton when fetching data
   if (dataSource && showLoading) {
@@ -459,8 +367,8 @@ const BarChartRenderer = createMemoRenderer(({ data, seriesInfo, showGrid, showT
   return (
     <RechartsBarChart width={width} height={height} data={data} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
       {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
-      <XAxis dataKey="name" axisLine={false} tickLine={false} tickMargin={10} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} interval="preserveStartEnd" />
-      <YAxis axisLine={false} tickLine={false} tickMargin={10} width={32} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} />
+      <XAxis dataKey="name" axisLine={false} tickLine={false} tickMargin={10} tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} interval="preserveStartEnd" />
+      <YAxis axisLine={false} tickLine={false} tickMargin={10} width={32} tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} />
       {showTooltip && <Tooltip content={<ChartTooltip />} />}
       {showLegend && <Legend />}
       {seriesInfo ? (

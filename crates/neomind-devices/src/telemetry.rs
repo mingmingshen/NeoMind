@@ -146,9 +146,13 @@ pub struct TimeSeriesStorage {
 impl TimeSeriesStorage {
     /// Get a clone of the inner store Arc.
     /// The lock is held only for the Arc::clone (atomic increment), never across .await.
+    /// Recovers from poisoned lock by taking the inner value (the data is still valid).
     #[inline]
     fn store(&self) -> Arc<StorageTimeSeriesStore> {
-        self.store.read().expect("telemetry store lock poisoned").clone()
+        match self.store.read() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
     }
 
     /// Create a new time series storage at the given path
@@ -166,8 +170,12 @@ impl TimeSeriesStorage {
     }
 
     /// Swap the underlying store (used for deferred persistent storage loading).
+    /// Recovers from poisoned lock by overwriting.
     pub fn swap_store(&self, new_store: Arc<StorageTimeSeriesStore>) {
-        *self.store.write().expect("telemetry store lock poisoned") = new_store;
+        match self.store.write() {
+            Ok(mut guard) => *guard = new_store,
+            Err(poisoned) => *poisoned.into_inner() = new_store,
+        }
     }
 
     /// Write a data point (all value types are stored)

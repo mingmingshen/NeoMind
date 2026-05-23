@@ -5,7 +5,7 @@
  * for dashboard time-series data.
  */
 
-import type { TelemetryAggregate, FillMissingStrategy } from '../types'
+import type { TelemetryAggregate } from '../types'
 import type { TelemetryPoint } from '../api/telemetry'
 
 // ============================================================================
@@ -47,54 +47,6 @@ export function aggregateData(
     default:
       return points[points.length - 1].value
   }
-}
-
-// ============================================================================
-// Fill missing data
-// ============================================================================
-
-/** Fill gaps in time-series data */
-export function fillMissing(
-  points: TelemetryPoint[],
-  strategy: FillMissingStrategy,
-  intervalMs: number,
-): TelemetryPoint[] {
-  if (points.length < 2 || strategy === 'none') return points
-
-  const result: TelemetryPoint[] = []
-  for (let i = 0; i < points.length; i++) {
-    result.push(points[i])
-
-    if (i < points.length - 1) {
-      const gap = points[i + 1].timestamp - points[i].timestamp
-      const expectedInterval = intervalMs / 1000
-      if (gap > expectedInterval * 1.5) {
-        // Fill the gap
-        const fillCount = Math.floor(gap / expectedInterval) - 1
-        for (let j = 1; j <= fillCount && j <= 100; j++) {
-          const ts = points[i].timestamp + j * expectedInterval
-          let value: number
-          switch (strategy) {
-            case 'zero':
-              value = 0
-              break
-            case 'previous':
-              value = points[i].value
-              break
-            case 'linear': {
-              const ratio = j / (fillCount + 1)
-              value = points[i].value + (points[i + 1].value - points[i].value) * ratio
-              break
-            }
-            default:
-              value = 0
-          }
-          result.push({ timestamp: ts, value })
-        }
-      }
-    }
-  }
-  return result
 }
 
 // ============================================================================

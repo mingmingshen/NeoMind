@@ -56,7 +56,7 @@ function getIconForTitle(title?: string): React.ComponentType<{ className?: stri
   return Power
 }
 
-export function ToggleSwitch({
+export function CommandButton({
   dataSource,
   title,
   size = 'md',
@@ -434,3 +434,6 @@ export function ToggleSwitch({
     </>
   )
 }
+
+/** @deprecated Use CommandButton instead */
+export const ToggleSwitch = CommandButton

@@ -257,6 +257,7 @@ export function isDuplicatePoint(
 /**
  * Deduplicate telemetry points. Skips dedup for image data.
  * Removes exact timestamp duplicates, caps at maxLimit.
+ * O(n) using a Set for seen timestamps.
  */
 export function dedupeTelemetryPoints(
   points: unknown[],
@@ -266,9 +267,13 @@ export function dedupeTelemetryPoints(
   if (points.some(isImageData)) return points.slice(0, maxLimit)
 
   const deduped: unknown[] = []
+  const seen = new Set<number>()
   for (const p of points) {
     const ts = getTs(p)
-    if (deduped.some((k) => Math.abs(getTs(k) - ts) < 1)) continue
+    // Quantize to 1-second buckets to match the old Math.abs(ts - existing) < 1 behavior
+    const bucket = Math.round(ts)
+    if (seen.has(bucket)) continue
+    seen.add(bucket)
     deduped.push(p)
     if (deduped.length >= maxLimit) break
   }

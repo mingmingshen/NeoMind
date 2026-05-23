@@ -13,8 +13,6 @@ export type {
   TelemetryAggregate,
   TimeWindowType,
   TimeWindowConfig,
-  ChartViewMode,
-  FillMissingStrategy,
 } from '@/types/dashboard'
 
 export {

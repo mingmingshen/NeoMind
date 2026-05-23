@@ -20,7 +20,7 @@ import { ProgressBar } from '@/components/dashboard/generic/ProgressBar'
 import { LineChart, AreaChart } from '@/components/dashboard/generic/LineChart'
 import { BarChart } from '@/components/dashboard/generic/BarChart'
 import { PieChart } from '@/components/dashboard/generic/PieChart'
-import { ToggleSwitch } from '@/components/dashboard/generic/ToggleSwitch'
+import { CommandButton } from '@/components/dashboard/generic/CommandButton'
 import { ImageDisplay } from '@/components/dashboard/generic/ImageDisplay'
 import { ImageHistory } from '@/components/dashboard/generic/ImageHistory'
 import { WebDisplay } from '@/components/dashboard/generic/WebDisplay'
@@ -78,9 +78,9 @@ function PieChartAdapter({ dataSource, title }: WidgetProps) {
   return <PieChart dataSource={dataSource?.source} title={title} />
 }
 
-function ToggleSwitchAdapter({ dataSource, isEditing, title }: WidgetProps) {
+function CommandButtonAdapter({ dataSource, isEditing, title }: WidgetProps) {
   return (
-    <ToggleSwitch
+    <CommandButton
       dataSource={dataSource?.source}
       title={title}
       editMode={isEditing}
@@ -143,7 +143,7 @@ const WIDGET_ADAPTERS: Record<string, ComponentType<WidgetProps>> = {
   'area-chart': AreaChartAdapter,
   'bar-chart': BarChartAdapter,
   'pie-chart': PieChartAdapter,
-  'toggle-switch': ToggleSwitchAdapter,
+  'toggle-switch': CommandButtonAdapter,
   'image-display': ImageDisplayAdapter,
   'image-history': ImageHistoryAdapter,
   'web-display': WebDisplayAdapter,

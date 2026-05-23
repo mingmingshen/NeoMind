@@ -31,7 +31,7 @@ import {
   BarChart3,
   PieChart as PieChartIcon,
   // Controls
-  ToggleLeft,
+  Send,
   Layers as LayersIcon,
   Sliders as SliderIcon,
   List,
@@ -191,7 +191,7 @@ export const componentRegistry: ComponentRegistry = {
     acceptsProp: (prop) => [
       'data', 'labels', 'colors', 'smooth', 'showGrid',
       'showLegend', 'showTooltip', 'fillArea', 'className',
-      'limit', 'timeRange', 'aggregate', 'chartViewMode', 'dataMapping'
+      'limit', 'timeRange', 'aggregate', 'dataMapping'
     ].includes(prop),
     defaultProps: {
       smooth: true,
@@ -216,7 +216,7 @@ export const componentRegistry: ComponentRegistry = {
     acceptsProp: (prop) => [
       'data', 'labels', 'colors', 'smooth', 'showGrid',
       'showLegend', 'showTooltip', 'opacity', 'className',
-      'limit', 'timeRange', 'aggregate', 'chartViewMode', 'dataMapping'
+      'limit', 'timeRange', 'aggregate', 'dataMapping'
     ].includes(prop),
     defaultProps: {
       smooth: true,
@@ -279,10 +279,10 @@ export const componentRegistry: ComponentRegistry = {
 
   'toggle-switch': {
     type: 'toggle-switch',
-    name: 'Toggle Switch',
-    description: 'On/off toggle switch for device commands',
+    name: 'Command Button',
+    description: 'Trigger button that opens a command form dialog for device or extension commands',
     category: 'controls',
-    icon: ToggleLeft,
+    icon: Send,
     sizeConstraints: getSizeConstraints('toggle-switch'),
     hasDataSource: true,
     hasDisplayConfig: false,
@@ -645,7 +645,7 @@ export function getCategoryInfo(category: ComponentCategory): { name: string; ic
   const categoryInfos: Record<string, { name: string; icon: React.ComponentType<{ className?: string }> }> = {
     indicators: { name: 'Indicators', icon: Hash },
     charts: { name: 'Charts', icon: LineChartIcon },
-    controls: { name: 'Controls', icon: ToggleLeft },
+    controls: { name: 'Controls', icon: Send },
     display: { name: 'Display & Content', icon: Image },
     spatial: { name: 'Spatial & Media', icon: MapPin },
     business: { name: 'Business Components', icon: Bot },

@@ -450,10 +450,15 @@ export class HybridDashboardStorage implements DashboardStorage {
   private async doServerSync(dashboard: Dashboard): Promise<StorageResult<Dashboard>> {
     const localResult = await this.localStorage.sync(dashboard)
 
-    // Sync to API in background (don't await)
-    this.apiStorage.sync(localResult.data || dashboard).catch(() => {
-      console.warn('[HybridStorage] API sync failed for dashboard:', dashboard.id)
-    })
+    // Sync to API — track failure so callers can detect stale server state
+    try {
+      const apiResult = await this.apiStorage.sync(localResult.data || dashboard)
+      if (apiResult.error) {
+        console.warn('[HybridStorage] API sync error for dashboard:', dashboard.id, apiResult.error)
+      }
+    } catch (err) {
+      console.warn('[HybridStorage] API sync failed for dashboard:', dashboard.id, err)
+    }
 
     return localResult
   }

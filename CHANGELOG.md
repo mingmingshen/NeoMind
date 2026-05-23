@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.7.9] - 2026-05-23
+
+### Added
+
+- **CLI command system (neomind-cli-ops)** — New shared library crate with typed API client, unified output formatting, and full CLI commands for all 8 domains: device, dashboard, rule, extension, widget, transform, agent, message. Each domain supports list/get/create/update/delete plus domain-specific actions (device control, rule testing, agent invocation, extension marketplace, etc.)
+- **AI Build Mode foundation** — `neomind-cli` packaged as Tauri external binary, enabling the agent to execute CLI commands via shell tool. Full CLI command reference injected into agent system prompt for discoverability
+- **System CLI** — New `system info` command aggregating MQTT broker status, network info, and webhook URL. Broker management and help modules added
+- **Telemetry stats API** — New endpoint for telemetry statistics with improved telemetry handling in backend
+- **Dashboard rewrite (Phase 1–4)** — Complete frontend dashboard architecture overhaul:
+  - Phase 1: New type system, API client, and Zustand store slices (CRUD + data source)
+  - Phase 2: Query hooks, data source abstractions, real-time event bridge
+  - Phase 3: Grid layout, widget shell, config panel, component registries
+  - Phase 4: Widget adapters for all chart types, feature module barrel export
+
+### Changed
+
+- **useDataSource pipeline rewrite** — Refactored from 16 files to 4 focused sub-hooks (useTelemetrySource, useExtensionSource, useStoreSource, useSystemSource). Fixed extension event dynamic updates and data flow bugs
+- **Agent CLI integration** — Unified flag names between shell.rs and CLI for consistency. Improved CLI completeness and token efficiency in agent prompts
+
+### Fixed
+
+- **Dashboard scroll white screen** — Multiple fixes: debounced Recharts ResponsiveContainer, staggered chart rendering with memoization, skipped unchanged device updates, removed overflow-anchor suppression
+- **Dashboard multi-widget performance** — Fixed lag, blank widgets, and unresponsive mouse in dashboards with many components
+- **Dashboard config preview** — Fixed live preview not reflecting config changes, removed forced grid aspect ratio causing component distortion, preserved component aspect ratio
+- **Dashboard data source config** — Improved data source selector and configuration UI
+- **Extension crash diagnostics** — Improved error reporting and fixed Windows DLL search path
+- **CLI compatibility** — Fixed short option conflicts in device commands, added `--json` flag, fixed output printing, added API key auth support
+- **Extension runner** — Bumped to 0.7.5 with improved crash protection
+
 ## [v0.7.8] - 2026-05-16
 
 ### Changed

@@ -13,7 +13,7 @@ import { useDashboardStore } from '../../store'
 import { DataSourceSelector } from './DataSourceSelector'
 import { DisplayOptions } from './DisplayOptions'
 import { ActionConfigEditor } from './ActionConfig'
-import type { DashboardComponent, DataSource, DisplayConfig, ActionConfig, GenericComponent } from '@/types/dashboard'
+import type { DashboardComponent, DataSourceOrList, DisplayConfig, ActionConfig, GenericComponent } from '@/types/dashboard'
 import { isGenericComponent } from '@/types/dashboard'
 
 export function WidgetConfigPanel() {
@@ -42,7 +42,7 @@ export function WidgetConfigPanel() {
   )
 
   const handleDataSourceChange = useCallback(
-    (dataSource: DataSource) => {
+    (dataSource: DataSourceOrList) => {
       if (!configComponentId) return
       updateComponent(configComponentId, { dataSource })
     },
@@ -105,7 +105,7 @@ export function WidgetConfigPanel() {
             {t('dashboard.dataSource', 'Data Source')}
           </Label>
           <DataSourceSelector
-            value={component.dataSource}
+            value={Array.isArray(component.dataSource) ? component.dataSource[0] : component.dataSource}
             onChange={handleDataSourceChange}
           />
         </div>

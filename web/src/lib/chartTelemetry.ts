@@ -29,13 +29,14 @@ export function toTelemetrySource(
 ): DataSource | undefined {
   if (!dataSource) return undefined
 
-  const effectiveTimeWindow = getEffectiveTimeWindow(dataSource)
+  const effectiveTimeWindow = dataSource.timeWindow ?? getEffectiveTimeWindow(dataSource)
 
   if (dataSource.type === 'telemetry') {
     return {
       ...dataSource,
       limit: dataSource.limit ?? limit,
       timeRange: dataSource.timeRange ?? timeWindowToHours(effectiveTimeWindow.type),
+      timeWindow: effectiveTimeWindow,
       aggregate: 'raw',
       params: {
         ...dataSource.params,
@@ -46,29 +47,18 @@ export function toTelemetrySource(
   }
 
   const sourceId = getSourceId(dataSource)
-  if (dataSource.type === 'device' && sourceId) {
+  if ((dataSource.type === 'device' || dataSource.type === 'metric') && sourceId) {
     return {
-      type: 'telemetry',
+      type: 'telemetry' as const,
       sourceId,
       metricId: dataSource.metricId ?? dataSource.property ?? 'value',
-      timeRange: timeWindowToHours(effectiveTimeWindow.type),
-      limit,
-      aggregate: 'raw',
+      timeRange: dataSource.timeRange ?? timeWindowToHours(effectiveTimeWindow.type),
+      limit: dataSource.limit ?? limit,
+      aggregate: 'raw' as const,
+      aggregateExt: dataSource.aggregateExt,
+      timeWindow: effectiveTimeWindow,
       params: { includeRawPoints: true },
-      transform: 'raw',
-    }
-  }
-
-  if (dataSource.type === 'metric' && sourceId) {
-    return {
-      type: 'telemetry',
-      sourceId,
-      metricId: dataSource.metricId ?? dataSource.property ?? 'value',
-      timeRange: timeWindowToHours(effectiveTimeWindow.type),
-      limit,
-      aggregate: 'raw',
-      params: { includeRawPoints: true },
-      transform: 'raw',
+      transform: 'raw' as const,
     }
   }
 

@@ -325,7 +325,11 @@ function SharedDashboardContent({ dashboard }: SharedDashboardContentProps) {
         position: comp.position,
         children: (
           <ComponentErrorBoundary>
-            {renderDashboardComponent(comp, false)}
+            <div className="relative h-full">
+              <div className="h-full w-full flex flex-col">
+                {renderDashboardComponent(comp, false)}
+              </div>
+            </div>
           </ComponentErrorBoundary>
         ),
       })),

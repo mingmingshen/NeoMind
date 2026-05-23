@@ -435,16 +435,20 @@ export const createDashboardCrudSlice: StateCreator<
         try {
           const result = await storage.sync(localDashboard)
           if (result.data && result.data.id !== localDashboard.id) {
-            const { dashboards: currentDashboards } = get()
+            const { dashboards: currentDashboards, currentDashboardId: activeId } = get()
             const newDashboards = currentDashboards
               .map((d) => (d.id === localDashboard.id ? result.data : d))
               .filter((d): d is Dashboard => d !== null)
+            // Only update currentDashboard if user hasn't switched away
+            const isStillActive = activeId === localDashboard.id
             set({
               dashboards: newDashboards,
-              currentDashboard: result.data,
-              currentDashboardId: result.data?.id,
+              ...(isStillActive ? {
+                currentDashboard: result.data,
+                currentDashboardId: result.data?.id,
+              } : {}),
             })
-            return result.data.id
+            return isStillActive ? result.data.id : localDashboard.id
           }
         } catch (err) {
           console.warn('[DashboardCrudSlice] Background sync failed:', err)

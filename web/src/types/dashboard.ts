@@ -75,28 +75,6 @@ export interface TimeWindowConfig {
   endTime?: number    // Unix timestamp in seconds
 }
 
-/**
- * Chart view mode - how to interpret and display the data.
- * - timeseries: X-axis is time, show trends over time
- * - snapshot: Show current/aggregated values (comparison view)
- * - distribution: Show proportions (for pie/donut charts)
- * - histogram: Show frequency distribution
- */
-export type ChartViewMode =
-  | 'timeseries'     // 时序模式：X轴=时间
-  | 'snapshot'       // 快照模式：显示当前值或聚合值对比
-  | 'distribution'   // 分布模式：显示占比（适合饼图）
-  | 'histogram'      // 直方图模式：显示频率分布
-
-/**
- * How to handle missing/empty values in time series.
- */
-export type FillMissingStrategy =
-  | 'none'       // Leave as null/undefined
-  | 'zero'       // Fill with 0
-  | 'previous'   // Use previous value (forward fill)
-  | 'linear'     // Linear interpolation between points
-
 // ============================================================================
 // Data Source Interface
 // ============================================================================
@@ -139,14 +117,6 @@ export interface DataSource {
   timeWindow?: TimeWindowConfig
   // Extended aggregation method
   aggregateExt?: TelemetryAggregate
-  // Chart view mode - how to interpret data
-  chartViewMode?: ChartViewMode
-  // Data sampling interval (seconds) - for downsampling
-  sampleInterval?: number
-  // How to handle missing values
-  fillMissing?: FillMissingStrategy
-  // Group dimension for multi-source data
-  groupBy?: 'device' | 'metric' | 'time'
 
   // === Device-info fields ===
   infoProperty?: 'name' | 'status' | 'online' | 'last_seen' | 'device_type' | 'plugin_name' | 'adapter_id'
@@ -180,10 +150,53 @@ export function isDataSourceList(value: unknown): value is DataSource[] {
   return Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && 'type' in value[0]
 }
 
-// Normalize to array
+/**
+ * Convert hours to the closest TimeWindowType (reverse of timeWindowToHours).
+ * Used to resolve legacy `timeRange` (hours) to canonical `timeWindow`.
+ */
+export function hoursToTimeWindow(hours: number): TimeWindowConfig {
+  if (hours === 0) return { type: 'now' }
+  const mapping: [number, TimeWindowType][] = [
+    [5 / 60, 'last_5min'],
+    [15 / 60, 'last_15min'],
+    [30 / 60, 'last_30min'],
+    [1, 'last_1hour'],
+    [6, 'last_6hours'],
+    [24, 'last_24hours'],
+    [24 * 7, 'this_week'],
+  ]
+  for (const [h, type] of mapping) {
+    if (hours <= h) return { type }
+  }
+  return { type: 'last_24hours' }
+}
+
+/**
+ * Normalize legacy fields to canonical fields on a single DataSource.
+ * Called once at entry point so all downstream consumers can read directly.
+ *
+ * - aggregate / aggregateExt → aggregateExt
+ * - timeRange / timeWindow → timeWindow
+ */
+export function resolveDataSource(ds: DataSource): DataSource {
+  // Resolve aggregate: aggregateExt is canonical, fallback to aggregate
+  const aggregateExt = ds.aggregateExt ?? (ds.aggregate as TelemetryAggregate | undefined) ?? undefined
+
+  // Resolve timeWindow: prefer explicit, fallback from legacy timeRange
+  const timeWindow = ds.timeWindow ?? (ds.timeRange != null ? hoursToTimeWindow(ds.timeRange) : undefined)
+
+  return {
+    ...ds,
+    ...(aggregateExt !== undefined && { aggregateExt }),
+    ...(timeWindow !== undefined && { timeWindow }),
+  }
+}
+
+// Normalize to array (resolves legacy fields)
 export function normalizeDataSource(dataSource: DataSourceOrList | undefined): DataSource[] {
   if (!dataSource) return []
-  return isDataSourceList(dataSource) ? dataSource : [dataSource]
+  const arr = isDataSourceList(dataSource) ? dataSource : [dataSource]
+  return arr.map(resolveDataSource)
 }
 
 /** Get the source identifier from a DataSource */
@@ -388,7 +401,7 @@ export interface BaseComponent {
 
 export interface GenericComponent extends BaseComponent {
   type: GenericComponentType
-  dataSource?: DataSource
+  dataSource?: DataSourceOrList
   display?: DisplayConfig
   actions?: ActionConfig[]
   config?: Record<string, unknown>
@@ -396,7 +409,7 @@ export interface GenericComponent extends BaseComponent {
 
 export interface BusinessComponent extends BaseComponent {
   type: BusinessComponentType
-  dataSource?: DataSource
+  dataSource?: DataSourceOrList
   config?: Record<string, unknown>
 }
 
