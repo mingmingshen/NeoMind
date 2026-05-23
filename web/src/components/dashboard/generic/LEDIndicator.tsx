@@ -210,7 +210,8 @@ export function LEDIndicator({
   const { data, loading, error } = useDataSource<unknown>(dataSource)
 
   // Prevent loading flash: only show skeleton when loading AND no data exists yet
-  const hasData = data !== null && data !== undefined
+  // Treat empty arrays as "no data" — the pipeline uses [] for empty fetches
+  const hasData = data !== null && data !== undefined && !(Array.isArray(data) && data.length === 0)
   const showLoading = loading && !hasData
 
   // Determine state, label, and color from matching rule

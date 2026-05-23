@@ -217,7 +217,8 @@ export function useDataSource<T = unknown>(
     {
       data, setData, setDataRaw, setLoading, setError, setLastUpdate,
       dataSourcesRef, optionsRef,
-    }
+    },
+    hasExtensionSource
   )
 
   // ============================================================================

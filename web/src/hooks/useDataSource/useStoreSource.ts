@@ -100,7 +100,8 @@ export function useStoreSource<T = unknown>(
   deviceInfoIds: Set<string>,
   hasTelemetrySource: boolean,
   needsWebSocket: boolean,
-  state: StoreSourceState<T>
+  state: StoreSourceState<T>,
+  hasExtensionSource?: boolean
 ): { readDataFromStore: () => void } {
   const initialFetchDoneRef = useRef<Set<string>>(new Set())
   const lastValidDataRef = useRef<Record<string, unknown>>({})
@@ -128,11 +129,15 @@ export function useStoreSource<T = unknown>(
       return
     }
 
-    try {
-      const nonTelemetrySources = currentDataSources.filter(
-        (ds) => ds.type !== 'telemetry' && ds.type !== 'system' && ds.type !== 'extension' && ds.type !== 'transform' && ds.type !== 'ai-metric'
-      )
+    const nonTelemetrySources = currentDataSources.filter(
+      (ds) => ds.type !== 'telemetry' && ds.type !== 'system' && ds.type !== 'extension' && ds.type !== 'transform' && ds.type !== 'ai-metric'
+    )
 
+    // When all sources are telemetry/system/extension, readDataFromStore has nothing to do.
+    // Don't touch loading state — those hooks manage their own loading lifecycle.
+    if (nonTelemetrySources.length === 0) return
+
+    try {
       const results = nonTelemetrySources.map((ds) => {
         let result: unknown
 
@@ -232,10 +237,8 @@ export function useStoreSource<T = unknown>(
       let finalData: unknown
       if (nonTelemetrySources.length > 0 && currentDataSources.length > 1) {
         finalData = results
-      } else if (nonTelemetrySources.length === 1) {
-        finalData = results[0]
       } else {
-        return
+        finalData = results[0]
       }
 
       const transformedData = transformFn ? transformFn(finalData) : (finalData as T)
@@ -263,7 +266,14 @@ export function useStoreSource<T = unknown>(
       return
     }
     if (!enabled) { state.setLoading(false); return }
-    if (relevantDeviceIds.size === 0) { readDataFromStore(); state.setLoading(false); return }
+    if (relevantDeviceIds.size === 0) {
+      readDataFromStore()
+      // readDataFromStore returns early for telemetry-only/extension-only sources
+      // without touching loading state — those hooks manage their own lifecycle.
+      // Only set loading=false when no async source will handle it.
+      if (!hasTelemetrySource && !hasExtensionSource) state.setLoading(false)
+      return
+    }
 
     readDataFromStore()
     prevStoreStateRef.current = { devices: useStore.getState().devices }

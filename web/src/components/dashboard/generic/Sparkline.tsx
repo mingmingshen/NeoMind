@@ -451,7 +451,8 @@ function SparklineComponent({
   })
 
   // Prevent loading flash: only show skeleton when loading AND no data exists yet
-  const hasData = data !== null && data !== undefined
+  // Treat empty arrays as "no data" — the pipeline uses [] for empty fetches
+  const hasData = data !== null && data !== undefined && !(Array.isArray(data) && data.length === 0)
   const showLoading = loading && !hasData
 
   // Check if dataSource is configured

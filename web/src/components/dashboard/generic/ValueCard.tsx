@@ -157,9 +157,8 @@ export const ValueCard = memo(function ValueCard({
     fallback: null,
   })
 
-  // Keep last valid data to avoid skeleton flash during telemetry refreshes.
-  // Only show skeleton on the very first load when we have no data at all.
-  const hasData = data !== null && data !== undefined
+  // Treat empty arrays as "no data" — the pipeline uses [] for empty fetches.
+  const hasData = data !== null && data !== undefined && !(Array.isArray(data) && data.length === 0)
   const showLoading = loading && !hasData
 
   // Check if dataSource is configured
@@ -304,7 +303,7 @@ export const ValueCard = memo(function ValueCard({
   // For arrays, use the first value (API returns data DESCENDING, so first is latest)
   // For objects, extract the 'value' property (handles both {value} and {time, value} formats)
   const formattedValue = useMemo(() => {
-    if (error || data === null || data === undefined) {
+    if (error || data === null || data === undefined || (Array.isArray(data) && data.length === 0)) {
       return '-'
     }
 

@@ -83,7 +83,8 @@ export function ProgressBar({
   })
 
   // Prevent loading flash: only show skeleton when loading AND no data exists yet
-  const hasData = data !== null && data !== undefined
+  // Treat empty arrays as "no data" — the pipeline uses [] for empty fetches
+  const hasData = data !== null && data !== undefined && !(Array.isArray(data) && data.length === 0)
   const showLoading = loading && !hasData
 
   // Extract value using DataMapper for proper data handling
@@ -125,7 +126,7 @@ export function ProgressBar({
   }
 
   // Unified empty state for all variants (only when dataSource is configured but no value)
-  if (!loading && !error && hasDataSource && (data === null || data === undefined)) {
+  if (!loading && !error && hasDataSource && (data === null || data === undefined || (Array.isArray(data) && data.length === 0))) {
     return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
