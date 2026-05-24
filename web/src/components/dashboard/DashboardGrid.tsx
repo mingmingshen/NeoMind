@@ -4,12 +4,10 @@
  * Provides a drag-and-drop grid layout using react-grid-layout v2.
  *
  * Layout Strategy:
- * - `layouts` prop is ONLY updated when components are added/removed
- * - react-grid-layout manages ALL positions internally (compact, drag, resize)
- * - `onLayoutChange` only updates a ref — never triggers React state/props
+ * - `layouts` always reflects component positions from props
+ * - react-grid-layout is re-driven via `layouts` whenever container width changes
+ * - This ensures sidebar toggle / resize always produces correct layout
  * - Positions synced to parent ONLY on drag/resize stop
- * - This completely avoids the controlled-mode feedback loop
- *   (react-grid-layout#1984: onLayoutChange fires twice)
  */
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
@@ -60,94 +58,11 @@ export function DashboardGrid({
   const isMobile = useIsMobile()
   const touchEnabled = isTouchDevice()
 
-  // react-grid-layout's latest internal positions (ref only, never triggers re-render)
-  const latestLayoutRef = useRef<Record<string, { x: number; y: number; w: number; h: number }>>({})
-
-  // Stable component ID string — only changes when components are added/removed
+  // Component ID string — changes when dashboard switches (different widgets)
   const componentIdKey = useMemo(() => components.map(c => c.id).join(','), [components])
 
-  // Keep a synchronous ref to components for use in the layouts memo.
-  const componentsRef = useRef(components)
-  componentsRef.current = components
-
-  // "Settle" mechanism: after new components are added, react-grid-layout may
-  // compact them (e.g., remove gaps). We need ONE layouts recalculation after
-  // compact to bake in the corrected positions, then never again.
-  const needsSettleRef = useRef(false)
-  const [settleVersion, setSettleVersion] = useState(0)
-
-  // Detect new components SYNCHRONOUSLY during render (not in useEffect).
-  const prevComponentIdKeyRef = useRef(componentIdKey)
-  if (componentIdKey !== prevComponentIdKeyRef.current) {
-    prevComponentIdKeyRef.current = componentIdKey
-    needsSettleRef.current = true
-    // Clear stale layout data from previous dashboard
-    latestLayoutRef.current = {}
-  }
-
-  // Build layouts using latestLayoutRef for settled positions.
-  const layouts = useMemo(() => {
-    const layout = componentsRef.current.map((c) => {
-      const current = latestLayoutRef.current[c.id]
-      const pos = current || c.position
-      return {
-        i: c.id,
-        x: pos.x ?? 0, y: pos.y ?? 0,
-        w: pos.w ?? c.position.w ?? 4,
-        h: pos.h ?? c.position.h ?? 3,
-        minW: c.position.minW ?? 1,
-        minH: c.position.minH ?? 1,
-        maxW: c.position.maxW,
-        maxH: c.position.maxH,
-        static: false,
-      }
-    })
-    return { lg: layout, md: layout, sm: layout, xs: layout }
-  }, [componentIdKey, settleVersion])
-
-  // Handle layout changes from react-grid-layout.
-  // Only update latestLayoutRef during settle (new component added).
-  // During width changes (sidebar toggle, resize), react-grid-layout manages
-  // positions internally — saving compacted positions would prevent layout recovery.
-  const handleLayoutChange = useCallback((currentLayout: any) => {
-    if (needsSettleRef.current) {
-      const newPositions: Record<string, { x: number; y: number; w: number; h: number }> = {}
-      currentLayout.forEach((item: any) => {
-        newPositions[item.i] = { x: item.x, y: item.y, w: item.w, h: item.h }
-      })
-      latestLayoutRef.current = newPositions
-      needsSettleRef.current = false
-      setSettleVersion(v => v + 1)
-    }
-  }, [])
-
-  const handleDragStart = useCallback(() => {}, [])
-
-  const handleDragStop = useCallback((layout: any) => {
-    const positions: Record<string, { x: number; y: number; w: number; h: number }> = {}
-    layout.forEach((item: any) => {
-      positions[item.i] = { x: item.x, y: item.y, w: item.w, h: item.h }
-    })
-    latestLayoutRef.current = positions
-    if (onLayoutChange && editMode) {
-      onLayoutChange(layout as readonly any[])
-    }
-  }, [onLayoutChange, editMode])
-
-  const handleResizeStart = useCallback(() => {}, [])
-
-  const handleResizeStop = useCallback((layout: any) => {
-    const positions: Record<string, { x: number; y: number; w: number; h: number }> = {}
-    layout.forEach((item: any) => {
-      positions[item.i] = { x: item.x, y: item.y, w: item.w, h: item.h }
-    })
-    latestLayoutRef.current = positions
-    if (onLayoutChange && editMode) {
-      onLayoutChange(layout as readonly any[])
-    }
-  }, [onLayoutChange, editMode])
-
-  // Debounced container width (matching v0.6.9's simple approach)
+  // Track container width via ResizeObserver
+  const widthRef = useRef(0)
   const updateWidth = useCallback(() => {
     if (containerRef.current) {
       const w = containerRef.current.offsetWidth
@@ -156,36 +71,50 @@ export function DashboardGrid({
     }
   }, [])
 
-  const resizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const widthRef = useRef(0)
-
   useEffect(() => {
     updateWidth()
-    const resizeObserver = new ResizeObserver((entries) => {
-      // Use contentBoxSize for immediate, accurate width
-      const newWidth = entries[0]?.contentBoxSize?.[0]?.inlineSize
-        ?? containerRef.current?.offsetWidth
-        ?? 0
-      if (newWidth > 0 && Math.abs(newWidth - widthRef.current) > 1) {
-        widthRef.current = newWidth
-        setWidth(newWidth)
-      }
-      // Also schedule a delayed update to catch final layout after CSS transitions
-      if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current)
-      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 150)
+    const resizeObserver = new ResizeObserver(() => {
+      requestAnimationFrame(updateWidth)
     })
     if (containerRef.current) resizeObserver.observe(containerRef.current)
-    const handleWindowResize = () => {
-      if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current)
-      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 100)
-    }
-    window.addEventListener('resize', handleWindowResize)
     return () => {
       resizeObserver.disconnect()
-      window.removeEventListener('resize', handleWindowResize)
-      if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current)
     }
   }, [updateWidth])
+
+  // Build layouts — include `width` in deps so the object reference changes
+  // whenever the container resizes. This forces react-grid-layout to fully
+  // recalculate positions from the original component.position values, preventing
+  // stale compacted positions from sidebar toggle or window resize.
+  const layouts = useMemo(() => {
+    const layout = components.map((c) => ({
+      i: c.id,
+      x: c.position.x ?? 0,
+      y: c.position.y ?? 0,
+      w: c.position.w ?? 4,
+      h: c.position.h ?? 3,
+      minW: c.position.minW ?? 1,
+      minH: c.position.minH ?? 1,
+      maxW: c.position.maxW,
+      maxH: c.position.maxH,
+      static: false,
+    }))
+    return { lg: layout, md: layout, sm: layout, xs: layout }
+    // width in deps: forces react-grid-layout to recalculate on container resize
+  }, [componentIdKey, width, components])
+
+  // Drag/resize handlers — only persist to parent, don't feed back into layouts
+  const handleDragStop = useCallback((layout: any) => {
+    if (onLayoutChange && editMode) {
+      onLayoutChange(layout as readonly any[])
+    }
+  }, [onLayoutChange, editMode])
+
+  const handleResizeStop = useCallback((layout: any) => {
+    if (onLayoutChange && editMode) {
+      onLayoutChange(layout as readonly any[])
+    }
+  }, [onLayoutChange, editMode])
 
   // Transitions
   const [transitionsEnabled, setTransitionsEnabled] = useState(false)
@@ -278,10 +207,7 @@ export function DashboardGrid({
           maxRows={Infinity}
           dragConfig={{ enabled: editMode, bounded: false }}
           resizeConfig={{ enabled: editMode, handles: ['se'] as const }}
-          onLayoutChange={handleLayoutChange}
-          onDragStart={handleDragStart}
           onDragStop={handleDragStop}
-          onResizeStart={handleResizeStart}
           onResizeStop={handleResizeStop}
         >
           {components.map((component) => (
