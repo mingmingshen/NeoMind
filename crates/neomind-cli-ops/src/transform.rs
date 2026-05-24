@@ -15,6 +15,22 @@ pub async fn get_transform(client: &ApiClient, id: &str) -> Result<CliResponse> 
     Ok(CliResponse::success(data, "Transform retrieved"))
 }
 
+/// Parse scope string to JSON matching API's TransformScope serde format
+/// "global" → "global"
+/// "device_type:TH" → {"device_type": "TH"}
+/// "device:TH_8f072f7d" → {"device": "TH_8f072f7d"}
+fn scope_to_json(scope: &str) -> serde_json::Value {
+    if scope.starts_with("device_type:") {
+        let parts: Vec<&str> = scope.splitn(2, ':').collect();
+        json!({"device_type": parts[1]})
+    } else if scope.starts_with("device:") {
+        let parts: Vec<&str> = scope.splitn(2, ':').collect();
+        json!({"device": parts[1]})
+    } else {
+        json!(scope)
+    }
+}
+
 /// Create a new transform
 pub async fn create_transform(
     client: &ApiClient,
@@ -26,7 +42,7 @@ pub async fn create_transform(
     enabled: Option<bool>,
 ) -> Result<CliResponse> {
     let definition = json!({
-        "scope": scope,
+        "scope": scope_to_json(scope),
         "js_code": js_code,
         "output_prefix": output_prefix.unwrap_or("transform"),
     });
@@ -67,7 +83,7 @@ pub async fn update_transform(
         definition["js_code"] = json!(code);
     }
     if let Some(s) = scope {
-        definition["scope"] = json!(s);
+        definition["scope"] = scope_to_json(s);
     }
     if let Some(op) = output_prefix {
         definition["output_prefix"] = json!(op);
