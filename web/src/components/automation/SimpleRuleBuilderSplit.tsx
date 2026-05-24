@@ -2392,14 +2392,14 @@ function ConditionStep({
             </div>
 
             <div className="space-y-3">
-              <div className="flex items-start gap-3 p-3 bg-background rounded-lg border">
-                <div className="p-1.5 rounded bg-success-light">
+              <div className="flex items-center gap-3 p-3 bg-background rounded-lg border">
+                <div className="w-6 h-6 shrink-0 rounded-full bg-success-light flex items-center justify-center">
                   <span className="text-xs font-medium text-success">1</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{tBuilder('manualStep1') || '在规则列表中点击执行按钮'}</p>
               </div>
-              <div className="flex items-start gap-3 p-3 bg-background rounded-lg border">
-                <div className="p-1.5 rounded bg-success-light">
+              <div className="flex items-center gap-3 p-3 bg-background rounded-lg border">
+                <div className="w-6 h-6 shrink-0 rounded-full bg-success-light flex items-center justify-center">
                   <span className="text-xs font-medium text-success">2</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{tBuilder('manualStep2') || '或在 API 中调用执行接口'}</p>
