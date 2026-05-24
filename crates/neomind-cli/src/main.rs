@@ -2766,69 +2766,10 @@ async fn validate_nep_package(path: &std::path::PathBuf, verbose: bool) -> Resul
 }
 
 /// List installed extensions.
-async fn list_extensions(verbose: bool) -> Result<()> {
-    use std::fs;
-
-    let search_dirs = [
-        std::path::PathBuf::from("./data/extensions"),
-        std::path::PathBuf::from("./extensions"),
-    ];
-
-    println!("Installed Extensions");
-    println!("====================\\n");
-
-    let mut found_count = 0;
-
-    for search_dir in &search_dirs {
-        if !search_dir.exists() {
-            continue;
-        }
-
-        let entries = fs::read_dir(search_dir)?;
-
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-
-            // Check for .nep files
-            if path.extension().is_some_and(|e| e == "nep") {
-                let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
-
-                println!("📦 {}", name);
-                println!("   Path: {}", path.display());
-
-                if verbose {
-                    // Try to read manifest
-                    if let Ok(manifest) = read_nep_manifest(&path) {
-                        if let Some(version) = manifest.get("version").and_then(|v| v.as_str()) {
-                            println!("   Version: {}", version);
-                        }
-                        if let Some(desc) = manifest.get("description").and_then(|v| v.as_str()) {
-                            println!("   Description: {}", desc);
-                        }
-                    }
-                    println!("   Size: {} bytes", path.metadata()?.len());
-                }
-
-                println!();
-                found_count += 1;
-            }
-        }
-    }
-
-    if found_count == 0 {
-        println!("No extensions found.");
-        println!();
-        println!("Searched in:");
-        for dir in &search_dirs {
-            println!("  - {}", dir.display());
-        }
-        println!();
-        println!("Install extensions using:");
-        println!("  neomind extension install <package.nep>");
-    } else {
-        println!("Total: {} extension(s)", found_count);
-    }
-
+async fn list_extensions(_verbose: bool) -> Result<()> {
+    let client = neomind_cli_ops::ApiClient::new();
+    let response = neomind_cli_ops::extension::list_extensions(&client).await?;
+    println!("{}", serde_json::to_string_pretty(&response)?);
     Ok(())
 }
 
@@ -2839,40 +2780,47 @@ async fn show_extension_info(id_or_path: &str) -> Result<()> {
     if path.exists() {
         // It's a file path, validate it
         validate_nep_package(&path, true).await?;
-    } else {
-        // It's an extension ID, search for it
-        use std::fs;
+        return Ok(());
+    }
 
-        let search_dirs = [
-            std::path::PathBuf::from("./data/extensions"),
-            std::path::PathBuf::from("./extensions"),
-        ];
+    // Try API first (shows runtime info: status, commands, metrics)
+    let client = neomind_cli_ops::ApiClient::new();
+    if let Ok(response) = neomind_cli_ops::extension::get_extension(&client, id_or_path).await {
+        println!("{}", serde_json::to_string_pretty(&response)?);
+        return Ok(());
+    }
 
-        let mut found = None;
-        'search: for search_dir in &search_dirs {
-            if let Ok(entries) = fs::read_dir(search_dir) {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    let entry_path = entry.path();
-                    if entry_path.extension().is_some_and(|e| e == "nep") {
-                        if let Some(stem) = entry_path.file_stem() {
-                            if stem.to_str().unwrap_or("").contains(id_or_path) {
-                                found = Some(entry_path);
-                                break 'search;
-                            }
+    // Fallback: search local filesystem for .nep files
+    use std::fs;
+
+    let search_dirs = [
+        std::path::PathBuf::from("./data/extensions"),
+        std::path::PathBuf::from("./extensions"),
+    ];
+
+    let mut found = None;
+    'search: for search_dir in &search_dirs {
+        if let Ok(entries) = fs::read_dir(search_dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let entry_path = entry.path();
+                if entry_path.extension().is_some_and(|e| e == "nep") {
+                    if let Some(stem) = entry_path.file_stem() {
+                        if stem.to_str().unwrap_or("").contains(id_or_path) {
+                            found = Some(entry_path);
+                            break 'search;
                         }
                     }
                 }
             }
         }
-
-        if let Some(found_path) = found {
-            validate_nep_package(&found_path, true).await?;
-        } else {
-            anyhow::bail!("Extension not found: {}", id_or_path);
-        }
     }
 
-    Ok(())
+    if let Some(found_path) = found {
+        validate_nep_package(&found_path, true).await?;
+        Ok(())
+    } else {
+        anyhow::bail!("Extension not found: {}", id_or_path);
+    }
 }
 
 /// Install an extension from .nep package.
@@ -2966,33 +2914,6 @@ async fn uninstall_extension(id: &str) -> Result<()> {
     println!("✅ Extension uninstalled successfully!");
 
     Ok(())
-}
-
-/// Read manifest from .nep package.
-fn read_nep_manifest(path: &std::path::PathBuf) -> Result<serde_json::Value> {
-    use std::fs::File;
-    use zip::ZipArchive;
-
-    let file = File::open(path)?;
-    let mut archive = ZipArchive::new(file)?;
-
-    // Collect file names first to avoid borrowing issues
-    let manifest_names: Vec<String> = archive
-        .file_names()
-        .filter(|n| n.ends_with("manifest.json"))
-        .map(|s| s.to_string())
-        .collect();
-
-    if let Some(name) = manifest_names.into_iter().next() {
-        let manifest_file = archive.by_name(&name)?;
-        let mut content = String::new();
-        let mut reader = std::io::BufReader::new(manifest_file);
-        reader.read_to_string(&mut content)?;
-        let manifest: serde_json::Value = serde_json::from_str(&content)?;
-        return Ok(manifest);
-    }
-
-    anyhow::bail!("No manifest.json found in package")
 }
 
 /// Create a new extension scaffold with a complete, compilable project.
