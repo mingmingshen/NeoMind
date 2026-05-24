@@ -53,7 +53,7 @@ pub use device_integration::{
     CoreExtensionRegistryAdapter, DeviceActionExecutor, DeviceIntegratedRuleEngine,
     DeviceIntegrationError, DeviceIntegrationResult, DeviceValueProvider,
 };
-pub use dsl::{ComparisonOperator, LogLevel, ParsedRule, RuleAction, RuleCondition, RuleDslParser};
+pub use dsl::{ComparisonOperator, LogLevel, ParsedRule, RuleAction, RuleCondition, RuleDslParser, TriggerType};
 pub use engine::{
     CompiledRule, InMemoryValueProvider, RuleEngine, RuleExecutionResult, RuleId, RuleState,
     RuleStatus, ValueProvider,

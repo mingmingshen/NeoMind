@@ -18,6 +18,9 @@ pub struct ErrorResponse {
     /// Optional request ID for tracing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
+    /// Optional hint for how to fix the error (used by LLM agents).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 impl ErrorResponse {
@@ -28,7 +31,14 @@ impl ErrorResponse {
             message: message.into(),
             status,
             request_id: None,
+            hint: None,
         }
+    }
+
+    /// Add a hint/suggestion for how to fix the error.
+    pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
+        self.hint = Some(hint.into());
+        self
     }
 
     /// Set the request ID.
@@ -100,13 +110,17 @@ impl ErrorResponse {
 impl IntoResponse for ErrorResponse {
     fn into_response(self) -> Response {
         let status = self.status;
+        let mut error_obj = serde_json::json!({
+            "code": self.code,
+            "message": self.message,
+            "request_id": self.request_id,
+        });
+        if let Some(hint) = self.hint {
+            error_obj["hint"] = serde_json::Value::String(hint);
+        }
         let body = serde_json::json!({
             "success": false,
-            "error": {
-                "code": self.code,
-                "message": self.message,
-                "request_id": self.request_id,
-            }
+            "error": error_obj,
         });
         (status, axum::Json(body)).into_response()
     }
@@ -146,8 +160,17 @@ impl From<neomind_agent::NeoMindError> for ErrorResponse {
 impl From<neomind_devices::DeviceError> for ErrorResponse {
     fn from(e: neomind_devices::DeviceError) -> Self {
         match e {
-            neomind_devices::DeviceError::NotFound(_) => Self::not_found("device"),
-            neomind_devices::DeviceError::InvalidParameter(_) => Self::bad_request(e.to_string()),
+            neomind_devices::DeviceError::NotFound(id) => {
+                Self::not_found(format!("Device '{}'", id)).with_hint(
+                    "Run 'neomind device list' to see available devices and their IDs.",
+                )
+            }
+            neomind_devices::DeviceError::InvalidParameter(msg) => {
+                Self::bad_request(msg.to_string()).with_hint(
+                    "Check required fields: --name (string), --type (device type ID), --adapter (mqtt|webhook|http-poll|ble|modbus-tcp|serial).\n\
+                     Run 'neomind device types list' to see valid device types.",
+                )
+            }
             _ => Self::internal(e.to_string()),
         }
     }
@@ -155,7 +178,23 @@ impl From<neomind_devices::DeviceError> for ErrorResponse {
 
 impl From<neomind_rules::RuleError> for ErrorResponse {
     fn from(e: neomind_rules::RuleError) -> Self {
-        Self::internal(format!("Rule error: {}", e))
+        let msg = format!("{}", e);
+        let hint = match &msg {
+            m if m.contains("Rule name not found") => {
+                "Rule name is required. Use: RULE \"My Rule Name\" WHEN ... DO ... END".to_string()
+            }
+            m if m.contains("WHEN clause not found") => {
+                "WHEN clause is required. Syntax: WHEN <device_id>.<metric> <op> <value>\n\
+                 Run 'neomind device list' and 'neomind device latest <ID>' to discover valid IDs and metrics.".to_string()
+            }
+            m if m.contains("Invalid condition") || m.contains("Invalid threshold") => {
+                "Condition format: <device_id>.<metric> <op> <number>\n\
+                 Operators: >, <, >=, <=, ==, !=\n\
+                 Do NOT prefix with 'device.' — use the actual device ID directly.".to_string()
+            }
+            _ => "DSL syntax: RULE \"<name>\" WHEN <condition> DO <action> END".to_string(),
+        };
+        Self::validation(format!("Rule error: {}", e)).with_hint(hint)
     }
 }
 

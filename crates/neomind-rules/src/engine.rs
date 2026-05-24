@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use super::dependencies::DependencyManager;
 use super::device_integration::DeviceActionExecutor;
-use super::dsl::{ParsedRule, RuleAction, RuleCondition};
+use super::dsl::{ParsedRule, RuleAction, RuleCondition, TriggerType};
 use super::error::RuleError;
 use super::extension_integration::{try_parse_extension_action, ExtensionActionExecutor};
 use super::store::RuleStore;
@@ -134,6 +134,9 @@ pub struct CompiledRule {
     /// Frontend UI state for proper restoration on edit (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<serde_json::Value>,
+    /// Trigger type (device state, schedule, or manual).
+    #[serde(default)]
+    pub trigger_type: TriggerType,
 }
 
 impl CompiledRule {
@@ -161,26 +164,41 @@ impl CompiledRule {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: parsed.trigger_type,
         }
     }
 
     /// Check if the rule should trigger based on current values.
     /// This now supports complex conditions through value provider.
+    /// For manual rules, always returns false (only triggered via API).
+    /// For schedule rules, always returns true when called by the scheduler
+    /// (the scheduler decides when to call this).
+    /// For device state rules, evaluates the condition.
     pub fn should_trigger(&self, value_provider: &dyn ValueProvider) -> bool {
-        let condition_met = self.evaluate_condition(&self.condition, value_provider);
-
-        if let Some(duration) = self.for_duration {
-            if condition_met {
-                if let Some(since) = self.state.condition_true_since {
-                    since.elapsed() >= duration
-                } else {
-                    false
-                }
-            } else {
-                false
+        match &self.trigger_type {
+            TriggerType::Manual => false,
+            TriggerType::Schedule { .. } => {
+                // Schedule rules are triggered by the scheduler,
+                // not by device state evaluation
+                true
             }
-        } else {
-            condition_met
+            TriggerType::DeviceState => {
+                let condition_met = self.evaluate_condition(&self.condition, value_provider);
+
+                if let Some(duration) = self.for_duration {
+                    if condition_met {
+                        if let Some(since) = self.state.condition_true_since {
+                            since.elapsed() >= duration
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    condition_met
+                }
+            }
         }
     }
 
@@ -353,6 +371,7 @@ impl CompiledRule {
             RuleCondition::Not(condition) => {
                 !self.evaluate_condition_with_mapping(condition, value_provider, device_id_mapping)
             }
+            RuleCondition::Always => true,
         }
     }
 }
@@ -1615,6 +1634,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -1670,6 +1690,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -1719,6 +1740,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -1774,6 +1796,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -1829,6 +1852,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -1884,6 +1908,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -1941,6 +1966,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -2014,6 +2040,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -2079,6 +2106,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -2131,6 +2159,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -2198,6 +2227,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -2250,6 +2280,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         let rule_id = rule.id.clone();
@@ -2311,6 +2342,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         let rule_id = rule.id.clone();
@@ -2355,6 +2387,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -2414,6 +2447,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -2496,6 +2530,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -2538,6 +2573,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -2585,6 +2621,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -2632,6 +2669,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         let rule2 = CompiledRule {
@@ -2656,6 +2694,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         let id1 = rule1.id.clone();
@@ -2730,6 +2769,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();
@@ -2804,6 +2844,7 @@ mod tests {
             },
             created_at: Utc::now(),
             source: None,
+            trigger_type: TriggerType::default(),
         };
 
         engine.add_rule(rule).await.unwrap();

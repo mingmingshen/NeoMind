@@ -539,6 +539,7 @@ impl RuleGenerator {
             RuleCondition::Not(condition) => {
                 format!("非({})", Self::format_condition(condition))
             }
+            RuleCondition::Always => "始终触发".to_string(),
         }
     }
 }

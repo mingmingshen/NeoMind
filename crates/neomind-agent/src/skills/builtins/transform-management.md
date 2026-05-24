@@ -20,34 +20,100 @@ Transforms process raw metric data into derived values using JavaScript code. Th
 
 ## CRITICAL: Transform Code Format
 
-Transforms receive `input` as the **raw metric value** (not an object). Must `return` the result.
+### `input` Semantics (Auto-unwrap)
+
+Device data is auto-unwrapped for convenience:
+
+- **Single-key object** (e.g. `{"value": 42}`) → `input = 42` (auto-unwrapped to scalar)
+- **Multi-key object** (e.g. `{"temperature": 25, "humidity": 60}`) → `input = {temperature: 25, humidity: 60}` (use `input.temperature`)
 
 ```javascript
-// Simple calculation
+// Single-key: {"value": 212} → input = 212
 return (input - 32) * 5 / 9
 
-// Classification
+// Multi-key: {"temperature": 25, "humidity": 60}
+return {feels_like: input.temperature * 1.1, humid: input.humidity}
+
+// Classification (single-key)
 if (input > 80) return "good"
 if (input > 20) return "ok"
 return "low"
-
-// Math function
-return Math.round(input * 100) / 100
 ```
 
+### Extension Invocation
+
+Call extension commands directly from transform code using `extensions.invoke()`:
+
+```javascript
+// Get weather data and combine with device input
+const weather = extensions.invoke('weather', 'current', {city: 'Shanghai'});
+return {outdoor_temp: weather.temperature, indoor_temp: input}
+```
+
+Extension calls are **pre-executed asynchronously** before your code runs — no async/await needed.
+
 **Rules:**
-- `input` is a single value (number, string, boolean)
 - Must use `return` to output the result
 - No imports, no external libraries — plain JS only
-- No async/await — synchronous code only
+- No async/await — synchronous code only (extensions are handled automatically)
+- Return can be: scalar, object (multiple metrics), or array
 
 ## Scope Levels
 
-| Scope | Syntax | Applies To |
-|-------|--------|-----------|
-| Global | `global` | All device metrics with matching name |
-| Device Type | `device_type:<type_id>` | All devices of a specific type |
-| Device | `device:<device_id>` | Only one specific device |
+| Scope | Syntax | Applies To | When to Use |
+|-------|--------|-----------|-------------|
+| Global | `global` | All device data | Same formula for all devices (unit conversion, formatting) |
+| Device Type | `device_type:<type_id>` | All devices of a specific type | Type-specific processing (e.g., all "temperature_sensor" devices) |
+| Device | `device:<device_id>` | Only one specific device | Calibration or device-specific logic |
+
+## CRITICAL: Discover Metrics Before Writing Code
+
+**NEVER guess metric/field names.** Always discover actual names first:
+
+### For Device Metrics (scope = device_type or device)
+
+```bash
+# Step 1: Find device ID and type
+neomind device list
+
+# Step 2: Check latest data to see actual metric names and structure
+neomind device latest <DEVICE_ID>
+# Output example: {"temperature": 23.5, "humidity": 60, "pressure": 1013}
+# → input fields: temperature, humidity, pressure
+
+# Step 3: For single-key data like {"value": 42}, input is auto-unwrapped to 42
+# For multi-key data like {"temperature": 23.5, "humidity": 60}, use input.temperature
+```
+
+### For Extension Metrics (extensions.invoke)
+
+```bash
+# Step 1: List available extensions
+neomind extension list
+
+# Step 2: Get extension details — shows available commands and their parameters
+neomind extension get <EXTENSION_ID>
+# Output includes: commands (name, params, return fields), metrics (field names)
+
+# Step 3: Use the command name and field names from the output
+# Example: extension "weather" has command "current" returning {temperature, humidity, description}
+# → Code: extensions.invoke('weather', 'current', {city: 'Shanghai'}).temperature
+```
+
+### For Existing Transform Outputs
+
+```bash
+# Check what virtual metrics already exist
+neomind transform metrics
+
+# Check available data sources
+neomind transform data-sources
+```
+
+**Workflow: Discover → Test → Create**
+1. Run discovery commands above to learn actual field names
+2. `neomind transform test --code '...' --input '<actual_data>'` to verify
+3. `neomind transform create --name ... --code ... --scope ...` to save
 
 **Output DataSourceId**: `transform:<output_prefix>:<field>`
 
@@ -146,6 +212,18 @@ neomind transform create --name 'Status Text' \
   --code 'const map = {0: "offline", 1: "online", 2: "warning"}; return map[input] || "unknown"'
 ```
 
+### Combine Device Data with Extension Data
+
+```bash
+# Uses extensions.invoke() to fetch external data and combine with device input
+neomind transform test --code 'const w = extensions.invoke("weather", "current", {city: "Shanghai"}); return {outdoor: w.temperature, indoor: input}' --input '{"value": 22}'
+
+neomind transform create --name 'Indoor vs Outdoor' \
+  --scope global \
+  --output-prefix temp_compare \
+  --code 'const w = extensions.invoke("weather", "current", {city: "Shanghai"}); return {outdoor: w.temperature, indoor: input}'
+```
+
 ## Using Transform Output in Dashboards
 
 After creating a transform, its output appears as a virtual metric. Use it in dashboard components:
@@ -178,3 +256,6 @@ neomind dashboard add-components <DASHBOARD_ID> --components '[{
 | "input is not defined" | Using wrong variable name | Must use `input` (not `inputs` or `value`) |
 | Dashboard shows no data | Wrong DataSourceId binding | Check `transform metrics` for correct output names |
 | Transform runs but output wrong | Logic error in code | Test with known input values via `transform test` |
+| `return input * 2` returns NaN/0 | Using `input.value` on auto-unwrapped scalar | Single-key `{"value":X}` is auto-unwrapped — just use `input`, not `input.value` |
+| `extensions.invoke is not defined` | Extension not installed | Check `neomind extension list` and verify extension ID |
+| Multi-key object: `input * 2` = NaN | Object can't be multiplied | Use `input.temperature * 2` for specific fields |

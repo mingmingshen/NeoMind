@@ -717,6 +717,12 @@ pub async fn extension_health_handler(
 ) -> HandlerResult<serde_json::Value> {
     let runtime = &state.extensions.runtime;
 
+    // Check extension exists before attempting IPC
+    runtime
+        .get(&id)
+        .await
+        .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
+
     let healthy = runtime
         .health_check(&id)
         .await
@@ -747,6 +753,12 @@ pub async fn get_extension_logs_handler(
 ) -> HandlerResult<Vec<ExtensionLogEntryDto>> {
     let runtime = &state.extensions.runtime;
 
+    // Check extension exists before attempting IPC
+    runtime
+        .get(&id)
+        .await
+        .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
+
     let logs = runtime
         .get_logs(&id)
         .await
@@ -771,6 +783,12 @@ pub async fn clear_extension_logs_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     let runtime = &state.extensions.runtime;
+
+    // Check extension exists before attempting IPC
+    runtime
+        .get(&id)
+        .await
+        .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     runtime
         .clear_logs(&id)

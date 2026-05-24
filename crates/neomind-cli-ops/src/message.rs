@@ -54,6 +54,7 @@ pub async fn send_message(
         "title": title,
         "message": message,
         "severity": severity,
+        "category": "system",
     });
     if let Some(src) = source {
         body["source"] = json!(src);

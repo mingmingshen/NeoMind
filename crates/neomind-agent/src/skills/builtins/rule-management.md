@@ -23,31 +23,52 @@ Rules are event-driven automations that trigger actions when conditions are met.
 Rules use DSL syntax, NOT JSON trigger/actions. The `--dsl` flag is required for `rule create`.
 
 ```
-RULE <rule_name>
+RULE "<rule_name>"
   WHEN <condition_expression>
   DO <action_expression>
 END
 ```
+
+**IMPORTANT: The rule name MUST be in double quotes:** `RULE "High Temp Alert"`, NOT `RULE high_temp`.
+
+## Before Creating Rules
+
+**Always discover real device IDs and metric names first:**
+
+```bash
+# Step 1: Find device IDs
+neomind device list
+
+# Step 2: Find metric names for a specific device
+neomind device latest <DEVICE_ID>
+```
+
+**NEVER guess metric names.** Always use `device latest` to discover the actual field names.
 
 ## DSL Syntax
 
 ### Basic Structure
 
 ```
-RULE high_temperature
-  WHEN device.sensor-001.temperature > 30
-  DO SEND_MESSAGE severity=warning message="Temperature too high: {value}°C"
-END
+RULE "High Temperature Alert"
+  WHEN sensor-001.temperature > 30
+  DO
+    NOTIFY "Temperature too high: {value}°C"
+  END
 ```
 
 ### WHEN Conditions
 
-| Condition Type | Syntax | Example |
-|---------------|--------|---------|
-| Device metric comparison | `device.<device_id>.<metric> <op> <value>` | `device.sensor-001.temperature > 30` |
-| AND logic | `<cond1> AND <cond2>` | `device.s1.temp > 20 AND device.s1.humidity < 50` |
-| OR logic | `<cond1> OR <cond2>` | `device.s1.battery < 10 OR device.s2.battery < 10` |
-| NOT logic | `NOT <condition>` | `NOT device.s1.status == "online"` |
+**CRITICAL: Use the actual device ID directly — do NOT prefix with `device.`**
+
+| Condition Type | Syntax | Example | WRONG |
+|---------------|--------|---------|-------|
+| Device metric comparison | `<device_id>.<metric> <op> <value>` | `sensor-001.temperature > 30` | ~~`device.sensor-001.temperature > 30`~~ |
+| AND logic | `<cond1> AND <cond2>` | `sensor-001.temp > 20 AND sensor-001.humidity < 50` | |
+| OR logic | `<cond1> OR <cond2>` | `sensor-001.battery < 10 OR sensor-002.battery < 10` | |
+| NOT logic | `NOT <condition>` | `NOT sensor-001.status == "online"` | |
+| Extension metric | `EXTENSION <ext_id>.<metric> <op> <value>` | `EXTENSION weather.temperature_c > 35` | |
+| Range check | `<device_id>.<metric> BETWEEN <val1> AND <val2>` | `sensor-001.temperature BETWEEN 18 AND 28` | |
 
 **Comparison operators:** `>`, `<`, `>=`, `<=`, `==`, `!=`
 
@@ -60,11 +81,11 @@ END
 
 | Action Type | Syntax | Description |
 |-------------|--------|-------------|
-| Send message | `SEND_MESSAGE severity=<level> message="<text>"` | Send notification via message channel |
-| Control device | `CONTROL_DEVICE device=<id> command=<cmd> params='<json>'` | Send command to device |
-| Trigger agent | `TRIGGER_AGENT agent=<id> input="<text>"` | Execute an AI agent |
-
-**Severity levels:** `info`, `warning`, `error`, `critical`
+| Send notification | `NOTIFY "message text" [channel1, channel2]` | Send notification via message channel |
+| Execute command | `EXECUTE <device_id>.<command>(key=value)` | Send command to device |
+| Log message | `LOG <level> "message"` | Log (level: info, warn, error) |
+| Alert | `ALERT "title" "message" <SEVERITY>` | Send alert (severity: info, warning, error, critical) |
+| Trigger agent | `TRIGGER_AGENT <agent_id> "input text"` | Execute an AI agent |
 
 **Placeholders in messages:**
 - `{value}` — the triggering value
@@ -81,7 +102,7 @@ neomind rule create --name '<rule_name>' --dsl '<DSL>'
 ```
 
 Required: `--dsl`
-Optional: `--name` (can be embedded in DSL)
+Optional: `--name` (can be embedded in DSL via `RULE "name"`)
 
 ### List & Get
 
@@ -126,55 +147,70 @@ neomind rule history <ID>
 ### Temperature Alert
 
 ```bash
-neomind rule create --name 'High Temperature Alert' --dsl 'RULE high_temp
-  WHEN device.sensor-001.temperature > 35
-  DO SEND_MESSAGE severity=warning message="Sensor {device_id} temperature is {value}°C, exceeds threshold 35°C"
-END'
+# Discover device ID and metrics first
+neomind device list
+neomind device latest sensor-001
+
+# Create rule with discovered device_id and metric
+neomind rule create --name 'High Temperature Alert' --dsl 'RULE "High Temperature Alert"
+  WHEN sensor-001.temperature > 35
+  DO
+    NOTIFY "Sensor {device_id} temperature is {value}°C, exceeds threshold 35°C"
+  END'
 ```
 
 ### Low Battery Warning
 
 ```bash
-neomind rule create --name 'Low Battery' --dsl 'RULE low_battery
-  WHEN device.sensor-001.battery < 20
-  DO SEND_MESSAGE severity=error message="Sensor {device_id} battery at {value}%"
-END'
+neomind rule create --name 'Low Battery' --dsl 'RULE "Low Battery Warning"
+  WHEN sensor-001.battery < 20
+  DO
+    NOTIFY "Sensor {device_id} battery at {value}%"
+  END'
 ```
 
 ### Multi-Device Alert
 
 ```bash
-neomind rule create --name 'Any Sensor Low Battery' --dsl 'RULE multi_battery
-  WHEN device.sensor-001.battery < 15 OR device.sensor-002.battery < 15 OR device.sensor-003.battery < 15
-  DO SEND_MESSAGE severity=critical message="Critical battery level detected"
-END'
+neomind rule create --name 'Any Sensor Low Battery' --dsl 'RULE "Multi Battery Alert"
+  WHEN sensor-001.battery < 15 OR sensor-002.battery < 15 OR sensor-003.battery < 15
+  DO
+    ALERT "Battery Critical" "Critical battery level detected on sensors" critical
+  END'
 ```
 
 ### Device Control Rule
 
 ```bash
-neomind rule create --name 'Auto Cool Down' --dsl 'RULE auto_cool
-  WHEN device.sensor-001.temperature > 30
-  DO CONTROL_DEVICE device=ac-unit command=turn_on params='"mode":"cool","target":25}'
-END'
+neomind rule create --name 'Auto Cool Down' --dsl 'RULE "Auto Cool Down"
+  WHEN sensor-001.temperature > 30
+  DO
+    EXECUTE ac-unit.turn_on(mode="cool", target=25)
+  END'
 ```
 
-### Agent Trigger Rule
+### Extension-Based Rule
 
 ```bash
-neomind rule create --name 'Anomaly Detection' --dsl 'RULE anomaly
-  WHEN device.sensor-001.temperature > 40
-  DO TRIGGER_AGENT agent=analyzer-agent input="Temperature anomaly: {value}°C from {device_id}"
-END'
+# Discover extension metrics first
+neomind extension info weather
+
+# Create rule using extension data
+neomind rule create --name 'Extreme Weather' --dsl 'RULE "Extreme Weather Alert"
+  WHEN EXTENSION weather.temperature_c > 38
+  DO
+    NOTIFY "Extreme heat: {value}°C from weather extension"
+  END'
 ```
 
 ### Combined Conditions
 
 ```bash
-neomind rule create --name 'Heat Index Alert' --dsl 'RULE heat_index
-  WHEN device.sensor-001.temperature > 30 AND device.sensor-001.humidity > 70
-  DO SEND_MESSAGE severity=warning message="High heat index: temp={value}°C, humidity >70%"
-END'
+neomind rule create --name 'Heat Index Alert' --dsl 'RULE "Heat Index Alert"
+  WHEN sensor-001.temperature > 30 AND sensor-001.humidity > 70
+  DO
+    NOTIFY "High heat index: temp={value}°C, humidity >70%"
+  END'
 ```
 
 ## Rule Lifecycle
@@ -190,10 +226,11 @@ END'
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| "Invalid DSL syntax" | Malformed DSL | Check RULE/WHEN/DO/END structure |
+| Rule has no name | DSL uses unquoted name `RULE foo` | Use quoted name: `RULE "My Rule"` |
 | "Device not found in condition" | Wrong device ID | Run `neomind device list` for valid IDs |
 | "Unknown metric" | Wrong metric name | Run `neomind device latest <ID>` for valid metrics |
-| "Rule not found" | Wrong rule ID | Run `neomind rule list` for valid IDs |
+| Condition matches wrong device | Used `device.` prefix | Remove `device.` — use actual device ID directly: `sensor-001.temp` not `device.sensor-001.temp` |
+| "Invalid DSL syntax" | Malformed DSL | Check RULE/WHEN/DO/END structure, ensure name is quoted |
 | Rule not triggering | Rule is disabled | Run `neomind rule enable <ID>` |
 | Rule triggers too often | No debounce | Add threshold margin or use AND with time conditions |
 | "Missing END" | DSL not terminated | Ensure DSL ends with `END` on its own line |

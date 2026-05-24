@@ -73,6 +73,7 @@ impl ValidationErrors {
             message: format!("Validation failed: {} error(s)", self.errors.len()),
             status: StatusCode::UNPROCESSABLE_ENTITY,
             request_id: None,
+            hint: None,
         }
     }
 }
@@ -538,6 +539,7 @@ pub fn validation_middleware(
                                 message: format!("Request body too large (max {} bytes)", max_size),
                                 status: StatusCode::PAYLOAD_TOO_LARGE,
                                 request_id: None,
+                                hint: None,
                             };
                             return error.into_response();
                         }

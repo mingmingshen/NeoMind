@@ -118,6 +118,7 @@ pub async fn initialize_admin_handler(
             message: "System has already been initialized. Use /api/auth/login to sign in."
                 .to_string(),
             request_id: None,
+            hint: None,
         });
     }
 
@@ -128,6 +129,7 @@ pub async fn initialize_admin_handler(
             code: "INVALID_USERNAME".to_string(),
             message: "Username must be at least 3 characters".to_string(),
             request_id: None,
+            hint: None,
         });
     }
 
@@ -139,6 +141,7 @@ pub async fn initialize_admin_handler(
                 code: "INVALID_EMAIL".to_string(),
                 message: "Please provide a valid email address".to_string(),
                 request_id: None,
+                hint: None,
             });
         }
     }
@@ -150,6 +153,7 @@ pub async fn initialize_admin_handler(
             code: "WEAK_PASSWORD".to_string(),
             message: "Password must be at least 8 characters".to_string(),
             request_id: None,
+            hint: None,
         });
     }
 
@@ -162,6 +166,7 @@ pub async fn initialize_admin_handler(
             code: "WEAK_PASSWORD".to_string(),
             message: "Password must contain both letters and numbers".to_string(),
             request_id: None,
+            hint: None,
         });
     }
 
@@ -176,6 +181,7 @@ pub async fn initialize_admin_handler(
             code: "USER_CREATE_FAILED".to_string(),
             message: e.to_string(),
             request_id: None,
+            hint: None,
         })?;
 
     tracing::info!(
@@ -211,6 +217,7 @@ pub async fn complete_setup_handler(
             code: "SETUP_INCOMPLETE".to_string(),
             message: "Cannot complete setup before creating an admin account".to_string(),
             request_id: None,
+            hint: None,
         });
     }
 
@@ -237,6 +244,7 @@ pub async fn save_llm_config_handler(
             code: "INVALID_PROVIDER".to_string(),
             message: format!("Provider must be one of: {}", valid_providers.join(", ")),
             request_id: None,
+            hint: None,
         });
     }
 
@@ -247,6 +255,7 @@ pub async fn save_llm_config_handler(
             code: "INVALID_MODEL".to_string(),
             message: "Model name cannot be empty".to_string(),
             request_id: None,
+            hint: None,
         });
     }
 
@@ -268,6 +277,7 @@ pub async fn save_llm_config_handler(
             code: "SETTINGS_SAVE_FAILED".to_string(),
             message: format!("Failed to save LLM settings: {}", e),
             request_id: None,
+            hint: None,
         })?;
 
     tracing::info!(

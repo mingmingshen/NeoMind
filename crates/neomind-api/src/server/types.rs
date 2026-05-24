@@ -618,10 +618,16 @@ impl ServerState {
             }
         };
 
-        // Create transform engine with extension registry support
-        let transform_engine = Some(Arc::new(TransformEngine::with_extension_registry(
-            extensions.registry.clone(),
-        )));
+        // Create transform engine with extension registry and automation store support
+        let transform_engine = {
+            let mut engine = TransformEngine::with_extension_registry(
+                extensions.registry.clone(),
+            );
+            if let Some(ref store) = automation_store {
+                engine = engine.with_automation_store(store.clone());
+            }
+            Some(Arc::new(engine))
+        };
         tracing::info!("Transform engine initialized with extension registry");
 
         // Await parallel-opened rule history store

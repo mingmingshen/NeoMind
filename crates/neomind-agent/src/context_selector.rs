@@ -631,6 +631,7 @@ impl ContextSelector {
                             )
                         }
                         RuleCondition::Not(_) => "(NOT condition)".to_string(),
+                        RuleCondition::Always => "(always)".to_string(),
                     };
 
                     rule_refs.push(RuleReference {

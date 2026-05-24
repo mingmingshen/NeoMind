@@ -101,8 +101,30 @@ pub async fn uninstall_extension(client: &ApiClient, id: &str) -> Result<CliResp
     ))
 }
 
+/// Reload an extension (restart from file)
+pub async fn reload_extension(client: &ApiClient, id: &str) -> Result<CliResponse> {
+    let data = client.post_raw(&format!("/extensions/{}/reload", id)).await?;
+    Ok(CliResponse::success(data, "Extension reloaded"))
+}
+
 /// List marketplace extensions
 pub async fn list_marketplace(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/extensions/market/list").await?;
     Ok(CliResponse::success(data, "Marketplace extensions listed"))
+}
+
+/// Get extension configuration
+pub async fn get_extension_config(client: &ApiClient, id: &str) -> Result<CliResponse> {
+    let data = client.get(&format!("/extensions/{}/config", id)).await?;
+    Ok(CliResponse::success(data, "Extension config retrieved"))
+}
+
+/// Update extension configuration
+pub async fn update_extension_config(
+    client: &ApiClient,
+    id: &str,
+    config: serde_json::Value,
+) -> Result<CliResponse> {
+    let data = client.put(&format!("/extensions/{}/config", id), &config).await?;
+    Ok(CliResponse::success(data, "Extension config updated"))
 }

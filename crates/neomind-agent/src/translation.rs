@@ -330,6 +330,7 @@ impl DslTranslator {
                 )
             }
             RuleCondition::Not(_) => "(NOT condition)".to_string(),
+            RuleCondition::Always => "(always)".to_string(),
         };
 
         RuleDescription {
@@ -535,6 +536,10 @@ impl DslTranslator {
                 Language::Chinese => format!("当条件不满足时{}", duration_text),
                 Language::English => format!("When condition is NOT met{}", duration_text),
             },
+            RuleCondition::Always => match language {
+                Language::Chinese => "始终触发".to_string(),
+                Language::English => "Always triggers".to_string(),
+            },
         }
     }
 
@@ -621,6 +626,7 @@ impl DslTranslator {
                 "(complex)".to_string(),
             ),
             RuleCondition::Not(_) => ("(not)".to_string(), "(complex)".to_string()),
+            RuleCondition::Always => ("always".to_string(), "always".to_string()),
         };
 
         match language {

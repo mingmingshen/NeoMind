@@ -352,6 +352,16 @@ enum ExtensionCommand {
     /// Shows all extensions available in the marketplace registry.
     /// Example: `neomind extension market-list`
     MarketList,
+    /// Reload an extension.
+    ///
+    /// Restarts the extension process from its installed files.
+    /// Useful after config changes or when the extension is unresponsive.
+    /// Example: `neomind extension reload weather-forecast`
+    Reload {
+        /// Extension ID.
+        #[arg(required = true)]
+        id: String,
+    },
 }
 
 /// Device subcommands.
@@ -2338,8 +2348,10 @@ async fn run_health() -> Result<()> {
 
     // Check if server is running
     println!("🔍 Checking server status...");
-    let check_url = "http://localhost:9375/api/health";
-    match reqwest::get(check_url).await {
+    let api_base = std::env::var("NEOMIND_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+    let check_url = format!("{}/health", api_base);
+    match reqwest::get(&check_url).await {
         Ok(resp) if resp.status().is_success() => {
             println!("  ✅ Server is running");
 
@@ -2622,6 +2634,12 @@ async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
         ExtensionCommand::MarketList => {
             let client = neomind_cli_ops::ApiClient::new();
             let response = neomind_cli_ops::extension::list_marketplace(&client).await?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+            Ok(())
+        }
+        ExtensionCommand::Reload { id } => {
+            let client = neomind_cli_ops::ApiClient::new();
+            let response = neomind_cli_ops::extension::reload_extension(&client, &id).await?;
             println!("{}", serde_json::to_string_pretty(&response)?);
             Ok(())
         }

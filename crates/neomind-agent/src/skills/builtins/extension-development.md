@@ -4,7 +4,7 @@ name: Extension Development Guide
 category: extension
 origin: builtin
 priority: 85
-token_budget: 12000
+token_budget: 14000
 triggers:
   keywords: [extension development, create extension, build extension, extension sdk, neomind extension, 扩展开发, 开发扩展, extension create, extension build, custom extension, neomind_export, Extension trait, capability, FFI, native extension, .nep]
   tool_target:
@@ -16,25 +16,35 @@ anti_triggers:
 
 # Extension Development Guide
 
-NeoMind extensions are Rust programs running in isolated processes. They communicate with the platform via FFI and a capability system.
+NeoMind extensions are Rust programs running in isolated processes. They communicate with the platform via FFI (ABI version 3).
 
 ## Architecture
 
 ```
 NeoMind Server
   └── Extension Runner (isolated process)
-        └── Your Extension (.dylib/.so)
+        └── Your Extension (.dylib/.so/.dll)
               ├── implements Extension trait
               ├── exposes FFI via neomind_export!()
-              ├── produces metrics
-              └── executes commands
+              ├── produces metrics (platform polls produce_metrics)
+              └── executes commands (user/API triggered)
 ```
 
-- **Process isolation**: Each extension runs in its own process — crashes don't affect the server
+- **Process isolation**: Crashes don't affect the server
 - **FFI boundary**: ABI version 3, JSON-serialized IPC
-- **Capabilities**: Extensions request platform access (device read/write, storage, events)
+- **Capabilities**: Extensions request platform access
 
-## Development Flow
+## Development Workflow
+
+### Step 0: Discover Platform Resources
+
+```bash
+neomind device list                    # What devices exist?
+neomind device latest <DEVICE_ID>      # What metrics do they have?
+neomind extension list                 # What extensions are installed?
+neomind llm list                       # What LLM backends available?
+neomind system info                    # MQTT broker, webhook URL
+```
 
 ### Step 1: Scaffold
 
@@ -42,193 +52,327 @@ NeoMind Server
 neomind extension create my-extension --extension-type tool -o ./extensions
 ```
 
-Generates:
-```
-extensions/my-extension/
-├── Cargo.toml          # With neomind-extension-sdk dependency
-├── src/lib.rs          # Basic extension skeleton
-├── manifest.json       # Extension metadata
-└── .gitignore
+### Step 2: Edit `src/lib.rs` (see complete template below)
+
+### Step 3: Build & Install
+
+```bash
+neomind extension build ./extensions/my-extension
+neomind extension validate ./my-extension.nep --verbose
+neomind extension install ./my-extension.nep
+neomind extension status my-extension     # verify running
+neomind extension logs my-extension       # check for errors
 ```
 
-### Step 2: Implement the Extension Trait
+## Complete Working Template: Data Processor Extension
 
+This template shows every part of a real extension. Copy and modify.
+
+**`Cargo.toml`:**
+```toml
+[package]
+name = "neomind-extension-my-extension"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+name = "neomind_extension_my_extension"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+neomind-extension-sdk = { path = "../../crates/neomind-extension-sdk" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+parking_lot = "0.12"
+tracing = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+panic = "unwind"    # Required for safe extension unloading
+```
+
+**`src/lib.rs`:**
 ```rust
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use neomind_extension_sdk::prelude::*;
+use parking_lot::RwLock;
 
-pub struct MyExtension;
+/// Extension struct — holds all mutable state behind thread-safe types
+pub struct MyExtension {
+    // Atomic counters for fast metric reporting (no lock needed)
+    process_count: AtomicU64,
+    error_count: AtomicU64,
+    // RwLock for configuration (many readers, occasional writer)
+    config: Arc<RwLock<MyConfig>>,
+    // Mutex for expensive resources (model loading, etc.)
+    last_result: parking_lot::Mutex<Option<serde_json::Value>>,
+}
+
+#[derive(Default, serde::Deserialize)]
+struct MyConfig {
+    threshold: f64,
+}
+
+impl MyExtension {
+    pub fn new() -> Self {
+        Self {
+            process_count: AtomicU64::new(0),
+            error_count: AtomicU64::new(0),
+            config: Arc::new(RwLock::new(MyConfig { threshold: 0.5 })),
+            last_result: parking_lot::Mutex::new(None),
+        }
+    }
+}
 
 #[async_trait]
 impl Extension for MyExtension {
+    // --- Metadata: use OnceLock for static lifetime ---
     fn metadata(&self) -> &ExtensionMetadata {
-        // Return static metadata
+        static META: std::sync::OnceLock<ExtensionMetadata> = std::sync::OnceLock::new();
+        META.get_or_init(|| {
+            ExtensionMetadata::new("my-extension", "My Extension", "1.0.0")
+                .with_description("Processes device data and produces derived metrics")
+                .with_author("Your Name")
+        })
     }
 
+    // --- Commands: what the extension can do ---
     fn commands(&self) -> Vec<ExtensionCommand> {
-        // Define commands the extension supports
+        vec![
+            CommandBuilder::new("analyze")
+                .display_name("Analyze Data")
+                .description("Analyze input data against threshold")
+                .param_simple("input", "Data to analyze", MetricDataType::String)
+                .param_optional("threshold", "Override threshold (0-1)", MetricDataType::Float)
+                .sample(serde_json::json!({"input": "sample data", "threshold": 0.7}))
+                .build(),
+            CommandBuilder::new("get_status")
+                .display_name("Get Status")
+                .description("Get current processing statistics")
+                .build(),
+        ]
     }
 
+    // --- Metrics: what the extension reports periodically ---
     fn metrics(&self) -> Vec<MetricDescriptor> {
-        // Define metrics the extension produces
+        vec![
+            MetricBuilder::new("process_count", "Items Processed")
+                .integer()
+                .unit("count")
+                .build(),
+            MetricBuilder::new("error_rate", "Error Rate")
+                .float()
+                .unit("percent")
+                .build(),
+            MetricBuilder::new("last_threshold", "Last Threshold")
+                .float()
+                .build(),
+        ]
     }
 
+    // --- Command Execution: handle each command ---
     async fn execute_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value> {
-        // Handle command execution
+        match command {
+            "analyze" => {
+                let input = args.get("input")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| ExtensionError::InvalidArguments(
+                        "Missing 'input' parameter".to_string()
+                    ))?;
+                let threshold = args.get("threshold")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(self.config.read().threshold);
+
+                // --- Your processing logic here ---
+                let score = input.len() as f64 / 100.0; // placeholder
+                let passed = score >= threshold;
+
+                self.process_count.fetch_add(1, Ordering::SeqCst);
+                if !passed {
+                    self.error_count.fetch_add(1, Ordering::SeqCst);
+                }
+
+                let result = serde_json::json!({
+                    "input": input,
+                    "score": score,
+                    "passed": passed,
+                    "threshold": threshold
+                });
+
+                *self.last_result.lock() = Some(result.clone());
+
+                Ok(result)
+            }
+            "get_status" => {
+                let processed = self.process_count.load(Ordering::SeqCst);
+                let errors = self.error_count.load(Ordering::SeqCst);
+                Ok(serde_json::json!({
+                    "processed": processed,
+                    "errors": errors,
+                    "threshold": self.config.read().threshold
+                }))
+            }
+            _ => Err(ExtensionError::CommandNotFound(command.to_string())),
+        }
     }
 
+    // --- Produce Metrics: called periodically by platform ---
     fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>> {
-        // Produce current metric values
+        let processed = self.process_count.load(Ordering::SeqCst);
+        let errors = self.error_count.load(Ordering::SeqCst);
+        let error_rate = if processed > 0 { errors as f64 / processed as f64 * 100.0 } else { 0.0 };
+        let threshold = self.config.read().threshold;
+
+        Ok(vec![
+            ExtensionMetricValue::new("process_count", MetricValue::Integer(processed as i64)),
+            ExtensionMetricValue::new("error_rate", MetricValue::Float(error_rate)),
+            ExtensionMetricValue::new("last_threshold", MetricValue::Float(threshold)),
+        ])
+    }
+
+    // --- Configuration: handle config updates ---
+    async fn configure(&mut self, config: &serde_json::Value) -> Result<()> {
+        let new_config: MyConfig = serde_json::from_value(config.clone())
+            .map_err(|e| ExtensionError::ConfigurationError(e.to_string()))?;
+        *self.config.write() = new_config;
+        Ok(())
     }
 
     fn as_any(&self) -> &dyn std::any::Any { self }
 }
 
 // Required: export FFI entry points
-neomind_export!(MyExtension);
+neomind_extension_sdk::neomind_export!(MyExtension);
 ```
 
-### Step 3: Define Metadata
+## State Management Patterns
 
+### Pattern 1: Atomic Counters (fastest, no lock)
 ```rust
-use neomind_extension_sdk::{ExtensionMetadata, ExtensionType};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-fn metadata() -> ExtensionMetadata {
-    ExtensionMetadata::new("my-extension", "My Extension")
-        .version("1.0.0")
-        .description("Does something useful")
-        .extension_type(ExtensionType::Tool)
-        .min_neomind_version("0.5.0")
+counter: AtomicU64,
+// Read: self.counter.load(Ordering::SeqCst)
+// Write: self.counter.fetch_add(1, Ordering::SeqCst)
+```
+
+### Pattern 2: RwLock for Config (many readers)
+```rust
+use parking_lot::RwLock;
+
+config: Arc<RwLock<Config>>,
+// Read: self.config.read().field
+// Write: *self.config.write() = new_config;
+```
+
+### Pattern 3: Mutex for Models (exclusive access)
+```rust
+use parking_lot::Mutex;
+
+model: Mutex<Option<Model>>,
+// Lazy load:
+fn ensure_loaded(&self) -> Result<()> {
+    let mut m = self.model.lock();
+    if m.is_none() { *m = Some(Model::load("models/model.onnx")?); }
+    Ok(())
 }
 ```
 
-### Step 4: Define Commands
+## Builder API Reference
 
+### CommandBuilder
 ```rust
-use neomind_extension_sdk::{CommandBuilder, ParamBuilder};
-
-fn commands() -> Vec<ExtensionCommand> {
-    vec![
-        CommandBuilder::new("analyze", "Analyze input data")
-            .param(ParamBuilder::new("input", "Data to analyze").required().string())
-            .param(ParamBuilder::new("threshold", "Min confidence").float().default(0.5))
-            .build(),
-    ]
-}
+CommandBuilder::new("command_name")
+    .display_name("Display Name")
+    .description("What this command does")
+    .param_simple("param1", "Param description", MetricDataType::String)  // required
+    .param_optional("param2", "Optional param", MetricDataType::Float)    // optional
+    .param_with_default("param3", "With default", MetricDataType::Integer, MetricValue::Integer(10))
+    .sample(serde_json::json!({"param1": "value"}))
+    .build()
 ```
 
-### Step 5: Define Metrics
-
+### MetricBuilder
 ```rust
-use neomind_extension_sdk::{MetricBuilder, MetricDataType};
-
-fn metrics() -> Vec<MetricDescriptor> {
-    vec![
-        MetricBuilder::new("result_count", "Number of results")
-            .data_type(MetricDataType::Integer)
-            .unit("count")
-            .build(),
-        MetricBuilder::new("confidence", "Average confidence")
-            .data_type(MetricDataType::Float)
-            .unit("percent")
-            .build(),
-    ]
-}
+MetricBuilder::new("metric_name", "Display Name")
+    .float()       // or .integer(), .boolean(), .string()
+    .unit("°C")    // optional unit
+    .min(0.0)      // optional range
+    .max(100.0)
+    .required()    // mark as required
+    .build()
 ```
 
-### Step 6: Handle Commands
-
+### ExtensionMetricValue
 ```rust
-async fn execute_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value> {
-    match command {
-        "analyze" => {
-            let input = args["input"].as_str().unwrap_or("");
-            let threshold = args["threshold"].as_f64().unwrap_or(0.5);
-            // ... your logic ...
-            Ok(serde_json::json!({"results": [], "count": 0}))
-        }
-        _ => Err(ExtensionError::command_not_found(command)),
-    }
-}
+ExtensionMetricValue::new("name", MetricValue::Float(23.5))
+ExtensionMetricValue::new("name", MetricValue::Integer(42))
+ExtensionMetricValue::new("name", MetricValue::Boolean(true))
+ExtensionMetricValue::new("name", MetricValue::String("ok".to_string()))
 ```
 
-### Step 7: Produce Metrics
+## Error Handling
 
 ```rust
-use neomind_extension_sdk::ExtensionMetricValue;
+use neomind_extension_sdk::ExtensionError;
 
-fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>> {
-    Ok(vec![
-        ExtensionMetricValue::float("result_count", self.result_count as f64),
-        ExtensionMetricValue::float("confidence", self.avg_confidence),
-    ])
-}
+// In execute_command:
+Err(ExtensionError::CommandNotFound(command.to_string()))
+Err(ExtensionError::InvalidArguments("Missing 'input' parameter".to_string()))
+Err(ExtensionError::ExecutionFailed("Processing error".to_string()))
+
+// In configure:
+Err(ExtensionError::ConfigurationError(e.to_string()))
 ```
 
 ## Capability System
-
-Extensions access platform features through capabilities:
 
 | Capability | Description |
 |-----------|-------------|
 | `device_metrics_read` | Read device telemetry |
 | `device_metrics_write` | Write device metrics |
-| `device_control` | Send control commands to devices |
+| `device_control` | Send control commands |
 | `storage_query` | Query persistent storage |
-| `event_publish` / `event_subscribe` | Publish/subscribe to events |
-| `telemetry_history` | Query historical telemetry |
-| `metrics_aggregate` | Aggregate metrics |
+| `event_publish` / `event_subscribe` | Events |
+| `telemetry_history` | Historical telemetry |
 | `extension_call` | Call other extensions |
 | `agent_trigger` | Trigger AI agents |
-| `rule_trigger` | Trigger automation rules |
+
+## HTTP Requests in Extensions
+
+**IMPORTANT**: Use synchronous HTTP (`ureq`), NOT async (`reqwest`). The extension runs in a Tokio context that conflicts with async HTTP.
+
+```toml
+# Cargo.toml
+[dependencies]
+ureq = { version = "2", features = ["json"] }
+```
 
 ```rust
-use neomind_extension_sdk::capabilities::CapabilityContext;
-
-let ctx = CapabilityContext::default();
-let response = ctx.invoke_capability(
-    "device_metrics_read",
-    &json!({"device_id": "sensor-001"}),
-)?;
+// In execute_command:
+fn fetch_weather(&self, city: &str) -> Result<serde_json::Value> {
+    let url = format!("https://api.weather.com/v1?city={}", city);
+    let response: serde_json::Value = ureq::get(&url)
+        .call()
+        .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))?
+        .into_json()
+        .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))?;
+    Ok(response)
+}
 ```
 
-## Build, Package & Install
+## Extension Types
 
-### Build
-
-```bash
-neomind extension build ./extensions/my-extension
-```
-
-Compiles in release mode, outputs `.nep` package.
-
-### Cross-Platform Build
-
-Build for multiple targets:
-
-```bash
-# macOS ARM64
-cargo build --release --target aarch64-apple-darwin
-
-# Linux x86_64
-cross build --release --target x86_64-unknown-linux-gnu
-
-# Linux ARM64 (Raspberry Pi)
-cross build --release --target aarch64-unknown-linux-gnu
-```
-
-### Validate
-
-```bash
-neomind extension validate ./my-extension.nep --verbose
-```
-
-### Install
-
-```bash
-neomind extension install ./my-extension.nep
-neomind extension status my-extension   # verify running
-neomind extension logs my-extension     # check for errors
-```
+| Type | Use Case | Has Model Loading | Has Streaming |
+|------|----------|-------------------|---------------|
+| `tool` | Data processing, API bridges | Optional | No |
+| `connector` | Device protocol bridges | No | Optional |
+| `processor` | Data transformation | Optional | No |
+| `analyzer` | AI/ML inference | Yes (ONNX) | Optional |
+| `bridge` | External system integration | No | Optional |
 
 ## Manifest Reference (manifest.json)
 
@@ -247,75 +391,9 @@ neomind extension logs my-extension     # check for errors
     "linux_x86_64": "binaries/linux_x86_64/extension.so",
     "linux_aarch64": "binaries/linux_aarch64/extension.so"
   },
-  "frontend": {
-    "components": []
-  },
+  "frontend": { "components": [] },
   "models": "models/"
 }
-```
-
-## Frontend Components (Optional)
-
-Extensions can bundle dashboard widgets:
-
-```json
-"frontend": {
-  "components": [{
-    "type": "my-widget",
-    "name": "My Widget",
-    "description": "Widget description",
-    "category": "custom",
-    "bundle_path": "frontend/my-widget.umd.cjs",
-    "export_name": "MyWidget",
-    "global_name": "MyExtensionWidget",
-    "size_constraints": {"min_w":300,"min_h":250,"default_w":400,"default_h":350,"max_w":600,"max_h":500},
-    "has_data_source": true,
-    "max_data_sources": 1,
-    "config_schema": { "type": "object", "properties": { ... } }
-  }]
-}
-```
-
-Frontend widgets use the same IIFE format as custom widgets — see `neomind widget` docs.
-
-## Common Patterns
-
-### Stateful Extension with ML Model
-
-```rust
-pub struct YoloExtension {
-    model: Mutex<Option<Model>>,  // Lazy-loaded, kept across sessions
-    results: Mutex<Vec<Detection>>,
-}
-
-impl YoloExtension {
-    fn ensure_model_loaded(&self) -> Result<()> {
-        let mut model = self.model.lock().unwrap();
-        if model.is_none() {
-            *model = Some(Model::load("models/yolov8n.onnx")?);
-        }
-        Ok(())
-    }
-}
-```
-
-### Periodic Metric Collection
-
-The platform calls `produce_metrics()` at regular intervals. Use this for:
-- Polling external APIs
-- Reading sensors
-- Aggregating data
-
-### Error Handling
-
-```rust
-use neomind_extension_sdk::ExtensionError;
-
-// Built-in error constructors
-ExtensionError::command_not_found("analyze")
-ExtensionError::invalid_parameter("threshold", "must be > 0")
-ExtensionError::internal("model loading failed")
-ExtensionError::capability_denied("device_metrics_read")
 ```
 
 ## Extension Management Commands
@@ -326,33 +404,24 @@ ExtensionError::capability_denied("device_metrics_read")
 | `neomind extension get <ID>` | Get extension details (alias: `info`) |
 | `neomind extension status <ID>` | Get runtime status |
 | `neomind extension logs <ID> [--limit <N>]` | View extension logs |
-| `neomind extension reload <ID>` | Reload extension (pick up code changes) |
-| `neomind extension install <PATH>` | Install from .nep package |
+| `neomind extension reload <ID>` | Reload (pick up code changes) |
+| `neomind extension config <ID>` | View current config |
+| `neomind extension config <ID> --set '<JSON>'` | Update config |
+| `neomind extension install <PATH>` | Install from .nep |
 | `neomind extension uninstall <ID>` | Uninstall extension |
-
-### Check Extension Status
-
-```bash
-# List all extensions and their states
-neomind extension list
-
-# Get detailed info including metrics and commands
-neomind extension info my-extension
-
-# Check if extension is running properly
-neomind extension status my-extension
-
-# View recent logs for debugging
-neomind extension logs my-extension --limit 50
-```
 
 ## Common Errors & Solutions
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| "ABI version mismatch" | Extension compiled with wrong SDK version | Rebuild with matching SDK version |
-| "Extension crashed" | Panic in extension code | Check logs with `extension logs <ID>`; add error handling |
-| "Capability denied" | Extension didn't request capability | Add to metadata capabilities list |
-| "Library not found" | Binary path wrong in manifest | Check `binaries` paths match actual files in `.nep` |
-| "Model file not found" | Model path relative to extension dir | Use `models/` directory referenced in manifest |
-| "Validation failed" | Malformed manifest or missing fields | Run `extension validate --verbose` to see details |
+| "ABI version mismatch" | SDK version mismatch | Rebuild with matching SDK version from workspace |
+| "Extension crashed" | Panic in code | Check `extension logs <ID>`; add error handling, never unwrap in production |
+| "Capability denied" | Missing capability declaration | Add capability to metadata |
+| "Library not found" | Binary path wrong in manifest | Check `binaries` paths match `.nep` structure |
+| "Model file not found" | Wrong model path | Use `models/` dir, path relative to extension root |
+| Trait not implemented | Missing required methods | Must implement: `metadata()`, `as_any()`. Add `produce_metrics()` for metrics, `execute_command()` for commands |
+| Mutex deadlock | Locking same mutex twice | Keep lock scopes minimal, use `parking_lot` (non-poisoning) |
+| "Command not found" | Missing match arm | Add command to `execute_command()` match block |
+| Cargo build error | Missing `[lib]` section | Cargo.toml MUST have `[lib] crate-type = ["cdylib", "rlib"]` |
+| Panic during HTTP | Using `reqwest` (async) | Use `ureq` (sync) — avoid async HTTP in extension context |
+| Config not updating | `configure()` not implemented | Implement `configure(&mut self, config: &Value)` in Extension trait |

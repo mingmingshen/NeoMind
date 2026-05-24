@@ -371,6 +371,9 @@ impl RuleValidator {
                 let sub_issues = Self::validate_condition(cond, context)?;
                 issues.extend(sub_issues);
             }
+            RuleCondition::Always => {
+                // No validation needed for schedule/manual rules
+            }
         }
 
         Ok(issues)

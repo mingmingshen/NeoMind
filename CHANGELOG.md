@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.7.9] - 2026-05-25
+
+### Added
+
+- **Widget development skill** — New builtin skill `widget-development.md` with complete IIFE templates (ValueCard, Clock, Gauge, DevicePanel), jsxRuntime pattern documentation, props interface guide, manifest.json reference, and Tailwind styling rules. Based on patterns from real NeoMind-Dashboard-Components repository
+- **Extension development skill** — Rewritten `extension-development.md` with complete working DataProcessor template, state management patterns (AtomicU64, RwLock, Mutex), Builder API reference, Cargo.toml requirements, and `ureq` sync HTTP guidance. Based on patterns from real NeoMind-Extensions repository
+- **Transform metric discovery guidance** — Enhanced `transform-management.md` with "Discover Metrics Before Writing Code" section, auto-unwrap semantics documentation, `extensions.invoke()` usage, and three discovery paths (device metrics, extension metrics, existing transforms)
+- **Extension reload command** — New `neomind extension reload <ID>` command in CLI, cli-ops, and shell.rs routing. Calls `POST /api/extensions/:id/reload` for hot-restarting extension processes
+- **Agent create advanced flags** — Help text now documents all flags: `--resources`, `--metrics`, `--commands`, `--event-filter`, `--timezone`, `--enable-tool-chaining`, `--max-chain-depth`, `--priority`, `--context-window-size`
+- **Shell help for extension/widget/transform** — Added detailed help entries for `extension create/build`, `widget create`, and `transform create` with workflow steps, parameter tables, and examples
+
+### Changed
+
+- **Dashboard add-components** — Shell help and tool description now prominently recommend `add-components` over `update --components` to prevent accidental full replacement of dashboard components
+- **Rule DSL quotes** — Fixed tool description to use `RULE "<name>"` (quoted) matching the actual DSL parser requirement
+- **Rule engine improvements** — Enhanced DSL parsing, validation, and generator for more robust rule creation
+- **CLI error recovery** — Transform test command now flattens API error responses for clearer error messages
+
+### Fixed
+
+- **Extension status/logs 500→404** — Fixed API returning 500 "IPC error" for non-existent extensions. Added existence check before IPC calls, returning proper 404
+- **Boolean flag parsing** — Fixed `--tls` flag silently failing when it's the last argument. Changed from `get_flag_value()` to `args.iter().any()` for boolean flags
+- **Severity level mismatch** — Fixed message send recovery hint from "error" to "emergency" to match actual API accepted values (info|warning|critical|emergency)
+- **Transform auto-unwrap** — Single-key JSON input like `{"value": 42}` is now auto-unwrapped to scalar `42` for simpler transform code. Multi-key objects remain as-is
+- **Extension reload routing** — `neomind extension reload` no longer falls through to `__FALLTHROUGH__` but properly calls the API endpoint
+
+---
+
 ## [v0.7.9] - 2026-05-23
 
 ### Added

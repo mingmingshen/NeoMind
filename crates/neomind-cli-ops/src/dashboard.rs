@@ -138,10 +138,10 @@ pub async fn share_dashboard(
     expires: Option<&str>,
 ) -> Result<CliResponse> {
     let mut body = json!({
-        "public": public,
+        "permissions": {"allow_interactive": public},
     });
     if let Some(exp) = expires {
-        body["expires"] = json!(exp);
+        body["expires_in_hours"] = json!(exp);
     }
 
     let data = client.post(&format!("/dashboards/{}/share", id), &body).await?;

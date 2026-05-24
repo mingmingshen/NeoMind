@@ -30,7 +30,11 @@
 
 use super::error::{AutomationError, Result};
 use super::output_registry::TransformOutputRegistry;
-use super::types::{AggregationFunc, TimeWindow, TransformAutomation, TransformOperation};
+use super::store::SharedAutomationStore;
+use super::types::{
+    AggregationFunc, AutomationType, ExecutionRecord, ExecutionStatus, TimeWindow,
+    TransformAutomation, TransformOperation,
+};
 use chrono::Utc;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -115,10 +119,32 @@ impl JsTransformExecutor {
                 message: format!("Failed to serialize input: {}", e),
             })?;
 
-        // Define the input variable
-        let setup_code = format!("const input = {};", input_json);
+        // Define the input variable with auto-unwrap:
+        // If input is a single-key object like {"value": 42} or {"temperature": 23.5},
+        // auto-unwrap to the scalar so `return input * 2` works naturally.
+        // The full object remains accessible as `input_raw`.
+        let unwrap_code = if let Some(obj) = input.as_object() {
+            if obj.len() == 1 {
+                if let Some(key) = obj.keys().next() {
+                    // Single-key object: unwrap it
+                    // e.g. {"value": 42} → input = 42 (auto-unwrapped)
+                    // Multi-key objects like {"temperature": 25, "humidity": 60} stay as-is
+                    format!(
+                        "var __obj = {}; var input = __obj['{}'];",
+                        input_json, key
+                    )
+                } else {
+                    format!("var input = {};", input_json)
+                }
+            } else {
+                format!("var input = {};", input_json)
+            }
+        } else {
+            // Input is already a scalar (number, string, etc.)
+            format!("var input = {};", input_json)
+        };
         context
-            .eval(Source::from_bytes(setup_code.as_bytes()))
+            .eval(Source::from_bytes(unwrap_code.as_bytes()))
             .map_err(|e| AutomationError::TransformError {
                 operation: "JsTransform".to_string(),
                 message: format!("Failed to set input: {}", e),
@@ -648,6 +674,8 @@ pub struct TransformEngine {
     extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
     /// Output registry for auto-registering Transform outputs as data sources
     output_registry: Arc<TransformOutputRegistry>,
+    /// Automation store for recording execution history
+    automation_store: Option<Arc<SharedAutomationStore>>,
 }
 
 impl Default for TransformEngine {
@@ -664,6 +692,7 @@ impl TransformEngine {
             js_executor: JsTransformExecutor::new(),
             extension_registry: None,
             output_registry: Arc::new(TransformOutputRegistry::new()),
+            automation_store: None,
         }
     }
 
@@ -676,6 +705,7 @@ impl TransformEngine {
             js_executor: JsTransformExecutor::new(),
             extension_registry: Some(extension_registry),
             output_registry: Arc::new(TransformOutputRegistry::new()),
+            automation_store: None,
         }
     }
 
@@ -689,6 +719,7 @@ impl TransformEngine {
             js_executor: JsTransformExecutor::new(),
             extension_registry: None,
             output_registry,
+            automation_store: None,
         }
     }
 
@@ -702,7 +733,14 @@ impl TransformEngine {
             js_executor: JsTransformExecutor::new(),
             extension_registry,
             output_registry,
+            automation_store: None,
         }
+    }
+
+    /// Set the automation store for recording execution history
+    pub fn with_automation_store(mut self, store: Arc<SharedAutomationStore>) -> Self {
+        self.automation_store = Some(store);
+        self
     }
 
     /// Phase 4.1: Set the extension registry
@@ -888,6 +926,58 @@ impl TransformEngine {
 
     /// Execute a single transform
     async fn execute_transform(
+        &self,
+        transform: &TransformAutomation,
+        device_id: &str,
+        raw_data: &Value,
+    ) -> Result<TransformResult> {
+        let started_at = Utc::now().timestamp_millis();
+
+        // Execute and capture result for execution recording
+        let result = self.execute_transform_inner(transform, device_id, raw_data).await;
+
+        // Record execution history
+        if let Some(ref store) = self.automation_store {
+            let (status, error, output) = match &result {
+                Ok(r) => {
+                    let output = if r.metrics.is_empty() {
+                        None
+                    } else {
+                        Some(serde_json::json!({
+                            "metric_count": r.metrics.len(),
+                            "warning_count": r.warnings.len(),
+                        }))
+                    };
+                    (ExecutionStatus::Completed, None, output)
+                }
+                Err(e) => (
+                    ExecutionStatus::Failed,
+                    Some(e.to_string()),
+                    None,
+                ),
+            };
+
+            let record = ExecutionRecord {
+                id: uuid::Uuid::new_v4().to_string(),
+                automation_id: transform.metadata.id.clone(),
+                automation_type: AutomationType::Transform,
+                started_at,
+                ended_at: Some(Utc::now().timestamp_millis()),
+                status,
+                error,
+                output,
+            };
+
+            if let Err(e) = store.save_execution(&record).await {
+                tracing::warn!("Failed to save execution record: {}", e);
+            }
+        }
+
+        result
+    }
+
+    /// Inner transform execution logic
+    async fn execute_transform_inner(
         &self,
         transform: &TransformAutomation,
         device_id: &str,

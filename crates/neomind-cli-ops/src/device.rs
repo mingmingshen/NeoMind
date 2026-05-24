@@ -261,6 +261,76 @@ pub async fn delete_device_type(client: &ApiClient, id: &str) -> Result<CliRespo
     ))
 }
 
+/// List pending device drafts (auto-discovered devices awaiting approval)
+pub async fn list_drafts(client: &ApiClient) -> Result<CliResponse> {
+    let data = client.get("/devices/drafts").await?;
+    Ok(CliResponse::success(data, "Device drafts listed"))
+}
+
+/// Get a specific device draft
+pub async fn get_draft(client: &ApiClient, device_id: &str) -> Result<CliResponse> {
+    let data = client.get(&format!("/devices/drafts/{}", device_id)).await?;
+    Ok(CliResponse::success(data, "Device draft retrieved"))
+}
+
+/// Approve a device draft
+pub async fn approve_draft(
+    client: &ApiClient,
+    device_id: &str,
+    name: Option<&str>,
+    device_type: Option<&str>,
+) -> Result<CliResponse> {
+    let mut body = json!({});
+    if let Some(n) = name {
+        body["name"] = json!(n);
+    }
+    if let Some(t) = device_type {
+        body["device_type"] = json!(t);
+    }
+    let data = client
+        .post(&format!("/devices/drafts/{}/approve", device_id), &body)
+        .await?;
+    Ok(CliResponse::success(data, "Device draft approved"))
+}
+
+/// Reject a device draft
+pub async fn reject_draft(client: &ApiClient, device_id: &str) -> Result<CliResponse> {
+    client
+        .post(&format!("/devices/drafts/{}/reject", device_id), &json!({}))
+        .await?;
+    Ok(CliResponse::success(
+        json!({ "id": device_id }),
+        "Device draft rejected",
+    ))
+}
+
+/// Get auto-discovery configuration
+pub async fn get_onboard_config(client: &ApiClient) -> Result<CliResponse> {
+    let data = client.get("/devices/drafts/config").await?;
+    Ok(CliResponse::success(data, "Onboard config retrieved"))
+}
+
+/// Update auto-discovery configuration
+pub async fn update_onboard_config(
+    client: &ApiClient,
+    enabled: Option<bool>,
+    max_samples: Option<u32>,
+    auto_approve: Option<bool>,
+) -> Result<CliResponse> {
+    let mut body = json!({});
+    if let Some(e) = enabled {
+        body["enabled"] = json!(e);
+    }
+    if let Some(m) = max_samples {
+        body["max_samples"] = json!(m);
+    }
+    if let Some(a) = auto_approve {
+        body["auto_approve"] = json!(a);
+    }
+    let data = client.put("/devices/drafts/config", &body).await?;
+    Ok(CliResponse::success(data, "Onboard config updated"))
+}
+
 /// Write metric data point for a device
 pub async fn write_metric(
     client: &ApiClient,

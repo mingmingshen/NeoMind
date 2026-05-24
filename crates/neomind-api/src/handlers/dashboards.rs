@@ -496,17 +496,24 @@ pub async fn update_dashboard_handler(
     }
     if let Some(components) = req.components {
         // Parse components from JSON — fail if any component is invalid
-        let parsed: Result<Vec<StoredComponent>, _> = components
+        let parsed: Result<Vec<StoredComponent>, String> = components
             .iter()
-            .map(|c| serde_json::from_value::<StoredComponent>(c.clone()))
+            .enumerate()
+            .map(|(i, c)| {
+                serde_json::from_value::<StoredComponent>(c.clone())
+                    .map_err(|e| format!("component[{}]: {}", i, e))
+            })
             .collect();
         match parsed {
             Ok(parsed_components) => dashboard.components = parsed_components,
             Err(e) => {
-                return Err(ErrorResponse::bad_request(format!(
-                    "Invalid component data: {}",
-                    e
-                )))
+                return Err(
+                    ErrorResponse::bad_request(format!("Invalid component data: {}", e))
+                        .with_hint(
+                            "Each component needs: id, type, title, position {x,y,w,h}.\n\
+                             Use 'neomind dashboard add-components' instead of full replacement.",
+                        ),
+                )
             }
         }
     }
@@ -536,9 +543,21 @@ pub async fn add_components_handler(
     let new_components: Vec<StoredComponent> = req
         .components
         .iter()
-        .map(|c| serde_json::from_value::<StoredComponent>(c.clone()))
+        .enumerate()
+        .map(|(i, c)| {
+            serde_json::from_value::<StoredComponent>(c.clone()).map_err(|e| {
+                format!("component[{}]: {}", i, e)
+            })
+        })
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| ErrorResponse::bad_request(format!("Invalid component data: {}", e)))?;
+        .map_err(|e| {
+            ErrorResponse::bad_request(format!("Invalid component data: {}", e)).with_hint(
+                "Each component needs: id (string), type (value-card|line-chart|bar-chart|gauge|markdown-display), title (string), \
+                 position {x, y, w, h}.\n\
+                 Example: {\"id\":\"temp\",\"type\":\"value-card\",\"title\":\"Temp\",\"position\":{\"x\":0,\"y\":0,\"w\":4,\"h\":2},\
+                 \"data_source\":{\"type\":\"device\",\"sourceId\":\"<device-id>\",\"property\":\"<metric>\"}}",
+            )
+        })?;
 
     dashboard.components.extend(new_components);
     dashboard.updated_at = chrono::Utc::now().timestamp();

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Database, Plus, Play, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Database, Plus, Play, Edit, Trash2, ChevronDown, ChevronUp, History } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -12,6 +12,7 @@ import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { formatTimestamp } from '@/lib/utils/format'
 import { TransformBuilder as TransformBuilderSplit } from './TransformBuilderSplit'
 import { TransformTestDialog } from './TransformTestDialog'
+import { TransformExecutionHistory } from './TransformExecutionHistory'
 import type { TransformAutomation } from '@/types'
 
 interface TransformsTabContentProps {
@@ -28,6 +29,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
   const [editingTransform, setEditingTransform] = useState<TransformAutomation | null>(null)
   const [testingTransformId, setTestingTransformId] = useState<string | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [historyExpanded, setHistoryExpanded] = useState<Set<string>>(new Set())
   const [devices, setDevices] = useState<Array<{ id: string; name: string; device_type?: string }>>([])
   const [deviceTypes, setDeviceTypes] = useState<Array<{ device_type: string; name?: string }>>([])
 
@@ -399,6 +401,33 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                                     ? formatTimestamp(transform.last_executed)
                                     : t('common:never', { defaultValue: 'Never' })}
                                 </div>
+                              </div>
+
+                              {/* Execution History */}
+                              <div className="mt-4 pt-3 border-t border-border/50">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 gap-1.5 text-xs text-muted-foreground"
+                                  onClick={() => {
+                                    setHistoryExpanded(prev => {
+                                      const next = new Set(prev)
+                                      if (next.has(transform.id)) next.delete(transform.id)
+                                      else next.add(transform.id)
+                                      return next
+                                    })
+                                  }}
+                                >
+                                  <History className="h-3.5 w-3.5" />
+                                  {historyExpanded.has(transform.id)
+                                    ? t('automation:hideHistory', { defaultValue: 'Hide History' })
+                                    : t('automation:showHistory', { defaultValue: 'Show History' })}
+                                </Button>
+                                {historyExpanded.has(transform.id) && (
+                                  <div className="mt-2">
+                                    <TransformExecutionHistory transformId={transform.id} limit={10} />
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>

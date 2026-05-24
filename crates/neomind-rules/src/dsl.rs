@@ -46,6 +46,23 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// Trigger type for a rule.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum TriggerType {
+    /// Triggered by device state changes (default, requires WHEN clause)
+    DeviceState,
+    /// Triggered on a cron schedule
+    Schedule { cron: String },
+    /// Triggered manually via API
+    Manual,
+}
+
+impl Default for TriggerType {
+    fn default() -> Self {
+        TriggerType::DeviceState
+    }
+}
+
 /// Parsed rule from DSL.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedRule {
@@ -61,6 +78,8 @@ pub struct ParsedRule {
     pub description: Option<String>,
     /// Rule tags (optional).
     pub tags: Vec<String>,
+    /// Trigger type (device state, schedule, or manual).
+    pub trigger_type: TriggerType,
 }
 
 /// Rule condition - supports device, extension, and logical conditions.
@@ -100,6 +119,8 @@ pub enum RuleCondition {
     Or(Vec<RuleCondition>),
     /// Logical NOT
     Not(Box<RuleCondition>),
+    /// Always true (used for schedule/manual rules)
+    Always,
 }
 
 impl RuleCondition {
@@ -122,7 +143,7 @@ impl RuleCondition {
                 .collect(),
             RuleCondition::Not(condition) => condition.get_device_metrics(),
             // Extension conditions don't contribute device metrics
-            RuleCondition::Extension { .. } | RuleCondition::ExtensionRange { .. } => vec![],
+            RuleCondition::Extension { .. } | RuleCondition::ExtensionRange { .. } | RuleCondition::Always => vec![],
         }
     }
 
@@ -149,7 +170,7 @@ impl RuleCondition {
                 .collect(),
             RuleCondition::Not(condition) => condition.get_extension_metrics(),
             // Device conditions don't contribute extension metrics
-            RuleCondition::Device { .. } | RuleCondition::DeviceRange { .. } => vec![],
+            RuleCondition::Device { .. } | RuleCondition::DeviceRange { .. } | RuleCondition::Always => vec![],
         }
     }
 
@@ -161,7 +182,7 @@ impl RuleCondition {
                 conditions.iter().any(|c| c.has_extension())
             }
             RuleCondition::Not(condition) => condition.has_extension(),
-            RuleCondition::Device { .. } | RuleCondition::DeviceRange { .. } => false,
+            RuleCondition::Device { .. } | RuleCondition::DeviceRange { .. } | RuleCondition::Always => false,
         }
     }
 
@@ -173,7 +194,7 @@ impl RuleCondition {
                 conditions.iter().any(|c| c.has_device())
             }
             RuleCondition::Not(condition) => condition.has_device(),
-            RuleCondition::Extension { .. } | RuleCondition::ExtensionRange { .. } => false,
+            RuleCondition::Extension { .. } | RuleCondition::ExtensionRange { .. } | RuleCondition::Always => false,
         }
     }
 }
@@ -591,8 +612,8 @@ impl RuleDslParser {
         // Find and extract the rule name
         let (name, description, tags) = Self::extract_rule_header(&mut lines)?;
 
-        // Find and parse the WHEN clause (now supports complex conditions)
-        let condition = Self::parse_when_clause(&mut lines)?;
+        // Check for SCHEDULE or TRIGGER MANUAL before WHEN clause
+        let (condition, trigger_type) = Self::parse_trigger_or_when(&mut lines)?;
 
         // Find and parse the FOR clause (optional)
         let for_duration = Self::parse_for_clause(&mut lines);
@@ -611,7 +632,44 @@ impl RuleDslParser {
                 Some(description)
             },
             tags,
+            trigger_type,
         })
+    }
+
+    /// Parse trigger type (SCHEDULE/TRIGGER MANUAL) or fall back to WHEN clause.
+    fn parse_trigger_or_when(
+        lines: &mut Vec<&str>,
+    ) -> Result<(RuleCondition, TriggerType), RuleError> {
+        // Check for SCHEDULE <cron>
+        for (i, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            if let Some(cron_expr) = trimmed.strip_prefix("SCHEDULE ") {
+                let cron = cron_expr.trim().to_string();
+                if cron.is_empty() {
+                    return Err(RuleError::Parse(
+                        "SCHEDULE requires a cron expression".to_string(),
+                    ));
+                }
+                lines.remove(i);
+                return Ok((
+                    RuleCondition::Always,
+                    TriggerType::Schedule { cron },
+                ));
+            }
+        }
+
+        // Check for TRIGGER MANUAL
+        for (i, line) in lines.iter().enumerate() {
+            let trimmed = line.trim().to_uppercase();
+            if trimmed == "TRIGGER MANUAL" {
+                lines.remove(i);
+                return Ok((RuleCondition::Always, TriggerType::Manual));
+            }
+        }
+
+        // Default: require WHEN clause
+        let condition = Self::parse_when_clause(lines)?;
+        Ok((condition, TriggerType::DeviceState))
     }
 
     /// Extract rule name and optional description/tags from RULE line.
@@ -627,6 +685,12 @@ impl RuleDslParser {
                 let rest = line.strip_prefix("RULE").map_or(*line, |s| s.trim()); // Skip "RULE"
                 if let Some(rule_name) = Self::extract_quoted_string(rest) {
                     name = rule_name;
+                } else {
+                    // Support unquoted names: take the first word after RULE
+                    let unquoted = rest.split_whitespace().next().unwrap_or("").trim();
+                    if !unquoted.is_empty() {
+                        name = unquoted.to_string();
+                    }
                 }
 
                 // Check for DESCRIPTION keyword on same or next lines

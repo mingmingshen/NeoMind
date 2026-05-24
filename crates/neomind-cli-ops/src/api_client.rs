@@ -13,7 +13,9 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new() -> Self {
-        Self::with_base_url(DEFAULT_BASE_URL)
+        let base_url = std::env::var("NEOMIND_API_BASE")
+            .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
+        Self::with_base_url(&base_url)
     }
 
     pub fn with_base_url(base_url: &str) -> Self {

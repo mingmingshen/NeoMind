@@ -175,6 +175,11 @@ fn condition_to_json(cond: &RuleCondition) -> Value {
                 "conditions": [condition_to_json(condition)],
             })
         }
+        RuleCondition::Always => {
+            json!({
+                "operator": "always",
+            })
+        }
     }
 }
 
@@ -753,13 +758,14 @@ pub async fn test_rule_handler(
     let condition_met = if let Some(val) = used_value {
         operator.evaluate(val, threshold)
     } else {
-        return Err(ErrorResponse::internal(format!(
-            "Device '{}' has no data for metric '{}'. Tried variants: {}. Current value unavailable and no historical data found. \
-            Please ensure the device has transmitted data at least once.",
-            device_id,
-            metric,
-            metric_variants.join(", "),
-        )));
+        return Err(ErrorResponse::bad_request(
+            format!("Cannot test rule: Device '{}' has no data for metric '{}'.", device_id, metric)
+        ).with_hint(
+            "The device must have transmitted data at least once before testing rules.\n\
+             1. Check device status: neomind device latest <ID>\n\
+             2. Send test data: neomind device write-metric <ID> --metric <METRIC> --value <VALUE>\n\
+             3. Then retry: neomind rule test <RULE_ID>"
+        ));
     };
 
     // If execute=true and condition is met, actually execute the rule actions
@@ -811,7 +817,12 @@ pub async fn create_rule_handler(
     let dsl = req
         .get("dsl")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| ErrorResponse::bad_request("Missing 'dsl' field"))?;
+        .ok_or_else(|| {
+            ErrorResponse::bad_request("Missing 'dsl' field").with_hint(
+                "DSL is required. Syntax: RULE \"<name>\" WHEN <condition> DO <action> END\n\
+                 Example: RULE \"High Temp\" WHEN sensor-001.temperature > 30 DO NOTIFY \"Too hot\" END",
+            )
+        })?;
 
     validate_required_string(dsl, "dsl")?;
     validate_string_length(dsl, "dsl", 10, 50000)?;
@@ -826,8 +837,39 @@ pub async fn create_rule_handler(
     let source = req.get("source").cloned();
 
     // Parse the DSL and create rule with source
-    let parsed = neomind_rules::dsl::RuleDslParser::parse(dsl)
-        .map_err(|e| ErrorResponse::internal(format!("Failed to parse DSL: {}", e)))?;
+    let parsed = neomind_rules::dsl::RuleDslParser::parse(dsl).map_err(|e| {
+        let err_msg = format!("{}", e);
+        let hint = match &err_msg {
+            m if m.contains("Rule name not found") => {
+                "Rule name is required. Use quoted format: RULE \"My Rule Name\" WHEN ... DO ... END".to_string()
+            }
+            m if m.contains("WHEN clause not found") => {
+                "WHEN clause is required. Syntax: WHEN <device_id>.<metric> <op> <value>\n\
+                 Example: WHEN sensor-001.temperature > 30\n\
+                 Use actual device_id (not 'device.' prefix). Run `neomind device list` to find IDs.".to_string()
+            }
+            m if m.contains("Invalid threshold") => {
+                "Threshold must be a number. Example: sensor-001.temperature > 30 (not > thirty)".to_string()
+            }
+            m if m.contains("Invalid condition") => {
+                "Condition format: <device_id>.<metric> <op> <value>\n\
+                 Operators: >, <, >=, <=, ==, !=\n\
+                 Example: sensor-001.temperature > 30\n\
+                 Do NOT prefix with 'device.' — use the actual device ID.".to_string()
+            }
+            m if m.contains("Missing END") || m.contains("END") => {
+                "DSL must end with END on its own line. Structure:\n\
+                 RULE \"name\"\n  WHEN <condition>\n  DO <action>\nEND".to_string()
+            }
+            _ => {
+                format!("DSL syntax: RULE \"<name>\" WHEN <condition> DO <action> END\n\
+                 Conditions: <device_id>.<metric> <op> <value>\n\
+                 Actions: NOTIFY \"message\", EXECUTE device.cmd(key=val), LOG level \"msg\"\n\
+                 Error detail: {}", err_msg)
+            }
+        };
+        ErrorResponse::validation(format!("Failed to parse DSL: {}", e)).with_hint(hint)
+    })?;
 
     // Create a compiled rule from the parsed DSL with source
     let mut rule = CompiledRule::from_parsed_with_dsl(parsed, dsl.to_string());
