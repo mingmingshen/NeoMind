@@ -240,9 +240,10 @@ const LineChartInner = function LineChart({
       return [{ name: 'Value', data: data as number[], color: undefined } as SeriesData]
     }
 
-    // If no dataSource, use propSeries (static data)
-    if (!dataSource && propSeries && Array.isArray(propSeries) && propSeries.length > 0 && propSeries[0]?.data) {
-      return propSeries
+    // If no dataSource, use propSeries (static data) — filter out items without data
+    if (!dataSource && propSeries && Array.isArray(propSeries) && propSeries.length > 0) {
+      const validSeries = propSeries.filter(s => Array.isArray(s?.data))
+      if (validSeries.length > 0) return validSeries
     }
 
     // Default fallback
@@ -282,7 +283,7 @@ const LineChartInner = function LineChart({
       return { chartLabels: propLabels, alignedSeries: normalizedSeries }
     }
 
-    const maxDataLength = Math.max(...normalizedSeries.map(s => s.data.length), 0)
+    const maxDataLength = Math.max(...normalizedSeries.map(s => s.data?.length ?? 0), 0)
     return {
       chartLabels: Array.from({ length: maxDataLength }, (_, i) => `${i}`),
       alignedSeries: normalizedSeries,
@@ -296,7 +297,7 @@ const LineChartInner = function LineChart({
     return chartLabels.map((label, idx) => {
       const point: any = { name: label }
       series.forEach((s, i) => {
-        point[`series${i}`] = s.data[idx] ?? null
+        point[`series${i}`] = s.data?.[idx] ?? null
       })
       return point
     })
@@ -604,9 +605,10 @@ export const AreaChart = memo(function AreaChart({
       return [{ name: 'Value', data: rawData as number[], color: undefined } as SeriesData]
     }
 
-    // If no dataSource, use propSeries (static data)
-    if (!dataSource && propSeries && Array.isArray(propSeries) && propSeries.length > 0 && propSeries[0]?.data) {
-      return propSeries
+    // If no dataSource, use propSeries (static data) — filter out items without data
+    if (!dataSource && propSeries && Array.isArray(propSeries) && propSeries.length > 0) {
+      const validSeries = propSeries.filter(s => Array.isArray(s?.data))
+      if (validSeries.length > 0) return validSeries
     }
 
     return DEFAULT_AREA_DATA
@@ -643,7 +645,7 @@ export const AreaChart = memo(function AreaChart({
       return { chartLabels: labels, alignedSeries: series }
     }
 
-    const maxDataLength = Math.max(...series.map(s => s.data.length), 0)
+    const maxDataLength = Math.max(...series.map(s => s.data?.length ?? 0), 0)
     return {
       chartLabels: Array.from({ length: maxDataLength }, (_, i) => `${i}`),
       alignedSeries: series,
@@ -656,7 +658,7 @@ export const AreaChart = memo(function AreaChart({
     return chartLabels.map((label, idx) => {
       const point: any = { name: label }
       finalSeries.forEach((s, i) => {
-        point[`series${i}`] = s.data[idx] ?? null
+        point[`series${i}`] = s.data?.[idx] ?? null
       })
       return point
     })
