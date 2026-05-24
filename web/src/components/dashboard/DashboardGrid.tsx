@@ -266,6 +266,7 @@ export function DashboardGrid({
       `}</style>
       {width > 0 && (
         <ResponsiveGridLayout
+          key={componentIdKey}
           className={cn('dashboard-grid', editMode && 'edit-mode')}
           layouts={layouts}
           breakpoints={breakpoints}
