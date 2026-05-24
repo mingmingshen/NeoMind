@@ -106,14 +106,16 @@ export function DashboardGrid({
   }, [componentIdKey, settleVersion])
 
   // Handle layout changes from react-grid-layout.
+  // Only update latestLayoutRef during settle (new component added).
+  // During width changes (sidebar toggle, resize), react-grid-layout manages
+  // positions internally — saving compacted positions would prevent layout recovery.
   const handleLayoutChange = useCallback((currentLayout: any) => {
-    const newPositions: Record<string, { x: number; y: number; w: number; h: number }> = {}
-    currentLayout.forEach((item: any) => {
-      newPositions[item.i] = { x: item.x, y: item.y, w: item.w, h: item.h }
-    })
-    latestLayoutRef.current = newPositions
-
     if (needsSettleRef.current) {
+      const newPositions: Record<string, { x: number; y: number; w: number; h: number }> = {}
+      currentLayout.forEach((item: any) => {
+        newPositions[item.i] = { x: item.x, y: item.y, w: item.w, h: item.h }
+      })
+      latestLayoutRef.current = newPositions
       needsSettleRef.current = false
       setSettleVersion(v => v + 1)
     }
