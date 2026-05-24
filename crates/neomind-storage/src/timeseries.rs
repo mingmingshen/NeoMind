@@ -889,7 +889,7 @@ impl TimeSeriesStore {
             end_key
         );
 
-        let cap = limit.map(|n| n.min(1000)).unwrap_or(0);
+        let cap = limit.map(|n| n.min(5000)).unwrap_or(0);
         let mut points = Vec::with_capacity(cap);
         let mut collected = 0usize;
         let mut total_count = 0u32;
@@ -965,7 +965,7 @@ impl TimeSeriesStore {
         let start_key = (source_id, metric, start);
         let end_key = (source_id, metric, end);
 
-        let cap = limit.map(|n| n.min(1000)).unwrap_or(0);
+        let cap = limit.map(|n| n.min(5000)).unwrap_or(0);
         let mut points = Vec::with_capacity(cap);
         let mut collected = 0usize;
         let mut total_count = 0u32;
@@ -1106,7 +1106,7 @@ impl TimeSeriesStore {
         let start_key = (source_id, metric, start);
         let end_key = (source_id, metric, end);
 
-        let cap = limit.map(|n| n.min(1000)).unwrap_or(0);
+        let cap = limit.map(|n| n.min(5000)).unwrap_or(0);
         let mut points = Vec::with_capacity(cap);
         let mut collected = 0usize;
         let mut total_count = 0u32;
@@ -1765,6 +1765,149 @@ impl TimeSeriesStore {
             metrics_cleaned: metrics_cleaned.into_iter().collect(),
         })
     }
+
+    /// Query data points with uniform time-bucket downsampling.
+    ///
+    /// Scans the time range in a single forward pass, divides it into `target_count`
+    /// equal-sized time buckets, and returns the **newest** (last) point from each
+    /// non-empty bucket.  This guarantees even temporal coverage regardless of how
+    /// many raw points exist — perfect for chart rendering.
+    ///
+    /// If total points ≤ target_count, returns all points without bucketing.
+    pub async fn query_range_bucketed(
+        &self,
+        source_id: &str,
+        metric: &str,
+        start: i64,
+        end: i64,
+        target_count: usize,
+    ) -> Result<TimeSeriesResult, Error> {
+        let read_txn = self.db.begin_read()?;
+
+        let table = match read_txn.open_table(TIMESERIES_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => {
+                return Ok(TimeSeriesResult {
+                    source_id: source_id.to_string(),
+                    metric: metric.to_string(),
+                    points: Vec::new(),
+                    total_count: None,
+                });
+            }
+            Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
+        };
+
+        let start_key = (source_id, metric, start);
+        let end_key = (source_id, metric, end);
+        let range = end.saturating_sub(start);
+
+        if range <= 0 || target_count == 0 {
+            return Ok(TimeSeriesResult {
+                source_id: source_id.to_string(),
+                metric: metric.to_string(),
+                points: Vec::new(),
+                total_count: None,
+            });
+        }
+
+        // First pass: count total points to decide if bucketing is needed.
+        let mut total_count = 0u32;
+        for result in table.range(start_key..=end_key)? {
+            let _ = result?;
+            total_count += 1;
+        }
+
+        // If data fits within target, just return all points (no bucketing).
+        if (total_count as usize) <= target_count {
+            let table2 = read_txn.open_table(TIMESERIES_TABLE)
+                .map_err(|e| Error::Storage(format!("Failed to reopen table: {}", e)))?;
+            let mut points = Vec::with_capacity(total_count as usize);
+            for result in table2.range(start_key..=end_key)? {
+                let (_key, value) = result?;
+                match serde_json::from_slice(value.value()) {
+                    Ok(point) => points.push(point),
+                    Err(e) => tracing::warn!("query_range_bucketed: deserialize error: {}", e),
+                }
+            }
+            return Ok(TimeSeriesResult {
+                source_id: source_id.to_string(),
+                metric: metric.to_string(),
+                points,
+                total_count: Some(total_count as usize),
+            });
+        }
+
+        // Second pass: scan forward, assign each point to a bucket, keep newest.
+        // Snap bucket_size to a "nice" aligned interval (1m, 2m, 5m, 10m, 15m, 30m, 1h…)
+        // so that bucket boundaries stay stable across refreshes even when end shifts.
+        let raw_bucket = (range as f64 / target_count as f64).ceil() as i64;
+        let bucket_size = snap_bucket_size(raw_bucket);
+        // Align start DOWN to a bucket boundary for deterministic buckets.
+        let aligned_start = (start / bucket_size) * bucket_size;
+
+        // Calculate how many buckets we actually need to cover [aligned_start, end].
+        let actual_buckets = ((end - aligned_start) as f64 / bucket_size as f64).ceil() as usize;
+        let actual_buckets = actual_buckets.max(1);
+        let mut buckets: Vec<Option<DataPoint>> = vec![None; actual_buckets];
+
+        let table2 = read_txn.open_table(TIMESERIES_TABLE)
+            .map_err(|e| Error::Storage(format!("Failed to reopen table: {}", e)))?;
+
+        for result in table2.range(start_key..=end_key)? {
+            let (key, value) = result?;
+            let (_, _, ts) = key.value();
+
+            let offset = ts.saturating_sub(aligned_start);
+            let idx = if bucket_size > 0 {
+                (offset / bucket_size) as usize
+            } else {
+                0
+            };
+            let idx = idx.min(actual_buckets - 1);
+
+            // Forward scan → each successive point in a bucket is newer.
+            match serde_json::from_slice(value.value()) {
+                Ok(point) => {
+                    buckets[idx] = Some(point);
+                }
+                Err(e) => {
+                    tracing::warn!("query_range_bucketed: deserialize error: {}", e);
+                }
+            }
+        }
+
+        // Collect non-empty buckets in chronological order.
+        let points: Vec<DataPoint> = buckets.into_iter().flatten().collect();
+
+        tracing::debug!(
+            "query_range_bucketed: source_id={}, metric={}, start={}, end={}, \
+             total={}, target={}, returned={}, bucket_size={}s",
+            source_id, metric, start, end,
+            total_count, target_count, points.len(), bucket_size,
+        );
+
+        Ok(TimeSeriesResult {
+            source_id: source_id.to_string(),
+            metric: metric.to_string(),
+            points,
+            total_count: Some(total_count as usize),
+        })
+    }
+}
+
+/// Snap a raw bucket size (seconds) up to the nearest "nice" aligned interval.
+/// This keeps bucket boundaries stable across refreshes.
+fn snap_bucket_size(raw_secs: i64) -> i64 {
+    const NICE: &[i64] = &[
+        30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400,
+    ];
+    for &n in NICE {
+        if n >= raw_secs {
+            return n;
+        }
+    }
+    // For very large ranges, round up to nearest hour.
+    ((raw_secs + 3599) / 3600) * 3600
 }
 
 /// Result of retention policy cleanup.

@@ -1,347 +1,221 @@
 ---
 id: agent-management
-name: Agent Management CLI Commands
+name: AI Agent Management
 category: agent
 origin: builtin
-priority: 80
+priority: 85
 token_budget: 10000
 triggers:
-  keywords: [agent, 代理, AI代理, agent list, list agent, agent create, 创建代理, agent invoke, 调用代理, agent memory, 代理记忆, agent execution, 代理执行, schedule, cron, interval, monitor, 监控]
+  keywords: [agent, 代理, AI代理, agent create, 创建代理, agent control, schedule, cron, interval, 监控, agent invoke, 调用代理, agent memory, 代理记忆, agent execution, 代理执行, 定时任务, scheduled task, agent schedule, agent update]
   tool_target:
     - tool: agent
       actions: [list, get, create, update, delete, control, invoke, memory, executions, latest-execution, conversation, send-message]
 anti_triggers:
-  keywords: [device, 设备, rule, 规则, dashboard, 仪表盘]
+  keywords: [device, 设备, rule, 规则, dashboard, 仪表盘, extension develop]
 ---
 
-# Agent Management CLI Commands
+# AI Agent Management
 
-Use `neomind` CLI commands via the `shell` tool to manage AI agents. All commands begin with `neomind agent`.
+Agents are LLM-powered automated tasks. They can be scheduled (interval/cron) or event-driven, and have access to the shell tool to execute CLI commands.
 
-## ⚠️ CRITICAL: Common Operations Checklist
+## CRITICAL: Create → Activate Pattern
 
-When user asks to **start/stop/delete** an agent, you MUST:
-1. `neomind agent list` → find the agent ID
-2. Then execute the actual action command:
+New agents are created in **paused** state. You MUST activate them:
 
-| User Request | Command |
-|---|---|
-| 启动/Start agent | `neomind agent control <ID> --status active` |
-| 停止/Stop agent | `neomind agent control <ID> --status paused` |
-| 删除/Delete agent | `neomind agent delete <ID>` |
-| 创建后启动 | `neomind agent create ...` then `neomind agent control <ID> --status active` |
-| 发消息/Send message | `neomind agent send-message <ID> --message '...'` |
-| 查看执行结果 | `neomind agent latest-execution <ID>` |
+```bash
+neomind agent create --name 'Monitor' --prompt 'Check battery levels'
+# → Returns agent ID (e.g., agent-abc123)
 
-> **DO NOT stop after `agent list`!** Listing is only step 1. You MUST proceed to the action command.
+neomind agent control agent-abc123 --status active
+# → Now it's running
+```
+
+## Schedule Types
+
+| Type | `--schedule-type` | `--schedule-config` | Example |
+|------|-------------------|---------------------|---------|
+| Event | `event` (default) | Not needed | Manual trigger via `invoke` |
+| Interval | `interval` | Seconds as string | `--schedule-config '300'` = every 5 min |
+| Cron | `cron` | Cron expression | `--schedule-config '0 9 * * *'` = daily 9 AM |
+
+## Execution Modes
+
+| Mode | Description | When to Use |
+|------|-------------|-------------|
+| `free` (default) | No bound resources, agent has full platform access | General monitoring, analysis tasks |
+| `focused` | Bound to specific devices/rules | Requires `--device-ids` or `--resources` |
 
 ## Command Reference
-
-### List All Agents
-
-```bash
-neomind agent list
-```
-
-Returns all agents with their IDs, names, status, and schedule type.
-
-### Get Agent Details
-
-```bash
-neomind agent get <ID>
-```
-
-Returns full agent configuration including prompt, model, schedule, and status.
 
 ### Create Agent
 
 ```bash
-neomind agent create --name '<name>' --prompt '<task_prompt>'
+neomind agent create \
+  --name '<name>' \
+  --prompt '<task_description>' \
+  [--schedule-type <event|interval|cron>] \
+  [--schedule-config '<config>'] \
+  [--description '<desc>'] \
+  [--model '<llm_backend_id>'] \
+  [--system-prompt '<instructions>'] \
+  [--execution-mode <free|focused>] \
+  [--device-ids 'id1,id2']
 ```
 
-**Required flags**: `--name`, `--prompt`
+**Required**: `--name`, `--prompt`
+**Important**: `--model` selects LLM backend (use `neomind llm list` to see available backends).
 
-**Optional flags**:
-- `--description` — human-readable description of the agent's purpose
-- `--schedule-type` — one of: `interval`, `cron`, `event` (default: `event`)
-- `--schedule-config` — depends on schedule type (see below)
-- `--model` — LLM model to use (e.g., `deepseek-v4`, `qwen3.5:4b`)
-- `--system-prompt` — system-level instructions for the agent
+### Control Agent
 
-**Schedule configuration**:
-- `event` (default): agent runs when triggered manually or by external events. No `--schedule-config` needed.
-- `interval`: `--schedule-config` is the interval in seconds (e.g., `"300"` for every 5 minutes, `"3600"` for hourly)
-- `cron`: `--schedule-config` is a cron expression (e.g., `"0 9 * * *"` for daily at 9 AM)
+```bash
+neomind agent control <ID> --status active    # Start
+neomind agent control <ID> --status paused    # Stop
+neomind agent control <ID> --action active    # Alias (same as --status)
+```
 
-**Important**: CLI-created agents always use `execution_mode: "free"` (no bound resources).
+### Invoke (One-shot Execution)
+
+```bash
+neomind agent invoke <ID> --input 'Analyze current temperature sensors'
+```
+
+### Get Details & Status
+
+```bash
+neomind agent get <ID>          # Full config + status
+neomind agent list              # All agents
+```
 
 ### Update Agent
 
 ```bash
-neomind agent update <ID> --name '<new_name>'
-neomind agent update <ID> --prompt '<new_prompt>'
-neomind agent update <ID> --model '<model_name>'
-neomind agent update <ID> --system-prompt '<new_system_prompt>'
-neomind agent update <ID> --description '<new_description>'
+neomind agent update <ID> --prompt 'New task description'
+neomind agent update <ID> --model qwen3.5:4b
+neomind agent update <ID> --name 'Better Name' --description 'Updated'
 ```
 
-Any combination of flags can be used in a single update command. Only specified fields are changed.
-
-### Control Agent Status
+### Monitor Executions
 
 ```bash
-neomind agent control <ID> --action active
-neomind agent control <ID> --action paused
-neomind agent control <ID> --status active
-neomind agent control <ID> --status paused
+neomind agent executions <ID> --limit 10      # Execution history
+neomind agent latest-execution <ID>           # Most recent execution
+neomind agent conversation <ID> --limit 20    # Full message log
+neomind agent memory <ID>                     # Extracted knowledge
 ```
 
-Both `--action` and `--status` are accepted and behave identically. Values are `active` or `paused`. Agents must be `active` to run on schedule or receive invocations.
-
-### Invoke Agent (One-shot Execution)
+### Send Message
 
 ```bash
-neomind agent invoke <ID> --input '<message>'
+neomind agent send-message <ID> --message 'Focus on building A sensors'
+neomind agent send-message <ID> --message 'Directive' --type instruction
 ```
-
-Triggers a single execution of the agent with the provided input. The agent runs immediately regardless of its schedule.
-
-### Get Agent Memory
-
-```bash
-neomind agent memory <ID>
-```
-
-Returns knowledge extracted from past agent conversations. Memory is accumulated over time and helps the agent maintain context.
-
-### Get Execution History
-
-```bash
-neomind agent executions <ID>
-neomind agent executions <ID> --limit 10 --offset 0
-```
-
-Returns a paginated list of past executions with status, timestamps, and results. Default limit is applied if not specified.
-
-### Get Latest Execution
-
-```bash
-neomind agent latest-execution <ID>
-```
-
-Returns only the most recent execution record. Useful for quickly checking if the last run succeeded.
-
-### Get Agent Conversation
-
-```bash
-neomind agent conversation <ID>
-neomind agent conversation <ID> --limit 20
-```
-
-Returns the full message history between the user and the agent, including tool calls and responses.
-
-### Send Message to Agent
-
-```bash
-neomind agent send-message <ID> --message '<message>'
-neomind agent send-message <ID> --message '<message>' --type instruction
-```
-
-Sends a message to the agent's conversation. The `--type` flag can specify the message type (e.g., `instruction` for directives that guide agent behavior).
-
-### Delete Agent
-
-```bash
-neomind agent delete <ID>
-```
-
-Permanently removes the agent and its data. This action cannot be undone.
 
 ## Workflows
 
-### Create an Interval-Based Monitoring Agent
-
-Creates an agent that runs on a fixed interval (e.g., every 5 minutes).
+### Interval-Based Monitoring Agent
 
 ```bash
-# Step 1: Create the agent with interval schedule
+# 1. Create agent that runs every 5 minutes
 neomind agent create \
   --name 'Battery Monitor' \
-  --prompt 'Check all devices battery levels. List any devices with battery below 20%. If any are found, send a warning message.' \
-  --description 'Monitors device battery levels every 5 minutes' \
+  --prompt 'Check all devices battery levels. List devices below 20%. Send warning if any found.' \
   --schedule-type interval \
-  --schedule-config '300' \
-  --model deepseek-v4 \
-  --system-prompt 'You are an IoT monitoring assistant. Be concise and actionable.'
+  --schedule-config '300'
 
-# Step 2: Activate the agent (replace AGENT_ID with actual ID from create output)
-neomind agent control <AGENT_ID> --action active
+# 2. Activate
+neomind agent control <AGENT_ID> --status active
 
-# Step 3: Verify it is running
-neomind agent get <AGENT_ID>
-
-# Step 4: After some time, check the latest execution
+# 3. Check results after a few minutes
 neomind agent latest-execution <AGENT_ID>
-
-# Step 5: Review accumulated knowledge
-neomind agent memory <AGENT_ID>
 ```
 
-### Create a Cron-Based Agent
-
-Creates an agent that runs on a cron schedule (e.g., daily at 9:00 AM).
+### Cron-Based Daily Report
 
 ```bash
-# Create a daily morning report agent
+# Daily at 9:00 AM
 neomind agent create \
   --name 'Morning Report' \
-  --prompt 'Generate a summary of all device statuses. Count online/offline devices. Report any anomalies from the last 24 hours.' \
-  --description 'Daily 9 AM device status report' \
+  --prompt 'Summarize all device statuses. Count online/offline. Report anomalies from last 24 hours.' \
   --schedule-type cron \
-  --schedule-config '0 9 * * *' \
-  --model deepseek-v4
+  --schedule-config '0 9 * * *'
 
-# Activate it
-neomind agent control <AGENT_ID> --action active
+neomind agent control <AGENT_ID> --status active
 ```
 
-### Create an Event-Driven Agent (Default)
-
-Creates an agent that only runs when manually invoked or triggered. This is the default schedule type.
+### On-Demand Analysis Agent
 
 ```bash
+# No schedule — runs when invoked
 neomind agent create \
-  --name 'On-Demand Analyzer' \
-  --prompt 'Analyze the provided input and generate a detailed report.' \
-  --description 'On-demand analysis agent'
+  --name 'Device Analyzer' \
+  --prompt 'Analyze the provided input and generate a detailed report.'
 
-# Run it whenever needed
-neomind agent invoke <AGENT_ID> --input 'Analyze the current state of all temperature sensors'
+# Run whenever needed
+neomind agent invoke <AGENT_ID> --input 'Analyze temperature trends for sensor-001'
 ```
 
-### Quick One-Shot Task via Invoke
-
-For agents that already exist, use `invoke` for immediate one-off tasks.
+### Focused Mode Agent (Bound to Specific Devices)
 
 ```bash
-# Invoke with a specific query
-neomind agent invoke <AGENT_ID> --input 'List all devices with battery below 30%'
+# Create agent that only has access to specific devices
+neomind agent create \
+  --name 'Sensor Monitor' \
+  --prompt 'Monitor temperature and humidity sensors. Alert if any reading is abnormal.' \
+  --schedule-type interval \
+  --schedule-config '300' \
+  --execution-mode focused \
+  --device-ids 'sensor-001,sensor-002,sensor-003'
 
-# Invoke with a complex multi-step instruction
-neomind agent invoke <AGENT_ID> --input 'Check device sensor-001 telemetry data, compare it with yesterday, and report any significant deviations'
+neomind agent control <AGENT_ID> --status active
 ```
 
-### Debug Agent Behavior
-
-When an agent is not behaving as expected, use these commands to diagnose issues.
+### Debug Agent Issues
 
 ```bash
-# 1. Check current configuration and status
+# 1. Check status and config
 neomind agent get <ID>
 
-# 2. Review recent execution history for errors
-neomind agent executions <ID> --limit 5
-
-# 3. Check the very latest execution for immediate status
+# 2. See recent execution results (check status, duration, error)
 neomind agent latest-execution <ID>
 
-# 4. Read the full conversation to understand what the agent did
+# 3. If latest execution failed, check full conversation to see what happened
 neomind agent conversation <ID> --limit 20
 
-# 5. Check extracted memory for stale or incorrect knowledge
+# 4. Check if LLM backend is available
+neomind llm list
+# If the configured model is not available, update:
+neomind agent update <ID> --model <available_backend>
+
+# 5. Check extracted memory for stale/incorrect knowledge
 neomind agent memory <ID>
+
+# 6. If agent is stuck in a loop, pause and review
+neomind agent control <ID> --status paused
+neomind agent conversation <ID> --limit 50
+
+# 7. After fixing, re-activate
+neomind agent control <ID> --status active
 ```
 
-### Send Instruction to a Running Agent
-
-Send a directive to guide an active agent's behavior without triggering a new execution.
+### Full Lifecycle
 
 ```bash
-# Send a behavioral instruction
-neomind agent send-message <AGENT_ID> --message 'Focus on temperature sensors in building A only' --type instruction
-
-# Send a regular message
-neomind agent send-message <AGENT_ID> --message 'What was the result of the last check?'
+neomind agent create --name 'Health Check' --prompt 'Check all devices' --schedule-type interval --schedule-config '600'
+neomind agent control <ID> --status active
+# ... wait, check results ...
+neomind agent latest-execution <ID>
+neomind agent control <ID> --status paused    # Stop when done
+neomind agent delete <ID>                      # Remove when no longer needed
 ```
-
-### Pause and Reactivate an Agent
-
-Temporarily stop a scheduled agent, then resume it later.
-
-```bash
-# Pause the agent — stops all scheduled executions
-neomind agent control <AGENT_ID> --action paused
-
-# Verify it is paused
-neomind agent get <AGENT_ID>
-
-# ... later, reactivate it
-neomind agent control <AGENT_ID> --action active
-```
-
-### Modify an Existing Agent
-
-Update an agent's configuration without recreating it.
-
-```bash
-# Change the prompt
-neomind agent update <AGENT_ID> --prompt 'Check battery levels and also report devices that have been offline for more than 1 hour'
-
-# Switch to a different model
-neomind agent update <AGENT_ID> --model qwen3.5:4b
-
-# Update multiple fields at once
-neomind agent update <AGENT_ID> --name 'Enhanced Battery Monitor' --description 'Extended monitoring with offline detection' --system-prompt 'You are a thorough IoT monitoring assistant. Always include device IDs in reports.'
-```
-
-### Full Lifecycle: Create, Run, Monitor, Cleanup
-
-End-to-end example of creating an agent, running it, checking results, and cleaning up.
-
-```bash
-# 1. Create the agent
-neomind agent create \
-  --name 'Health Check' \
-  --prompt 'Check all devices, report online/offline counts, list any devices with anomalies' \
-  --schedule-type interval \
-  --schedule-config '600'
-
-# 2. Activate it
-neomind agent control <AGENT_ID> --action active
-
-# 3. Wait for execution, then check results
-neomind agent latest-execution <AGENT_ID>
-
-# 4. Review conversation
-neomind agent conversation <AGENT_ID> --limit 10
-
-# 5. Check memory
-neomind agent memory <AGENT_ID>
-
-# 6. When done, pause or delete
-neomind agent control <AGENT_ID> --action paused
-# OR permanently remove:
-neomind agent delete <AGENT_ID>
-```
-
-## Notes
-
-- Agent IDs are returned by `neomind agent create` and visible in `neomind agent list`
-- Both `--model` and `--llm-backend` are accepted when creating or updating agents
-- `control` accepts both `--action` and `--status` flags interchangeably
-- `invoke` runs the agent immediately regardless of schedule; for recurring tasks use `create` with `--schedule-type`
-- `memory` contains knowledge automatically extracted from past conversations
-- `conversation` shows the full message log including tool calls — useful for debugging
-- Schedule types: `event` (default, manual trigger), `interval` (every N seconds), `cron` (cron expression)
-- `execution_mode` is always set to `"free"` for CLI-created agents (no bound device/rule resources)
-- Use `latest-execution` (with hyphen) for the most recent execution record
-- Use `send-message` (with hyphen) to send messages to an agent's conversation
 
 ## Common Errors & Solutions
 
-- **"Agent not found"**: Run `neomind agent list` to find valid agent IDs. Use the exact ID from the output.
-- **Create fails**: The required flags are `--name` and `--prompt`. If the schedule is not `event` (default), also provide `--schedule-type` and `--schedule-config`.
-- **Control command fails**: Valid status values are `active` and `paused` only. Both `--action` and `--status` flags are accepted. Do not use `start`, `stop`, `running`, or other values.
-- **Agent not executing on schedule**: Run `neomind agent get <ID>` to check if the status is `active`. If it is `paused`, run `neomind agent control <ID> --action active`. Also check `neomind agent latest-execution <ID>` for errors.
-- **`execution_mode: "free"` required**: CLI-created agents automatically use `execution_mode: "free"` (no bound resources). If an API call fails with a resource binding error, ensure `execution_mode` is set to `"free"`.
-- **Agent list only shows IDs/names**: After listing, use `neomind agent get <ID>` for full details including status, schedule, and prompt.
+| Error | Cause | Solution |
+|-------|-------|----------|
+| "Agent not found" | Wrong ID | Run `neomind agent list` for valid IDs |
+| Create fails | Missing `--name` or `--prompt` | Both are required flags |
+| Agent not running on schedule | Status is `paused` | Run `agent control <ID> --status active` |
+| Control fails | Invalid status value | Only `active` and `paused` are valid |
+| Focused mode error | No resources bound | Add `--device-ids` or `--resources` |
+| Execution shows error | LLM or tool failure | Check `agent conversation <ID>` for details |
+| Bad LLM responses | Wrong model/backend | Run `neomind llm list` for available backends, update with `agent update <ID> --model <backend>` |

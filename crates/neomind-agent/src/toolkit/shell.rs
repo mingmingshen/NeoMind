@@ -124,6 +124,35 @@ impl ShellTool {
         let domain = args[1].as_str();
         tracing::debug!(domain = domain, "Attempting internal CLI execution");
 
+        // Global --help interception: if any arg is --help/-h, return help instead of executing
+        if Self::has_help_flag(&args) {
+            let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+            // For subcommands like "device types create --help", include the sub-subcommand
+            let sub = args.get(3).map(|s| s.as_str())
+                .filter(|s| !s.starts_with('-'))
+                .unwrap_or("");
+            let help_cmd = if action.is_empty() || action == "--help" || action == "-h" {
+                domain.to_string()
+            } else if sub.is_empty() {
+                format!("{} {}", domain, action)
+            } else {
+                format!("{} {} {}", domain, action, sub)
+            };
+            let result = Self::help_response(&help_cmd);
+            return match result {
+                Ok(resp) => {
+                    let output = serde_json::to_string(&resp).unwrap_or_default();
+                    Some(Ok(CommandOutput {
+                        exit_code: Some(0),
+                        stdout: output,
+                        stderr: String::new(),
+                        timed_out: false,
+                    }))
+                }
+                Err(e) => Some(Err(ToolError::Execution(e.to_string()))),
+            };
+        }
+
         let result = match domain {
             "device" => Self::exec_device(&client, &args).await,
             "dashboard" => Self::exec_dashboard(&client, &args).await,
@@ -134,9 +163,8 @@ impl ShellTool {
             "agent" => Self::exec_agent(&client, &args).await,
             "message" => Self::exec_message(&client, &args).await,
             "system" => Self::exec_system(&client, &args).await,
-            "connector" | "broker" => Self::exec_connector(&client, &args).await,
+            "connector" => Self::exec_connector(&client, &args).await,
             "llm" => Self::exec_llm(&client, &args).await,
-            "guide" => Self::exec_guide(&client, &args).await,
             _ => return None, // Unknown domain, fall through to process spawning
         };
 
@@ -163,6 +191,412 @@ impl ShellTool {
                 ))))
             }
         }
+    }
+
+    /// Check if args contain --help or -h flag
+    fn has_help_flag(args: &[String]) -> bool {
+        args.iter().any(|a| a == "--help" || a == "-h")
+    }
+
+    /// Build a help response for a given command path (e.g. "device types create")
+    fn help_response(cmd: &str) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        // Domain-specific help texts for subcommands the LLM commonly needs
+        let help = match cmd {
+            "device types create" => concat!(
+                "Usage: neomind device types create --name <NAME> --metrics '<JSON>' [--id <ID>] [--commands '<JSON>']\n\n",
+                "Flags:\n",
+                "  --name       (required) Device type display name\n",
+                "  --id         Optional custom ID (auto-generated if omitted)\n",
+                "  --metrics    (required) JSON array of metric definitions\n",
+                "  --commands   Optional JSON array of command definitions\n\n",
+                "Metrics format: [{\"name\":\"temperature\",\"display_name\":\"Temperature\",\"data_type\":\"Float\",\"unit\":\"°C\"}]\n",
+                "  - name: metric identifier (required)\n",
+                "  - display_name: human-readable name (optional)\n",
+                "  - data_type: Float | Integer | String | Boolean (default: Float)\n",
+                "  - unit: display unit like °C, %, Pa (optional)\n\n",
+                "Example:\n",
+                "  neomind device types create --name 'Temperature Sensor' \\\n",
+                "    --metrics '[{\"name\":\"temperature\",\"display_name\":\"Temperature\",\"data_type\":\"Float\",\"unit\":\"°C\"},{\"name\":\"humidity\",\"display_name\":\"Humidity\",\"data_type\":\"Float\",\"unit\":\"%\"}]'"
+            ),
+            "device create" => concat!(
+                "Usage: neomind device create <NAME> [device_type_id] <adapter>\n\n",
+                "Positional: NAME, device_type_id (optional), adapter (mqtt|webhook)\n\n",
+                "Flags:\n",
+                "  --type / --device-type   Device type ID\n",
+                "  --adapter / --adapter-type  mqtt (default) | webhook\n\n",
+                "Example:\n",
+                "  neomind device create 'Temp-01' temperature-sensor mqtt\n",
+                "  neomind device create 'Temp-02' --type temperature-sensor --adapter webhook"
+            ),
+            "dashboard update" => concat!(
+                "Usage: neomind dashboard update <ID> [--name <NAME>] [--description <DESC>] [--layout '<JSON>'] [--components '<JSON>']\n\n",
+                "WARNING: --components replaces ALL existing components. Use 'dashboard add-components' instead.\n\n",
+                "Flags:\n",
+                "  --name          New dashboard name\n",
+                "  --description   New description\n",
+                "  --layout        JSON layout config\n",
+                "  --components    JSON array of ALL components (replaces existing!)\n\n",
+                "RECOMMENDED: Use add-components to append without replacing:\n",
+                "  neomind dashboard add-components <ID> --components '[...]'\n\n",
+                "Example (rename only):\n",
+                "  neomind dashboard update <ID> --name 'New Name'"
+            ),
+            "dashboard add-components" => concat!(
+                "Usage: neomind dashboard add-components <ID> --components '<JSON_ARRAY>'\n\n",
+                "Append components to an existing dashboard without replacing existing ones.\n",
+                "This is the RECOMMENDED way to add widgets.\n\n",
+                "Flags:\n",
+                "  --components    (required) JSON array of new components\n\n",
+                "Component format:\n",
+                "  {\n",
+                "    \"id\": \"unique-id\",\n",
+                "    \"type\": \"value-card\",\n",
+                "    \"title\": \"Temperature\",\n",
+                "    \"position\": {\"x\":0, \"y\":0, \"w\":4, \"h\":2},\n",
+                "    \"data_source\": {\"type\":\"device\",\"sourceId\":\"sensor-001\",\"property\":\"temperature\"},\n",
+                "    \"display\": {\"unit\":\"°C\"}\n",
+                "  }\n\n",
+                "Grid: 12 columns wide. New components should start at y = max(existing_y + h).\n\n",
+                "Example:\n",
+                "  neomind dashboard add-components <ID> --components '[\n",
+                "    {\"id\":\"temp\",\"type\":\"value-card\",\"title\":\"Temp\",\"position\":{\"x\":0,\"y\":0,\"w\":4,\"h\":2},\n",
+                "     \"data_source\":{\"type\":\"device\",\"sourceId\":\"sensor-001\",\"property\":\"temperature\"}},\n",
+                "    {\"id\":\"hum\",\"type\":\"value-card\",\"title\":\"Humidity\",\"position\":{\"x\":4,\"y\":0,\"w\":4,\"h\":2},\n",
+                "     \"data_source\":{\"type\":\"extension-metric\",\"extensionId\":\"weather\",\"extensionMetric\":\"humidity\"}}\n",
+                "  ]'"
+            ),
+            "dashboard remove-components" => concat!(
+                "Usage: neomind dashboard remove-components <ID> --ids '<JSON_ARRAY>'\n\n",
+                "Remove specific components from a dashboard by their IDs.\n\n",
+                "Flags:\n",
+                "  --ids    (required) JSON array of component IDs to remove\n\n",
+                "Example:\n",
+                "  neomind dashboard remove-components <ID> --ids '[\"temp\",\"chart1\"]'"
+            ),
+            "dashboard create" => concat!(
+                "Usage: neomind dashboard create --name <NAME> [--description <DESC>] [--layout '<JSON>']\n\n",
+                "Flags:\n",
+                "  --name          (required) Dashboard name\n",
+                "  --description   Optional description\n",
+                "  --layout        Optional JSON layout (default: 12-column grid)\n\n",
+                "Example:\n",
+                "  neomind dashboard create --name 'Battery Monitor'\n",
+                "  neomind dashboard create --name 'Sensors' --description 'All sensor data'"
+            ),
+            "rule create" => concat!(
+                "Usage: neomind rule create --dsl '<DSL_STRING>' [--name <NAME>]\n\n",
+                "Flags:\n",
+                "  --dsl    (required) Rule DSL definition\n",
+                "  --name   Optional rule name\n\n",
+                "DSL Syntax (case-insensitive keywords):\n",
+                "  RULE <name>\n",
+                "    WHEN <condition>\n",
+                "    DO <action>\n",
+                "  END\n\n",
+                "Conditions:\n",
+                "  <device_id>.<metric> <op> <value>   (op: >, <, >=, <=, ==, !=)\n",
+                "  <device_id>.<metric> BETWEEN <val1> AND <val2>\n",
+                "  EXTENSION <ext_id>.<metric> <op> <value>\n",
+                "  Logical: AND, OR, NOT  (combine with parentheses)\n\n",
+                "Actions:\n",
+                "  NOTIFY \"message text\" [channel1, channel2]\n",
+                "  EXECUTE <device_id>.<command>(key=value, key2=\"val2\")\n",
+                "  LOG <level> \"message\"\n",
+                "  ALERT \"title\" \"message\" <SEVERITY>\n",
+                "  TRIGGER_AGENT <agent_id> \"input text\"\n\n",
+                "Template vars: {{device.name}}, {{value}}\n",
+                "New rules are disabled — run `neomind rule enable <ID>` after create.\n\n",
+                "Example:\n",
+                "  neomind rule create --name 'High Temp Alert' --dsl 'RULE high_temp\n",
+                "    WHEN sensor-001.temperature > 30\n",
+                "    DO\n",
+                "      NOTIFY \"High temp on {{device.name}}: {{value}}°C\"\n",
+                "    END'\n\n",
+                "  neomind rule create --name 'Offline Alert' --dsl 'RULE offline\n",
+                "    WHEN sensor-001.status == \"offline\"\n",
+                "    DO\n",
+                "      NOTIFY \"{{device.name}} went offline\" [email, sms]\n",
+                "    END'"
+            ),
+            "transform create" => concat!(
+                "Usage: neomind transform create --name <NAME> --code '<JS>' [--scope <SCOPE>] [--output-prefix <PREFIX>] [--description <DESC>] [--enabled]\n\n",
+                "Flags:\n",
+                "  --name           (required) Transform name\n",
+                "  --code           (required) JavaScript function body\n",
+                "  --scope          global | device_type:<Type> | device:<ID> (default: global)\n",
+                "  --output-prefix  Prefix for output DataSourceId\n",
+                "  --description    Optional description\n",
+                "  --enabled        Enable immediately (omit to create disabled)\n\n",
+                "Code format: `input` is the raw metric value. Must `return` the result.\n",
+                "  return (input - 32) * 5 / 9\n",
+                "  if (input > 80) return \"good\"; if (input > 20) return \"ok\"; return \"low\"\n\n",
+                "Example:\n",
+                "  neomind transform create --name 'F to C' --scope global \\\n",
+                "    --code 'return (input - 32) * 5 / 9'\n",
+                "  neomind transform create --name 'Battery Health' --scope global \\\n",
+                "    --code 'if (input > 80) return \"good\"; if (input > 20) return \"ok\"; return \"low\"'"
+            ),
+            "agent create" => concat!(
+                "Usage: neomind agent create --name <NAME> --prompt '<TASK>' [options]\n\n",
+                "Required:\n",
+                "  --name       Agent display name\n",
+                "  --prompt     Task description for the LLM\n\n",
+                "Optional:\n",
+                "  --schedule-type     event | interval | cron (default: event)\n",
+                "  --schedule-config   Interval seconds or cron expression\n",
+                "  --description       Agent description\n",
+                "  --model             LLM backend ID (see: neomind llm list)\n",
+                "  --system-prompt     Custom system instructions\n",
+                "  --execution-mode    free | focused (default: free)\n",
+                "  --device-ids        Comma-separated device IDs for focused mode\n\n",
+                "After create, MUST activate:\n",
+                "  neomind agent control <ID> --status active\n\n",
+                "Examples:\n",
+                "  neomind agent create --name 'Monitor' --prompt 'Check batteries' --schedule-type interval --schedule-config '300'\n",
+                "  neomind agent create --name 'Daily' --prompt 'Summarize' --schedule-type cron --schedule-config '0 9 * * *'\n",
+                "  neomind agent create --name 'Sensor Watch' --prompt 'Monitor sensors' --execution-mode focused --device-ids 's1,s2'"
+            ),
+            "agent invoke" => concat!(
+                "Usage: neomind agent invoke <ID> --input '<TEXT>'\n\n",
+                "One-shot agent execution. Runs the agent immediately with the given input.\n\n",
+                "Flags:\n",
+                "  --input    (required) Input text for the agent\n\n",
+                "Example:\n",
+                "  neomind agent invoke my-agent --input 'Check all sensors and report anomalies'"
+            ),
+            "agent memory" => concat!(
+                "Usage: neomind agent memory <ID>\n\n",
+                "Get extracted knowledge and memories for an agent.\n",
+                "Returns key-value pairs the agent has learned across executions.\n\n",
+                "Example:\n",
+                "  neomind agent memory my-agent"
+            ),
+            "agent conversation" => concat!(
+                "Usage: neomind agent conversation <ID> [--limit <N>]\n\n",
+                "Get the full conversation history (message log) for an agent.\n\n",
+                "Flags:\n",
+                "  --limit    Max messages to return (default: 50)\n\n",
+                "Example:\n",
+                "  neomind agent conversation my-agent --limit 20"
+            ),
+            "agent latest-execution" => concat!(
+                "Usage: neomind agent latest-execution <ID>\n\n",
+                "Get the most recent execution result for an agent.\n",
+                "Returns status, output, tool calls, and duration.\n\n",
+                "Example:\n",
+                "  neomind agent latest-execution my-agent"
+            ),
+            "agent executions" => concat!(
+                "Usage: neomind agent executions <ID> [--limit <N>] [--offset <N>]\n\n",
+                "Get execution history for an agent.\n\n",
+                "Flags:\n",
+                "  --limit    Max executions to return\n",
+                "  --offset   Skip first N executions\n\n",
+                "Example:\n",
+                "  neomind agent executions my-agent --limit 10"
+            ),
+            "agent send-message" => concat!(
+                "Usage: neomind agent send-message <ID> --message '<TEXT>' [--type <TYPE>]\n\n",
+                "Send a directive message to a running agent.\n\n",
+                "Flags:\n",
+                "  --message    (required) Message text\n",
+                "  --type       Optional message type\n\n",
+                "Example:\n",
+                "  neomind agent send-message my-agent --message 'Focus on battery levels today'"
+            ),
+            "connector create" => concat!(
+                "Usage: neomind connector create --name <NAME> --host <HOST> [--port <PORT>] [--type <TYPE>] [--tls] [--username <USER>] [--password <PASS>] [--topics <TOPICS>]\n\n",
+                "Flags:\n",
+                "  --name      (required) Connector display name\n",
+                "  --host      (required) Broker hostname or IP\n",
+                "  --port      Port number (default: 1883)\n",
+                "  --type / --connector-type   mqtt | webhook\n",
+                "  --tls       Enable TLS (flag, no value)\n",
+                "  --username  Auth username\n",
+                "  --password  Auth password\n",
+                "  --topics    Comma-separated topics to subscribe\n\n",
+                "Example:\n",
+                "  neomind connector create --name 'Remote Broker' --host 192.168.1.50 --port 1883\n",
+                "  neomind connector create --name 'Secure' --host broker.example.com --port 8883 --tls --username user --password pass"
+            ),
+            "message send" => concat!(
+                "Usage: neomind message send --title <TITLE> --message <TEXT> [--severity <LEVEL>] [--source <SRC>]\n\n",
+                "Flags:\n",
+                "  --title      (required) Message title\n",
+                "  --message    (required) Message body text\n",
+                "  --severity   info | warning | error | critical (default: info)\n",
+                "  --source     Optional source identifier\n\n",
+                "Example:\n",
+                "  neomind message send --title 'Low Battery' --message 'Sensor-001 battery at 15%' --severity warning"
+            ),
+            "message channel-create" => concat!(
+                "Usage: neomind message channel-create --name <NAME> --type <TYPE> --config '<JSON>'\n\n",
+                "Flags:\n",
+                "  --name     (required) Channel name (unique identifier)\n",
+                "  --type     (required) Channel type: webhook | email\n",
+                "  --config   (required) JSON configuration for the channel\n\n",
+                "Webhook config: {\"url\": \"https://...\", \"headers\": {\"Authorization\": \"Bearer ...\"}}\n",
+                "Email config: {\"smtp_server\": \"smtp.example.com\", \"smtp_port\": 587, \"username\": \"...\", \"password\": \"...\", \"from_address\": \"...\"}\n\n",
+                "Example:\n",
+                "  neomind message channel-create --name alerts --type webhook --config '{\"url\": \"https://hooks.example.com/notify\"}'"
+            ),
+            "message channel-update" => concat!(
+                "Usage: neomind message channel-update <NAME> --config '<JSON>'\n\n",
+                "Flags:\n",
+                "  --config    (required) New JSON configuration\n\n",
+                "Example:\n",
+                "  neomind message channel-update alerts --config '{\"url\": \"https://new-url.example.com/hook\"}'"
+            ),
+            "message channel-delete" => concat!(
+                "Usage: neomind message channel-delete <NAME>\n\n",
+                "Permanently delete a message channel.\n\n",
+                "Example:\n",
+                "  neomind message channel-delete alerts"
+            ),
+            "message channel-test" => concat!(
+                "Usage: neomind message channel-test <NAME>\n\n",
+                "Send a test message through the channel to verify configuration.\n\n",
+                "Example:\n",
+                "  neomind message channel-test alerts"
+            ),
+            "dashboard" => concat!(
+                "Dashboard Commands:\n\n",
+                "  neomind dashboard list                                    List all dashboards\n",
+                "  neomind dashboard get <ID>                                Get dashboard details\n",
+                "  neomind dashboard create --name <NAME>                    Create new dashboard\n",
+                "  neomind dashboard update <ID> [--name] [--components]     Update (components REPLACES all!)\n",
+                "  neomind dashboard add-components <ID> --components '<JSON>'  APPEND components (recommended)\n",
+                "  neomind dashboard remove-components <ID> --ids '<JSON>'   Remove components by ID\n",
+                "  neomind dashboard delete <ID>                             Delete dashboard\n",
+                "  neomind dashboard share <ID> [--public] [--expires <SEC>]  Share dashboard"
+            ),
+            "device" => concat!(
+                "Device Commands:\n\n",
+                "  neomind device list                                       List devices\n",
+                "  neomind device get <ID>                                   Get device details\n",
+                "  neomind device create <NAME> [--type <T>] [--adapter <A>] Create device\n",
+                "  neomind device update <ID> [--name] [--config]            Update device\n",
+                "  neomind device delete <ID>                                Delete device\n",
+                "  neomind device latest <ID>                                Latest metric values\n",
+                "  neomind device history <ID> [--metric] [--time-range]     Telemetry history\n",
+                "  neomind device control <ID> <CMD> [--params '<JSON>']     Send command\n",
+                "  neomind device types list                                 List device types\n",
+                "  neomind device types create --name <N> --metrics '<JSON>' Create device type\n",
+                "  neomind device types get <ID>                             Get device type\n",
+                "  neomind device write-metric <ID> --metric <M> --value <V> Write metric value"
+            ),
+            "rule" => concat!(
+                "Rule Commands:\n\n",
+                "  neomind rule list                                         List rules\n",
+                "  neomind rule get <ID>                                     Get rule details\n",
+                "  neomind rule create [--name <N>] --dsl '<DSL>'            Create rule\n",
+                "  neomind rule update <ID> [--name] [--dsl]                 Update rule\n",
+                "  neomind rule delete <ID>                                  Delete rule\n",
+                "  neomind rule enable <ID>                                  Enable rule\n",
+                "  neomind rule disable <ID>                                 Disable rule\n",
+                "  neomind rule test <ID> --input '<JSON>'                   Test rule"
+            ),
+            "agent" => concat!(
+                "Agent Commands:\n\n",
+                "  neomind agent list                                        List agents\n",
+                "  neomind agent get <ID>                                    Get agent details\n",
+                "  neomind agent create --name <N> --prompt '<TASK>'         Create agent\n",
+                "  neomind agent update <ID> [--name] [--prompt] [--model]   Update agent\n",
+                "  neomind agent delete <ID>                                 Delete agent\n",
+                "  neomind agent control <ID> --status active|paused        Start/stop agent\n",
+                "  neomind agent invoke <ID> --input '<TEXT>'                One-shot execution\n",
+                "  neomind agent executions <ID>                             Execution history\n",
+                "  neomind agent latest-execution <ID>                       Most recent execution\n",
+                "  neomind agent conversation <ID>                           Full message log\n",
+                "  neomind agent memory <ID>                                 Extracted knowledge\n",
+                "  neomind agent send-message <ID> --message '<TEXT>'        Send directive"
+            ),
+            "extension" => concat!(
+                "Extension Commands:\n\n",
+                "  neomind extension list                                    List extensions\n",
+                "  neomind extension get|info <ID>                          Get extension details\n",
+                "  neomind extension status <ID>                             Extension status\n",
+                "  neomind extension logs <ID> [--limit <N>]                 Extension logs\n",
+                "  neomind extension create <NAME> --extension-type <T>      Scaffold extension\n",
+                "  neomind extension build <PATH>                            Build extension\n",
+                "  neomind extension validate <PATH>                         Validate package\n",
+                "  neomind extension install <PATH>                          Install extension\n",
+                "  neomind extension uninstall <ID>                          Uninstall extension\n",
+                "  neomind extension reload <ID>                             Reload extension\n",
+                "  neomind extension market-list                             List marketplace\n",
+                "  neomind extension market-install <ID> [--version <V>]     Install from marketplace"
+            ),
+            "widget" => concat!(
+                "Widget Commands:\n\n",
+                "  neomind widget list                                       List installed widgets\n",
+                "  neomind widget get <ID>                                   Get widget details + config_schema\n",
+                "  neomind widget bundle <ID>                                Get widget bundle JS\n",
+                "  neomind widget create <NAME> [--widget-type <T>]          Scaffold widget (local files)\n",
+                "  neomind widget install <PATH>                             Install widget from zip\n",
+                "  neomind widget uninstall <ID>                             Uninstall widget\n",
+                "  neomind widget market-list                                List marketplace widgets\n",
+                "  neomind widget market-install <ID> [--version <V>]        Install from marketplace\n\n",
+                "Widget types: chart, gauge, stat, table, image, custom"
+            ),
+            "connector" => concat!(
+                "Connector Commands:\n\n",
+                "  neomind connector list                                    List connectors\n",
+                "  neomind connector get <ID>                                Get connector details\n",
+                "  neomind connector create --name <N> --host <H> [--port <P>]  Create connector\n",
+                "  neomind connector update <ID> [--name] [--host] [--port]  Update connector\n",
+                "  neomind connector delete <ID>                             Delete connector\n",
+                "  neomind connector test <ID>                               Test connection\n",
+                "  neomind connector subscriptions                           List subscriptions\n",
+                "  neomind connector subscribe --topic <T> [--qos <Q>]       Subscribe to topic\n",
+                "  neomind connector unsubscribe --topic <T>                 Unsubscribe from topic"
+            ),
+            "llm" => concat!(
+                "LLM Backend Commands:\n\n",
+                "  neomind llm list                                         List configured backends\n",
+                "  neomind llm get <ID>                                     Get backend details\n",
+                "  neomind llm models                                       List available Ollama models\n\n",
+                "Use backend IDs with: neomind agent create --model <ID>"
+            ),
+            "transform" => concat!(
+                "Transform Commands:\n\n",
+                "  neomind transform list                                    List transforms\n",
+                "  neomind transform get <ID>                                Get transform details\n",
+                "  neomind transform create --name <N> --code '<JS>' [--scope <S>]  Create transform\n",
+                "  neomind transform update <ID> [--name] [--code] [--enabled]  Update transform\n",
+                "  neomind transform delete <ID>                             Delete transform\n",
+                "  neomind transform test --code '<JS>' --input '<JSON>'     Test transform code\n",
+                "  neomind transform metrics                                 List virtual metrics\n",
+                "  neomind transform data-sources                            List data sources"
+            ),
+            "message" => concat!(
+                "Message Commands:\n\n",
+                "  neomind message send --title <T> --message <M> [--severity <LV>]  Send notification\n",
+                "  neomind message list [--limit] [--severity] [--status]    List messages\n",
+                "  neomind message get <ID>                                  Get message details\n",
+                "  neomind message read <ID> / ack <ID>                      Mark as read\n\n",
+                "Channel Commands:\n",
+                "  neomind message channel-list                              List channels\n",
+                "  neomind message channel-get <NAME>                        Get channel\n",
+                "  neomind message channel-create --name <N> --type <T> --config '<JSON>'\n",
+                "  neomind message channel-update <NAME> --config '<JSON>'   Update channel\n",
+                "  neomind message channel-delete <NAME>                     Delete channel\n",
+                "  neomind message channel-test <NAME>                       Test channel\n",
+                "  neomind message channel-types                             List channel types\n\n",
+                "Severity levels: info, warning, error, critical"
+            ),
+            "system" => concat!(
+                "System Commands:\n\n",
+                "  neomind system info                                       System status & network info"
+            ),
+            _ => return Ok(neomind_cli_ops::CliResponse::success(
+                serde_json::json!({"help": true, "command": cmd}),
+                format!("Help for '{}': refer to the shell tool description for available commands and flags.", cmd)
+            )),
+        };
+        Ok(neomind_cli_ops::CliResponse::success(
+            serde_json::json!({"help": true, "command": cmd}),
+            help.to_string()
+        ))
     }
 
     /// Extract value for a flag like --name <value> from args
@@ -297,6 +731,18 @@ impl ShellTool {
                 let components = Self::get_flag_value(args, "--components")
                     .map(|s| serde_json::from_str(s).unwrap_or(serde_json::json!(s)));
                 neomind_cli_ops::dashboard::update_dashboard(client, &id, name.as_deref(), description.as_deref(), layout, components).await
+            }
+            "add-components" => {
+                let id = Self::resolve_id(args).to_string();
+                let components_str = Self::get_flag_value(args, "--components").unwrap_or("[]");
+                let components = serde_json::from_str(components_str).unwrap_or(serde_json::json!([]));
+                neomind_cli_ops::dashboard::add_components(client, &id, components).await
+            }
+            "remove-components" => {
+                let id = Self::resolve_id(args).to_string();
+                let ids_str = Self::get_flag_value(args, "--ids").unwrap_or("[]");
+                let ids = serde_json::from_str(ids_str).unwrap_or(serde_json::json!([]));
+                neomind_cli_ops::dashboard::remove_components(client, &id, ids).await
             }
             "delete" => {
                 let id = Self::resolve_id(args);
@@ -746,28 +1192,6 @@ impl ShellTool {
         }
     }
 
-    /// Execute `neomind guide <domain>` — returns the full help manual as a CliResponse.
-    async fn exec_guide(_client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
-        let domain = args.get(2).map(|s| s.as_str()).unwrap_or("");
-        if domain.is_empty() {
-            let domains: Vec<serde_json::Value> = neomind_cli_ops::help::list_domains()
-                .into_iter()
-                .map(|d| serde_json::json!({"domain": d.name, "description": d.description}))
-                .collect();
-            return Ok(neomind_cli_ops::CliResponse::success(
-                serde_json::json!({"domains": domains}),
-                "Available guide domains",
-            ));
-        }
-        match neomind_cli_ops::help::get_help(domain) {
-            Some(content) => Ok(neomind_cli_ops::CliResponse::success(
-                serde_json::json!({"domain": domain, "content": content}),
-                &format!("Guide for '{}'", domain),
-            )),
-            None => anyhow::bail!("Unknown guide domain: '{}'. Run `neomind guide` to see available domains.", domain),
-        }
-    }
-
     /// Build a platform-appropriate shell command.
     /// Unix: login shell (`$SHELL -l -c`) with isolated process group;
     ///       falls back to `/bin/sh -c` without `-l` if $SHELL is not set.
@@ -1115,20 +1539,96 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 
 | Domain | Key Actions | Description |
 |--------|------------|-------------|
-| device | list, get, create, update, delete, latest, history, control, write-metric, types | Device management, telemetry, control commands |
-| dashboard | list, get, create, update, delete, share | Dashboard CRUD; `--components` replaces ALL components |
-| widget | list, get, create, install, uninstall, market-list | Widget schemas; `get <TYPE>` returns config_schema |
-| rule | list, get, create, update, delete, enable, disable, history | Rules use DSL: `RULE ... WHEN ... DO ... END` |
-| agent | list, get, create, update, delete, control, executions, send-message | Must `control --status active` after create |
-| transform | list, get, create, update, delete, test, data-sources | JS code transforms; uses `input` variable |
-| extension | list, get, status, install, uninstall, logs, market-list | `get <ID>` returns commands, metrics, config details |
-| message | list, send, read, channel-list/create/update/delete | Send requires `--title` + `--message` |
+| device | list, get, create, update, delete, latest, history, control, write-metric, types | Device management, telemetry, control commands. `types` is a subcommand: `device types list`, `device types get <ID>`, `device types create --name 'X' --metrics '[{"name":"temp","unit":"°C","type":"number"}]'` |
+| dashboard | list, get, create, update, delete, share, add-components, remove-components | Dashboard CRUD. `--components` replaces ALL; use `add-components` to append safely |
+| widget | list, get, bundle, create, install, uninstall, market-list, market-install | Widget schemas and lifecycle. `get <ID>` returns config_schema. `create` scaffolds locally |
+| rule | list, get, create, update, delete, enable, disable, test, history | Rules use DSL: `RULE ... WHEN ... DO ... END` |
+| agent | list, get, create, update, delete, control, invoke, executions, latest-execution, conversation, memory, send-message | Must `control --status active` after create |
+| transform | list, get, create, update, delete, test, metrics, data-sources | JS code transforms; `input` is raw metric value. `metrics` lists virtual outputs |
+| extension | list, get/info, status, logs, install, uninstall, market-list, market-install, reload | `get <ID>` returns commands, metrics, config details |
+| message | list, get, send, read/ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-test, channel-types | Send requires `--title` + `--message` + `--severity` |
 | system | info | MQTT broker, webhook URL, network info |
 | connector | list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe | Data connectors (MQTT, webhook, etc.) |
-| broker | *(alias for connector)* | Deprecated, use `connector` instead |
 | llm | list, get, models | LLM backend management; `models` lists Ollama models |
 
 > **Discover command details**: run `neomind <domain> <action> --help` to see all flags, examples, and usage notes.
+
+## Domain Quick Guides
+
+> For complex operations (dashboard creation, agent management, extension development, device onboarding), use the `skill` tool to load detailed step-by-step guides.
+
+### Rule DSL Syntax
+```
+RULE <name> WHEN <condition> DO <action> END
+```
+- Conditions: `<device_id>.<metric> <op> <value>`, `EXTENSION <ext_id>.<metric> <op> <value>`
+- Operators: `< > <= >= == !=`, `BETWEEN val AND val`, combine with `AND`, `OR`, `NOT`
+- Actions: `NOTIFY "msg" [channels]`, `EXECUTE device.cmd(key=val)`, `ALERT "title" "msg" SEVERITY`, `TRIGGER_AGENT id "input"`
+- Template vars: `{{device.name}}`, `{{value}}`
+- New rules are **disabled** — must `neomind rule enable <ID>` after create
+- Metric names must match exactly — use `device latest <ID>` to discover real names
+
+```bash
+neomind rule create --dsl 'RULE high_temp WHEN sensor-001.temperature > 30 DO NOTIFY "High temp on {{device.name}}: {{value}}°C" END'
+neomind rule create --dsl 'RULE offline WHEN sensor-001.status == "offline" DO NOTIFY "{{device.name}} went offline" [email] END'
+neomind rule create --dsl 'RULE critical WHEN sensor-001.cpu > 90 AND sensor-001.memory > 80 DO ALERT "Critical" "Check {{device.name}}" CRITICAL END'
+```
+
+### Dashboard Components
+Grid is 12 columns. `--components` **replaces ALL** components.
+```json
+{"id":"c1","type":"value-card","title":"Temp","position":{"x":0,"y":0,"w":4,"h":3},
+ "data_source":{"type":"device","sourceId":"sensor-01","property":"temperature"},
+ "display":{"unit":"°C"},"config":{}}
+```
+DataSource types: `device` (sourceId+property), `extension-metric` (extensionId+extensionMetric).
+Always discover metric names first via `device latest <ID>`. Charts accept `data_source` as array for multi-series.
+**For full workflow, load `dashboard-management` skill.**
+
+### Transform JS Rules
+`input` is the raw metric value. Must `return` the result.
+Scope: `global` | `device_type:<Type>` | `device:<ID>`
+Output DataSourceId: `transform:<output_prefix>:<field>`
+
+```bash
+neomind transform create --name 'F to C' --scope global --code 'return (input - 32) * 5 / 9'
+neomind transform create --name 'Battery Health' --scope global --code 'if (input > 80) return "good"; if (input > 20) return "ok"; return "low"'
+neomind transform test --code 'return (input - 32) * 5 / 9' --input '{"value": 212}'
+```
+
+### Custom Widget IIFE Format
+No build tools. `manifest.json` + `bundle.js`. Use `neomind widget create "Name" --widget-type <TYPE>` to scaffold.
+```javascript
+(function(global) {
+  var React = global.React;
+  function MyWidget(props) {
+    return React.createElement('div', {style:{width:'100%',height:'100%'}}, 'Hello');
+  }
+  global['NeoMindMyWidget'] = MyWidget;
+})(window);
+```
+Rules: `React.createElement` only (no JSX/import), `global.React`, CSS vars only, under 50KB.
+Props: `props.config`, `props.display`, `props.dataSource`, `props.id`, `props.title`
+
+### Widget Creation Workflow (scaffold → edit → install → use)
+1. `neomind widget create "My Widget" --widget-type <TYPE>` → scaffold to `data/frontend-components/<widget-id>/`
+   - Types: `chart`, `gauge`, `stat`, `table`, `image`, `custom`
+2. Edit `manifest.json` — required fields:
+   - `id` (lowercase-hyphen, must not match built-ins like `value-card`)
+   - `global_name` (convention: `NeoMind{PascalCase}`, must match bundle.js assignment)
+   - `category`: indicators, charts, controls, display, spatial, business, custom
+   - `size_constraints`: `{"min_w":2,"min_h":2,"default_w":4,"default_h":3,"max_w":12,"max_h":8}`
+   - `has_data_source`: boolean, `max_data_sources`: number (omit = unlimited)
+   - `config_schema`: JSON Schema with `display` and `config` sections
+3. Edit `bundle.js` — must be valid IIFE (see template above), assign to `global['{global_name}']`
+4. Package and install:
+```bash
+cd data/frontend-components/my-widget && zip -r ../my-widget.zip manifest.json bundle.js
+neomind widget install ../my-widget.zip
+neomind widget list    # verify
+neomind widget get my-widget  # check config_schema
+```
+5. Add to dashboard via `dashboard update <ID> --components '[...]'`
 
 ## System Commands
 - Network: ping, traceroute, curl, arp, nmap

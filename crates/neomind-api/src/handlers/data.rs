@@ -526,10 +526,12 @@ pub struct TelemetryQueryParams {
     pub start: Option<i64>,
     /// End timestamp in seconds (default: now)
     pub end: Option<i64>,
-    /// Maximum number of data points to return (default: 100, max: 1000)
+    /// Maximum number of data points to return (default: 100, max: 5000)
     pub limit: Option<usize>,
     /// Aggregation function: "avg", "min", "max", "sum", "count", "last"
     pub aggregate: Option<String>,
+    /// When true, use server-side time-bucket downsampling to return evenly-spaced points
+    pub bucketed: Option<bool>,
 }
 
 /// GET /api/telemetry
@@ -548,7 +550,7 @@ pub async fn query_telemetry_handler(
     let now = chrono::Utc::now().timestamp();
     let start = params.start.unwrap_or(now - 86400);
     let end = params.end.unwrap_or(now);
-    let limit = params.limit.unwrap_or(100).min(1000);
+    let limit = params.limit.unwrap_or(100).min(5000);
 
     // Parse source into a DataSourceId to extract the storage key
     let ds_id =
@@ -611,11 +613,18 @@ pub async fn query_telemetry_handler(
         }));
     }
 
-    // Regular query
-    let (points, total_count) = telemetry
-        .query_with_limit(&source_part, metric_part, start, end, Some(limit))
-        .await
-        .map_err(|e| crate::models::error::ErrorResponse::internal(e.to_string()))?;
+    // Regular query — use bucketed downsampling when requested
+    let (points, total_count) = if params.bucketed.unwrap_or(false) {
+        telemetry
+            .query_bucketed(&source_part, metric_part, start, end, limit)
+            .await
+            .map_err(|e| crate::models::error::ErrorResponse::internal(e.to_string()))?
+    } else {
+        telemetry
+            .query_with_limit(&source_part, metric_part, start, end, Some(limit))
+            .await
+            .map_err(|e| crate::models::error::ErrorResponse::internal(e.to_string()))?
+    };
 
     let data: Vec<serde_json::Value> = points
         .iter()

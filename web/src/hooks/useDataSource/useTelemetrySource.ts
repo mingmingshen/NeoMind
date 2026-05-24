@@ -149,7 +149,6 @@ export function useTelemetrySource(
         // Sort and dedup
         finalData = sortTelemetryResults(finalData, telemetrySources, pm)
 
-        // Merge: preserve any real-time points from WebSocket that are newer
         state.setData((prevData: unknown) => {
           // No previous data — just set fetched data
           if (prevData == null) return finalData

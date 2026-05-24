@@ -10,20 +10,36 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     // value doesn't interrupt CJK / pinyin input.  This is especially
     // needed in Tauri (WebKit) where React's built-in composition
     // suppression doesn't always work.
-    const composingRef = React.useRef(false)
-    const [buffer, setBuffer] = React.useState(valueProp)
-
-    // For password fields, IME composition produces intermediate
-    // characters that bypass the browser's ● masking, causing
-    // garbled display.  Disable the IME buffer for password inputs.
+    //
+    // For password fields, skip all composition buffering — let the
+    // browser handle type="password" natively.  IME intermediate
+    // characters bypass ● masking and cause garbled display.
     const isPassword = type === 'password'
+    const composingRef = React.useRef(false)
+    const [buffer, setBuffer] = React.useState(isPassword ? undefined : valueProp)
 
     // Sync from parent when value changes externally (and not composing)
     React.useEffect(() => {
-      if (!composingRef.current) {
+      if (!composingRef.current && !isPassword) {
         setBuffer(valueProp)
       }
-    }, [valueProp])
+    }, [valueProp, isPassword])
+
+    if (isPassword) {
+      return (
+        <input
+          type="password"
+          className={cn(
+            "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:ring-destructive/20",
+            className
+          )}
+          ref={ref}
+          value={valueProp}
+          onChange={(e) => onChangeProp?.(e)}
+          {...props}
+        />
+      )
+    }
 
     return (
       <input
@@ -33,11 +49,9 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           className
         )}
         ref={ref}
-        value={isPassword ? valueProp : buffer}
+        value={buffer}
         onChange={(e) => {
-          if (!isPassword) {
-            setBuffer(e.target.value)
-          }
+          setBuffer(e.target.value)
           if (!composingRef.current) {
             onChangeProp?.(e)
           }
@@ -49,10 +63,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         onCompositionEnd={(e) => {
           composingRef.current = false
           const v = (e.target as HTMLInputElement).value
-          if (!isPassword) {
-            setBuffer(v)
-          }
-          // Fire parent onChange with final value via a synthetic change event
+          setBuffer(v)
           onChangeProp?.({ target: { value: v } } as React.ChangeEvent<HTMLInputElement>)
           compEndProp?.(e)
         }}

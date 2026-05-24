@@ -35,13 +35,13 @@ This returns:
 To see all configured external brokers and their connection status:
 
 ```bash
-neomind broker list
+neomind connector list
 ```
 
 To see all active MQTT topic subscriptions:
 
 ```bash
-neomind broker subscriptions
+neomind connector subscriptions
 ```
 
 ---
@@ -311,6 +311,53 @@ These typically require a **gateway** that translates the protocol to MQTT or HT
 | Webhook URL | `POST http://<SERVER_IP>:9375/api/devices/webhook/{device_id}` |
 | API Base | `http://<SERVER_IP>:9375/api` |
 | Check System | `neomind system info` |
+
+## Device Management Commands
+
+| Command | Description |
+|---------|-------------|
+| `neomind device list` | List all devices |
+| `neomind device get <ID>` | Get device details |
+| `neomind device create <NAME> [--type <T>] [--adapter <A>]` | Create device |
+| `neomind device update <ID> [--name <N>] [--config '<JSON>']` | Update device |
+| `neomind device delete <ID>` | Delete device |
+| `neomind device latest <ID>` | Get latest metric values |
+| `neomind device history <ID> [--metric <M>] [--time-range <R>]` | Telemetry history |
+| `neomind device control <ID> <CMD> [--params '<JSON>']` | Send command |
+| `neomind device types list` | List device types |
+| `neomind device types create --name <N> --metrics '<JSON>'` | Create device type |
+| `neomind device types get <ID>` | Get device type details |
+
+## Connector Management
+
+| Command | Description |
+|---------|-------------|
+| `neomind connector list` | List all MQTT connectors |
+| `neomind connector create --name <N> --host <H> [--port <P>]` | Add external connector |
+| `neomind connector get <ID>` | Get connector details |
+| `neomind connector test <ID>` | Test connector connection |
+| `neomind connector subscriptions` | List active subscriptions |
+
+## Webhook Complete Flow
+
+1. **Get webhook URL from system info:**
+```bash
+neomind system info
+# Note the webhook URL: http://<SERVER_IP>:9375/api/devices/webhook/{device_id}
+```
+
+2. **Create the device first:**
+```bash
+neomind device create 'Weather Station' --adapter webhook
+# Record the device ID from response
+```
+
+3. **Send data to webhook:**
+```bash
+curl -X POST http://<SERVER_IP>:9375/api/devices/webhook/<DEVICE_ID> \
+  -H 'Content-Type: application/json' \
+  -d '{"data": {"temperature": 23.5, "humidity": 65}}'
+```
 
 ---
 

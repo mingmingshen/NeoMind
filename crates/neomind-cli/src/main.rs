@@ -36,15 +36,6 @@ struct Args {
 /// Available commands.
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Show detailed guide for a domain (e.g., neomind guide device).
-    ///
-    /// Available domains: device, dashboard, rule, agent, transform, extension,
-    /// message, widget, onboarding, system. Run without args to list all.
-    Guide {
-        /// Domain name (e.g., device, dashboard, rule, agent, transform, extension,
-        /// message, widget, onboarding, system).
-        domain: Option<String>,
-    },
     /// Start the web server.
     Serve {
         /// Host to bind to.
@@ -704,6 +695,39 @@ enum DashboardCommand {
         /// Each component: {"type":"widget-type","data_source":{"..."},"display":{...},"config":{...}}
         #[arg(short, long)]
         components: Option<String>,
+        /// Output format (json flag for structured output).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add components to dashboard (append mode).
+    ///
+    /// Appends new widgets without replacing existing ones.
+    /// This is the RECOMMENDED way to add widgets.
+    ///
+    /// Example: `neomind dashboard add-components <ID> --components '[{"id":"c1","type":"value-card",...}]'`
+    AddComponents {
+        /// Dashboard ID.
+        #[arg(required = true)]
+        id: String,
+        /// JSON array of new components to append.
+        #[arg(short, long)]
+        components: String,
+        /// Output format (json flag for structured output).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove components from dashboard by ID.
+    ///
+    /// Removes specific widgets by their component IDs.
+    ///
+    /// Example: `neomind dashboard remove-components <ID> --ids '["c1","c2"]'`
+    RemoveComponents {
+        /// Dashboard ID.
+        #[arg(required = true)]
+        id: String,
+        /// JSON array of component IDs to remove.
+        #[arg(short, long)]
+        ids: String,
         /// Output format (json flag for structured output).
         #[arg(long)]
         json: bool,
@@ -1756,30 +1780,6 @@ async fn main() -> Result<()> {
 
     // Run the appropriate command
     match args.command {
-        Command::Guide { domain } => {
-            match domain {
-                Some(d) => {
-                    match neomind_cli_ops::help::get_help(&d) {
-                        Some(content) => println!("{}", content),
-                        None => {
-                            eprintln!("Unknown domain: '{}'. Available domains:", d);
-                            for info in neomind_cli_ops::help::list_domains() {
-                                eprintln!("  {:<12} {}", info.name, info.description);
-                            }
-                        }
-                    }
-                }
-                None => {
-                    println!("NeoMind CLI — Available Guide Domains:\n");
-                    for info in neomind_cli_ops::help::list_domains() {
-                        println!("  {:<12} {}", info.name, info.description);
-                    }
-                    println!("\nUsage: neomind guide <domain>");
-                    println!("Example: neomind guide device");
-                }
-            }
-            Ok(())
-        }
         Command::Serve { host, port } => run_server(host, port).await,
         Command::Prompt {
             prompt,
@@ -3479,6 +3479,20 @@ async fn run_dashboard_cmd(cmd: DashboardCommand) -> Result<()> {
         }
         DashboardCommand::Delete { id } => {
             delete_dashboard(&client, &id).await?
+        }
+        DashboardCommand::AddComponents { id, components, json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let comps = serde_json::from_str(&components).unwrap_or(serde_json::json!([]));
+            let resp = add_components(&client, &id, comps).await?;
+            format_output(&resp, fmt);
+            return Ok(());
+        }
+        DashboardCommand::RemoveComponents { id, ids, json } => {
+            let fmt = if json { OutputFormat::Json } else { output_format };
+            let ids_val = serde_json::from_str(&ids).unwrap_or(serde_json::json!([]));
+            let resp = remove_components(&client, &id, ids_val).await?;
+            format_output(&resp, fmt);
+            return Ok(());
         }
         DashboardCommand::Share { id, public, expires, json } => {
             let fmt = if json { OutputFormat::Json } else { output_format };

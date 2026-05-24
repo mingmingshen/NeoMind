@@ -341,6 +341,35 @@ impl TimeSeriesStorage {
         Ok((filtered, total_count))
     }
 
+    /// Query with server-side time-bucket downsampling.
+    ///
+    /// Returns at most `target_count` points evenly spaced across the time range.
+    /// Ideal for chart rendering where displaying 50-100 points is sufficient.
+    pub async fn query_bucketed(
+        &self,
+        source_id: &str,
+        metric: &str,
+        start_timestamp: i64,
+        end_timestamp: i64,
+        target_count: usize,
+    ) -> Result<(Vec<DataPoint>, Option<usize>), DeviceError> {
+        let result = self.store()
+            .query_range_bucketed(source_id, metric, start_timestamp, end_timestamp, target_count)
+            .await
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
+
+        let pts: Vec<DataPoint> = result.points.into_iter()
+            .filter_map(DataPoint::from_storage)
+            .collect();
+
+        tracing::debug!(
+            "query_bucketed result: {} points for {}/{} (total_count={:?})",
+            pts.len(), source_id, metric, result.total_count
+        );
+
+        Ok((pts, result.total_count))
+    }
+
     /// Get the latest data point
     pub async fn latest(
         &self,

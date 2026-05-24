@@ -1,315 +1,186 @@
 ---
 id: message-management
-name: Message Management CLI Commands
+name: Message Management & Channel Configuration
 category: message
 origin: builtin
 priority: 80
-token_budget: 10000
+token_budget: 8000
 triggers:
-  keywords: [message, 消息, 通知, notification, message list, list message, message send, 发送消息, message read, 已读, unread, 未读, alert, 警报, acknowledge, ack, channel, 通道, 通知通道, webhook, dingtalk, 钉钉, email, 邮件]
+  keywords: [message, 消息, 通知, notification, channel, 通道, alert, 告警, 报警, send message, 发送消息, webhook channel, email channel, 邮件通道, 消息管理, severity, 严重程度, acknowledge, 确认, message channel]
   tool_target:
     - tool: message
-      actions: [list, get, send, read, ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-types, channel-test]
+      actions: [list, get, send, read, ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-test, channel-types]
 anti_triggers:
-  keywords: [device, 设备, rule, 规则, agent, 代理, dashboard, 仪表盘]
+  keywords: [dashboard, 仪表盘, agent, 代理, extension develop, 扩展开发, rule, 规则, device connect, 设备连接]
 ---
 
-# Message Management CLI Commands
+# Message Management & Channel Configuration
 
-Use `neomind` CLI commands via the `shell` tool to manage messages and notifications.
+Messages are platform notifications that can be sent programmatically and delivered through configurable channels (webhook, email, etc.).
 
-## Commands Overview
+## CRITICAL Rules
 
-| Command | Description |
-|---------|-------------|
-| `neomind message list` | List messages with optional filters |
-| `neomind message get <ID>` | Get details of a specific message |
-| `neomind message send` | Send a new message |
-| `neomind message read <ID>` | Mark a message as read |
-| `neomind message ack <ID>` | Mark a message as read (alias) |
+1. **`--title` and `--message` are required** for sending — not `--body` or `--channel`
+2. **Channels must be created before rules can use them** for notifications
+3. **Always test a channel** after creation with `message channel-test <NAME>`
 
----
+## Command Reference
 
-## List Messages
-
-Returns a paginated list of messages. Supports filtering by severity and read status.
+### Send Message
 
 ```bash
-neomind message list [--limit N] [--offset N] [--severity LEVEL] [--status STATUS]
+neomind message send --title '<TITLE>' --message '<TEXT>' [--severity <LEVEL>] [--source <SRC>]
 ```
-
-**Flags:**
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
-| `--limit` | No | — | Maximum number of messages to return |
-| `--offset` | No | — | Number of messages to skip (for pagination) |
-| `--severity` | No | — | Filter by severity: `info`, `warning`, `error`, `critical` |
-| `--status` | No | — | Filter by status: `read`, `unread` |
+| `--title` | Yes | — | Message title |
+| `--message` | Yes | — | Message body text |
+| `--severity` | No | info | Severity: `info`, `warning`, `error`, `critical` |
+| `--source` | No | — | Source identifier |
 
-**Examples:**
-
-```bash
-# List all messages (first page)
-neomind message list
-
-# Paginate through results
-neomind message list --limit 10 --offset 20
-
-# Show only unread messages
-neomind message list --status unread
-
-# Show critical messages only
-neomind message list --severity critical
-
-# Combine filters: unread warnings
-neomind message list --severity warning --status unread
-```
-
-**API mapping:** `GET /messages?limit=N&offset=N&severity=X&status=X`
-
----
-
-## Get Message Details
-
-Retrieve full details of a specific message by its ID.
+### List & Read Messages
 
 ```bash
-neomind message get <ID>
+neomind message list                              # List all messages
+neomind message list --severity warning --limit 20 # Filtered list
+neomind message get <ID>                          # Get message details
+neomind message read <ID>                         # Mark as read (alias: ack)
 ```
 
-**Examples:**
+### Channel Management
 
 ```bash
-neomind message get msg-123
-neomind message get 42
+neomind message channel-list                      # List all channels
+neomind message channel-types                     # List available channel types
+neomind message channel-get <NAME>                # Get channel details
+neomind message channel-create --name <N> --type <T> --config '<JSON>'  # Create channel
+neomind message channel-update <NAME> --config '<JSON>'                 # Update channel config
+neomind message channel-delete <NAME>             # Delete channel
+neomind message channel-test <NAME>               # Test channel delivery
 ```
 
-**API mapping:** `GET /messages/{id}`
+## Channel Types
 
----
+### Webhook Channel
 
-## Send Message
-
-Create and send a new message or notification.
+Sends HTTP POST with message payload to a configured URL.
 
 ```bash
-neomind message send --title '<title>' --message '<content>' [--severity LEVEL] [--source SOURCE]
+neomind message channel-create --name alerts --type webhook \
+  --config '{"url": "https://hooks.example.com/notify", "headers": {"Authorization": "Bearer token123"}}'
 ```
 
-**Flags:**
+**Config fields:**
+- `url` (required): Webhook endpoint URL
+- `headers` (optional): Custom HTTP headers
 
-| Flag | Required | Default | Description |
-|------|----------|---------|-------------|
-| `--title` | Yes | — | Message title (short summary) |
-| `--message` | Yes | — | Message body (full content) |
-| `--severity` | No | `info` | Severity level: `info`, `warning`, `error`, `critical` |
-| `--source` | No | — | Source identifier (e.g., "agent", "system", extension name) |
+### Email Channel
 
-**Severity levels:**
-- `info` — General information, no action needed
-- `warning` — Attention recommended, potential issue
-- `error` — Problem detected, action likely needed
-- `critical` — Urgent issue, immediate action required
-
-**Examples:**
+Sends messages via SMTP.
 
 ```bash
-# Simple info notification
-neomind message send --title 'Task Complete' --message 'Dashboard created successfully' --severity info
-
-# Warning about a device condition
-neomind message send --title 'Low Battery' --message 'Device sensor-001 battery is at 15%' --severity warning
-
-# Critical alert for offline device
-neomind message send --title 'Device Offline' --message 'Sensor-003 has been offline for 30 minutes' --severity critical
-
-# With source attribution
-neomind message send --title 'Rule Triggered' --message 'Temperature threshold exceeded on floor-3' --severity warning --source agent
+neomind message channel-create --name email-alerts --type email \
+  --config '{"smtp_server": "smtp.example.com", "smtp_port": 587, "username": "user@example.com", "password": "pass", "from_address": "neo@example.com", "use_tls": true}'
 ```
 
-**API mapping:** `POST /messages` with body `{title, message, severity, source}`
+**Config fields:**
+- `smtp_server` (required): SMTP server hostname
+- `smtp_port` (optional, default 587): SMTP port
+- `username` (required): SMTP auth username
+- `password` (required): SMTP auth password
+- `from_address` (required): Sender email
+- `use_tls` (optional, default true): Enable TLS
 
----
-
-## Read/Acknowledge Message
-
-Mark a message as read. Both `read` and `ack` are equivalent.
-
-```bash
-neomind message read <ID>
-neomind message ack <ID>
-```
-
-**Examples:**
-
-```bash
-neomind message read msg-123
-neomind message ack 42
-```
-
-**API mapping:** `POST /messages/{id}/acknowledge`
-
----
-
-## Workflows
-
-### Check and clear unread messages
-
-Review and acknowledge unread notifications.
-
-```bash
-# Step 1: List all unread messages
-neomind message list --status unread
-
-# Step 2: Read details of a specific message
-neomind message get <MESSAGE_ID>
-
-# Step 3: Mark it as read
-neomind message read <MESSAGE_ID>
-
-# Step 4: Confirm it's cleared
-neomind message list --status unread
-```
-
-### Send alerts from automation
-
-Use in agent workflows or rules to notify users of important events.
-
-```bash
-# Device went offline — critical alert
-neomind message send --title 'Device Offline' --message 'Production sensor array disconnected unexpectedly' --severity critical --source device-monitor
-
-# Threshold exceeded — warning
-neomind message send --title 'High Temperature' --message 'Server room temperature reached 35C, threshold is 30C' --severity warning
-
-# Extension error — error notification
-neomind message send --title 'Extension Error' --message 'Weather extension failed to fetch data: connection timeout' --severity error --source system
-```
-
-### Filter messages by severity
-
-Audit messages at a specific severity level.
-
-```bash
-# Check for critical issues
-neomind message list --severity critical
-
-# Review all errors
-neomind message list --severity error
-
-# Paginate through warnings
-neomind message list --severity warning --limit 10 --offset 0
-```
-
-### Send info notification after completing a task
-
-Confirm task completion to the user via the messaging system.
-
-```bash
-# After creating a dashboard
-neomind message send --title 'Dashboard Ready' --message 'Battery Monitor dashboard has been created with 4 widgets' --severity info --source agent
-
-# After applying a configuration change
-neomind message send --title 'Config Updated' --message 'Retention policy changed to 30 days' --severity info --source agent
-
-# After bulk operation
-neomind message send --title 'Devices Registered' --message '5 new devices added to the system' --severity info --source agent
-```
-
----
-
-## Notes
-
-- Message IDs are returned by `neomind message list` and can be used with `get`, `read`, and `ack`
-- `read` and `ack` are interchangeable — both call the same acknowledge endpoint
-- Use `--status unread` to find messages requiring attention
-- The `--source` flag on send is informational only — it helps identify where the message originated
-- Pagination uses `--limit` (page size) and `--offset` (skip count); typical page size is 10-20
-- All severity levels are lowercase: `info`, `warning`, `error`, `critical`
-
----
-
-## Notification Channels
-
-Messages can be routed through notification channels (webhook, email, etc.).
-
-### List Channels
-
-```bash
-neomind message channel-list
-```
-
-### Get Channel Details
-
-```bash
-neomind message channel-get <NAME>
-```
-
-### List Available Channel Types
-
+**To discover available channel types and their schemas:**
 ```bash
 neomind message channel-types
 ```
 
-Returns all supported channel types (e.g., `webhook`, `email`) with their configuration schemas.
+## Workflow Examples
 
-### Create Channel
-
-```bash
-neomind message channel-create --name '<name>' --type <TYPE> --config '<json>'
-```
-
-**Required flags**: `--name`, `--type`, `--config`
-
-**Examples:**
+### Set Up Webhook Alert Channel
 
 ```bash
-# Webhook channel
-neomind message channel-create --name 'my-webhook' --type webhook --config '{"url": "https://example.com/webhook"}'
+# Step 1: Create the channel
+neomind message channel-create --name alerts --type webhook \
+  --config '{"url": "https://hooks.slack.com/services/T00/B00/xxx"}'
 
-# DingTalk (钉钉) webhook
-neomind message channel-create --name 'dingtalk' --type webhook --config '{"url": "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN"}'
+# Step 2: Test the channel
+neomind message channel-test alerts
 
-# Email channel
-neomind message channel-create --name 'alerts' --type email --config '{"smtp_host": "smtp.example.com", "smtp_port": 587, "from": "alert@example.com", "to": ["admin@example.com"]}'
+# Step 3: Send a test message
+neomind message send --title 'Test' --message 'Channel setup complete' --severity info
 ```
 
-Use `neomind message channel-types` to see all available types and their config schemas.
-
-### Update Channel
+### Send Warning Alert
 
 ```bash
-neomind message channel-update <NAME> --config '<new_json>'
+neomind message send --title 'Low Battery' \
+  --message 'Sensor-001 battery at 15%' \
+  --severity warning \
+  --source sensor-001
 ```
 
-**Example:**
+### Send Critical Alert
 
 ```bash
-neomind message channel-update my-webhook --config '{"url": "https://new-url.example.com/hook"}'
+neomind message send --title 'System Overheating' \
+  --message 'Temperature sensor reads 95°C — immediate action required' \
+  --severity critical
 ```
 
-### Delete Channel
+### Review & Acknowledge Messages
 
 ```bash
-neomind message channel-delete <NAME>
+# List unread warnings and errors
+neomind message list --severity warning
+neomind message list --severity error
+
+# Acknowledge a message
+neomind message read <ID>
 ```
 
-### Test Channel Connectivity
+### Update Channel Config
 
 ```bash
-neomind message channel-test <NAME>
+neomind message channel-update alerts \
+  --config '{"url": "https://new-hook.example.com/alert", "headers": {"Authorization": "Bearer new-token"}}'
 ```
 
-Sends a test message through the channel to verify connectivity and configuration.
+### Delete a Channel
+
+```bash
+neomind message channel-delete alerts
+```
+
+## Using Messages with Rules
+
+Messages are typically sent by rules. When a rule triggers, it can send messages through all configured channels:
+
+```bash
+# 1. Set up a channel first
+neomind message channel-create --name alerts --type webhook \
+  --config '{"url": "https://hooks.example.com/notify"}'
+
+# 2. Create a rule that sends notifications
+neomind rule create --name 'High Temp Alert' --dsl 'RULE high_temp
+  WHEN sensor-001.temperature > 35
+  DO
+    NOTIFY "Temperature {value}°C on {{device.name}}" [alerts]
+  END'
+
+# 3. Enable the rule
+neomind rule enable <RULE_ID>
+```
 
 ## Common Errors & Solutions
 
-- **"Message not found"**: Run `neomind message list` to find valid message IDs. Use the exact ID from the output.
-- **Send fails with missing fields**: Both `--title` and `--message` are required flags. Omitting either will cause an error.
-- **Invalid severity level**: Valid values are `info`, `warning`, `error`, `critical` (all lowercase). Other values like `normal`, `high`, `low` are not accepted.
-- **Message still showing as unread after ack**: Ensure you are using the correct message ID from `neomind message list`. Both `read` and `ack` subcommands work identically.
-- **Pagination returns no results**: The offset is zero-based. If a list returns fewer results than expected, try reducing the offset or removing filters to confirm messages exist.
-- **Channel creation fails**: Use `neomind message channel-types` to check supported channel types and their required config fields. Each channel type has a specific config schema.
-- **Webhook test fails**: Verify the URL is accessible. Use `neomind message channel-test <NAME>` to diagnose connectivity.
-- **"Channel not found"**: Run `neomind message channel-list` to see all channels. Use the exact channel name (not ID).
+| Error | Cause | Solution |
+|-------|-------|----------|
+| "Missing required field: title" | Using wrong flag names | Use `--title` and `--message` (not `--body` or `--channel`) |
+| "Channel not found" | Wrong channel name | Run `message channel-list` for valid names |
+| Webhook not delivering | Wrong URL or network issue | Test with `message channel-test <NAME>` |
+| "Invalid channel type" | Unsupported type | Run `message channel-types` for available types |
+| "SMTP auth failed" | Wrong email credentials | Verify SMTP settings and update with `channel-update` |
+| "Message not found" | Wrong message ID | Run `message list` for valid IDs |

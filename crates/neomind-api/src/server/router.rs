@@ -781,6 +781,14 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             delete(dashboards::delete_dashboard_handler),
         )
         .route(
+            "/api/dashboards/:id/components",
+            post(dashboards::add_components_handler),
+        )
+        .route(
+            "/api/dashboards/:id/components",
+            delete(dashboards::remove_components_handler),
+        )
+        .route(
             "/api/dashboards/:id/default",
             post(dashboards::set_default_dashboard_handler),
         )

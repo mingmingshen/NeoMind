@@ -1,53 +1,317 @@
 ---
 id: dashboard-management
-name: Dashboard Management CLI Commands
-category: general
+name: Dashboard Management & Component Creation
+category: dashboard
 origin: builtin
-priority: 70
-token_budget: 10000
+priority: 85
+token_budget: 14000
 triggers:
-  keywords: [dashboard, 仪表盘, 仪表板, dashboard list, list dashboard, dashboard create, 创建仪表盘, dashboard widget, widget, 组件, 监控面板, monitoring dashboard, 组件, 天气, weather, 电量, battery]
+  keywords: [dashboard, 仪表盘, 仪表板, create dashboard, 组件, widget, component, 数据源, data source, dashboard component, dashboard widget, 绑定数据, bind data, 创建仪表盘, 监控面板, share dashboard, 共享仪表盘, add-components, 添加组件, 删除组件, remove component]
   tool_target:
     - tool: dashboard
-      actions: [list, get, create, update, delete, share]
+      actions: [list, get, create, update, delete, share, add-components, remove-components]
+    - tool: widget
+      actions: [list, get]
+    - tool: device
+      actions: [list, latest]
+    - tool: extension
+      actions: [info, list]
 anti_triggers:
-  keywords: [rule, 规则, agent, 代理]
+  keywords: [rule, 规则, agent, 代理, extension develop, 扩展开发]
 ---
 
-# Dashboard Management CLI Commands
+# Dashboard Management & Component Creation
 
-Use `neomind` CLI commands via the `shell` tool to manage dashboards.
+Creating dashboards with data-bound components is the most complex CLI operation. Follow the workflows below exactly.
 
-## List Dashboards
+## CRITICAL Rules
+
+1. **NEVER guess metric names** — always discover them via `device latest <ID>` or `extension info <ID>`
+2. **Use `add-components` to add widgets** — this appends without replacing existing components
+3. **`update --components` replaces ALL components** — avoid this unless intentionally replacing everything
+4. **Grid is 12 columns wide** — plan layout accordingly
+5. **NEVER use Python/pipe/file tricks** — each shell call is an isolated process; you cannot share data between calls via files, pipes, or variables. Build the complete JSON string inline.
+6. **Use `widget get <type>` to inspect config_schema** before configuring unfamiliar widgets
+
+## Component Management Commands
+
+| Command | Purpose |
+|---------|---------|
+| `dashboard add-components <ID> --components '<JSON>'` | **Append** new components (RECOMMENDED) |
+| `dashboard remove-components <ID> --ids '["c1","c2"]'` | Remove components by ID |
+| `dashboard update <ID> --name 'New Name'` | Update metadata only (name, description) |
+| `dashboard update <ID> --components '<JSON>'` | Replace ALL components (dangerous!) |
+| `dashboard delete <ID>` | Delete entire dashboard |
+
+## Step-by-Step: Create a Data Dashboard
+
+### Step 1: Discover Devices & Metrics
 
 ```bash
-neomind dashboard list
+# List all devices
+neomind device list
+
+# Get real metric names for each device you want to display
+neomind device latest sensor-001
+neomind device latest sensor-002
+
+# If using extension data, discover extension metrics
+neomind extension info weather-forecast
 ```
 
-## Get Dashboard Details
+**Record the exact metric names** — you will use them in data_source binding. NEVER guess metric names.
+
+### Step 2: Check Available Widget Types
 
 ```bash
+neomind widget list
+# Returns all installed widget types with size constraints
+
+neomind widget get value-card
+# Returns config_schema describing accepted display and config fields
+```
+
+### Step 3: Create Dashboard
+
+```bash
+neomind dashboard create --name "Battery Monitor"
+# Record the dashboard ID from the response
+```
+
+### Step 4: Add Components (RECOMMENDED)
+
+Use `add-components` — it appends without replacing existing components:
+
+```bash
+neomind dashboard add-components <DASHBOARD_ID> --components '[
+  {
+    "id": "c1",
+    "type": "value-card",
+    "title": "Temperature",
+    "position": {"x": 0, "y": 0, "w": 4, "h": 2},
+    "data_source": {
+      "type": "device",
+      "sourceId": "sensor-001",
+      "property": "temperature"
+    },
+    "display": {"unit": "°C", "format": ".1f"}
+  }
+]'
+```
+
+### Complete Example: Battery Dashboard
+
+```bash
+# Step 1: Discover metrics
+neomind device list
+neomind device latest sensor-001
+neomind device latest sensor-002
+
+# Step 2: Create dashboard
+neomind dashboard create --name 'Battery Monitor'
+
+# Step 3: Add ALL components using add-components (append mode)
+neomind dashboard add-components <DASHBOARD_ID> --components '[
+  {"id":"b1","type":"value-card","title":"Sensor 1 Battery","position":{"x":0,"y":0,"w":4,"h":2},
+   "data_source":{"type":"device","sourceId":"sensor-001","property":"battery"},
+   "display":{"unit":"%","format":".0f"}},
+  {"id":"b2","type":"value-card","title":"Sensor 2 Battery","position":{"x":4,"y":0,"w":4,"h":2},
+   "data_source":{"type":"device","sourceId":"sensor-002","property":"battery"},
+   "display":{"unit":"%","format":".0f"}},
+  {"id":"chart","type":"line-chart","title":"Battery Trends","position":{"x":0,"y":2,"w":12,"h":4},
+   "data_source":[
+     {"type":"device","sourceId":"sensor-001","property":"battery","timeWindow":{"type":"last_24hours"}},
+     {"type":"device","sourceId":"sensor-002","property":"battery","timeWindow":{"type":"last_24hours"}}
+   ],
+   "display":{"unit":"%","showLegend":true}}
+]'
+
+# Step 4: Verify
+neomind dashboard get <DASHBOARD_ID>
+```
+
+### Remove Components
+
+```bash
+# Remove specific components by their IDs
+neomind dashboard remove-components <DASHBOARD_ID> --ids '["b1","chart"]'
+```
+
+### Delete Dashboard
+
+```bash
+neomind dashboard delete <DASHBOARD_ID>
+```
+
+## DataSource Binding Reference
+
+### Device Metrics
+
+```json
+{"type":"device","sourceId":"<device-id>","property":"<metric-name>"}
+```
+
+**IMPORTANT**: Must use real metric names from `device latest <ID>`. Common names: `temperature`, `humidity`, `battery`, `cpu`, `memory`, `status`.
+
+### Extension Metrics
+
+```json
+{"type":"extension-metric","extensionId":"<ext-id>","extensionMetric":"<field>"}
+```
+
+**CRITICAL DIFFERENCES from device data source:**
+- Extension uses `extensionId` (NOT `sourceId`)
+- Extension uses `extensionMetric` (NOT `property`)
+- Must discover field names via `extension info <ID>`
+
+### Time Series (for charts)
+
+Add to any data_source:
+```json
+{
+  "type":"device","sourceId":"sensor-01","property":"temperature",
+  "timeWindow":{"type":"last_24hours"},
+  "aggregateExt":"avg"
+}
+```
+
+Time windows: `now`, `last_5min`, `last_15min`, `last_30min`, `last_1hour`, `last_6hours`, `last_24hours`, `today`, `this_week`
+Aggregates: `raw`, `latest`, `avg`, `min`, `max`, `sum`, `count`, `delta`, `rate`
+Charts accept `data_source` as **array** for multiple series.
+
+### Common DataSource Errors
+
+| Error | Wrong Field | Correct Field |
+|-------|-------------|---------------|
+| Extension data not binding | `"property":"temp"` | `"extensionMetric":"temp"` |
+| Extension data not binding | `"sourceId":"weather"` | `"extensionId":"weather"` |
+| Device data not binding | `"extensionMetric":"temp"` | `"property":"temp"` |
+| No data shows | Guessed metric name | Run `device latest <ID>` first |
+| "Device not found" | Wrong sourceId | Run `device list` for valid IDs |
+
+## Widget Types Reference
+
+| Category | Types | Min Size | Recommended |
+|----------|-------|----------|-------------|
+| Indicators | `value-card` | 3x2 | 3x2 or 4x2 |
+| Indicators | `led-indicator` | 2x2 | 2x2 |
+| Indicators | `sparkline` | 3x2 | 4x2 |
+| Indicators | `progress-bar` | 3x1 | 4x1 |
+| Charts | `line-chart` | 6x3 | 12x4 |
+| Charts | `area-chart` | 6x3 | 12x4 |
+| Charts | `bar-chart` | 6x3 | 12x4 |
+| Charts | `pie-chart` | 4x4 | 4x4 |
+| Charts | `radar-chart` | 4x4 | 6x4 |
+| Controls | `toggle-switch` | 2x2 | 2x2 |
+| Display | `markdown-display` | 12x2 | 12x4 |
+| Display | `image-display` | 4x3 | 6x4 |
+| Display | `image-history` | 6x4 | 12x4 |
+| Display | `web-display` | 6x4 | 12x4 |
+| Spatial | `map-display` | 6x4 | 12x6 |
+| Spatial | `video-display` | 6x4 | 12x6 |
+| Business | `agent-monitor-widget` | 6x4 | 12x6 |
+| Business | `ai-analyst` | 12x4 | 12x6 |
+
+## Layout Design Guide
+
+### Grid System
+- **12 columns wide**, unlimited rows
+- Position: `{"x": 0, "y": 0, "w": 4, "h": 2}`
+  - `x`: column offset (0-11)
+  - `y`: row offset (0+)
+  - `w`: width in columns
+  - `h`: height in rows
+
+### Alignment Patterns
+
+| Layout | x positions | Example |
+|--------|-----------|---------|
+| 3 columns | 0, 4, 8 | Three value-cards side by side |
+| 4 columns | 0, 3, 6, 9 | Four value-cards side by side |
+| 2 columns | 0, 6 | Two charts side by side |
+| Full width | 0, w=12 | Single chart spanning all columns |
+
+### Layout Principles
+1. **Same-type indicators on the same row** (value-cards at y=0)
+2. **Charts get a full row** (w=12)
+3. **New components start after existing ones** — y = max(existing y + h)
+4. **No overlap** — each component needs unique x,y coordinates
+
+### Layout Templates
+
+**4 Indicators + 1 Chart:**
+```
+Row 0: [card1 x=0,w=3] [card2 x=3,w=3] [card3 x=6,w=3] [card4 x=9,w=3]
+Row 2: [line-chart x=0,w=12,h=4]
+```
+
+**8 Indicators + 2 Charts:**
+```
+Row 0: [4 cards, x=0,3,6,9 w=3 each]
+Row 2: [4 cards, x=0,3,6,9 w=3 each]
+Row 4: [line-chart x=0,w=6,h=4] [bar-chart x=6,w=6,h=4]
+```
+
+**Mixed Device + Extension Dashboard:**
+```
+Row 0: [device-value x=0,w=4] [device-value x=4,w=4] [ext-value x=8,w=4]
+Row 2: [chart with device+ext data_sources, x=0,w=12,h=4]
+```
+
+## Adding Components to Existing Dashboard
+
+When adding new widgets to an existing dashboard, use `add-components`:
+
+```bash
+# Step 1: Check current layout to determine y position for new components
 neomind dashboard get <ID>
+# Note: find max(existing y + h) for the new y position
+
+# Step 2: Add new components (they are appended, not replaced)
+neomind dashboard add-components <ID> --components '[
+  {"id":"new_chart","type":"line-chart","title":"New Chart",
+   "position":{"x":0,"y":4,"w":12,"h":4},
+   "data_source":{"type":"device","sourceId":"sensor-001","property":"temperature","timeWindow":{"type":"last_24hours"}}}
+]'
 ```
 
-## Create Dashboard
+## Mixed Data Source Example (Device + Extension)
 
 ```bash
-neomind dashboard create --name '<name>'
-neomind dashboard create --name 'Battery Monitor' --description 'Battery status for all devices'
+# Discover both device and extension metrics
+neomind device latest sensor-001
+neomind extension info weather-forecast
+
+# Create dashboard with mixed sources
+neomind dashboard create --name 'Weather Comparison'
+neomind dashboard add-components <ID> --components '[
+  {"id":"indoor","type":"value-card","title":"Indoor Temp",
+   "position":{"x":0,"y":0,"w":4,"h":2},
+   "data_source":{"type":"device","sourceId":"sensor-001","property":"temperature"},
+   "display":{"unit":"°C"}},
+  {"id":"outdoor","type":"value-card","title":"Outdoor Temp",
+   "position":{"x":4,"y":0,"w":4,"h":2},
+   "data_source":{"type":"extension-metric","extensionId":"weather-forecast","extensionMetric":"temperature_c"},
+   "display":{"unit":"°C"}},
+  {"id":"compare","type":"line-chart","title":"Temperature Comparison",
+   "position":{"x":0,"y":2,"w":12,"h":4},
+   "data_source":[
+     {"type":"device","sourceId":"sensor-001","property":"temperature","timeWindow":{"type":"last_24hours"}},
+     {"type":"extension-metric","extensionId":"weather-forecast","extensionMetric":"temperature_c","timeWindow":{"type":"last_24hours"}}
+   ],
+   "display":{"showLegend":true}}
+]'
 ```
 
-## Update Dashboard
+## Static Content (no data binding)
 
+Markdown display widget for static content:
 ```bash
-neomind dashboard update <ID> --name '<new_name>'
-neomind dashboard update <ID> --description '<new_desc>'
-```
-
-## Delete Dashboard
-
-```bash
-neomind dashboard delete <ID>
+neomind dashboard add-components <ID> --components '[{
+  "id":"md1","type":"markdown-display","title":"Report",
+  "position":{"x":0,"y":0,"w":12,"h":4},
+  "config":{"content":"# Status\nAll systems normal"}
+}]'
 ```
 
 ## Share Dashboard
@@ -57,171 +321,15 @@ neomind dashboard share <ID> --public
 neomind dashboard share <ID> --expires 3600
 ```
 
-## Widget Commands
-
-```bash
-neomind widget list                          # List all installed widget types
-neomind widget get <ID>                      # Get widget details
-neomind widget create <NAME> --widget-type <TYPE>  # Create widget scaffold
-neomind widget install <PATH>                # Install from file
-neomind widget uninstall <ID>                # Remove widget
-neomind widget market-list                   # Browse marketplace
-neomind widget market-install <ID>           # Install from marketplace
-```
-
-## Adding Components to a Dashboard
-
-Use `--components` to add widgets. The `--layout` only sets grid settings (columns/rows), NOT widgets.
-
-> **Before choosing widget types and configuring components, query the widget metadata:**
-> 1. `neomind widget list` — shows all available widget types with size constraints and data source info
-> 2. `neomind widget get <type>` — returns the full `config_schema` for a widget, describing accepted `display` and `config` fields
-> 3. Use the `config_schema` to populate `display` and `config` correctly when creating dashboard components
-
-### Component JSON Format (array of objects)
-
-Each component object:
-```json
-{
-  "id": "comp_1",
-  "type": "value-card",
-  "title": "Temperature",
-  "position": {"x": 0, "y": 0, "w": 4, "h": 3},
-  "data_source": {
-    "type": "device",
-    "sourceId": "device-123",
-    "property": "temperature"
-  },
-  "display": {"unit": "°C", "format": ".1f"},
-  "config": {}
-}
-```
-
-Required fields: `id`, `type`, `position`
-Optional fields: `title`, `data_source`, `display`, `config`, `actions`
-
-### Available Widget Types
-
-**Indicators:** `value-card`, `led-indicator`, `sparkline`, `progress-bar`
-**Charts:** `line-chart`, `area-chart`, `bar-chart`, `pie-chart`, `radar-chart`
-**Controls:** `toggle-switch`
-**Display:** `markdown-display`, `image-display`, `image-history`, `web-display`
-**Spatial:** `map-display`, `video-display`, `custom-layer`
-**Business:** `agent-monitor-widget`, `ai-analyst`
-
-### DataSource Binding — CRITICAL RULES
-
-> **IMPORTANT: ALWAYS query existing metrics BEFORE binding. NEVER guess or fabricate property names.**
->
-> 1. For devices: run `neomind device latest <ID>` or `neomind device get <ID>` to discover available metric names
-> 2. For extensions: run `neomind extension info <ID>` to see exposed metrics
-> 3. Use `data_source.type` = `device` for device metrics, `extension-metric` for extension metrics
-> 4. **Do NOT use `ai-metric` type** — always bind directly to real device/extension metrics
-> 5. **Field names MUST match exactly** — device uses `sourceId`+`property`, extension uses `extensionId`+`extensionMetric`
-
-#### Device data source (type: "device")
-
-```json
-{
-  "type": "device",
-  "sourceId": "device-123",
-  "property": "battery"
-}
-```
-
-#### Extension data source (type: "extension-metric")
-
-```json
-{
-  "type": "extension-metric",
-  "extensionId": "weather-forecast-v2",
-  "extensionMetric": "temperature_c"
-}
-```
-
-> **WARNING: Extension data source MUST use `extensionMetric` field (NOT `metricId` or `property`).**
-
-#### Optional fields for time-series data
-
-```json
-{
-  "type": "device",
-  "sourceId": "sensor-01",
-  "property": "temperature",
-  "timeWindow": {"type": "last_24hours"},
-  "aggregateExt": "avg"
-}
-```
-
-Time windows: `now`, `last_5min`, `last_15min`, `last_30min`, `last_1hour`, `last_6hours`, `last_24hours`, `today`, `this_week`
-Aggregates: `raw`, `latest`, `avg`, `min`, `max`, `sum`, `count`, `delta`, `rate`
-
-### Example: Add components to a dashboard
-
-```bash
-neomind dashboard update <DASHBOARD_ID> --components '[{"id":"c1","type":"value-card","title":"Temperature","position":{"x":0,"y":0,"w":4,"h":3},"data_source":{"type":"device","sourceId":"sensor-01","property":"temperature"},"display":{"unit":"°C"}},{"id":"c2","type":"value-card","title":"Humidity","position":{"x":4,"y":0,"w":4,"h":3},"data_source":{"type":"device","sourceId":"sensor-01","property":"humidity"},"display":{"unit":"%"}}]'
-```
-
-### Example: Markdown display widget (static content)
-
-```bash
-neomind dashboard update <DASHBOARD_ID> --components '[{"id":"c1","type":"markdown-display","title":"Weather Report","position":{"x":0,"y":0,"w":12,"h":4},"config":{"content":"# Weather\\n\\nTemperature: 28°C\\nHumidity: 58%"}}]'
-```
-
-### Example: Line chart with time series data
-
-```bash
-neomind dashboard update <DASHBOARD_ID> --components '[{"id":"c1","type":"line-chart","title":"Temperature History","position":{"x":0,"y":0,"w":8,"h":4},"data_source":{"type":"device","sourceId":"sensor-01","property":"temperature","timeWindow":{"type":"last_24hours"},"aggregateExt":"avg"},"display":{"unit":"°C","showLegend":true}}]'
-```
-
-## Common Workflows — ALWAYS follow these steps
-
-> **Before creating ANY dashboard with data-bound components, you MUST:**
-> 1. Run `neomind device list` or `neomind extension list` to find entity IDs
-> 2. Run `neomind device latest <ID>` or `neomind extension info <ID>` to discover available metrics
-> 3. Use the REAL metric names from step 2 — device metrics go in `property`, extension metrics go in `extensionMetric`
-> 4. Do NOT fabricate or guess metric names — if you can't find a metric, tell the user
-> 5. Do NOT use `ai-metric` as a middle layer — bind device/extension metrics directly
-
-### Create a battery monitoring dashboard for all devices
-
-```bash
-# Step 1: List devices to get IDs
-neomind device list
-
-# Step 2: Check available metrics for each device (CRITICAL - do not skip)
-neomind device latest <DEVICE1_ID>
-neomind device latest <DEVICE2_ID>
-
-# Step 3: Create dashboard
-neomind dashboard create --name 'Battery Monitor'
-
-# Step 4: Add components using REAL metric names from step 2
-neomind dashboard update <DASHBOARD_ID> --components '[{"id":"batt_1","type":"value-card","title":"Sensor 1 Battery","position":{"x":0,"y":0,"w":4,"h":3},"data_source":{"type":"device","sourceId":"<DEVICE1_ID>","property":"battery"},"display":{"unit":"%","format":".0f"}},{"id":"batt_2","type":"value-card","title":"Sensor 2 Battery","position":{"x":4,"y":0,"w":4,"h":3},"data_source":{"type":"device","sourceId":"<DEVICE2_ID>","property":"battery"},"display":{"unit":"%","format":".0f"}}]'
-
-# Step 5: Add a line chart showing all batteries over time
-neomind dashboard update <DASHBOARD_ID> --components '[{"id":"batt_chart","type":"line-chart","title":"Battery Trends","position":{"x":0,"y":3,"w":12,"h":4},"data_source":[{"type":"device","sourceId":"<DEVICE1_ID>","property":"battery","timeWindow":{"type":"last_24hours"}},{"type":"device","sourceId":"<DEVICE2_ID>","property":"battery","timeWindow":{"type":"last_24hours"}}],"display":{"unit":"%","showLegend":true}}]'
-```
-
-## Notes
-
-- Dashboard IDs can be found via `neomind dashboard list`
-- Use `neomind dashboard get <ID>` to inspect current components and layout
-- `--components` replaces ALL components — include all existing + new ones in one update
-- `--layout` is only for grid settings (columns/rows), NOT for adding widgets
-- Widget types available: check `neomind widget list` for currently installed types
-- Each widget's `config_schema` describes its accepted `display` and `config` fields — use `neomind widget get <type>` to inspect
-- **CRITICAL**: DataSource field names MUST be exact — device uses `sourceId` + `property`, extension uses `extensionId` + `extensionMetric`. Do NOT use `metricId` or `property` for extensions.
-- **CRITICAL**: DataSource `property`/`extensionMetric` value MUST be a real metric name discovered via `neomind device latest <ID>` or `neomind extension info <ID>`. NEVER guess metric names.
-- **Do NOT use `ai-metric` as data source type** — always bind directly to real device metrics (`device`) or extension metrics (`extension-metric`)
-- Charts (`line-chart`, `area-chart`, `bar-chart`) accept an array in `data_source` for multiple series
-- Grid is 12 columns wide
-
 ## Common Errors & Solutions
 
-- **"Dashboard not found"**: Run `neomind dashboard list` to find valid dashboard IDs. Use the exact ID from the output.
-- **Update with components fails**: The `--components` flag requires a valid JSON array. Use single quotes around the JSON string. Run `neomind widget list` to verify widget types exist.
-- **"Invalid widget type"**: Widget types must match an entry from `neomind widget list` exactly. Built-in types include `value-card`, `line-chart`, `bar-chart`, `toggle-switch`, etc. Custom widgets use their registered ID.
-- **Layout position invalid**: Position must be an object with `x`, `y`, `w`, `h` keys. Grid is 12 columns wide. Values must be non-negative integers. Components must not overlap.
-- **Share fails with "dashboard not found"**: The dashboard ID must exist. Run `neomind dashboard list` to verify, then retry the share command.
-- **`--components` replaces all components**: When adding new widgets, you must include ALL existing components plus the new ones in a single update. Check current components with `neomind dashboard get <ID>` first.
+| Error | Cause | Solution |
+|-------|-------|----------|
+| "Invalid widget type" | Type doesn't exist | Run `neomind widget list` to see valid types |
+| Components disappear after update | Used `update --components` which replaces all | Use `add-components` instead |
+| "Device not found" | Wrong sourceId | Run `neomind device list` for valid IDs |
+| No data shows | Wrong property name | Run `neomind device latest <ID>` for exact metric names |
+| Extension data not binding | Using `property` instead of `extensionMetric` | Extension sources MUST use `extensionMetric` field and `extensionId` key |
+| Position overlap | Same x,y coords | Each component needs unique position; grid is 12 columns |
+| "Dashboard not found" | Wrong dashboard ID | Run `neomind dashboard list` for valid IDs |
+| JSON parse error | Malformed JSON in --components | Validate JSON structure carefully |

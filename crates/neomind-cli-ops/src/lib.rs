@@ -14,7 +14,6 @@ pub mod message;
 pub mod widget;
 pub mod system;
 pub mod connector;
-pub mod help;
 pub mod llm;
 
 pub use api_client::ApiClient;

@@ -520,6 +520,80 @@ pub async fn update_dashboard_handler(
     ok(stored_to_api(&dashboard))
 }
 
+/// Add components to a dashboard (append mode)
+pub async fn add_components_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+    Json(req): Json<AddComponentsRequest>,
+) -> HandlerResult<Dashboard> {
+    let mut dashboard = state
+        .dashboard_store
+        .load(&id)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load dashboard: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Dashboard '{}' not found", id)))?;
+
+    // Parse and append new components
+    let new_components: Vec<StoredComponent> = req
+        .components
+        .iter()
+        .map(|c| serde_json::from_value::<StoredComponent>(c.clone()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| ErrorResponse::bad_request(format!("Invalid component data: {}", e)))?;
+
+    dashboard.components.extend(new_components);
+    dashboard.updated_at = chrono::Utc::now().timestamp();
+
+    state
+        .dashboard_store
+        .save(&dashboard)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to save dashboard: {}", e)))?;
+
+    ok(stored_to_api(&dashboard))
+}
+
+/// Remove components from a dashboard by ID
+pub async fn remove_components_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+    Json(req): Json<RemoveComponentsRequest>,
+) -> HandlerResult<serde_json::Value> {
+    let mut dashboard = state
+        .dashboard_store
+        .load(&id)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load dashboard: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Dashboard '{}' not found", id)))?;
+
+    let before = dashboard.components.len();
+    dashboard
+        .components
+        .retain(|c| !req.ids.contains(&c.id));
+    let removed = before - dashboard.components.len();
+    dashboard.updated_at = chrono::Utc::now().timestamp();
+
+    state
+        .dashboard_store
+        .save(&dashboard)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to save dashboard: {}", e)))?;
+
+    ok(serde_json::json!({
+        "ok": true,
+        "removed": removed,
+        "remaining": dashboard.components.len(),
+    }))
+}
+
+/// Request to add components
+#[derive(Debug, Deserialize)]
+pub struct AddComponentsRequest {
+    pub components: Vec<JsonValue>,
+}
+
+/// Request to remove components by ID
+#[derive(Debug, Deserialize)]
+pub struct RemoveComponentsRequest {
+    pub ids: Vec<String>,
+}
+
 /// Delete a dashboard
 pub async fn delete_dashboard_handler(
     State(state): State<ServerState>,

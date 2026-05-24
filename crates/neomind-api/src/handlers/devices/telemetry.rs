@@ -85,7 +85,7 @@ pub async fn get_device_telemetry_handler(
         .get("limit")
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(100.0);
-    validate_numeric_range(limit, "limit", 1.0, 1000.0)?;
+    validate_numeric_range(limit, "limit", 1.0, 5000.0)?;
     let limit = limit as usize;
 
     // Cursor-based pagination: cursor = timestamp of the last point from previous page.
@@ -103,6 +103,14 @@ pub async fn get_device_telemetry_handler(
     let offset = offset as usize;
 
     let aggregate = params.get("aggregate").cloned();
+
+    // Bucketed downsampling: when true, use server-side time-bucket aggregation
+    // to return at most `limit` evenly-spaced points covering the full time range.
+    // Ideal for chart rendering — avoids transferring thousands of raw points.
+    let bucketed = params
+        .get("bucketed")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
 
     // AI compression mode: lossless adaptive series (kept/fluctuated)
     let compress = params
@@ -369,6 +377,29 @@ pub async fn get_device_telemetry_handler(
                     } else {
                         (start, offset) // Traditional offset pagination for small offsets
                     };
+
+                    // Fast path: server-side bucketed downsampling for chart rendering.
+                    // When no pagination (cursor/offset) and bucketed=true, use a single
+                    // storage scan that returns at most `limit` evenly-spaced points.
+                    if bucketed && cursor_ts.is_none() && effective_offset == 0 {
+                        let (pts, total) = match telemetry
+                            .query_bucketed(&device_source_id, &metric_name, start, end, limit)
+                            .await
+                        {
+                            Ok((pts, total)) => (pts, total),
+                            Err(e) => {
+                                tracing::warn!("query_bucketed failed for {}/{}: {}", device_source_id, metric_name, e);
+                                (Vec::new(), None)
+                            }
+                        };
+                        let data: Vec<_> = pts.into_iter().map(|p| {
+                            json!({
+                                "timestamp": p.timestamp,
+                                "value": metric_value_to_json(&p.value),
+                            })
+                        }).collect();
+                        return (metric_name, json!(data), total.unwrap_or(data.len()), None::<i64>);
+                    }
 
                     // PERFORMANCE FIX: Add limit to prevent loading all historical data points
                     // For "newest first" pagination, we need to fetch more than requested

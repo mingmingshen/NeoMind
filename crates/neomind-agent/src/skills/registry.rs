@@ -52,16 +52,14 @@ impl SkillRegistry {
     /// Load builtin skills embedded in the binary.
     fn load_builtin_skills(&mut self) {
         let builtin_skills = vec![
-            include_str!("../skills/builtins/system-info.md"),
-            include_str!("../skills/builtins/device-management.md"),
             include_str!("../skills/builtins/device-onboarding.md"),
+            include_str!("../skills/builtins/extension-development.md"),
+            include_str!("../skills/builtins/dashboard-management.md"),
             include_str!("../skills/builtins/agent-management.md"),
             include_str!("../skills/builtins/rule-management.md"),
-            include_str!("../skills/builtins/message-management.md"),
             include_str!("../skills/builtins/transform-management.md"),
-            include_str!("../skills/builtins/dashboard-management.md"),
-            include_str!("../skills/builtins/extension-management.md"),
-            include_str!("../skills/builtins/component-development.md"),
+            include_str!("../skills/builtins/connector-management.md"),
+            include_str!("../skills/builtins/message-management.md"),
         ];
 
         let mut count = 0;
@@ -307,8 +305,12 @@ mod tests {
             "Builtin skills should be loaded even without data dir"
         );
         assert!(
-            registry.get("system-info").is_some(),
-            "Builtin system-info skill should exist"
+            registry.get("dashboard-management").is_some(),
+            "Builtin dashboard-management skill should exist"
+        );
+        assert!(
+            registry.get("rule-management").is_some(),
+            "Builtin rule-management skill should exist"
         );
     }
 

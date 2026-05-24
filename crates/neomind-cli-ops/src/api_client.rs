@@ -109,6 +109,23 @@ impl ApiClient {
         Ok(resp_body)
     }
 
+    pub async fn delete_with_body(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let url = format!("{}{}", self.base_url, path);
+        let req = self.client.delete(&url).json(body);
+        let resp = self.add_auth(req).send().await?;
+        let status = resp.status();
+        let resp_body: serde_json::Value = resp.json().await?;
+        if !status.is_success() {
+            let msg = extract_error_message(&resp_body);
+            anyhow::bail!("API error ({}): {}", status, msg);
+        }
+        Ok(resp_body)
+    }
+
     pub async fn post_file(&self, path: &str, file_path: &str) -> Result<serde_json::Value> {
         use std::fs::File;
         use std::io::Read;

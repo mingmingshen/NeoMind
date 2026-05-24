@@ -124,11 +124,12 @@ export async function fetchHistoricalTelemetry(
       }
 
       // Scale fetch limit based on time range for adequate coverage.
-      // Backend caps at 1000 and internally fetches 2x (so 2000 DB points).
-      // For time-window queries, always request max to cover the full range.
-      // For default/short queries, scale based on timeRange.
+      // TODO: Re-enable server-side bucketed downsampling after fixing
+      // stability issues with live data updates. For now, fetch raw points
+      // and let the frontend handle display.
+      const useBucketed = false // !!timeWindow
       const fetchLimit = timeWindow
-        ? 1000  // Max backend limit — ensure full time range coverage
+        ? 3000
         : Math.max(limit * 2, timeRange <= 1 ? 100 : Math.min(Math.ceil(timeRange * 17), 1000))
 
       // Use unified telemetry endpoint for transform/ai sources, device endpoint otherwise
@@ -136,10 +137,10 @@ export async function fetchHistoricalTelemetry(
       let metricData: unknown[] | undefined
 
       if (isUnifiedSource) {
-        const response = await api.queryTelemetry(deviceId, metricId, startSec, endSec, fetchLimit)
+        const response = await api.queryTelemetry(deviceId, metricId, startSec, endSec, fetchLimit, useBucketed)
         metricData = response?.data as unknown[] | undefined
       } else {
-        const response = await api.getDeviceTelemetry(deviceId, metricId, startSec, endSec, fetchLimit)
+        const response = await api.getDeviceTelemetry(deviceId, metricId, startSec, endSec, fetchLimit, undefined, useBucketed)
 
         // Find metric data — exact match, then case-insensitive
         if (response?.data && typeof response.data === 'object') {
@@ -234,18 +235,17 @@ export async function fetchHistoricalTelemetry(
           values = [aggVal]
           if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else {
-          // raw — Backend now returns newest points first (via reverse scan).
-          // API handler returns them newest-first after its rev().take() logic.
-          // Sort by timestamp descending as a safety net.
+          // raw — points are already the right count:
+          //   - timeWindow queries: backend did bucketed downsampling
+          //   - default queries: backend returned limited newest points
+          // Just sort descending as a safety net and apply display limit.
           const sorted = [...metricData].sort((a, b) => {
             const tsA = extractTimestamp(a)
             const tsB = extractTimestamp(b)
             return tsB - tsA // descending (newest first)
           })
-          // Use all fetched points for time-window queries to cover the full range.
-          // Only apply user's display `limit` for default queries without a timeWindow.
-          const effectiveLimit = timeWindow ? Infinity : limit
-          const rawData = sorted.length > effectiveLimit ? sorted.slice(0, effectiveLimit) : sorted
+          const displayLimit = limit || 50
+          const rawData = sorted.length > displayLimit ? sorted.slice(0, displayLimit) : sorted
           values = rawData.map(extractValue).filter((v: number) => typeof v === 'number' && !isNaN(v))
           rawPoints = includeRawPoints ? rawData.map((point) => {
             if (typeof point === 'number') return { timestamp: Math.floor(Date.now() / 1000), value: point }

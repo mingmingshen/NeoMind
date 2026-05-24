@@ -86,6 +86,50 @@ pub async fn delete_dashboard(client: &ApiClient, id: &str) -> Result<CliRespons
     ))
 }
 
+/// Add components to a dashboard (append mode)
+pub async fn add_components(
+    client: &ApiClient,
+    id: &str,
+    components: serde_json::Value,
+) -> Result<CliResponse> {
+    let body = json!({
+        "components": components,
+    });
+    let data = client
+        .post(&format!("/dashboards/{}/components", id), &body)
+        .await?;
+    let inner = data.get("data").unwrap_or(&data);
+    let count = inner["components"]
+        .as_array()
+        .map(|a| a.len())
+        .unwrap_or(0);
+    Ok(CliResponse::success(
+        data,
+        &format!("Components added (total: {})", count),
+    ))
+}
+
+/// Remove components from a dashboard by ID
+pub async fn remove_components(
+    client: &ApiClient,
+    id: &str,
+    ids: serde_json::Value,
+) -> Result<CliResponse> {
+    let body = json!({
+        "ids": ids,
+    });
+    let data = client
+        .delete_with_body(&format!("/dashboards/{}/components", id), &body)
+        .await?;
+    let inner = data.get("data").unwrap_or(&data);
+    let removed = inner["removed"].as_u64().unwrap_or(0);
+    let remaining = inner["remaining"].as_u64().unwrap_or(0);
+    Ok(CliResponse::success(
+        data,
+        &format!("Removed {} component(s), {} remaining", removed, remaining),
+    ))
+}
+
 /// Share dashboard
 pub async fn share_dashboard(
     client: &ApiClient,

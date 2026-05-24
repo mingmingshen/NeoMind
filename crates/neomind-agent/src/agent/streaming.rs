@@ -1877,13 +1877,6 @@ pub async fn process_stream_events_with_safeguards(
         let mut recently_executed_tools: VecDeque<String> = VecDeque::new();
         // Track actual shell command strings (for list-only dead end detection)
         let mut recently_executed_commands: VecDeque<String> = VecDeque::new();
-        // Track tool signatures to detect consecutive duplicate rounds
-        let mut prev_round_signatures: Vec<Vec<String>> = Vec::new();
-        let mut prev_round_results: Vec<(String, String)> = Vec::new();
-        let mut consecutive_duplicate_rounds: usize = 0;
-        // Track ALL tool signatures ever executed to detect repeated tool calls
-        // (2B models often re-call already-executed tools despite prompt instructions)
-        let mut all_executed_signatures: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // === SAFEGUARD: Track multi-round tool calling iterations ===
         let mut tool_iteration_count = 0usize;
@@ -1985,18 +1978,10 @@ pub async fn process_stream_events_with_safeguards(
                             "DO NOT output text. DO NOT summarize the list results. DO NOT say 'I found the ...'.\n\
                             OUTPUT A TOOL CALL JSON ARRAY NOW to execute the action."
                         );
-
-                        // Inject duplicate warning on top of the list-only prompt
-                        if consecutive_duplicate_rounds > 0 {
-                            msg.push_str(&format!(
-                                "\n\n⚠️ DUPLICATE WARNING: {} consecutive duplicate rounds. Do NOT repeat previous calls.",
-                                consecutive_duplicate_rounds
-                            ));
-                        }
                         msg
                     } else {
                         // Normal context message — no list-only dead end detected
-                        let mut msg = format!(
+                        format!(
                             "Round {} of processing.\n\n\
                             Previously executed tools (results are in context above):\n{}\n\n\
                             STOP AND THINK: Do you need MORE tools, or can you answer from the results above?\n\
@@ -2005,26 +1990,7 @@ pub async fn process_stream_events_with_safeguards(
                             - NEVER call the same tool with the same arguments — results are already in context.",
                             tool_iteration_count + 1,
                             executed_summary
-                        );
-                        // Inject duplicate warning so the LLM knows it's repeating
-                        if consecutive_duplicate_rounds > 0 {
-                            let prev_results_summary: Vec<String> = prev_round_results.iter()
-                                .take(3)
-                                .map(|(name, result)| format!("- {}: {}", name, result.chars().take(200).collect::<String>()))
-                                .collect();
-                            msg.push_str(&format!(
-                                "\n\n⚠️ DUPLICATE WARNING: You have called the same tool with the same arguments {} time(s) already. \
-                                The previous results were:\n{}\n\n\
-                                IMPORTANT: Do NOT repeat the same call. Either:\n\
-                                1. Use DIFFERENT arguments if the previous ones were wrong, OR\n\
-                                2. Give your final text response based on the results above, OR\n\
-                                3. Ask the user for clarification.\n\
-                                If you repeat the same call again, the system will force-stop and generate a response without tools.",
-                                consecutive_duplicate_rounds,
-                                prev_results_summary.join("\n")
-                            ));
-                        }
-                        msg
+                        )
                     }
                 };
 
@@ -2593,71 +2559,6 @@ pub async fn process_stream_events_with_safeguards(
                 // Check iteration limit and duplicate detection
                 let should_continue = tool_iteration_count < MAX_TOOL_ITERATIONS - 1;
 
-                // === DUPLICATE DETECTION ===
-                // Detect consecutive duplicate rounds (same tool calls repeated).
-                // After 2 consecutive duplicates, force a no-tool summary call so the
-                // LLM must output text instead of repeating tool calls endlessly.
-                let mut should_break_for_duplicate = false;
-                {
-                    let mut new_tool_signatures: Vec<Vec<String>> = Vec::new();
-                    for tc in &tool_calls_to_execute {
-                        let action_key = tc.arguments.get("action")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let mut sig = vec![tc.name.clone(), action_key];
-                        for param in &["device_id", "metric", "agent_id", "rule_id", "alert_id", "message_id", "extension_id"] {
-                            if let Some(val) = tc.arguments.get(*param).and_then(|v| v.as_str()) {
-                                sig.push(val.to_string());
-                            }
-                        }
-                        // Check against all previously executed signatures
-                        let sig_key = sig.join("|");
-                        all_executed_signatures.insert(sig_key);
-                        new_tool_signatures.push(sig);
-                    }
-
-                    // Check if this round is identical to the PREVIOUS round
-                    let is_consecutive_dup = !prev_round_signatures.is_empty()
-                        && new_tool_signatures.len() == prev_round_signatures.len()
-                        && new_tool_signatures.iter().all(|sig| {
-                            prev_round_signatures.iter().any(|prev| {
-                                prev.len() == sig.len()
-                                    && prev.iter().zip(sig.iter()).all(|(a, b)| a == b)
-                            })
-                        });
-
-                    if is_consecutive_dup {
-                        consecutive_duplicate_rounds += 1;
-                        tracing::info!(
-                            "Consecutive duplicate round detected (count={}). Reusing cached results, not re-executing tools.",
-                            consecutive_duplicate_rounds,
-                        );
-
-                        // Reuse previous round's results instead of the freshly executed ones.
-                        // This prevents wasting tokens on identical re-executions.
-                        if !prev_round_results.is_empty() {
-                            tool_call_results = prev_round_results.clone();
-                        }
-                    } else {
-                        consecutive_duplicate_rounds = 0;
-                    }
-
-                    prev_round_signatures = new_tool_signatures;
-                    // Save this round's results for potential reuse next round
-                    prev_round_results = tool_call_results.clone();
-
-                    // Break after 3 consecutive identical rounds — the LLM is stuck.
-                    // A forced no-tool summary call will follow to produce a text response.
-                    if consecutive_duplicate_rounds >= 3 {
-                        tracing::warn!(
-                            "LLM stuck in loop ({} consecutive duplicate rounds). Forcing text-only response.",
-                            consecutive_duplicate_rounds
-                        );
-                        should_break_for_duplicate = true;
-                    }
-                }
-
                 // === Save assistant message with tool_calls BEFORE tool results ===
                 let response_to_save = if content_before_tools.is_empty() {
                     String::new()
@@ -2697,7 +2598,7 @@ pub async fn process_stream_events_with_safeguards(
                 // lost when compact_memory_mid_task modified state.memory).
 
                 // If we should continue the ReAct loop, save round state and loop back
-                if should_continue && !should_break_for_duplicate {
+                if should_continue {
                     tool_iteration_count += 1;
 
                     // Save per-round thinking and content for persistence
@@ -2762,7 +2663,7 @@ pub async fn process_stream_events_with_safeguards(
                 if content_before_tools.is_empty() || (last_round_has_errors && content_is_preamble) {
 
                     // Notify user that we're generating a final response
-                    if should_break_for_duplicate || last_round_has_errors {
+                    if last_round_has_errors {
                         yield AgentEvent::progress(
                             "Generating final response...".to_string(),
                             "summarizing",
@@ -2783,21 +2684,7 @@ pub async fn process_stream_events_with_safeguards(
                         lower.contains("error") || lower.contains("failed") || lower.contains("invalid")
                     });
 
-                    let summary_prompt = if should_break_for_duplicate {
-                        // Duplicate loop exit — let LLM decide how to respond
-                        if has_errors {
-                            "The tool calls kept returning errors and the system stopped retrying. \
-                            Review the error messages above and decide:\n\
-                            1. If you can give a useful answer or explanation → do so now.\n\
-                            2. If you need the user to provide different info (e.g., correct parameters) → ask them clearly.\n\
-                            Do NOT output any tool calls — give a direct text response."
-                        } else {
-                            "The tool execution has gathered the results above. Decide:\n\
-                            1. If you have enough data to answer the user's question → give your final answer now.\n\
-                            2. If you need more info from the user → ask them clearly what you need.\n\
-                            Do NOT output any tool calls — give a direct text response."
-                        }
-                    } else if has_errors {
+                    let summary_prompt = if has_errors {
                         "The tool calls above returned errors. \
                         Analyze the errors and explain to the user what went wrong in plain language. \
                         Suggest what the user can do (e.g., provide different parameters, check the device, etc.). \
@@ -2950,7 +2837,7 @@ pub async fn process_stream_events_with_safeguards(
                 // This handles the case where thinking models consume all generation
                 // budget on thinking tokens, producing no content. Retry once with
                 // thinking forcefully disabled so the model outputs content directly.
-                if raw_response.trim().is_empty() && tool_iteration_count == 0 {
+                if raw_response.trim().is_empty() {
                     let had_thinking = !thinking_content.is_empty();
                     tracing::warn!(
                         had_thinking = had_thinking,
