@@ -1067,6 +1067,10 @@ enum AgentCommand {
         /// Example: "300" (5min interval) or "0 8 * * *" (daily 8am).
         #[arg(long)]
         schedule_config: Option<String>,
+        /// Shortcut: --every "5m" = interval/300, "1h" = interval/3600, "30s" = interval/30
+        /// Overrides --schedule-type and --schedule-config.
+        #[arg(long)]
+        every: Option<String>,
         /// Event filter for event schedule type (e.g., "device_type:temp_sensor").
         #[arg(long)]
         event_filter: Option<String>,
@@ -1704,6 +1708,22 @@ enum ConnectorCommand {
 enum BrokerAliasCommand {
     #[command(flatten)]
     Connector(ConnectorCommand),
+}
+
+/// Parse human duration like "30s", "5m", "1h", "2d" to seconds
+fn parse_duration(s: &str) -> u64 {
+    let s = s.trim();
+    if let Some(num) = s.strip_suffix('s') {
+        num.parse::<u64>().unwrap_or(30)
+    } else if let Some(num) = s.strip_suffix('m') {
+        num.parse::<u64>().unwrap_or(1) * 60
+    } else if let Some(num) = s.strip_suffix('h') {
+        num.parse::<u64>().unwrap_or(1) * 3600
+    } else if let Some(num) = s.strip_suffix('d') {
+        num.parse::<u64>().unwrap_or(1) * 86400
+    } else {
+        s.parse::<u64>().unwrap_or(300)
+    }
 }
 
 // Custom runtime with increased worker threads for better concurrent performance
@@ -3586,14 +3606,21 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
         AgentCommand::Get { id } => {
             get_agent(&client, &id).await?
         }
-        AgentCommand::Create { name, prompt, description, schedule_type, schedule_config, event_filter, timezone, llm_backend, system_prompt, execution_mode, device_ids, resources, metrics, commands, enable_tool_chaining, max_chain_depth, priority, context_window_size } => {
+        AgentCommand::Create { name, prompt, description, schedule_type, schedule_config, every, event_filter, timezone, llm_backend, system_prompt, execution_mode, device_ids, resources, metrics, commands, enable_tool_chaining, max_chain_depth, priority, context_window_size } => {
+            // Handle --every shortcut: parse duration to interval schedule
+            let (resolved_st, resolved_sc) = if let Some(dur) = &every {
+                let secs = parse_duration(dur);
+                (Some("interval".to_string()), Some(secs.to_string()))
+            } else {
+                (schedule_type.clone(), schedule_config.clone())
+            };
             create_agent(
                 &client,
                 &name,
                 &prompt,
                 description.as_deref(),
-                schedule_type.as_deref(),
-                schedule_config.as_deref(),
+                resolved_st.as_deref(),
+                resolved_sc.as_deref(),
                 event_filter.as_deref(),
                 timezone.as_deref(),
                 llm_backend.as_deref(),
