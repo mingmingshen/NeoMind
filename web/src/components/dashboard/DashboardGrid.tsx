@@ -148,17 +148,29 @@ export function DashboardGrid({
   // Debounced container width (matching v0.6.9's simple approach)
   const updateWidth = useCallback(() => {
     if (containerRef.current) {
-      setWidth(containerRef.current.offsetWidth)
+      const w = containerRef.current.offsetWidth
+      widthRef.current = w
+      setWidth(w)
     }
   }, [])
 
   const resizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const widthRef = useRef(0)
 
   useEffect(() => {
     updateWidth()
-    const resizeObserver = new ResizeObserver(() => {
+    const resizeObserver = new ResizeObserver((entries) => {
+      // Use contentBoxSize for immediate, accurate width
+      const newWidth = entries[0]?.contentBoxSize?.[0]?.inlineSize
+        ?? containerRef.current?.offsetWidth
+        ?? 0
+      if (newWidth > 0 && Math.abs(newWidth - widthRef.current) > 1) {
+        widthRef.current = newWidth
+        setWidth(newWidth)
+      }
+      // Also schedule a delayed update to catch final layout after CSS transitions
       if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current)
-      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 100)
+      resizeTimeoutRef.current = setTimeout(() => requestAnimationFrame(updateWidth), 150)
     })
     if (containerRef.current) resizeObserver.observe(containerRef.current)
     const handleWindowResize = () => {

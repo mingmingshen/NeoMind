@@ -274,8 +274,8 @@ export function DashboardListSidebar({
     return (
       <div
         className={cn(
-          'flex-shrink-0 flex flex-col bg-card border-r border-border transition-all duration-300',
-          !open ? 'w-0 overflow-hidden' : 'w-64',
+          'flex-shrink-0 flex flex-col bg-card transition-[width] duration-300 ease-out',
+          !open ? 'w-0 overflow-hidden border-r-0' : 'w-64 border-r border-border',
           className
         )}
       >
