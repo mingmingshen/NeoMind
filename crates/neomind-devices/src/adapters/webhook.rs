@@ -15,7 +15,7 @@
 //! ## Webhook URL Format
 //!
 //! ```text
-//! POST /api/devices/webhook/{device_id}
+//! POST /api/devices/{device_id}/webhook
 //! ```
 //!
 //! ## Payload Format
@@ -493,7 +493,7 @@ impl WebhookAdapter {
 
     /// Get the webhook URL for a device.
     pub fn get_webhook_url(&self, base_url: &str, device_id: &str) -> String {
-        format!("{}/api/devices/webhook/{}", base_url, device_id)
+        format!("{}/api/devices/{}/webhook", base_url, device_id)
     }
 }
 
@@ -701,6 +701,6 @@ mod tests {
         let adapter = WebhookAdapter::new(config, None, Arc::new(DeviceRegistry::new()));
 
         let url = adapter.get_webhook_url("http://localhost:3000", "sensor01");
-        assert_eq!(url, "http://localhost:3000/api/devices/webhook/sensor01");
+        assert_eq!(url, "http://localhost:3000/api/devices/sensor01/webhook");
     }
 }

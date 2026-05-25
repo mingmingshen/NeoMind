@@ -221,7 +221,7 @@ pub async fn approve_draft_device(
                 existing_type
             );
 
-            // Use the original MQTT topic as the telemetry topic
+            // Use the original topic as the telemetry topic (for MQTT devices)
             // The device publishes to this topic (e.g., "ashuau" - the topic where it was discovered)
             // We cannot change the device's topic, so we subscribe to what it's using
             // Prefer original_topic if available, otherwise fall back to source
@@ -230,21 +230,31 @@ pub async fn approve_draft_device(
                 .clone()
                 .unwrap_or_else(|| draft.source.clone());
 
+            // Determine adapter_type and connection_config based on source
+            let adapter_type = draft.source.clone();
+            let default_adapter_id = format!("internal-{}", adapter_type);
+            let connection_config = if adapter_type == "webhook" {
+                // Webhook devices don't need MQTT topic config
+                ConnectionConfig::default()
+            } else {
+                ConnectionConfig {
+                    telemetry_topic: Some(topic.clone()),
+                    json_path: Some("$.value".to_string()),
+                    ..Default::default()
+                }
+            };
+
             // Create device config with the existing type
             let device_config = DeviceConfig {
                 device_id: device_id.clone(),
                 name: device_instance_name.clone(),
                 device_type: existing_type.clone(),
-                adapter_type: "mqtt".to_string(),
-                connection_config: ConnectionConfig {
-                    telemetry_topic: Some(topic.clone()),
-                    json_path: Some("$.value".to_string()),
-                    ..Default::default()
-                },
+                adapter_type,
+                connection_config,
                 adapter_id: draft
                     .adapter_id
                     .clone()
-                    .or_else(|| Some("internal-mqtt".to_string())),
+                    .or_else(|| Some(default_adapter_id)),
                 last_seen: chrono::Utc::now().timestamp(),
             };
 
@@ -317,30 +327,37 @@ pub async fn approve_draft_device(
 
             tracing::info!("Registered device type '{}'", type_id);
 
-            // Use the original MQTT topic as the telemetry topic
-            // The device publishes to this topic (e.g., "ashuau" - the topic where it was discovered)
-            // We cannot change the device's topic, so we subscribe to what it's using
+            // Use the original topic as the telemetry topic (for MQTT devices)
             // Prefer original_topic if available, otherwise fall back to source
             let topic = draft
                 .original_topic
                 .clone()
                 .unwrap_or_else(|| draft.source.clone());
 
+            // Determine adapter_type and connection_config based on source
+            let adapter_type = draft.source.clone();
+            let default_adapter_id = format!("internal-{}", adapter_type);
+            let connection_config = if adapter_type == "webhook" {
+                ConnectionConfig::default()
+            } else {
+                ConnectionConfig {
+                    telemetry_topic: Some(topic.clone()),
+                    json_path: Some("$.value".to_string()),
+                    ..Default::default()
+                }
+            };
+
             // Create device config
             let device_config = DeviceConfig {
                 device_id: device_id.clone(),
                 name: device_instance_name.clone(),
                 device_type: type_id.clone(),
-                adapter_type: "mqtt".to_string(),
-                connection_config: ConnectionConfig {
-                    telemetry_topic: Some(topic.clone()),
-                    json_path: Some("$.value".to_string()),
-                    ..Default::default()
-                },
+                adapter_type,
+                connection_config,
                 adapter_id: draft
                     .adapter_id
                     .clone()
-                    .or_else(|| Some("internal-mqtt".to_string())),
+                    .or_else(|| Some(default_adapter_id)),
                 last_seen: chrono::Utc::now().timestamp(),
             };
 
