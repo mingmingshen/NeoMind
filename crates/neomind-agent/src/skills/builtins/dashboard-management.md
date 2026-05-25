@@ -26,12 +26,13 @@ Creating dashboards with data-bound components is the most complex CLI operation
 
 ## CRITICAL Rules
 
-1. **NEVER guess metric names** — always discover them via `device latest <ID>` or `extension info <ID>`
+1. **NEVER guess metric names** — always discover them via `device latest <ID>` or `extension get <ID>`
 2. **Use `add-components` to add widgets** — this appends without replacing existing components
 3. **`update --components` replaces ALL components** — avoid this unless intentionally replacing everything
 4. **Grid is 12 columns wide** — plan layout accordingly
 5. **NEVER use Python/pipe/file tricks** — each shell call is an isolated process; you cannot share data between calls via files, pipes, or variables. Build the complete JSON string inline.
 6. **Use `widget get <type>` to inspect config_schema** before configuring unfamiliar widgets
+7. **NEVER use emoji in component titles or descriptions** — use plain text labels only. Example: use "Temperature" not "Temperature", use "Humidity" not "Humidity"
 
 ## Component Management Commands
 
@@ -56,7 +57,7 @@ neomind device latest sensor-001
 neomind device latest sensor-002
 
 # If using extension data, discover extension metrics
-neomind extension info weather-forecast
+neomind extension get weather-forecast-v2
 ```
 
 **Record the exact metric names** — you will use them in data_source binding. NEVER guess metric names.
@@ -156,13 +157,15 @@ neomind dashboard delete <DASHBOARD_ID>
 ### Extension Metrics
 
 ```json
-{"type":"extension-metric","extensionId":"<ext-id>","extensionMetric":"<field>"}
+{"type":"extension-metric","extensionId":"<ext-id>","extensionMetric":"<command>:<field>"}
 ```
 
 **CRITICAL DIFFERENCES from device data source:**
 - Extension uses `extensionId` (NOT `sourceId`)
 - Extension uses `extensionMetric` (NOT `property`)
-- Must discover field names via `extension info <ID>`
+- `extensionMetric` MUST use `COMMAND:FIELD` format — e.g. `get_weather:temperature_c`, NOT bare `temperature_c`
+- Discover command IDs and output field names via `extension get <ID>` → `commands[].id` + `commands[].output_fields[].name`
+- Example: If `extension get weather-forecast-v2` shows command `get_weather` with output field `temperature_c`, the extensionMetric is `get_weather:temperature_c`
 
 ### Time Series (for charts)
 
@@ -183,8 +186,9 @@ Charts accept `data_source` as **array** for multiple series.
 
 | Error | Wrong Field | Correct Field |
 |-------|-------------|---------------|
-| Extension data not binding | `"property":"temp"` | `"extensionMetric":"temp"` |
-| Extension data not binding | `"sourceId":"weather"` | `"extensionId":"weather"` |
+| Extension data not binding | `"property":"temp"` | `"extensionMetric":"get_weather:temp"` |
+| Extension data not binding | `"sourceId":"weather"` | `"extensionId":"weather-forecast-v2"` |
+| Extension data not binding | `"extensionMetric":"temperature_c"` | `"extensionMetric":"get_weather:temperature_c"` |
 | Device data not binding | `"extensionMetric":"temp"` | `"property":"temp"` |
 | No data shows | Guessed metric name | Run `device latest <ID>` first |
 | "Device not found" | Wrong sourceId | Run `device list` for valid IDs |
@@ -280,7 +284,7 @@ neomind dashboard add-components <ID> --components '[
 ```bash
 # Discover both device and extension metrics
 neomind device latest sensor-001
-neomind extension info weather-forecast
+neomind extension get weather-forecast-v2
 
 # Create dashboard with mixed sources
 neomind dashboard create --name 'Weather Comparison'
@@ -291,13 +295,13 @@ neomind dashboard add-components <ID> --components '[
    "display":{"unit":"°C"}},
   {"id":"outdoor","type":"value-card","title":"Outdoor Temp",
    "position":{"x":4,"y":0,"w":4,"h":2},
-   "data_source":{"type":"extension-metric","extensionId":"weather-forecast","extensionMetric":"temperature_c"},
+   "data_source":{"type":"extension-metric","extensionId":"weather-forecast-v2","extensionMetric":"get_weather:temperature_c"},
    "display":{"unit":"°C"}},
   {"id":"compare","type":"line-chart","title":"Temperature Comparison",
    "position":{"x":0,"y":2,"w":12,"h":4},
    "data_source":[
      {"type":"device","sourceId":"sensor-001","property":"temperature","timeWindow":{"type":"last_24hours"}},
-     {"type":"extension-metric","extensionId":"weather-forecast","extensionMetric":"temperature_c","timeWindow":{"type":"last_24hours"}}
+     {"type":"extension-metric","extensionId":"weather-forecast-v2","extensionMetric":"get_weather:temperature_c","timeWindow":{"type":"last_24hours"}}
    ],
    "display":{"showLegend":true}}
 ]'
@@ -329,7 +333,7 @@ neomind dashboard share <ID> --expires 3600
 | Components disappear after update | Used `update --components` which replaces all | Use `add-components` instead |
 | "Device not found" | Wrong sourceId | Run `neomind device list` for valid IDs |
 | No data shows | Wrong property name | Run `neomind device latest <ID>` for exact metric names |
-| Extension data not binding | Using `property` instead of `extensionMetric` | Extension sources MUST use `extensionMetric` field and `extensionId` key |
+| Extension data not binding | Using `property` instead of `extensionMetric` | Extension sources MUST use `extensionMetric` (format: `COMMAND:FIELD`) and `extensionId` key |
 | Position overlap | Same x,y coords | Each component needs unique position; grid is 12 columns |
 | "Dashboard not found" | Wrong dashboard ID | Run `neomind dashboard list` for valid IDs |
 | JSON parse error | Malformed JSON in --components | Validate JSON structure carefully |

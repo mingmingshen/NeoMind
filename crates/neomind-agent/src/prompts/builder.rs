@@ -153,7 +153,7 @@ impl PromptBuilder {
         prompt.push_str("  ❌ \"Let me check the devices for you.\" (no tool call → WRONG)\n");
         prompt.push_str("  ❌ \"I'll create a monitoring agent now.\" (no tool call → WRONG)\n\n");
         prompt.push_str("**CORRECT** — Output tool call JSON directly:\n");
-        prompt.push_str("  ✓ [{\"name\":\"shell\",\"arguments\":{\"command\":\"neomind device list --json\"}}]\n");
+        prompt.push_str("  ✓ [{\"name\":\"shell\",\"arguments\":{\"command\":\"neomind device list\"}}]\n");
         prompt.push_str("  ✓ [{\"name\":\"shell\",\"arguments\":{\"command\":\"neomind rule create --name 'Low Battery Alert' --dsl 'RULE \\\"Low Battery\\\" WHEN device.battery < 20 DO NOTIFY \\\"Battery below 20%\\\" END'\"}}]\n\n");
         prompt.push_str("Rules:\n");
         prompt.push_str("1. If user asks for an operation → output tool call JSON, NOT descriptive text\n");
@@ -328,16 +328,20 @@ Use `shell(command="neomind <domain> <action> [args]")` for ALL operations.
 
 | Domain | Commands | Key Notes |
 |--------|----------|-----------|
-| **device** | `list, get, create, update, delete, latest, history, write-metric, control, types list/create` | `create` needs `--device-type` + `--adapter-type` (default: mqtt) |
-| **rule** | `list, get, create --dsl 'RULE...END', update, delete, enable, disable, history` | DSL only: `RULE name WHEN condition DO action END`. Use `skill` for DSL syntax. |
-| **agent** | `list, get, create, update, delete, control, executions, send-message` | Must `control <ID> active` after create. Schedule: `--schedule-type interval/cron` |
-| **dashboard** | `list, get, create, update --components 'JSON', delete, share` | `--components` replaces ALL. Use `widget list/get` for component schemas. |
+| **device** | `list, get, create, update, delete, latest, history, write-metric, control, webhook-url, types list/get/create/delete` | `create` needs `--device-type` + `--adapter-type` (default: mqtt). For webhook devices, use `webhook-url <ID>` to get push URL. |
+| **rule** | `list, get, create --dsl 'RULE...END', update, delete, enable, disable, test, history` | DSL only: `RULE name WHEN condition DO action END`. Use `skill` for DSL syntax. |
+| **agent** | `list, get, create, update, delete, control, invoke, executions, latest-execution, conversation, memory, send-message` | Must `control --status active` after create. Shortcut: `--every 5m` replaces `--schedule-type interval --schedule-config "300"`. |
+| **dashboard** | `list, get, create, add-components, update, delete, share` | `--components` replaces ALL. Use `add-components` to append. `widget list/get` for component schemas. |
 | **widget** | `list, get, create, install, uninstall, market-list, market-install` | `list` shows config_schema. `get <TYPE>` shows full schema with display/config fields. |
-| **transform** | `list, get, create --code 'JS', update, delete` | Code uses `input` variable (NOT `value`). `--scope global` required. |
-| **extension** | `list, get, status, install, uninstall, create, logs, market-list` | `get <ID>` returns commands, metrics, config. Use for "what data does X provide" questions. |
-| **message** | `list, get, send --title --message, read` + `channel-list/create/update/delete/test` | Send requires `--title` + `--message`. Channels: webhook, email, dingtalk. |
+| **transform** | `list, get, create --code 'JS', update, delete, test, metrics, data-sources` | Code uses `input` variable (NOT `value`). `--scope` defaults to `global`. |
+| **extension** | `list, get/info, status, logs, config, install, uninstall, market-list, market-install, reload` | `get <ID>` returns commands, metrics, config. Use for "what data does X provide" questions. |
+| **message** | `list, get, send --title --message, read/ack` + `channel-list/get/create/update/delete/test/types` | Send requires `--title` + `--message`. Channels: webhook, email, dingtalk. |
 | **system** | `info` | Returns MQTT broker address, webhook URL, network info. Use for onboarding questions. |
-| **broker** | `list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe` | External MQTT brokers. `test` checks real connectivity. |
+| **connector** | `list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe` | External MQTT/data connectors. `test` checks real connectivity. |
+| **llm** | `list, get, models, create, update, delete, activate, test` | LLM backend management. `models` lists available Ollama models. |
+| **settings** | `timezone, timezones, retention, cleanup` | System settings: timezone, data retention config, manual cleanup trigger. |
+| **config** | `export, import, validate` | Full system configuration backup/restore. |
+| **automation** | `list, get, export, import, enable, disable, executions` | Unified management for rules, transforms, agents. |
 
 ### Critical Decision Rules
 
@@ -345,7 +349,7 @@ Use `shell(command="neomind <domain> <action> [args]")` for ALL operations.
 - "创建设备并写入数据" → `device create` → use returned ID → `device write-metric <ID> ...`
 - "创建规则并启用" → `rule create --dsl '...'` → `rule enable <ID>`
 - "创建Agent并启动" → `agent create ...` → `agent control <ID> --status active`
-- "创建仪表盘并添加组件" → `dashboard create` → `dashboard update <ID> --components '...'`
+- "创建仪表盘并添加组件" → `dashboard create` → `dashboard add-components <ID> --components '[...]'`
 
 **Context Reference (Multi-turn)**: When user says "它/这个/那个/刚才/上一个/第一个", refer to PREVIOUS turn entities:
 - "给它写入温度" → Use device ID from previous turn → `device write-metric <THAT_ID> ...`
@@ -362,7 +366,7 @@ Use `shell(command="neomind <domain> <action> [args]")` for ALL operations.
 1. Run `neomind system info` → get broker address, webhook URL
 2. Load `device-onboarding` skill via `skill` tool for detailed connection guides
 3. MQTT: broker at `<IP>:1883`, any topic, auto-discovery
-4. Webhook: `POST http://<IP>:9375/api/devices/webhook/{device_id}`
+4. Webhook: `POST http://<IP>:9375/api/devices/{device_id}/webhook`
 
 **Analysis Tasks**: When user asks "which/compare/analyze/highest", call tools to get current data, don't guess.
 
@@ -375,6 +379,8 @@ Use `shell(command="neomind <domain> <action> [args]")` for ALL operations.
 - 转换 → `neomind transform`
 - 消息/通知 → `neomind message`
 - Agent/代理/智能体 → `neomind agent`
+- 连接器/外部MQTT → `neomind connector`
+- 模型/LLM/大模型 → `neomind llm`
 - 接入/连接设备/设备上线/怎么接入 → `neomind system info` + `device-onboarding` skill
 - broker地址/MQTT/服务器地址 → `neomind system info`
 
@@ -394,7 +400,7 @@ When user asks to create/update/delete/control/enable/disable → you MUST execu
 
 **MANDATORY: Query Before Act Pattern**
 Before creating/updating ANY resource, you MUST query existing data first:
-1. **Dashboard**: `device list` → get IDs → `device latest <ID>` → get metrics → `dashboard create` → `dashboard update <ID> --components '[...]'`
+1. **Dashboard**: `device list` → get IDs → `device latest <ID>` → get metrics → `dashboard create` → `dashboard add-components <ID> --components '[...]'`
 2. **Rule**: `device list` → get IDs → `device latest <ID>` → get real metric names → `rule create --dsl 'RULE ... WHEN device.metric(<REAL_METRIC>) ... END'`
 3. **Agent**: `agent list` → check existing → `agent create` → **MUST run** `agent control <ID> --status active`
 4. **NEVER** fabricate IDs or metric names. Always query first and use real values from results.
@@ -441,9 +447,9 @@ When analyzing data across multiple devices or metrics, you MUST use this two-ph
 **CRITICAL BATCH RULE**: When you need to execute multiple independent commands, output ALL calls in a single JSON array response:
 ```json
 [
-  {"name":"shell","arguments":{"command":"neomind device history --id <id_a> --metric <metric> --time-range 24h --json"}},
-  {"name":"shell","arguments":{"command":"neomind device history --id <id_b> --metric <metric> --time-range 24h --json"}},
-  {"name":"shell","arguments":{"command":"neomind device history --id <id_c> --metric <metric> --time-range 24h --json"}}
+  {"name":"shell","arguments":{"command":"neomind device history <id_a> --metric <metric> --time-range 24h"}},
+  {"name":"shell","arguments":{"command":"neomind device history <id_b> --metric <metric> --time-range 24h"}},
+  {"name":"shell","arguments":{"command":"neomind device history <id_c> --metric <metric> --time-range 24h"}}
 ]
 ```
 NEVER call tools one at a time when multiple independent calls are needed. ALWAYS batch them.
@@ -463,7 +469,7 @@ NEVER call tools one at a time when multiple independent calls are needed. ALWAY
 
 ### Image Analysis Workflow
 When user asks to analyze device images:
-1. `shell(command="neomind device history --id <id> --metric <metric> --time-range 48h --json")` → Get image data
+1. `shell(command="neomind device history <id> --metric <metric> --time-range 48h")` → Get image data
 
 ### Cached Data References ($cached)
 When a tool returns large data (images, files, etc.), the result is cached and you'll see a summary like:
@@ -501,10 +507,12 @@ For device control, rule delete/update, and agent control actions:
 - Good: "Temperature is 25°C, within normal range. Stable over the past 24 hours."
 
 **Data Query**: Present key insights concisely
-**Device Control**: ✓ Success + device name and state change
-**Create Rule/Agent**: ✓ Created "Name" + brief summary
+**Device Control**: Success + device name and state change
+**Create Rule/Agent**: Created "Name" + brief summary
 **Confirmation Preview**: Show action preview, ask user to confirm
-**Error**: ❌ Operation failed + specific error and suggestion"#;
+
+**NEVER use emoji** in any text output, component titles, dashboard names, or descriptions. Use plain text only. For example: use "Temperature" not "Temperature", use "Success" not "Success".
+**Error**: Operation failed + specific error and suggestion"#;
 
     const THINKING_GUIDELINES: &str = r#"## Thinking Mode Guidelines
 
@@ -521,61 +529,60 @@ When thinking mode is enabled, structure your thought process:
 - Use `skill` for guide management (search, list, get, create, update, delete)
 
 **Common Flows**:
-- User asks "How is device X doing?" → shell(command="neomind device latest --id <id> --json")
-- User asks "What's the temp history?" → shell(command="neomind device list --json") → shell(command="neomind device history --id <id> --metric <metric> --time-range 24h --json")
-- User asks "battery trend this week" for ALL devices → shell(command="neomind device list --json") → batch shell(command="neomind device history ...") for ALL devices → **summarize each device in your response text** → final comparison
+- User asks "How is device X doing?" → shell(command="neomind device latest <id>")
+- User asks "What's the temp history?" → shell(command="neomind device list") → shell(command="neomind device history <id> --metric <metric> --time-range 24h")
+- User asks "battery trend this week" for ALL devices → shell(command="neomind device list") → batch shell(command="neomind device history ...") for ALL devices → **summarize each device in your response text** → final comparison
 - User asks "compare environmental conditions across rooms" → shell(device list) → Round2: batch temp for all spaces → **summarize** → Round3: batch humidity/occupancy/light → **summarize** → Round4: cross-space analysis from summaries
-- User says "Turn off light" → shell(command="neomind device list --json") → shell(command="neomind device control --id <id> --command turn_off --confirm")
-- User says "Create a monitor" → shell(command="neomind agent create --name 'xxx' --prompt 'xxx' --schedule-type interval --schedule-config 300")
+- User says "Turn off light" → shell(command="neomind device list") → shell(command="neomind device control <id> --command turn_off")
+- User says "Create a monitor" → shell(command="neomind agent create --name 'xxx' --prompt 'xxx' --every 5m")
 - User says "Create a rule" → shell(command="neomind rule create --name 'Alert' --dsl 'RULE \"Alert\" WHEN ... DO ... END'")
 
 **Important**:
 - Get device_id from `neomind device list`, never guess
-- Destructive ops: first call without --confirm, show preview, then with --confirm"#;
+- Device control executes immediately — inform user of result after execution"#;
 
     const EXAMPLE_RESPONSES: &str = r#"## Example Dialogs
 
 ### Single tool calls:
 
 **User**: "What devices are there?"
-→ `[{"name":"shell","arguments":{"command":"neomind device list --json"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind device list"}}]`
 
 **User**: "How is the office temperature sensor doing?"
-→ `[{"name":"shell","arguments":{"command":"neomind device latest --id id_from_list --json"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind device latest id_from_list"}}]`
 
 **User**: "Show me all alerts"
-→ `[{"name":"shell","arguments":{"command":"neomind message list --json"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind message list"}}]`
 
 **User**: "What rules do I have?"
-→ `[{"name":"shell","arguments":{"command":"neomind rule list --json"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind rule list"}}]`
 
 **User**: "List all agents"
-→ `[{"name":"shell","arguments":{"command":"neomind agent list --json"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind agent list"}}]`
 
 ### Multi-tool calls:
 
 **User**: "What's the temperature of the sensor?"
-Round 1 → `[{"name":"shell","arguments":{"command":"neomind device list --json"}}]`
-Round 2 → `[{"name":"shell","arguments":{"command":"neomind device history --id id_from_list --metric metric_from_list --time-range 24h --json"}}]`
+Round 1 → `[{"name":"shell","arguments":{"command":"neomind device list"}}]`
+Round 2 → `[{"name":"shell","arguments":{"command":"neomind device history id_from_list --metric metric_from_list --time-range 24h"}}]`
 
 **User**: "Turn off the living room light"
-Round 1 → `[{"name":"shell","arguments":{"command":"neomind device list --json"}}]`
-Round 2 → `[{"name":"shell","arguments":{"command":"neomind device control --id id_from_list --command turn_off --confirm"}}]`
+Round 1 → `[{"name":"shell","arguments":{"command":"neomind device list"}}]`
+Round 2 → `[{"name":"shell","arguments":{"command":"neomind device control id_from_list --command turn_off"}}]`
 
 **User**: "Create a temperature monitoring agent"
-→ `[{"name":"shell","arguments":{"command":"neomind agent create --name 'Temp Monitor' --prompt 'Check temperature sensor every 5 min, alert if above 30C' --schedule-type interval --schedule-config 300"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind agent create --name 'Temp Monitor' --prompt 'Check temperature sensor every 5 min, alert if above 30C' --every 5m"}}]`
 
 **User**: "Create a rule to alert when battery < 20%"
 → `[{"name":"shell","arguments":{"command":"neomind rule create --name 'Low Battery Alert' --dsl 'RULE \"Low Battery\" WHEN device.battery < 20 DO NOTIFY \"Battery below 20%\" END'"}}]`
 
 **User**: "How is an agent performing?"
-→ `[{"name":"shell","arguments":{"command":"neomind agent executions --id id_from_agent_list"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind agent executions id_from_agent_list"}}]`
 
 **Multi-tool calling key principles**:
 - Call in sequence: previous tool output may feed into next tool
 - Query before act: `neomind device list` first, then specific operations
 - Get device IDs from list results, never guess
-- Destructive ops: first call without --confirm, show preview, then with --confirm
 
 ### Scenarios NOT requiring tools:
 

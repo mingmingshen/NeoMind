@@ -6,7 +6,7 @@ origin: builtin
 priority: 90
 token_budget: 12000
 triggers:
-  keywords: [设备接入, 接入, onboarding, 连接设备, connect device, MQTT, mqtt, broker, webhook, 传感器, sensor, 如何连接, how to connect, 怎么接入, 设备配置, device setup, device connect, 设备上线, provision, 配置设备, device provisioning, 串口, serial, modbus, BLE, bluetooth, Zigbee, LoRa, 网关, gateway, 接入方式, connection method, 接入协议, protocol, broker地址, broker address, 服务器地址, server address, topic, 主题, 订阅, subscribe, 发布, publish]
+  keywords: [设备接入, 接入, onboarding, 连接设备, connect device, MQTT, mqtt, broker, webhook, 传感器, sensor, 如何连接, how to connect, 怎么接入, 设备配置, device setup, device connect, 设备上线, provision, 配置设备, device provisioning, 网关, gateway, 接入方式, connection method, 接入协议, protocol, broker地址, broker address, 服务器地址, server address, topic, 主题, 订阅, subscribe, 发布, publish]
   tool_target:
     - tool: system
       actions: [info]
@@ -106,7 +106,7 @@ For devices that support HTTP but not MQTT.
 
 **Webhook URL** (from `neomind system info`):
 ```
-POST http://<SERVER_IP>:9375/api/devices/webhook/{device_id}
+POST http://<SERVER_IP>:9375/api/devices/{device_id}/webhook
 ```
 
 **Payload Format:**
@@ -122,7 +122,7 @@ POST http://<SERVER_IP>:9375/api/devices/webhook/{device_id}
 ```
 
 **Steps:**
-1. Create a device first: `neomind device create <name> <type> <adapter>`
+1. Create a device first: `neomind device create --name <NAME> --device-type <TYPE> --adapter-type <ADAPTER>`
 2. Use the returned device ID in the webhook URL
 3. Device sends HTTP POST with data payload
 
@@ -137,15 +137,14 @@ For devices that need manual setup:
 neomind device types list
 
 # Step 2: Create device with specific type and adapter
-neomind device create <name> <device_type> <adapter_type>
+neomind device create --name <NAME> --device-type <TYPE> --adapter-type <ADAPTER>
 
 # adapter_type options:
-#   mqtt        - MQTT protocol (default)
-#   webhook     - HTTP webhook
-#   http-poll   - HTTP polling (for web APIs)
-#   ble         - Bluetooth Low Energy
-#   modbus-tcp  - Modbus TCP/IP
-#   serial      - Serial port (RS-232/485)
+#   mqtt        - MQTT protocol (default, bidirectional: telemetry + commands)
+#   webhook     - HTTP webhook (receive-only: devices push data via POST)
+
+# If no matching device type exists, create one first:
+neomind device types create --name 'My Sensor' --metrics '[{"name":"temperature","display_name":"Temperature","data_type":"Float","unit":"°C"}]'
 
 # Step 3: Verify device was created
 neomind device get <DEVICE_ID>
@@ -232,12 +231,16 @@ while True:
 
 1. Create the device first:
 ```bash
-neomind device create "Weather Station" weather-station webhook
+neomind device create --name "Weather Station" --device-type weather-station --adapter-type webhook
 ```
 
-2. Tell user the webhook URL:
+2. Get the webhook URL for the device:
+```bash
+neomind device webhook-url <DEVICE_ID>
 ```
-POST http://192.168.1.100:9375/api/devices/webhook/{DEVICE_ID}
+
+3. The webhook URL is: `POST http://<SERVER_IP>:9375/api/devices/{DEVICE_ID}/webhook`
+```
 Content-Type: application/json
 
 {
@@ -308,7 +311,7 @@ These typically require a **gateway** that translates the protocol to MQTT or HT
 | MQTT Protocol | MQTT 3.1.1 |
 | MQTT Auth | None (default) |
 | Auto-Discovery | Enabled (`neomind/discovery/#`) |
-| Webhook URL | `POST http://<SERVER_IP>:9375/api/devices/webhook/{device_id}` |
+| Webhook URL | `POST http://<SERVER_IP>:9375/api/devices/{device_id}/webhook` |
 | API Base | `http://<SERVER_IP>:9375/api` |
 | Check System | `neomind system info` |
 
@@ -318,7 +321,7 @@ These typically require a **gateway** that translates the protocol to MQTT or HT
 |---------|-------------|
 | `neomind device list` | List all devices |
 | `neomind device get <ID>` | Get device details |
-| `neomind device create <NAME> [--type <T>] [--adapter <A>]` | Create device |
+| `neomind device create --name <NAME> [--device-type <T>] [--adapter-type <A>]` | Create device |
 | `neomind device update <ID> [--name <N>] [--config '<JSON>']` | Update device |
 | `neomind device delete <ID>` | Delete device |
 | `neomind device latest <ID>` | Get latest metric values |
@@ -343,18 +346,18 @@ These typically require a **gateway** that translates the protocol to MQTT or HT
 1. **Get webhook URL from system info:**
 ```bash
 neomind system info
-# Note the webhook URL: http://<SERVER_IP>:9375/api/devices/webhook/{device_id}
+# Note the webhook URL: http://<SERVER_IP>:9375/api/devices/{device_id}/webhook
 ```
 
 2. **Create the device first:**
 ```bash
-neomind device create 'Weather Station' --adapter webhook
+neomind device create --name 'Weather Station' --adapter-type webhook
 # Record the device ID from response
 ```
 
 3. **Send data to webhook:**
 ```bash
-curl -X POST http://<SERVER_IP>:9375/api/devices/webhook/<DEVICE_ID> \
+curl -X POST http://<SERVER_IP>:9375/api/devices/<DEVICE_ID>/webhook \
   -H 'Content-Type: application/json' \
   -d '{"data": {"temperature": 23.5, "humidity": 65}}'
 ```

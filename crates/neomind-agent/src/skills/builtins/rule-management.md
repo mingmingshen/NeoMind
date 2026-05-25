@@ -193,7 +193,7 @@ neomind rule create --name 'Auto Cool Down' --dsl 'RULE "Auto Cool Down"
 
 ```bash
 # Discover extension metrics first
-neomind extension info weather
+neomind extension get weather
 
 # Create rule using extension data
 neomind rule create --name 'Extreme Weather' --dsl 'RULE "Extreme Weather Alert"

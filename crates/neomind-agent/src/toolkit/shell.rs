@@ -226,14 +226,24 @@ impl ShellTool {
                 "Flags:\n",
                 "  --name / -n            Device display name (required)\n",
                 "  --type / --device-type Device type ID (required). Run 'neomind device types list' to see valid IDs.\n",
-                "  --adapter / --adapter-type  mqtt | webhook | http-poll | ble | modbus-tcp | serial\n",
-                "  --config               Connection config JSON (optional)\n\n",
+                "  --adapter / --adapter-type  mqtt | webhook\n",
+                "  --config               Connection config JSON (optional, see adapter-specific fields below)\n\n",
                 "**IMPORTANT**: Device ID is auto-generated (e.g. 'TH_bf11d93d'), NOT the name you provide.\n",
                 "  Always capture the returned 'id' field for subsequent operations (get, update, latest, etc.).\n\n",
+                "Adapter-specific --config:\n",
+                "  MQTT:\n",
+                "    --config '{\"telemetry_topic\":\"device/TH/SENSOR_ID/uplink\",\"command_topic\":\"device/TH/SENSOR_ID/downlink\"}'\n",
+                "    If omitted, default topics are auto-generated: device/{type}/{device_id}/uplink|downlink\n",
+                "  Webhook:\n",
+                "    --config '{\"webhook_token\":\"whk_xxxxx\"}'\n",
+                "    If omitted, device receives data at POST /api/devices/{id}/webhook (no auth)\n",
+                "    After create, run: neomind device webhook-url <ID> to get the full push URL\n\n",
                 "Common device type IDs: TH (temp/humidity), voltage, TotalDevice, ne101_camera, ne301_camera\n\n",
                 "Examples:\n",
                 "  neomind device create --name 'Office Sensor' --device-type TH --adapter-type mqtt\n",
-                "  neomind device create --name 'Power Meter' --type voltage --adapter mqtt"
+                "  neomind device create --name 'Power Meter' --type voltage --adapter mqtt\n",
+                "  neomind device create --name 'Weather' --adapter webhook --type TH\n",
+                "  neomind device create --name 'Temp' --adapter mqtt --type TH --config '{\"telemetry_topic\":\"my/custom/topic\"}'"
             ),
             "dashboard update" => concat!(
                 "Usage: neomind dashboard update <ID> [--name <NAME>] [--description <DESC>] [--layout '<JSON>'] [--components '<JSON>']\n\n",
@@ -269,7 +279,7 @@ impl ShellTool {
                 "    {\"id\":\"temp\",\"type\":\"value-card\",\"title\":\"Temp\",\"position\":{\"x\":0,\"y\":0,\"w\":4,\"h\":2},\n",
                 "     \"data_source\":{\"type\":\"device\",\"sourceId\":\"sensor-001\",\"property\":\"temperature\"}},\n",
                 "    {\"id\":\"hum\",\"type\":\"value-card\",\"title\":\"Humidity\",\"position\":{\"x\":4,\"y\":0,\"w\":4,\"h\":2},\n",
-                "     \"data_source\":{\"type\":\"extension-metric\",\"extensionId\":\"weather\",\"extensionMetric\":\"humidity\"}}\n",
+                "     \"data_source\":{\"type\":\"extension-metric\",\"extensionId\":\"weather-forecast-v2\",\"extensionMetric\":\"get_weather:humidity_percent\"}}\n",
                 "  ]'"
             ),
             "dashboard remove-components" => concat!(
@@ -449,8 +459,9 @@ impl ShellTool {
                 "Workflow:\n",
                 "  1. neomind widget create 'My Chart' --widget-type chart\n",
                 "  2. Edit data/frontend-components/<widget-id>/bundle.js and manifest.json\n",
-                "  3. neomind widget install data/frontend-components/<widget-id>\n\n",
+                "  3. neomind widget install data/frontend-components/<widget-id>   (directory or .zip)\n\n",
                 "Bundle rules: IIFE format, React.createElement only (no JSX), CSS vars only.\n",
+                "Styling: outermost container MUST have `border border-border rounded-lg bg-card` for visible card edges.\n",
                 "Props: props.dataSource (.value, .timeSeries), props.config, props.title\n",
                 "For full templates and data binding examples, load `widget-development` skill."
             ),
@@ -547,6 +558,7 @@ impl ShellTool {
                 "  neomind device types get <ID>                             Get device type\n",
                 "  neomind device types delete <ID>                          Delete device type\n",
                 "  neomind device write-metric <ID> --metric <M> --value <V> Write metric value\n",
+                "  neomind device webhook-url <ID>                            Get webhook push URL\n",
                 "  neomind device drafts list                                List pending device approvals\n",
                 "  neomind device drafts get <ID>                            Get draft details\n",
                 "  neomind device drafts approve <ID> [--name <N>] [--type <T>]  Approve draft\n",
@@ -604,7 +616,7 @@ impl ShellTool {
                 "  neomind widget get <ID>                                   Get widget details + config_schema\n",
                 "  neomind widget bundle <ID>                                Get widget bundle JS\n",
                 "  neomind widget create <NAME> [--widget-type <T>]          Scaffold widget (local files)\n",
-                "  neomind widget install <PATH>                             Install widget from zip\n",
+                "  neomind widget install <PATH>                             Install widget (directory or .zip)\n",
                 "  neomind widget uninstall <ID>                             Uninstall widget\n",
                 "  neomind widget market-list                                List marketplace widgets\n",
                 "  neomind widget market-install <ID> [--version <V>]        Install from marketplace\n\n",
@@ -875,6 +887,11 @@ impl ShellTool {
                 };
                 let timestamp = Self::get_flag_value(args, "--timestamp").and_then(|s| s.parse::<i64>().ok());
                 neomind_cli_ops::device::write_metric(client, &id, &metric, value, timestamp).await
+            }
+            "webhook-url" => {
+                if let Some(err) = Self::check_required_id(args, "device", "webhook-url") { return Ok(err) }
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::device::get_webhook_url(client, id).await
             }
             "drafts" => {
                 let sub = args.get(3).map(|s| s.as_str()).unwrap_or("");
@@ -1918,7 +1935,7 @@ impl ShellTool {
                 } else if action == "create" && is_validation {
                     Some("Valid widget types: chart, gauge, stat, table, image, custom. Example: neomind widget create \"My Chart\" --widget-type chart".to_string())
                 } else if action == "install" && is_validation {
-                    Some("Provide the widget directory path containing manifest.json and bundle.js. Use 'neomind widget market-list' to browse.".to_string())
+                    Some("Provide a widget directory (containing manifest.json + bundle.js) or a .zip file. Example: neomind widget install data/frontend-components/my-widget".to_string())
                 } else {
                     Some("Available actions: list, get, bundle, create, install, uninstall, market-list, market-install".to_string())
                 }
@@ -1978,7 +1995,7 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 
 | Domain | Key Actions | Description |
 |--------|------------|-------------|
-| device | list, get, create, update, delete, latest, history, control, write-metric, types, drafts | Device management, telemetry, control commands. **create returns auto-generated ID** (e.g. `TH_bf11d93d`), NOT the name — always use the returned ID for subsequent operations. `types` is a subcommand: `device types list`, `device types get <ID>`, `device types create --name 'X' --metrics '[...]'`, `device types delete <ID>`. `drafts` is a subcommand: `device drafts list`, `device drafts get <ID>`, `device drafts approve <ID>`, `device drafts reject <ID>`, `device drafts config` |
+| device | list, get, create, update, delete, latest, history, control, write-metric, webhook-url, types, drafts | Device management, telemetry, control commands. Adapters: `mqtt` (bidirectional, topic-based) and `webhook` (receive-only HTTP POST). `create` returns auto-generated ID (e.g. `TH_bf11d93d`). For webhook devices, use `webhook-url <ID>` to get the push URL. `types` subcommand: list/get/create/delete. `drafts` subcommand: list/get/approve/reject/config |
 | dashboard | list, get, create, update, delete, share, add-components, remove-components | Dashboard CRUD. `--components` replaces ALL; use `add-components` to append safely |
 | widget | list, get, bundle, create, install, uninstall, market-list, market-install | IIFE React components. `create` scaffolds manifest.json + bundle.js. Props: dataSource (.value, .timeSeries), config, title |
 | rule | list, get, create, update, delete, enable, disable, test, history | Rules use DSL: `RULE ... WHEN ... DO ... END` |
@@ -2030,8 +2047,9 @@ neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c2","type":"
 # 3. Gauge: 3x3
 neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c3","type":"gauge","title":"LABEL","position":{"x":4,"y":0,"w":3,"h":3},"data_source":{"type":"device","sourceId":"DEVICE_ID","property":"METRIC_NAME"},"display":{"min":0,"max":100,"unit":"%"}}]'
 
-# 4. Extension metric: use extensionId + extensionMetric (NOT property)
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c4","type":"value-card","title":"LABEL","position":{"x":0,"y":0,"w":4,"h":2},"data_source":{"type":"extension-metric","extensionId":"EXT_ID","extensionMetric":"FIELD_NAME"}}]'
+# 4. Extension metric: use extensionId + extensionMetric as COMMAND:FIELD (NOT property)
+#    Discover via: neomind extension get <ID> -> commands[].id + commands[].output_fields[].name
+neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c4","type":"value-card","title":"LABEL","position":{"x":0,"y":0,"w":4,"h":2},"data_source":{"type":"extension-metric","extensionId":"EXT_ID","extensionMetric":"COMMAND:FIELD"}}]'
 
 # 5. Multi-series line chart: data_source as array
 neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c5","type":"line-chart","title":"LABEL","position":{"x":0,"y":2,"w":12,"h":4},"data_source":[{"type":"device","sourceId":"DEV1","property":"metric1"},{"type":"device","sourceId":"DEV2","property":"metric2"}],"timeWindow":"1h"}]'
@@ -2041,11 +2059,12 @@ DataSource field reference:
 | type | Required fields | How to discover |
 |------|----------------|-----------------|
 | `device` | `sourceId` (device ID), `property` (metric name) | `neomind device list` → `neomind device latest <ID>` |
-| `extension-metric` | `extensionId`, `extensionMetric` | `neomind extension info <ID>` → look at metrics |
+| `extension-metric` | `extensionId`, `extensionMetric` (format: `COMMAND:FIELD`) | `neomind extension get <ID>` → commands[].id + output_fields[].name |
 
 **Critical rules:**
-- **NEVER guess metric names** — always discover via `device latest <ID>` or `extension info <ID>` first
+- **NEVER guess metric names** — always discover via `device latest <ID>` or `extension get <ID>` first
 - device data source uses `property`, extension uses `extensionMetric` — mixing them up silently fails
+- **extensionMetric MUST be `COMMAND:FIELD` format** (e.g. `get_weather:temperature_c`). Discover via `extension get <ID>` → each command has `id` and `output_fields[].name`. NEVER use bare field names like `temperature_c` — they silently fail to load data.
 - Position: x increments by width (4-col layout: x=0,4,8), y increments when row is full
 - **For full workflow, load `dashboard-management` skill.**
 
@@ -2090,7 +2109,7 @@ var MyWidget = (function() {
     var config = props.config || {};
     var value = (props.dataSource && props.dataSource.value) != null ? props.dataSource.value : '-';
     return jsx('div', {
-      className: 'flex flex-col items-center justify-center h-full w-full p-3',
+      className: 'flex flex-col items-center justify-center h-full w-full p-3 rounded-lg border border-border bg-card',
       children: jsx('span', { className: 'text-2xl font-bold font-mono tabular-nums text-foreground', children: String(value) })
     });
   }
@@ -2100,6 +2119,7 @@ var MyWidget = (function() {
 ```
 Runtime: `window.React` (hooks: useState, useEffect, useRef), `window.jsxRuntime.jsx/jsxs`
 Styling: Tailwind classes preferred (`text-foreground`, `text-muted-foreground`, `bg-muted`, `bg-success`, `border-border`) or CSS vars (`var(--chart-1..6)`)
+**Border requirement**: Every widget's outermost container MUST include `border border-border rounded-lg bg-card` classes. Without borders, cards visually merge with the dashboard background and look incomplete.
 Props: `props.dataSource` (.value, .timeSeries, .isLoading, .unit), `props.config`, `props.title`, `props.deviceContext`, `props.sendDeviceCommand`
 manifest `global_name` must match IIFE variable name (e.g. `var MyWidget = ...` → `"global_name": "MyWidget"`)
 
@@ -2111,7 +2131,7 @@ manifest `global_name` must match IIFE variable name (e.g. `var MyWidget = ...` 
    - `global_name` (convention: `NeoMind{PascalCase}`, must match bundle.js assignment)
    - `has_data_source`: true/false, `config_schema`: JSON Schema for user settings
 3. Edit `bundle.js` — must be valid IIFE (see template above), assign to `global['{global_name}']`
-4. Install: `neomind widget install data/frontend-components/<widget-id>`
+4. Install: `neomind widget install data/frontend-components/<widget-id>` (accepts directory or .zip)
 5. Add to dashboard: `neomind dashboard add-components <ID> --components '[...]'`
 **For complete templates (value card, chart, gauge) and data binding examples, load `widget-development` skill.**
 
