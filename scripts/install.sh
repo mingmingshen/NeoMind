@@ -157,6 +157,12 @@ install_linux() {
         fi
     fi
 
+    # Stop existing service before upgrading
+    if $SUDO systemctl is-active --quiet neomind 2>/dev/null; then
+        status "Stopping existing NeoMind service..."
+        $SUDO systemctl stop neomind || true
+    fi
+
     # Install systemd service
     if [ "$NO_SERVICE" != "true" ]; then
         status "Installing systemd service..."
@@ -172,22 +178,21 @@ Type=simple
 User=neomind
 Group=neomind
 WorkingDirectory=${DATA_DIR}
-ExecStart=${INSTALL_DIR}/neomind serve --port ${PORT}
+ExecStart=${INSTALL_DIR}/neomind serve --host 0.0.0.0 --port ${PORT}
 Restart=always
 RestartSec=3
 TimeoutStopSec=30
 
 # Environment
 Environment=RUST_LOG=info
-Environment=NEOMIND_DATA_DIR=${DATA_DIR}
-Environment=NEOMIND_BIND_ADDR=0.0.0.0:${PORT}
 Environment=NEOMIND_WEB_DIR=${WEB_DIR}
+Environment=NEOMIND_API_BASE=http://localhost:${PORT}/api
 
 # Security hardening
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
+ProtectSystem=full
+ProtectHome=read-only
 ReadWritePaths=${DATA_DIR} ${WEB_DIR}
 
 [Install]
@@ -325,7 +330,7 @@ install_darwin() {
     status "Installing NeoMind on macOS..."
 
     # Create directories
-    mkdir -p "$INSTALL_DIR"
+    $SUDO mkdir -p "$INSTALL_DIR"
     mkdir -p "$DATA_DIR"
 
     # Download and extract
@@ -342,13 +347,16 @@ install_darwin() {
     status "Extracting..."
     tar xzf "$TEMP_DIR/neomind.tar.gz" -C "$TEMP_DIR"
 
+    # Stop existing service before upgrading
+    launchctl unload ~/Library/LaunchAgents/com.neomind.server.plist 2>/dev/null || true
+
     # Install binary
     status "Installing binary to $INSTALL_DIR..."
-    install -m 755 "$TEMP_DIR/neomind" "$INSTALL_DIR/neomind"
+    $SUDO install -m 755 "$TEMP_DIR/neomind" "$INSTALL_DIR/neomind"
 
     # Install extension runner if present
     if [ -f "$TEMP_DIR/neomind-extension-runner" ]; then
-        install -m 755 "$TEMP_DIR/neomind-extension-runner" "$INSTALL_DIR/neomind-extension-runner"
+        $SUDO install -m 755 "$TEMP_DIR/neomind-extension-runner" "$INSTALL_DIR/neomind-extension-runner"
         success "Extension runner installed"
     fi
 
@@ -361,8 +369,8 @@ install_darwin() {
 
         status "Downloading frontend..."
         if curl -fSL --progress-bar "$WEB_URL" -o "$TEMP_DIR/neomind-web.tar.gz" 2>/dev/null; then
-            mkdir -p "$WEB_DIR"
-            tar xzf "$TEMP_DIR/neomind-web.tar.gz" -C "$WEB_DIR"
+            $SUDO mkdir -p "$WEB_DIR"
+            $SUDO tar xzf "$TEMP_DIR/neomind-web.tar.gz" -C "$WEB_DIR"
             success "Frontend installed to $WEB_DIR"
         else
             warning "Frontend package not found. Web UI will show a placeholder page."
@@ -396,12 +404,10 @@ install_darwin() {
     <dict>
         <key>RUST_LOG</key>
         <string>info</string>
-        <key>NEOMIND_DATA_DIR</key>
-        <string>${DATA_DIR}</string>
-        <key>NEOMIND_BIND_ADDR</key>
-        <string>0.0.0.0:${PORT}</string>
         <key>NEOMIND_WEB_DIR</key>
         <string>${WEB_DIR}</string>
+        <key>NEOMIND_API_BASE</key>
+        <string>http://localhost:${PORT}/api</string>
     </dict>
     <key>StandardOutPath</key>
     <string>${DATA_DIR}/neomind.log</string>
@@ -517,10 +523,8 @@ main() {
     fi
     status "Installing version: ${VERSION}"
 
-    # Detect sudo for Linux
-    if [ "$OS" = "linux" ]; then
-        detect_sudo
-    fi
+    # Detect sudo
+    detect_sudo
 
     # Install
     case "$OS" in
