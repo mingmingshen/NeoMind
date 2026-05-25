@@ -180,8 +180,7 @@ export function ExtensionsPage() {
       <MarketplaceDialog
         open={marketplaceDialogOpen}
         onOpenChange={setMarketplaceDialogOpen}
-        onInstallComplete={() => {
-          fetchExtensions()
+        onInstallComplete={(extensionId) => {
           toast({
             title: t("extensions:extensionInstalled", { defaultValue: "Extension installed successfully" }),
           })

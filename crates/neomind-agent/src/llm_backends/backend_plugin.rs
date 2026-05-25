@@ -43,6 +43,7 @@ pub struct DynBackendPlugin {
     id: &'static str,
     name: &'static str,
     #[cfg(feature = "cloud")]
+    #[allow(clippy::type_complexity)]
     factory: Box<dyn Fn(&Value) -> Result<Box<dyn LlmRuntime>, LlmError> + Send + Sync>,
     #[cfg(not(feature = "cloud"))]
     _marker: PhantomData<()>,

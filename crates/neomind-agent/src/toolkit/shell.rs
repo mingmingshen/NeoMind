@@ -545,8 +545,10 @@ impl ShellTool {
                 "  neomind device types list                                 List device types\n",
                 "  neomind device types create --name <N> --metrics '<JSON>' Create device type\n",
                 "  neomind device types get <ID>                             Get device type\n",
+                "  neomind device types delete <ID>                          Delete device type\n",
                 "  neomind device write-metric <ID> --metric <M> --value <V> Write metric value\n",
                 "  neomind device drafts list                                List pending device approvals\n",
+                "  neomind device drafts get <ID>                            Get draft details\n",
                 "  neomind device drafts approve <ID> [--name <N>] [--type <T>]  Approve draft\n",
                 "  neomind device drafts reject <ID>                         Reject draft\n",
                 "  neomind device drafts config                              View auto-discovery config\n",
@@ -747,14 +749,14 @@ impl ShellTool {
         let input = input.trim();
         if input.is_empty() { return 300; } // default 5 min
         if let Ok(secs) = input.parse::<u64>() { return secs; }
-        let (num_part, unit) = if input.ends_with('s') {
-            (&input[..input.len()-1], 's')
-        } else if input.ends_with('m') {
-            (&input[..input.len()-1], 'm')
-        } else if input.ends_with('h') {
-            (&input[..input.len()-1], 'h')
-        } else if input.ends_with('d') {
-            (&input[..input.len()-1], 'd')
+        let (num_part, unit) = if let Some(stripped) = input.strip_suffix('s') {
+            (stripped, 's')
+        } else if let Some(stripped) = input.strip_suffix('m') {
+            (stripped, 'm')
+        } else if let Some(stripped) = input.strip_suffix('h') {
+            (stripped, 'h')
+        } else if let Some(stripped) = input.strip_suffix('d') {
+            (stripped, 'd')
         } else {
             (input, 's')
         };
@@ -853,7 +855,11 @@ impl ShellTool {
                             .map(|s| serde_json::from_str(s).unwrap_or(serde_json::json!(null)));
                         neomind_cli_ops::device::create_device_type(client, id.as_deref(), &name, metrics, commands).await
                     }
-                    _ => anyhow::bail!("Unknown device types subcommand: {}", sub),
+                    "delete" => {
+                        let type_id = args.get(4).map(|s| s.as_str()).unwrap_or("");
+                        neomind_cli_ops::device::delete_device_type(client, type_id).await
+                    }
+                    _ => anyhow::bail!("Unknown device types subcommand: {}. Available: list, get, create, delete", sub),
                 }
             }
             "write-metric" => {
@@ -874,6 +880,10 @@ impl ShellTool {
                 let sub = args.get(3).map(|s| s.as_str()).unwrap_or("");
                 match sub {
                     "list" => neomind_cli_ops::device::list_drafts(client).await,
+                    "get" => {
+                        let device_id = args.get(4).map(|s| s.as_str()).unwrap_or("").to_string();
+                        neomind_cli_ops::device::get_draft(client, &device_id).await
+                    }
                     "approve" => {
                         let device_id = args.get(4).map(|s| s.as_str()).unwrap_or("").to_string();
                         let name = Self::get_flag_value(args, "--name").map(|s| s.to_string());
@@ -894,7 +904,7 @@ impl ShellTool {
                             neomind_cli_ops::device::get_onboard_config(client).await
                         }
                     }
-                    _ => anyhow::bail!("Unknown device drafts subcommand: {}. Available: list, approve, reject, config", sub),
+                    _ => anyhow::bail!("Unknown device drafts subcommand: {}. Available: list, get, approve, reject, config", sub),
                 }
             }
             _ => anyhow::bail!("Unknown device action: {}", action),
@@ -1968,7 +1978,7 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 
 | Domain | Key Actions | Description |
 |--------|------------|-------------|
-| device | list, get, create, update, delete, latest, history, control, write-metric, types, drafts | Device management, telemetry, control commands. **create returns auto-generated ID** (e.g. `TH_bf11d93d`), NOT the name — always use the returned ID for subsequent operations. `types` is a subcommand: `device types list`, `device types get <ID>`, `device types create --name 'X' --metrics '[{"name":"temp","unit":"°C","type":"number"}]'`. `drafts` is a subcommand: `device drafts list`, `device drafts approve <ID>`, `device drafts reject <ID>`, `device drafts config` |
+| device | list, get, create, update, delete, latest, history, control, write-metric, types, drafts | Device management, telemetry, control commands. **create returns auto-generated ID** (e.g. `TH_bf11d93d`), NOT the name — always use the returned ID for subsequent operations. `types` is a subcommand: `device types list`, `device types get <ID>`, `device types create --name 'X' --metrics '[...]'`, `device types delete <ID>`. `drafts` is a subcommand: `device drafts list`, `device drafts get <ID>`, `device drafts approve <ID>`, `device drafts reject <ID>`, `device drafts config` |
 | dashboard | list, get, create, update, delete, share, add-components, remove-components | Dashboard CRUD. `--components` replaces ALL; use `add-components` to append safely |
 | widget | list, get, bundle, create, install, uninstall, market-list, market-install | IIFE React components. `create` scaffolds manifest.json + bundle.js. Props: dataSource (.value, .timeSeries), config, title |
 | rule | list, get, create, update, delete, enable, disable, test, history | Rules use DSL: `RULE ... WHEN ... DO ... END` |

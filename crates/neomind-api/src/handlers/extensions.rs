@@ -3831,11 +3831,11 @@ pub async fn upload_extension_file_handler(
     }
 
     // Step 3: Now install the package (safe to overwrite files)
-    let body_bytes_for_install = body_bytes.clone();
+    // body_bytes is no longer needed after this point, move it directly
     let target_dir_clone = target_dir.clone();
     let install_result = tokio::task::spawn_blocking(move || {
         use neomind_core::extension::package::ExtensionPackage;
-        ExtensionPackage::install_sync(&body_bytes_for_install, &target_dir_clone)
+        ExtensionPackage::install_sync(&body_bytes, &target_dir_clone)
     })
     .await
     .map_err(|e| ErrorResponse::internal(format!("Task join error: {}", e)))?

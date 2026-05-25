@@ -22,16 +22,6 @@ export const ADAPTER_TYPES: AdapterType[] = [
     builtin: true,
   },
   {
-    id: 'http',
-    name: 'HTTP (Polling)',
-    description: 'Poll data from device REST APIs on a schedule',
-    icon: 'Radio',
-    icon_bg: 'bg-accent-orange-light text-accent-orange',
-    mode: 'pull',
-    can_add_multiple: true,
-    builtin: true,
-  },
-  {
     id: 'webhook',
     name: 'Webhook',
     description: 'Devices push data via HTTP POST to your server',
@@ -47,7 +37,7 @@ export const ADAPTER_TYPES: AdapterType[] = [
  * Get adapter type by ID
  */
 export const getAdapterType = (id: string): AdapterType | undefined => {
-  return ADAPTER_TYPES.find((type) => type.id === id)
+  return ADAPTER_TYPES.find((t) => t.id === id)
 }
 
 /**
@@ -55,6 +45,5 @@ export const getAdapterType = (id: string): AdapterType | undefined => {
  */
 export const ADAPTER_ICONS: Record<string, string> = {
   mqtt: 'Server',
-  http: 'Radio',
   webhook: 'Webhook',
 }

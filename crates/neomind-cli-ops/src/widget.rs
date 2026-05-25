@@ -28,7 +28,7 @@ pub fn create_widget(
     let widget_id: String = name
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else if c == ' ' { '-' } else { '-' })
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '-' })
         .collect::<String>()
         .trim_matches('-')
         .to_string();
@@ -118,7 +118,7 @@ pub fn create_widget(
                 { "name": "bundle.js", "path": bundle_path.display().to_string() }
             ]
         }),
-        &format!("Widget scaffold created in {}", dir_str),
+        format!("Widget scaffold created in {}", dir_str),
         meta,
     ))
 }
@@ -174,37 +174,35 @@ r#"  // Stat widget — displays a key metric with label
     React.createElement('div', {{ style: {{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }} }}, label)
   );"#
         ),
-        "table" => format!(
-r#"  // Table widget — displays data in tabular form
+        "table" => r#"  // Table widget — displays data in tabular form
   const rows = props.dataSource ?? [];
 
-  return React.createElement('div', {{
-    style: {{ width: '100%', height: '100%', overflow: 'auto', padding: '0.5rem' }},
-  }},
-    React.createElement('table', {{ style: {{ width: '100%', borderCollapse: 'collapse' }} }},
+  return React.createElement('div', {
+    style: { width: '100%', height: '100%', overflow: 'auto', padding: '0.5rem' },
+  },
+    React.createElement('table', { style: { width: '100%', borderCollapse: 'collapse' } },
       React.createElement('thead', null,
         React.createElement('tr', null,
           ['Timestamp', 'Value'].map(h =>
-            React.createElement('th', {{
+            React.createElement('th', {
               key: h,
-              style: {{ padding: '0.5rem', textAlign: 'left', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}
-            }}, h)
+              style: { padding: '0.5rem', textAlign: 'left', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-muted)', fontSize: '0.75rem' }
+            }, h)
           )
         )
       ),
       React.createElement('tbody', null,
         rows.slice(0, 10).map((row, i) =>
-          React.createElement('tr', {{ key: i }},
-            React.createElement('td', {{ style: {{ padding: '0.5rem', borderBottom: '1px solid var(--color-border)', fontSize: '0.875rem' }} }},
+          React.createElement('tr', { key: i },
+            React.createElement('td', { style: { padding: '0.5rem', borderBottom: '1px solid var(--color-border)', fontSize: '0.875rem' } },
               row.timestamp ?? ''),
-            React.createElement('td', {{ style: {{ padding: '0.5rem', borderBottom: '1px solid var(--color-border)', fontSize: '0.875rem' }} }},
+            React.createElement('td', { style: { padding: '0.5rem', borderBottom: '1px solid var(--color-border)', fontSize: '0.875rem' } },
               String(row.value ?? ''))
           )
         )
       )
     )
-  );"#
-        ),
+  );"#.to_string(),
         "image" => format!(
 r#"  // Image widget — displays an image from data source
   const imageUrl = props.config?.url ?? '';

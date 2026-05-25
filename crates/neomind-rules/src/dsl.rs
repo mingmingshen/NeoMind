@@ -48,8 +48,10 @@ use std::time::Duration;
 
 /// Trigger type for a rule.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Default)]
 pub enum TriggerType {
     /// Triggered by device state changes (default, requires WHEN clause)
+    #[default]
     DeviceState,
     /// Triggered on a cron schedule
     Schedule { cron: String },
@@ -57,11 +59,6 @@ pub enum TriggerType {
     Manual,
 }
 
-impl Default for TriggerType {
-    fn default() -> Self {
-        TriggerType::DeviceState
-    }
-}
 
 /// Parsed rule from DSL.
 #[derive(Debug, Clone, Serialize, Deserialize)]

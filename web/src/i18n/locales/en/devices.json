@@ -183,7 +183,6 @@
     "instruction": "Enter host address and click scan to discover devices",
     "types": {
       "mqtt": "MQTT Gateway",
-      "http": "HTTP Device",
       "coap": "CoAP Device"
     }
   },
@@ -970,19 +969,13 @@
     "retryMessage": "Failed to add device, please try again later",
     "adapterType": "Adapter Type",
     "adapterLabel_mqtt": "MQTT",
-    "adapterLabel_http": "HTTP",
     "adapterLabel_webhook": "Webhook",
     "adapterDesc_mqtt": "IoT sensors & embedded devices",
-    "adapterDesc_http": "Poll device API on schedule",
     "adapterDesc_webhook": "Receive data push from external",
     "telemetryTopic": "Telemetry Topic",
     "telemetryTopicHelp": "The MQTT topic your device publishes sensor data to. Auto-generated based on type and ID.",
     "commandTopic": "Command Topic",
     "commandTopicHelp": "The topic NeoMind sends commands to your device on. Leave default unless customized.",
-    "httpUrl": "URL",
-    "httpUrlHelp": "The HTTP endpoint to fetch device data from, e.g. http://192.168.1.100/api/data",
-    "requestMethod": "Request Method",
-    "pollInterval": "Poll Interval (sec)",
     "webhookUrlDescription": "After adding the device, configure your external service to POST data to the URL below:",
     "deviceIdHelp": "Auto-generated. Use the refresh button to regenerate, or enter a custom ID.",
     "deviceNameHelp": "A human-readable name for easy identification. Optional — ID will be used if empty.",
@@ -990,7 +983,17 @@
     "basicInfo": "Basic Info",
     "basicInfoDesc": "Device identity and type",
     "connectionSettings": "Connection Settings",
-    "connectionSettingsDesc": "Choose how the device communicates with NeoMind"
+    "connectionSettingsDesc": "Choose how the device communicates with NeoMind",
+    "mqttConfig": "MQTT Configuration",
+    "webhookConfig": "Webhook Configuration",
+    "webhookToken": "Webhook Token",
+    "webhookTokenPlaceholder": "Auto-generated if empty",
+    "webhookTokenDesc": "Token for device authentication. Devices must include this in requests via Authorization header or ?token= query param.",
+    "webhookTokenGenerate": "Generate",
+    "webhookTokenNone": "No token set (open access)",
+    "webhookTokenCopied": "Token copied",
+    "webhookAuthHeader": "Authentication",
+    "webhookAuthDesc": "Include the token in requests:"
   },
   "detailPage": {
     "deviceInfo": "Device Information",

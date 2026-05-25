@@ -117,8 +117,9 @@ pub struct IsolatedExtensionManager {
     death_channel: (broadcast::Sender<()>, AsyncRwLock<broadcast::Receiver<()>>),
     /// Optional callback invoked after crash recovery restart, to apply saved config etc.
     /// Parameters: (extension_id, extension_path)
+    #[allow(clippy::type_complexity)]
     on_crash_recovery_restart:
-        std::sync::RwLock<Option<Arc<dyn Fn(&str, &std::path::Path) + Send + Sync>>>,
+        std::sync::RwLock<Option<Arc<dyn Fn(&str, &Path) + Send + Sync>>>,
     /// Per-extension loading locks to prevent race conditions during concurrent loads
     /// Maps extension ID to a mutex that must be held during loading
     loading_locks: AsyncRwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -160,9 +161,10 @@ impl IsolatedExtensionManager {
 
     /// Set a callback to be invoked after crash recovery restart.
     /// The callback receives (extension_id, extension_path) and can apply saved config, etc.
+    #[allow(clippy::type_complexity)]
     pub fn set_on_crash_recovery_restart(
         &self,
-        callback: Arc<dyn Fn(&str, &std::path::Path) + Send + Sync>,
+        callback: Arc<dyn Fn(&str, &Path) + Send + Sync>,
     ) {
         if let Ok(mut guard) = self.on_crash_recovery_restart.write() {
             *guard = Some(callback);

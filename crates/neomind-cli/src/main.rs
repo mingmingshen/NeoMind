@@ -35,6 +35,7 @@ struct Args {
 
 /// Available commands.
 #[derive(Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
 enum Command {
     /// Start the web server.
     Serve {
@@ -329,7 +330,8 @@ enum ExtensionCommand {
     ///   3. `extension build ./my-extension` — compile
     ///   4. `extension validate ./my-extension.nep` — check
     ///   5. `extension install ./my-extension.nep` — deploy
-    /// Example: `neomind extension build ./extensions/weather-forecast`
+    ///
+    ///   Example: `neomind extension build ./extensions/weather-forecast`
     Build {
         /// Extension directory path.
         #[arg(required = true)]
@@ -1583,7 +1585,8 @@ enum ConnectorCommand {
     ///   1. `connector create --name "Factory MQTT" --host 192.168.1.100 --port 1883`
     ///   2. `connector test <ID>` — verify connectivity
     ///   3. Devices sending to the connector's topics will auto-appear in NeoMind
-    /// Example: `neomind connector create --type mqtt --name "Factory MQTT" --host 192.168.1.100 --port 1883 --topics "sensor/#,device/#"`
+    ///
+    ///   Example: `neomind connector create --type mqtt --name "Factory MQTT" --host 192.168.1.100 --port 1883 --topics "sensor/#,device/#"`
     Create {
         /// Connector type (mqtt, webhook, http). Default: mqtt.
         #[arg(long, default_value = "mqtt")]

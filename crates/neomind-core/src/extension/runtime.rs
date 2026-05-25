@@ -79,6 +79,7 @@ impl ExtensionRuntime {
 
     /// Set a callback to be invoked after crash recovery restart.
     /// The callback receives (extension_id, extension_path) and can apply saved config, etc.
+    #[allow(clippy::type_complexity)]
     pub fn set_on_crash_recovery_restart(
         &self,
         callback: Arc<dyn Fn(&str, &std::path::Path) + Send + Sync>,

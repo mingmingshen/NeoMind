@@ -30,6 +30,23 @@ export interface EntityIconPickerProps {
   className?: string
 }
 
+// Module-level icon preview to avoid remounting on every parent render
+function IconPreview({ iconName, size = 16 }: { iconName: string; size?: number }) {
+  if (!iconName) {
+    return (
+      <div className="flex items-center justify-center text-muted-foreground" style={{ width: size, height: size }}>
+        <span className="text-xs">—</span>
+      </div>
+    )
+  }
+  try {
+    const IconComponent = getIconForEntity(iconName)
+    return <IconComponent style={{ width: size, height: size }} />
+  } catch {
+    return null
+  }
+}
+
 export function EntityIconPicker({
   value = '',
   onChange,
@@ -58,23 +75,6 @@ export function EntityIconPicker({
       (icon.id && icon.id.toLowerCase().includes(query))
     )
   }, [searchQuery, ALL_ENTITY_ICONS])
-
-  // Get icon component for preview
-  const IconPreview = ({ iconName, size = 16 }: { iconName: string; size?: number }) => {
-    if (!iconName) {
-      return (
-        <div className="flex items-center justify-center text-muted-foreground" style={{ width: size, height: size }}>
-          <span className="text-xs">—</span>
-        </div>
-      )
-    }
-    try {
-      const IconComponent = getIconForEntity(iconName)
-      return <IconComponent style={{ width: size, height: size }} />
-    } catch {
-      return null
-    }
-  }
 
   const handleSelectIcon = (iconName: string) => {
     onChange?.(iconName)

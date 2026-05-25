@@ -16,6 +16,7 @@ pub async fn get_agent(client: &ApiClient, id: &str) -> Result<CliResponse> {
 }
 
 /// Create a new agent
+#[allow(clippy::too_many_arguments)]
 pub async fn create_agent(
     client: &ApiClient,
     name: &str,
@@ -140,6 +141,7 @@ pub async fn create_agent(
 }
 
 /// Update agent
+#[allow(clippy::too_many_arguments)]
 pub async fn update_agent(
     client: &ApiClient,
     id: &str,

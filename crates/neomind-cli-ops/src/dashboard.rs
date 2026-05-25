@@ -105,7 +105,7 @@ pub async fn add_components(
         .unwrap_or(0);
     Ok(CliResponse::success(
         data,
-        &format!("Components added (total: {})", count),
+        format!("Components added (total: {})", count),
     ))
 }
 
@@ -126,7 +126,7 @@ pub async fn remove_components(
     let remaining = inner["remaining"].as_u64().unwrap_or(0);
     Ok(CliResponse::success(
         data,
-        &format!("Removed {} component(s), {} remaining", removed, remaining),
+        format!("Removed {} component(s), {} remaining", removed, remaining),
     ))
 }
 

@@ -16,6 +16,7 @@ pub async fn get_connector(client: &ApiClient, id: &str) -> Result<CliResponse> 
 }
 
 /// Create a new data connector
+#[allow(clippy::too_many_arguments)]
 pub async fn create_connector(
     client: &ApiClient,
     name: &str,
@@ -62,6 +63,7 @@ pub async fn create_connector(
 }
 
 /// Update an existing connector
+#[allow(clippy::too_many_arguments)]
 pub async fn update_connector(
     client: &ApiClient,
     id: &str,

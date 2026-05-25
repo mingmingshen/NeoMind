@@ -183,7 +183,6 @@
     "instruction": "输入主机地址并点击扫描以发现设备",
     "types": {
       "mqtt": "MQTT 网关",
-      "http": "HTTP 设备",
       "coap": "CoAP 设备"
     }
   },
@@ -971,19 +970,13 @@
     "retryMessage": "添加设备失败，请稍后重试",
     "adapterType": "适配器类型",
     "adapterLabel_mqtt": "MQTT",
-    "adapterLabel_http": "HTTP",
     "adapterLabel_webhook": "Webhook",
     "adapterDesc_mqtt": "IoT 传感器和嵌入式设备",
-    "adapterDesc_http": "定时轮询设备 API 获取数据",
     "adapterDesc_webhook": "接收外部服务的数据推送",
     "telemetryTopic": "遥测主题",
     "telemetryTopicHelp": "设备发布传感器数据的 MQTT 主题，已根据设备类型和 ID 自动生成。",
     "commandTopic": "命令主题",
     "commandTopicHelp": "NeoMind 向设备发送指令的主题，通常保持默认即可。",
-    "httpUrl": "URL",
-    "httpUrlHelp": "用于获取设备数据的 HTTP 端点，例如 http://192.168.1.100/api/data",
-    "requestMethod": "请求方法",
-    "pollInterval": "轮询间隔(秒)",
     "webhookUrlDescription": "添加设备后，请将外部服务配置为向以下 URL POST 数据：",
     "deviceIdHelp": "自动生成，可点击刷新按钮重新生成，也可手动输入自定义 ID。",
     "deviceNameHelp": "便于识别的友好名称，可不填——将使用设备 ID 作为名称。",
@@ -991,7 +984,17 @@
     "basicInfo": "基本信息",
     "basicInfoDesc": "设备标识和类型",
     "connectionSettings": "连接设置",
-    "connectionSettingsDesc": "选择设备与 NeoMind 的通信方式"
+    "connectionSettingsDesc": "选择设备与 NeoMind 的通信方式",
+    "mqttConfig": "MQTT 配置",
+    "webhookConfig": "Webhook 配置",
+    "webhookToken": "Webhook 令牌",
+    "webhookTokenPlaceholder": "留空则自动生成",
+    "webhookTokenDesc": "用于设备认证的令牌。设备需通过 Authorization 请求头或 ?token= 查询参数携带此令牌。",
+    "webhookTokenGenerate": "生成",
+    "webhookTokenNone": "未设置令牌（开放访问）",
+    "webhookTokenCopied": "令牌已复制",
+    "webhookAuthHeader": "认证方式",
+    "webhookAuthDesc": "在请求中携带令牌："
   },
   "detailPage": {
     "deviceInfo": "设备信息",

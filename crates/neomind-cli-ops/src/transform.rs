@@ -68,6 +68,7 @@ pub async fn create_transform(
 }
 
 /// Update transform
+#[allow(clippy::too_many_arguments)]
 pub async fn update_transform(
     client: &ApiClient,
     id: &str,

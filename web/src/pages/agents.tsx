@@ -96,6 +96,18 @@ export function AgentsPage() {
   }>(null)
   const skillsPanelRef = useRef<SkillsPanelHandle>(null)
 
+  // Skills pagination state (lifted from SkillsPanel for PageLayout footer)
+  const [skillsPagination, setSkillsPagination] = useState<{
+    total: number
+    pageSize: number
+    currentPage: number
+    onPageChange: (page: number) => void
+    loading: boolean
+  }>({ total: 0, pageSize: 10, currentPage: 1, onPageChange: () => {}, loading: false })
+  const handleSkillsPaginationChange = useCallback((info: typeof skillsPagination) => {
+    setSkillsPagination(info)
+  }, [])
+
   // Track executing agents for real-time updates with timestamps for timeout
   const [executingAgents, setExecutingAgents] = useState<Map<string, number>>(new Map())
   // Track current thinking state per agent
@@ -527,6 +539,14 @@ export function AgentsPage() {
             currentPage={agentsPage}
             onPageChange={setAgentsPage}
           />
+        ) : activeTab === 'skills' && skillsPagination.total > skillsPagination.pageSize ? (
+          <Pagination
+            total={skillsPagination.total}
+            pageSize={skillsPagination.pageSize}
+            currentPage={skillsPagination.currentPage}
+            onPageChange={skillsPagination.onPageChange}
+            isLoading={skillsPagination.loading}
+          />
         ) : undefined
       }
     >
@@ -567,7 +587,7 @@ export function AgentsPage() {
       </PageTabsContent>
 
       <PageTabsContent value="skills" activeTab={activeTab}>
-        <SkillsPanel ref={skillsPanelRef} />
+        <SkillsPanel ref={skillsPanelRef} onPaginationChange={handleSkillsPaginationChange} />
       </PageTabsContent>
 
       {/* Mobile: Bottom navigation bar */}

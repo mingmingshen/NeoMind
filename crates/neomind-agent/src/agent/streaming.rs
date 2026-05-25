@@ -2995,6 +2995,7 @@ pub async fn process_multimodal_stream_events(
 }
 
 /// Process multimodal message with configurable safeguards.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_multimodal_stream_events_with_safeguards(
     llm_interface: Arc<LlmInterface>,
     internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,

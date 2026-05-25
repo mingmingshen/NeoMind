@@ -57,6 +57,21 @@ pub enum NeoMindEvent {
         timestamp: i64,
     },
 
+    /// Unknown device discovered by an adapter (MQTT, Webhook, etc.)
+    ///
+    /// Emitted when an adapter receives data from a device that is not
+    /// registered in the system. Triggers the auto-onboarding flow.
+    DeviceDiscovered {
+        device_id: String,
+        source: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        adapter_id: Option<String>,
+        metadata: serde_json::Value,
+        sample: serde_json::Value,
+        is_binary: bool,
+        timestamp: i64,
+    },
+
     // ========== Rule Events ==========
     /// Rule condition was evaluated
     RuleEvaluated {
@@ -416,6 +431,7 @@ impl NeoMindEvent {
             Self::DeviceOffline { .. } => "DeviceOffline",
             Self::DeviceMetric { .. } => "DeviceMetric",
             Self::DeviceCommandResult { .. } => "DeviceCommandResult",
+            Self::DeviceDiscovered { .. } => "DeviceDiscovered",
             Self::RuleEvaluated { .. } => "RuleEvaluated",
             Self::RuleTriggered { .. } => "RuleTriggered",
             Self::RuleExecuted { .. } => "RuleExecuted",
@@ -467,6 +483,7 @@ impl NeoMindEvent {
             | Self::DeviceOffline { timestamp, .. }
             | Self::DeviceMetric { timestamp, .. }
             | Self::DeviceCommandResult { timestamp, .. }
+            | Self::DeviceDiscovered { timestamp, .. }
             | Self::RuleEvaluated { timestamp, .. }
             | Self::RuleTriggered { timestamp, .. }
             | Self::RuleExecuted { timestamp, .. }
@@ -512,6 +529,7 @@ impl NeoMindEvent {
                 | Self::DeviceOffline { .. }
                 | Self::DeviceMetric { .. }
                 | Self::DeviceCommandResult { .. }
+                | Self::DeviceDiscovered { .. }
         )
     }
 

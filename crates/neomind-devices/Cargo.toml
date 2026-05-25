@@ -17,9 +17,6 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 
-# HTTP Client
-reqwest = { workspace = true, optional = true }
-
 # Storage
 redb = { workspace = true }
 
@@ -40,11 +37,10 @@ base64 = { workspace = true }
 semver = { workspace = true }
 
 [features]
-default = ["mqtt", "http"]
+default = ["mqtt"]
 mqtt = ["rumqttc", "rustls", "rustls-pki-types", "rustls-pemfile", "rustls-native-certs", "async-channel"]
-http = ["reqwest"]
 embedded-broker = ["rumqttd"]
-all = ["mqtt", "http", "embedded-broker"]
+all = ["mqtt", "embedded-broker"]
 
 [dev-dependencies]
 base64 = { workspace = true }

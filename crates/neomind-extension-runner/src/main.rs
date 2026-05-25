@@ -1280,7 +1280,6 @@ impl WasmRuntime {
         let engine = self.engine.clone();
         let function_name_owned = function_name.to_string();
         let module_name = self.module_name.clone();
-        let args_str_clone = args_str.clone();
         let metric_values = self.metric_values.clone();
 
         // Execute with timeout
@@ -1346,7 +1345,7 @@ impl WasmRuntime {
                 }))
             } else if params_count == 2 && results_count == 1 {
                 // Standard signature: (args_ptr: i32, args_len: i32) -> result_len: i32
-                let args_bytes = args_str_clone.as_bytes();
+                let args_bytes = args_str.as_bytes();
                 let args_len = args_bytes.len();
 
                 memory

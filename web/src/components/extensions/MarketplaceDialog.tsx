@@ -296,149 +296,6 @@ export function MarketplaceDialog({
     setSelectedExtension(null)
   }
 
-  const ExtensionListContent = () => (
-    <div className="space-y-4">
-      {/* Search and Filter */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder={t("extensions:market.searchPlaceholder", "Search extensions...")}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <div className="flex gap-2 flex-wrap overflow-x-auto pb-1">
-          <Button
-            variant={selectedCategory === null ? "default" : "outline"}
-            size="sm"
-            onClick={() => setSelectedCategory(null)}
-            className="shrink-0"
-          >
-            {t("extensions:market.allCategories", "All")}
-          </Button>
-          {getAllCategories().slice(0, 5).map((cat) => (
-            <Button
-              key={cat}
-              variant={selectedCategory === cat ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedCategory(cat)}
-              className="shrink-0"
-            >
-              {cat}
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      {/* Extensions List */}
-      {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : filteredExtensions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 text-center">
-          <Package className="h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">
-            {searchQuery || selectedCategory
-              ? t("extensions:market.noResults", "No extensions found")
-              : t("extensions:market.noExtensions", "No extensions available")}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredExtensions.map((ext) => {
-            const installed = isInstalled(ext.id)
-            return (
-              <Card
-                key={ext.id}
-                className={cn(
-                  "p-4 hover:bg-accent transition-colors overflow-hidden",
-                  !installed && "cursor-pointer",
-                  installed && "border-border"
-                )}
-                onClick={() => !installed && loadExtensionDetails(ext.id)}
-              >
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <h3 className="font-semibold truncate">{ext.name}</h3>
-                      {installed && (
-                        <Badge variant="secondary" className="text-xs shrink-0">
-                          <Check className="h-3 w-3 mr-1" />
-                          {t("extensions:market.installed", "Installed")}
-                        </Badge>
-                      )}
-                      <Badge variant="outline" className="text-xs shrink-0">
-                        {ext.version}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground line-clamp-2 mb-2 h-10 leading-5">
-                      {ext.description}
-                    </p>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {ext.categories.slice(0, 3).map((cat) => (
-                        <Badge key={cat} variant="secondary" className="text-xs">
-                          {cat}
-                        </Badge>
-                      ))}
-                      {ext.author && (
-                        <span className="text-xs text-muted-foreground">
-                          by {ext.author}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 sm:shrink-0 w-full sm:w-auto">
-                    {installed ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full sm:w-auto"
-                        disabled
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Check className="h-4 w-4 mr-1" />
-                        {t("extensions:market.installed", "Installed")}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="default"
-                        size="sm"
-                        className="w-full sm:w-auto"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          loadExtensionDetails(ext.id)
-                        }}
-                      >
-                        {t("extensions:market.viewDetails", "View Details")}
-                        <ChevronRight className="h-4 w-4 ml-1" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-
-  const DetailContent = () => {
-    if (!selectedExtension) return null
-
-    return (
-      <ExtensionDetailView
-        extension={selectedExtension}
-        installing={installing && installingId === selectedExtension.id}
-        onInstall={() => handleInstall(selectedExtension.id)}
-        onBack={handleBack}
-        isMobile={isMobile}
-      />
-    )
-  }
 
   const showInstallFooter = showDetail && selectedExtension && !isInstalled(selectedExtension.id)
 
@@ -470,7 +327,145 @@ export function MarketplaceDialog({
       )}
       <FullScreenDialogContent>
         <FullScreenDialogMain className="p-4 md:p-6">
-          {showDetail ? <DetailContent /> : <ExtensionListContent />}
+          {showDetail ? (
+            selectedExtension ? (
+              <ExtensionDetailView
+                extension={selectedExtension}
+                installing={installing && installingId === selectedExtension.id}
+                onInstall={() => handleInstall(selectedExtension.id)}
+                onBack={handleBack}
+                isMobile={isMobile}
+              />
+            ) : null
+          ) : (
+            <div className="space-y-4">
+              {/* Search and Filter */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder={t("extensions:market.searchPlaceholder", "Search extensions...")}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <div className="flex gap-2 flex-wrap overflow-x-auto pb-1">
+                  <Button
+                    variant={selectedCategory === null ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedCategory(null)}
+                    className="shrink-0"
+                  >
+                    {t("extensions:market.allCategories", "All")}
+                  </Button>
+                  {getAllCategories().slice(0, 5).map((cat) => (
+                    <Button
+                      key={cat}
+                      variant={selectedCategory === cat ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setSelectedCategory(cat)}
+                      className="shrink-0"
+                    >
+                      {cat}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Extensions List */}
+              {loading ? (
+                <div className="flex items-center justify-center h-64">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : filteredExtensions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-64 text-center">
+                  <Package className="h-12 w-12 text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">
+                    {searchQuery || selectedCategory
+                      ? t("extensions:market.noResults", "No extensions found")
+                      : t("extensions:market.noExtensions", "No extensions available")}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredExtensions.map((ext) => {
+                    const installed = isInstalled(ext.id)
+                    return (
+                      <Card
+                        key={ext.id}
+                        className={cn(
+                          "p-4 hover:bg-accent transition-colors overflow-hidden",
+                          !installed && "cursor-pointer",
+                          installed && "border-border"
+                        )}
+                        onClick={() => !installed && loadExtensionDetails(ext.id)}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <h3 className="font-semibold truncate">{ext.name}</h3>
+                              {installed && (
+                                <Badge variant="secondary" className="text-xs shrink-0">
+                                  <Check className="h-3 w-3 mr-1" />
+                                  {t("extensions:market.installed", "Installed")}
+                                </Badge>
+                              )}
+                              <Badge variant="outline" className="text-xs shrink-0">
+                                {ext.version}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground line-clamp-2 mb-2 h-10 leading-5">
+                              {ext.description}
+                            </p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {ext.categories.slice(0, 3).map((cat) => (
+                                <Badge key={cat} variant="secondary" className="text-xs">
+                                  {cat}
+                                </Badge>
+                              ))}
+                              {ext.author && (
+                                <span className="text-xs text-muted-foreground">
+                                  by {ext.author}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 sm:shrink-0 w-full sm:w-auto">
+                            {installed ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full sm:w-auto"
+                                disabled
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Check className="h-4 w-4 mr-1" />
+                                {t("extensions:market.installed", "Installed")}
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="w-full sm:w-auto"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  loadExtensionDetails(ext.id)
+                                }}
+                              >
+                                {t("extensions:market.viewDetails", "View Details")}
+                                <ChevronRight className="h-4 w-4 ml-1" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </FullScreenDialogMain>
       </FullScreenDialogContent>
       {showInstallFooter && (

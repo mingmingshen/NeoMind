@@ -1570,7 +1570,7 @@ export interface LlmBackendStats {
 // Similar to LLM backend types, device adapters are now dynamically loaded
 
 export interface AdapterType {
-  id: string  // e.g., "mqtt", "http", "webhook"
+  id: string  // e.g., "mqtt", "webhook"
   name: string  // e.g., "MQTT", "HTTP (Polling)", "Webhook"
   description: string
   icon: string  // Icon name for lucide-react

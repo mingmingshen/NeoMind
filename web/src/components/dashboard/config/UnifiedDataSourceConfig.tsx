@@ -42,6 +42,43 @@ type CategoryType = 'device-metric' | 'device-command' | 'device' | 'system' | '
 type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" or "device:deviceId" or "system:metric" or "extension:extensionId:metric" or "extension-command:extensionId:command" or "transform:transformId:field" or "ai-metric:group:field"
 
 // ============================================================================
+// Shared sub-components (module-level to prevent remounting)
+// ============================================================================
+
+function _ItemBadge({ itemType, t }: { itemType: 'template' | 'virtual' | 'info'; t: (key: string) => string }) {
+  const config = {
+    template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
+    virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-accent-purple-light text-accent-purple border-accent-purple-light' },
+    info: { label: t('dataSource.badgeInfo'), className: 'bg-warning-light text-warning border-warning' },
+  }[itemType]
+  return (
+    <span className={cn('px-1.5 py-0.5', textNano, 'font-medium rounded-[3px] border shrink-0', config.className)}>
+      {config.label}
+    </span>
+  )
+}
+
+function _DataIndicator({ hasData, count, t }: { hasData: boolean | null; count?: number; t: (key: string) => string }) {
+  if (hasData === true) {
+    return (
+      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-success-light border border-success-light" title={`${t('dataSource.hasHistoricalData')} (${count ?? 0} ${t('dataSource.dataPoints')})`}>
+        <Circle className="h-1.5 w-1.5 fill-success text-success" />
+        <span className={cn(textNano, "text-success font-medium")}>{count ?? 0}</span>
+      </div>
+    )
+  }
+  if (hasData === false) {
+    return (
+      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted-30 border border-muted" title={t('dataSource.noHistoricalData')}>
+        <Circle className="h-1.5 w-1.5 fill-muted-foreground text-muted-foreground" />
+        <span className={cn(textNano, "text-muted-foreground")}>{t('dataSource.noData')}</span>
+      </div>
+    )
+  }
+  return null
+}
+
+// ============================================================================
 // Constants
 // ============================================================================
 
@@ -1073,40 +1110,11 @@ export function UnifiedDataSourceConfig({
         return String(val)
       }
 
-      // Badge component for item type
-      const ItemBadge = ({ itemType }: { itemType: 'template' | 'virtual' | 'info' }) => {
-        const config = {
-          template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
-          virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-accent-purple-light text-accent-purple border-accent-purple-light' },
-          info: { label: t('dataSource.badgeInfo'), className: 'bg-warning-light text-warning border-warning' },
-        }[itemType]
-        return (
-          <span className={cn('px-1.5 py-0.5', textNano, 'font-medium rounded-[3px] border shrink-0', config.className)}>
-            {config.label}
-          </span>
-        )
-      }
+      // Badge component for item type (uses module-level _ItemBadge)
+      const ItemBadge = (props: { itemType: 'template' | 'virtual' | 'info' }) => <_ItemBadge {...props} t={t} />
 
-      // Data indicator component
-      const DataIndicator = ({ hasData, count }: { hasData: boolean | null; count?: number }) => {
-        if (hasData === true) {
-          return (
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-success-light border border-success-light" title={`${t('dataSource.hasHistoricalData')} (${count ?? 0} ${t('dataSource.dataPoints')})`}>
-              <Circle className="h-1.5 w-1.5 fill-success text-success" />
-              <span className={cn(textNano, "text-success font-medium")}>{count ?? 0}</span>
-            </div>
-          )
-        }
-        if (hasData === false) {
-          return (
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted-30 border border-muted" title={t('dataSource.noHistoricalData')}>
-              <Circle className="h-1.5 w-1.5 fill-muted-foreground text-muted-foreground" />
-              <span className={cn(textNano, "text-muted-foreground")}>{t('dataSource.noData')}</span>
-            </div>
-          )
-        }
-        return null
-      }
+      // Data indicator component (uses module-level _DataIndicator)
+      const DataIndicator = (props: { hasData: boolean | null; count?: number }) => <_DataIndicator {...props} t={t} />
 
       return (
         <div className="flex flex-col h-full">
@@ -2197,18 +2205,7 @@ function MobileMetricsList({
     return String(val)
   }
 
-  const ItemBadge = ({ itemType }: { itemType: 'template' | 'virtual' | 'info' }) => {
-    const config = {
-      template: { label: t('dataSource.badgeTemplate'), className: 'bg-info-light text-info border-info' },
-      virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-accent-purple-light text-accent-purple border-accent-purple-light' },
-      info: { label: t('dataSource.badgeInfo'), className: 'bg-warning-light text-warning border-warning' },
-    }[itemType]
-    return (
-      <span className={`px-2 py-0.5 text-xs font-medium rounded-md border shrink-0 ${config.className}`}>
-        {config.label}
-      </span>
-    )
-  }
+  const ItemBadge = (props: { itemType: 'template' | 'virtual' | 'info' }) => <_ItemBadge {...props} t={t} />
 
   return (
     <div className="p-4 space-y-3">

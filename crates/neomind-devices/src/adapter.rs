@@ -150,10 +150,31 @@ impl DeviceEvent {
                 }
             }
             Self::Discovery { device } => {
-                // Discovery creates an online event
-                NeoMindEvent::DeviceOnline {
+                // Discovery creates a DeviceDiscovered event for auto-onboarding
+                NeoMindEvent::DeviceDiscovered {
                     device_id: device.device_id,
-                    device_type: device.device_type.clone(),
+                    source: device
+                        .metadata
+                        .get("source")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    adapter_id: device
+                        .metadata
+                        .get("adapter_id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    metadata: device.metadata.clone(),
+                    sample: device
+                        .metadata
+                        .get("sample")
+                        .cloned()
+                        .unwrap_or(serde_json::json!(null)),
+                    is_binary: device
+                        .metadata
+                        .get("is_binary")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
                     timestamp: device.timestamp,
                 }
             }
@@ -460,9 +481,17 @@ impl EventPublishingAdapter {
             while running.load(std::sync::atomic::Ordering::Relaxed) {
                 match rx.next().await {
                     Some(event) => {
-                        let device_id = event.device_id().unwrap_or("unknown").to_string();
+                        let source = match &event {
+                            DeviceEvent::Discovery { device } => {
+                                format!("adapter:discovery:{}", device.device_id)
+                            }
+                            _ => {
+                                let device_id =
+                                    event.device_id().unwrap_or("unknown").to_string();
+                                format!("adapter:{}", device_id)
+                            }
+                        };
                         let neomind_event = event.to_neomind_event();
-                        let source = format!("adapter:{}", device_id);
                         event_bus.publish_with_source(neomind_event, source).await;
                     }
                     None => break,

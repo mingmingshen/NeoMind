@@ -1664,8 +1664,9 @@ impl MqttAdapter {
                             (serde_json::json!(BASE64.encode(&payload)), true, "base64")
                         };
 
-                        // Publish unknown_device_data event for auto-onboarding
-                        if let Some(bus) = event_bus {
+                        // Publish DeviceDiscovered event via DeviceEvent::Discovery for auto-onboarding
+                        {
+                            let adapter_id = config.name.clone();
                             let sample = serde_json::json!({
                                 "device_id": auto_device_id,
                                 "timestamp": chrono::Utc::now().timestamp(),
@@ -1675,23 +1676,42 @@ impl MqttAdapter {
                                 "is_binary": is_binary
                             });
 
-                            // Use the adapter's name as adapter_id for auto-onboarding
-                            // This matches the adapter_id used during registration
-                            let adapter_id = config.name.clone();
-
-                            bus.publish(NeoMindEvent::Custom {
-                                event_type: "unknown_device_data".to_string(),
-                                data: serde_json::json!({
-                                    "device_id": auto_device_id,
+                            let discovered = crate::adapter::DiscoveredDeviceInfo {
+                                device_id: auto_device_id.clone(),
+                                device_type: "unknown".to_string(),
+                                name: None,
+                                endpoint: Some(topic.to_string()),
+                                capabilities: vec![],
+                                timestamp: chrono::Utc::now().timestamp(),
+                                metadata: serde_json::json!({
                                     "source": "mqtt",
                                     "broker_id": broker_id,
                                     "adapter_id": adapter_id,
                                     "original_topic": topic,
                                     "sample": sample,
-                                    "is_binary": is_binary
+                                    "is_binary": is_binary,
                                 }),
-                            })
-                            .await;
+                            };
+
+                            let _ = event_tx.send(crate::adapter::DeviceEvent::Discovery {
+                                device: discovered,
+                            });
+
+                            // Also publish directly to event bus if available
+                            if let Some(bus) = event_bus {
+                                bus.publish(NeoMindEvent::DeviceDiscovered {
+                                    device_id: auto_device_id,
+                                    source: "mqtt".to_string(),
+                                    adapter_id: Some(adapter_id),
+                                    metadata: serde_json::json!({
+                                        "broker_id": broker_id,
+                                        "original_topic": topic,
+                                    }),
+                                    sample,
+                                    is_binary,
+                                    timestamp: chrono::Utc::now().timestamp(),
+                                }).await;
+                            }
                         }
                     }
                 }
