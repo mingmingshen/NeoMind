@@ -236,6 +236,14 @@ fn extract_event_data(event: &NeoMindEvent) -> Value {
                 "timestamp": timestamp,
             })
         }
+        // Custom events: flatten the custom event_type alongside the payload data
+        // so the frontend can filter by custom_type and inspect the inner event_type
+        NeoMindEvent::Custom { event_type, data } => {
+            serde_json::json!({
+                "custom_type": event_type,
+                "data": data,
+            })
+        }
         // For other event types, serialize the full event (they may have the type field, but frontend handles them)
         _ => serde_json::to_value(event).unwrap_or(Value::Null),
     }

@@ -27,11 +27,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Webhook adapter auto-discovery** — Webhook adapter now emits `DeviceDiscovered` on every POST for unregistered devices (previously only on first POST), enabling proper sample collection for auto-onboarding
+- **Webhook auto-onboarding single-trigger** — `create_draft_with_topic()` now triggers analysis immediately when `MIN_SAMPLES_FOR_ANALYSIS` samples are collected (was 1 but analysis only triggered in `add_sample_to_draft`). One webhook POST now creates draft + triggers analysis
+- **Webhook URL format** — Fixed all frontend webhook URL generation from `/api/devices/webhook/{id}` to correct route `/api/devices/{id}/webhook` across 6 components
+- **Webhook handler refactor** — Rewrote webhook handler from 650+ lines to ~200 lines, delegating to `WebhookAdapter.process_webhook()` instead of duplicating token verification, metric extraction, and event publishing
+- **Webhook shared device registry** — Webhook adapter now receives the shared `DeviceRegistry` via `set_shared_device_registry()`, fixing token verification and device type lookup
+- **Webhook token display** — Fixed `config_to_device_instance()` in compat.rs to include `connection_config.extra` fields (webhook_token, json_path, etc.) so tokens display correctly in Device Connections
+- **Pending Devices WebSocket auto-update** — Fixed event handler to use correct field names (`custom_type`, `data.event_type`, snake_case values). Added `Custom` event arm in `extract_event_data()` to avoid double-wrapped serialization
+- **Webhook routes** — Added 3 webhook routes to router.rs: `POST /api/devices/:id/webhook`, `POST /api/devices/webhook`, `GET /api/devices/:id/webhook-url`
+- **Webhook token input** — Added webhook token generation and input to both AddDeviceDialog and ManualAddForm (AddDeviceGlobalDialog)
+- **Webhook URL with real IP** — Device Connections webhook URLs now show server's real IP instead of localhost
+- **Device Information webhook display** — DeviceDetail page now shows webhook URL and token for webhook adapter devices
 - **Extension status/logs 500→404** — Fixed API returning 500 "IPC error" for non-existent extensions. Added existence check before IPC calls, returning proper 404
 - **Boolean flag parsing** — Fixed `--tls` flag silently failing when it's the last argument. Changed from `get_flag_value()` to `args.iter().any()` for boolean flags
 - **Severity level mismatch** — Fixed message send recovery hint from "error" to "emergency" to match actual API accepted values (info|warning|critical|emergency)
 - **Transform auto-unwrap** — Single-key JSON input like `{"value": 42}` is now auto-unwrapped to scalar `42` for simpler transform code. Multi-key objects remain as-is
 - **Extension reload routing** — `neomind extension reload` no longer falls through to `__FALLTHROUGH__` but properly calls the API endpoint
+- **Marketplace dialog flickering (Windows)** — `ExtensionListContent` and `DetailContent` were defined as inline components inside `MarketplaceDialog`, causing React to unmount/remount the entire DOM subtree on every render. Replaced with stable inline JSX. Also removed duplicate `fetchExtensions()` call after install
+- **EntityIconPicker flickering** — `IconPreview` was defined inside the component body, moved to module level to prevent React remounting
+- **UnifiedDataSourceConfig flickering** — `ItemBadge` (2 instances) and `DataIndicator` defined inside component bodies caused unnecessary remounts. Extracted to module-level components with `t` passed via props
 
 ---
 

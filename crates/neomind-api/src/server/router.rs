@@ -181,6 +181,19 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/frontend-components/:id/bundle",
             get(frontend_components::get_bundle_handler),
         )
+        // Webhook API (public endpoints for device data push - external devices cannot carry JWT)
+        .route(
+            "/api/devices/:id/webhook",
+            post(devices::webhook_handler),
+        )
+        .route(
+            "/api/devices/webhook",
+            post(devices::webhook_generic_handler),
+        )
+        .route(
+            "/api/devices/:id/webhook-url",
+            get(devices::get_webhook_url_handler),
+        )
         ;
 
     // JWT protected routes (require JWT token authentication)

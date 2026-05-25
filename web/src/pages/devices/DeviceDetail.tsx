@@ -522,6 +522,24 @@ export function DeviceDetail({
                     </p>
                   </div>
                 )}
+                {device.adapter_type === 'webhook' && (() => {
+                  const webhookUrl = `${window.location.origin}/api/devices/${device.device_id}/webhook`
+                  const token = (device.config?.webhook_token || device.connection_config?.webhook_token) as string | undefined
+                  return (
+                    <>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Webhook URL</p>
+                        <p className="text-xs font-mono text-muted-foreground break-all">{webhookUrl}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">{t('devices:add.webhookToken')}</p>
+                        <p className="text-xs font-mono text-muted-foreground">
+                          {token ? `${token.slice(0, 8)}${'•'.repeat(8)}${token.slice(-4)}` : t('devices:add.webhookTokenNone')}
+                        </p>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
             </div>
 

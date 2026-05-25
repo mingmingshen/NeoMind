@@ -187,18 +187,19 @@ export function PendingDevicesList({
 
   // Use WebSocket events for real-time updates
   const handleAutoOnboardEvent = useCallback((event: { type: string; data: unknown }) => {
-    // Check if this is an auto_onboard event
-    if (event.type === 'Custom' && (event.data as { event_type?: string })?.event_type === 'auto_onboard') {
-      const eventData = event.data as { event?: string; device_id?: string }
-      // Refresh drafts list when relevant auto_onboard events occur
-      const eventType = eventData.event
-      if (eventType === 'DraftCreated' ||
-          eventType === 'SampleCollected' ||
-          eventType === 'AnalysisStarted' ||
-          eventType === 'AnalysisCompleted' ||
-          eventType === 'DraftRegistered' ||
-          eventType === 'DraftRejected') {
-        fetchDrafts()
+    // Custom events from backend have: { custom_type: "auto_onboard", data: { event_type: "draft_created", ... } }
+    if (event.type === 'Custom') {
+      const customData = event.data as { custom_type?: string; data?: { event_type?: string; device_id?: string } }
+      if (customData.custom_type === 'auto_onboard') {
+        const innerEventType = customData.data?.event_type
+        if (innerEventType === 'draft_created' ||
+            innerEventType === 'sample_collected' ||
+            innerEventType === 'analysis_started' ||
+            innerEventType === 'analysis_completed' ||
+            innerEventType === 'device_registered' ||
+            innerEventType === 'device_rejected') {
+          fetchDrafts()
+        }
       }
     }
   }, [fetchDrafts])

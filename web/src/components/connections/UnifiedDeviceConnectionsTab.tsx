@@ -12,9 +12,11 @@ import {
   Radio,
   Copy,
   Check,
+  Cpu,
   LucideIcon,
   Loader2,
   AlertTriangle,
+  KeyRound,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -43,6 +45,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Server,
   Webhook,
   Radio,
+  Cpu,
 }
 
 type View = 'list' | 'detail'
@@ -144,37 +147,6 @@ const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
           ],
         },
       }
-    case 'http':
-      return {
-        type: 'object',
-        properties: {
-          name: {
-            type: 'string',
-            description: 'Adapter name',
-          },
-          poll_interval: {
-            type: 'number',
-            description: 'Default poll interval (seconds)',
-            default: 30,
-            minimum: 1,
-          },
-          timeout: {
-            type: 'number',
-            description: 'Request timeout (seconds)',
-            default: 10,
-            minimum: 1,
-          },
-        },
-        required: ['name'],
-        ui_hints: {
-          field_order: ['name', 'poll_interval', 'timeout'],
-          display_names: {
-            name: 'Adapter Name',
-            poll_interval: 'Poll Interval (sec)',
-            timeout: 'Timeout (sec)',
-          },
-        },
-      }
     case 'webhook':
       return {
         type: 'object',
@@ -219,6 +191,44 @@ function toUnifiedPluginType(type: AdapterType): UnifiedPluginType {
     can_add_multiple: type.can_add_multiple,
     builtin: type.builtin,
   }
+}
+
+/** Token display with masked value and copy button */
+function WebhookTokenDisplay({ token }: { token?: string }) {
+  const { t } = useTranslation(['devices'])
+  const { toast } = useToast()
+  const [copied, setCopied] = useState(false)
+
+  if (!token) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <KeyRound className="h-3 w-3" />
+        {t('devices:add.webhookTokenNone')}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <KeyRound className="h-3 w-3 text-muted-foreground shrink-0" />
+      <code className="text-xs font-mono flex-1 truncate bg-muted px-1.5 py-0.5 rounded">
+        {token.slice(0, 8)}{'•'.repeat(8)}{token.slice(-4)}
+      </code>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 w-6 p-0 shrink-0"
+        onClick={async () => {
+          await navigator.clipboard.writeText(token)
+          setCopied(true)
+          toast({ title: t('devices:add.webhookTokenCopied') })
+          setTimeout(() => setCopied(false), 2000)
+        }}
+      >
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      </Button>
+    </div>
+  )
 }
 
 export function UnifiedDeviceConnectionsTab() {
@@ -298,9 +308,9 @@ export function UnifiedDeviceConnectionsTab() {
       // Count webhook devices
       return devices.filter((d: any) => d.adapter_type === 'webhook').length
     }
-    if (type === 'http') {
-      // Count HTTP polling devices
-      return devices.filter((d: any) => d.adapter_type === 'http').length
+    if (type === 'webhook') {
+      // Count webhook devices
+      return devices.filter((d: any) => d.adapter_type === 'webhook').length
     }
     return 0
   }
@@ -310,16 +320,19 @@ export function UnifiedDeviceConnectionsTab() {
       // Connected if builtin OR any external broker is connected
       return (mqttStatus?.connected || false) || externalBrokers.some((b) => b.connected)
     }
-    if (type === 'webhook' || type === 'http') {
-      // Always "available" - these are built-in endpoints
+    if (type === 'webhook') {
+      // Always "available" - built-in endpoint
       return getDeviceCount(type) > 0
     }
     return false
   }
 
   const getWebhookUrl = () => {
-    const apiBase = getServerOrigin()
-    return `${apiBase}/api/devices/webhook/{device_id}`
+    if (mqttStatus?.server_ip) {
+      const port = new URL(getServerOrigin()).port || '9375'
+      return `http://${mqttStatus.server_ip}:${port}/api/devices/{device_id}/webhook`
+    }
+    return `${getServerOrigin()}/api/devices/{device_id}/webhook`
   }
 
   const copyWebhookUrl = async () => {
@@ -635,23 +648,46 @@ export function UnifiedDeviceConnectionsTab() {
                 <Label>Devices Using Webhook ({getDeviceCount('webhook')})</Label>
                 {getDeviceCount('webhook') > 0 ? (
                   <div className="space-y-2">
-                    {devices.filter((d: any) => d.adapter_type === 'webhook').map((device: any) => (
-                      <div key={device.id} className="flex items-center justify-between gap-2 p-2 rounded border">
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium text-sm truncate">{device.name || device.id}</div>
-                          <div className="text-xs text-muted-foreground font-mono truncate">
-                            {getWebhookUrl().replace('{device_id}', device.id)}
+                    {devices.filter((d: any) => d.adapter_type === 'webhook').map((device: any) => {
+                      const token = (device.config?.webhook_token || device.connection_config?.webhook_token) as string | undefined
+
+                      return (
+                        <div key={device.id} className="p-3 rounded border space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="font-medium text-sm truncate">{device.name || device.id}</div>
+                              <div className="text-xs text-muted-foreground font-mono truncate">
+                                {getWebhookUrl().replace('{device_id}', device.id)}
+                              </div>
+                            </div>
+                            <Badge variant={device.online ? 'default' : 'secondary'}>
+                              {device.online ? 'Online' : 'Offline'}
+                            </Badge>
                           </div>
+                          <WebhookTokenDisplay token={token} />
                         </div>
-                        <Badge variant={device.online ? 'default' : 'secondary'}>
-                          {device.online ? 'Online' : 'Offline'}
-                        </Badge>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">No devices using webhook yet</p>
                 )}
+              </div>
+
+              {/* Authentication guide */}
+              <div className="space-y-2">
+                <Label>{t('devices:add.webhookAuthHeader')}</Label>
+                <p className="text-xs text-muted-foreground">{t('devices:add.webhookAuthDesc')}</p>
+                <div className="rounded-lg bg-muted p-3 sm:p-4 -mx-1 sm:mx-0 space-y-2">
+                  <div>
+                    <span className="text-xs font-medium">Authorization Header:</span>
+                    <pre className="text-xs font-mono">Authorization: Bearer {'<token>'}</pre>
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium">Query Parameter:</span>
+                    <pre className="text-xs font-mono">?token={'<token>'}</pre>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -687,25 +723,6 @@ export function UnifiedDeviceConnectionsTab() {
 
       // Add external brokers
       pluginInstances.push(...externalBrokers.map(brokerToInstance))
-    } else if (selectedType.id === 'http') {
-      // HTTP polling devices - show as "instances" since they are configured per device
-      const httpDevices = devices.filter((d: any) => d.adapter_type === 'http')
-      pluginInstances = httpDevices.map((device: any) => ({
-        id: device.id,
-        name: device.name || device.id,
-        plugin_type: 'http',
-        enabled: true,
-        running: device.online || false,
-        isBuiltin: false,
-        config: {
-          ...(device.connection_config || {}),
-          _url: device.connection_config?.url,
-          _poll_interval: device.connection_config?.poll_interval,
-        },
-        status: {
-          connected: device.online || false,
-        },
-      }))
     }
 
     const IconComponent = ICON_MAP[adapterType?.icon || 'Server'] || Server
@@ -737,13 +754,10 @@ export function UnifiedDeviceConnectionsTab() {
                 <IconComponent className="h-8 w-8" />
               </div>
               <h3 className="text-lg font-semibold mb-1">
-                {selectedType.id === 'http' ? 'No HTTP polling devices configured' : t('plugins:llm.noInstanceYet', { name: adapterType?.name })}
+                {t('plugins:llm.noInstanceYet', { name: adapterType?.name })}
               </h3>
               <p className="text-sm text-muted-foreground mb-4">
-                {selectedType.id === 'http'
-                  ? 'Add devices with HTTP adapter type to enable polling'
-                  : t('plugins:llm.configureToStart', { name: adapterType?.name })
-                }
+                {t('plugins:llm.configureToStart', { name: adapterType?.name })}
               </p>
               {selectedType.id === 'mqtt' && (
                 <Button onClick={() => {
@@ -761,7 +775,6 @@ export function UnifiedDeviceConnectionsTab() {
             {pluginInstances.map((instance) => {
               const testResult = testResults[instance.id]
               const isMqtt = instance.plugin_type === 'mqtt'
-              const isHttp = instance.plugin_type === 'http'
               const isBuiltin = (instance as any).isBuiltin
 
               return (
@@ -790,8 +803,6 @@ export function UnifiedDeviceConnectionsTab() {
                         <CardDescription className="font-mono text-xs truncate">
                           {isMqtt && isBuiltin
                             ? `${mqttStatus?.server_ip || 'localhost'}:${mqttStatus?.listen_port || 1883}`
-                            : isHttp
-                            ? `${(instance.config as any)?._url || 'N/A'} (${(instance.config as any)?._poll_interval || 30}s)`
                             : `${instance.config?.broker}:${instance.config?.port}`}
                         </CardDescription>
                       </div>

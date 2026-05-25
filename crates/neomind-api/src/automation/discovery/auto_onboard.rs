@@ -399,8 +399,24 @@ impl AutoOnboardManager {
             is_binary
         );
 
-        // Note: Analysis will be triggered when MIN_SAMPLES_FOR_ANALYSIS samples are collected
-        // See add_sample_to_draft() for the analysis trigger logic
+        // Trigger analysis immediately if we already have enough samples
+        // (MIN_SAMPLES_FOR_ANALYSIS == 1, so the first sample triggers analysis)
+        {
+            let drafts = self.drafts.read().await;
+            if let Some(draft) = drafts.get(device_id) {
+                if draft.ready_for_analysis(MIN_SAMPLES_FOR_ANALYSIS) {
+                    let draft_id = draft.id.clone();
+                    let device_id = draft.device_id.clone();
+                    let samples = draft.json_samples();
+                    drop(drafts);
+
+                    let manager = self.clone_for_task();
+                    tokio::spawn(async move {
+                        let _ = manager.analyze_device(&draft_id, &device_id, samples).await;
+                    });
+                }
+            }
+        }
 
         Ok(true)
     }

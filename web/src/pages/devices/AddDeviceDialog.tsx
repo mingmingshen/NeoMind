@@ -10,18 +10,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { RefreshCw, Plus } from "lucide-react"
+import { RefreshCw, Plus, KeyRound } from "lucide-react"
 import type { DeviceType, AddDeviceRequest, ConnectionConfig } from "@/types"
 import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 import { FormField } from "@/components/ui/field"
 import { getServerOrigin } from "@/lib/api"
-import { validateUrl } from "@/lib/form-validation"
 import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 
 function generateRandomId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
   let result = ''
   for (let i = 0; i < 10; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return result
+}
+
+function generateWebhookToken(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let result = 'whk_'
+  for (let i = 0; i < 32; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length))
   }
   return result
@@ -47,8 +55,9 @@ export function AddDeviceDialog({
   const [selectedDeviceType, setSelectedDeviceType] = useState("")
   const [deviceId, setDeviceId] = useState("")
   const [deviceName, setDeviceName] = useState("")
-  const [adapterType, setAdapterType] = useState<"mqtt" | "http" | "webhook">("mqtt")
+  const [adapterType, setAdapterType] = useState<"mqtt" | "webhook">("mqtt")
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig>({})
+  const [webhookToken, setWebhookToken] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -66,14 +75,11 @@ export function AddDeviceDialog({
         telemetry_topic: defaultTopic,
         command_topic: defaultCommandTopic,
       })
-    } else if (adapterType === 'http') {
-      setConnectionConfig({
-        url: `http://192.168.1.100/api/telemetry`,
-        method: 'GET',
-        poll_interval: 30,
-      })
     } else {
       setConnectionConfig({})
+    }
+    if (adapterType !== 'webhook') {
+      setWebhookToken("")
     }
   }, [adapterType, selectedDeviceType, deviceId])
 
@@ -83,10 +89,6 @@ export function AddDeviceDialog({
     if (!selectedDeviceType) {
       newErrors.deviceType = t('devices:deviceType') + ' is required'
     }
-    if (adapterType === 'http' && connectionConfig.url) {
-      const urlError = validateUrl(connectionConfig.url, 'URL')
-      if (urlError) newErrors.httpUrl = urlError
-    }
     setErrors(newErrors)
     if (Object.keys(newErrors).length > 0) return
 
@@ -95,7 +97,10 @@ export function AddDeviceDialog({
       name: deviceName || deviceId || selectedDeviceType,
       device_type: selectedDeviceType,
       adapter_type: adapterType,
-      connection_config: connectionConfig,
+      connection_config: {
+        ...connectionConfig,
+        ...(adapterType === 'webhook' && webhookToken ? { webhook_token: webhookToken } : {}),
+      },
     }
 
     const success = await onAdd(request)
@@ -105,6 +110,7 @@ export function AddDeviceDialog({
       setDeviceName("")
       setAdapterType("mqtt")
       setConnectionConfig({})
+      setWebhookToken("")
       onOpenChange(false)
       toast({
         title: t('devices:add.success'),
@@ -126,6 +132,7 @@ export function AddDeviceDialog({
       setDeviceName("")
       setAdapterType("mqtt")
       setConnectionConfig({})
+      setWebhookToken("")
       setErrors({})
       onOpenChange(false)
     }
@@ -201,14 +208,13 @@ export function AddDeviceDialog({
         <FormField label={t('devices:add.adapterType')}>
           <Select
             value={adapterType}
-            onValueChange={(v) => setAdapterType(v as "mqtt" | "http" | "webhook")}
+            onValueChange={(v) => setAdapterType(v as "mqtt" | "webhook")}
           >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="mqtt">MQTT</SelectItem>
-              <SelectItem value="http">HTTP</SelectItem>
               <SelectItem value="webhook">Webhook</SelectItem>
             </SelectContent>
           </Select>
@@ -244,63 +250,51 @@ export function AddDeviceDialog({
           </FormSection>
         )}
 
-        {adapterType === 'http' && (
-          <FormSection
-            title={t('devices:add.httpConfig', { defaultValue: 'HTTP Configuration' })}
-            collapsible
-            defaultExpanded
-          >
-            <div className="space-y-3">
-              <FormField label={t('devices:add.httpUrl')} error={errors.httpUrl}>
-                <Input
-                  value={connectionConfig.url || ''}
-                  onChange={(e) => { setConnectionConfig({ ...connectionConfig, url: e.target.value }); setErrors(prev => { const next = { ...prev }; delete next.httpUrl; return next }) }}
-                  placeholder="http://192.168.1.100/api/telemetry"
-                  className="font-mono text-sm"
-                />
-              </FormField>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField label={t('devices:add.requestMethod')}>
-                  <Select
-                    value={connectionConfig.method || 'GET'}
-                    onValueChange={(v) => setConnectionConfig({ ...connectionConfig, method: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="GET">GET</SelectItem>
-                      <SelectItem value="POST">POST</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FormField>
-                <FormField label={t('devices:add.pollInterval')}>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={connectionConfig.poll_interval || 30}
-                    onChange={(e) => setConnectionConfig({ ...connectionConfig, poll_interval: parseInt(e.target.value) || 30 })}
-                  />
-                </FormField>
-              </div>
-            </div>
-          </FormSection>
-        )}
-
         {adapterType === 'webhook' && (
           <FormSection
             title={t('devices:add.webhookConfig', { defaultValue: 'Webhook Configuration' })}
           >
-            <div className="rounded-lg border bg-muted p-4">
-              <p className="text-sm text-muted-foreground mb-2">
-                {t('devices:add.webhookUrlDescription')}
-              </p>
-              <code className="text-xs break-all block">
-                {getServerOrigin()}/api/devices/webhook/{deviceId}
-              </code>
+            <div className="space-y-4">
+              {/* Webhook URL preview */}
+              <div className="rounded-lg border bg-muted p-4">
+                <p className="text-sm text-muted-foreground mb-2">
+                  {t('devices:add.webhookUrlDescription')}
+                </p>
+                <code className="text-xs break-all block">
+                  {getServerOrigin()}/api/devices/{deviceId}/webhook
+                </code>
+              </div>
+
+              {/* Webhook Token */}
+              <FormField
+                label={t('devices:add.webhookToken')}
+                error={undefined}
+              >
+                <div className="flex gap-2">
+                  <Input
+                    value={webhookToken}
+                    onChange={(e) => setWebhookToken(e.target.value)}
+                    placeholder={t('devices:add.webhookTokenPlaceholder')}
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setWebhookToken(generateWebhookToken())}
+                    title={t('devices:add.webhookTokenGenerate')}
+                  >
+                    <KeyRound className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t('devices:add.webhookTokenDesc')}
+                </p>
+              </FormField>
             </div>
           </FormSection>
         )}
+
       </FormSectionGroup>
     </UnifiedFormDialog>
   )

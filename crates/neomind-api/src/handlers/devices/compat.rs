@@ -53,6 +53,24 @@ pub fn config_to_device_instance(
     if let Some(topic) = &config.connection_config.command_topic {
         instance_config.insert("command_topic".to_string(), topic.clone());
     }
+    // Include extra fields (e.g., webhook_token, json_path, etc.)
+    for (key, value) in &config.connection_config.extra {
+        // Convert serde_json::Value to string for the HashMap<String, String> config
+        match value {
+            serde_json::Value::String(s) => {
+                instance_config.insert(key.clone(), s.clone());
+            }
+            serde_json::Value::Number(n) => {
+                instance_config.insert(key.clone(), n.to_string());
+            }
+            serde_json::Value::Bool(b) => {
+                instance_config.insert(key.clone(), b.to_string());
+            }
+            other => {
+                instance_config.insert(key.clone(), other.to_string());
+            }
+        }
+    }
 
     DeviceInstance {
         device_type: config.device_type.clone(),

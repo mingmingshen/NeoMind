@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Bluetooth, Pencil, Search, RefreshCw, Cpu,
+  Bluetooth, Pencil, Search, RefreshCw, Cpu, Plus,
   Wifi, Globe, Radio,
   CheckCircle2, XCircle, Loader2,
-  Copy, LucideIcon,
+  Copy, LucideIcon, KeyRound,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { textMini } from "@/design-system/tokens/typography"
@@ -34,7 +34,6 @@ import { toast } from '@/components/ui/use-toast'
 import { api, getServerOrigin } from '@/lib/api'
 import { useStore } from '@/store'
 import { fetchCache } from '@/lib/utils/async'
-import { validateUrl } from '@/lib/form-validation'
 import type { DeviceType, AddDeviceRequest, ConnectionConfig, MqttStatus, ExternalBroker } from '@/types'
 
 // ---------------------------------------------------------------------------
@@ -72,6 +71,15 @@ function generateRandomId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
   let result = ''
   for (let i = 0; i < 10; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return result
+}
+
+function generateWebhookToken(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let result = 'whk_'
+  for (let i = 0; i < 32; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length))
   }
   return result
@@ -290,7 +298,7 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
   const serverIp = mqttStatus?.server_ip || getServerOrigin().replace(/^https?:\/\//, '')
   const brokerPort = mqttStatus?.listen_port ?? 1883
   const apiPort = new URL(getServerOrigin()).port || '9375'
-  const webhookBaseUrl = `http://${serverIp}:${apiPort}/api/devices/webhook/`
+  const webhookBaseUrl = `http://${serverIp}:${apiPort}/api/devices/`
   const enabledBrokers = brokers.filter(b => b.enabled)
   const hasAnyBroker = brokerRunning || enabledBrokers.length > 0
 
@@ -524,7 +532,6 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
 
 const ADAPTER_TYPES = [
   { value: 'mqtt' as const, icon: Radio, color: 'text-accent-orange', bg: 'bg-accent-orange-light' },
-  { value: 'http' as const, icon: Globe, color: 'text-accent-cyan', bg: 'bg-accent-cyan-light' },
   { value: 'webhook' as const, icon: Wifi, color: 'text-accent-purple', bg: 'bg-accent-purple-light' },
 ]
 
@@ -547,10 +554,11 @@ function ManualAddForm({
   const [selectedDeviceType, setSelectedDeviceType] = useState('')
   const [deviceId, setDeviceId] = useState('')
   const [deviceName, setDeviceName] = useState('')
-  const [adapterType, setAdapterType] = useState<'mqtt' | 'http' | 'webhook'>('mqtt')
+  const [adapterType, setAdapterType] = useState<'mqtt' | 'webhook'>('mqtt')
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverIp, setServerIp] = useState('')
+  const [webhookToken, setWebhookToken] = useState('')
 
   // Fetch server IP for webhook URL
   useEffect(() => {
@@ -571,14 +579,11 @@ function ManualAddForm({
         telemetry_topic: `device/${selectedDeviceType}/${deviceId}/uplink`,
         command_topic: `device/${selectedDeviceType}/${deviceId}/downlink`,
       })
-    } else if (adapterType === 'http') {
-      setConnectionConfig({
-        url: 'http://192.168.1.100/api/telemetry',
-        method: 'GET',
-        poll_interval: 30,
-      })
     } else {
       setConnectionConfig({})
+    }
+    if (adapterType !== 'webhook') {
+      setWebhookToken('')
     }
   }, [adapterType, selectedDeviceType, deviceId])
 
@@ -586,10 +591,6 @@ function ManualAddForm({
     const newErrors: Record<string, string> = {}
     if (!selectedDeviceType) {
       newErrors.deviceType = t('devices:deviceType') + ' is required'
-    }
-    if (adapterType === 'http' && connectionConfig.url) {
-      const urlError = validateUrl(connectionConfig.url, 'URL')
-      if (urlError) newErrors.httpUrl = urlError
     }
     setErrors(newErrors)
     if (Object.keys(newErrors).length > 0) return
@@ -599,7 +600,10 @@ function ManualAddForm({
       name: deviceName || deviceId || selectedDeviceType,
       device_type: selectedDeviceType,
       adapter_type: adapterType,
-      connection_config: connectionConfig,
+      connection_config: {
+        ...connectionConfig,
+        ...(adapterType === 'webhook' && webhookToken ? { webhook_token: webhookToken } : {}),
+      },
     }
 
     const success = await onAdd(request)
@@ -687,7 +691,7 @@ function ManualAddForm({
         description={t('devices:add.connectionSettingsDesc')}
       >
         {/* Adapter type — visual cards */}
-        <div className={cn("gap-2", isMobile ? "grid grid-cols-1" : "grid grid-cols-3")}>
+        <div className={cn("gap-2", isMobile ? "grid grid-cols-2" : "grid grid-cols-2")}>
           {ADAPTER_TYPES.map(({ value, icon: AdapterIcon, color, bg }) => {
             const isActive = adapterType === value
             return (
@@ -748,59 +752,44 @@ function ManualAddForm({
           </div>
         )}
 
-        {/* HTTP Config */}
-        {adapterType === 'http' && (
-          <div className="space-y-3 pt-1">
-            <FormField label={t('devices:add.httpUrl')} error={errors.httpUrl}>
-              <Input
-                value={connectionConfig.url || ''}
-                onChange={(e) => { setConnectionConfig({ ...connectionConfig, url: e.target.value }); setErrors(prev => { const next = { ...prev }; delete next.httpUrl; return next }) }}
-                placeholder="http://192.168.1.100/api/telemetry"
-                className="font-mono text-sm"
-              />
-            </FormField>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormField label={t('devices:add.requestMethod')}>
-                <Select
-                  value={connectionConfig.method || 'GET'}
-                  onValueChange={(v) => setConnectionConfig({ ...connectionConfig, method: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="GET">GET</SelectItem>
-                    <SelectItem value="POST">POST</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormField>
-              <FormField label={t('devices:add.pollInterval')}>
-                <Input
-                  type="number"
-                  min="1"
-                  value={connectionConfig.poll_interval || 30}
-                  onChange={(e) => setConnectionConfig({ ...connectionConfig, poll_interval: parseInt(e.target.value) || 30 })}
-                />
-              </FormField>
-            </div>
-          </div>
-        )}
-
         {/* Webhook Config */}
         {adapterType === 'webhook' && (
-          <div className="pt-1">
+          <div className="space-y-3 pt-1">
             <div className="rounded-lg border bg-muted-30 p-4">
               <p className="text-sm text-muted-foreground mb-2">
                 {t('devices:add.webhookUrlDescription')}
               </p>
               <code className="text-xs break-all block font-mono">
                 {serverIp
-                  ? `http://${serverIp}:${new URL(getServerOrigin()).port || '9375'}/api/devices/webhook/${deviceId}`
-                  : `${getServerOrigin()}/api/devices/webhook/${deviceId}`}
+                  ? `http://${serverIp}:${new URL(getServerOrigin()).port || '9375'}/api/devices/${deviceId}/webhook`
+                  : `${getServerOrigin()}/api/devices/${deviceId}/webhook`}
               </code>
             </div>
+            <FormField label={t('devices:add.webhookToken')}>
+              <div className="flex gap-2">
+                <Input
+                  value={webhookToken}
+                  onChange={(e) => setWebhookToken(e.target.value)}
+                  placeholder={t('devices:add.webhookTokenPlaceholder')}
+                  className="font-mono text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setWebhookToken(generateWebhookToken())}
+                  title={t('devices:add.webhookTokenGenerate')}
+                >
+                  <KeyRound className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {t('devices:add.webhookTokenDesc')}
+              </p>
+            </FormField>
           </div>
         )}
+
       </FormSection>
     </FormSectionGroup>
   )

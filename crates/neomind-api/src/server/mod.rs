@@ -57,7 +57,7 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     // Initialization phase
     startup.phase_init();
 
-    // Initialize device type storage (must be before init_mqtt)
+    // Initialize device type storage (must be before init_device_adapters)
     state.init_device_storage().await;
     startup.service("Device storage", ServiceStatus::Started);
 
@@ -329,8 +329,8 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
                 });
             }
 
-            // Initialize MQTT and register device types
-            bg_state.init_mqtt().await;
+            // Initialize device adapters (MQTT, Webhook, etc.)
+            bg_state.init_device_adapters().await;
 
             tracing::info!(
                 elapsed_ms = t_bg.elapsed().as_millis() as u64,

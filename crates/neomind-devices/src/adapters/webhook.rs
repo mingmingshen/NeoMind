@@ -31,7 +31,10 @@
 //! }
 //! ```
 
-use crate::adapter::{AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent};
+use crate::adapter::{
+    AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent,
+    DiscoveredDeviceInfo,
+};
 use crate::mdl::MetricValue;
 use crate::registry::DeviceRegistry;
 use crate::telemetry::TimeSeriesStorage;
@@ -136,8 +139,8 @@ pub struct WebhookAdapter {
     config: WebhookAdapterConfig,
     /// Event bus
     event_bus: Option<Arc<EventBus>>,
-    /// Device registry
-    device_registry: Arc<DeviceRegistry>,
+    /// Device registry (shared with DeviceService)
+    device_registry: Arc<RwLock<Arc<DeviceRegistry>>>,
     /// Event channel
     event_tx: broadcast::Sender<DeviceEvent>,
     /// Running state
@@ -161,13 +164,14 @@ impl WebhookAdapter {
     ) -> Self {
         let (event_tx, _) = broadcast::channel(1000);
 
-        let extractor = Arc::new(UnifiedExtractor::new(device_registry.clone()));
+        let registry = Arc::new(RwLock::new(device_registry.clone()));
+        let extractor = Arc::new(UnifiedExtractor::new(device_registry));
 
         Self {
             name: config.name.clone(),
             config,
             event_bus,
-            device_registry,
+            device_registry: registry,
             event_tx,
             running: Arc::new(RwLock::new(false)),
             devices: Arc::new(RwLock::new(Vec::new())),
@@ -193,10 +197,9 @@ impl WebhookAdapter {
         *self.telemetry_storage.write().await = Some(storage);
     }
 
-    /// Set the device registry.
-    pub fn with_device_registry(mut self, registry: Arc<DeviceRegistry>) -> Self {
-        self.device_registry = registry;
-        self
+    /// Set the device registry (shared with DeviceService).
+    pub async fn set_shared_device_registry(&self, registry: Arc<DeviceRegistry>) {
+        *self.device_registry.write().await = registry;
     }
 
     /// Validate an incoming webhook request.
@@ -264,13 +267,51 @@ impl WebhookAdapter {
     }
 
     /// Process a webhook payload and emit events.
+    ///
+    /// `provided_token`: Optional webhook token from Authorization header or query param.
+    ///   If the device has a `webhook_token` in its connection_config.extra, it must match.
     pub async fn process_webhook(
         &self,
         device_id: String,
         payload: WebhookPayload,
+        provided_token: Option<&str>,
     ) -> AdapterResult<usize> {
-        // Validate request
+        // Validate request (API key, IP blacklist/whitelist)
         self.validate_request(&device_id, None, None)?;
+
+        // Get device from shared registry (for token verification and type info)
+        let registry = self.device_registry.read().await;
+        let device_info = registry.get_device(&device_id);
+        let is_registered = device_info.is_some();
+        let device_type = device_info
+            .as_ref()
+            .map(|d| d.device_type.clone())
+            .unwrap_or_else(|| "webhook".to_string());
+
+        // Verify per-device webhook token (if configured)
+        if let Some(device) = device_info {
+            if let Some(expected) = device
+                .connection_config
+                .extra
+                .get("webhook_token")
+                .and_then(|v| v.as_str())
+            {
+                match provided_token {
+                    Some(token) if token == expected => {}
+                    Some(_) => {
+                        return Err(AdapterError::Connection(
+                            "Invalid webhook token".to_string(),
+                        ));
+                    }
+                    None => {
+                        return Err(AdapterError::Connection(
+                            "Webhook token required".to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+        drop(registry);
 
         // Check rate limit
         self.check_rate_limit(&device_id).await?;
@@ -279,30 +320,67 @@ impl WebhookAdapter {
             .timestamp
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
-        // Get device type from registry for template-driven extraction
-        let device_type = self
-            .device_registry
-            .get_device(&device_id)
-            .map(|d| d.device_type)
-            .unwrap_or_else(|| "webhook".to_string());
-
-        // Add device to tracking if not already present
-        {
+        // Track device first sighting (for DeviceOnline emission on registered devices)
+        let is_new = {
             let mut devices = self.devices.write().await;
             if !devices.contains(&device_id) {
                 devices.push(device_id.clone());
+                true
+            } else {
+                false
+            }
+        };
 
-                // Publish device online event
-                if let Some(bus) = &self.event_bus {
-                    use neomind_core::NeoMindEvent;
+        // For known/registered devices, emit DeviceOnline only on first sighting
+        if is_new && is_registered {
+            if let Some(bus) = &self.event_bus {
+                use neomind_core::NeoMindEvent;
 
-                    bus.publish(NeoMindEvent::DeviceOnline {
-                        device_id: device_id.clone(),
-                        device_type: device_type.clone(),
-                        timestamp,
-                    })
-                    .await;
-                }
+                bus.publish(NeoMindEvent::DeviceOnline {
+                    device_id: device_id.clone(),
+                    device_type: device_type.clone(),
+                    timestamp,
+                })
+                .await;
+            }
+        }
+
+        // For unknown/unregistered devices, emit DeviceDiscovered on EVERY call
+        // so the auto-onboard manager can collect multiple samples for analysis
+        if !is_registered {
+            let sample = payload.data.clone();
+            let discovered = DiscoveredDeviceInfo {
+                device_id: device_id.clone(),
+                device_type: "unknown".to_string(),
+                name: None,
+                endpoint: Some(format!("webhook:{}", self.name)),
+                capabilities: vec![],
+                timestamp,
+                metadata: serde_json::json!({
+                    "source": "webhook",
+                    "adapter_id": self.name,
+                }),
+            };
+
+            let _ = self.event_tx.send(DeviceEvent::Discovery {
+                device: discovered,
+            });
+
+            if let Some(bus) = &self.event_bus {
+                use neomind_core::NeoMindEvent;
+
+                bus.publish(NeoMindEvent::DeviceDiscovered {
+                    device_id: device_id.clone(),
+                    source: "webhook".to_string(),
+                    adapter_id: Some(self.name.clone()),
+                    metadata: serde_json::json!({
+                        "endpoint": format!("webhook:{}", self.name),
+                    }),
+                    sample,
+                    is_binary: false,
+                    timestamp,
+                })
+                .await;
             }
         }
 

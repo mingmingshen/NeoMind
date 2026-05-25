@@ -36,7 +36,7 @@ export function EditDeviceDialog({
   const { t } = useTranslation(['common', 'devices'])
 
   const [deviceName, setDeviceName] = useState("")
-  const [adapterType, setAdapterType] = useState<"mqtt" | "http" | "webhook">("mqtt")
+  const [adapterType, setAdapterType] = useState<"mqtt" | "webhook">("mqtt")
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig>({})
 
   // Memoize device type info to prevent unnecessary re-renders
@@ -53,7 +53,7 @@ export function EditDeviceDialog({
   useEffect(() => {
     if (open && device) {
       setDeviceName(device.name || "")
-      setAdapterType((device.adapter_type as "mqtt" | "http" | "webhook") || "mqtt")
+      setAdapterType((device.adapter_type as "mqtt" | "webhook") || "mqtt")
 
       const config = device.connection_config || {}
 
@@ -143,14 +143,13 @@ export function EditDeviceDialog({
         <FormField label={t('devices:add.adapterType')}>
           <Select
             value={adapterType}
-            onValueChange={(v) => setAdapterType(v as "mqtt" | "http" | "webhook")}
+            onValueChange={(v) => setAdapterType(v as "mqtt" | "webhook")}
           >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="mqtt">MQTT</SelectItem>
-              <SelectItem value="http">HTTP</SelectItem>
               <SelectItem value="webhook">Webhook</SelectItem>
             </SelectContent>
           </Select>
@@ -186,49 +185,6 @@ export function EditDeviceDialog({
           </FormSection>
         )}
 
-        {adapterType === 'http' && (
-          <FormSection
-            title={t('devices:add.httpConfig', { defaultValue: 'HTTP Configuration' })}
-            collapsible
-            defaultExpanded
-          >
-            <div className="space-y-3">
-              <FormField label={t('devices:add.httpUrl')}>
-                <Input
-                  value={connectionConfig.url || ''}
-                  onChange={(e) => setConnectionConfig({ ...connectionConfig, url: e.target.value })}
-                  placeholder="http://192.168.1.100/api/telemetry"
-                  className="font-mono text-sm"
-                />
-              </FormField>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField label={t('devices:add.requestMethod')}>
-                  <Select
-                    value={connectionConfig.method || 'GET'}
-                    onValueChange={(v) => setConnectionConfig({ ...connectionConfig, method: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="GET">GET</SelectItem>
-                      <SelectItem value="POST">POST</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FormField>
-                <FormField label={t('devices:add.pollInterval')}>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={connectionConfig.poll_interval || 30}
-                    onChange={(e) => setConnectionConfig({ ...connectionConfig, poll_interval: parseInt(e.target.value) || 30 })}
-                  />
-                </FormField>
-              </div>
-            </div>
-          </FormSection>
-        )}
-
         {adapterType === 'webhook' && (
           <FormSection
             title={t('devices:add.webhookConfig', { defaultValue: 'Webhook Configuration' })}
@@ -238,7 +194,7 @@ export function EditDeviceDialog({
                 {t('devices:add.webhookUrlDescription')}
               </p>
               <code className="text-xs break-all block">
-                {getServerOrigin()}/api/devices/webhook/{device?.id}
+                {getServerOrigin()}/api/devices/{device?.id}/webhook
               </code>
             </div>
           </FormSection>
