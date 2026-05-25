@@ -542,13 +542,21 @@ impl ChannelRegistry {
             channel_recipients.push(email.to_string());
         }
 
-        // Persist to storage
-        self.save_recipients(channel_name).await?;
-
-        // Update the channel with new recipients (recreate for email channels)
+        // Update the channel with new recipients first (recreate for email channels)
+        // Do this before persisting so we can rollback on failure
         if channel_type == "email" {
-            self.recreate_email_channel(channel_name).await?;
+            if let Err(e) = self.recreate_email_channel(channel_name).await {
+                // Rollback: remove from memory
+                let mut state = self.state.write().await;
+                if let Some(channel_recipients) = state.recipients.get_mut(channel_name) {
+                    channel_recipients.retain(|r| r != email);
+                }
+                return Err(e);
+            }
         }
+
+        // Persist to storage only after channel recreation succeeds
+        self.save_recipients(channel_name).await?;
 
         tracing::info!("Added recipient '{}' to channel '{}'", email, channel_name);
         Ok(())
@@ -582,13 +590,19 @@ impl ChannelRegistry {
             return Err(Error::NotFound(format!("Recipient not found: {}", email)));
         }
 
-        // Persist to storage
-        self.save_recipients(channel_name).await?;
-
-        // Update the channel with new recipients (recreate for email channels)
+        // Update the channel with new recipients first (recreate for email channels)
         if channel_type == "email" {
-            self.recreate_email_channel(channel_name).await?;
+            if let Err(e) = self.recreate_email_channel(channel_name).await {
+                // Rollback: add back to memory
+                let mut state = self.state.write().await;
+                let channel_recipients = state.recipients.entry(channel_name.to_string()).or_default();
+                channel_recipients.push(email.to_string());
+                return Err(e);
+            }
         }
+
+        // Persist to storage only after channel recreation succeeds
+        self.save_recipients(channel_name).await?;
 
         tracing::info!(
             "Removed recipient '{}' from channel '{}'",
@@ -964,7 +978,8 @@ pub fn get_channel_schema(channel_type: &str) -> Option<serde_json::Value> {
             "properties": {
                 "name": {"type": "string"},
                 "url": {"type": "string"},
-                "headers": {"type": "object"}
+                "headers": {"type": "object"},
+                "timeout_secs": {"type": "integer", "description": "Request timeout in seconds (default: 30)"}
             },
             "required": ["url"]
         })),

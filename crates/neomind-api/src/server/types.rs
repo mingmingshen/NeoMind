@@ -699,6 +699,40 @@ impl ServerState {
             "All parallel store opens completed"
         );
 
+        // Spawn periodic delivery log + old message cleanup (every 6 hours)
+        // and delivery retry (every 2 minutes)
+        {
+            let mm = core.message_manager.clone();
+            tokio::spawn(async move {
+                // Initial cleanup on startup
+                let cleaned_logs = mm.cleanup_delivery_logs(1).await;
+                if cleaned_logs > 0 {
+                    tracing::info!("Cleaned up {} expired delivery logs on startup", cleaned_logs);
+                }
+
+                let mut cleanup_interval = tokio::time::interval(tokio::time::Duration::from_secs(6 * 60 * 60));
+                let mut retry_interval = tokio::time::interval(tokio::time::Duration::from_secs(2 * 60));
+                loop {
+                    tokio::select! {
+                        _ = cleanup_interval.tick() => {
+                            let cleaned_logs = mm.cleanup_delivery_logs(1).await;
+                            if cleaned_logs > 0 {
+                                tracing::info!("Periodic cleanup: removed {} delivery logs older than 1 day", cleaned_logs);
+                            }
+                            if let Ok(cleaned_msgs) = mm.cleanup_old(30).await {
+                                if cleaned_msgs > 0 {
+                                    tracing::info!("Periodic cleanup: removed {} messages older than 30 days", cleaned_msgs);
+                                }
+                            }
+                        }
+                        _ = retry_interval.tick() => {
+                            mm.retry_failed_deliveries().await;
+                        }
+                    }
+                }
+            });
+        }
+
         Self {
             core,
             devices,

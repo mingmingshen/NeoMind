@@ -168,6 +168,26 @@ export function MessageChannelsTab({
                 }}
               />
             </div>
+            <div>
+              <Label htmlFor="webhook-timeout">{t('messages.channels.timeoutLabel', 'Timeout (seconds)')}</Label>
+              <Input
+                id="webhook-timeout"
+                type="number"
+                min={5}
+                max={120}
+                placeholder="30"
+                value={(newChannelConfig.timeout_secs as number) || ''}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value)
+                  if (val > 0) {
+                    setNewChannelConfig(prev => ({ ...prev, timeout_secs: val }))
+                  }
+                }}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {t('messages.channels.timeoutHint', 'Request timeout in seconds (default: 30, max: 120)')}
+              </p>
+            </div>
           </>
         )}
         {selectedChannelType.id === 'email' && (

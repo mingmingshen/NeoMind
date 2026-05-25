@@ -34,6 +34,8 @@
     "webhookUrlPlaceholder": "https://webhook.site/xxxxx-xxxx-xxxx-xxxx",
     "headers": "Headers (JSON)",
     "headersPlaceholder": "{\"Content-Type\": \"application/json\"}",
+    "timeoutLabel": "Timeout (seconds)",
+    "timeoutHint": "Request timeout in seconds (default: 30, max: 120)",
     "smtpServer": "SMTP Server",
     "smtpServerPlaceholder": "smtp.example.com",
     "smtpPort": "SMTP Port",

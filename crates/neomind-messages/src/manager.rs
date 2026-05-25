@@ -15,6 +15,10 @@ use super::delivery_log::{
 use super::error::{Error, Result};
 use super::{Message, MessageId, MessageSeverity, MessageStatus, MessageType};
 
+/// Minimum interval (in seconds) between duplicate messages with the same
+/// title + source + severity key. Prevents message bombing from rules engine.
+const DEDUP_INTERVAL_SECS: i64 = 60;
+
 /// Persistent message manager with storage backend.
 #[derive(Clone)]
 pub struct MessageManager {
@@ -28,6 +32,8 @@ pub struct MessageManager {
     event_bus: Arc<RwLock<Option<Arc<neomind_core::EventBus>>>>,
     /// Delivery log storage (in-memory with optional persistence)
     delivery_logs: Arc<RwLock<HashMap<DeliveryLogId, DeliveryLog>>>,
+    /// Deduplication cache: (title, source, severity) -> last send timestamp
+    dedup_cache: Arc<RwLock<HashMap<String, chrono::DateTime<chrono::Utc>>>>,
 }
 
 impl MessageManager {
@@ -39,6 +45,7 @@ impl MessageManager {
             channels: Arc::new(RwLock::new(ChannelRegistry::new())),
             event_bus: Arc::new(RwLock::new(None)),
             delivery_logs: Arc::new(RwLock::new(HashMap::new())),
+            dedup_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -98,6 +105,7 @@ impl MessageManager {
             channels: Arc::new(RwLock::new(channels)),
             event_bus: Arc::new(RwLock::new(None)),
             delivery_logs: Arc::new(RwLock::new(HashMap::new())),
+            dedup_cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -310,6 +318,29 @@ impl MessageManager {
         let severity = message.severity;
         let message_type = message.message_type;
 
+        // Deduplication: skip if same title+source+severity was sent recently
+        let dedup_key = format!("{}|{}|{}", message.title, message.source, message.severity.as_str());
+        {
+            let cache = self.dedup_cache.read().await;
+            if let Some(last_sent) = cache.get(&dedup_key) {
+                let elapsed = (chrono::Utc::now() - *last_sent).num_seconds();
+                if elapsed < DEDUP_INTERVAL_SECS {
+                    tracing::debug!(
+                        "Skipping duplicate message '{}' (same key sent {}s ago)",
+                        message.title,
+                        elapsed
+                    );
+                    // Still store the message, just don't send to channels
+                    self.messages.write().await.insert(id.clone(), message.clone());
+                    if let Some(store) = self.storage.read().await.as_ref() {
+                        let stored = Self::message_to_stored(&message);
+                        let _ = store.insert_async(stored).await;
+                    }
+                    return Ok(message);
+                }
+            }
+        }
+
         // Store in memory for all message types (Notification and DataPush)
         self.messages
             .write()
@@ -397,10 +428,11 @@ impl MessageManager {
                             let error_msg = e.to_string();
                             send_results.push((channel_name.clone(), Err(error_msg.clone())));
                             if let Some(log) = delivery_log {
-                                pending_delivery_logs.push(
-                                    log.with_status(DeliveryStatus::Failed)
-                                        .with_error(error_msg),
-                                );
+                                // Mark as Retrying so the retry scheduler can pick it up
+                                let mut log = log.with_status(DeliveryStatus::Retrying)
+                                    .with_error(error_msg);
+                                log.channel_name = channel_name.clone();
+                                pending_delivery_logs.push(log);
                             }
                         }
                     }
@@ -444,6 +476,15 @@ impl MessageManager {
                 })
                 .await;
             tracing::debug!("Published MessageCreated event for message {}", id);
+        }
+
+        // Update dedup cache
+        {
+            let mut cache = self.dedup_cache.write().await;
+            cache.insert(dedup_key, chrono::Utc::now());
+            // Prune old entries (keep only last 5 minutes)
+            let cutoff = chrono::Utc::now() - chrono::Duration::seconds(DEDUP_INTERVAL_SECS * 5);
+            cache.retain(|_, ts| *ts > cutoff);
         }
 
         tracing::info!(
@@ -847,6 +888,119 @@ impl MessageManager {
     /// Clear all delivery logs.
     pub async fn clear_delivery_logs(&self) {
         self.delivery_logs.write().await.clear();
+    }
+
+    /// Retry failed deliveries that haven't exceeded max retries.
+    /// Returns the number of retries attempted.
+    pub async fn retry_failed_deliveries(&self) -> usize {
+        let channels = self.channels.read().await;
+
+        // Collect logs that need retry
+        let to_retry: Vec<(DeliveryLogId, String, String)> = {
+            let logs = self.delivery_logs.read().await;
+            logs.iter()
+                .filter(|(_, log)| {
+                    log.status == DeliveryStatus::Retrying && log.can_retry()
+                })
+                .map(|(id, log)| {
+                    (id.clone(), log.channel_name.clone(), log.event_id.clone())
+                })
+                .collect()
+        };
+
+        let mut retried = 0;
+        for (log_id, channel_name, event_id) in to_retry {
+            // Try to parse the message ID for lookup
+            let msg_id = match MessageId::from_string(&event_id) {
+                Ok(id) => id,
+                Err(_) => {
+                    let mut logs = self.delivery_logs.write().await;
+                    if let Some(log) = logs.get_mut(&log_id) {
+                        log.status = DeliveryStatus::Failed;
+                        log.error_message = Some("Invalid message ID".to_string());
+                        log.updated_at = chrono::Utc::now();
+                    }
+                    continue;
+                }
+            };
+
+            let message = {
+                let messages = self.messages.read().await;
+                messages.get(&msg_id).cloned()
+            };
+
+            let Some(message) = message else {
+                // Original message no longer exists, mark as failed
+                let mut logs = self.delivery_logs.write().await;
+                if let Some(log) = logs.get_mut(&log_id) {
+                    log.status = DeliveryStatus::Failed;
+                    log.error_message = Some("Original message no longer exists".to_string());
+                    log.updated_at = chrono::Utc::now();
+                }
+                continue;
+            };
+
+            // Try to get and send through the channel
+            if let Some(channel) = channels.get(&channel_name).await {
+                if channel.is_enabled() {
+                    match channel.send(&message).await {
+                        Ok(()) => {
+                            let mut logs = self.delivery_logs.write().await;
+                            if let Some(log) = logs.get_mut(&log_id) {
+                                log.status = DeliveryStatus::Success;
+                                log.error_message = None;
+                                log.updated_at = chrono::Utc::now();
+                            }
+                            retried += 1;
+                            tracing::info!(
+                                "Retry succeeded for message '{}' on channel '{}'",
+                                event_id,
+                                channel_name
+                            );
+                        }
+                        Err(e) => {
+                            let error_msg = e.to_string();
+                            let mut logs = self.delivery_logs.write().await;
+                            if let Some(log) = logs.get_mut(&log_id) {
+                                log.increment_retry();
+                                log.error_message = Some(error_msg);
+                                if !log.can_retry() {
+                                    log.status = DeliveryStatus::Failed;
+                                }
+                                log.updated_at = chrono::Utc::now();
+                            }
+                            tracing::warn!(
+                                "Retry failed (attempt) for message '{}' on channel '{}': {}",
+                                event_id,
+                                channel_name,
+                                e
+                            );
+                        }
+                    }
+                } else {
+                    // Channel disabled, mark as failed
+                    let mut logs = self.delivery_logs.write().await;
+                    if let Some(log) = logs.get_mut(&log_id) {
+                        log.status = DeliveryStatus::Failed;
+                        log.error_message = Some("Channel is disabled".to_string());
+                        log.updated_at = chrono::Utc::now();
+                    }
+                }
+            } else {
+                // Channel removed
+                let mut logs = self.delivery_logs.write().await;
+                if let Some(log) = logs.get_mut(&log_id) {
+                    log.status = DeliveryStatus::Failed;
+                    log.error_message = Some("Channel no longer exists".to_string());
+                    log.updated_at = chrono::Utc::now();
+                }
+            }
+        }
+
+        if retried > 0 {
+            tracing::info!("Retry scheduler: {} deliveries succeeded on retry", retried);
+        }
+        retried
     }
 
     /// Clear all messages (use with caution).

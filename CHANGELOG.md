@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.8.0] - 2026-05-25
+
+### Added
+
+- **Messaging system delivery retry** — Failed message deliveries are now automatically retried up to 3 times with a 2-minute interval scheduler. The existing `DeliveryLog` infrastructure (`can_retry`/`increment_retry`/`max_retries`) is now fully wired to a background retry loop in `AppState`
+- **Webhook timeout configuration** — Webhook channels now support configurable request timeout (`timeout_secs`, default 30s) with a 10s connect timeout. Field exposed in the channel creation dialog in the UI, with en/zh i18n labels
+- **Message deduplication** — Messages with the same title+source+severity within a 60-second window are automatically deduplicated. The message is still stored but channel delivery is skipped, preventing message bombing from high-frequency rule triggers
+- **Automatic delivery log cleanup** — A background task now runs every 6 hours to clean up delivery logs older than 1 day and messages older than 30 days. Runs on startup and periodically via `tokio::select!` alongside the retry scheduler
+- **Automatic updater fixes** — Fixed app restart and version placeholder replacement after in-app updates. Fixed service config, sudo handling, and upgrade support for the install/update flow
+
+### Changed
+
+- **Email SMTP connection reuse** — `EmailChannel` now builds and caches the `SmtpTransport` at creation time via `Arc<Mutex>`, eliminating per-send SMTP connection setup overhead
+- **Email recipients atomicity** — `add_recipient`/`remove_recipient` now recreate the email channel before persisting to storage, with automatic rollback on failure. Previously a failed recreation could leave `state.recipients` and `EmailChannel.to_addresses` out of sync
+
+### Fixed
+
+- **Email TLS configuration dead code** — The `use_tls` field in `EmailChannel` was stored but never read in `send()`, which always used `Tls::Required`. Now correctly uses `builder_dangerous` when `use_tls` is false, enabling support for local mail servers (MailHog, etc.)
+- **CLI robustness** — Fixed widget install multipart mismatch, added border styling to widget scaffolds, aligned CLI docs/skills/prompts with actual system behavior
+- **CI build** — Fixed Tauri externalBin by building `neomind-cli` alongside `neomind-extension-runner`
+- **Device auto-discovery** — Fixed `adapter_type` when registering auto-discovered devices
+
+---
+
 ## [v0.7.9] - 2026-05-25
 
 ### Added

@@ -34,6 +34,8 @@
     "webhookUrlPlaceholder": "https://webhook.site/xxxxx-xxxx-xxxx-xxxx",
     "headers": "请求头 (JSON)",
     "headersPlaceholder": "{\"Content-Type\": \"application/json\"}",
+    "timeoutLabel": "超时时间（秒）",
+    "timeoutHint": "请求超时时间（默认30秒，最大120秒）",
     "smtpServer": "SMTP 服务器",
     "smtpServerPlaceholder": "smtp.example.com",
     "smtpPort": "SMTP 端口",

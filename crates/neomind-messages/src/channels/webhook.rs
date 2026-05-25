@@ -11,6 +11,9 @@ use super::super::{Error, Message, Result};
 #[cfg(feature = "webhook")]
 use super::MessageChannel;
 
+/// Default webhook timeout in seconds.
+const DEFAULT_WEBHOOK_TIMEOUT_SECS: u64 = 30;
+
 /// Webhook channel for sending messages via HTTP POST.
 #[cfg(feature = "webhook")]
 #[derive(Debug, Clone)]
@@ -25,12 +28,21 @@ pub struct WebhookChannel {
 #[cfg(feature = "webhook")]
 impl WebhookChannel {
     pub fn new(name: String, url: String) -> Self {
+        Self::with_timeout(name, url, DEFAULT_WEBHOOK_TIMEOUT_SECS)
+    }
+
+    pub fn with_timeout(name: String, url: String, timeout_secs: u64) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(timeout_secs))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self {
             name,
             enabled: true,
             url,
             headers: HashMap::new(),
-            client: reqwest::Client::new(),
+            client,
         }
     }
 
@@ -123,7 +135,12 @@ impl super::ChannelFactory for WebhookChannelFactory {
             .unwrap_or("webhook")
             .to_string();
 
-        let mut channel = WebhookChannel::new(name, url.to_string());
+        let timeout_secs = config
+            .get("timeout_secs")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(DEFAULT_WEBHOOK_TIMEOUT_SECS);
+
+        let mut channel = WebhookChannel::with_timeout(name, url.to_string(), timeout_secs);
 
         if let Some(headers) = config.get("headers") {
             if let Some(obj) = headers.as_object() {

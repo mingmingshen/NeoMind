@@ -4,6 +4,9 @@
 use async_trait::async_trait;
 
 #[cfg(feature = "email")]
+use std::sync::Arc;
+
+#[cfg(feature = "email")]
 use super::super::{Error, Message, Result};
 #[cfg(feature = "email")]
 use super::MessageChannel;
@@ -16,6 +19,53 @@ fn html_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
+}
+
+/// Wrapper for SmtpTransport that implements Debug and Clone.
+#[cfg(feature = "email")]
+#[derive(Clone)]
+struct SmtpTransportHandle {
+    inner: Arc<std::sync::Mutex<lettre::SmtpTransport>>,
+}
+
+#[cfg(feature = "email")]
+impl std::fmt::Debug for SmtpTransportHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SmtpTransportHandle").finish()
+    }
+}
+
+/// Build the SMTP transport from config.
+#[cfg(feature = "email")]
+fn build_smtp_transport(
+    smtp_server: &str,
+    smtp_port: u16,
+    username: String,
+    password: String,
+    use_tls: bool,
+) -> std::result::Result<lettre::SmtpTransport, Error> {
+    let creds = lettre::transport::smtp::authentication::Credentials::new(username, password);
+
+    if use_tls {
+        use lettre::transport::smtp::client::Tls;
+        use lettre::transport::smtp::client::TlsParametersBuilder;
+
+        let tls_params = TlsParametersBuilder::new(smtp_server.to_string())
+            .build()
+            .map_err(|e| Error::SendFailed(format!("Failed to build TLS params: {}", e)))?;
+
+        Ok(lettre::SmtpTransport::relay(smtp_server)
+            .map_err(|e| Error::SendFailed(format!("Invalid SMTP server: {}", e)))?
+            .port(smtp_port)
+            .tls(Tls::Required(tls_params))
+            .credentials(creds)
+            .build())
+    } else {
+        Ok(lettre::SmtpTransport::builder_dangerous(smtp_server)
+            .port(smtp_port)
+            .credentials(creds)
+            .build())
+    }
 }
 
 /// Email channel for sending messages via SMTP.
@@ -31,6 +81,8 @@ pub struct EmailChannel {
     from_address: String,
     to_addresses: Vec<String>,
     use_tls: bool,
+    /// Cached SMTP transport for reuse.
+    transport: Option<SmtpTransportHandle>,
 }
 
 #[cfg(feature = "email")]
@@ -43,6 +95,18 @@ impl EmailChannel {
         password: String,
         from_address: String,
     ) -> Self {
+        let transport = build_smtp_transport(
+            &smtp_server,
+            smtp_port,
+            username.clone(),
+            password.clone(),
+            true,
+        )
+        .ok()
+        .map(|t| SmtpTransportHandle {
+            inner: Arc::new(std::sync::Mutex::new(t)),
+        });
+
         Self {
             name,
             enabled: true,
@@ -53,6 +117,7 @@ impl EmailChannel {
             from_address,
             to_addresses: Vec::new(),
             use_tls: true,
+            transport,
         }
     }
 
@@ -78,6 +143,17 @@ impl EmailChannel {
 
     pub fn without_tls(mut self) -> Self {
         self.use_tls = false;
+        self.transport = build_smtp_transport(
+            &self.smtp_server,
+            self.smtp_port,
+            self.username.clone(),
+            self.password.clone(),
+            false,
+        )
+        .ok()
+        .map(|t| SmtpTransportHandle {
+            inner: Arc::new(std::sync::Mutex::new(t)),
+        });
         self
     }
 
@@ -304,27 +380,21 @@ impl MessageChannel for EmailChannel {
         let smtp_port = self.smtp_port;
         let username = self.username.clone();
         let password = self.password.clone();
+        let use_tls = self.use_tls;
+        let transport = self.transport.clone();
 
         tokio::task::spawn_blocking(move || {
-            let creds =
-                lettre::transport::smtp::authentication::Credentials::new(username, password);
-
-            use lettre::transport::smtp::client::Tls;
-            use lettre::transport::smtp::client::TlsParametersBuilder;
-
-            let tls_params = TlsParametersBuilder::new(smtp_server.clone())
-                .build()
-                .map_err(|e| Error::SendFailed(format!("Failed to build TLS params: {}", e)))?;
-
-            let mailer = lettre::SmtpTransport::relay(&smtp_server)
-                .map_err(|e| Error::SendFailed(format!("Invalid SMTP server: {}", e)))?
-                .port(smtp_port)
-                .tls(Tls::Required(tls_params))
-                .credentials(creds)
-                .build();
-
-            lettre::Transport::send(&mailer, &email)
-                .map_err(|e| Error::SendFailed(format!("Failed to send email: {}", e)))?;
+            if let Some(handle) = transport {
+                // Reuse cached transport
+                let guard = handle.inner.lock().unwrap();
+                lettre::Transport::send(&*guard, &email)
+                    .map_err(|e| Error::SendFailed(format!("Failed to send email: {}", e)))?;
+            } else {
+                // Fallback: build transport on-the-fly (should not normally happen)
+                let mailer = build_smtp_transport(&smtp_server, smtp_port, username, password, use_tls)?;
+                lettre::Transport::send(&mailer, &email)
+                    .map_err(|e| Error::SendFailed(format!("Failed to send email: {}", e)))?;
+            }
 
             Ok::<(), Error>(())
         })
