@@ -177,11 +177,11 @@ pub async fn get_app_version(app: AppHandle) -> Result<String, String> {
 
 /// Restart the application
 ///
-/// This command triggers a restart of the application.
-/// Should be called after a successful update installation.
+/// Uses `request_restart()` which schedules a restart after the current
+/// event loop tick completes, giving the app a chance to clean up gracefully.
 #[tauri::command]
 pub async fn relaunch_app(app: AppHandle) {
-    app.restart();
+    app.request_restart();
 }
 
 /// Show a system notification for available updates

@@ -47,6 +47,7 @@ export function AboutTab() {
   const { handleError, showSuccess } = useErrorHandler()
   const { updateInfo, setUpdateDialogOpen } = useAppStore()
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
 
@@ -55,7 +56,7 @@ export function AboutTab() {
     showSuccess(t('settings:alreadyUpToDate'))
   }, [showSuccess, t])
 
-  const { checkUpdate } = useUpdateCheck({
+  const { checkUpdate, getAppVersion } = useUpdateCheck({
     autoCheck: false,
     onUpToDate: handleUpToDate,
   })
@@ -66,6 +67,13 @@ export function AboutTab() {
       setSystemInfo(response)
     } catch (e) {
       handleError(e, { operation: 'Load system info', showToast: false })
+      // Fallback: get version from Tauri when API isn't ready yet
+      if (isTauriEnv() && !appVersion) {
+        try {
+          const v = await getAppVersion()
+          setAppVersion(v)
+        } catch { /* ignore */ }
+      }
     } finally {
       setLoading(false)
     }
@@ -143,7 +151,7 @@ export function AboutTab() {
           </div>
         </div>
         <Badge variant="outline" className="text-sm">
-          {systemInfo?.version || "v0.1.0"}
+          {systemInfo?.version || (appVersion ? `v${appVersion}` : "")}
         </Badge>
       </div>
 
@@ -281,7 +289,7 @@ export function AboutTab() {
           <div className="flex items-center justify-between border-b pb-2">
             <span className="text-muted-foreground">{t("settings:version")}</span>
             <div className="flex items-center gap-2">
-              <Badge variant="secondary">{systemInfo?.version || "v0.1.0"}</Badge>
+              <Badge variant="secondary">{systemInfo?.version || (appVersion ? `v${appVersion}` : "---")}</Badge>
               {isTauriEnv() && updateInfo?.available && updateInfo.version !== systemInfo?.version && (
                 <Badge variant="default" className="text-xs">
                   v{updateInfo.version} {t("settings:update")}
