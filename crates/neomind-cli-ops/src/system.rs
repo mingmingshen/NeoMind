@@ -54,7 +54,7 @@ pub async fn system_info(client: &ApiClient) -> Result<CliResponse> {
     let api_base = client.base_url();
     // api_base includes /api suffix (e.g. http://host:9375/api), strip it for device-facing URLs
     let server_base = api_base.trim_end_matches("/api");
-    let webhook_url = format!("{}/api/devices/webhook/{{device_id}}", server_base);
+    let webhook_url = format!("{}/api/devices/{{device_id}}/webhook", server_base);
     let api_url = api_base.to_string();
 
     let info = json!({

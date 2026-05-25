@@ -134,7 +134,13 @@ impl ApiClient {
         Ok(resp_body)
     }
 
-    pub async fn post_file(&self, path: &str, file_path: &str) -> Result<serde_json::Value> {
+    /// Upload a single file as multipart with the specified field name.
+    pub async fn post_file_named(
+        &self,
+        path: &str,
+        file_path: &str,
+        field_name: &str,
+    ) -> Result<serde_json::Value> {
         use std::fs::File;
         use std::io::Read;
         use reqwest::multipart;
@@ -146,13 +152,39 @@ impl ApiClient {
             .and_then(|n| n.to_str())
             .unwrap_or("file");
 
-        // Read file content
         let mut file_content = Vec::new();
         file.read_to_end(&mut file_content)?;
 
         let part = multipart::Part::bytes(file_content)
             .file_name(file_name.to_string());
-        let form = multipart::Form::new().part("file", part);
+        let form = multipart::Form::new().part(field_name.to_string(), part);
+
+        let req = self.client.post(&url).multipart(form);
+        let resp = self.add_auth(req).send().await?;
+        let status = resp.status();
+        let resp_body: serde_json::Value = resp.json().await?;
+        if !status.is_success() {
+            let msg = extract_error_message(&resp_body);
+            anyhow::bail!("API error ({}): {}", status, msg);
+        }
+        Ok(resp_body)
+    }
+
+    /// Upload multiple named parts as multipart/form-data.
+    /// Each tuple is (field_name, bytes, filename).
+    pub async fn post_multipart(
+        &self,
+        path: &str,
+        parts: Vec<(&str, Vec<u8>, String)>,
+    ) -> Result<serde_json::Value> {
+        use reqwest::multipart;
+
+        let url = format!("{}{}", self.base_url, path);
+        let mut form = multipart::Form::new();
+        for (field_name, bytes, filename) in parts {
+            let part = multipart::Part::bytes(bytes).file_name(filename);
+            form = form.part(field_name.to_string(), part);
+        }
 
         let req = self.client.post(&url).multipart(form);
         let resp = self.add_auth(req).send().await?;

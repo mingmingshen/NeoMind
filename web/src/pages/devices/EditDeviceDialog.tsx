@@ -36,7 +36,7 @@ export function EditDeviceDialog({
   const { t } = useTranslation(['common', 'devices'])
 
   const [deviceName, setDeviceName] = useState("")
-  const [adapterType, setAdapterType] = useState<"mqtt" | "webhook">("mqtt")
+  const [adapterType, setAdapterType] = useState<string>("mqtt")
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig>({})
 
   // Memoize device type info to prevent unnecessary re-renders
@@ -53,7 +53,7 @@ export function EditDeviceDialog({
   useEffect(() => {
     if (open && device) {
       setDeviceName(device.name || "")
-      setAdapterType((device.adapter_type as "mqtt" | "webhook") || "mqtt")
+      setAdapterType(device.adapter_type || "mqtt")
 
       const config = device.connection_config || {}
 
@@ -143,7 +143,8 @@ export function EditDeviceDialog({
         <FormField label={t('devices:add.adapterType')}>
           <Select
             value={adapterType}
-            onValueChange={(v) => setAdapterType(v as "mqtt" | "webhook")}
+            onValueChange={(v) => setAdapterType(v)}
+            disabled={adapterType === 'extension'}
           >
             <SelectTrigger>
               <SelectValue />
@@ -151,6 +152,7 @@ export function EditDeviceDialog({
             <SelectContent>
               <SelectItem value="mqtt">MQTT</SelectItem>
               <SelectItem value="webhook">Webhook</SelectItem>
+              <SelectItem value="extension" disabled>Extension</SelectItem>
             </SelectContent>
           </Select>
         </FormField>

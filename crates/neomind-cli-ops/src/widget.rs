@@ -128,6 +128,9 @@ pub fn create_widget(
 fn generate_bundle_template(widget_id: &str, global_name: &str, widget_type: &str) -> String {
     let component_name = to_pascal_case(widget_id);
 
+    // Common card shell style: border + rounded corners + card background
+    let card_style = "width: '100%', height: '100%', border: '1px solid var(--color-border)', borderRadius: '0.5rem', background: 'var(--color-card)', overflow: 'hidden'";
+
     // Different templates based on widget type
     let component_body = match widget_type {
         "chart" => format!(
@@ -141,7 +144,7 @@ r#"  // Chart widget — receives data via props.dataSource
   }}, [props.dataSource]);
 
   return React.createElement('div', {{
-    style: {{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }},
+    style: {{ {card_style}, display: 'flex', alignItems: 'center', justifyContent: 'center' }},
     ref: canvasRef,
   }},
     React.createElement('span', {{ style: {{ color: 'var(--color-text-muted)' }} }}, '{component_name} Chart')
@@ -153,7 +156,7 @@ r#"  // Gauge widget — displays a single metric value
   const max = props.config?.max ?? 100;
 
   return React.createElement('div', {{
-    style: {{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }},
+    style: {{ {card_style}, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }},
   }},
     React.createElement('div', {{ style: {{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--color-text-primary)' }} }}, String(value)),
     React.createElement('div', {{ style: {{ color: 'var(--color-text-muted)', marginTop: '0.5rem' }} }}, '{component_name}'),
@@ -168,48 +171,50 @@ r#"  // Stat widget — displays a key metric with label
   const label = props.config?.label ?? '{component_name}';
 
   return React.createElement('div', {{
-    style: {{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem' }},
+    style: {{ {card_style}, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem' }},
   }},
     React.createElement('div', {{ style: {{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--color-text-primary)' }} }}, String(value)),
     React.createElement('div', {{ style: {{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }} }}, label)
   );"#
         ),
-        "table" => r#"  // Table widget — displays data in tabular form
+        "table" => format!(
+r#"  // Table widget — displays data in tabular form
   const rows = props.dataSource ?? [];
 
-  return React.createElement('div', {
-    style: { width: '100%', height: '100%', overflow: 'auto', padding: '0.5rem' },
-  },
-    React.createElement('table', { style: { width: '100%', borderCollapse: 'collapse' } },
+  return React.createElement('div', {{
+    style: {{ {card_style}, overflow: 'auto', padding: '0.5rem' }},
+  }},
+    React.createElement('table', {{ style: {{ width: '100%', borderCollapse: 'collapse' }} }},
       React.createElement('thead', null,
         React.createElement('tr', null,
           ['Timestamp', 'Value'].map(h =>
-            React.createElement('th', {
+            React.createElement('th', {{
               key: h,
-              style: { padding: '0.5rem', textAlign: 'left', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-muted)', fontSize: '0.75rem' }
-            }, h)
+              style: {{ padding: '0.5rem', textAlign: 'left', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}
+            }}, h)
           )
         )
       ),
       React.createElement('tbody', null,
         rows.slice(0, 10).map((row, i) =>
-          React.createElement('tr', { key: i },
-            React.createElement('td', { style: { padding: '0.5rem', borderBottom: '1px solid var(--color-border)', fontSize: '0.875rem' } },
+          React.createElement('tr', {{ key: i }},
+            React.createElement('td', {{ style: {{ padding: '0.5rem', borderBottom: '1px solid var(--color-border)', fontSize: '0.875rem' }} }},
               row.timestamp ?? ''),
-            React.createElement('td', { style: { padding: '0.5rem', borderBottom: '1px solid var(--color-border)', fontSize: '0.875rem' } },
+            React.createElement('td', {{ style: {{ padding: '0.5rem', borderBottom: '1px solid var(--color-border)', fontSize: '0.875rem' }} }},
               String(row.value ?? ''))
           )
         )
       )
     )
-  );"#.to_string(),
+  );"#
+        ),
         "image" => format!(
 r#"  // Image widget — displays an image from data source
   const imageUrl = props.config?.url ?? '';
   const alt = props.config?.alt ?? '{component_name}';
 
   return React.createElement('div', {{
-    style: {{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }},
+    style: {{ {card_style}, display: 'flex', alignItems: 'center', justifyContent: 'center' }},
   }},
     imageUrl
       ? React.createElement('img', {{ src: imageUrl, alt, style: {{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} }})
@@ -219,7 +224,7 @@ r#"  // Image widget — displays an image from data source
         _ => format!(
 r#"  // Custom widget — implement your logic here
   return React.createElement('div', {{
-    style: {{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }},
+    style: {{ {card_style}, display: 'flex', alignItems: 'center', justifyContent: 'center' }},
   }},
     React.createElement('span', {{ style: {{ color: 'var(--color-text-muted)' }} }}, '{component_name}')
   );"#
@@ -295,20 +300,83 @@ pub async fn get_widget_bundle(client: &ApiClient, id: &str) -> Result<CliRespon
     Ok(CliResponse::success(data, "Widget bundle retrieved"))
 }
 
-/// Install widget from file
+/// Install widget from a directory (containing manifest.json + bundle.js) or a ZIP file.
+///
+/// - If `path` is a directory: reads manifest.json + bundle.js and uploads as separate fields.
+/// - If `path` is a .zip file: uploads as a `package` field for server-side extraction.
 pub async fn install_widget_file(
     client: &ApiClient,
-    file_path: &str,
+    path: &str,
 ) -> Result<CliResponse> {
-    let data = client.post_file("/frontend-components", file_path).await?;
-    let widget_id = data["id"]
+    let p = Path::new(path);
+
+    if !p.exists() {
+        return Ok(CliResponse::error(
+            format!("Path not found: {}", path),
+            "PATH_NOT_FOUND",
+        ));
+    }
+
+    let data = if p.is_dir() {
+        // Directory mode: read manifest.json + bundle.js, upload as separate multipart fields
+        let manifest_path = p.join("manifest.json");
+        let bundle_path = p.join("bundle.js");
+
+        if !manifest_path.exists() {
+            return Ok(CliResponse::error(
+                format!("No manifest.json found in {}", path),
+                "MANIFEST_MISSING",
+            ));
+        }
+        if !bundle_path.exists() {
+            return Ok(CliResponse::error(
+                format!("No bundle.js found in {}", path),
+                "BUNDLE_MISSING",
+            ));
+        }
+
+        let manifest_bytes = fs::read(&manifest_path)?;
+        let bundle_bytes = fs::read(&bundle_path)?;
+
+        // API expects text manifest + binary bundle
+        let manifest_text = String::from_utf8(manifest_bytes).map_err(|e| {
+            anyhow::anyhow!("manifest.json is not valid UTF-8: {}", e)
+        })?;
+
+        client.post_multipart("/frontend-components", vec![
+            ("manifest", manifest_text.into_bytes(), "manifest.json".to_string()),
+            ("bundle", bundle_bytes, "bundle.js".to_string()),
+        ]).await?
+    } else {
+        // File mode: upload as ZIP package
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext != "zip" {
+            return Ok(CliResponse::error(
+                format!(
+                    "Expected a directory or .zip file, got: {}. \
+                     Usage: neomind widget install <directory> OR neomind widget install <file.zip>",
+                    path
+                ),
+                "INVALID_PATH_TYPE",
+            ));
+        }
+        let zip_bytes = fs::read(p)?;
+        client.post_multipart("/frontend-components", vec![
+            ("package", zip_bytes, p.file_name().and_then(|n| n.to_str()).unwrap_or("package.zip").to_string()),
+        ]).await?
+    };
+
+    // API returns {"component": {...}} — extract from wrapper
+    let component = data.get("component").cloned().unwrap_or(data.clone());
+    let widget_id = component["id"]
         .as_str()
         .map(|s| s.to_string())
-        .or_else(|| data["id"].as_i64().map(|i| i.to_string()))
+        .or_else(|| component["id"].as_i64().map(|i| i.to_string()))
         .unwrap_or_else(|| "unknown".to_string());
 
-    let widget_name = data["name"]
+    let widget_name = component["name"]
         .as_str()
+        .or_else(|| component["name"].get("en").and_then(|v| v.as_str()))
         .unwrap_or("unknown")
         .to_string();
 
@@ -320,7 +388,7 @@ pub async fn install_widget_file(
         undo_command: format!("neomind widget uninstall {}", widget_id),
     };
 
-    Ok(CliResponse::success_with_meta(data, "Widget installed", meta))
+    Ok(CliResponse::success_with_meta(component, "Widget installed", meta))
 }
 
 /// Uninstall widget

@@ -41,9 +41,23 @@ pub async fn install_extension_file(
     client: &ApiClient,
     file_path: &str,
 ) -> Result<CliResponse> {
-    // For file upload, we need to use multipart/form-data
-    // This is a special case that will need custom handling in api_client
-    let data = client.post_file("/extensions/upload/file", file_path).await?;
+    // Extension upload API expects JSON body with base64-encoded file data
+    use std::io::Read;
+    let mut file = std::fs::File::open(file_path)?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf)?;
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buf);
+    let filename = std::path::Path::new(file_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("extension.nep")
+        .to_string();
+
+    let body = json!({
+        "data": b64,
+        "filename": filename,
+    });
+    let data = client.post("/extensions/upload/file", &body).await?;
     let ext_id = data["id"]
         .as_str()
         .map(|s| s.to_string())

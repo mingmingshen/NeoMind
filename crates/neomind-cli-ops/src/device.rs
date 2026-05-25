@@ -349,3 +349,9 @@ pub async fn write_metric(
     let data = client.post(&format!("/devices/{}/metrics", id), &body).await?;
     Ok(CliResponse::success(data, "Metric written"))
 }
+
+/// Get webhook URL for a device
+pub async fn get_webhook_url(client: &ApiClient, id: &str) -> Result<CliResponse> {
+    let data = client.get(&format!("/devices/{}/webhook-url", id)).await?;
+    Ok(CliResponse::success(data, "Webhook URL retrieved"))
+}
