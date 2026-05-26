@@ -25,6 +25,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download, Tag, Clock, FileCode, Info, Send, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
+import { isBase64Image } from '@/pages/devices/utils'
 import { cn } from '@/lib/utils'
 import type { UnifiedDataSourceInfo } from '@/types'
 import { useIsMobile } from '@/hooks/useMobile'
@@ -479,8 +480,10 @@ export function DataExplorerPage() {
                         <Badge variant="outline" className="text-xs">{selectedSource.unit}</Badge>
                       )}
                     </div>
-                    <div className="font-mono text-lg font-semibold break-all">
-                      {typeof selectedSource.current_value === 'object'
+                    <div className="font-mono text-lg font-semibold break-all max-h-32 overflow-y-auto">
+                      {typeof selectedSource.current_value === 'string' && isBase64Image(selectedSource.current_value) ? (
+                        <img src={selectedSource.current_value} alt="metric" className="max-h-28 rounded-lg object-contain" />
+                      ) : typeof selectedSource.current_value === 'object'
                         ? JSON.stringify(selectedSource.current_value, null, 2)
                         : String(selectedSource.current_value)}
                     </div>
@@ -559,7 +562,7 @@ export function DataExplorerPage() {
                       <table className="w-full text-sm">
                         <thead className="sticky top-0 bg-background">
                           <tr className="border-b">
-                            <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2">{t('data:timestamp', 'Timestamp')}</th>
+                            <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2 w-[180px] whitespace-nowrap">{t('data:timestamp', 'Timestamp')}</th>
                             <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2">{t('data:value', 'Value')}</th>
                             <th className="text-left text-xs font-medium text-muted-foreground px-4 py-2 w-20">{t('data:quality', 'Quality')}</th>
                           </tr>
@@ -567,8 +570,14 @@ export function DataExplorerPage() {
                         <tbody>
                           {historyData.map((point, i) => (
                             <tr key={i} className="border-b last:border-0 hover:bg-muted-30">
-                              <td className="px-4 py-2 font-mono text-xs">{formatTimestamp(point.timestamp)}</td>
-                              <td className="px-4 py-2 font-mono text-xs">{formatHistoryValue(point.value)}</td>
+                              <td className="px-4 py-2 font-mono text-xs whitespace-nowrap">{formatTimestamp(point.timestamp)}</td>
+                              <td className="px-4 py-2 text-xs max-w-[300px]">
+                                {typeof point.value === 'string' && isBase64Image(point.value) ? (
+                                  <img src={point.value} alt="metric" className="h-10 w-10 object-cover rounded" />
+                                ) : (
+                                  <span className="font-mono block truncate">{formatHistoryValue(point.value)}</span>
+                                )}
+                              </td>
                               <td className="px-4 py-2 text-xs text-muted-foreground">
                                 {point.quality !== null ? (point.quality * 100).toFixed(0) + '%' : '-'}
                               </td>
