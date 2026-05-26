@@ -241,7 +241,7 @@ export interface ChatInputFieldHandle {
   focus: () => void
 }
 
-const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
+export const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
   isStreaming: boolean
   onSend: (text: string) => void
   onSlash: () => void
