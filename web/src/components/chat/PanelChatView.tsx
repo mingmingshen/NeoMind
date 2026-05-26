@@ -22,7 +22,7 @@ import {
 import { MergedMessageList } from "./MergedMessageList"
 import { StreamProgress } from "./StreamProgress"
 import { ChatInputField } from "./ChatContainer"
-import { X, Minimize2 } from "lucide-react"
+import { X, Minimize2, Bot, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface PanelChatViewProps {
@@ -320,49 +320,46 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
   const filteredMessages = useMemo(() => filterPartialMessages(messages), [messages])
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Compact header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <img src="/logo-square.png" alt="NeoMind" width={24} height={24} className="w-6 h-6 rounded-md" />
-          <span className="text-sm font-semibold">{t("panelTitle")}</span>
+    <div className="flex flex-col h-full bg-background">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/60 flex-shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-info/15 flex items-center justify-center">
+            <Bot className="h-4.5 w-4.5 text-info" />
+          </div>
+          <div>
+            <span className="text-sm font-semibold leading-tight">{t("panelTitle")}</span>
+            {isStreamingRef.current && (
+              <span className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <span className="w-1.5 h-1.5 rounded-full bg-info animate-pulse" />
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          {showMinimize && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onClose}
-              className="h-8 w-8 rounded-lg"
-              aria-label={t("closePanel")}
-            >
-              <Minimize2 className="h-4 w-4" />
-            </Button>
-          )}
-          {!showMinimize && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onClose}
-              className="h-8 w-8 rounded-lg"
-              aria-label={t("closePanel")}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+          aria-label={t("closePanel")}
+        >
+          {showMinimize ? <Minimize2 className="h-4 w-4" /> : <X className="h-4 w-4" />}
+        </Button>
       </div>
 
       {/* Messages */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto px-3 py-4 min-h-0"
+        className="flex-1 overflow-y-auto px-4 py-5 min-h-0"
       >
-        <div className="space-y-4">
+        <div className="max-w-2xl mx-auto space-y-4">
           {filteredMessages.length === 0 && !streamState.isStreaming && (
-            <div className="text-center py-12">
-              <img src="/logo-square.png" alt="NeoMind" width={48} height={48} className="w-12 h-12 rounded-xl mx-auto mb-4" />
-              <p className="text-sm text-muted-foreground">{t("welcome.description")}</p>
+            <div className="text-center py-16">
+              <div className="w-14 h-14 rounded-2xl bg-info/10 flex items-center justify-center mx-auto mb-5">
+                <Sparkles className="h-7 w-7 text-info" />
+              </div>
+              <h3 className="text-base font-semibold mb-1.5">{t("welcome.greeting")}</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">{t("welcome.description")}</p>
             </div>
           )}
 
@@ -393,15 +390,17 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
       </div>
 
       {/* Input area */}
-      <div className="border-t border-border bg-background backdrop-blur-xl px-3 py-3 pb-6 safe-bottom flex-shrink-0">
-        <ChatInputField
-          ref={inputFieldRef}
-          isStreaming={streamState.isStreaming}
-          onSend={handleSend}
-          onSlash={() => {}}
-          onEscape={onClose}
-          showSuggestions={false}
-        />
+      <div className="border-t border-border/60 px-4 py-3 pb-6 safe-bottom flex-shrink-0">
+        <div className="max-w-2xl mx-auto">
+          <ChatInputField
+            ref={inputFieldRef}
+            isStreaming={streamState.isStreaming}
+            onSend={handleSend}
+            onSlash={() => {}}
+            onEscape={onClose}
+            showSuggestions={false}
+          />
+        </div>
       </div>
     </div>
   )
