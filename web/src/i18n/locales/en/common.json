@@ -714,9 +714,11 @@
     "testFailedDesc": "{{name}} test returned no response",
     "deleted": "Deleted",
     "batchConfig": "Batch Aggregation",
+    "batchConfigDesc": "Aggregate multiple events into a single payload to reduce requests",
+    "batchOff": "Immediate",
+    "batchOn": "Batched",
     "batchSize": "Batch Size",
     "batchInterval": "Max Interval (ms)",
-    "batchConfigHint": "Aggregates multiple events into a single batch payload: {\"batch\":true,\"count\":N,\"items\":[...]}",
     "sourcePatternsHint": "Comma-separated patterns, e.g. device:sensor1:, extension:weather:"
   }
 }

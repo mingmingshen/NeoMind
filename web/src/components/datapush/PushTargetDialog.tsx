@@ -706,52 +706,69 @@ export function PushTargetDialog() {
               </div>
 
               {/* ── Batch / Aggregation ── */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>
-                    {t('common:dataPush.batchConfig', 'Batch Aggregation')}
-                  </Label>
-                  <Checkbox
-                    checked={batchEnabled}
-                    onCheckedChange={(v) => setBatchEnabled(!!v)}
-                  />
+              <div className="space-y-3">
+                <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>
+                  {t('common:dataPush.batchConfig', 'Batch Aggregation')}
+                </Label>
+                <p className={cn(textMini, "text-muted-foreground -mt-2")}>
+                  {t('common:dataPush.batchConfigDesc', 'Aggregate multiple events into a single payload to reduce requests')}
+                </p>
+                <div className={cn("flex gap-2", isMobile ? "flex-col" : "")}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBatchEnabled(false)}
+                    className={cn("flex-1", !batchEnabled && "border-primary bg-primary/10 text-primary")}
+                  >
+                    {t('common:dataPush.batchOff', 'Immediate')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBatchEnabled(true)}
+                    className={cn("flex-1", batchEnabled && "border-primary bg-primary/10 text-primary")}
+                  >
+                    {t('common:dataPush.batchOn', 'Batched')}
+                  </Button>
                 </div>
                 {batchEnabled && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className={cn(textMini, "text-muted-foreground")}>
-                        {t('common:dataPush.batchSize', 'Batch Size')}
-                      </Label>
-                      <Input
-                        type="number"
-                        value={batchSize}
-                        onChange={(e) => setBatchSize(Number(e.target.value))}
-                        min={2}
-                        max={1000}
-                        placeholder="10"
-                        className={isMobile ? "h-12 text-base" : "h-10"}
-                      />
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className={cn(textMini, "text-muted-foreground")}>
+                          {t('common:dataPush.batchSize', 'Batch Size')}
+                        </Label>
+                        <Input
+                          type="number"
+                          value={batchSize}
+                          onChange={(e) => setBatchSize(Number(e.target.value))}
+                          min={2}
+                          max={1000}
+                          placeholder="10"
+                          className={isMobile ? "h-12 text-base" : "h-10"}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className={cn(textMini, "text-muted-foreground")}>
+                          {t('common:dataPush.batchInterval', 'Max Interval (ms)')}
+                        </Label>
+                        <Input
+                          type="number"
+                          value={batchIntervalMs}
+                          onChange={(e) => setBatchIntervalMs(Number(e.target.value))}
+                          min={100}
+                          max={60000}
+                          placeholder="1000"
+                          className={isMobile ? "h-12 text-base" : "h-10"}
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <Label className={cn(textMini, "text-muted-foreground")}>
-                        {t('common:dataPush.batchInterval', 'Max Interval (ms)')}
-                      </Label>
-                      <Input
-                        type="number"
-                        value={batchIntervalMs}
-                        onChange={(e) => setBatchIntervalMs(Number(e.target.value))}
-                        min={100}
-                        max={60000}
-                        placeholder="1000"
-                        className={isMobile ? "h-12 text-base" : "h-10"}
-                      />
-                    </div>
-                  </div>
-                )}
-                {batchEnabled && (
-                  <p className={cn(textMini, "text-muted-foreground")}>
-                    {t('common:dataPush.batchConfigHint', 'Aggregates multiple events into a single batch payload: {"batch":true,"count":N,"items":[...]}')}
-                  </p>
+                    <p className={cn(textNano, "text-muted-foreground font-mono bg-muted/50 rounded px-2 py-1.5")}>
+                      {"{\"batch\":true,\"count\":N,\"items\":[...]}"}
+                    </p>
+                  </>
                 )}
               </div>
 
