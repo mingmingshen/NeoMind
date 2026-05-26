@@ -619,6 +619,7 @@
     "defaultTitle": "New Chat",
     "deleteTitle": "Delete Session",
     "deleteDescription": "Are you sure you want to delete this session? This action cannot be undone.",
+    "sessionDeleted": "Session deleted",
     "resumeResponseTitle": "Resume incomplete response?",
     "resumeResponseDesc": "Detected an in-progress response from previous disconnection",
     "discard": "Discard",
@@ -691,6 +692,24 @@
     "selectAllFields": "Select all",
     "deselectAllFields": "Deselect all",
     "back": "Back",
-    "next": "Next"
+    "next": "Next",
+    "webhookAuthToken": "Bearer Token",
+    "webhookAuthTokenPlaceholder": "Authorization token",
+    "webhookBasicAuth": "Basic Auth",
+    "webhookUsername": "Username",
+    "webhookPassword": "Password",
+    "webhookAuthType": "Authentication",
+    "webhookNoAuth": "None",
+    "mqttPort": "Port",
+    "mqttUsername": "Username",
+    "mqttPassword": "Password",
+    "mqttQos": "QoS",
+    "mqttSelectBroker": "Select existing broker",
+    "mqttManualInput": "Manual input",
+    "testSuccess": "Test Successful",
+    "testSuccessDesc": "{{name}} responded successfully",
+    "testFailed": "Test Failed",
+    "testFailedDesc": "{{name}} test returned no response",
+    "deleted": "Deleted"
   }
 }

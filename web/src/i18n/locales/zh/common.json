@@ -615,6 +615,7 @@
     "defaultTitle": "新对话",
     "deleteTitle": "删除会话",
     "deleteDescription": "确定要删除这个会话吗？此操作无法撤销。",
+    "sessionDeleted": "会话已删除",
     "resumeResponseTitle": "恢复未完成的响应？",
     "resumeResponseDesc": "检测到之前断线时有正在进行的响应",
     "discard": "放弃",
@@ -687,6 +688,24 @@
     "selectAllFields": "全选",
     "deselectAllFields": "取消全选",
     "back": "上一步",
-    "next": "下一步"
+    "next": "下一步",
+    "webhookAuthToken": "Bearer Token",
+    "webhookAuthTokenPlaceholder": "认证令牌",
+    "webhookBasicAuth": "Basic 认证",
+    "webhookUsername": "用户名",
+    "webhookPassword": "密码",
+    "webhookAuthType": "认证方式",
+    "webhookNoAuth": "无",
+    "mqttPort": "端口",
+    "mqttUsername": "用户名",
+    "mqttPassword": "密码",
+    "mqttQos": "QoS",
+    "mqttSelectBroker": "选择已有 Broker",
+    "mqttManualInput": "手动输入",
+    "testSuccess": "测试成功",
+    "testSuccessDesc": "{{name}} 响应成功",
+    "testFailed": "测试失败",
+    "testFailedDesc": "{{name}} 测试未返回响应",
+    "deleted": "已删除"
   }
 }
