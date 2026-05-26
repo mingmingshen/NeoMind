@@ -287,42 +287,43 @@ export const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
   const canSend = !!input.trim() && !isStreaming
 
   return (
-    <div className="relative">
-      {isStreaming && (
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1.5 pointer-events-none">
-          <span className="w-1.5 h-1.5 rounded-full bg-info animate-ping" />
-          <span className="text-xs text-muted-foreground">{t("status.typing", "正在输入...")}</span>
-        </div>
-      )}
-      <textarea
-        ref={inputRef}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={isStreaming ? t("status.wait", "请等待...") : t("input.placeholder")}
-        rows={1}
-        disabled={isStreaming}
-        className={cn(
-          "w-full pl-4 pr-14 py-3 rounded-2xl resize-none text-base",
-          "border border-input bg-background text-foreground placeholder:text-muted-foreground",
-          "focus-visible:outline-none",
-          "transition-all duration-200",
-          "max-h-32 scroll-mb-32",
-          isStreaming && "opacity-60 cursor-wait"
+    <div className="flex items-center gap-2">
+      <div className="flex-1 relative">
+        {isStreaming && (
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1.5 pointer-events-none">
+            <span className="w-1.5 h-1.5 rounded-full bg-info animate-ping" />
+            <span className="text-xs text-muted-foreground">{t("status.typing", "正在输入...")}</span>
+          </div>
         )}
-        style={{ minHeight: "48px", height: "auto" }}
-        onInput={(e) => {
-          const target = e.target as HTMLTextAreaElement
-          target.style.height = "auto"
-          target.style.height = Math.min(target.scrollHeight, 128) + "px"
-        }}
-      />
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={isStreaming ? t("status.wait", "请等待...") : t("input.placeholder")}
+          rows={1}
+          disabled={isStreaming}
+          className={cn(
+            "w-full px-4 py-2.5 rounded-2xl resize-none text-base",
+            "border border-input bg-background text-foreground placeholder:text-muted-foreground",
+            "focus-visible:outline-none",
+            "transition-all duration-200",
+            "max-h-32",
+            isStreaming && "opacity-60 cursor-wait"
+          )}
+          style={{ height: "48px" }}
+          onInput={(e) => {
+            const target = e.target as HTMLTextAreaElement
+            target.style.height = "auto"
+            target.style.height = Math.min(target.scrollHeight, 128) + "px"
+          }}
+        />
+      </div>
       <Button
         onClick={handleSend}
         disabled={!canSend}
         className={cn(
-          "absolute right-2 bottom-1.5",
-          "h-9 w-9 rounded-full flex-shrink-0",
+          "h-[48px] w-[48px] rounded-2xl flex-shrink-0",
           "bg-info hover:bg-info/90 text-primary-foreground",
           "transition-all duration-200",
           "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -332,10 +333,10 @@ export const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
         {isStreaming ? (
           <>
             <span className="absolute inset-0 bg-info/20 animate-ping" />
-            <Send className="h-4 w-4 relative" />
+            <Send className="h-5 w-5 relative" />
           </>
         ) : (
-          <Send className="h-4 w-4" />
+          <Send className="h-5 w-5" />
         )}
       </Button>
     </div>
