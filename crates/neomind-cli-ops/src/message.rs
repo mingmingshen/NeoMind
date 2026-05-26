@@ -68,11 +68,7 @@ pub async fn send_message(
 
     let data = client.post("/messages", &body).await?;
     let data = extract_inner_data(data);
-    let msg_id = data["id"]
-        .as_str()
-        .map(|s| s.to_string())
-        .or_else(|| data["id"].as_i64().map(|i| i.to_string()))
-        .unwrap_or_else(|| "unknown".to_string());
+    let msg_id = data["id"].as_str().unwrap_or("unknown").to_string();
 
     let meta = BuildMeta {
         r#type: "message".to_string(),

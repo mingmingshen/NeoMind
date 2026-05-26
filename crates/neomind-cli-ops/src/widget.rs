@@ -368,11 +368,7 @@ pub async fn install_widget_file(
 
     // API returns {"component": {...}} — extract from wrapper
     let component = data.get("component").cloned().unwrap_or(data.clone());
-    let widget_id = component["id"]
-        .as_str()
-        .map(|s| s.to_string())
-        .or_else(|| component["id"].as_i64().map(|i| i.to_string()))
-        .unwrap_or_else(|| "unknown".to_string());
+    let widget_id = component["id"].as_str().unwrap_or("unknown").to_string();
 
     let widget_name = component["name"]
         .as_str()
@@ -420,11 +416,7 @@ pub async fn install_widget_market(
     }
 
     let data = client.post("/frontend-components/market/install", &body).await?;
-    let installed_id = data["id"]
-        .as_str()
-        .map(|s| s.to_string())
-        .or_else(|| data["id"].as_i64().map(|i| i.to_string()))
-        .unwrap_or_else(|| widget_id.to_string());
+    let installed_id = data["id"].as_str().unwrap_or(widget_id).to_string();
 
     let widget_name = data["name"]
         .as_str()

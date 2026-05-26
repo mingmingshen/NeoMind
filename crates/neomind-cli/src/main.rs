@@ -156,12 +156,6 @@ enum Command {
         #[command(subcommand)]
         connector_cmd: ConnectorCommand,
     },
-    /// Deprecated: use 'connector' instead.
-    #[command(hide = true)]
-    Broker {
-        #[command(subcommand)]
-        broker_cmd: BrokerAliasCommand,
-    },
 }
 
 /// API key subcommands.
@@ -1353,17 +1347,17 @@ enum MessageCommand {
     /// Creates a system message with severity level. Supports markdown content.
     /// Severity levels: info, warning, error, critical.
     ///
-    /// Workflow: `message send --title "Alert" --message "Check sensor #3" --severity warning`
+    /// Workflow: `message send --title "Alert" --body "Check sensor #3" --severity warning`
     /// Messages appear in the UI notification center and can trigger rules.
     ///
-    /// Example: `neomind message send --title "Deploy Notice" --message "Version 2.0 deployed" --severity info`
+    /// Example: `neomind message send --title "Deploy Notice" --body "Version 2.0 deployed" --severity info`
     Send {
         /// Message title.
         #[arg(short, long)]
         title: String,
         /// Message content (supports markdown).
-        #[arg(long)]
-        message: String,
+        #[arg(short, long)]
+        body: String,
         /// Severity level: info | warning | error | critical.
         #[arg(short, long, default_value = "info")]
         severity: String,
@@ -1848,14 +1842,6 @@ enum ConnectorCommand {
     },
 }
 
-/// Hidden backward-compatible alias — delegates to ConnectorCommand.
-#[derive(Subcommand, Debug)]
-#[command(hide = true)]
-enum BrokerAliasCommand {
-    #[command(flatten)]
-    Connector(ConnectorCommand),
-}
-
 /// Parse human duration like "30s", "5m", "1h", "2d" to seconds
 fn parse_duration(s: &str) -> u64 {
     let s = s.trim();
@@ -1985,12 +1971,6 @@ async fn main() -> Result<()> {
         Command::Widget { widget_cmd } => run_widget_cmd(widget_cmd).await,
         Command::System { system_cmd } => run_system_cmd(system_cmd).await,
         Command::Connector { connector_cmd } => run_connector_cmd(connector_cmd).await,
-        Command::Broker { broker_cmd } => {
-            // Hidden backward-compatible alias: delegate to connector handler
-            match broker_cmd {
-                BrokerAliasCommand::Connector(cmd) => run_connector_cmd(cmd).await,
-            }
-        }
     }
 }
 
@@ -3862,8 +3842,8 @@ async fn run_message_cmd(cmd: MessageCommand) -> Result<()> {
         MessageCommand::Get { id } => {
             get_message(&client, &id).await?
         }
-        MessageCommand::Send { title, message, severity, source } => {
-            send_message(&client, &title, &message, &severity, source.as_deref()).await?
+        MessageCommand::Send { title, body, severity, source } => {
+            send_message(&client, &title, &body, &severity, source.as_deref()).await?
         }
         MessageCommand::Read { id } => {
             acknowledge_message(&client, &id).await?

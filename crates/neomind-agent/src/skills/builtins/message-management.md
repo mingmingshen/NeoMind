@@ -20,7 +20,7 @@ Messages are platform notifications delivered through configurable channels. 7 c
 
 ## CRITICAL Rules
 
-1. **`--title` and `--message` are required** for sending — not `--body` or `--channel`
+1. **`--title` and `--body` are required** for sending — not `--channel`
 2. **Severity values**: `info`, `warning`, `critical`, `emergency` (NOT `error`)
 3. **Channels must be created before rules can use them** for notifications
 4. **Always discover types dynamically**: `channel-types` → `channel-type-schema <TYPE>` → `channel-create`
@@ -31,13 +31,13 @@ Messages are platform notifications delivered through configurable channels. 7 c
 ### Send Message
 
 ```bash
-neomind message send --title '<TITLE>' --message '<TEXT>' [--severity <LEVEL>] [--source <SRC>]
+neomind message send --title '<TITLE>' --body '<TEXT>' [--severity <LEVEL>] [--source <SRC>]
 ```
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
 | `--title` | Yes | — | Message title |
-| `--message` | Yes | — | Message body text |
+| `--body` | Yes | — | Message body text |
 | `--severity` | No | info | Severity: `info`, `warning`, `critical`, `emergency` |
 | `--source` | No | — | Source identifier |
 
@@ -171,14 +171,14 @@ neomind message channel-create --name dingtalk-ops --type dingtalk \
 neomind message channel-test dingtalk-ops
 
 # Step 5: Send a test message
-neomind message send --title 'Test' --message 'DingTalk channel setup complete' --severity info
+neomind message send --title 'Test' --body 'DingTalk channel setup complete' --severity info
 ```
 
 ### Send Warning Alert
 
 ```bash
 neomind message send --title 'Low Battery' \
-  --message 'Sensor-001 battery at 15%' \
+  --body 'Sensor-001 battery at 15%' \
   --severity warning \
   --source sensor-001
 ```
@@ -187,7 +187,7 @@ neomind message send --title 'Low Battery' \
 
 ```bash
 neomind message send --title 'System Overheating' \
-  --message 'Temperature sensor reads 95°C — immediate action required' \
+  --body 'Temperature sensor reads 95°C — immediate action required' \
   --severity emergency
 ```
 
@@ -242,7 +242,7 @@ neomind rule enable <RULE_ID>
 | "Channel name is required" | Missing --name | Use `--name <NAME>` |
 | "Unknown channel type 'discord'" | Unsupported type | Run `message channel-types` for available types |
 | "Invalid config JSON" | Malformed JSON in --config | Validate JSON syntax. Run `channel-type-schema <TYPE>` for examples |
-| "Missing required field: title" | Using wrong flag names | Use `--title` and `--message` (not `--body` or `--channel`) |
+| "Missing required field: title" | Using wrong flag names | Use `--title` and `--body` (not `--channel`) |
 | "Channel not found" | Wrong channel name | Run `message channel-list` for valid names |
 | Webhook not delivering | Wrong URL or network issue | Test with `message channel-test <NAME>` |
 | "SMTP auth failed" | Wrong email credentials | Verify SMTP settings and update with `channel-update` |

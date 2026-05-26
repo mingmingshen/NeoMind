@@ -226,8 +226,8 @@ impl ShellTool {
                 "Usage: neomind device create --name <NAME> --device-type <TYPE> --adapter-type <ADAPTER>\n\n",
                 "Flags:\n",
                 "  --name / -n            Device display name (required)\n",
-                "  --type / --device-type Device type ID (required). Run 'neomind device types list' to see valid IDs.\n",
-                "  --adapter / --adapter-type  mqtt | webhook\n",
+                "  --device-type         Device type ID (required). Run 'neomind device types list' to see valid IDs.\n",
+                "  --adapter-type        mqtt | webhook\n",
                 "  --config               Connection config JSON (optional, see adapter-specific fields below)\n\n",
                 "**IMPORTANT**: Device ID is auto-generated (e.g. 'TH_bf11d93d'), NOT the name you provide.\n",
                 "  Always capture the returned 'id' field for subsequent operations (get, update, latest, etc.).\n\n",
@@ -242,9 +242,9 @@ impl ShellTool {
                 "Common device type IDs: TH (temp/humidity), voltage, TotalDevice, ne101_camera, ne301_camera\n\n",
                 "Examples:\n",
                 "  neomind device create --name 'Office Sensor' --device-type TH --adapter-type mqtt\n",
-                "  neomind device create --name 'Power Meter' --type voltage --adapter mqtt\n",
-                "  neomind device create --name 'Weather' --adapter webhook --type TH\n",
-                "  neomind device create --name 'Temp' --adapter mqtt --type TH --config '{\"telemetry_topic\":\"my/custom/topic\"}'"
+                "  neomind device create --name 'Power Meter' --device-type voltage --adapter-type mqtt\n",
+                "  neomind device create --name 'Weather' --adapter-type webhook --device-type TH\n",
+                "  neomind device create --name 'Temp' --adapter-type mqtt --device-type TH --config '{\"telemetry_topic\":\"my/custom/topic\"}'"
             ),
             "dashboard update" => concat!(
                 "Usage: neomind dashboard update <ID> [--name <NAME>] [--description <DESC>] [--layout '<JSON>'] [--components '<JSON>']\n\n",
@@ -366,7 +366,7 @@ impl ShellTool {
                 "  --schedule-type event | interval | cron + --schedule-config '<VALUE>'\n\n",
                 "Optional:\n",
                 "  --description       Agent description\n",
-                "  --model             LLM backend ID (see: neomind llm list)\n",
+                "  --llm-backend       LLM backend ID (see: neomind llm list)\n",
                 "  --system-prompt     Custom system instructions\n",
                 "  --execution-mode    free | focused (default: free)\n",
                 "  --device-ids        Comma-separated device IDs for focused mode\n",
@@ -380,7 +380,7 @@ impl ShellTool {
                 "  --priority 0-255                     Agent priority\n",
                 "  --context-window-size N              Context window tokens\n\n",
                 "After create, MUST activate:\n",
-                "  neomind agent control <ID> --status active\n\n",
+                "  neomind agent control <ID> active\n\n",
                 "Examples:\n",
                 "  neomind agent create --name 'Monitor' --prompt 'Check batteries' --every 5m\n",
                 "  neomind agent create --name 'Hourly' --prompt 'Summarize' --every 1h\n",
@@ -429,21 +429,21 @@ impl ShellTool {
                 "  neomind agent executions my-agent --limit 10"
             ),
             "agent send-message" => concat!(
-                "Usage: neomind agent send-message <ID> --message '<TEXT>' [--type <TYPE>]\n\n",
+                "Usage: neomind agent send-message <ID> --body '<TEXT>' [--type <TYPE>]\n\n",
                 "Send a directive message to a running agent.\n\n",
                 "Flags:\n",
-                "  --message    (required) Message text\n",
+                "  --body       (required) Message text\n",
                 "  --type       Optional message type\n\n",
                 "Example:\n",
-                "  neomind agent send-message my-agent --message 'Focus on battery levels today'"
+                "  neomind agent send-message my-agent --body 'Focus on battery levels today'"
             ),
             "connector create" => concat!(
-                "Usage: neomind connector create --name <NAME> --host <HOST> [--port <PORT>] [--type <TYPE>] [--tls] [--username <USER>] [--password <PASS>] [--topics <TOPICS>]\n\n",
+                "Usage: neomind connector create --name <NAME> --host <HOST> [--port <PORT>] [--connector-type <TYPE>] [--tls] [--username <USER>] [--password <PASS>] [--topics <TOPICS>]\n\n",
                 "Flags:\n",
                 "  --name      (required) Connector display name\n",
                 "  --host      (required) Broker hostname or IP\n",
                 "  --port      Port number (default: 1883)\n",
-                "  --type / --connector-type   mqtt | webhook\n",
+                "  --connector-type   mqtt | webhook\n",
                 "  --tls       Enable TLS (flag, no value)\n",
                 "  --username  Auth username\n",
                 "  --password  Auth password\n",
@@ -495,13 +495,13 @@ impl ShellTool {
                 "  4. Verify: neomind extension status my-ext && neomind extension logs my-ext"
             ),
             "message send" => concat!(
-                "Usage: neomind message send --title <TITLE> --message <TEXT> [--severity <LEVEL>]\n\n",
+                "Usage: neomind message send --title <TITLE> --body <TEXT> [--severity <LEVEL>]\n\n",
                 "Flags:\n",
                 "  --title           (required) Message title\n",
-                "  --message / --body  (required) Message body text\n",
+                "  --body            (required) Message body text\n",
                 "  --severity        info | warning | critical | emergency (default: info)\n\n",
                 "Example:\n",
-                "  neomind message send --title 'Low Battery' --message 'Sensor-001 battery at 15%' --severity warning"
+                "  neomind message send --title 'Low Battery' --body 'Sensor-001 battery at 15%' --severity warning"
             ),
             "message channel-create" => concat!(
                 "Usage: neomind message channel-create --name <NAME> --type <TYPE> --config '<JSON>'\n\n",
@@ -548,7 +548,7 @@ impl ShellTool {
                 "Device Commands:\n\n",
                 "  neomind device list                                       List devices\n",
                 "  neomind device get <ID>                                   Get device details\n",
-                "  neomind device create <NAME> [--type <T>] [--adapter <A>] Create device\n",
+                "  neomind device create <NAME> [--device-type <T>] [--adapter-type <A>] Create device\n",
                 "  neomind device update <ID> [--name] [--config]            Update device\n",
                 "  neomind device delete <ID>                                Delete device\n",
                 "  neomind device latest <ID>                                Latest metric values\n",
@@ -584,15 +584,15 @@ impl ShellTool {
                 "  neomind agent list                                        List agents\n",
                 "  neomind agent get <ID>                                    Get agent details\n",
                 "  neomind agent create --name <N> --prompt '<TASK>'         Create agent\n",
-                "  neomind agent update <ID> [--name] [--prompt] [--model]   Update agent\n",
+                "  neomind agent update <ID> [--name] [--prompt] [--llm-backend]   Update agent\n",
                 "  neomind agent delete <ID>                                 Delete agent\n",
-                "  neomind agent control <ID> --status active|paused        Start/stop agent\n",
+                "  neomind agent control <ID> active|paused                 Start/stop agent\n",
                 "  neomind agent invoke <ID> --input '<TEXT>'                One-shot execution\n",
                 "  neomind agent executions <ID>                             Execution history\n",
                 "  neomind agent latest-execution <ID>                       Most recent execution\n",
                 "  neomind agent conversation <ID>                           Full message log\n",
                 "  neomind agent memory <ID>                                 Extracted knowledge\n",
-                "  neomind agent send-message <ID> --message '<TEXT>'        Send directive"
+                "  neomind agent send-message <ID> --body '<TEXT>'        Send directive"
             ),
             "extension" => concat!(
                 "Extension Commands:\n\n",
@@ -640,7 +640,7 @@ impl ShellTool {
                 "  neomind llm list                                         List configured backends\n",
                 "  neomind llm get <ID>                                     Get backend details\n",
                 "  neomind llm models                                       List available Ollama models\n",
-                "  neomind llm create --name <N> --type <T> --endpoint <URL> --model <M> [--api-key <K>] [--temperature <F>]\n",
+                "  neomind llm create --name <N> --backend-type <T> --endpoint <URL> --model <M> [--api-key <K>] [--temperature <F>]\n",
                 "                                                           Create new LLM backend\n",
                 "  neomind llm update <ID> [--name] [--model] [--endpoint] [--api-key] [--temperature]\n",
                 "                                                           Update backend settings\n",
@@ -648,7 +648,7 @@ impl ShellTool {
                 "  neomind llm activate <ID>                                Set as default backend\n",
                 "  neomind llm test <ID>                                    Test backend connection\n\n",
                 "Backend types: ollama, openai, custom\n",
-                "Use backend IDs with: neomind agent create --model <ID>"
+                "Use backend IDs with: neomind agent create --llm-backend <ID>"
             ),
             "settings" => concat!(
                 "Settings Commands:\n\n",
@@ -690,7 +690,7 @@ impl ShellTool {
             ),
             "message" => concat!(
                 "Message Commands:\n\n",
-                "  neomind message send --title <T> --message <M> [--severity <LV>]  Send notification\n",
+                "  neomind message send --title <T> --body <M> [--severity <LV>]  Send notification\n",
                 "  neomind message list [--limit] [--severity] [--status]    List messages\n",
                 "  neomind message get <ID>                                  Get message details\n",
                 "  neomind message read <ID> / ack <ID>                      Mark as read\n\n",
@@ -801,14 +801,12 @@ impl ShellTool {
             "create" => {
                 if let Some(err) = Self::check_required_flag(
                     args, "--name",
-                    "Device name is required. Example: neomind device create --name 'My Sensor' --type temperature-sensor --adapter mqtt"
+                    "Device name is required. Example: neomind device create --name 'My Sensor' --device-type temperature-sensor --adapter-type mqtt"
                 ) { return Ok(err) }
                 let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
-                let type_id = Self::get_flag_value(args, "--type")
-                    .or_else(|| Self::get_flag_value(args, "--device-type"))
+                let type_id = Self::get_flag_value(args, "--device-type")
                     .unwrap_or("").to_string();
-                let adapter = Self::get_flag_value(args, "--adapter")
-                    .or_else(|| Self::get_flag_value(args, "--adapter-type"))
+                let adapter = Self::get_flag_value(args, "--adapter-type")
                     .unwrap_or("mqtt").to_string();
                 let config = Self::get_flag_value(args, "--config")
                     .map(|s| serde_json::from_str(s).unwrap_or(serde_json::json!(s)));
@@ -1255,8 +1253,7 @@ impl ShellTool {
                 };
                 let event_filter = Self::get_flag_value(args, "--event-filter").map(|s| s.to_string());
                 let timezone = Self::get_flag_value(args, "--timezone").map(|s| s.to_string());
-                let llm_backend = Self::get_flag_value(args, "--model")
-                    .or_else(|| Self::get_flag_value(args, "--llm-backend"))
+                let llm_backend = Self::get_flag_value(args, "--llm-backend")
                     .map(|s| s.to_string());
                 let system_prompt = Self::get_flag_value(args, "--system-prompt").map(|s| s.to_string());
                 let execution_mode = Self::get_flag_value(args, "--execution-mode").map(|s| s.to_string());
@@ -1286,9 +1283,8 @@ impl ShellTool {
             "control" => {
                 if let Some(err) = Self::check_required_id(args, "agent", "control") { return Ok(err) }
                 let id = Self::resolve_id(args).to_string();
-                // Support --action, --status flags and positional status arg (args[4])
-                let action = Self::get_flag_value(args, "--action")
-                    .or_else(|| Self::get_flag_value(args, "--status"))
+                // Support --status flag and positional status arg (args[4])
+                let action = Self::get_flag_value(args, "--status")
                     .or_else(|| args.get(4).map(|s| s.as_str()).filter(|s| !s.starts_with("--")))
                     .unwrap_or("").to_string();
                 neomind_cli_ops::agent_cmd::control_agent(client, &id, &action).await
@@ -1298,8 +1294,7 @@ impl ShellTool {
                 let name = Self::get_flag_value(args, "--name").map(|s| s.to_string());
                 let prompt = Self::get_flag_value(args, "--prompt").map(|s| s.to_string());
                 let description = Self::get_flag_value(args, "--description").map(|s| s.to_string());
-                let llm_backend = Self::get_flag_value(args, "--model")
-                    .or_else(|| Self::get_flag_value(args, "--llm-backend"))
+                let llm_backend = Self::get_flag_value(args, "--llm-backend")
                     .map(|s| s.to_string());
                 let system_prompt = Self::get_flag_value(args, "--system-prompt").map(|s| s.to_string());
                 let schedule_type = Self::get_flag_value(args, "--schedule-type").map(|s| s.to_string());
@@ -1348,7 +1343,9 @@ impl ShellTool {
             }
             "send-message" => {
                 let id = Self::resolve_id(args).to_string();
-                let message = Self::get_flag_value(args, "--message").unwrap_or("").to_string();
+                let message = Self::get_flag_value(args, "--body")
+                    .or_else(|| args.get(4).map(|s| s.as_str()).filter(|s| !s.starts_with("--")))
+                    .unwrap_or("").to_string();
                 let message_type = Self::get_flag_value(args, "--type").map(|s| s.to_string());
                 neomind_cli_ops::agent_cmd::send_message(client, &id, &message, message_type.as_deref()).await
             }
@@ -1372,8 +1369,7 @@ impl ShellTool {
             }
             "send" => {
                 let title = Self::get_flag_value(args, "--title").unwrap_or("").to_string();
-                let message_body = Self::get_flag_value(args, "--message")
-                    .or_else(|| Self::get_flag_value(args, "--body"))
+                let message_body = Self::get_flag_value(args, "--body")
                     .unwrap_or("").to_string();
                 let severity = Self::get_flag_value(args, "--severity").unwrap_or("info").to_string();
                 let source = Self::get_flag_value(args, "--source").map(|s| s.to_string());
@@ -1442,8 +1438,7 @@ impl ShellTool {
                 neomind_cli_ops::connector::get_connector(client, id).await
             }
             "create" => {
-                let connector_type = Self::get_flag_value(args, "--type")
-                    .or_else(|| Self::get_flag_value(args, "--connector-type"))
+                let connector_type = Self::get_flag_value(args, "--connector-type")
                     .map(|s| s.to_string());
                 let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
                 let host = Self::get_flag_value(args, "--host").unwrap_or("").to_string();
@@ -1637,8 +1632,7 @@ impl ShellTool {
             "models" => neomind_cli_ops::llm::list_ollama_models(client).await,
             "create" => {
                 let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
-                let backend_type = Self::get_flag_value(args, "--type")
-                    .or_else(|| Self::get_flag_value(args, "--backend-type"))
+                let backend_type = Self::get_flag_value(args, "--backend-type")
                     .unwrap_or("").to_string();
                 let endpoint = Self::get_flag_value(args, "--endpoint").unwrap_or("").to_string();
                 let model = Self::get_flag_value(args, "--model").unwrap_or("").to_string();
@@ -2001,7 +1995,7 @@ impl ShellTool {
                 if is_not_found {
                     Some("Run 'neomind message list' to see all messages.".to_string())
                 } else if action == "send" && is_validation {
-                    Some("Required fields: --title, --message, --severity (info|warning|critical|emergency). Example: neomind message send --title \"Alert\" --message \"High temp\" --severity warning".to_string())
+                    Some("Required fields: --title, --body, --severity (info|warning|critical|emergency). Example: neomind message send --title \"Alert\" --body \"High temp\" --severity warning".to_string())
                 } else {
                     Some("Available actions: list, get, send, read, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-types, channel-test".to_string())
                 }
@@ -2056,10 +2050,10 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 | dashboard | list, get, create, update, delete, share, add-components, remove-components | Dashboard CRUD. `--components` replaces ALL; use `add-components` to append safely |
 | widget | list, get, bundle, create, install, uninstall, market-list, market-install | IIFE React components. `create` scaffolds manifest.json + bundle.js. Props: dataSource (.value, .timeSeries), config, title |
 | rule | list, get, create, update, delete, enable, disable, test, history | Rules use DSL: `RULE ... WHEN ... DO ... END` |
-| agent | list, get, create, update, delete, control, invoke, executions, latest-execution, conversation, memory, send-message | Must `control --status active` after create. **Shortcut**: `--every 5m` (or `30s`, `1h`, `2d`) replaces `--schedule-type interval --schedule-config "300"`. Or use `--schedule-type event` for device-triggered agents |
+| agent | list, get, create, update, delete, control, invoke, executions, latest-execution, conversation, memory, send-message | Must `control <ID> active` after create. **Shortcut**: `--every 5m` (or `30s`, `1h`, `2d`) replaces `--schedule-type interval --schedule-config "300"`. Or use `--schedule-type event` for device-triggered agents |
 | transform | list, get, create, update, delete, test, metrics, data-sources | JS code transforms; `input` is raw metric value. `--scope` defaults to `global`. `metrics` lists virtual outputs |
 | extension | list, get/info, status, logs, config, install, uninstall, market-list, market-install, reload | `get <ID>` returns commands, metrics, config details. `config <ID>` reads config, `config <ID> --set '<JSON>'` updates |
-| message | list, get, send, read/ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-test, channel-types, channel-type-schema | Send requires `--title` + `--message` + `--severity`. Use `channel-types` to discover types, `channel-type-schema <TYPE>` for config schema. |
+| message | list, get, send, read/ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-test, channel-types, channel-type-schema | Send requires `--title` + `--body` + `--severity`. Use `channel-types` to discover types, `channel-type-schema <TYPE>` for config schema. |
 | system | info | MQTT broker, webhook URL, network info |
 | connector | list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe | Data connectors (MQTT, webhook, etc.) |
 | llm | list, get, models, create, update, delete, activate, test | LLM backend management; `models` lists Ollama models |

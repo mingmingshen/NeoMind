@@ -45,11 +45,7 @@ pub async fn create_backend(
     }
 
     let data = client.post("/llm-backends", &body).await?;
-    let backend_id = data["id"]
-        .as_str()
-        .map(|s| s.to_string())
-        .or_else(|| data["id"].as_i64().map(|i| i.to_string()))
-        .unwrap_or_else(|| "unknown".to_string());
+    let backend_id = data["id"].as_str().unwrap_or("unknown").to_string();
 
     let meta = BuildMeta {
         r#type: "llm_backend".to_string(),

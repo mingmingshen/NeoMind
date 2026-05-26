@@ -56,21 +56,20 @@ neomind agent create \
   [--schedule-type <event|interval|cron>] \
   [--schedule-config '<config>'] \
   [--description '<desc>'] \
-  [--model '<llm_backend_id>'] \
+  [--llm-backend '<llm_backend_id>'] \
   [--system-prompt '<instructions>'] \
   [--execution-mode <free|focused>] \
   [--device-ids 'id1,id2']
 ```
 
 **Required**: `--name`, `--prompt`
-**Important**: `--model` selects LLM backend (use `neomind llm list` to see available backends).
+**Important**: `--llm-backend` selects LLM backend (use `neomind llm list` to see available backends).
 
 ### Control Agent
 
 ```bash
-neomind agent control <ID> --status active    # Start
-neomind agent control <ID> --status paused    # Stop
-neomind agent control <ID> --action active    # Alias (same as --status)
+neomind agent control <ID> active    # Start
+neomind agent control <ID> paused    # Stop
 ```
 
 ### Invoke (One-shot Execution)
@@ -90,7 +89,7 @@ neomind agent list              # All agents
 
 ```bash
 neomind agent update <ID> --prompt 'New task description'
-neomind agent update <ID> --model qwen3.5:4b
+neomind agent update <ID> --llm-backend qwen3.5:4b
 neomind agent update <ID> --name 'Better Name' --description 'Updated'
 ```
 
@@ -106,8 +105,8 @@ neomind agent memory <ID>                     # Extracted knowledge
 ### Send Message
 
 ```bash
-neomind agent send-message <ID> --message 'Focus on building A sensors'
-neomind agent send-message <ID> --message 'Directive' --type instruction
+neomind agent send-message <ID> --body 'Focus on building A sensors'
+neomind agent send-message <ID> --body 'Directive' --type instruction
 ```
 
 ## Workflows
@@ -184,7 +183,7 @@ neomind agent conversation <ID> --limit 20
 # 4. Check if LLM backend is available
 neomind llm list
 # If the configured model is not available, update:
-neomind agent update <ID> --model <available_backend>
+neomind agent update <ID> --llm-backend <available_backend>
 
 # 5. Check extracted memory for stale/incorrect knowledge
 neomind agent memory <ID>
@@ -218,4 +217,4 @@ neomind agent delete <ID>                      # Remove when no longer needed
 | Control fails | Invalid status value | Only `active` and `paused` are valid |
 | Focused mode error | No resources bound | Add `--device-ids` or `--resources` |
 | Execution shows error | LLM or tool failure | Check `agent conversation <ID>` for details |
-| Bad LLM responses | Wrong model/backend | Run `neomind llm list` for available backends, update with `agent update <ID> --model <backend>` |
+| Bad LLM responses | Wrong model/backend | Run `neomind llm list` for available backends, update with `agent update <ID> --llm-backend <backend>` |
