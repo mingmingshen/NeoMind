@@ -83,7 +83,7 @@ export function GlobalChatFab() {
         onClick={isOpen ? handleClose : handleOpen}
         aria-label={isOpen ? t("closePanel") : t("openPanel")}
         className={cn(
-          "fixed bottom-6 right-6 z-50",
+          "fixed bottom-20 right-6 z-50",
           "w-14 h-14 rounded-full",
           "flex items-center justify-center",
           "transition-all duration-300 ease-out",
@@ -128,7 +128,7 @@ export function GlobalChatFab() {
           // State-dependent positioning & sizing
           panelState !== "closed"
             ? "inset-0 sm:inset-4 md:inset-8 rounded-none sm:rounded-2xl opacity-100 scale-100"
-            : "bottom-6 right-6 w-14 h-14 rounded-full opacity-0 scale-0 pointer-events-none",
+            : "bottom-20 right-6 w-14 h-14 rounded-full opacity-0 scale-0 pointer-events-none",
           "backdrop-blur-2xl",
           "border border-glass-border",
           "shadow-2xl",
