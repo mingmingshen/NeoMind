@@ -131,6 +131,14 @@ NeoMind 是一个模块化的生态系统，每个关注点都有专门的仓库
 
 NE301（边缘 AI 摄像头）和 NE101（感知摄像头）。完整设备类型定义请查看 [NeoMind-DeviceTypes](https://github.com/camthink-ai/NeoMind-DeviceTypes)。
 
+### 参与生态共建
+
+我们欢迎社区贡献，共同丰富 NeoMind 生态系统：
+
+- **[开发扩展](https://github.com/camthink-ai/NeoMind-Extensions)** — 为新的数据源、AI 模型或集成创建扩展。参考 [扩展开发指南](docs/guides/zh/extension-system.md) 快速上手，然后向市场提交 PR。
+- **[添加设备类型](https://github.com/camthink-ai/NeoMind-DeviceTypes)** — 为你的 IoT 硬件定义指标和命令，让其他人开箱即用。只需添加一个 JSON 文件。
+- **[创建仪表板组件](https://github.com/camthink-ai/NeoMind-Dashboard-Components)** — 构建可复用的 React 仪表板组件（图表、仪表盘、地图等），与社区分享。
+
 ## 快速开始
 
 ### 桌面应用（推荐）

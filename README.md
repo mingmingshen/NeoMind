@@ -131,6 +131,14 @@ NeoMind is a modular ecosystem with specialized repositories for each concern:
 
 NE301 (Edge AI Camera) and NE101 (Sensing Camera). See [NeoMind-DeviceTypes](https://github.com/camthink-ai/NeoMind-DeviceTypes) for full device type definitions.
 
+### Contribute to the Ecosystem
+
+We welcome community contributions to grow the NeoMind ecosystem:
+
+- **[Build an Extension](https://github.com/camthink-ai/NeoMind-Extensions)** — Create extensions for new data sources, AI models, or integrations. Follow the [Extension Guide](docs/guides/en/extension-system.md) to get started, then submit a PR to the marketplace.
+- **[Add a Device Type](https://github.com/camthink-ai/NeoMind-DeviceTypes)** — Define metrics and commands for your IoT hardware so others can use it out of the box. Just add a JSON file.
+- **[Create a Dashboard Widget](https://github.com/camthink-ai/NeoMind-Dashboard-Components)** — Build reusable React dashboard components (charts, gauges, maps, etc.) and share them with the community.
+
 ## Quick Start
 
 ### Desktop App (Recommended)
