@@ -512,23 +512,16 @@ export function PushTargetDialog() {
                       <KeyRound className="h-4 w-4 text-muted-foreground" />
                       {t('common:dataPush.webhookAuthType', 'Authentication')}
                     </Label>
-                    <div className="flex gap-2">
-                      {(['none', 'token', 'basic'] as const).map(type => (
-                        <Button
-                          key={type}
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setWebhookAuthType(type)}
-                          className={cn(
-                            "flex-1",
-                            webhookAuthType === type && "border-primary bg-primary/10 text-primary"
-                          )}
-                        >
-                          {t(`common:dataPush.webhook${type === 'none' ? 'NoAuth' : type === 'token' ? 'AuthToken' : 'BasicAuth'}`, type)}
-                        </Button>
-                      ))}
-                    </div>
+                    <Select value={webhookAuthType} onValueChange={(v) => setWebhookAuthType(v as 'none' | 'token' | 'basic')}>
+                      <SelectTrigger className={isMobile ? "h-12 text-base" : "h-10"}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">{t('common:dataPush.webhookNoAuth', 'None')}</SelectItem>
+                        <SelectItem value="token">{t('common:dataPush.webhookAuthToken', 'Bearer Token')}</SelectItem>
+                        <SelectItem value="basic">{t('common:dataPush.webhookBasicAuth', 'Basic Auth')}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   {/* Bearer Token */}
@@ -563,27 +556,22 @@ export function PushTargetDialog() {
               ) : (
                 <div className="space-y-3">
                   {/* MQTT mode: select broker or manual */}
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setMqttMode('select')}
-                      className={cn("flex-1", mqttMode === 'select' && "border-primary bg-primary/10 text-primary")}
-                    >
-                      <Link2 className="h-4 w-4 mr-1" />
-                      {t('common:dataPush.mqttSelectBroker', 'Select broker')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setMqttMode('manual')}
-                      className={cn("flex-1", mqttMode === 'manual' && "border-primary bg-primary/10 text-primary")}
-                    >
-                      {t('common:dataPush.mqttManualInput', 'Manual input')}
-                    </Button>
-                  </div>
+                  <Select value={mqttMode} onValueChange={(v) => setMqttMode(v as 'select' | 'manual')}>
+                    <SelectTrigger className={isMobile ? "h-12 text-base" : "h-10"}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="select">
+                        <span className="flex items-center gap-2">
+                          <Link2 className="h-4 w-4" />
+                          {t('common:dataPush.mqttSelectBroker', 'Select broker')}
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="manual">
+                        {t('common:dataPush.mqttManualInput', 'Manual input')}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
 
                   {mqttMode === 'select' ? (
                     <div className="space-y-2">
@@ -706,69 +694,40 @@ export function PushTargetDialog() {
               </div>
 
               {/* ── Batch / Aggregation ── */}
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>
                   {t('common:dataPush.batchConfig', 'Batch Aggregation')}
                 </Label>
-                <p className={cn(textMini, "text-muted-foreground -mt-2")}>
-                  {t('common:dataPush.batchConfigDesc', 'Aggregate multiple events into a single payload to reduce requests')}
-                </p>
-                <div className={cn("flex gap-2", isMobile ? "flex-col" : "")}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setBatchEnabled(false)}
-                    className={cn("flex-1", !batchEnabled && "border-primary bg-primary/10 text-primary")}
-                  >
-                    {t('common:dataPush.batchOff', 'Immediate')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setBatchEnabled(true)}
-                    className={cn("flex-1", batchEnabled && "border-primary bg-primary/10 text-primary")}
-                  >
-                    {t('common:dataPush.batchOn', 'Batched')}
-                  </Button>
-                </div>
+                <Select value={batchEnabled ? 'batched' : 'immediate'} onValueChange={(v) => setBatchEnabled(v === 'batched')}>
+                  <SelectTrigger className={isMobile ? "h-12 text-base" : "h-10"}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="immediate">{t('common:dataPush.batchOff', 'Immediate (per event)')}</SelectItem>
+                    <SelectItem value="batched">{t('common:dataPush.batchOn', 'Batched (aggregate)')}</SelectItem>
+                  </SelectContent>
+                </Select>
                 {batchEnabled && (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label className={cn(textMini, "text-muted-foreground")}>
-                          {t('common:dataPush.batchSize', 'Batch Size')}
-                        </Label>
-                        <Input
-                          type="number"
-                          value={batchSize}
-                          onChange={(e) => setBatchSize(Number(e.target.value))}
-                          min={2}
-                          max={1000}
-                          placeholder="10"
-                          className={isMobile ? "h-12 text-base" : "h-10"}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className={cn(textMini, "text-muted-foreground")}>
-                          {t('common:dataPush.batchInterval', 'Max Interval (ms)')}
-                        </Label>
-                        <Input
-                          type="number"
-                          value={batchIntervalMs}
-                          onChange={(e) => setBatchIntervalMs(Number(e.target.value))}
-                          min={100}
-                          max={60000}
-                          placeholder="1000"
-                          className={isMobile ? "h-12 text-base" : "h-10"}
-                        />
-                      </div>
-                    </div>
-                    <p className={cn(textNano, "text-muted-foreground font-mono bg-muted/50 rounded px-2 py-1.5")}>
-                      {"{\"batch\":true,\"count\":N,\"items\":[...]}"}
-                    </p>
-                  </>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                    <Input
+                      type="number"
+                      value={batchSize}
+                      onChange={(e) => setBatchSize(Number(e.target.value))}
+                      min={2}
+                      max={1000}
+                      placeholder={t('common:dataPush.batchSize', 'Batch Size')}
+                      className={isMobile ? "h-12 text-base" : "h-10"}
+                    />
+                    <Input
+                      type="number"
+                      value={batchIntervalMs}
+                      onChange={(e) => setBatchIntervalMs(Number(e.target.value))}
+                      min={100}
+                      max={60000}
+                      placeholder={t('common:dataPush.batchInterval', 'Max Interval (ms)')}
+                      className={isMobile ? "h-12 text-base" : "h-10"}
+                    />
+                  </div>
                 )}
               </div>
 
