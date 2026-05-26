@@ -1,4 +1,8 @@
 {
+  "openPanel": "打开 AI 对话",
+  "closePanel": "关闭",
+  "panelTitle": "AI 对话",
+  "streamInProgress": "正在响应中，完成后自动关闭...",
   "title": "智能物联网助手",
   "welcome": {
     "greeting": "你好！我是 NeoMind",

@@ -1,4 +1,8 @@
 {
+  "openPanel": "Open AI Chat",
+  "closePanel": "Close",
+  "panelTitle": "AI Chat",
+  "streamInProgress": "Stream in progress, closing after completion...",
   "title": "Smart IoT Assistant",
   "welcome": {
     "greeting": "Hello! I'm NeoMind",
