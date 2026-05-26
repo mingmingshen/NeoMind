@@ -12,6 +12,7 @@ import { forceViewportReset } from "@/hooks/useVisualViewport"
 import { useExtensionComponents } from "@/hooks/useExtensionComponents"
 import { UpdateDialog } from '@/components/update'
 import { InstanceSwitchOverlay } from '@/components/layout/InstanceSwitchOverlay'
+import { GlobalChatFab } from '@/components/chat/GlobalChatFab'
 import { useUpdateCheck } from '@/hooks/useUpdateCheck'
 
 // Performance optimization: Lazy load route components to reduce initial bundle size
@@ -475,6 +476,7 @@ function App() {
                   </main>
                   <Toaster />
                   <Confirmer />
+                  <GlobalChatFab />
                 </div>
               </ProtectedRoute>
             }
