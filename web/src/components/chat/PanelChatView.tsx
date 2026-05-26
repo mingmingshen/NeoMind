@@ -15,19 +15,17 @@ import type { ServerMessage, ExecutionPlan } from "@/types"
 import type { StreamProgress as StreamProgressType } from "@/types"
 import { filterPartialMessages } from "@/lib/messageUtils"
 import {
-  selectSessionId,
   selectMessages,
   selectChatActions,
 } from "@/store/selectors"
 import { MergedMessageList } from "./MergedMessageList"
-import { StreamProgress } from "./StreamProgress"
-import { ChatInputField } from "./ChatContainer"
-import { X, Minimize2, Bot } from "lucide-react"
+import { Send, X, Minimize2, Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface PanelChatViewProps {
   onClose: () => void
   onStreamingChange: (streaming: boolean) => void
+  ensureSession: () => Promise<string>
   showMinimize?: boolean
 }
 
@@ -164,22 +162,25 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
   }
 }
 
-export function PanelChatView({ onClose, onStreamingChange, showMinimize }: PanelChatViewProps) {
+export function PanelChatView({ onClose, onStreamingChange, ensureSession, showMinimize }: PanelChatViewProps) {
   const { t } = useTranslation("chat")
 
   // Store state
-  const sessionId = useStore(selectSessionId)
   const messages = useStore(selectMessages)
-  const { addMessage, createSession } = useStore(selectChatActions)
+  const { addMessage } = useStore(selectChatActions)
+
+  // Panel session ID — received from parent via ensureSession, survives unmount
+  const panelSessionIdRef = useRef<string | null>(null)
 
   // Streaming state
   const [streamState, dispatch] = useReducer(streamReducer, initialStreamState)
   const [currentStreamMessageId, setCurrentStreamMessageId] = useState<string | null>(null)
+  const [input, setInput] = useState("")
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const inputFieldRef = useRef<{ setText: (text: string) => void; focus: () => void }>(null)
   const isStreamingRef = useRef(false)
   const onStreamingChangeRef = useRef(onStreamingChange)
   useEffect(() => { onStreamingChangeRef.current = onStreamingChange }, [onStreamingChange])
@@ -197,12 +198,13 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
     })
   }, [messages, streamState.streamingContent, streamState.isStreaming])
 
-  // Initialize session if needed
+  // Initialize panel session once — independent from main chat
   useEffect(() => {
-    if (!sessionId) {
-      createSession()
-    }
-  }, [sessionId, createSession])
+    ensureSession().then(id => {
+      panelSessionIdRef.current = id
+      ws.setSessionId(id)
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle WebSocket events
   useEffect(() => {
@@ -302,7 +304,8 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
   }, [addMessage, t])
 
   // Send message
-  const handleSend = useCallback((text: string) => {
+  const handleSend = useCallback(() => {
+    const text = input.trim()
     if (!text || streamState.isStreaming) return
 
     addMessage({
@@ -312,10 +315,13 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
       timestamp: Math.floor(Date.now() / 1000),
     })
 
+    setInput("")
+    if (inputRef.current) inputRef.current.style.height = "auto"
     dispatch({ type: 'START_STREAM' })
     setCurrentStreamMessageId(generateId())
     ws.sendMessage(text)
-  }, [streamState.isStreaming, addMessage])
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [input, streamState.isStreaming, addMessage])
 
   const filteredMessages = useMemo(() => filterPartialMessages(messages), [messages])
 
@@ -352,6 +358,14 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-4 py-5 min-h-0"
       >
+        {filteredMessages.length === 0 && !streamState.isStreaming ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-accent-orange-bg flex items-center justify-center">
+              <Bot className="h-6 w-6 text-accent-orange" />
+            </div>
+            <p className="text-sm text-muted-foreground text-center">{t("input.startNewConversation")}</p>
+          </div>
+        ) : (
         <div className="space-y-4">
           <MergedMessageList
             messages={filteredMessages}
@@ -365,30 +379,43 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
             roundContents={streamState.roundContents}
           />
 
-          {streamState.isStreaming && (
-            <StreamProgress
-              elapsed={streamState.streamProgress.elapsed}
-              totalDuration={300}
-              stage={streamState.streamProgress.stage}
-              warning={streamState.streamProgress.warnings[streamState.streamProgress.warnings.length - 1]}
-              currentStep={streamState.currentPlanStep}
-            />
-          )}
-
           <div ref={messagesEndRef} />
         </div>
+        )}
       </div>
 
       {/* Input area */}
-      <div className="border-t border-border/60 px-6 py-5 pb-8 safe-bottom flex-shrink-0">
-        <ChatInputField
-          ref={inputFieldRef}
-          isStreaming={streamState.isStreaming}
-          onSend={handleSend}
-          onSlash={() => {}}
-          onEscape={onClose}
-          showSuggestions={false}
-        />
+      <div className="bg-[var(--background)] backdrop-blur-xl px-4 pt-3 pb-6 flex-shrink-0">
+        <div className="flex items-center gap-2">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSend()
+                }
+                if (e.key === "Escape") onClose()
+              }}
+              placeholder={streamState.isStreaming ? t("status.wait", "请等待...") : t("input.placeholder")}
+              rows={1}
+              disabled={streamState.isStreaming}
+              className="flex-1 px-4 py-2.5 rounded-2xl resize-none text-base border border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:outline-none transition-all duration-200 min-h-[44px] max-h-32 disabled:opacity-60"
+              onInput={(e) => {
+                const el = e.target as HTMLTextAreaElement
+                el.style.height = "auto"
+                el.style.height = Math.min(el.scrollHeight, 128) + "px"
+              }}
+            />
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || streamState.isStreaming}
+            className="h-[44px] w-[44px] rounded-2xl flex-shrink-0 bg-accent-orange hover:bg-accent-orange/90 text-white flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Send className="h-5 w-5" />
+          </button>
+        </div>
       </div>
     </div>
   )

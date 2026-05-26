@@ -4,6 +4,7 @@ import { ThinkingBlock } from "./ThinkingBlock"
 import { ToolCallVisualization } from "./ToolCallVisualization"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Bot } from "lucide-react"
 import { formatTimestamp } from "@/lib/utils/format"
 
 interface MessageItemProps {
@@ -25,7 +26,9 @@ export const MessageItem = React.memo<MessageItemProps>(
         className={`flex gap-3 ${isAssistant ? "justify-start" : "justify-end"}`}
       >
         {isAssistant && (
-          <img src="/logo-square.png" alt="NeoMind" width={32} height={32} className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5" />
+          <div className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5 bg-accent-orange-bg flex items-center justify-center">
+            <Bot className="h-4.5 w-4.5 text-accent-orange" />
+          </div>
         )}
 
         {isAssistant ? (
@@ -73,7 +76,7 @@ export const MessageItem = React.memo<MessageItemProps>(
 
         {message.role === "user" && user && (
           <Avatar className="h-8 w-8 order-2">
-            <AvatarFallback className="bg-info text-primary-foreground text-xs">
+            <AvatarFallback className="bg-accent-orange text-white text-xs">
               {getUserInitials(user.username)}
             </AvatarFallback>
           </Avatar>

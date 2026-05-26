@@ -6,9 +6,10 @@ import { MessageItem } from "./MessageItem"
 import { ExecutionPlanPanel } from "./ExecutionPlanPanel"
 import { useStore } from "@/store"
 import { useMemo, useCallback, useRef, type RefObject } from "react"
+import { useTranslation } from "react-i18next"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { mergeMessagesForDisplay } from "@/lib/messageUtils"
-import { Loader2 } from "lucide-react"
+import { Loader2, Bot } from "lucide-react"
 
 interface MergedMessageListProps {
   messages: Message[]
@@ -34,6 +35,7 @@ export function MergedMessageList({
   roundContents = {},
 }: MergedMessageListProps) {
   const user = useStore((s) => s.user)
+  const { t } = useTranslation("chat")
 
   // Memoize merged messages to avoid recalculation on every render
   const displayMessages = useMemo(() => mergeMessagesForDisplay(messages), [messages])
@@ -72,11 +74,7 @@ export function MergedMessageList({
 
   return (
     <>
-      {!hasContent ? (
-        <div className="flex items-center justify-center py-16">
-          <span className="text-sm text-muted-foreground">暂无消息</span>
-        </div>
-      ) : (
+      {!hasContent ? null : (
         <div className="space-y-6">
           {/* Virtual list for existing messages */}
           {virtualMessages.length > 0 && (
@@ -127,7 +125,9 @@ export function MergedMessageList({
           {/* Streaming message — always rendered outside the virtualizer */}
           {isStreaming && (
             <div className="flex gap-3 justify-start">
-              <img src="/logo-square.png" alt="NeoMind" width={32} height={32} className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5" />
+              <div className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5 bg-accent-orange-bg flex items-center justify-center">
+                <Bot className="h-4.5 w-4.5 text-accent-orange" />
+              </div>
               <div className="flex-1 min-w-0">
                 {/* Execution plan */}
                 {executionPlan && (
@@ -160,7 +160,7 @@ export function MergedMessageList({
                 ) : !streamingThinking && streamingToolCalls.length === 0 && (
                   <div className="flex items-center gap-3 py-2">
                     <Loader2 className="h-4 w-4 animate-spin opacity-60" />
-                    <span className="text-sm opacity-60">正在思考...</span>
+                    <span className="text-sm opacity-60">{t("thinking.thinking")}</span>
                   </div>
                 )}
               </div>

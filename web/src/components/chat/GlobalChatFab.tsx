@@ -6,19 +6,24 @@
  * Minimize button collapses back to FAB with reverse animation.
  */
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useLocation } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { MessageSquare, Minimize2 } from "lucide-react"
 import { PanelChatView } from "./PanelChatView"
 import { notifyInfo } from "@/lib/notify"
 import { cn } from "@/lib/utils"
+import { useStore } from "@/store"
+import { selectChatActions } from "@/store/selectors"
 
 type PanelState = "closed" | "opening" | "open" | "closing"
 
 export function GlobalChatFab() {
   const [panelState, setPanelState] = useState<PanelState>("closed")
   const [isStreaming, setIsStreaming] = useState(false)
+  // Persist panel session at parent level — survives panel unmount
+  const panelSessionIdRef = useRef<string | null>(null)
+  const { createSession } = useStore(selectChatActions)
   const location = useLocation()
   const { t } = useTranslation("chat")
   const fabRef = useRef<HTMLButtonElement>(null)
@@ -47,6 +52,16 @@ export function GlobalChatFab() {
     })
   }
 
+  // Panel calls this once to get a persistent session
+  const ensurePanelSession = useCallback(async (): Promise<string> => {
+    if (panelSessionIdRef.current) return panelSessionIdRef.current
+    const id = await createSession()
+    if (id) {
+      panelSessionIdRef.current = id
+    }
+    return id!
+  }, [createSession])
+
   const handleClose = () => {
     setPanelState("closing")
     setTimeout(() => setPanelState("closed"), 250)
@@ -57,7 +72,7 @@ export function GlobalChatFab() {
 
   return (
     <>
-      {/* Floating action button */}
+      {/* Floating action button — glass + glow */}
       <button
         ref={fabRef}
         onClick={isOpen ? handleClose : handleOpen}
@@ -65,17 +80,23 @@ export function GlobalChatFab() {
         className={cn(
           "fixed bottom-6 right-6 z-50",
           "w-14 h-14 rounded-full",
-          "bg-info text-primary-foreground",
-          "shadow-lg hover:shadow-xl",
           "flex items-center justify-center",
           "transition-all duration-300 ease-out",
           "safe-bottom",
+          // Glass background with brand orange
+          "bg-accent-orange-bg backdrop-blur-xl",
+          "border border-accent-orange/30",
+          "text-accent-orange",
+          // Glow ring
+          "shadow-[0_0_24px_var(--accent-orange-bg),0_0_48px_var(--accent-orange-bg)]",
+          "hover:shadow-[0_0_32px_var(--accent-orange),0_0_64px_var(--accent-orange-bg)]",
+          "hover:border-accent-orange/50",
           isOpen
             ? "scale-0 opacity-0 pointer-events-none"
-            : "scale-100 opacity-100 hover:scale-110"
+            : "scale-100 opacity-100 hover:scale-105"
         )}
       >
-        <MessageSquare className="h-6 w-6" />
+        <MessageSquare className="h-5 w-5" />
       </button>
 
       {/* Full-screen overlay backdrop */}
@@ -103,17 +124,19 @@ export function GlobalChatFab() {
           panelState !== "closed"
             ? "inset-0 sm:inset-4 md:inset-8 rounded-none sm:rounded-2xl opacity-100 scale-100"
             : "bottom-6 right-6 w-14 h-14 rounded-full opacity-0 scale-0 pointer-events-none",
-          "bg-surface-glass backdrop-blur-xl",
+          "backdrop-blur-2xl",
           "border border-glass-border",
           "shadow-2xl",
           "flex flex-col overflow-hidden"
         )}
+        style={{ backgroundColor: "var(--surface-glass)", backdropFilter: "blur(40px) saturate(1.8)" }}
       >
         {/* Only render content when visible */}
         {panelState !== "closed" && (
           <PanelChatView
             onClose={handleClose}
             onStreamingChange={setIsStreaming}
+            ensureSession={ensurePanelSession}
             showMinimize
           />
         )}

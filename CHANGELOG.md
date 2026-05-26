@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Global AI chat entry (FAB)** — Floating action button on all non-chat pages opens a full-screen glass-morphism chat overlay with smooth scale-up animation. Panel shares WebSocket connection and Zustand store with the main `/chat` page, using an independent persistent session that survives panel close/reopen
+
+### Changed
+
+- **Chat message styling** — AI messages now use Bot icon (lucide) instead of logo image. User message bubbles use neutral black/white instead of blue. User avatar uses brand orange accent. Streaming "thinking" text internationalized via `t()`
+
+### Fixed
+
+- **Panel session persistence** — Panel session ID is held at parent component level (`GlobalChatFab`), preventing session loss on panel unmount. No longer creates duplicate sessions on repeated panel open/close
+
+---
+
 ## [v0.8.0] - 2026-05-25
 
 ### Added

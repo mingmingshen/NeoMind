@@ -308,10 +308,9 @@ export const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
             "border border-input bg-background text-foreground placeholder:text-muted-foreground",
             "focus-visible:outline-none",
             "transition-all duration-200",
-            "max-h-32",
+            "min-h-[44px] max-h-32",
             isStreaming && "opacity-60 cursor-wait"
           )}
-          style={{ height: "48px" }}
           onInput={(e) => {
             const target = e.target as HTMLTextAreaElement
             target.style.height = "auto"
@@ -323,7 +322,7 @@ export const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
         onClick={handleSend}
         disabled={!canSend}
         className={cn(
-          "h-[48px] w-[48px] rounded-2xl flex-shrink-0",
+          "h-[44px] w-[44px] rounded-2xl flex-shrink-0",
           "bg-info hover:bg-info/90 text-primary-foreground",
           "transition-all duration-200",
           "disabled:opacity-50 disabled:cursor-not-allowed",

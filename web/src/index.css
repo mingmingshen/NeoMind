@@ -288,7 +288,7 @@ a {
     --destructive-hover: oklch(0.577 0.245 27 / 90%);
 
     /* Chat-specific colors - light mode */
-    --msg-user-bg: oklch(0.45 0.18 260);
+    --msg-user-bg: oklch(0.15 0.02 270);
     --msg-user-text: oklch(1 0 0);
     --msg-ai-bg: oklch(0.97 0.003 270);
     --msg-ai-text: oklch(0.18 0.02 270);
@@ -388,8 +388,8 @@ a {
     --chart-5: oklch(0.65 0.17 20);
     --chart-6: oklch(0.65 0.12 210);
 
-    --msg-user-bg: oklch(0.45 0.15 260);
-    --msg-user-text: oklch(1 0 0);
+    --msg-user-bg: oklch(0.97 0.003 270);
+    --msg-user-text: oklch(0.15 0.02 270);
     --msg-ai-bg: oklch(0.18 0.008 270);
     --msg-ai-text: oklch(0.90 0.005 270);
     --msg-system-bg: oklch(0.20 0.008 270);
