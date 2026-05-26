@@ -139,7 +139,7 @@ Shared dashboards poll for live data every 30 seconds. Interactive mode allows w
 
 ## Dark Mode
 
-NeoMind follows your system theme preference. Toggle between light and dark in **Settings > Preferences > Theme**.
+NeoMind follows your system theme preference. Toggle between light and dark mode using the **sun/moon icon** in the top navigation bar, accessible from any page.
 
 ![Dashboard in dark mode](../../img/dashboard_dark.png)
 

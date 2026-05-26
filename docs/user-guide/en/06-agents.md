@@ -123,13 +123,13 @@ Click **Create** at the bottom of the builder. The agent appears on the Agents p
 
 ## 3. Manage Agents
 
-After creating agents, the Agents page shows a card-based overview.
+After creating agents, the Agents page shows a card grid.
 
 ![Agents list](../../img/agents-list.png)
 
 > **(1)** Each agent card shows name, description, and current status. **(2)** The **toggle switch** enables or disables the agent -- disabled agents stop executing. **(3)** **Last execution** time and result. **(4)** **Schedule** info shows next run time or interval.
 
-### Agent Actions
+### Agent Card Actions
 
 | Action | How To |
 |--------|--------|
@@ -139,11 +139,19 @@ After creating agents, the Agents page shows a card-based overview.
 | **Edit** | Click the pencil icon to modify configuration |
 | **Delete** | Click the trash icon and confirm (permanent, cannot undo) |
 
+### Agent Detail Panel
+
+Click anywhere on an agent card (not on an action icon) to open the full-screen detail panel. This shows:
+
+- **Agent info**: name, description, execution mode, schedule, and resource bindings
+- **Execution history**: a timeline of recent runs with status, duration, and token usage
+- **Quick actions**: Edit and Execute buttons at the top of the panel
+
 ---
 
 ## 4. Check Execution Results
 
-Click an execution in the history to see detailed results.
+Click an execution in the history (from the agent card or detail panel) to see detailed results.
 
 ### Execution Timeline
 
@@ -179,21 +187,92 @@ The reasoning section shows the agent's thought process:
 
 ## 5. Agent Memory
 
-Agents with memory enabled accumulate knowledge across executions, learning and improving over time.
+Click the **Memory** tab at the top of the Agents page to open the global memory store. This is a system-wide knowledge base shared across all agents.
+
+> **Note**: The Memory tab is NOT per-agent -- it is a shared store at the platform level. All agents can read and contribute to it.
 
 Each memory entry contains:
 
 | Field | Description |
 |-------|------------|
-| **Category** | Type: device behavior, pattern, preference, fact |
+| **Category** | Type: device behavior, pattern, preference, fact, user profile |
 | **Content** | The stored knowledge |
-| **Source** | Which execution created this memory |
+| **Source** | Which agent execution created this memory |
 | **Created** | When the memory was recorded |
 | **Relevance** | How frequently this memory is used |
 
-You can search memories by keyword, filter by category, or sort by date and relevance. To manage memories: click **View** to read full content, **Delete** to remove a single entry, or **Clear All** to reset the agent's memory entirely.
+You can search memories by keyword, filter by category, or sort by date and relevance. To manage memories: click **View** to read full content, **Delete** to remove a single entry, or **Clear All** to reset the entire memory store.
 
-> **Tip**: Memory persists across executions and survives agent restarts. If memories become outdated (for example, after replacing a sensor), clear them so the agent does not rely on stale information.
+> **Tip**: Memory persists across agent executions and survives server restarts. If memories become outdated (for example, after replacing a sensor), clear them so agents do not rely on stale information.
+
+---
+
+## 6. Agent Skills
+
+Click the **Skills** tab at the top of the Agents page to manage skill guides -- structured instructions that teach agents how to perform specific operations. Skills are Markdown documents with YAML frontmatter that define triggers, categories, and execution rules.
+
+> **Note**: Skills are shared at the platform level -- any agent can use any skill. Skills are injected into the agent's system prompt context when their trigger keywords match the user's intent or the agent's task.
+
+### Skills Table
+
+The Skills tab displays a table of all configured skills:
+
+| Column | Description |
+|--------|-------------|
+| **Name** | Skill name, displayed with a category-specific icon and color |
+| **Category** | One of: Device, Rule, Agent, Message, Extension, General |
+| **Priority** | Numeric priority (0-100); higher values are preferred when multiple skills match |
+| **Keywords** | Trigger keywords that activate the skill (first 3 shown, with count for more) |
+| **Size** | Size of the skill body in bytes |
+
+### Creating a Skill
+
+1. Click **Create Skill** (or **Add Skill**) at the top of the Skills tab.
+2. A full-screen dialog opens with a **CodeMirror editor** pre-loaded with a Markdown template.
+3. Edit the **YAML frontmatter** at the top:
+
+```yaml
+---
+id: my-skill
+name: My Skill
+category: general
+priority: 50
+token_budget: 500
+triggers:
+  keywords: [example, keyword]
+  tool_target:
+    tool: example
+    actions: [action1, action2]
+anti_triggers:
+  keywords: [exclude, these]
+---
+```
+
+| Frontmatter Field | Required | Description |
+|-------------------|----------|-------------|
+| `id` | Yes | Unique identifier for the skill |
+| `name` | Yes | Display name shown in the Skills table |
+| `category` | Yes | Skill category: `device`, `rule`, `agent`, `message`, `extension`, or `general` |
+| `priority` | No | Priority 0-100 (default: 50). Higher priority skills are preferred |
+| `token_budget` | No | Maximum tokens for the skill body (default: 500) |
+| `triggers.keywords` | Yes | Keywords that activate this skill |
+| `triggers.tool_target` | No | Tool and actions this skill guides |
+| `anti_triggers.keywords` | No | Keywords that prevent this skill from activating |
+
+4. Write the **skill body** below the frontmatter in Markdown. This is the instruction content injected into the agent's context when the skill activates. Include:
+   - **Purpose**: What the skill does
+   - **Prerequisites**: What must be true before following the skill
+   - **Steps**: Numbered instructions for the agent to follow
+   - **Common Errors**: Known pitfalls and solutions
+
+5. Click **Save** to create the skill.
+
+### Managing Skills
+
+- **View** -- Click the eye icon to read the full skill content in a dialog
+- **Edit** -- Click the pencil icon to reopen the editor with the skill pre-loaded
+- **Delete** -- Click the trash icon to permanently remove the skill
+- Skills are paginated (10 per page) and support search and category filtering
 
 ---
 

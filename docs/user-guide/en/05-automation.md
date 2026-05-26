@@ -6,7 +6,7 @@ The Automation page provides two tools for processing device and extension data:
 
 ## Automation Page
 
-Navigate to **Automation** in the sidebar. The page opens on the **Rules** tab by default. Switch between tabs using the tab bar (1) at the top. Click **Create** (2) to add a new rule or transform depending on the active tab. Use the **Import / Export** (3) dropdown to bulk-manage rules or transforms as JSON files.
+Navigate to **Automation** in the top navigation bar. The page opens on the **Rules** tab by default. Switch between tabs using the tab bar (1) at the top. Click **Create** (2) to add a new rule or transform depending on the active tab. Use the **Import / Export** (3) dropdown to bulk-manage rules or transforms as JSON files.
 
 ![Automation - Rules](../../img/automation-rules.png)
 
@@ -109,8 +109,8 @@ Transformed metrics are first-class data sources:
 
 - **Dashboards** -- Add transform outputs as chart or value widgets.
 - **Rules** -- Reference `transform:{id}:{field}` as the metric source in rule conditions.
-- **Data Explorer** (under the **Data** page in the sidebar) -- Browse and query transform outputs alongside raw metrics.
-- **Data Push** (under the **Data** page in the sidebar) -- Forward transformed data to external systems.
+- **Data Explorer** (under the **Data** page in the top navigation bar) -- Browse and query transform outputs alongside raw metrics.
+- **Data Push** (under the **Data** page in the top navigation bar) -- Forward transformed data to external systems.
 
 #### Managing Transforms
 
@@ -124,7 +124,7 @@ Transformed metrics are first-class data sources:
 
 ## Related: Data Page
 
-The **Data** page in the sidebar (at `/data`) provides additional tools for exploring and forwarding your telemetry data:
+The **Data** page in the top navigation bar (at `/data`) provides additional tools for exploring and forwarding your telemetry data:
 
 - **Data Explorer** -- Browse all telemetry data sources across devices, extensions, and transforms in a unified, filterable table with history charts and export.
 - **Data Push** -- Forward telemetry to external systems (InfluxDB, TimescaleDB, custom endpoints) via Webhook (HTTP) or MQTT.

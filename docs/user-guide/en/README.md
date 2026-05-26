@@ -15,7 +15,7 @@ NeoMind is an Edge AI Platform for IoT. Connect your devices, run AI agents for 
 | 3 | [AI Chat](03-chat.md) | Conversations, image upload, memory and skills, tool execution |
 | 4 | [Device Management](04-devices.md) | MQTT and webhook devices, commands, auto-discovery, device types |
 | 4a | [Device Connection](04a-device-connection.md) | **Deep dive**: MQTT topics, webhook auth, TLS/mTLS, BLE provisioning, code examples (Python/ESP32/Node.js) |
-| 5 | [Automation](05-automation.md) | Rules, transforms, data push to external systems |
+| 5 | [Automation](05-automation.md) | Rules, transforms, data explorer, data push to external systems |
 | 6 | [AI Agents](06-agents.md) | Agent builder, execution modes, scheduling, memory, prompt engineering |
 | 7 | [Dashboards](07-dashboard.md) | Widgets, layout editing, data source binding, public sharing |
 | 8 | [Notifications](08-notifications.md) | 7 notification channels, setup guides, message lifecycle, retry logic |
@@ -53,7 +53,7 @@ On first launch (when no admin account exists), NeoMind shows the setup page:
 
 AI features require at least one LLM (Large Language Model) backend.
 
-1. Open **Settings** from the left navigation bar, then select the **LLM Backends** tab.
+1. Open **Settings** from the top navigation bar, then select the **LLM Backends** tab.
 2. Click **Add Backend**.
 3. Choose a provider and fill in the required fields.
 4. Click **Test Connection** to verify, then **Save**.
@@ -75,11 +75,11 @@ Add an Ollama backend in Settings pointing to `http://localhost:11434` with mode
 |----------|---------|-------------------|-------|
 | **Ollama** | No | `http://localhost:11434` | Free, local. Best for getting started. |
 | **OpenAI** | Yes | `https://api.openai.com/v1` | GPT-4o, GPT-4o-mini |
-| **Anthropic** | Yes | `https://api.anthropic.com` | Claude models |
+| **Anthropic** | Yes | `https://api.anthropic.com/v1` | Claude models |
 | **Google** | Yes | -- | Gemini models |
-| **xAI** | Yes | `https://api.x.ai` | Grok models |
+| **xAI** | Yes | `https://api.x.ai/v1` | Grok models |
 | **Qwen** | Yes | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Alibaba Qwen series |
-| **DeepSeek** | Yes | `https://api.deepseek.com` | DeepSeek V3/R1 |
+| **DeepSeek** | Yes | `https://api.deepseek.com/v1` | DeepSeek V3/R1 |
 | **GLM** | Yes | `https://open.bigmodel.cn/api/paas/v4` | Zhipu AI models |
 | **MiniMax** | Yes | -- | MiniMax models |
 | **LlamaCpp** | No | `http://localhost:8080` | Self-hosted, advanced users |
@@ -122,10 +122,9 @@ NeoMind's web interface is fully responsive. Open `http://your-server:9375` on y
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl/Cmd + K` | Open global search |
-| `Ctrl/Cmd + Enter` | Send chat message |
+| `Enter` | Send chat message |
+| `Shift + Enter` | Insert a new line in chat |
 | `Escape` | Close current dialog or overlay |
-| `?` | Show keyboard shortcut help |
 
 ### B. API Quick Reference
 

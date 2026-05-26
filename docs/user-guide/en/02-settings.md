@@ -1,6 +1,6 @@
 # Settings
 
-Settings is the control center for AI model connections, device connections, interface preferences, and data management. Access it from the sidebar navigation or go directly to `/settings`.
+Settings is the control center for AI model connections, device connections, interface preferences, and data management. Access it from the top navigation bar or go directly to `/settings`.
 
 The page is organized into four tabs: **LLM Backends**, **Device Connections**, **Preferences**, and **About**. Switch between them using the tab bar at the top.
 

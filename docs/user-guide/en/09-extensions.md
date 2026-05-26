@@ -6,7 +6,7 @@
 
 ## Opening the Extensions Page
 
-1. Click **Extensions** in the left sidebar to open the extensions management page
+1. Click **Extensions** in the top navigation bar to open the extensions management page
 2. The page displays all installed extensions as cards in a grid layout
 3. Each card shows the extension icon, name, ID, version, status (Active/Error), command count, and metric count
 

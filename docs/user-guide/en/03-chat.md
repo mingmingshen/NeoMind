@@ -72,7 +72,7 @@ Type your message in the text field at the bottom of the chat area. The input fi
 
 Attach images for the AI to analyze (photos of equipment, screenshots of errors, diagrams, etc.):
 
-1. Click the **paperclip** button in the input toolbar.
+1. Click the **image** button in the input toolbar.
 2. Select one or more images from your file system.
 3. Image thumbnails appear above the input field. Hover and click the X to remove any attachment.
 4. Type an optional text prompt, then send.
@@ -162,7 +162,7 @@ Each message builds on previous context -- no need to repeat device names or par
 | Switch session | Click any session in the drawer |
 | Delete session | Hover, click trash icon, confirm |
 | Search sessions | Type in search field in session drawer |
-| Attach image | Click paperclip button or drag-drop |
+| Attach image | Click image button or drag-drop |
 | Switch model | Click model selector in input toolbar |
 | Activate skills | Click Skills button, select from dropdown |
 | Open suggestions | Type `/` in empty input |

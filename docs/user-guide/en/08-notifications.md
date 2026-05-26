@@ -17,7 +17,7 @@ All notification channels are created, tested, and managed from the Channels tab
 
 ## Step 1: Open the Messages Page
 
-1. Click **Messages** in the left sidebar.
+1. Click **Messages** in the top navigation bar.
 2. The page opens on the **Messages** tab by default, showing the delivery log.
 3. Click the **Channels** tab to manage notification channels.
 
@@ -213,7 +213,7 @@ Once channels are configured, reference them in automation rules to send alerts 
 
 ### Rule NOTIFY Action
 
-1. Navigate to **Automation** in the sidebar.
+1. Navigate to **Automation** in the top navigation bar.
 2. Create or edit a rule (see [Automation & Data](05-automation.md) for the full rule builder flow).
 3. In **Step 3 -- Action Configuration**, select **NOTIFY** as the action type.
 4. Choose a **Channel** from the dropdown (shows all enabled notification channels).
