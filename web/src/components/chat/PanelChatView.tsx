@@ -22,12 +22,13 @@ import {
 import { MergedMessageList } from "./MergedMessageList"
 import { StreamProgress } from "./StreamProgress"
 import { ChatInputField } from "./ChatContainer"
-import { X } from "lucide-react"
+import { X, Minimize2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface PanelChatViewProps {
   onClose: () => void
   onStreamingChange: (streaming: boolean) => void
+  showMinimize?: boolean
 }
 
 // Stream state - same structure as ChatContainer
@@ -163,7 +164,7 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
   }
 }
 
-export function PanelChatView({ onClose, onStreamingChange }: PanelChatViewProps) {
+export function PanelChatView({ onClose, onStreamingChange, showMinimize }: PanelChatViewProps) {
   const { t } = useTranslation("chat")
 
   // Store state
@@ -326,15 +327,30 @@ export function PanelChatView({ onClose, onStreamingChange }: PanelChatViewProps
           <img src="/logo-square.png" alt="NeoMind" width={24} height={24} className="w-6 h-6 rounded-md" />
           <span className="text-sm font-semibold">{t("panelTitle")}</span>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          className="h-8 w-8 rounded-lg"
-          aria-label={t("closePanel")}
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          {showMinimize && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="h-8 w-8 rounded-lg"
+              aria-label={t("closePanel")}
+            >
+              <Minimize2 className="h-4 w-4" />
+            </Button>
+          )}
+          {!showMinimize && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="h-8 w-8 rounded-lg"
+              aria-label={t("closePanel")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
