@@ -2,11 +2,12 @@
   "title": "Data Explorer",
   "subtitle": "Browse all data sources across devices, extensions, and transforms",
   "tabs": {
-    "all": "All",
+    "all": "Data Sources",
     "device": "Devices",
     "extension": "Extensions",
     "transform": "Transforms",
-    "ai": "AI Metrics"
+    "ai": "AI Metrics",
+    "push": "Data Push"
   },
   "columns": {
     "type": "Type",

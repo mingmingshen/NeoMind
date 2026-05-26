@@ -171,46 +171,8 @@ impl EmailChannel {
     }
 
     fn build_email_body(&self, message: &Message) -> String {
-        // Build payload section for DataPush messages
-        let payload_section = if message.message_type == super::super::MessageType::DataPush {
-            if let Some(payload) = &message.payload {
-                let payload_str = payload.to_string();
-                // Truncate if too long
-                let display_payload = if payload_str.len() > 2000 {
-                    let end = payload_str.floor_char_boundary(2000);
-                    format!(
-                        "{}...\n\n<i>(Content truncated, total {} characters)</i>",
-                        &payload_str[..end],
-                        payload_str.len()
-                    )
-                } else {
-                    payload_str
-                };
-                format!(
-                    r#"<div class="payload">
-            <h3>📦 Push Data</h3>
-            <pre>{}</pre>
-        </div>"#,
-                    html_escape(&display_payload)
-                )
-            } else {
-                r#"<div class="payload">
-            <p><em>No data content</em></p>
-        </div>"#
-                    .to_string()
-            }
-        } else {
-            String::new()
-        };
-
         // Build message content section
-        let message_content = if message.message.is_empty()
-            && message.message_type == super::super::MessageType::DataPush
-        {
-            "<em>(Data push message)</em>".to_string()
-        } else {
-            html_escape(&message.message)
-        };
+        let message_content = html_escape(&message.message);
 
         // Severity colors using orange accent theme
         let (severity_color, severity_bg, severity_border) = match message.severity {
@@ -219,14 +181,6 @@ impl EmailChannel {
             super::super::MessageSeverity::Critical => ("#e74c3c", "#ffebee", "#e74c3c"),
             super::super::MessageSeverity::Emergency => ("#c0392b", "#fce4ec", "#c0392b"),
         };
-
-        // Message type badge
-        let (type_bg, type_text, type_label) =
-            if message.message_type == super::super::MessageType::DataPush {
-                ("#e67e22", "#ffffff", "Data Push")
-            } else {
-                ("#3498db", "#ffffff", "Notification")
-            };
 
         format!(
             r#"<!DOCTYPE html>
@@ -245,16 +199,12 @@ impl EmailChannel {
         .message-card {{ background-color: {}; border-left: 4px solid {}; border-radius: 6px; padding: 24px; margin-bottom: 24px; }}
         .message-header {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }}
         .message-title {{ font-size: 20px; font-weight: bold; color: #1a1a1a; flex: 1; }}
-        .message-type-badge {{ display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; background-color: {}; color: {}; }}
-        .severity-badge {{ display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; background-color: {}; color: #ffffff; margin-left: 8px; }}
+        .severity-badge {{ display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; background-color: {}; color: #ffffff; }}
         .meta-info {{ margin-bottom: 16px; }}
         .meta-row {{ display: flex; margin-bottom: 8px; font-size: 14px; }}
         .meta-label {{ color: #888; width: 80px; flex-shrink: 0; }}
         .meta-value {{ color: #333; font-weight: 500; }}
         .message-body {{ font-size: 15px; color: #555; line-height: 1.7; padding: 16px; background-color: #ffffff; border-radius: 4px; }}
-        .payload {{ margin-top: 20px; padding: 20px; background-color: #f8f9fa; border-radius: 6px; border: 1px solid #eee; }}
-        .payload h3 {{ margin: 0 0 12px 0; color: #e67e22; font-size: 16px; }}
-        .payload pre {{ white-space: pre-wrap; word-wrap: break-word; font-size: 13px; margin: 0; color: #555; font-family: 'Courier New', monospace; }}
         .footer {{ background-color: #1a1a1a; color: #888; padding: 24px 32px; text-align: center; }}
         .footer p {{ font-size: 13px; margin-bottom: 8px; }}
         .footer a {{ color: #e67e22; text-decoration: none; }}
@@ -273,7 +223,6 @@ impl EmailChannel {
                     <span class="message-title">{}</span>
                 </div>
                 <div style="margin-bottom: 12px;">
-                    <span class="message-type-badge">{}</span>
                     <span class="severity-badge" style="background-color: {};">{}</span>
                 </div>
                 <div class="meta-info">
@@ -290,7 +239,6 @@ impl EmailChannel {
                 <div class="message-body">
                     {}
                 </div>
-                {}
             </div>
         </div>
         <div class="footer">
@@ -302,17 +250,13 @@ impl EmailChannel {
 </html>"#,
             severity_bg,
             severity_border,
-            type_bg,
-            type_text,
             severity_color,
             message.title,
-            type_label,
             severity_color,
             message.severity.as_str(),
             message.timestamp.format("%Y-%m-%d %H:%M:%S"),
             message.source,
             message_content,
-            payload_section
         )
     }
 }

@@ -22,6 +22,7 @@ use crate::automation::{
 };
 use neomind_agent::memory::TieredMemory;
 use neomind_messages::MessageManager;
+use neomind_data_push::PushManager;
 
 use crate::auth::AuthState as ApiKeyAuthState;
 use crate::auth_users::AuthUserState;
@@ -72,6 +73,9 @@ pub struct ServerState {
 
     /// Data directory for persistent storage (e.g. skills, extensions).
     pub data_dir: std::path::PathBuf,
+
+    /// Data push manager (lazy-initialized).
+    pub data_push: Arc<tokio::sync::RwLock<Option<PushManager>>>,
 
     /// Auto-onboarding manager for zero-config device discovery (lazy-initialized).
     pub auto_onboard_manager: Arc<tokio::sync::RwLock<Option<Arc<AutoOnboardManager>>>>,
@@ -699,34 +703,16 @@ impl ServerState {
             "All parallel store opens completed"
         );
 
-        // Spawn periodic delivery log + old message cleanup (every 6 hours)
-        // and delivery retry (every 2 minutes)
+        // Spawn periodic old message cleanup (every 6 hours)
         {
             let mm = core.message_manager.clone();
             tokio::spawn(async move {
-                // Initial cleanup on startup
-                let cleaned_logs = mm.cleanup_delivery_logs(1).await;
-                if cleaned_logs > 0 {
-                    tracing::info!("Cleaned up {} expired delivery logs on startup", cleaned_logs);
-                }
-
                 let mut cleanup_interval = tokio::time::interval(tokio::time::Duration::from_secs(6 * 60 * 60));
-                let mut retry_interval = tokio::time::interval(tokio::time::Duration::from_secs(2 * 60));
                 loop {
-                    tokio::select! {
-                        _ = cleanup_interval.tick() => {
-                            let cleaned_logs = mm.cleanup_delivery_logs(1).await;
-                            if cleaned_logs > 0 {
-                                tracing::info!("Periodic cleanup: removed {} delivery logs older than 1 day", cleaned_logs);
-                            }
-                            if let Ok(cleaned_msgs) = mm.cleanup_old(30).await {
-                                if cleaned_msgs > 0 {
-                                    tracing::info!("Periodic cleanup: removed {} messages older than 30 days", cleaned_msgs);
-                                }
-                            }
-                        }
-                        _ = retry_interval.tick() => {
-                            mm.retry_failed_deliveries().await;
+                    cleanup_interval.tick().await;
+                    if let Ok(cleaned_msgs) = mm.cleanup_old(30).await {
+                        if cleaned_msgs > 0 {
+                            tracing::info!("Periodic cleanup: removed {} messages older than 30 days", cleaned_msgs);
                         }
                     }
                 }
@@ -757,6 +743,22 @@ impl ServerState {
             extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
             telemetry_query_semaphore: Arc::new(tokio::sync::Semaphore::new(16)),
             data_dir,
+            data_push: {
+                let push_manager = match PushManager::new(
+                    std::path::Path::new("data"),
+                    event_bus.clone(),
+                ) {
+                    Ok(m) => {
+                        tracing::info!("Data push manager initialized");
+                        Some(m)
+                    }
+                    Err(e) => {
+                        tracing::warn!(category = "storage", error = %e, "Failed to initialize data push manager");
+                        None
+                    }
+                };
+                Arc::new(tokio::sync::RwLock::new(push_manager))
+            },
         }
     }
 
@@ -937,6 +939,10 @@ impl ServerState {
             extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
             telemetry_query_semaphore: Arc::new(tokio::sync::Semaphore::new(16)),
             data_dir: std::path::PathBuf::from("data"),
+            data_push: {
+                let push_manager = PushManager::memory().ok();
+                Arc::new(tokio::sync::RwLock::new(push_manager))
+            },
         }
     }
 

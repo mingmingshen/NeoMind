@@ -720,7 +720,8 @@ mod tests {
         let builder = PromptBuilder::new();
         let strategy = builder.tool_strategy();
         assert!(strategy.contains("Tool Usage Strategy"));
-        assert!(strategy.contains("neomind device list"));
+        assert!(strategy.contains("device list"));
+        assert!(strategy.contains("CLI Command Reference"));
     }
 
     #[test]

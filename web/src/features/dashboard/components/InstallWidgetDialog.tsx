@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+import { textNano } from '@/design-system/tokens/typography'
 import { useDashboardStore } from '../store'
 import { getWidgetRegistry, groupComponentsByCategory, getCategoryInfo } from '../widgets/registry'
 import type { WidgetCategory } from '../types'
@@ -105,7 +106,7 @@ export function InstallWidgetDialog() {
             const catInfo = getCategoryInfo(category)
             return (
               <div key={category}>
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1 mb-1">
+                <p className={`${textNano} font-medium text-muted-foreground uppercase tracking-wider px-1 mb-1`}>
                   {catInfo.label}
                 </p>
                 <div className="grid grid-cols-2 gap-1.5">

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { BrandLogoHorizontal } from "@/components/shared/BrandName"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
+import { textNano } from '@/design-system/tokens/typography'
 import { tokenManager, getApiBase, getApiKey, setApiBase, clearApiKey, setApiKey } from "@/lib/api"
 import { INSTANCE_CACHE_KEY, CURRENT_INSTANCE_KEY, PENDING_SWITCH_KEY } from "@/lib/instance-constants"
 import { decryptApiKey } from "@/store/slices/instanceSlice"
@@ -271,7 +272,7 @@ export function LoginPage() {
                     <div className="font-medium truncate flex items-center gap-2">
                       {inst.is_local ? t('instances:localBackend') : inst.name}
                       {isCurrent && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                        <span className={`inline-flex items-center gap-0.5 ${textNano} font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary`}>
                           <Check className="h-3 w-3" />
                           {t('instances:current')}
                         </span>
@@ -279,7 +280,7 @@ export function LoginPage() {
                     </div>
                     <div className="text-xs text-muted-foreground truncate flex items-center gap-2 mt-0.5">
                       <span>{inst.is_local ? 'localhost:9375' : inst.url.replace(/^https?:\/\//, '')}</span>
-                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-muted">
+                      <span className={`inline-flex items-center gap-1 ${textNano} px-1.5 py-0.5 rounded bg-muted`}>
                         <KeyRound className="h-3 w-3" />
                         {inst.is_local ? t('instances:authUserLogin') : hasApiKey ? t('instances:authApiKey') : t('instances:authUserLogin')}
                       </span>

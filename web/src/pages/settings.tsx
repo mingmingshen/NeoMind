@@ -8,17 +8,16 @@ import { AboutTab } from "./settings/AboutTab"
 import { PreferencesTab } from "./settings/PreferencesTab"
 import { UnifiedLLMBackendsTab } from "@/components/llm/UnifiedLLMBackendsTab"
 import { UnifiedDeviceConnectionsTab } from "@/components/connections"
-import { UnifiedAlertChannelsTab } from "@/components/alerts/UnifiedAlertChannelsTab"
-import { Sliders, Info, Cpu, Plug, BellRing } from "lucide-react"
+import { Sliders, Info, Cpu, Plug } from "lucide-react"
 
-type SettingsTabValue = "llm" | "connections" | "alert-channels" | "preferences" | "about"
+type SettingsTabValue = "llm" | "connections" | "preferences" | "about"
 
 export function SettingsPage() {
   const { t } = useTranslation(["common", "settings", "llm", "connections", "extensions"])
   const [searchParams] = useSearchParams()
   const tabFromUrl = searchParams.get("tab") as SettingsTabValue | null
   const [activeTab, setActiveTab] = useState<SettingsTabValue>(() => {
-    const validTabs: SettingsTabValue[] = ["llm", "connections", "alert-channels", "preferences", "about"]
+    const validTabs: SettingsTabValue[] = ["llm", "connections", "preferences", "about"]
     return tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "preferences"
   })
 
@@ -31,7 +30,6 @@ export function SettingsPage() {
   const tabs = [
     { value: "llm" as SettingsTabValue, label: t("settings:llmBackends"), icon: <Cpu className="h-4 w-4" /> },
     { value: "connections" as SettingsTabValue, label: t("settings:deviceConnections"), icon: <Plug className="h-4 w-4" /> },
-    { value: "alert-channels" as SettingsTabValue, label: t("settings:alertChannels"), icon: <BellRing className="h-4 w-4" /> },
     { value: "preferences" as SettingsTabValue, label: t("settings:preferences"), icon: <Sliders className="h-4 w-4" /> },
     { value: "about" as SettingsTabValue, label: t("settings:about"), icon: <Info className="h-4 w-4" /> },
   ]
@@ -64,11 +62,6 @@ export function SettingsPage() {
         {/* Device Connections Tab */}
         <PageTabsContent value="connections" activeTab={activeTab}>
           <UnifiedDeviceConnectionsTab />
-        </PageTabsContent>
-
-        {/* Alert Channels Tab */}
-        <PageTabsContent value="alert-channels" activeTab={activeTab}>
-          <UnifiedAlertChannelsTab hideFilterButton />
         </PageTabsContent>
 
         {/* Preferences Tab */}

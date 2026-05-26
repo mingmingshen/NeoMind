@@ -30,29 +30,25 @@ impl std::fmt::Display for MessageId {
     }
 }
 
-/// Message type distinguishing notifications from data pushes.
+/// Message type (currently only Notification, extensible for future types).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageType {
     /// Human-readable notification (stored long-term)
     #[default]
     Notification,
-    /// Structured data push (short-term delivery log)
-    DataPush,
 }
 
 impl MessageType {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Notification => "notification",
-            Self::DataPush => "data_push",
         }
     }
 
     pub fn from_string(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "notification" => Some(Self::Notification),
-            "data_push" | "datapush" => Some(Self::DataPush),
             _ => None,
         }
     }
@@ -250,15 +246,6 @@ pub struct Message {
     /// Associated tags
     #[serde(default)]
     pub tags: Vec<String>,
-    /// Message type (notification or data_push)
-    #[serde(default)]
-    pub message_type: MessageType,
-    /// Explicit source ID for filtering
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_id: Option<String>,
-    /// Structured payload for DataPush
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub payload: Option<serde_json::Value>,
 }
 
 impl Message {
@@ -283,9 +270,6 @@ impl Message {
             status: MessageStatus::Active,
             metadata: None,
             tags: Vec::new(),
-            message_type: MessageType::Notification,
-            source_id: None,
-            payload: None,
         }
     }
 
@@ -343,28 +327,6 @@ impl Message {
         let mut msg = Self::alert(severity, title, message, rule_id.clone());
         msg.source_type = "rule".to_string();
         msg.tags.push("rule".to_string());
-        msg
-    }
-
-    /// Create a data push message with structured payload
-    pub fn data_push(
-        category: String,
-        title: String,
-        payload: serde_json::Value,
-        source_type: String,
-        source_id: String,
-    ) -> Self {
-        let mut msg = Self::new(
-            category,
-            MessageSeverity::Info,
-            title,
-            String::new(),
-            source_id.clone(),
-        );
-        msg.message_type = MessageType::DataPush;
-        msg.source_type = source_type;
-        msg.source_id = Some(source_id);
-        msg.payload = Some(payload);
         msg
     }
 
@@ -581,27 +543,22 @@ mod tests {
             MessageType::from_string("notification"),
             Some(MessageType::Notification)
         );
-        assert_eq!(
-            MessageType::from_string("data_push"),
-            Some(MessageType::DataPush)
-        );
         assert_eq!(MessageType::from_string("invalid"), None);
     }
 
     #[test]
     fn test_message_type_as_str() {
         assert_eq!(MessageType::Notification.as_str(), "notification");
-        assert_eq!(MessageType::DataPush.as_str(), "data_push");
     }
 
     #[test]
     fn test_message_type_serialization() {
-        let mt = MessageType::DataPush;
+        let mt = MessageType::Notification;
         let json = serde_json::to_string(&mt).unwrap();
-        assert_eq!(json, "\"data_push\"");
+        assert_eq!(json, "\"notification\"");
 
         let parsed: MessageType = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, MessageType::DataPush);
+        assert_eq!(parsed, MessageType::Notification);
     }
 
     #[test]
@@ -751,25 +708,6 @@ mod tests {
     #[test]
     fn test_message_type_display() {
         assert_eq!(format!("{}", MessageType::Notification), "notification");
-        assert_eq!(format!("{}", MessageType::DataPush), "data_push");
-    }
-
-    #[test]
-    fn test_message_data_push() {
-        let payload = serde_json::json!({"temperature": 85.5});
-
-        let msg = Message::data_push(
-            "sensor_data".to_string(),
-            "Temperature Reading".to_string(),
-            payload.clone(),
-            "device".to_string(),
-            "sensor_1".to_string(),
-        );
-
-        assert_eq!(msg.message_type, MessageType::DataPush);
-        assert_eq!(msg.source_type, "device");
-        assert_eq!(msg.source_id, Some("sensor_1".to_string()));
-        assert_eq!(msg.payload, Some(payload));
     }
 
     #[test]

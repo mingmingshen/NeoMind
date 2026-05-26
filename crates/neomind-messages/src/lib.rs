@@ -42,7 +42,6 @@
 //! ```
 
 pub mod channels;
-pub mod delivery_log;
 pub mod error;
 pub mod manager;
 pub mod message;
@@ -59,16 +58,26 @@ pub use channels::{WebhookChannel, WebhookChannelFactory};
 #[cfg(feature = "email")]
 pub use channels::{EmailChannel, EmailChannelFactory};
 
+#[cfg(feature = "telegram")]
+pub use channels::{TelegramChannel, TelegramChannelFactory};
+
+#[cfg(feature = "wecom")]
+pub use channels::{WeComChannel, WeComChannelFactory};
+
+#[cfg(feature = "dingtalk")]
+pub use channels::{DingTalkChannel, DingTalkChannelFactory};
+
+#[cfg(feature = "slack")]
+pub use channels::{SlackChannel, SlackChannelFactory};
+
+#[cfg(feature = "feishu")]
+pub use channels::{FeishuChannel, FeishuChannelFactory};
+
 // Channel info exports (always available)
 pub use channels::{ChannelFactory, ChannelInfo, ChannelStats, ChannelTypeInfo, TestResult};
 
 // Re-export channel helper functions
 pub use channels::{get_channel_schema, list_channel_types};
-
-// Delivery log exports
-pub use delivery_log::{
-    DeliveryLog, DeliveryLogId, DeliveryLogQuery, DeliveryStats, DeliveryStatus,
-};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

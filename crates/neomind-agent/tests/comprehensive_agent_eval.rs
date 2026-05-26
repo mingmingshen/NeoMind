@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use neomind_agent::session::SessionManager;
-use neomind_agent::{OllamaConfig, OllamaRuntime};
+use neomind_agent::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
 
 // ── helpers ───────────────────────────────────────────────────────────
@@ -27,16 +27,32 @@ async fn new_session() -> (SessionManager, String) {
     let sm = SessionManager::memory();
     let sid = sm.create_session().await.unwrap();
 
-    let model = std::env::var("MODEL").unwrap_or("qwen3.5:2b".into());
-    let endpoint = std::env::var("OLLAMA_ENDPOINT").unwrap_or("http://localhost:11434".into());
-    let llm: Arc<dyn LlmRuntime> = Arc::new(
-        OllamaRuntime::new(OllamaConfig {
-            endpoint,
-            model,
-            timeout_secs: 180,
-        })
-        .unwrap(),
-    );
+    let llm: Arc<dyn LlmRuntime> = if let Ok(api_key) = std::env::var("LLM_API_KEY") {
+        // Cloud LLM mode (GLM-5, OpenAI, etc.)
+        let endpoint = std::env::var("LLM_ENDPOINT")
+            .unwrap_or("https://open.bigmodel.cn/api/coding/paas/v4".into());
+        let model = std::env::var("MODEL").unwrap_or("glm-5".into());
+        Arc::new(
+            CloudRuntime::new(
+                CloudConfig::custom(api_key, endpoint)
+                    .with_model(model)
+                    .with_timeout_secs(180),
+            )
+            .unwrap(),
+        )
+    } else {
+        // Local Ollama mode
+        let model = std::env::var("MODEL").unwrap_or("qwen3.5:2b".into());
+        let endpoint = std::env::var("OLLAMA_ENDPOINT").unwrap_or("http://localhost:11434".into());
+        Arc::new(
+            OllamaRuntime::new(OllamaConfig {
+                endpoint,
+                model,
+                timeout_secs: 180,
+            })
+            .unwrap(),
+        )
+    };
     sm.get_session(&sid)
         .await
         .unwrap()
@@ -49,9 +65,19 @@ async fn send(sm: &SessionManager, sid: &str, msg: &str) -> MsgResult {
     let start = Instant::now();
     let resp = sm.process_message(sid, msg).await.unwrap();
     let elapsed = start.elapsed();
+    // Extract CLI commands from shell tool calls
+    let shell_commands: Vec<String> = resp
+        .tool_calls
+        .iter()
+        .filter(|t| t.name == "shell")
+        .filter_map(|t| t.arguments.get("command").and_then(|v| v.as_str()))
+        .map(|s| s.to_string())
+        .collect();
+
     MsgResult {
         content: resp.message.content.to_string(),
         tool_calls: resp.tool_calls.iter().map(|t| t.name.clone()).collect(),
+        shell_commands,
         tool_results: resp
             .tool_calls
             .iter()
@@ -65,14 +91,39 @@ async fn send(sm: &SessionManager, sid: &str, msg: &str) -> MsgResult {
     }
 }
 
+#[allow(dead_code)]
 struct MsgResult {
     content: String,
     tool_calls: Vec<String>,
+    /// All shell commands executed (e.g. ["neomind device list"])
+    shell_commands: Vec<String>,
     tool_results: Vec<String>,
     tools_used: Vec<String>,
     memory_used: bool,
     processing_ms: u64,
     elapsed_ms: u64,
+}
+
+impl MsgResult {
+    /// Check if any shell command targets the given CLI domain.
+    /// e.g. has_domain("device") matches "neomind device list", "neomind device get ..."
+    fn has_domain(&self, domain: &str) -> bool {
+        let prefix = format!("neomind {} ", domain);
+        let exact = format!("neomind {}", domain);
+        self.shell_commands
+            .iter()
+            .any(|c| c.starts_with(&prefix) || *c == exact)
+    }
+
+    /// Count how many shell commands target the given CLI domain.
+    fn domain_count(&self, domain: &str) -> usize {
+        let prefix = format!("neomind {} ", domain);
+        let exact = format!("neomind {}", domain);
+        self.shell_commands
+            .iter()
+            .filter(|c| c.starts_with(&prefix) || **c == exact)
+            .count()
+    }
 }
 
 // ── metrics ───────────────────────────────────────────────────────────
@@ -174,13 +225,13 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     // 1 — list devices (single-turn tool)
     let r = send(sm, sid, "列出所有设备").await;
     m.total_turns += 1;
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.tools_correct += 1;
     }
     m.tools_total_expected += 1;
-    m.turns_with_tools += r.tool_calls.len().min(1);
+    m.turns_with_tools += if r.shell_commands.is_empty() { 0 } else { 1 };
     m.single_turn_tasks += 1;
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.single_turn_success += 1;
         notes.push("T1: ✅ list devices".to_string());
     } else {
@@ -191,7 +242,7 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     let r = send(sm, sid, "查看设备 sensor_01 的最新数据").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.tools_correct += 1;
         m.single_turn_success += 1;
         notes.push("T2: ✅ device data".to_string());
@@ -204,7 +255,7 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     let r = send(sm, sid, "查看设备 sensor_01 过去24小时的温度变化趋势").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.tools_correct += 1;
         m.single_turn_success += 1;
         notes.push("T3: ✅ history trend".to_string());
@@ -232,7 +283,7 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.single_turn_tasks += 1;
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.tools_correct += 1;
         m.single_turn_success += 1;
         notes.push("T5: ✅ device control".to_string());
@@ -244,11 +295,11 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     let r = send(sm, sid, "同时查看 sensor_01 和 sensor_02 的数据").await;
     m.total_turns += 1;
     m.tools_total_expected += 2;
-    if r.tool_calls.iter().filter(|t| *t == "device").count() >= 2 {
+    if r.domain_count("device") >= 2 {
         m.tools_correct += 2;
         m.multi_tool_success += 1;
         notes.push("T6: ✅ multi-device".to_string());
-    } else if r.tool_calls.contains(&"device".into()) {
+    } else if r.has_domain("device") {
         m.tools_correct += 1;
         notes.push("T6: ⚠️ partial multi-device".to_string());
     } else {
@@ -260,7 +311,7 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     let r = send(sm, sid, "分析所有设备的在线离线状态").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.tools_correct += 1;
         notes.push("T7: ✅ device analysis".to_string());
     } else {
@@ -294,7 +345,7 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     let r = send(sm, sid, "我办公室的温度是多少？").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.tools_correct += 1;
         notes.push("T10: ✅ NL device query".to_string());
     } else {
@@ -305,7 +356,7 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     let r = send(sm, sid, "列出所有离线设备").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.tools_correct += 1;
         notes.push("T11: ✅ offline filter".to_string());
     } else {
@@ -316,7 +367,7 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.single_turn_tasks += 1;
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.tools_correct += 1;
         m.single_turn_success += 1;
         notes.push("T12: ✅ turn off".to_string());
@@ -327,7 +378,7 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     let r = send(sm, sid, "sensor_01 的信号强度怎么样").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.tools_correct += 1;
         notes.push("T13: ✅ signal query".to_string());
     } else {
@@ -338,11 +389,11 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     m.total_turns += 1;
     m.tools_total_expected += 2;
     m.multi_tool_attempts += 1;
-    if r.tool_calls.iter().filter(|t| *t == "device").count() >= 2 {
+    if r.domain_count("device") >= 2 {
         m.tools_correct += 2;
         m.multi_tool_success += 1;
         notes.push("T14: ✅ compare devices".to_string());
-    } else if r.tool_calls.contains(&"device".into()) {
+    } else if r.has_domain("device") {
         m.tools_correct += 1;
         notes.push("T14: ⚠️ partial compare".to_string());
     } else {
@@ -353,7 +404,7 @@ async fn r1_device_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -
     m.total_turns += 1;
     notes.push(format!(
         "T15: {} device anomaly check",
-        if r.tool_calls.contains(&"device".into()) {
+        if r.has_domain("device") {
             "✅"
         } else {
             "⚠️"
@@ -372,7 +423,7 @@ async fn r2_rule_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -> 
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.single_turn_tasks += 1;
-    if r.tool_calls.contains(&"rule".into()) {
+    if r.has_domain("rule") {
         m.tools_correct += 1;
         m.single_turn_success += 1;
         notes.push("T1: ✅ list rules".to_string());
@@ -385,7 +436,7 @@ async fn r2_rule_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -> 
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.resource_creation_tasks += 1;
-    if r.tool_calls.contains(&"rule".into()) {
+    if r.has_domain("rule") {
         m.tools_correct += 1;
         let has_dsl =
             r.content.contains("RULE") || r.content.contains("温度") || r.content.contains("35");
@@ -404,7 +455,7 @@ async fn r2_rule_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -> 
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.resource_creation_tasks += 1;
-    if r.tool_calls.contains(&"rule".into()) {
+    if r.has_domain("rule") {
         m.tools_correct += 1;
         m.resource_creation_success += 1;
         notes.push("T3: ✅ create battery rule".to_string());
@@ -437,7 +488,7 @@ async fn r2_rule_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -> 
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.resource_creation_tasks += 1;
-    if r.tool_calls.contains(&"rule".into()) {
+    if r.has_domain("rule") {
         m.tools_correct += 1;
         let complex = r.content.contains("30")
             && (r.content.contains("40")
@@ -457,7 +508,7 @@ async fn r2_rule_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -> 
     let r = send(sm, sid, "现在有多少条规则？").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"rule".into()) {
+    if r.has_domain("rule") {
         m.tools_correct += 1;
         notes.push("T6: ✅ count rules".to_string());
     } else {
@@ -468,7 +519,7 @@ async fn r2_rule_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -> 
     let r = send(sm, sid, "删除温度告警规则").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"rule".into()) {
+    if r.has_domain("rule") {
         m.tools_correct += 1;
         notes.push("T7: ✅ delete rule".to_string());
     } else {
@@ -488,7 +539,7 @@ async fn r2_rule_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -> 
     let r = send(sm, sid, "禁用电池电量告警规则").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"rule".into()) {
+    if r.has_domain("rule") {
         m.tools_correct += 1;
         notes.push("T9: ✅ disable rule".to_string());
     } else {
@@ -523,7 +574,7 @@ async fn r2_rule_management(sm: &SessionManager, sid: &str, m: &mut Metrics) -> 
         if i == 0 || i == 2 {
             m.resource_creation_tasks += 1;
         }
-        if r.tool_calls.contains(&"rule".into()) {
+        if r.has_domain("rule") {
             m.tools_correct += 1;
             m.tools_total_expected += 1;
             if i == 0 || i == 2 {
@@ -547,7 +598,7 @@ async fn r3_agent_management(sm: &SessionManager, sid: &str, m: &mut Metrics) ->
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.single_turn_tasks += 1;
-    if r.tool_calls.contains(&"agent".into()) {
+    if r.has_domain("agent") {
         m.tools_correct += 1;
         m.single_turn_success += 1;
         notes.push("T1: ✅ list agents".to_string());
@@ -565,7 +616,7 @@ async fn r3_agent_management(sm: &SessionManager, sid: &str, m: &mut Metrics) ->
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.resource_creation_tasks += 1;
-    if r.tool_calls.contains(&"agent".into()) {
+    if r.has_domain("agent") {
         m.tools_correct += 1;
         let has_name = r.content.contains("温度") || r.content.contains("巡检");
         if has_name {
@@ -588,7 +639,7 @@ async fn r3_agent_management(sm: &SessionManager, sid: &str, m: &mut Metrics) ->
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.resource_creation_tasks += 1;
-    if r.tool_calls.contains(&"agent".into()) {
+    if r.has_domain("agent") {
         m.tools_correct += 1;
         m.resource_creation_success += 1;
         notes.push("T3: ✅ create battery agent".to_string());
@@ -600,7 +651,7 @@ async fn r3_agent_management(sm: &SessionManager, sid: &str, m: &mut Metrics) ->
     let r = send(sm, sid, "查看温度巡检Agent的详细信息").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"agent".into()) {
+    if r.has_domain("agent") {
         m.tools_correct += 1;
         notes.push("T4: ✅ agent detail".to_string());
     } else {
@@ -623,7 +674,7 @@ async fn r3_agent_management(sm: &SessionManager, sid: &str, m: &mut Metrics) ->
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.single_turn_tasks += 1;
-    if r.tool_calls.contains(&"agent".into()) {
+    if r.has_domain("agent") {
         m.tools_correct += 1;
         m.single_turn_success += 1;
         notes.push("T6: ✅ pause agent".to_string());
@@ -635,7 +686,7 @@ async fn r3_agent_management(sm: &SessionManager, sid: &str, m: &mut Metrics) ->
     let r = send(sm, sid, "查看温度巡检Agent的执行历史").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"agent".into()) {
+    if r.has_domain("agent") {
         m.tools_correct += 1;
         notes.push("T7: ✅ agent executions".to_string());
     } else {
@@ -646,7 +697,7 @@ async fn r3_agent_management(sm: &SessionManager, sid: &str, m: &mut Metrics) ->
     let r = send(sm, sid, "恢复温度巡检Agent").await;
     m.total_turns += 1;
     m.tools_total_expected += 1;
-    if r.tool_calls.contains(&"agent".into()) {
+    if r.has_domain("agent") {
         m.tools_correct += 1;
         notes.push("T8: ✅ resume agent".to_string());
     } else {
@@ -663,7 +714,7 @@ async fn r3_agent_management(sm: &SessionManager, sid: &str, m: &mut Metrics) ->
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.resource_creation_tasks += 1;
-    if r.tool_calls.contains(&"agent".into()) {
+    if r.has_domain("agent") {
         m.tools_correct += 1;
         m.resource_creation_success += 1;
         notes.push("T9: ✅ complex agent create".to_string());
@@ -689,7 +740,7 @@ async fn r3_agent_management(sm: &SessionManager, sid: &str, m: &mut Metrics) ->
         if needs_tool {
             m.tools_total_expected += 1;
         }
-        if r.tool_calls.contains(&"agent".into()) {
+        if r.has_domain("agent") {
             if needs_tool {
                 m.tools_correct += 1;
             }
@@ -718,7 +769,7 @@ async fn r4_cross_domain(sm: &SessionManager, sid: &str, m: &mut Metrics) -> Vec
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.multi_turn_tasks += 1;
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.tools_correct += 1;
         notes.push("T1: ✅ check devices".to_string());
     } else {
@@ -730,13 +781,13 @@ async fn r4_cross_domain(sm: &SessionManager, sid: &str, m: &mut Metrics) -> Vec
     m.total_turns += 1;
     notes.push(format!(
         "T2: {} temp check",
-        if r.tool_calls.contains(&"device".into()) {
+        if r.has_domain("device") {
             "✅"
         } else {
             "⚠️"
         }
     ));
-    if r.tool_calls.contains(&"device".into()) {
+    if r.has_domain("device") {
         m.tools_correct += 1;
         m.tools_total_expected += 1;
     }
@@ -746,7 +797,7 @@ async fn r4_cross_domain(sm: &SessionManager, sid: &str, m: &mut Metrics) -> Vec
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.resource_creation_tasks += 1;
-    if r.tool_calls.contains(&"rule".into()) {
+    if r.has_domain("rule") {
         m.tools_correct += 1;
         m.resource_creation_success += 1;
         notes.push("T3: ✅ cross-domain: device→rule".to_string());
@@ -759,7 +810,7 @@ async fn r4_cross_domain(sm: &SessionManager, sid: &str, m: &mut Metrics) -> Vec
     m.total_turns += 1;
     m.tools_total_expected += 1;
     m.resource_creation_tasks += 1;
-    if r.tool_calls.contains(&"agent".into()) {
+    if r.has_domain("agent") {
         m.tools_correct += 1;
         m.resource_creation_success += 1;
         notes.push("T4: ✅ cross-domain: rule→agent".to_string());
@@ -808,8 +859,8 @@ async fn r4_cross_domain(sm: &SessionManager, sid: &str, m: &mut Metrics) -> Vec
             Some("multi") => {
                 m.tools_total_expected += 2;
                 m.multi_tool_attempts += 1;
-                let d = r.tool_calls.contains(&"device".into());
-                let ru = r.tool_calls.contains(&"rule".into());
+                let d = r.has_domain("device");
+                let ru = r.has_domain("rule");
                 if d {
                     m.tools_correct += 1;
                 }
@@ -829,7 +880,7 @@ async fn r4_cross_domain(sm: &SessionManager, sid: &str, m: &mut Metrics) -> Vec
             }
             Some(tool) => {
                 m.tools_total_expected += 1;
-                if r.tool_calls.iter().any(|t| t == tool) {
+                if r.has_domain(tool) {
                     m.tools_correct += 1;
                     notes.push(format!("T{}: OK {}", 6 + i, q));
                 } else {
@@ -868,15 +919,15 @@ async fn r5_memory_context_stress(sm: &SessionManager, sid: &str, m: &mut Metric
         }
     ));
 
-    let r = send(sm, sid, "我们仓库有50个温湿度传感器，10个摄像头").await;
+    let _r = send(sm, sid, "我们仓库有50个温湿度传感器，10个摄像头").await;
     m.total_turns += 1;
     notes.push("T2: device info planted".to_string());
 
-    let r = send(sm, sid, "告警阈值：温度超过32度，湿度超过80%").await;
+    let _r = send(sm, sid, "告警阈值：温度超过32度，湿度超过80%").await;
     m.total_turns += 1;
     notes.push("T3: ✅ thresholds planted".into());
 
-    let r = send(sm, sid, "通知方式用短信，紧急情况打电话").await;
+    let _r = send(sm, sid, "通知方式用短信，紧急情况打电话").await;
     m.total_turns += 1;
     notes.push("T4: ✅ notification prefs planted".into());
 
@@ -914,7 +965,7 @@ async fn r5_memory_context_stress(sm: &SessionManager, sid: &str, m: &mut Metric
 
         if i >= 8 {
             m.resource_creation_tasks += 1;
-            if r.tool_calls.len() > 0 {
+            if !r.shell_commands.is_empty() {
                 m.resource_creation_success += 1;
             }
         }
@@ -924,7 +975,7 @@ async fn r5_memory_context_stress(sm: &SessionManager, sid: &str, m: &mut Metric
     let r = send(sm, sid, "根据我之前设定的阈值，再创建一个湿度告警规则").await;
     m.total_turns += 1;
     m.resource_creation_tasks += 1;
-    if r.tool_calls.contains(&"rule".into()) {
+    if r.has_domain("rule") {
         m.resource_creation_success += 1;
         notes.push("T15: ✅ rule from memory".to_string());
     } else {
@@ -981,8 +1032,8 @@ static SCENARIO_NAMES: &[&str] = &[
 #[tokio::test]
 #[ignore = "Requires Ollama. cargo test -p neomind-agent --test comprehensive_agent_eval -- --ignored --nocapture"]
 async fn comprehensive_20round_evaluation() -> anyhow::Result<()> {
-    if !ollama_up() {
-        eprintln!("⚠️  Ollama not available, skipping");
+    if !ollama_up() && std::env::var("LLM_API_KEY").is_err() {
+        eprintln!("Neither Ollama nor LLM_API_KEY available, skipping");
         return Ok(());
     }
 

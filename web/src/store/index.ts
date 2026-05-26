@@ -64,6 +64,7 @@ import { createUpdateSlice } from './slices/updateSlice'
 import { createAiAnalystSlice } from './slices/aiAnalystSlice'
 import { createInstanceSlice } from './slices/instanceSlice'
 import { createFrontendComponentSlice } from './slices/frontendComponentSlice'
+import { createDataPushSlice } from './slices/dataPushSlice'
 
 // Import types
 import type { AuthSlice } from './slices/authSlice'
@@ -79,6 +80,7 @@ import type { UpdateSlice } from './slices/updateSlice'
 import type { AiAnalystSlice } from './slices/aiAnalystSlice'
 import type { InstanceSlice } from './slices/instanceSlice'
 import type { FrontendComponentSlice } from './slices/frontendComponentSlice'
+import type { DataPushSlice } from './slices/dataPushSlice'
 
 // ============================================================================
 // Combined Store Type
@@ -97,6 +99,7 @@ export type NeoMindStore = AuthSlice
   & AiAnalystSlice
   & InstanceSlice
   & FrontendComponentSlice
+  & DataPushSlice
 
 // ============================================================================
 // Create Store
@@ -120,6 +123,7 @@ export const useStore = create<NeoMindStore>()(
         ...createAiAnalystSlice(set, get, api),
         ...createInstanceSlice(set, get, api),
         ...createFrontendComponentSlice(set, get, api),
+        ...createDataPushSlice(set, get, api),
       }),
       {
         name: 'neomind-store',

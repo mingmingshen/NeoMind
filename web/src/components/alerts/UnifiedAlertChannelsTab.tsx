@@ -32,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type { AlertChannel, ChannelTypeInfo, ChannelSchemaResponse, PluginConfigSchema, ExtensionCapabilityDto, ChannelFilter, MessageType, MessageSeverity } from "@/types"
+import type { AlertChannel, ChannelTypeInfo, ChannelSchemaResponse, PluginConfigSchema, ExtensionCapabilityDto, ChannelFilter, MessageSeverity } from "@/types"
 
 type View = 'list' | 'detail'
 
@@ -193,11 +193,9 @@ export function UnifiedAlertChannelsTab({
   // Filter configuration dialog state
   const [filterDialogChannel, setFilterDialogChannel] = useState<AlertChannel | null>(null)
   const [filterConfig, setFilterConfig] = useState<ChannelFilter>({
-    message_types: [],
     source_types: [],
     categories: [],
     min_severity: null,
-    source_ids: [],
   })
   const [savingFilter, setSavingFilter] = useState(false)
 
@@ -412,11 +410,9 @@ export function UnifiedAlertChannelsTab({
     } catch (error) {
       // Use default filter on error
       setFilterConfig({
-        message_types: [],
         source_types: [],
         categories: [],
         min_severity: null,
-        source_ids: [],
       })
     }
   }
@@ -718,54 +714,6 @@ export function UnifiedAlertChannelsTab({
           submitLabel={t('common:save')}
         >
           <div className="space-y-4">
-            {/* Message Types */}
-            <div className="space-y-2">
-              <Label>{t('common:messages.channels.messageTypes')}</Label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox
-                    checked={filterConfig.message_types.length === 0 || filterConfig.message_types.includes('notification')}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setFilterConfig(prev => ({
-                          ...prev,
-                          message_types: [...new Set([...prev.message_types, 'notification' as MessageType])]
-                        }))
-                      } else {
-                        setFilterConfig(prev => ({
-                          ...prev,
-                          message_types: prev.message_types.filter(t => t !== 'notification')
-                        }))
-                      }
-                    }}
-                  />
-                  {t('common:messages.channels.notification')}
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox
-                    checked={filterConfig.message_types.length === 0 || filterConfig.message_types.includes('data_push')}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setFilterConfig(prev => ({
-                          ...prev,
-                          message_types: [...new Set([...prev.message_types, 'data_push' as MessageType])]
-                        }))
-                      } else {
-                        setFilterConfig(prev => ({
-                          ...prev,
-                          message_types: prev.message_types.filter(t => t !== 'data_push')
-                        }))
-                      }
-                    }}
-                  />
-                  {t('common:messages.channels.dataPush')}
-                </label>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {t('common:messages.channels.messageTypesHint')}
-              </p>
-            </div>
-
             {/* Source Types */}
             <div className="space-y-2">
               <Label>{t('common:messages.channels.sourceTypes')}</Label>
@@ -854,11 +802,10 @@ export function UnifiedAlertChannelsTab({
             <div className="p-3 bg-muted-50 rounded-md">
               <p className="text-sm font-medium mb-1">{t('common:messages.channels.filterPreview')}</p>
               <p className="text-xs text-muted-foreground">
-                {filterConfig.message_types.length === 0 && filterConfig.source_types.length === 0
+                {filterConfig.source_types.length === 0
                   ? t('common:messages.channels.filterAcceptAll')
                   : t('common:messages.channels.filterWillMatch', {
-                      types: filterConfig.message_types.length > 0 ? filterConfig.message_types.join(', ') : t('common:messages.channels.all'),
-                      sources: filterConfig.source_types.length > 0 ? filterConfig.source_types.join(', ') : t('common:messages.channels.all')
+                      sources: filterConfig.source_types.join(', ')
                     })}
               </p>
             </div>

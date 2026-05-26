@@ -11,6 +11,7 @@ members = [
     "crates/neomind-agent",
     "crates/neomind-extension-sdk",
     "crates/neomind-extension-runner",
+    "crates/neomind-data-push",
     # Testing utilities (not part of main release)
     "crates/neomind-core/tests/fixtures/smoke-extension",
 ]

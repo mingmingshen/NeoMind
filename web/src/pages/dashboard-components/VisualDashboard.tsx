@@ -20,6 +20,7 @@ import { clearTelemetryCache } from '@/hooks/useDataSource/fetch'
 import { fetchCache } from '@/lib/utils/async'
 import { cn } from '@/lib/utils'
 import { chartColorsHex } from '@/design-system/tokens/color'
+import { textNano } from '@/design-system/tokens/typography'
 import { createStableKey as createStableCacheKey } from '@/lib/stable-key'
 import { useIsMobile, useTouchHover } from '@/hooks/useMobile'
 import {
@@ -5681,7 +5682,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                                       >
                                         <Icon className="h-5 w-5 mb-1.5 text-muted-foreground shrink-0" />
                                         <span className="text-xs font-medium w-full truncate">{item.name}</span>
-                                        <p className="text-[10px] text-muted-foreground mt-0.5 w-full line-clamp-2 leading-tight">{item.description}</p>
+                                        <p className={`${textNano} text-muted-foreground mt-0.5 w-full line-clamp-2 leading-tight`}>{item.description}</p>
                                       </button>
                                     )
                                   })}

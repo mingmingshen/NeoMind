@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PageLayout } from '@/components/layout/PageLayout'
+import { useStore } from '@/store'
 import { Card } from '@/components/ui/card'
 import { ResponsiveTable, type TableColumn, Pagination, EmptyState } from '@/components/shared'
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav } from '@/components/shared/PageTabs'
@@ -22,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download, Tag, Clock, FileCode, Info } from 'lucide-react'
+import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download, Tag, Clock, FileCode, Info, Send, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { UnifiedDataSourceInfo } from '@/types'
@@ -32,8 +33,9 @@ import { useAbortController } from '@/hooks/useAbortController'
 import { textNano, textMini } from "@/design-system/tokens/typography"
 import { ExportDataDialog } from '@/components/data/ExportDataDialog'
 import { formatTimestamp } from '@/lib/utils/format'
+import { PushTargetsTab } from '@/components/datapush/PushTargetsTab'
 
-type SourceType = 'all' | string
+type TabValue = 'data' | 'push'
 
 function SourceTypeBadge({ type }: { type: string }) {
   const colorMap: Record<string, string> = {
@@ -76,6 +78,10 @@ function formatDateTime(timestamp: number): string {
 export function DataExplorerPage() {
   const { t } = useTranslation(['common', 'data'])
   const isMobile = useIsMobile()
+  const { setPushTargetDialogOpen } = useStore()
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<TabValue>('data')
 
   // Server-side paginated state
   const [pageData, setPageData] = useState<UnifiedDataSourceInfo[]>([])
@@ -88,7 +94,6 @@ export function DataExplorerPage() {
 
   // Filters
   const [search, setSearch] = useState('')
-  const [activeType, setActiveType] = useState<SourceType>('all')
   const [selectedSourceName, setSelectedSourceName] = useState<string>('__all__')
   const [page, setPage] = useState(1)
   const pageSize = 10
@@ -121,7 +126,6 @@ export function DataExplorerPage() {
         offset: (page - 1) * pageSize,
         limit: pageSize,
       }
-      if (activeType !== 'all') params.source_type = activeType
       if (selectedSourceName !== '__all__') params.source = selectedSourceName
       if (debouncedSearch.trim()) params.search = debouncedSearch.trim()
 
@@ -148,7 +152,7 @@ export function DataExplorerPage() {
     } finally {
       if (!controller.signal.aborted) setLoading(false)
     }
-  }, [page, activeType, selectedSourceName, debouncedSearch, pageSize])
+  }, [page, selectedSourceName, debouncedSearch, pageSize])
 
   // Fetch on mount and when filters/page change
   useEffect(() => {
@@ -160,8 +164,7 @@ export function DataExplorerPage() {
   useEffect(() => {
     setPage(1)
     setMobileLoadedPages(1)
-  }, [debouncedSearch, activeType, selectedSourceName])
-  useEffect(() => { setSelectedSourceName('__all__') }, [activeType])
+  }, [debouncedSearch, selectedSourceName])
 
   // Debounce search input
   useEffect(() => {
@@ -217,11 +220,8 @@ export function DataExplorerPage() {
   }, [selectedSource, historyRange])
 
   const tabs = useMemo(() => [
-    { value: 'all', label: t('data:tabs.all', 'All'), icon: <Database className="h-4 w-4" /> },
-    { value: 'device', label: t('data:tabs.device', 'Device'), icon: <Cpu className="h-4 w-4" /> },
-    { value: 'extension', label: t('data:tabs.extension', 'Extension'), icon: <Puzzle className="h-4 w-4" /> },
-    { value: 'transform', label: t('data:tabs.transform', 'Transform'), icon: <Workflow className="h-4 w-4" /> },
-    { value: 'ai', label: t('data:tabs.ai', 'AI Metrics'), icon: <Brain className="h-4 w-4" /> },
+    { value: 'data', label: t('data:tabs.all', 'Data'), icon: <Database className="h-4 w-4" /> },
+    { value: 'push', label: t('data:tabs.push', 'Data Push'), icon: <Send className="h-4 w-4" /> },
   ], [t])
 
   const columns: TableColumn[] = [
@@ -386,33 +386,45 @@ export function DataExplorerPage() {
         headerContent={
           <PageTabsBar
             tabs={tabs}
-            activeTab={activeType}
-            onTabChange={(v) => setActiveType(v)}
+            activeTab={activeTab}
+            onTabChange={(v) => setActiveTab(v as TabValue)}
+            actions={
+              activeTab === 'push'
+                ? [{
+                    label: t('common:dataPush.create', 'Create Target'),
+                    icon: <Plus className="h-4 w-4" />,
+                    variant: 'outline' as const,
+                    onClick: () => setPushTargetDialogOpen(true),
+                  }]
+                : []
+            }
             actionsExtra={
-              <div className="flex items-center gap-2">
-                {sourceFilter}
-                <div className="relative">
-                  <span className="absolute left-2.5 top-0 bottom-0 flex items-center">
-                    {isSearchPending ? (
-                      <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
-                    ) : (
-                      <Search className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </span>
-                  <Input
-                    placeholder={t('data:search', 'Search data sources...')}
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    className="pl-9 w-[180px] md:w-[240px] h-9"
-                    autoFocus
-                  />
+              activeTab === 'data' ? (
+                <div className="flex items-center gap-2">
+                  {sourceFilter}
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-0 bottom-0 flex items-center">
+                      {isSearchPending ? (
+                        <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+                      ) : (
+                        <Search className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </span>
+                    <Input
+                      placeholder={t('data:search', 'Search data sources...')}
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      className="pl-9 w-[180px] md:w-[240px] h-9"
+                      autoFocus
+                    />
+                  </div>
                 </div>
-              </div>
+              ) : undefined
             }
           />
         }
         footer={
-          totalCount > pageSize ? (
+          activeTab === 'data' && totalCount > pageSize ? (
             <Pagination
               total={totalCount}
               pageSize={pageSize}
@@ -423,15 +435,18 @@ export function DataExplorerPage() {
           ) : undefined
         }
       >
-        <PageTabsContent value={activeType} activeTab={activeType}>
+        <PageTabsContent value="data" activeTab={activeTab}>
           {dataTable}
+        </PageTabsContent>
+        <PageTabsContent value="push" activeTab={activeTab}>
+          <PushTargetsTab />
         </PageTabsContent>
       </PageLayout>
 
       <PageTabsBottomNav
         tabs={tabs}
-        activeTab={activeType}
-        onTabChange={(v) => setActiveType(v)}
+        activeTab={activeTab}
+        onTabChange={(v) => setActiveTab(v as TabValue)}
       />
 
       <FullScreenDialog

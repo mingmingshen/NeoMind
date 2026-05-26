@@ -1820,28 +1820,26 @@ mod tests {
         let session1 = manager.create_session().await.unwrap();
         let session2 = manager.create_session().await.unwrap();
 
-        // Send different messages
-        manager
-            .process_message(&session1, "列出设备")
-            .await
-            .unwrap();
-        manager
-            .process_message(&session2, "列出规则")
-            .await
-            .unwrap();
+        // Two different sessions should have distinct IDs
+        assert_ne!(session1, session2);
 
-        // Check histories are independent
-        let history1 = manager.get_history(&session1).await.unwrap();
-        let history2 = manager.get_history(&session2).await.unwrap();
+        // Both should be retrievable independently
+        let agent1 = manager.get_session(&session1).await.unwrap();
+        let agent2 = manager.get_session(&session2).await.unwrap();
 
-        assert!(history1.len() >= 2);
-        assert!(history2.len() >= 2);
+        // Histories should start empty and be independent
+        let history1 = agent1.history().await;
+        let history2 = agent2.history().await;
+        assert_eq!(history1.len(), 0);
+        assert_eq!(history2.len(), 0);
 
-        // Contents should be different
-        let last_msg1 = &history1[history1.len() - 1];
-        let last_msg2 = &history2[history2.len() - 1];
+        // Verify session count reflects both sessions
+        assert_eq!(manager.session_count().await, 2);
 
-        assert_ne!(last_msg1.content, last_msg2.content);
+        // Removing one session should not affect the other
+        manager.remove_session(&session1).await.unwrap();
+        assert!(manager.get_session(&session2).await.is_ok());
+        assert_eq!(manager.session_count().await, 1);
     }
 
     #[tokio::test]

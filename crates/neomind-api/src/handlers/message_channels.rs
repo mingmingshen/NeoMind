@@ -27,6 +27,21 @@ use neomind_messages::WebhookChannelFactory;
 #[cfg(feature = "email")]
 use neomind_messages::EmailChannelFactory;
 
+#[cfg(feature = "telegram")]
+use neomind_messages::TelegramChannelFactory;
+
+#[cfg(feature = "wecom")]
+use neomind_messages::WeComChannelFactory;
+
+#[cfg(feature = "dingtalk")]
+use neomind_messages::DingTalkChannelFactory;
+
+#[cfg(feature = "slack")]
+use neomind_messages::SlackChannelFactory;
+
+#[cfg(feature = "feishu")]
+use neomind_messages::FeishuChannelFactory;
+
 use super::{
     common::{ok, HandlerResult},
     ServerState,
@@ -157,9 +172,44 @@ pub async fn create_channel_handler(
                 .create(&req.config)
                 .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
         }
+        #[cfg(feature = "telegram")]
+        "telegram" => {
+            let factory = TelegramChannelFactory;
+            factory
+                .create(&req.config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
+        #[cfg(feature = "wecom")]
+        "wecom" => {
+            let factory = WeComChannelFactory;
+            factory
+                .create(&req.config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
+        #[cfg(feature = "dingtalk")]
+        "dingtalk" => {
+            let factory = DingTalkChannelFactory;
+            factory
+                .create(&req.config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
+        #[cfg(feature = "slack")]
+        "slack" => {
+            let factory = SlackChannelFactory;
+            factory
+                .create(&req.config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
+        #[cfg(feature = "feishu")]
+        "feishu" => {
+            let factory = FeishuChannelFactory;
+            factory
+                .create(&req.config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
         _ => {
             return Err(ErrorResponse::bad_request(format!(
-                "Unknown channel type: {}. Supported types: webhook, email",
+                "Unknown channel type: {}. Supported types: webhook, email, telegram, wecom, dingtalk, slack, feishu",
                 req.channel_type
             )));
         }
@@ -276,6 +326,41 @@ pub async fn update_channel_handler(
         #[cfg(feature = "email")]
         "email" => {
             let factory = EmailChannelFactory;
+            factory
+                .create(&config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
+        #[cfg(feature = "telegram")]
+        "telegram" => {
+            let factory = TelegramChannelFactory;
+            factory
+                .create(&config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
+        #[cfg(feature = "wecom")]
+        "wecom" => {
+            let factory = WeComChannelFactory;
+            factory
+                .create(&config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
+        #[cfg(feature = "dingtalk")]
+        "dingtalk" => {
+            let factory = DingTalkChannelFactory;
+            factory
+                .create(&config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
+        #[cfg(feature = "slack")]
+        "slack" => {
+            let factory = SlackChannelFactory;
+            factory
+                .create(&config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
+        #[cfg(feature = "feishu")]
+        "feishu" => {
+            let factory = FeishuChannelFactory;
             factory
                 .create(&config)
                 .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
@@ -478,11 +563,9 @@ pub async fn get_channel_filter_handler(
 /// Request to update channel filter.
 #[derive(Debug, Deserialize)]
 pub struct UpdateFilterRequest {
-    pub message_types: Vec<String>,
     pub source_types: Vec<String>,
     pub categories: Vec<String>,
     pub min_severity: Option<String>,
-    pub source_ids: Vec<String>,
 }
 
 /// Update channel filter configuration.
@@ -506,21 +589,12 @@ pub async fn update_channel_filter_handler(
     // Build ChannelFilter
     let mut filter = ChannelFilter::default();
 
-    // Parse message_types
-    for mt in req.message_types {
-        if let Some(parsed) = neomind_messages::MessageType::from_string(&mt) {
-            filter.message_types.push(parsed);
-        }
-    }
-
     filter.source_types = req.source_types;
     filter.categories = req.categories;
 
     if let Some(sev) = req.min_severity {
         filter.min_severity = neomind_messages::MessageSeverity::from_string(&sev);
     }
-
-    filter.source_ids = req.source_ids;
 
     // Save filter
     registry_guard
@@ -534,55 +608,6 @@ pub async fn update_channel_filter_handler(
         "channel": name,
         "filter": filter
     }))
-}
-
-// ========== Delivery Log Management ==========
-
-/// Query parameters for delivery logs.
-#[derive(Debug, Deserialize)]
-pub struct DeliveryLogQueryParams {
-    /// Filter by channel name
-    pub channel: Option<String>,
-    /// Filter by status (pending, success, failed, retrying)
-    pub status: Option<String>,
-    /// Filter by event ID
-    pub event_id: Option<String>,
-    /// Hours to look back (default: 24)
-    pub hours: Option<i64>,
-    /// Maximum results (default: 100)
-    pub limit: Option<usize>,
-}
-
-/// List delivery logs.
-/// GET /api/messages/delivery-logs
-pub async fn list_delivery_logs_handler(
-    State(state): State<ServerState>,
-    axum::extract::Query(params): axum::extract::Query<DeliveryLogQueryParams>,
-) -> HandlerResult<serde_json::Value> {
-    let query = neomind_messages::DeliveryLogQuery {
-        channel: params.channel,
-        status: params.status,
-        event_id: params.event_id,
-        hours: params.hours,
-        limit: params.limit,
-    };
-
-    let logs = state.core.message_manager.list_delivery_logs(query).await;
-
-    ok(json!({
-        "logs": logs,
-        "count": logs.len(),
-    }))
-}
-
-/// Get delivery log statistics.
-/// GET /api/messages/delivery-logs/stats
-pub async fn get_delivery_stats_handler(
-    State(state): State<ServerState>,
-) -> HandlerResult<serde_json::Value> {
-    let stats = state.core.message_manager.get_delivery_stats().await;
-
-    ok(json!(stats))
 }
 
 /// Router for message channel endpoints.
@@ -628,11 +653,5 @@ pub fn message_channels_router() -> axum::Router<ServerState> {
         .route(
             "/messages/channels/:name/filter",
             put(update_channel_filter_handler),
-        )
-        // Delivery log management
-        .route("/messages/delivery-logs", get(list_delivery_logs_handler))
-        .route(
-            "/messages/delivery-logs/stats",
-            get(get_delivery_stats_handler),
         )
 }

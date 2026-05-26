@@ -14,7 +14,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use neomind_messages::{Message, MessageId, MessageSeverity, MessageType};
+use neomind_messages::{Message, MessageId, MessageSeverity};
 
 use super::{
     common::{ok, HandlerResult},
@@ -33,7 +33,6 @@ pub struct ListMessagesQuery {
     pub severity: Option<String>,
     pub status: Option<String>,
     pub category: Option<String>,
-    pub message_type: Option<String>,
 }
 
 /// List messages with pagination and filters.
@@ -47,7 +46,7 @@ pub async fn list_messages_handler(
 
     // Use targeted queries when only a single filter is specified
     // to avoid loading all messages into memory
-    let messages = if params.severity.is_none() && params.message_type.is_none() {
+    let messages = if params.severity.is_none() {
         match (&params.status, &params.category) {
             // Single status filter → use indexed query
             (Some(st), None) => {
@@ -113,12 +112,6 @@ pub async fn list_messages_handler(
                     return false;
                 }
             }
-            if let Some(ref mt) = params.message_type {
-                let msg_mt = format!("{:?}", m.message_type).to_lowercase();
-                if msg_mt != mt.to_lowercase().as_str() {
-                    return false;
-                }
-            }
             true
         })
         .collect();
@@ -151,12 +144,6 @@ pub struct CreateMessageRequest {
     pub source_type: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub tags: Option<Vec<String>>,
-    /// Message type: notification or data_push
-    pub message_type: Option<String>,
-    /// Source ID for filtering
-    pub source_id: Option<String>,
-    /// Payload for DataPush messages
-    pub payload: Option<serde_json::Value>,
 }
 
 /// Create a message.
@@ -189,28 +176,6 @@ pub async fn create_message_handler(
 
     if let Some(tags) = req.tags {
         msg.tags = tags;
-    }
-
-    // Handle message_type
-    if let Some(mt) = &req.message_type {
-        tracing::info!("Received message_type: {}", mt);
-        if let Some(msg_type) = MessageType::from_string(mt) {
-            tracing::info!("Parsed message_type: {:?}", msg_type);
-            msg.message_type = msg_type;
-        } else {
-            tracing::warn!("Failed to parse message_type: {}", mt);
-        }
-    }
-
-    // Handle payload
-    if let Some(payload) = &req.payload {
-        tracing::info!("Received payload: {:?}", payload);
-        msg.payload = Some(payload.clone());
-    }
-
-    // Handle source_id
-    if let Some(source_id) = req.source_id {
-        msg.source_id = Some(source_id);
     }
 
     let created = state

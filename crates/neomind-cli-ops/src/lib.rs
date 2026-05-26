@@ -18,6 +18,7 @@ pub mod llm;
 pub mod settings;
 pub mod config_cmd;
 pub mod automation;
+pub mod data_push;
 
 pub use api_client::ApiClient;
 pub use types::{BuildMeta, CliResponse, OutputFormat};

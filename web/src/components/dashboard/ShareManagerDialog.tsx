@@ -30,6 +30,7 @@ import {
   Plus,
   Link2,
 } from 'lucide-react'
+import { textNano, textMini } from '@/design-system/tokens/typography'
 
 // ============================================================================
 // Types
@@ -165,14 +166,14 @@ export function ShareManagerDialog({
                     <div className="flex items-center gap-2">
                       <Badge
                         variant={st.permissions.allow_interactive ? 'default' : 'secondary'}
-                        className="text-[10px] px-1.5 py-0"
+                        className={`${textNano} px-1.5 py-0`}
                       >
                         {st.permissions.allow_interactive
                           ? t('visualDashboard.share.permission.interactive')
                           : t('visualDashboard.share.permission.readOnly')}
                       </Badge>
                       <span className={cn(
-                        "text-[11px] flex items-center gap-0.5",
+                        `${textMini} flex items-center gap-0.5`,
                         isExpired ? "text-error" : "text-muted-foreground"
                       )}>
                         <Clock className="h-3 w-3" />

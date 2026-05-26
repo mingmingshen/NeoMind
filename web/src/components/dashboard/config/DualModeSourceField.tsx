@@ -27,6 +27,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { textNano } from '@/design-system/tokens/typography'
 import { UnifiedDataSourceConfig } from './UnifiedDataSourceConfig'
 import { getSourceSummary } from './DataSourceIndicator'
 import type { DataSourceOrList } from '@/types/dashboard'
@@ -183,7 +184,7 @@ export function DualModeSourceField({
           {/* Info */}
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{boundSummary || t('dualMode.dataBound')}</p>
-            <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground mt-0.5">
+            <span className={`inline-flex items-center rounded bg-muted px-1.5 py-0.5 ${textNano} font-medium text-muted-foreground mt-0.5`}>
               {normalizedSources[0]?.type}
             </span>
           </div>

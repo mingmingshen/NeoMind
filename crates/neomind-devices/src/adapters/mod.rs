@@ -64,8 +64,9 @@ pub fn create_adapter(
 }
 
 /// Get list of available adapter types (based on enabled features).
+#[allow(clippy::vec_init_then_push)]
 pub fn available_adapters() -> Vec<&'static str> {
-    let mut adapters = vec![];
+    let mut adapters = Vec::with_capacity(2);
 
     #[cfg(feature = "mqtt")]
     adapters.push("mqtt");

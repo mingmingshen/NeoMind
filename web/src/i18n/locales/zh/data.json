@@ -2,11 +2,12 @@
   "title": "数据浏览器",
   "subtitle": "浏览设备、扩展和转换中的所有数据源",
   "tabs": {
-    "all": "全部",
+    "all": "数据源",
     "device": "设备",
     "extension": "扩展",
     "transform": "转换",
-    "ai": "AI 指标"
+    "ai": "AI 指标",
+    "push": "数据推送"
   },
   "columns": {
     "type": "类型",

@@ -30,6 +30,7 @@ use neomind_core::message::Message;
 // Test Context
 // ============================================================================
 
+#[allow(dead_code)]
 struct ToolCallingTestContext {
     pub session_manager: SessionManager,
     pub session_id: String,

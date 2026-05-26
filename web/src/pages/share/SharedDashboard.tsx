@@ -20,6 +20,7 @@ import { dynamicRegistry } from '@/components/dashboard/registry/DynamicRegistry
 import { useStore } from '@/store'
 import type { Dashboard } from '@/types/dashboard'
 import type { FrontendComponentMeta } from '@/types/frontend-component'
+import { textNano } from '@/design-system/tokens/typography'
 
 // ============================================================================
 // Error boundary for graceful degradation of unsupported components
@@ -211,7 +212,7 @@ export function SharedDashboard() {
       <header className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-border bg-background z-10">
         <div className="flex items-center gap-2">
           <h1 className="text-sm font-semibold">{data.dashboard.name}</h1>
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${textNano} font-medium bg-muted text-muted-foreground`}>
             {isInteractive ? (
               <><Zap className="h-3 w-3" /> Interactive</>
             ) : (

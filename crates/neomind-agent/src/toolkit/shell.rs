@@ -168,6 +168,7 @@ impl ShellTool {
             "settings" => Self::exec_settings(&client, &args).await,
             "config" => Self::exec_config(&client, &args).await,
             "automation" => Self::exec_automation(&client, &args).await,
+            "push" => Self::exec_push(&client, &args).await,
             _ => return None, // Unknown domain, fall through to process spawning
         };
 
@@ -1566,6 +1567,55 @@ impl ShellTool {
                 neomind_cli_ops::automation::get_automation_executions(client, id).await
             }
             _ => anyhow::bail!("Unknown automation action: {}. Available: list, get, export, import, enable, disable, executions", action),
+        }
+    }
+
+    async fn exec_push(client: &neomind_cli_ops::ApiClient, args: &[String]) -> anyhow::Result<neomind_cli_ops::CliResponse> {
+        let action = args.get(2).map(|s| s.as_str()).unwrap_or("");
+        match action {
+            "list" => neomind_cli_ops::data_push::list_targets(client).await,
+            "get" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::data_push::get_target(client, id).await
+            }
+            "create" => {
+                let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
+                let target_type = Self::get_flag_value(args, "--type").unwrap_or("webhook").to_string();
+                let config = Self::get_flag_value(args, "--config").unwrap_or("{}").to_string();
+                let schedule_type = Self::get_flag_value(args, "--schedule").unwrap_or("event").to_string();
+                let source_patterns = Self::get_flag_value(args, "--sources").unwrap_or("").to_string();
+                neomind_cli_ops::data_push::create_target(client, &name, &target_type, &config, &schedule_type, &source_patterns).await
+            }
+            "update" => {
+                let id = Self::resolve_id(args);
+                let name = Self::get_flag_value(args, "--name").map(|s| s.to_string());
+                let config = Self::get_flag_value(args, "--config").map(|s| s.to_string());
+                let enabled = Self::get_flag_value(args, "--enabled").and_then(|s| s.parse::<bool>().ok());
+                neomind_cli_ops::data_push::update_target(client, id, name.as_deref(), config.as_deref(), enabled).await
+            }
+            "delete" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::data_push::delete_target(client, id).await
+            }
+            "start" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::data_push::start_target(client, id).await
+            }
+            "stop" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::data_push::stop_target(client, id).await
+            }
+            "test" => {
+                let id = Self::resolve_id(args);
+                neomind_cli_ops::data_push::test_target(client, id).await
+            }
+            "logs" => {
+                let id = Self::resolve_id(args);
+                let limit = Self::get_flag_value(args, "--limit").and_then(|s| s.parse::<usize>().ok());
+                neomind_cli_ops::data_push::list_logs(client, id, limit).await
+            }
+            "stats" => neomind_cli_ops::data_push::get_stats(client).await,
+            _ => anyhow::bail!("Unknown push action: {}. Available: list, get, create, update, delete, start, stop, test, logs, stats", action),
         }
     }
 

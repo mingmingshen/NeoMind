@@ -8,10 +8,15 @@ edition.workspace = true
 neomind-api = { path = ".", features = ["testing"] }
 
 [features]
-default = ["embedded-broker", "webhook", "email"]
+default = ["embedded-broker", "webhook", "email", "telegram", "wecom", "dingtalk", "slack", "feishu"]
 embedded-broker = []
 webhook = []
 email = []
+telegram = []
+wecom = []
+dingtalk = []
+slack = []
+feishu = []
 static = ["rust-embed", "mime_guess"]
 testing = []  # Enable test-only APIs for parallel test execution
 
@@ -20,8 +25,9 @@ neomind-core = { path = "../neomind-core" }
 neomind-agent = { path = "../neomind-agent", features = ["cloud", "llamacpp"] }
 neomind-devices = { path = "../neomind-devices", features = ["embedded-broker"] }
 neomind-rules = { path = "../neomind-rules" }
-neomind-messages = { path = "../neomind-messages", features = ["webhook", "email"] }
+neomind-messages = { path = "../neomind-messages", features = ["webhook", "email", "telegram", "wecom", "dingtalk", "slack", "feishu"] }
 neomind-storage = { path = "../neomind-storage" }
+neomind-data-push = { path = "../neomind-data-push" }
 
 # JavaScript execution (merged from neomind-automation)
 boa_engine = "0.17"

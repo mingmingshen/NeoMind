@@ -10,6 +10,7 @@ pub mod common;
 pub mod config;
 pub mod dashboards;
 pub mod data;
+pub mod data_push;
 pub mod devices;
 pub mod events;
 pub mod extension_stream;
@@ -114,8 +115,8 @@ pub use messages::{
 pub use message_channels::{
     add_recipient_handler, create_channel_handler, delete_channel_handler,
     get_channel_filter_handler, get_channel_handler, get_channel_stats_handler,
-    get_channel_type_schema_handler, get_delivery_stats_handler, list_channel_types_handler,
-    list_channels_handler, list_delivery_logs_handler, list_recipients_handler,
+    get_channel_type_schema_handler, list_channel_types_handler,
+    list_channels_handler, list_recipients_handler,
     remove_recipient_handler, test_channel_handler, toggle_enabled_handler,
     update_channel_filter_handler, update_channel_handler,
 };

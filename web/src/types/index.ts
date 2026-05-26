@@ -209,18 +209,16 @@ export interface Alert {
 
 export type MessageSeverity = 'info' | 'warning' | 'critical' | 'emergency'
 // Message Type - must match backend MessageType enum
-export type MessageType = 'notification' | 'data_push'
+export type MessageType = 'notification'
 export type MessageStatus = 'active' | 'acknowledged' | 'resolved' | 'archived'
 // Category is a flexible string - backend can provide any category value
 export type MessageCategory = string
 
 // Channel Filter - must match backend ChannelFilter struct
 export interface ChannelFilter {
-  message_types: MessageType[]
   source_types: string[]
   categories: string[]
   min_severity: MessageSeverity | null
-  source_ids: string[]
 }
 
 // Known category values for reference (not exhaustive)
@@ -246,10 +244,6 @@ export interface NotificationMessage {
   status: MessageStatus
   metadata?: Record<string, unknown>
   tags: string[]
-  // New fields
-  message_type?: MessageType
-  source_id?: string
-  payload?: Record<string, unknown>
 }
 
 /**
@@ -283,10 +277,6 @@ export interface CreateMessageRequest {
   source_type?: string
   metadata?: Record<string, unknown>
   tags?: string[]
-  // New fields
-  message_type?: MessageType
-  source_id?: string
-  payload?: Record<string, unknown>
 }
 
 // Helper to get display label for MessageType
@@ -294,8 +284,6 @@ export function getMessageTypeLabel(type: MessageType): string {
   switch (type) {
     case 'notification':
       return '通知'
-    case 'data_push':
-      return '数据推送'
     default:
       return type
   }
@@ -315,55 +303,10 @@ export interface CleanupMessagesRequest {
   older_than_days: number
 }
 
-// ========== Delivery Log Types ==========
-
-/**
- * Delivery status - must match backend DeliveryStatus enum
- */
-export type DeliveryStatus = 'pending' | 'success' | 'failed' | 'retrying'
-
-/**
- * Delivery log entry - must match backend DeliveryLog struct
- */
-export interface DeliveryLog {
-  id: string
-  event_id: string
-  channel_name: string
-  status: DeliveryStatus
-  payload_summary: string
-  error_message?: string
-  retry_count: number
-  max_retries: number
-  created_at: string  // ISO 8601 string
-  updated_at: string  // ISO 8601 string
-}
-
-/**
- * Delivery log query parameters
- */
-export interface DeliveryLogQueryParams {
-  channel?: string
-  status?: string
-  event_id?: string
-  hours?: number
-  limit?: number
-}
-
-/**
- * Delivery statistics - must match backend DeliveryStats struct
- */
-export interface DeliveryStats {
-  total: number
-  pending: number
-  success: number
-  failed: number
-  retrying: number
-}
-
 // Message Channel Types (formerly AlertChannel for backward compatibility)
 export interface AlertChannel {
   name: string
-  channel_type: 'console' | 'memory' | 'webhook' | 'email'
+  channel_type: 'console' | 'memory' | 'webhook' | 'email' | 'telegram' | 'wecom' | 'dingtalk' | 'slack' | 'feishu'
   enabled: boolean
   config?: Record<string, unknown>
 }
@@ -420,7 +363,7 @@ export interface ChannelSchemaResponse {
 
 export interface MessageChannel {
   name: string
-  channel_type: 'console' | 'memory' | 'webhook' | 'email'
+  channel_type: 'console' | 'memory' | 'webhook' | 'email' | 'telegram' | 'wecom' | 'dingtalk' | 'slack' | 'feishu'
   enabled: boolean
   config?: Record<string, unknown>
   recipients?: string[]  // For email channels
@@ -2975,5 +2918,84 @@ export interface PluginConfigSchema {
 }
 
 
+// ========== Data Push Types ==========
+
+export type PushTargetType = 'webhook' | 'mqtt'
+export type DeliveryStatus = 'pending' | 'success' | 'failed' | 'retrying'
+export type PushScheduleType = 'event_driven' | 'interval'
+
+export interface PushSchedule {
+  type: PushScheduleType
+  event_types?: string[]
+  interval_secs?: number
+}
+
+export interface DataSourceFilter {
+  source_patterns: string[]
+  only_changes: boolean
+}
+
+export interface RetryConfig {
+  max_retries: number
+  backoff_secs: number
+  max_backoff_secs: number
+}
+
+export interface PushTarget {
+  id: string
+  name: string
+  enabled: boolean
+  target_type: PushTargetType
+  config: Record<string, any>
+  schedule: PushSchedule
+  data_filter: DataSourceFilter
+  template?: string
+  retry_config: RetryConfig
+  created_at: number
+  updated_at: number
+}
+
+export interface DeliveryLog {
+  id: string
+  target_id: string
+  status: DeliveryStatus
+  data_source_id: string
+  payload_sent: string
+  response?: string
+  attempts: number
+  created_at: number
+  completed_at?: number
+  error?: string
+}
+
+export interface PushStats {
+  total_targets: number
+  active_targets: number
+  total_deliveries: number
+  successful_deliveries: number
+  failed_deliveries: number
+}
+
+export interface CreatePushTargetRequest {
+  name: string
+  target_type: PushTargetType
+  config: Record<string, any>
+  schedule: PushSchedule
+  data_filter: DataSourceFilter
+  template?: string
+  enabled?: boolean
+  retry_config?: RetryConfig
+}
+
+export interface UpdatePushTargetRequest {
+  name?: string
+  target_type?: PushTargetType
+  config?: Record<string, any>
+  schedule?: PushSchedule
+  data_filter?: DataSourceFilter
+  template?: string
+  enabled?: boolean
+  retry_config?: RetryConfig
+}
 
 

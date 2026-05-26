@@ -9,11 +9,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::channels::{ChannelFactory, ChannelFilter, ChannelRegistry};
-use super::delivery_log::{
-    DeliveryLog, DeliveryLogId, DeliveryLogQuery, DeliveryStats, DeliveryStatus,
-};
 use super::error::{Error, Result};
-use super::{Message, MessageId, MessageSeverity, MessageStatus, MessageType};
+use super::{Message, MessageId, MessageSeverity, MessageStatus};
 
 /// Minimum interval (in seconds) between duplicate messages with the same
 /// title + source + severity key. Prevents message bombing from rules engine.
@@ -30,8 +27,6 @@ pub struct MessageManager {
     channels: Arc<RwLock<ChannelRegistry>>,
     /// Optional event bus for publishing message events
     event_bus: Arc<RwLock<Option<Arc<neomind_core::EventBus>>>>,
-    /// Delivery log storage (in-memory with optional persistence)
-    delivery_logs: Arc<RwLock<HashMap<DeliveryLogId, DeliveryLog>>>,
     /// Deduplication cache: (title, source, severity) -> last send timestamp
     dedup_cache: Arc<RwLock<HashMap<String, chrono::DateTime<chrono::Utc>>>>,
 }
@@ -44,7 +39,6 @@ impl MessageManager {
             storage: Arc::new(RwLock::new(None)),
             channels: Arc::new(RwLock::new(ChannelRegistry::new())),
             event_bus: Arc::new(RwLock::new(None)),
-            delivery_logs: Arc::new(RwLock::new(HashMap::new())),
             dedup_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -104,7 +98,6 @@ impl MessageManager {
             storage: Arc::new(RwLock::new(Some(store))),
             channels: Arc::new(RwLock::new(channels)),
             event_bus: Arc::new(RwLock::new(None)),
-            delivery_logs: Arc::new(RwLock::new(HashMap::new())),
             dedup_cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -214,22 +207,6 @@ impl MessageManager {
 
     /// Convert StoredMessage to Message.
     fn stored_to_message(stored: neomind_storage::StoredMessage) -> Message {
-        let (message_type, source_id, payload) = if let Some(ref meta) = stored.metadata {
-            let mt = meta
-                .get("message_type")
-                .and_then(|v| v.as_str())
-                .and_then(MessageType::from_string)
-                .unwrap_or(MessageType::Notification);
-            let sid = meta
-                .get("source_id")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let p = meta.get("payload").cloned();
-            (mt, sid, p)
-        } else {
-            (MessageType::Notification, None, None)
-        };
-
         Message {
             id: MessageId::from_string(&stored.id).unwrap_or_else(|_| MessageId::new()),
             category: stored.category,
@@ -244,9 +221,6 @@ impl MessageManager {
             status: MessageStatus::from_string(&stored.status).unwrap_or(MessageStatus::Active),
             metadata: stored.metadata,
             tags: stored.tags.unwrap_or_default(),
-            message_type,
-            source_id,
-            payload,
         }
     }
 
@@ -266,27 +240,7 @@ impl MessageManager {
             } else {
                 Some(msg.tags.clone())
             },
-            metadata: if msg.payload.is_some()
-                || msg.source_id.is_some()
-                || msg.message_type != MessageType::Notification
-            {
-                let mut meta = msg.metadata.clone().unwrap_or(serde_json::json!({}));
-                if let Some(obj) = meta.as_object_mut() {
-                    obj.insert(
-                        "message_type".to_string(),
-                        serde_json::json!(msg.message_type.as_str()),
-                    );
-                    if let Some(sid) = &msg.source_id {
-                        obj.insert("source_id".to_string(), serde_json::json!(sid));
-                    }
-                    if let Some(p) = &msg.payload {
-                        obj.insert("payload".to_string(), p.clone());
-                    }
-                }
-                Some(meta)
-            } else {
-                msg.metadata.clone()
-            },
+            metadata: msg.metadata.clone(),
             timestamp: msg.timestamp.timestamp(),
             acknowledged_at: None,
             resolved_at: None,
@@ -316,7 +270,6 @@ impl MessageManager {
         let id = message.id.clone();
         let _is_active = message.is_active();
         let severity = message.severity;
-        let message_type = message.message_type;
 
         // Deduplication: skip if same title+source+severity was sent recently
         let dedup_key = format!("{}|{}|{}", message.title, message.source, message.severity.as_str());
@@ -360,7 +313,6 @@ impl MessageManager {
         let channels = self.channels.read().await;
         let channel_names = channels.list_names().await;
         let mut send_results: Vec<(String, std::result::Result<(), String>)> = Vec::new();
-        let mut pending_delivery_logs: Vec<DeliveryLog> = Vec::new();
 
         for channel_name in &channel_names {
             if let Some(channel) = channels.get(channel_name).await {
@@ -382,31 +334,6 @@ impl MessageManager {
                         channel.channel_type()
                     );
 
-                    // Create delivery log entry for DataPush
-                    let delivery_log = if message_type == MessageType::DataPush {
-                        let payload_summary = message
-                            .payload
-                            .as_ref()
-                            .map(|p| {
-                                let s = p.to_string();
-                                // Truncate to 500 chars for display
-                                if s.len() > 500 {
-                                    let end = s.floor_char_boundary(497);
-                                    format!("{}...", &s[..end])
-                                } else {
-                                    s
-                                }
-                            })
-                            .unwrap_or_default();
-                        Some(DeliveryLog::new(
-                            id.to_string(),
-                            channel_name.clone(),
-                            payload_summary,
-                        ))
-                    } else {
-                        None
-                    };
-
                     match channel.send(&message).await {
                         Ok(()) => {
                             tracing::info!(
@@ -414,9 +341,6 @@ impl MessageManager {
                                 channel_name
                             );
                             send_results.push((channel_name.clone(), Ok(())));
-                            if let Some(log) = delivery_log {
-                                pending_delivery_logs.push(log.with_status(DeliveryStatus::Success));
-                            }
                         }
                         Err(e) => {
                             // Log channel failure but don't fail the entire operation
@@ -425,31 +349,10 @@ impl MessageManager {
                                 channel_name,
                                 e
                             );
-                            let error_msg = e.to_string();
-                            send_results.push((channel_name.clone(), Err(error_msg.clone())));
-                            if let Some(log) = delivery_log {
-                                // Mark as Retrying so the retry scheduler can pick it up
-                                let mut log = log.with_status(DeliveryStatus::Retrying)
-                                    .with_error(error_msg);
-                                log.channel_name = channel_name.clone();
-                                pending_delivery_logs.push(log);
-                            }
+                            send_results.push((channel_name.clone(), Err(e.to_string())));
                         }
                     }
                 }
-            }
-        }
-
-        // Batch-write all delivery logs in a single lock acquisition
-        if !pending_delivery_logs.is_empty() {
-            let mut logs = self.delivery_logs.write().await;
-            // Auto-prune if exceeding 1000 entries
-            if logs.len() > 1000 {
-                let cutoff = chrono::Utc::now() - chrono::Duration::hours(24);
-                logs.retain(|_, l| l.created_at > cutoff);
-            }
-            for log in pending_delivery_logs {
-                logs.insert(log.id.clone(), log);
             }
         }
 
@@ -791,216 +694,6 @@ impl MessageManager {
             by_severity,
             by_status,
         }
-    }
-
-    // =========================================================================
-    // Delivery Log Methods
-    // =========================================================================
-
-    /// List delivery logs with optional filtering.
-    pub async fn list_delivery_logs(&self, query: DeliveryLogQuery) -> Vec<DeliveryLog> {
-        let logs = self.delivery_logs.read().await;
-
-        // Default values
-        let hours = query.hours.unwrap_or(24);
-        let limit = query.limit.unwrap_or(100);
-        let cutoff = chrono::Utc::now() - chrono::Duration::hours(hours);
-
-        let mut result: Vec<DeliveryLog> = logs
-            .values()
-            .filter(|log| {
-                // Filter by channel
-                if let Some(ref channel) = query.channel {
-                    if log.channel_name != *channel {
-                        return false;
-                    }
-                }
-
-                // Filter by status
-                if let Some(ref status) = query.status {
-                    if log.status.as_str() != *status {
-                        return false;
-                    }
-                }
-
-                // Filter by event_id
-                if let Some(ref event_id) = query.event_id {
-                    if log.event_id != *event_id {
-                        return false;
-                    }
-                }
-
-                // Filter by time
-                if log.created_at < cutoff {
-                    return false;
-                }
-
-                true
-            })
-            .cloned()
-            .collect();
-
-        // Sort by created_at descending (most recent first)
-        result.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-
-        // Apply limit
-        result.truncate(limit);
-
-        result
-    }
-
-    /// Get a specific delivery log by ID.
-    pub async fn get_delivery_log(&self, id: &DeliveryLogId) -> Option<DeliveryLog> {
-        self.delivery_logs.read().await.get(id).cloned()
-    }
-
-    /// Get delivery log statistics.
-    pub async fn get_delivery_stats(&self) -> DeliveryStats {
-        let logs = self.delivery_logs.read().await;
-
-        let mut stats = DeliveryStats {
-            total: logs.len(),
-            ..Default::default()
-        };
-
-        for log in logs.values() {
-            match log.status {
-                DeliveryStatus::Pending => stats.pending += 1,
-                DeliveryStatus::Success => stats.success += 1,
-                DeliveryStatus::Failed => stats.failed += 1,
-                DeliveryStatus::Retrying => stats.retrying += 1,
-            }
-        }
-
-        stats
-    }
-
-    /// Cleanup old delivery logs (older than retention_days).
-    pub async fn cleanup_delivery_logs(&self, retention_days: i64) -> usize {
-        let mut logs = self.delivery_logs.write().await;
-        let initial_count = logs.len();
-
-        logs.retain(|_, log| !log.is_expired(retention_days));
-
-        initial_count - logs.len()
-    }
-
-    /// Clear all delivery logs.
-    pub async fn clear_delivery_logs(&self) {
-        self.delivery_logs.write().await.clear();
-    }
-
-    /// Retry failed deliveries that haven't exceeded max retries.
-    /// Returns the number of retries attempted.
-    pub async fn retry_failed_deliveries(&self) -> usize {
-        let channels = self.channels.read().await;
-
-        // Collect logs that need retry
-        let to_retry: Vec<(DeliveryLogId, String, String)> = {
-            let logs = self.delivery_logs.read().await;
-            logs.iter()
-                .filter(|(_, log)| {
-                    log.status == DeliveryStatus::Retrying && log.can_retry()
-                })
-                .map(|(id, log)| {
-                    (id.clone(), log.channel_name.clone(), log.event_id.clone())
-                })
-                .collect()
-        };
-
-        let mut retried = 0;
-        for (log_id, channel_name, event_id) in to_retry {
-            // Try to parse the message ID for lookup
-            let msg_id = match MessageId::from_string(&event_id) {
-                Ok(id) => id,
-                Err(_) => {
-                    let mut logs = self.delivery_logs.write().await;
-                    if let Some(log) = logs.get_mut(&log_id) {
-                        log.status = DeliveryStatus::Failed;
-                        log.error_message = Some("Invalid message ID".to_string());
-                        log.updated_at = chrono::Utc::now();
-                    }
-                    continue;
-                }
-            };
-
-            let message = {
-                let messages = self.messages.read().await;
-                messages.get(&msg_id).cloned()
-            };
-
-            let Some(message) = message else {
-                // Original message no longer exists, mark as failed
-                let mut logs = self.delivery_logs.write().await;
-                if let Some(log) = logs.get_mut(&log_id) {
-                    log.status = DeliveryStatus::Failed;
-                    log.error_message = Some("Original message no longer exists".to_string());
-                    log.updated_at = chrono::Utc::now();
-                }
-                continue;
-            };
-
-            // Try to get and send through the channel
-            if let Some(channel) = channels.get(&channel_name).await {
-                if channel.is_enabled() {
-                    match channel.send(&message).await {
-                        Ok(()) => {
-                            let mut logs = self.delivery_logs.write().await;
-                            if let Some(log) = logs.get_mut(&log_id) {
-                                log.status = DeliveryStatus::Success;
-                                log.error_message = None;
-                                log.updated_at = chrono::Utc::now();
-                            }
-                            retried += 1;
-                            tracing::info!(
-                                "Retry succeeded for message '{}' on channel '{}'",
-                                event_id,
-                                channel_name
-                            );
-                        }
-                        Err(e) => {
-                            let error_msg = e.to_string();
-                            let mut logs = self.delivery_logs.write().await;
-                            if let Some(log) = logs.get_mut(&log_id) {
-                                log.increment_retry();
-                                log.error_message = Some(error_msg);
-                                if !log.can_retry() {
-                                    log.status = DeliveryStatus::Failed;
-                                }
-                                log.updated_at = chrono::Utc::now();
-                            }
-                            tracing::warn!(
-                                "Retry failed (attempt) for message '{}' on channel '{}': {}",
-                                event_id,
-                                channel_name,
-                                e
-                            );
-                        }
-                    }
-                } else {
-                    // Channel disabled, mark as failed
-                    let mut logs = self.delivery_logs.write().await;
-                    if let Some(log) = logs.get_mut(&log_id) {
-                        log.status = DeliveryStatus::Failed;
-                        log.error_message = Some("Channel is disabled".to_string());
-                        log.updated_at = chrono::Utc::now();
-                    }
-                }
-            } else {
-                // Channel removed
-                let mut logs = self.delivery_logs.write().await;
-                if let Some(log) = logs.get_mut(&log_id) {
-                    log.status = DeliveryStatus::Failed;
-                    log.error_message = Some("Channel no longer exists".to_string());
-                    log.updated_at = chrono::Utc::now();
-                }
-            }
-        }
-
-        if retried > 0 {
-            tracing::info!("Retry scheduler: {} deliveries succeeded on retry", retried);
-        }
-        retried
     }
 
     /// Clear all messages (use with caution).
@@ -1717,179 +1410,6 @@ mod tests {
     }
 
     // =========================================================================
-    // Delivery Log Tests
-    // =========================================================================
-
-    #[tokio::test]
-    async fn test_delivery_log_tracking() {
-        let manager = MessageManager::new();
-
-        // Create a data push message
-        let payload = serde_json::json!({"temperature": 85.5});
-        let msg = Message::data_push(
-            "temperature".to_string(),
-            "High Temp".to_string(),
-            payload,
-            "device".to_string(),
-            "sensor_1".to_string(),
-        );
-
-        let _ = manager.create_message(msg).await;
-
-        // Check delivery logs (should have logs even if no channels are configured)
-        let logs = manager.list_delivery_logs(DeliveryLogQuery::default()).await;
-        // No channels configured, so no delivery logs should be created
-        assert_eq!(logs.len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_delivery_log_filtering() {
-        let manager = MessageManager::new();
-
-        // Manually add some delivery logs for testing
-        let log1 = DeliveryLog::new("event_1".to_string(), "webhook_1".to_string(), r#"{"temp":80}"#.to_string())
-            .with_status(DeliveryStatus::Success);
-
-        let log2 = DeliveryLog::new("event_2".to_string(), "webhook_1".to_string(), r#"{"temp":85}"#.to_string())
-            .with_status(DeliveryStatus::Failed)
-            .with_error("Connection timeout".to_string());
-
-        let log3 = DeliveryLog::new("event_3".to_string(), "webhook_2".to_string(), r#"{"temp":90}"#.to_string())
-            .with_status(DeliveryStatus::Success);
-
-        {
-            let mut logs = manager.delivery_logs.write().await;
-            logs.insert(log1.id.clone(), log1);
-            logs.insert(log2.id.clone(), log2);
-            logs.insert(log3.id.clone(), log3);
-        }
-
-        // Test filtering by channel
-        let webhook1_logs = manager
-            .list_delivery_logs(DeliveryLogQuery {
-                channel: Some("webhook_1".to_string()),
-                ..Default::default()
-            })
-            .await;
-        assert_eq!(webhook1_logs.len(), 2);
-
-        // Test filtering by status
-        let failed_logs = manager
-            .list_delivery_logs(DeliveryLogQuery {
-                status: Some("failed".to_string()),
-                ..Default::default()
-            })
-            .await;
-        assert_eq!(failed_logs.len(), 1);
-        assert_eq!(failed_logs[0].status, DeliveryStatus::Failed);
-
-        // Test filtering by event_id
-        let event_logs = manager
-            .list_delivery_logs(DeliveryLogQuery {
-                event_id: Some("event_1".to_string()),
-                ..Default::default()
-            })
-            .await;
-        assert_eq!(event_logs.len(), 1);
-        assert_eq!(event_logs[0].event_id, "event_1");
-    }
-
-    #[tokio::test]
-    async fn test_delivery_log_stats() {
-        let manager = MessageManager::new();
-
-        let log1 = DeliveryLog::new("event_1".to_string(), "webhook_1".to_string(), r#"{"temp":80}"#.to_string())
-            .with_status(DeliveryStatus::Success);
-
-        let log2 = DeliveryLog::new("event_2".to_string(), "webhook_1".to_string(), r#"{"temp":85}"#.to_string())
-            .with_status(DeliveryStatus::Failed)
-            .with_error("Timeout".to_string());
-
-        let log3 = DeliveryLog::new("event_3".to_string(), "webhook_2".to_string(), r#"{"temp":90}"#.to_string())
-            .with_status(DeliveryStatus::Pending);
-
-        {
-            let mut logs = manager.delivery_logs.write().await;
-            logs.insert(log1.id.clone(), log1);
-            logs.insert(log2.id.clone(), log2);
-            logs.insert(log3.id.clone(), log3);
-        }
-
-        let stats = manager.get_delivery_stats().await;
-        assert_eq!(stats.total, 3);
-        assert_eq!(stats.success, 1);
-        assert_eq!(stats.failed, 1);
-        assert_eq!(stats.pending, 1);
-    }
-
-    #[tokio::test]
-    async fn test_delivery_log_cleanup() {
-        let manager = MessageManager::new();
-
-        // Create an old log (simulated by creating a log and then manually setting its timestamp)
-        let mut old_log = DeliveryLog::new("old_event".to_string(), "webhook_1".to_string(), "old".to_string());
-        old_log.created_at = chrono::Utc::now() - chrono::Duration::days(2);
-        old_log.updated_at = old_log.created_at;
-
-        let new_log = DeliveryLog::new("new_event".to_string(), "webhook_1".to_string(), "new".to_string());
-
-        {
-            let mut logs = manager.delivery_logs.write().await;
-            logs.insert(old_log.id.clone(), old_log);
-            logs.insert(new_log.id.clone(), new_log);
-        }
-
-        assert_eq!(manager.get_delivery_stats().await.total, 2);
-
-        // Cleanup logs older than 1 day
-        let cleaned = manager.cleanup_delivery_logs(1).await;
-        assert_eq!(cleaned, 1);
-
-        assert_eq!(manager.get_delivery_stats().await.total, 1);
-    }
-
-    #[tokio::test]
-    async fn test_clear_delivery_logs() {
-        let manager = MessageManager::new();
-
-        let log1 = DeliveryLog::new("event_1".to_string(), "webhook_1".to_string(), "test".to_string());
-        let log2 = DeliveryLog::new("event_2".to_string(), "webhook_1".to_string(), "test".to_string());
-
-        {
-            let mut logs = manager.delivery_logs.write().await;
-            logs.insert(log1.id.clone(), log1);
-            logs.insert(log2.id.clone(), log2);
-        }
-
-        assert_eq!(manager.get_delivery_stats().await.total, 2);
-
-        manager.clear_delivery_logs().await;
-
-        assert_eq!(manager.get_delivery_stats().await.total, 0);
-    }
-
-    #[tokio::test]
-    async fn test_get_delivery_log_by_id() {
-        let manager = MessageManager::new();
-
-        let log = DeliveryLog::new("event_1".to_string(), "webhook_1".to_string(), "test".to_string());
-        let log_id = log.id.clone();
-
-        {
-            let mut logs = manager.delivery_logs.write().await;
-            logs.insert(log_id.clone(), log);
-        }
-
-        let retrieved = manager.get_delivery_log(&log_id).await;
-        assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().event_id, "event_1");
-
-        let fake_id = DeliveryLogId::new();
-        let not_found = manager.get_delivery_log(&fake_id).await;
-        assert!(not_found.is_none());
-    }
-
-    // =========================================================================
     // Edge Cases and Error Handling
     // =========================================================================
 
@@ -2147,30 +1667,5 @@ mod tests {
         let duration = created.duration();
         assert!(duration.num_seconds() >= 0);
         assert!(duration.num_seconds() < 10); // Should be very recent
-    }
-
-    #[tokio::test]
-    async fn test_data_push_message_creation() {
-        let manager = MessageManager::new();
-
-        let payload = serde_json::json!({
-            "temperature": 85.5,
-            "humidity": 90,
-            "timestamp": 1234567890
-        });
-
-        let msg = Message::data_push(
-            "sensor_data".to_string(),
-            "Temperature Reading".to_string(),
-            payload.clone(),
-            "device".to_string(),
-            "sensor_1".to_string(),
-        );
-
-        let created = manager.create_message(msg).await.unwrap();
-        assert_eq!(created.message_type, MessageType::DataPush);
-        assert_eq!(created.source_type, "device");
-        assert_eq!(created.source_id, Some("sensor_1".to_string()));
-        assert_eq!(created.payload, Some(payload));
     }
 }

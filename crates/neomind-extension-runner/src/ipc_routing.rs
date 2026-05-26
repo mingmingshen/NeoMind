@@ -1118,7 +1118,6 @@ mod tests {
 
     #[test]
     fn test_ipc_response_request_id_extraction() {
-        use neomind_extension_sdk::ExtensionMetricValue;
 
         let test_cases = vec![
             (

@@ -1,15 +1,11 @@
 //! Channel filter for message routing.
 
-use crate::{Message, MessageSeverity, MessageType};
+use crate::{Message, MessageSeverity};
 use serde::{Deserialize, Serialize};
 
 /// Filter configuration for a channel to select which messages to receive.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ChannelFilter {
-    /// Message types to receive (empty = all)
-    #[serde(default)]
-    pub message_types: Vec<MessageType>,
-
     /// Source types to receive (empty = all)
     #[serde(default)]
     pub source_types: Vec<String>,
@@ -25,10 +21,6 @@ pub struct ChannelFilter {
         deserialize_with = "deserialize_option_severity"
     )]
     pub min_severity: Option<MessageSeverity>,
-
-    /// Specific source IDs to receive (empty = all)
-    #[serde(default)]
-    pub source_ids: Vec<String>,
 }
 
 /// Serialize Option<MessageSeverity>
@@ -62,11 +54,6 @@ where
 impl ChannelFilter {
     /// Check if a message matches this filter.
     pub fn matches(&self, message: &Message) -> bool {
-        // Filter by message_types
-        if !self.message_types.is_empty() && !self.message_types.contains(&message.message_type) {
-            return false;
-        }
-
         // Filter by source_types
         if !self.source_types.is_empty() && !self.source_types.contains(&message.source_type) {
             return false;
@@ -84,14 +71,6 @@ impl ChannelFilter {
             }
         }
 
-        // Filter by source_ids
-        if !self.source_ids.is_empty() {
-            match &message.source_id {
-                Some(sid) if self.source_ids.contains(sid) => {}
-                _ => return false,
-            }
-        }
-
         true
     }
 
@@ -106,12 +85,10 @@ mod tests {
     use super::*;
 
     fn make_test_message(
-        message_type: MessageType,
         source_type: &str,
         severity: MessageSeverity,
     ) -> Message {
         let mut msg = Message::system("Test".to_string(), "Test".to_string());
-        msg.message_type = message_type;
         msg.source_type = source_type.to_string();
         msg.severity = severity;
         msg
@@ -120,21 +97,8 @@ mod tests {
     #[test]
     fn test_default_filter_matches_all() {
         let filter = ChannelFilter::default();
-        let msg = make_test_message(MessageType::DataPush, "device", MessageSeverity::Critical);
+        let msg = make_test_message("device", MessageSeverity::Critical);
         assert!(filter.matches(&msg));
-    }
-
-    #[test]
-    fn test_filter_by_message_type() {
-        let mut filter = ChannelFilter::default();
-        filter.message_types = vec![MessageType::Notification];
-
-        let notification =
-            make_test_message(MessageType::Notification, "system", MessageSeverity::Info);
-        let data_push = make_test_message(MessageType::DataPush, "system", MessageSeverity::Info);
-
-        assert!(filter.matches(&notification));
-        assert!(!filter.matches(&data_push));
     }
 
     #[test]
@@ -142,11 +106,9 @@ mod tests {
         let mut filter = ChannelFilter::default();
         filter.source_types = vec!["device".to_string(), "rule".to_string()];
 
-        let device_msg =
-            make_test_message(MessageType::Notification, "device", MessageSeverity::Info);
-        let rule_msg = make_test_message(MessageType::Notification, "rule", MessageSeverity::Info);
-        let system_msg =
-            make_test_message(MessageType::Notification, "system", MessageSeverity::Info);
+        let device_msg = make_test_message("device", MessageSeverity::Info);
+        let rule_msg = make_test_message("rule", MessageSeverity::Info);
+        let system_msg = make_test_message("system", MessageSeverity::Info);
 
         assert!(filter.matches(&device_msg));
         assert!(filter.matches(&rule_msg));
@@ -158,17 +120,9 @@ mod tests {
         let mut filter = ChannelFilter::default();
         filter.min_severity = Some(MessageSeverity::Warning);
 
-        let info = make_test_message(MessageType::Notification, "system", MessageSeverity::Info);
-        let warning = make_test_message(
-            MessageType::Notification,
-            "system",
-            MessageSeverity::Warning,
-        );
-        let critical = make_test_message(
-            MessageType::Notification,
-            "system",
-            MessageSeverity::Critical,
-        );
+        let info = make_test_message("system", MessageSeverity::Info);
+        let warning = make_test_message("system", MessageSeverity::Warning);
+        let critical = make_test_message("system", MessageSeverity::Critical);
 
         assert!(!filter.matches(&info));
         assert!(filter.matches(&warning));
@@ -178,48 +132,16 @@ mod tests {
     #[test]
     fn test_filter_combined() {
         let mut filter = ChannelFilter::default();
-        filter.message_types = vec![MessageType::DataPush];
         filter.source_types = vec!["device".to_string()];
         filter.min_severity = Some(MessageSeverity::Warning);
 
-        let matching =
-            make_test_message(MessageType::DataPush, "device", MessageSeverity::Critical);
+        let matching = make_test_message("device", MessageSeverity::Critical);
         assert!(filter.matches(&matching));
 
-        let wrong_type = make_test_message(
-            MessageType::Notification,
-            "device",
-            MessageSeverity::Critical,
-        );
-        assert!(!filter.matches(&wrong_type));
-
-        let wrong_source =
-            make_test_message(MessageType::DataPush, "rule", MessageSeverity::Critical);
+        let wrong_source = make_test_message("rule", MessageSeverity::Critical);
         assert!(!filter.matches(&wrong_source));
 
-        let wrong_severity =
-            make_test_message(MessageType::DataPush, "device", MessageSeverity::Info);
+        let wrong_severity = make_test_message("device", MessageSeverity::Info);
         assert!(!filter.matches(&wrong_severity));
-    }
-
-    #[test]
-    fn test_filter_by_source_id() {
-        let mut filter = ChannelFilter::default();
-        filter.source_ids = vec!["sensor_001".to_string(), "sensor_002".to_string()];
-
-        let mut msg1 =
-            make_test_message(MessageType::Notification, "device", MessageSeverity::Info);
-        msg1.source_id = Some("sensor_001".to_string());
-
-        let mut msg2 =
-            make_test_message(MessageType::Notification, "device", MessageSeverity::Info);
-        msg2.source_id = Some("sensor_003".to_string());
-
-        let msg_no_id =
-            make_test_message(MessageType::Notification, "device", MessageSeverity::Info);
-
-        assert!(filter.matches(&msg1));
-        assert!(!filter.matches(&msg2));
-        assert!(!filter.matches(&msg_no_id));
     }
 }

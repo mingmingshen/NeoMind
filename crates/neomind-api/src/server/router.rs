@@ -23,7 +23,7 @@ pub async fn create_router() -> Router {
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         agents, auth as auth_handlers, auth_users, automations, basic, capabilities, config,
-        dashboards, data, devices, events, extension_stream, extensions, frontend_components,
+        dashboards, data, data_push, devices, events, extension_stream, extensions, frontend_components,
         instances, llm_backends, memory, message_channels, messages, mqtt, rules, sessions,
         settings, setup, skills, stats, suggestions, tools,
     };
@@ -547,6 +547,17 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/messages/channels/:name/test",
             post(message_channels::test_channel_handler),
         )
+        // Data Push API
+        .route("/api/data-push", get(data_push::list_push_targets_handler))
+        .route("/api/data-push", post(data_push::create_push_target_handler))
+        .route("/api/data-push/stats", get(data_push::get_push_stats_handler))
+        .route("/api/data-push/:id", get(data_push::get_push_target_handler))
+        .route("/api/data-push/:id", put(data_push::update_push_target_handler))
+        .route("/api/data-push/:id", delete(data_push::delete_push_target_handler))
+        .route("/api/data-push/:id/test", post(data_push::test_push_target_handler))
+        .route("/api/data-push/:id/start", post(data_push::start_push_target_handler))
+        .route("/api/data-push/:id/stop", post(data_push::stop_push_target_handler))
+        .route("/api/data-push/:id/logs", get(data_push::list_delivery_logs_handler))
         // Message Channel Recipients API
         .route(
             "/api/messages/channels/:name/recipients",
@@ -573,15 +584,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route(
             "/api/messages/channels/:name/enabled",
             put(message_channels::toggle_enabled_handler),
-        )
-        // Delivery Log API
-        .route(
-            "/api/messages/delivery-logs",
-            get(message_channels::list_delivery_logs_handler),
-        )
-        .route(
-            "/api/messages/delivery-logs/stats",
-            get(message_channels::get_delivery_stats_handler),
         )
         // LLM Generation API (one-shot, no session)
         .route("/api/llm/generate", post(settings::llm_generate_handler))

@@ -8,6 +8,21 @@ pub mod webhook;
 #[cfg(feature = "email")]
 pub mod email;
 
+#[cfg(feature = "telegram")]
+pub mod telegram;
+
+#[cfg(feature = "wecom")]
+pub mod wecom;
+
+#[cfg(feature = "dingtalk")]
+pub mod dingtalk;
+
+#[cfg(feature = "slack")]
+pub mod slack;
+
+#[cfg(feature = "feishu")]
+pub mod feishu;
+
 pub use filter::ChannelFilter;
 
 use async_trait::async_trait;
@@ -25,6 +40,21 @@ pub use webhook::{WebhookChannel, WebhookChannelFactory};
 
 #[cfg(feature = "email")]
 pub use email::{EmailChannel, EmailChannelFactory};
+
+#[cfg(feature = "telegram")]
+pub use telegram::{TelegramChannel, TelegramChannelFactory};
+
+#[cfg(feature = "wecom")]
+pub use wecom::{WeComChannel, WeComChannelFactory};
+
+#[cfg(feature = "dingtalk")]
+pub use dingtalk::{DingTalkChannel, DingTalkChannelFactory};
+
+#[cfg(feature = "slack")]
+pub use slack::{SlackChannel, SlackChannelFactory};
+
+#[cfg(feature = "feishu")]
+pub use feishu::{FeishuChannel, FeishuChannelFactory};
 
 /// Trait for message channels.
 #[async_trait]
@@ -966,6 +996,56 @@ pub fn list_channel_types() -> Vec<ChannelTypeInfo> {
             icon: "mail".to_string(),
             category: "external".to_string(),
         },
+        #[cfg(feature = "telegram")]
+        ChannelTypeInfo {
+            id: "telegram".to_string(),
+            name: "Telegram".to_string(),
+            name_zh: "Telegram".to_string(),
+            description: "Send messages via Telegram Bot API".to_string(),
+            description_zh: "通过 Telegram 机器人发送消息".to_string(),
+            icon: "send".to_string(),
+            category: "external".to_string(),
+        },
+        #[cfg(feature = "wecom")]
+        ChannelTypeInfo {
+            id: "wecom".to_string(),
+            name: "WeCom".to_string(),
+            name_zh: "企业微信".to_string(),
+            description: "Send messages via WeCom robot webhook".to_string(),
+            description_zh: "通过企业微信机器人发送消息".to_string(),
+            icon: "message-square".to_string(),
+            category: "external".to_string(),
+        },
+        #[cfg(feature = "dingtalk")]
+        ChannelTypeInfo {
+            id: "dingtalk".to_string(),
+            name: "DingTalk".to_string(),
+            name_zh: "钉钉".to_string(),
+            description: "Send messages via DingTalk custom robot".to_string(),
+            description_zh: "通过钉钉自定义机器人发送消息".to_string(),
+            icon: "message-circle".to_string(),
+            category: "external".to_string(),
+        },
+        #[cfg(feature = "slack")]
+        ChannelTypeInfo {
+            id: "slack".to_string(),
+            name: "Slack".to_string(),
+            name_zh: "Slack".to_string(),
+            description: "Send messages via Slack Incoming Webhook".to_string(),
+            description_zh: "通过 Slack Incoming Webhook 发送消息".to_string(),
+            icon: "hash".to_string(),
+            category: "external".to_string(),
+        },
+        #[cfg(feature = "feishu")]
+        ChannelTypeInfo {
+            id: "feishu".to_string(),
+            name: "Feishu".to_string(),
+            name_zh: "飞书".to_string(),
+            description: "Send messages via Feishu custom bot".to_string(),
+            description_zh: "通过飞书自定义机器人发送消息".to_string(),
+            icon: "messages-square".to_string(),
+            category: "external".to_string(),
+        },
     ]
 }
 
@@ -996,6 +1076,54 @@ pub fn get_channel_schema(channel_type: &str) -> Option<serde_json::Value> {
                 "use_tls": {"type": "boolean"}
             },
             "required": ["smtp_server", "smtp_port", "username", "password", "from_address"]
+        })),
+        #[cfg(feature = "telegram")]
+        "telegram" => Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "token": {"type": "string", "description": "Telegram Bot API token"},
+                "chat_id": {"type": "string", "description": "Target chat ID"}
+            },
+            "required": ["token", "chat_id"]
+        })),
+        #[cfg(feature = "wecom")]
+        "wecom" => Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "key": {"type": "string", "description": "WeCom robot webhook key"}
+            },
+            "required": ["key"]
+        })),
+        #[cfg(feature = "dingtalk")]
+        "dingtalk" => Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "access_token": {"type": "string", "description": "DingTalk robot access token"},
+                "secret": {"type": "string", "description": "Secret for sign verification (optional)"}
+            },
+            "required": ["access_token"]
+        })),
+        #[cfg(feature = "slack")]
+        "slack" => Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "webhook_url": {"type": "string", "description": "Slack Incoming Webhook URL"}
+            },
+            "required": ["webhook_url"]
+        })),
+        #[cfg(feature = "feishu")]
+        "feishu" => Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "hook_id": {"type": "string", "description": "Feishu bot hook ID"},
+                "secret": {"type": "string", "description": "Secret for sign verification (optional)"}
+            },
+            "required": ["hook_id"]
         })),
         _ => None,
     }
