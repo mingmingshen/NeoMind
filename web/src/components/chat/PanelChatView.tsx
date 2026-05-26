@@ -380,7 +380,7 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
       </div>
 
       {/* Input area */}
-      <div className="border-t border-border/60 px-4 py-3 pb-6 safe-bottom flex-shrink-0">
+      <div className="border-t border-border/60 px-4 py-4 safe-bottom flex-shrink-0">
         <ChatInputField
           ref={inputFieldRef}
           isStreaming={streamState.isStreaming}

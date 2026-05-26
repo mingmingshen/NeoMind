@@ -287,7 +287,7 @@ export const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
   const canSend = !!input.trim() && !isStreaming
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-end gap-2">
       <div className="flex-1 relative">
         {isStreaming && (
           <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1.5 pointer-events-none">
@@ -311,7 +311,7 @@ export const ChatInputField = memo(forwardRef<ChatInputFieldHandle, {
             "max-h-32 scroll-mb-32",
             isStreaming && "opacity-60 cursor-wait"
           )}
-          style={{ minHeight: "44px", height: "auto" }}
+          style={{ minHeight: "48px", height: "auto" }}
           onInput={(e) => {
             const target = e.target as HTMLTextAreaElement
             target.style.height = "auto"
