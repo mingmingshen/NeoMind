@@ -353,16 +353,6 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
         className="flex-1 overflow-y-auto px-4 py-5 min-h-0"
       >
         <div className="space-y-4">
-          {filteredMessages.length === 0 && !streamState.isStreaming && (
-            <div className="text-center py-16">
-              <div className="w-14 h-14 rounded-2xl bg-info/10 flex items-center justify-center mx-auto mb-5">
-                <Bot className="h-7 w-7 text-info" />
-              </div>
-              <h3 className="text-base font-semibold mb-1.5">{t("welcome.greeting")}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">{t("welcome.description")}</p>
-            </div>
-          )}
-
           <MergedMessageList
             messages={filteredMessages}
             scrollElementRef={scrollContainerRef}
@@ -391,16 +381,14 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
 
       {/* Input area */}
       <div className="border-t border-border/60 px-6 py-5 pb-8 safe-bottom flex-shrink-0">
-        <div className="flex items-center justify-center">
-          <ChatInputField
-            ref={inputFieldRef}
-            isStreaming={streamState.isStreaming}
-            onSend={handleSend}
-            onSlash={() => {}}
-            onEscape={onClose}
-            showSuggestions={false}
-          />
-        </div>
+        <ChatInputField
+          ref={inputFieldRef}
+          isStreaming={streamState.isStreaming}
+          onSend={handleSend}
+          onSlash={() => {}}
+          onEscape={onClose}
+          showSuggestions={false}
+        />
       </div>
     </div>
   )
