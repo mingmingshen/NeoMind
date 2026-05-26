@@ -309,7 +309,8 @@ async function loadHistoryMessages(
               if (typeof val === 'string' && val.length > 100 && (
                 val.startsWith('data:image/') || val.startsWith('/9j/') || val.startsWith('iVBOR')
               )) {
-                allImages.push(val.startsWith('data:') ? val : `data:image/png;base64,${val}`)
+                const clean = val.replace(/[\s\r\n]+/g, '')
+                allImages.push(clean.startsWith('data:') ? clean : `data:image/png;base64,${clean}`)
               } else {
                 const s = summarizeData(val)
                 if (s) allLines.push(dataType ? `${dataType}: ${s}` : s)
@@ -317,10 +318,13 @@ async function loadHistoryMessages(
               // Also check image_base64 field for raw base64 image data
               const b64 = record.image_base64
               if (typeof b64 === 'string' && b64.length > 100) {
-                const mime = record.image_mime_type || record.mime_type
-                const dataUrl = typeof mime === 'string'
-                  ? `data:${mime};base64,${b64}`
-                  : `data:image/png;base64,${b64}`
+                const cleanB64 = b64.replace(/[\s\r\n]+/g, '')
+                const recordMime = record.image_mime_type || record.mime_type
+                // If already a data URL, use as-is; otherwise add prefix
+                const dataUrl = cleanB64.startsWith('data:') ? cleanB64
+                  : typeof recordMime === 'string'
+                    ? `data:${recordMime};base64,${cleanB64}`
+                    : `data:image/png;base64,${cleanB64}`
                 allImages.push(dataUrl)
               }
             } else {
@@ -329,7 +333,8 @@ async function loadHistoryMessages(
                 if (typeof val === 'string' && val.length > 100 && (
                   val.startsWith('data:image/') || val.startsWith('/9j/') || val.startsWith('iVBOR')
                 )) {
-                  allImages.push(val.startsWith('data:') ? val : `data:image/png;base64,${val}`)
+                  const clean = val.replace(/[\s\r\n]+/g, '')
+                  allImages.push(clean.startsWith('data:') ? clean : `data:image/png;base64,${clean}`)
                 } else if (!isMetaField(key)) {
                   const s = summarizeData(val)
                   if (s) allLines.push(`${key}: ${s}`)

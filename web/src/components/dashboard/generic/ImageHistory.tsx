@@ -79,25 +79,37 @@ function normalizeImageUrl(value: string): string | null {
   }
 
   if (trimmed.startsWith('data:image/')) {
-    return trimmed
+    const commaIdx = trimmed.indexOf(',')
+    if (commaIdx === -1) return trimmed
+    const prefix = trimmed.slice(0, commaIdx + 1)
+    let b64 = trimmed.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '')
+    // Unwrap double-prefixed data URLs
+    if (b64.startsWith('data:image/') || b64.startsWith('data:')) {
+      return normalizeImageUrl(b64)
+    }
+    return `${prefix}${b64}`
   }
 
   if (trimmed.startsWith('data:base64,')) {
-    const base64Data = trimmed.slice(12)
+    const base64Data = trimmed.slice(12).replace(/[\s\r\n]+/g, '')
     const formatInfo = detectImageFormatFromMagicBytes(base64Data) || { type: 'png', mime: 'image/png' }
     return `data:${formatInfo.mime};base64,${base64Data}`
   }
 
   if (trimmed.startsWith('data:')) {
-    return trimmed
+    // Strip unknown data: prefix and recurse
+    const afterComma = trimmed.slice(trimmed.indexOf(',') + 1)
+    if (afterComma && afterComma !== trimmed) return normalizeImageUrl(afterComma)
+    return null
   }
 
   if (isPureBase64(trimmed)) {
-    const formatInfo = detectImageFormatFromMagicBytes(trimmed) || { type: 'png', mime: 'image/png' }
-    return `data:${formatInfo.mime};base64,${trimmed}`
+    const clean = trimmed.replace(/[\s\r\n]+/g, '')
+    const formatInfo = detectImageFormatFromMagicBytes(clean) || { type: 'png', mime: 'image/png' }
+    return `data:${formatInfo.mime};base64,${clean}`
   }
 
-  return trimmed
+  return null
 }
 
 export interface ImageHistoryItem {

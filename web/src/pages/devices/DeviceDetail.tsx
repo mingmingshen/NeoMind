@@ -25,7 +25,7 @@ import { ChevronLeft, Send, Clock, Zap, Settings, Info, ChevronRight, X, Image a
 import { toast } from "@/components/ui/use-toast"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { Device, DeviceType, CommandDefinition, ParameterDefinition, TelemetryDataResponse, DeviceCurrentStateResponse } from "@/types"
-import { isBase64Image } from "./utils"
+import { isBase64Image, getImageDataUrl } from "./utils"
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/useMobile"
 
@@ -58,15 +58,16 @@ function renderMetricValue(
   if (typeof value === "boolean") return <span className={value ? "text-success" : "text-error"}>{value ? "Yes" : "No"}</span>
   if (typeof value === "number") return <span className="font-semibold tabular-nums">{parseFloat(value.toFixed(2))}</span>
   if (typeof value === "string" && isBase64Image(value)) {
+    const imgSrc = getImageDataUrl(value) ?? value
     return (
       <div
         className="cursor-pointer hover:opacity-80 transition-opacity"
         onClick={(e) => {
           e.stopPropagation() // Prevent opening history dialog
-          onImageClick?.(value)
+          onImageClick?.(imgSrc)
         }}
       >
-        <img src={value} alt="metric" className="h-16 w-16 object-cover rounded-lg" />
+        <img src={imgSrc} alt="metric" className="h-16 w-16 object-cover rounded-lg" />
       </div>
     )
   }
@@ -459,16 +460,17 @@ export function DeviceDetail({
         )
       case 'value': {
         if (isMetricImage(point.value)) {
+          const imgSrc = getImageDataUrl(String(point.value)) ?? String(point.value)
           return (
             <div className="flex items-center gap-2">
               <div
                 className="cursor-pointer hover:opacity-80 transition-opacity inline-block"
                 onClick={() => {
-                  setPreviewImageSrc(String(point.value))
+                  setPreviewImageSrc(imgSrc)
                   setImagePreviewOpen(true)
                 }}
               >
-                <img src={String(point.value)} alt="metric" className="h-12 w-12 object-cover rounded-lg" loading="lazy" />
+                <img src={imgSrc} alt="metric" className="h-12 w-12 object-cover rounded-lg" loading="lazy" />
               </div>
               <Button
                 variant="ghost"
@@ -476,7 +478,7 @@ export function DeviceDetail({
                 className="h-8 w-8 shrink-0"
                 onClick={(e) => {
                   e.stopPropagation()
-                  downloadImage(String(point.value), formatTimestamp(point.timestamp))
+                  downloadImage(imgSrc, formatTimestamp(point.timestamp))
                 }}
                 title={t('devices:detailPage.downloadImage')}
               >

@@ -23,23 +23,64 @@ export function isBase64Image(value: unknown): boolean {
   return imageSignatures.some(sig => str.startsWith(sig))
 }
 
-// Get the data URL for a base64 image value
+// Strip whitespace/newlines from base64 data (browsers can't decode base64 with line breaks)
+function sanitizeBase64(data: string): string {
+  return data.replace(/[\s\r\n]+/g, '')
+}
+
+// Validate that a string is valid base64 (quick check via atob)
+function isValidBase64(data: string): boolean {
+  if (!data || data.length === 0) return false
+  try {
+    // Only decode a small portion for performance on large images
+    atob(data.length > 200 ? data.slice(0, 100) + data.slice(-100) : data)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Get the data URL for a base64 image value.
+// Handles: raw base64, data:image/ URLs, and malformed data URLs.
 export function getImageDataUrl(value: unknown): string | null {
   if (typeof value !== "string") return null
   const str = value.trim()
 
-  // Already has data URL prefix
-  if (str.startsWith("data:image/")) return str
+  // Already a data:image URL
+  if (str.startsWith("data:image/")) {
+    const commaIdx = str.indexOf(',')
+    if (commaIdx === -1) return str
+    const prefix = str.slice(0, commaIdx + 1)
+    let b64 = sanitizeBase64(str.slice(commaIdx + 1))
+
+    // Detect if the "base64" portion is actually another data URL (double-prefix bug)
+    if (b64.startsWith('data:image/') || b64.startsWith('data:')) {
+      // Recursively unwrap: the inner data URL is the real one
+      return getImageDataUrl(b64)
+    }
+
+    if (!isValidBase64(b64)) return null
+    return `${prefix}${b64}`
+  }
+
+  // Any other data: prefix (malformed)
+  if (str.startsWith('data:')) {
+    return getImageDataUrl(str.replace(/^data:[^,]*,/, ''))
+  }
+
+  // Sanitize base64 data (backend may include newlines)
+  const clean = sanitizeBase64(str)
+  if (!isValidBase64(clean)) return null
 
   // Detect image type from signature and add data URL prefix
-  if (str.startsWith("iVBORw0KGgo")) return `data:image/png;base64,${str}`
-  if (str.startsWith("/9j/")) return `data:image/jpeg;base64,${str}`
-  if (str.startsWith("R0lGODlh")) return `data:image/gif;base64,${str}`
-  if (str.startsWith("UklGR")) return `data:image/webp;base64,${str}`
-  if (str.startsWith("Qk")) return `data:image/bmp;base64,${str}`
+  if (clean.startsWith("iVBORw0KGgo")) return `data:image/png;base64,${clean}`
+  if (clean.startsWith("/9j/")) return `data:image/jpeg;base64,${clean}`
+  if (clean.startsWith("R0lGODlh")) return `data:image/gif;base64,${clean}`
+  if (clean.startsWith("UklGR")) return `data:image/webp;base64,${clean}`
+  if (clean.startsWith("Qk")) return `data:image/bmp;base64,${clean}`
 
   // Fallback - try as PNG
-  return `data:image/png;base64,${str}`
+  return `data:image/png;base64,${clean}`
 }
 
 // Format metric value for display

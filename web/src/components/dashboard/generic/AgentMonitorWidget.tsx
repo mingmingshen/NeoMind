@@ -92,10 +92,18 @@ function isBase64Image(str: string): boolean {
 }
 
 function normalizeToDataUrl(str: string): string {
-  if (str.startsWith('data:image/')) return str
-  const mime = detectImageFormat(str)
-  if (mime) return `data:${mime};base64,${str}`
-  return `data:image/png;base64,${str}`
+  if (str.startsWith('data:image/')) {
+    const commaIdx = str.indexOf(',')
+    if (commaIdx === -1) return str
+    let b64 = str.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '')
+    // Unwrap double-prefixed data URLs
+    if (b64.startsWith('data:image/') || b64.startsWith('data:')) return normalizeToDataUrl(b64)
+    return str.slice(0, commaIdx + 1) + b64
+  }
+  const clean = str.replace(/[\s\r\n]+/g, '')
+  const mime = detectImageFormat(clean)
+  if (mime) return `data:${mime};base64,${clean}`
+  return `data:image/png;base64,${clean}`
 }
 
 // Extract images from data_collected values

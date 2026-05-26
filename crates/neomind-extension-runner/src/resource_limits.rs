@@ -28,7 +28,7 @@
 //! ```
 
 use std::io;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 /// Configuration for resource limits
 #[derive(Debug, Clone)]
@@ -121,12 +121,13 @@ pub enum ResourceLimitError {
 
 #[cfg(unix)]
 fn setup_unix_limits(config: &ResourceLimitsConfig) -> Result<(), ResourceLimitError> {
-    use libc::{rlimit, setpriority, setrlimit, PRIO_PROCESS, RLIMIT_AS, RLIMIT_DATA};
+    use libc::{getrlimit, rlimit, setpriority, setrlimit, PRIO_PROCESS, RLIMIT_AS, RLIMIT_DATA};
 
     // 1. Set memory limit
     if let Some(soft_mb) = config.memory_limit_mb {
         let soft = soft_mb * 1024 * 1024;
-        let hard = config.memory_limit_hard_mb.unwrap_or(soft_mb * 2) * 1024 * 1024;
+        let desired_hard =
+            config.memory_limit_hard_mb.unwrap_or(soft_mb * 2) * 1024 * 1024;
 
         info!(
             "Setting memory limit: soft={}MB, hard={}MB",
@@ -134,7 +135,20 @@ fn setup_unix_limits(config: &ResourceLimitsConfig) -> Result<(), ResourceLimitE
             config.memory_limit_hard_mb.unwrap_or(soft_mb * 2)
         );
 
-        // Try RLIMIT_AS first (address space), fall back to RLIMIT_DATA (data segment)
+        // Clamp hard limit to the system's current hard limit to avoid EINVAL on macOS
+        let sys_max = unsafe {
+            let mut lim: rlimit = std::mem::zeroed();
+            if getrlimit(RLIMIT_AS, &mut lim) == 0 {
+                lim.rlim_max
+            } else {
+                // Cannot query, use desired value and let setrlimit decide
+                desired_hard
+            }
+        };
+        let hard = desired_hard.min(sys_max);
+        // soft must not exceed hard
+        let soft = soft.min(hard);
+
         let limits = rlimit {
             rlim_cur: soft,
             rlim_max: hard,
@@ -146,8 +160,18 @@ fn setup_unix_limits(config: &ResourceLimitsConfig) -> Result<(), ResourceLimitE
 
             // If that fails, try RLIMIT_DATA (data segment limit)
             if result != 0 {
+                // Re-query for RLIMIT_DATA hard limit
+                let mut lim: rlimit = std::mem::zeroed();
+                let data_limits = if getrlimit(RLIMIT_DATA, &mut lim) == 0 {
+                    rlimit {
+                        rlim_cur: soft.min(lim.rlim_max),
+                        rlim_max: hard.min(lim.rlim_max),
+                    }
+                } else {
+                    limits
+                };
                 warn!("RLIMIT_AS failed, trying RLIMIT_DATA");
-                result = setrlimit(RLIMIT_DATA, &limits);
+                result = setrlimit(RLIMIT_DATA, &data_limits);
             }
 
             result
@@ -155,14 +179,11 @@ fn setup_unix_limits(config: &ResourceLimitsConfig) -> Result<(), ResourceLimitE
 
         if result != 0 {
             let err = io::Error::last_os_error();
-            error!("Failed to set memory limit: {}", err);
-            return Err(ResourceLimitError::SystemError(format!(
-                "setrlimit failed: {}",
-                err
-            )));
+            // Non-fatal on macOS: memory limits are best-effort
+            warn!("Failed to set memory limit: {} (continuing anyway)", err);
+        } else {
+            info!("Memory limit set successfully");
         }
-
-        info!("Memory limit set successfully");
     }
 
     // 2. Set process priority (nice level)

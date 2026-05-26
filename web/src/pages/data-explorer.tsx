@@ -25,7 +25,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Search, Database, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye, Download, Tag, Clock, FileCode, Info, Send, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
-import { isBase64Image } from '@/pages/devices/utils'
+import { isBase64Image, getImageDataUrl } from '@/pages/devices/utils'
 import { cn } from '@/lib/utils'
 import type { UnifiedDataSourceInfo } from '@/types'
 import { useIsMobile } from '@/hooks/useMobile'
@@ -482,7 +482,7 @@ export function DataExplorerPage() {
                     </div>
                     <div className="font-mono text-lg font-semibold break-all max-h-32 overflow-y-auto">
                       {typeof selectedSource.current_value === 'string' && isBase64Image(selectedSource.current_value) ? (
-                        <img src={selectedSource.current_value} alt="metric" className="max-h-28 rounded-lg object-contain" />
+                        <img src={getImageDataUrl(selectedSource.current_value) ?? undefined} alt="metric" className="max-h-28 rounded-lg object-contain" />
                       ) : typeof selectedSource.current_value === 'object'
                         ? JSON.stringify(selectedSource.current_value, null, 2)
                         : String(selectedSource.current_value)}
@@ -573,7 +573,7 @@ export function DataExplorerPage() {
                               <td className="px-4 py-2 font-mono text-xs whitespace-nowrap">{formatTimestamp(point.timestamp)}</td>
                               <td className="px-4 py-2 text-xs max-w-[300px]">
                                 {typeof point.value === 'string' && isBase64Image(point.value) ? (
-                                  <img src={point.value} alt="metric" className="h-10 w-10 object-cover rounded" />
+                                  <img src={getImageDataUrl(point.value) ?? undefined} alt="metric" className="h-10 w-10 object-cover rounded" />
                                 ) : (
                                   <span className="font-mono block truncate">{formatHistoryValue(point.value)}</span>
                                 )}

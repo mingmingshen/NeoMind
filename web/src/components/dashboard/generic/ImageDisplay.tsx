@@ -187,12 +187,21 @@ function normalizeImageUrl(value: string | number | undefined | null): {
   // 1. Already a proper data URL
   if (trimmed.startsWith('data:image/')) {
     // Extract mime type
-    const mimeMatch = trimmed.match(/data:image\/([^;]+)/i)
+    const mimeMatch = trimmed.match(/data:image\/([^;,]+)/i)
     const mime = mimeMatch ? `image/${mimeMatch[1].toLowerCase()}` : 'image/png'
     const formatInfo = detectFormatFromMimeType(mime) || { type: 'png', mime }
+    const commaIdx = trimmed.indexOf(',')
+    const prefix = commaIdx !== -1 ? trimmed.slice(0, commaIdx + 1) : trimmed
+    let b64 = commaIdx !== -1 ? trimmed.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '') : ''
+
+    // Unwrap double-prefixed data URLs (e.g., data:image/png;base64,data:image/jpeg;base64,...)
+    if (b64.startsWith('data:image/') || b64.startsWith('data:')) {
+      const unwrapped = normalizeImageUrl(b64)
+      if (unwrapped) return unwrapped
+    }
 
     return {
-      src: trimmed,
+      src: `${prefix}${b64}`,
       format: formatInfo.type,
       isBase64: trimmed.includes('base64'),
       isDataUrl: true,
@@ -202,7 +211,7 @@ function normalizeImageUrl(value: string | number | undefined | null): {
 
   // 2. Data URL without image/ prefix (malformed)
   if (trimmed.startsWith('data:base64,')) {
-    const base64Data = trimmed.slice(12)
+    const base64Data = trimmed.slice(12).replace(/[\s\r\n]+/g, '')
     const formatInfo = detectImageFormatFromMagicBytes(base64Data) || { type: 'png', mime: 'image/png' }
     return {
       src: `data:${formatInfo.mime};base64,${base64Data}`,
@@ -215,9 +224,11 @@ function normalizeImageUrl(value: string | number | undefined | null): {
 
   // 3. Data URL with charset (e.g., data:image/jpeg;charset=utf-8;base64,...)
   if (trimmed.startsWith('data:')) {
-    // Just return as-is, browser should handle it
+    const commaIdx = trimmed.indexOf(',')
+    const prefix = commaIdx !== -1 ? trimmed.slice(0, commaIdx + 1) : trimmed
+    const b64 = commaIdx !== -1 ? trimmed.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '') : ''
     return {
-      src: trimmed,
+      src: `${prefix}${b64}`,
       format: 'png',
       isBase64: trimmed.includes('base64'),
       isDataUrl: true,
@@ -227,9 +238,10 @@ function normalizeImageUrl(value: string | number | undefined | null): {
 
   // 4. Pure base64 string (no prefix)
   if (isPureBase64(trimmed)) {
-    const formatInfo = detectImageFormatFromMagicBytes(trimmed) || { type: 'png', mime: 'image/png' }
+    const cleanBase64 = trimmed.replace(/[\s\r\n]+/g, '')
+    const formatInfo = detectImageFormatFromMagicBytes(cleanBase64) || { type: 'png', mime: 'image/png' }
     return {
-      src: `data:${formatInfo.mime};base64,${trimmed}`,
+      src: `data:${formatInfo.mime};base64,${cleanBase64}`,
       format: formatInfo.type,
       isBase64: true,
       isDataUrl: true,

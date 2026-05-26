@@ -777,6 +777,13 @@ fn metric_value_to_json(value: &neomind_devices::MetricValue) -> serde_json::Val
             // Try to parse as JSON first (for stored JSON objects like _raw data)
             if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(v) {
                 json_val
+            } else if let Some(rest) = v.strip_prefix("data:image/") {
+                // Normalize data URLs: strip prefix so frontend gets raw base64
+                if let Some(b64) = rest.split("base64,").nth(1) {
+                    json!(b64)
+                } else {
+                    json!(v)
+                }
             } else {
                 json!(v)
             }
