@@ -1,12 +1,8 @@
 <p align="center">
-  <img src="web/public/logo-square.png" alt="NeoMind Logo" width="120" height="120">
+  <img src="web/public/logo-light.png" alt="NeoMind" width="400">
 </p>
 
-<h1 align="center">NeoMind</h1>
-
-<p align="center">
-  <strong>Edge AI Platform for IoT Automation</strong>
-</p>
+<h3 align="center">Edge AI Platform for IoT Automation</h3>
 
 <p align="center">
   Rust-powered edge intelligence — connect devices, run AI agents, automate everything.

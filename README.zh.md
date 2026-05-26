@@ -1,12 +1,8 @@
 <p align="center">
-  <img src="web/public/logo-square.png" alt="NeoMind Logo" width="120" height="120">
+  <img src="web/public/logo-light.png" alt="NeoMind" width="400">
 </p>
 
-<h1 align="center">NeoMind</h1>
-
-<p align="center">
-  <strong>面向物联网自动化的边缘 AI 平台</strong>
-</p>
+<h3 align="center">面向物联网自动化的边缘 AI 平台</h3>
 
 <p align="center">
   基于 Rust 的边缘智能 — 连接设备、运行 AI 智能体、自动化一切。
