@@ -149,8 +149,8 @@ export function PushTargetDialog() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   // Batch config
   const [batchEnabled, setBatchEnabled] = useState(false)
-  const [batchSize, setBatchSize] = useState(10)
-  const [batchIntervalMs, setBatchIntervalMs] = useState(1000)
+  const [batchSize, setBatchSize] = useState(50)
+  const [batchIntervalMs, setBatchIntervalMs] = useState(2000)
 
   const toggleGroupExpand = useCallback((key: string) => {
     setExpandedGroups(prev => {

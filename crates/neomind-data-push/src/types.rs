@@ -59,7 +59,7 @@ fn default_batch_size() -> usize {
 }
 
 fn default_batch_interval_ms() -> u64 {
-    1000
+    2000
 }
 
 impl Default for BatchConfig {
