@@ -22,7 +22,7 @@ import {
 import { MergedMessageList } from "./MergedMessageList"
 import { StreamProgress } from "./StreamProgress"
 import { ChatInputField } from "./ChatContainer"
-import { X, Minimize2, Bot, Sparkles } from "lucide-react"
+import { X, Minimize2, Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface PanelChatViewProps {
@@ -352,17 +352,7 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-4 py-5 min-h-0"
       >
-        <div className="max-w-2xl mx-auto space-y-4">
-          {filteredMessages.length === 0 && !streamState.isStreaming && (
-            <div className="text-center py-16">
-              <div className="w-14 h-14 rounded-2xl bg-info/10 flex items-center justify-center mx-auto mb-5">
-                <Sparkles className="h-7 w-7 text-info" />
-              </div>
-              <h3 className="text-base font-semibold mb-1.5">{t("welcome.greeting")}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">{t("welcome.description")}</p>
-            </div>
-          )}
-
+        <div className="space-y-4">
           <MergedMessageList
             messages={filteredMessages}
             scrollElementRef={scrollContainerRef}
@@ -391,16 +381,14 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
 
       {/* Input area */}
       <div className="border-t border-border/60 px-4 py-3 pb-6 safe-bottom flex-shrink-0">
-        <div className="max-w-2xl mx-auto">
-          <ChatInputField
-            ref={inputFieldRef}
-            isStreaming={streamState.isStreaming}
-            onSend={handleSend}
-            onSlash={() => {}}
-            onEscape={onClose}
-            showSuggestions={false}
-          />
-        </div>
+        <ChatInputField
+          ref={inputFieldRef}
+          isStreaming={streamState.isStreaming}
+          onSend={handleSend}
+          onSlash={() => {}}
+          onEscape={onClose}
+          showSuggestions={false}
+        />
       </div>
     </div>
   )
