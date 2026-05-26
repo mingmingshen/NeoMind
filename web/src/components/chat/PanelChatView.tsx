@@ -390,15 +390,17 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize }: Pane
       </div>
 
       {/* Input area */}
-      <div className="border-t border-border/60 px-4 py-4 safe-bottom flex-shrink-0">
-        <ChatInputField
-          ref={inputFieldRef}
-          isStreaming={streamState.isStreaming}
-          onSend={handleSend}
-          onSlash={() => {}}
-          onEscape={onClose}
-          showSuggestions={false}
-        />
+      <div className="border-t border-border/60 px-6 py-5 pb-8 safe-bottom flex-shrink-0">
+        <div className="flex items-center justify-center">
+          <ChatInputField
+            ref={inputFieldRef}
+            isStreaming={streamState.isStreaming}
+            onSend={handleSend}
+            onSlash={() => {}}
+            onEscape={onClose}
+            showSuggestions={false}
+          />
+        </div>
       </div>
     </div>
   )
