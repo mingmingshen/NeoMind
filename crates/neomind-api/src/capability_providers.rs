@@ -106,13 +106,18 @@ impl DeviceCapabilityProvider {
             .get("value")
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing value".to_string()))?;
 
-        // Optional timestamp parameter (seconds since epoch).
-        // Extension SDK sends milliseconds, convert to seconds for internal storage.
-        let timestamp_ms = params
+        // Optional timestamp parameter.
+        // Auto-detect seconds vs milliseconds: values > 10_000_000_000 are milliseconds
+        // (corresponds to year 2286 in seconds), otherwise treat as seconds.
+        let timestamp_raw = params
             .get("timestamp")
             .and_then(|v| v.as_i64())
             .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-        let timestamp_secs = timestamp_ms / 1000;
+        let timestamp_secs = if timestamp_raw > 10_000_000_000 {
+            timestamp_raw / 1000 // milliseconds → seconds
+        } else {
+            timestamp_raw // already in seconds
+        };
 
         let telemetry_storage: Arc<TimeSeriesStorage> = self
             .services
@@ -139,10 +144,24 @@ impl DeviceCapabilityProvider {
             quality: Some(1.0),
         };
 
+        let write_source_id = format!("device:{}", device_id);
+        tracing::info!(
+            "[METRICS_WRITE_DEBUG] Writing metric: source_id={} metric={} timestamp_secs={} value_type={}",
+            write_source_id, metric, timestamp_secs, if value.is_string() { "string" } else if value.is_number() { "number" } else { "other" }
+        );
+
         telemetry_storage
-            .write(&format!("device:{}", device_id), metric, data_point)
+            .write(&write_source_id, metric, data_point)
             .await
-            .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!("[METRICS_WRITE_DEBUG] Write FAILED: {}", e);
+                CapabilityError::ProviderError(e.to_string())
+            })?;
+
+        // Force flush after each virtual metric write to ensure immediate persistence
+        if let Err(e) = telemetry_storage.flush() {
+            tracing::warn!("[METRICS_WRITE_DEBUG] Flush after write failed: {}", e);
+        }
 
         // Update last_seen so the device doesn't show "Never Connected"
         if let Some(device_service) = self.services.get::<DeviceService>(keys::DEVICE_SERVICE) {

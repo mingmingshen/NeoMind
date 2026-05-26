@@ -1544,9 +1544,15 @@ impl TimeSeriesStore {
 
             for entry in self.metrics_info.iter() {
                 let key = entry.key();
-                if let Some(colon_pos) = key.find(':') {
-                    let source_id = &key[..colon_pos];
-                    let metric = &key[colon_pos + 1..];
+                // metrics_info key format: "{source_part}:{metric}"
+                // where source_part = "{type}:{id}" (e.g. "device:camera01").
+                // Split at the SECOND colon to correctly separate source_part from metric.
+                let colon_positions: Vec<usize> =
+                    key.char_indices().filter_map(|(i, c)| if c == ':' { Some(i) } else { None }).collect();
+                if colon_positions.len() >= 2 {
+                    let second_colon = colon_positions[1];
+                    let source_id = &key[..second_colon];
+                    let metric = &key[second_colon + 1..];
                     grouped
                         .entry(source_id.to_string())
                         .or_default()

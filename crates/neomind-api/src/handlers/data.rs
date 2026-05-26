@@ -314,7 +314,9 @@ async fn collect_device_sources(state: &ServerState, sources: &mut Vec<UnifiedDa
 
         // 2. Add virtual metrics from telemetry storage (metrics not in template)
         // Uses pre-fetched batch data instead of per-device query
-        if let Some(telemetry_metrics) = all_telemetry_metrics.get(&device.device_id) {
+        // Key format in grouped map is "{type}:{id}" (e.g. "device:camera01")
+        let device_source_key = format!("device:{}", device.device_id);
+        if let Some(telemetry_metrics) = all_telemetry_metrics.get(&device_source_key) {
             for metric_name in telemetry_metrics {
                 if known_metrics.contains(metric_name) {
                     continue; // Already added from template

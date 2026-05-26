@@ -220,6 +220,12 @@ pub async fn get_device_telemetry_handler(
         )));
     }
 
+    // Flush write buffer to ensure recent writes are visible to range queries.
+    // The latest cache is updated immediately on write, but the write buffer
+    // only flushes to redb when full or every 5 seconds. Without flushing,
+    // history queries could miss recently written data points.
+    let _ = state.devices.telemetry.flush();
+
     // Query time series data for each metric
     //
     // Performance optimization: Use concurrent queries instead of sequential loop.
@@ -415,6 +421,10 @@ pub async fn get_device_telemetry_handler(
                         .await
                     {
                         Ok(all_points) => {
+                            tracing::info!(
+                                "[TELEMETRY_DEBUG] query_telemetry OK for device={} metric={} start={} end={} fetch_limit={} returned={}",
+                                device_id_for_service, metric_name, effective_start, end, fetch_limit, all_points.len()
+                            );
                             // DB returns points in timestamp-asc order.
                             // For "newest first" pagination, take from the end and reverse.
                             let total = all_points.len();
@@ -432,7 +442,11 @@ pub async fn get_device_telemetry_handler(
                                 .collect();
                             (paginated, total)
                         }
-                        Err(_) => {
+                        Err(e) => {
+                            tracing::warn!(
+                                "[TELEMETRY_DEBUG] query_telemetry FAILED for device={} metric={} error={:?}, trying direct fallback",
+                                device_id_for_service, metric_name, e
+                            );
                             // Fallback to direct telemetry query (with limit for performance)
                             // NOTE: We must NOT push limit to storage because storage returns
                             // ascending order (oldest first) and would give us the OLDEST N points
