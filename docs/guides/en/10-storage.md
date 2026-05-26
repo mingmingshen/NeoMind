@@ -1,8 +1,8 @@
 # Storage Module
 
 **Package**: `neomind-storage`
-**Version**: 0.7.0
-**Completion**: 95%
+**Version**: 0.8.0
+**Completion**: 98%
 **Purpose**: Persistent storage layer
 
 ## Overview
@@ -12,28 +12,34 @@ The Storage module provides a unified persistent storage interface supporting ti
 ## Module Structure
 
 ```
-crates/storage/src/
+crates/neomind-storage/src/
 ├── lib.rs                      # Public interface
+├── backend.rs                  # Storage backend trait
 ├── backends/
 │   ├── mod.rs                  # Storage backends
-│   └── redb.rs                 # Redb implementation
+│   ├── redb.rs                 # Redb implementation
+│   └── memory.rs               # In-memory backend
 ├── timeseries.rs               # Time-series storage
 ├── vector.rs                   # Vector storage
 ├── session.rs                  # Session storage
 ├── messages.rs                 # Message storage
 ├── settings.rs                 # Settings storage
 ├── agents.rs                   # Agent storage
-├── decisions.rs                # Decision storage
 ├── device_state.rs             # Device state
 ├── device_registry.rs          # Device registry
 ├── llm_backends.rs             # LLM backend storage
 ├── llm_data.rs                 # LLM data storage
 ├── dashboards.rs               # Dashboard storage
-├── business.rs                 # Business data
+├── business.rs                 # Business data (alerts, rule history)
+├── extensions.rs               # Extension storage
+├── frontend_components.rs      # Frontend component storage
+├── instances.rs                # Instance storage (remote backends)
+├── memory_config.rs            # Memory configuration storage
+├── system_memory.rs            # System memory (Markdown-based)
+├── singleton.rs                # Singleton DB cache
 ├── backup.rs                   # Backup management
-├── maintenance.rs              # Maintenance scheduling
 ├── monitoring.rs               # Monitoring
-└── multimodal.rs               # Multimodal storage
+└── error.rs                    # Error types
 ```
 
 ## Storage Backends

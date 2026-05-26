@@ -1,27 +1,37 @@
 # Tools Module
 
-**Package**: `neomind-tools`
-**Version**: 0.5.9
-**Completion**: 80%
+**Package**: `neomind-agent` (toolkit and tools submodules)
+**Version**: 0.8.0
+**Completion**: 90%
 **Purpose**: AI function calling tools
 
 ## Overview
 
-The Tools module implements a tool system for AI-callable functions, including device control, rule management, data analysis, and more.
+The Tools module implements a tool system for AI-callable functions, including device control, rule management, data analysis, and more. Tools are organized into two submodules within `neomind-agent`: `tools/` for agent-specific tool wrappers (event integration, interaction) and `toolkit/` for core tool implementations (shell, skills, extensions, metrics).
 
 ## Module Structure
 
 ```
-crates/neomind-tools/src/
-├── lib.rs                      # Public interface
-├── tool.rs                     # Tool trait
-├── registry.rs                 # Tool registry
-├── core_tools.rs               # Core business tools
-├── agent_tools.rs              # Agent tools
-├── system_tools.rs             # System tools
-├── extension_tools.rs          # Extension tools
-├── real.rs                     # Real implementation (feature-gated)
-└── simplified.rs               # Simplified interface
+crates/neomind-agent/src/
+├── toolkit/                            # Core tool implementations
+│   ├── mod.rs                          # Public interface and re-exports
+│   ├── tool.rs                         # Tool trait and ToolDefinition
+│   ├── registry.rs                     # ToolRegistry and ToolRegistryBuilder
+│   ├── resolver.rs                     # EntityResolver (fuzzy name/ID matching)
+│   ├── shell.rs                        # Shell tool (neomind CLI execution)
+│   ├── skill_tool.rs                   # Skill management tool
+│   ├── extension_tools.rs              # Extension tool generator and executor
+│   ├── ai_metric.rs                    # AI metric query tools
+│   ├── session_search.rs              # Session history search tool
+│   ├── time_utils.rs                  # Time range parsing utilities
+│   └── error.rs                        # Tool error types
+├── tools/                              # Agent tool wrappers
+│   ├── mod.rs                          # Public interface and re-exports
+│   ├── event_integration.rs            # Tool execution with event bus tracking
+│   ├── interaction.rs                  # AskUser, ClarifyIntent, ConfirmAction
+│   ├── mapper.rs                       # Tool name mapping and parameter resolution
+│   ├── think.rs                        # ThinkTool for reasoning
+│   └── tool_search.rs                  # ToolSearchTool for tool lookup
 ```
 
 ## Core Trait
@@ -163,6 +173,76 @@ impl ToolRegistry {
 
 ## Built-in Tools
 
+### Shell Tool (CLI-driven)
+
+The primary tool interface uses the `shell` tool to execute `neomind` CLI commands. The LLM constructs CLI commands and the shell tool routes them to in-process CLI operations.
+
+```rust
+/// Shell tool for neomind CLI execution
+pub struct ShellTool;
+
+// 10 CLI domains: device, dashboard, rule, extension, widget,
+//   transform, agent, message, system, data-push
+// Input: { "command": "neomind device list --type sensor" }
+// Output: { "success": true, "data": {...}, "suggestion": null }
+```
+
+**CLI Command Reference** (embedded in tool description for LLM discoverability):
+| Domain | Actions |
+|--------|---------|
+| `device` | list, get, create, update, delete, control |
+| `dashboard` | list, get, create, update, delete |
+| `rule` | list, get, create, update, delete, enable, disable |
+| `extension` | list, get, install, uninstall, enable, disable |
+| `widget` | list, get, create, update, delete |
+| `transform` | list, get, create, update, delete |
+| `agent` | list, get, create, update, delete, status, executions |
+| `message` | list, get, send, channel-list, channel-create, channel-update, channel-delete |
+| `system` | info |
+| `data-push` | list, get, create, update, delete |
+
+### Skill Tool
+
+```rust
+/// User-defined skill management
+pub struct SkillTool;
+
+// Actions: search, list, get, create, update, delete
+// Input: { "action": "search", "keyword": "temperature" }
+```
+
+### Extension Tools
+
+```rust
+/// Extension tool generator and executor
+pub struct ExtensionTool;
+pub struct ExtensionToolGenerator;
+
+// Dynamically generates tool definitions from extension manifests
+// Executes extension tool calls via the extension runner
+```
+
+### AI Metric Tool
+
+```rust
+/// AI metric query tools
+pub struct AiMetricTool;
+pub struct AiMetricsRegistry;
+
+// Query time-series metrics for devices and extensions
+// Input: { "data_source_id": "device:sensor_1:temperature", "time_range": "1h" }
+```
+
+### Session Search Tool
+
+```rust
+/// Session history search
+pub struct SessionSearchTool;
+
+// Search across conversation history
+// Input: { "query": "temperature alert", "limit": 5 }
+```
+
 ### Device Tools
 
 ```rust
@@ -274,28 +354,67 @@ tool.requires_confirmation("获取温度");
 ### System Tools
 
 ```rust
-/// System info
+/// System info — aggregates MQTT status, network info, webhook URL
 pub struct SystemInfoTool;
 
-// Output: { "version": "...", "uptime": "...", "memory": ... }
+// Accessible via: neomind system info
+// Output: { "version": "...", "uptime": "...", "mqtt_status": "...", "webhook_url": "..." }
+```
+
+### Think Tool
+
+```rust
+/// Reasoning and thought recording
+pub struct ThinkTool;
+
+// Input: { "thought": "User wants to control device, need to find device ID first..." }
+// Output: { "type": "think", "recorded": true }
+```
+
+### Tool Search Tool
+
+```rust
+/// Tool lookup and discovery
+pub struct ToolSearchTool;
+
+// Input: { "query": "temperature", "category": "device" }
+// Output: { "results": [...] }
 ```
 
 ## Tool Execution History
 
 ```rust
 pub struct ToolExecutionHistory {
+    /// Execution records
+    records: Vec<ToolExecutionRecord>,
+}
+
+pub struct ToolExecutionRecord {
+    /// Execution ID
+    pub id: String,
+    /// Tool name
+    pub tool_name: String,
+    /// Input parameters
+    pub input: serde_json::Value,
+    /// Output result
+    pub output: Option<ToolOutput>,
+    /// Execution timestamp
+    pub executed_at: i64,
+    /// Duration (ms)
+    pub duration_ms: u64,
+    /// Success status
+    pub success: bool,
+}
+
+pub struct ToolExecutionStats {
     /// Total executions
     pub total_executions: usize,
-
     /// Success count
     pub success_count: usize,
-
     /// Failure count
     pub failure_count: usize,
-
     /// Average duration
     pub avg_duration_ms: f64,
-
     /// Most used tools
     pub most_used_tools: Vec<(String, usize)>,
 }
@@ -307,13 +426,10 @@ pub struct ToolExecutionHistory {
 pub struct LlmToolDefinition {
     /// Tool name
     pub name: String,
-
     /// Display name
     pub display_name: String,
-
     /// Description
     pub description: String,
-
     /// Parameters (JSON Schema format)
     pub parameters: serde_json::Value,
 }
@@ -324,24 +440,24 @@ pub struct LlmToolDefinition {
 ### Create Tool Registry
 
 ```rust
-use neomind_tools::{ToolRegistryBuilder, QueryDataTool, ControlDeviceTool};
+use neomind_agent::toolkit::{ToolRegistryBuilder, ShellTool, SkillTool};
 use std::sync::Arc;
 
 let registry = ToolRegistryBuilder::new()
-    .with_tool(Arc::new(QueryDataTool::mock()))
-    .with_tool(Arc::new(ControlDeviceTool::mock()))
-    .with_standard_tools()
+    .with_tool(Arc::new(ShellTool::new(shell_config)))
+    .with_tool(Arc::new(SkillTool::new(skill_registry)))
     .build();
 ```
 
-### Execute Tool
+### Execute Tool via Shell
 
 ```rust
+use neomind_agent::toolkit::ToolRegistry;
+
 let result = registry.execute(
-    "query_data",
+    "shell",
     serde_json::json!({
-        "device_id": "sensor_1",
-        "metric": "temperature"
+        "command": "neomind device list --type sensor"
     }),
 ).await?;
 
@@ -352,22 +468,11 @@ if result.success {
 }
 ```
 
-## Feature Flags
-
-```toml
-[features]
-default = ["device", "rule", "agent", "system"]
-device = ["mqtt", "http", "webhook"]
-rule = ["pest", "executor"]
-agent = ["llm"]
-system = ["stats", "restart"]
-```
-
 ## Design Principles
 
 1. **Unified Interface**: All tools implement the same Trait
 2. **Type Safety**: Strongly typed input/output
-3. **Testable**: Mock implementations provided
-4. **LLM-Friendly**: Standardized function calling format
-5. **Traceable**: Full execution history tracking
-EOF
+3. **CLI-First**: Tools use `neomind` CLI commands via shell tool for consistency
+4. **LLM-Friendly**: Standardized function calling format with embedded CLI reference
+5. **Traceable**: Full execution history tracking via event bus integration
+6. **Error Recovery**: Failed CLI commands return domain-specific recovery hints

@@ -1,499 +1,240 @@
 # Automation 模块
 
-**包名**: `neomind-automation`
-**版本**: 0.5.9
-**完成度**: 75%
-**用途**: 数据转换、自动化和意图分析
+**包名**: `neomind-rules`（规则生成）、`neomind-devices`（自动入板）
+**版本**: 0.8.0
+**完成度**: 85%
+**用途**: 数据转换、NL规则生成、自动入板和设备类型生成
 
 ## 概述
 
-Automation模块提供数据转换引擎、自然语言转自动化、设备类型生成等功能。
+Automation模块提供从自然语言生成规则、从示例生成设备类型、以及自动入板发现设备的功能。这些功能分布在 `neomind-rules` 和 `neomind-devices` crate中。
 
-## 重要变更 (v0.5.x)
+## 重要变更 (v0.8.0)
 
-### Transform Metrics 存储
+### 统一架构
 
-Transform产生的虚拟指标现在统一存储在 `data/telemetry.redb`：
-
-```
-DataSourceId: "transform:{transform_id}:{metric_name}"
-- device_part: "transform:{transform_id}"
-- metric_part: "{metric_name}"
-```
-
-示例：
-```
-transform:avg_temperature:temperature_avg
-transform:humidity_calc:indoor_humidity
-```
-
-这使得Transform指标可以被Agent、Rule等模块统一访问。
+自动化功能现在集成到核心crate中，而不是独立的 `neomind-automation` crate：
+- **规则生成**: 基于LLM的规则生成位于 `neomind-rules/src/generator.rs`
+- **自动入板**: 草稿设备管理位于 `neomind-devices/src/service.rs`
+- **设备类型生成**: 基于LLM的类型生成位于设备API层
+- **规则验证**: 上下文感知验证位于 `neomind-rules/src/validator.rs`
 
 ## 模块结构
 
 ```
-crates/automation/src/
-├── lib.rs                      # 公开接口
-├── transform.rs                # 转换引擎
-├── types.rs                    # 类型定义
-├── conversion.rs               # 类型转换
-├── discovery.rs                # 数据发现
-├── intent.rs                   # 意图分析
-├── nl2automation.rs            # NL2Automation
-├── threshold_recommender.rs    # 阈值推荐
-├── device_type_generator.rs    # 设备类型生成
-└── store.rs                    # 存储层
+crates/neomind-rules/src/
+├── generator.rs                # 基于LLM的自然语言规则生成
+├── validator.rs                # 带上下文感知的规则验证
+├── device_integration.rs       # 规则中的设备动作执行
+├── extension_integration.rs    # 规则中的扩展动作执行
+└── dsl.rs                      # DSL解析器（RULE...WHEN...DO...END）
+
+crates/neomind-devices/src/
+├── service.rs                  # 带自动入板的DeviceService
+├── registry.rs                 # 带类型管理的DeviceRegistry
+└── adapters/                   # 带自动发现的适配器
 ```
 
 ## 核心功能
 
-### 1. TransformEngine - 转换引擎
+### 1. 自然语言规则生成
 
 ```rust
-pub struct TransformEngine {
-    /// JS执行环境
-    js_runtime: Rc<RefCell<JsRuntime>>,
+// 在 neomind-rules/src/generator.rs 中
+
+pub struct GeneratorConfig {
+    pub model: String,
+    pub max_tokens: Option<usize>,
+    pub temperature: Option<f32>,
 }
 
-impl TransformEngine {
-    /// 创建转换引擎
-    pub fn new() -> Self;
-
-    /// 执行转换
-    pub async fn execute(
-        &self,
-        transform: &TransformAutomation,
-        input: &serde_json::Value,
-    ) -> Result<TransformResult>;
-
-    /// 验证转换
-    pub validate(&self, transform: &TransformAutomation) -> Result<()>;
-}
-```
-
-### 2. TransformAutomation - 转换定义
-
-```rust
-pub struct TransformAutomation {
-    /// 转换ID
-    pub id: String,
-
-    /// 转换名称
+/// 从自然语言描述中提取的信息
+pub struct ExtractedRuleInfo {
     pub name: String,
-
-    /// 转换范围
-    pub scope: TransformScope,
-
-    /// 转换操作
-    pub operations: Vec<TransformOperation>,
-}
-
-pub enum TransformScope {
-    /// 特定设备
-    Device(String),
-
-    /// 设备类型
-    DeviceType(String),
-
-    /// 全局
-    Global,
+    pub device_id: Option<String>,
+    pub metric: Option<String>,
+    pub operator: Option<ComparisonOperator>,
+    pub threshold: Option<f64>,
+    pub action_type: Option<ActionType>,
+    pub message: Option<String>,
 }
 ```
 
-### 3. TransformOperation - 转换操作
+### 2. 上下文感知的规则验证
 
 ```rust
-pub enum TransformOperation {
-    /// 字段映射
-    Map {
-        mappings: HashMap<String, String>,
-    },
+// 在 neomind-rules/src/validator.rs 中
 
-    /// 时间窗口聚合
-    TimeWindow {
-        window: TimeWindow,
-        aggregation: AggregationFunc,
-    },
+pub struct RuleValidator {
+    // 根据可用设备、指标、命令验证规则
+}
 
-    /// 数组聚合
-    ArrayAggregation {
-        json_path: String,
-        aggregation: AggregationFunc,
-        value_path: Option<String>,
-        output_metric: String,
-    },
+pub struct ValidationContext {
+    pub devices: Vec<DeviceInfo>,
+    pub metrics: Vec<MetricInfo>,
+    pub commands: Vec<CommandInfo>,
+    pub alert_channels: Vec<AlertChannelInfo>,
+}
 
-    /// JavaScript表达式
-    Expression {
-        code: String,
-    },
-
-    /// 管道
-    Pipeline {
-        stages: Vec<TransformOperation>,
-    },
-
-    /// 条件分支
-    If {
-        condition: String,
-        then_op: Box<TransformOperation>,
-        else_op: Option<Box<TransformOperation>>,
-    },
-
-    /// 分支执行
-    Fork {
-        branches: Vec<TransformOperation>,
-    },
-
-    /// 自定义WASM
-    Custom {
-        wasm_module: Vec<u8>,
-        function_name: String,
-    },
+pub struct RuleValidationResult {
+    pub is_valid: bool,
+    pub issues: Vec<ValidationIssue>,
+    pub resource_summary: ResourceSummary,
 }
 ```
 
-### 4. JsTransformExecutor - JS执行器
+### 3. 自动入板流程
 
-```rust
-pub struct JsTransformExecutor {
-    /// Boa JS运行时
-    runtime: Rc<RefCell<JsRuntime>>,
-}
-
-impl JsTransformExecutor {
-    /// 执行JS表达式
-    pub fn execute(
-        &self,
-        code: &str,
-        input: &serde_json::Value,
-    ) -> Result<serde_json::Value>;
-
-    /// 注册自定义函数
-    pub fn register_function(
-        &mut self,
-        name: &str,
-        func: NativeFunction,
-    );
-}
+```
+适配器发现 -> 草稿设备 -> LLM分析 -> 类型建议 -> 用户批准 -> 完整设备
 ```
 
-**内置JS函数**:
-```javascript
-// 数学函数
-Math.abs(x)
-Math.floor(x)
-Math.ceil(x)
-Math.round(x)
+自动入板流程：
+1. 适配器发现新设备并发出 `DeviceEvent::Discovery` 事件
+2. 发现的设备存储为草稿设备
+3. LLM分析示例数据以建议设备类型
+4. 用户审查并批准/拒绝
+5. 批准的草稿成为完整的设备实例
 
-// 字符串函数
-str.toUpperCase(s)
-str.toLowerCase(s)
-str.substring(s, start, end)
+### 4. 从示例生成设备类型
 
-// 数组函数
-arr.sum(array)
-arr.avg(array)
-arr.max(array)
-arr.min(array)
-
-// 时间函数
-time.now()
-time.format(timestamp, format)
+```
+POST /api/device-types/generate-from-samples
 ```
 
-## 数据发现
+通过LLM分析从示例数据生成设备类型模板。
 
-```rust
-pub struct DataPathExtractor {
-    /// JSON路径提取器
-    extractor: JsonPathExtractor,
-}
+## 规则DSL语法
 
-impl DataPathExtractor {
-    /// 从示例数据中提取路径
-    pub fn extract_paths(
-        &self,
-        data: &serde_json::Value,
-    ) -> Vec<DiscoveredPath>;
+### 基本规则
 
-    /// 推断字段语义类型
-    pub fn infer_semantic_type(
-        &self,
-        path: &str,
-        value: &serde_json::Value,
-    ) -> SemanticType;
-}
-
-pub enum SemanticType {
-    Temperature,
-    Humidity,
-    Pressure,
-    Boolean,
-    Enum(Vec<String>),
-    Unknown,
-}
+```neo
+RULE "温度告警"
+WHEN sensor.temperature > 50
+FOR 5 minutes
+DO
+    NOTIFY "设备温度过高: {temperature}C"
+    EXECUTE device.fan(speed=100)
+    LOG alert, severity="high"
+END
 ```
 
-## NL2Automation
+### 扩展规则
 
-```rust
-pub struct Nl2Automation {
-    /// LLM运行时
-    llm: Arc<dyn LlmRuntime>,
-}
-
-impl Nl2Automation {
-    /// 从自然语言生成自动化
-    pub async fn generate(
-        &self,
-        description: &str,
-    ) -> Result<SuggestedAutomation>;
-
-    /// 提取实体
-    pub async fn extract_entities(
-        &self,
-        text: &str,
-    ) -> Result<ExtractedEntities>;
-}
-
-pub struct ExtractedEntities {
-    pub triggers: Vec<TriggerEntity>,
-    pub conditions: Vec<ConditionEntity>,
-    pub actions: Vec<ActionEntity>,
-}
+```neo
+RULE "天气告警"
+WHEN EXTENSION weather.temperature > 30
+DO
+    NOTIFY "天气过热"
+END
 ```
 
-## 阈值推荐
+### 带AND/OR的复杂规则
 
-```rust
-pub struct ThresholdRecommender {
-    /// 历史数据窗口
-    window_size: usize,
-}
-
-impl ThresholdRecommender {
-    /// 分析数据并推荐阈值
-    pub async fn recommend(
-        &self,
-        data: &[f64],
-        intent: ThresholdIntent,
-    ) -> ThresholdRecommendation;
-
-    /// 验证阈值合理性
-    pub fn validate(
-        &self,
-        threshold: f64,
-        statistics: &Statistics,
-    ) -> ThresholdValidation;
-}
-
-pub enum ThresholdIntent {
-    /// 检测异常高值
-    DetectHigh,
-
-    /// 检测异常低值
-    DetectLow,
-
-    /// 检测离群值
-    DetectOutliers,
-
-    /// 检测趋势变化
-    DetectTrendChange,
-}
+```neo
+RULE "复合条件告警"
+WHEN (sensor.temperature > 30) AND (EXTENSION weather.humidity < 20)
+DO
+    NOTIFY "温度高且湿度低"
+    EXECUTE device.humidifier(on=true)
+END
 ```
 
-## 设备类型生成
+### 范围条件规则
 
-```rust
-pub struct DeviceTypeGenerator {
-    /// LLM运行时
-    llm: Arc<dyn LlmRuntime>,
-}
-
-impl DeviceTypeGenerator {
-    /// 从示例数据生成设备类型
-    pub async fn generate_from_sample(
-        &self,
-        sample_data: &serde_json::Value,
-        device_info: &DeviceInfo,
-    ) -> Result<GeneratedDeviceType>;
-
-    /// 验证生成的类型
-    pub fn validate(
-        &self,
-        device_type: &DeviceTypeTemplate,
-    ) -> ValidationResult;
-}
-
-pub struct GeneratedDeviceType {
-    pub device_type: String,
-    pub name: String,
-    pub description: String,
-    pub metrics: Vec<MetricDefinition>,
-    pub commands: Vec<CommandDefinition>,
-}
+```neo
+RULE "温度范围告警"
+WHEN sensor.temperature BETWEEN 20 AND 25
+DO
+    NOTIFY "温度在舒适范围内"
+END
 ```
 
-## 自动入板
+### 定时规则
 
-```rust
-pub struct AutoOnboardManager {
-    /// 设备注册表
-    registry: Arc<DeviceRegistry>,
-
-    /// 生成器
-    generator: DeviceTypeGenerator,
-
-    /// 阈值推荐器
-    recommender: ThresholdRecommender,
-}
-
-impl AutoOnboardManager {
-    /// 处理待确认设备
-    pub async fn process_draft_device(
-        &self,
-        draft: DraftDevice,
-    ) -> Result<RegistrationResult>;
-
-    /// 从示例生成设备类型
-    pub async fn generate_device_type(
-        &self,
-        sample: &DeviceSample,
-    ) -> Result<GeneratedDeviceType>;
-}
-
-pub struct DraftDevice {
-    pub id: String,
-    pub source: String,
-    pub sample_data: serde_json::Value,
-    pub status: DraftDeviceStatus,
-}
-
-pub enum DraftDeviceStatus {
-    Pending,
-    Processing,
-    Ready,
-    Failed(String),
-}
+```neo
+RULE "周期检查"
+TRIGGER SCHEDULE "0 */5 * * * *"
+DO
+    EXECUTE device.read_sensors()
+END
 ```
 
 ## API端点
 
 ```
-# Transforms (统一自动化API的一部分)
-GET    /api/automations/transforms              # 列出转换
-POST   /api/automations/transforms              # 创建转换
-GET    /api/automations/transforms/:id          # 获取转换
-PUT    /api/automations/transforms/:id          # 更新转换
-DELETE /api/automations/transforms/:id          # 删除转换
-POST   /api/automations/transforms/:id/test     # 测试转换
-POST   /api/automations/transforms/process      # 处理数据
-GET    /api/automations/transforms/metrics      # 获取虚拟指标
+# 规则生成
+POST   /api/rules/validate                  # 验证规则DSL
 
-# Discovery
-POST   /api/automations/analyze-intent          # 意图分析
-POST   /api/device-types/generate-from-samples  # 生成设备类型
+# 设备类型生成
+POST   /api/device-types/generate-from-samples  # 从示例生成设备类型
 
-# Thresholds
-POST   /api/thresholds/recommend                # 推荐阈值
-POST   /api/thresholds/validate                 # 验证阈值
-
-# Draft Devices (自动入板)
-GET    /api/devices/drafts                      # 列出草稿设备
-GET    /api/devices/drafts/:id                  # 获取草稿
-PUT    /api/devices/drafts/:id                  # 更新草稿
-POST   /api/devices/drafts/:id/approve          # 批准设备
-POST   /api/devices/drafts/:id/reject           # 拒绝设备
-POST   /api/devices/drafts/:id/analyze          # LLM分析
+# 自动入板（草稿）
+GET    /api/devices/drafts                      # 列出草稿
+GET    /api/devices/drafts/:device_id           # 获取草稿
+PUT    /api/devices/drafts/:device_id           # 更新草稿
+POST   /api/devices/drafts/:device_id/approve   # 批准设备
+POST   /api/devices/drafts/:device_id/reject    # 拒绝设备
+POST   /api/devices/drafts/:device_id/analyze   # LLM分析
+POST   /api/devices/drafts/:device_id/enhance   # LLM增强
+GET    /api/devices/drafts/:device_id/suggest-types  # 建议类型
 POST   /api/devices/drafts/cleanup              # 清理草稿
+GET    /api/devices/drafts/type-signatures      # 获取类型签名
+GET    /api/devices/drafts/config               # 获取入板配置
+PUT    /api/devices/drafts/config               # 更新入板配置
+POST   /api/devices/drafts/upload               # 上传设备数据
 ```
 
 ## 使用示例
 
-### 创建数据转换
+### 自然语言规则生成
 
 ```rust
-use neomind-automation::{TransformAutomation, TransformOperation, TransformScope};
+use neomind_rules::generator::GeneratorConfig;
 
-let transform = TransformAutomation::new(
-    "avg_temperature",
-    "计算平均温度",
-    TransformScope::DeviceType("sensor".to_string()),
-)
-.with_operation(TransformOperation::ArrayAggregation {
-    json_path: "$.sensors".to_string(),
-    aggregation: AggregationFunc::Mean,
-    value_path: Some("temp".to_string()),
-    output_metric: "temperature_avg".to_string(),
-});
-
-let result = engine.execute(&transform, &input_data).await?;
+// 生成器使用LLM将自然语言描述转换为DSL规则
+// 输入: "当温度超过30度时发送告警"
+// 输出:
+// RULE "温度告警"
+// WHEN sensor.temperature > 30
+// DO
+//     NOTIFY "温度过高"
+// END
 ```
 
-### JavaScript表达式
+### 规则验证
 
 ```rust
-let transform = TransformAutomation::new(
-    "temp_conversion",
-    "温度单位转换",
-    TransformScope::Global,
-)
-.with_operation(TransformOperation::Expression {
-    code: r#"
-        // 摄氏度转华氏度
-        input.temp * 1.8 + 32
-    "#.to_string(),
-});
+use neomind_rules::validator::{RuleValidator, ValidationContext};
+
+let validator = RuleValidator::new();
+let context = ValidationContext {
+    devices: vec![/* 可用设备 */],
+    metrics: vec![/* 可用指标 */],
+    commands: vec![/* 可用命令 */],
+    alert_channels: vec![/* 已配置的通道 */],
+};
+
+let result = validator.validate(&rule, &context);
 ```
 
-### 自然语言生成规则
+## 功能状态
 
-```rust
-use neomind-automation::Nl2Automation;
-
-let nl2auto = Nl2Automation::new(llm);
-
-let suggested = nl2auto.generate(
-    "当温度超过30度时，发送告警"
-).await?;
-
-// suggested 包含:
-// - trigger: DeviceMetric { metric: "temperature", compare: Gt, value: 30 }
-// - condition: ...
-// - action: SendAlert { message: "温度过高" }
-```
-
-### 阈值推荐
-
-```rust
-use neomind-automation::{ThresholdRecommender, ThresholdIntent};
-
-let recommender = ThresholdRecommender::new(100);
-
-let data = vec![22.5, 23.1, 22.8, 23.5, 22.9, 23.2];
-let recommendation = recommender.recommend(&data, ThresholdIntent::DetectHigh).await?;
-
-println!("推荐阈值: {}", recommendation.threshold);
-println!("置信度: {}", recommendation.confidence);
-```
-
-## 转换操作状态
-
-| 操作 | 状态 | 说明 |
+| 功能 | 状态 | 说明 |
 |------|------|------|
-| Map | ✅ | 字段映射完整实现 |
-| TimeWindow | ✅ | 时间窗口聚合完整 |
-| ArrayAggregation | ✅ | 数组聚合完整 |
-| Expression | ✅ | JS表达式执行完整 |
-| Pipeline | 🟡 | 基础实现 |
-| Fork | 🟡 | 基础实现 |
-| If | 🟡 | 基础实现 |
-| Custom/WASM | ❌ | 未实现 |
+| DSL规则引擎 | 完成 | 完整的DSL解析器，RULE/WHEN/DO/END语法 |
+| NL规则生成 | 完成 | 基于LLM的自然语言规则生成 |
+| 规则验证 | 完成 | 上下文感知的资源验证 |
+| 扩展条件 | 完成 | 规则中支持EXTENSION指标条件 |
+| 设备类型生成 | 完成 | 基于LLM的示例生成类型 |
+| 自动入板 | 完成 | 完整的草稿设备流水线 |
+| Agent触发动作 | 完成 | 规则可触发AI Agent |
+| Transform引擎 | 计划中 | 数据转换管道 |
 
 ## 设计原则
 
-1. **JS优先**: 使用JavaScript作为转换语言
-2. **类型推断**: 自动推断数据类型
-3. **自然语言**: 支持从自然语言生成配置
-4. **可测试**: 所有转换都可以测试
+1. **LLM驱动**: 使用LLM进行NL到规则和示例到类型的生成
+2. **上下文感知**: 根据可用设备和指标验证规则
+3. **DSL优先**: 人类可读的规则定义语言
+4. **可扩展**: 支持规则中的设备和扩展条件
+5. **流水线**: 带LLM分析和用户批准的自动入板

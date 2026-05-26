@@ -1,7 +1,7 @@
 # Agent Module
 
 **Package**: `neomind-agent`
-**Version**: 0.7.0
+**Version**: 0.8.0
 **Completion**: 95%
 **Purpose**: AI chat agent with LLM, memory, and tools integration
 
@@ -26,7 +26,7 @@ crates/neomind-agent/src/
 │   │   ├── llm_planner.rs      #   LLMPlanner (structured output parsing)
 │   │   └── coordinator.rs      #   PlanningCoordinator (routes between planners)
 │   ├── scheduler.rs            # Scheduler
-│   ├── streaming.rs            # Streaming response
+│   ├── streaming.rs            # Streaming response (includes list-only dead end detection)
 │   └── tokenizer.rs            # Tokenizer
 ├── ai_agent/
 │   ├── mod.rs                  # Autonomous Agent
@@ -35,29 +35,48 @@ crates/neomind-agent/src/
 │   │   └── memory.rs           #   Memory integration for executor
 │   └── intent_parser.rs        # Intent parser
 ├── tools/
-│   ├── mod.rs                  # Agent tools
-│   ├── dsl.rs                  # DSL tools
-│   ├── mapper.rs               # Mapping tools
-│   ├── rule_gen.rs             # Rule generation
-│   ├── shell.rs                # Shell command execution (v0.6.10)
-│   └── skill.rs                # Skill management (v0.6.10)
+│   ├── mod.rs                  # Agent tool wrappers (event integration)
+│   ├── event_integration.rs    #   Tool execution with event bus tracking
+│   ├── interaction.rs          #   AskUser, ClarifyIntent, ConfirmAction tools
+│   ├── mapper.rs               #   Tool name mapping and parameter resolution
+│   ├── think.rs                #   ThinkTool for reasoning
+│   └── tool_search.rs          #   ToolSearchTool for tool lookup
 ├── toolkit/
 │   ├── mod.rs                  # Toolkit module
-│   ├── resolver.rs             # EntityResolver (fuzzy name/ID matching) (v0.6.4)
-│   └── simplified.rs           # Simplified tool definitions for prompts
+│   ├── tool.rs                 #   Tool trait and ToolDefinition
+│   ├── registry.rs             #   ToolRegistry and ToolRegistryBuilder
+│   ├── resolver.rs             #   EntityResolver (fuzzy name/ID matching) (v0.6.4)
+│   ├── shell.rs                #   Shell command execution (v0.6.10)
+│   ├── skill_tool.rs           #   Skill management tool (v0.6.10)
+│   ├── extension_tools.rs      #   Extension tool generator and executor
+│   ├── ai_metric.rs            #   AI metric query tools
+│   ├── session_search.rs       #   Session search tool
+│   ├── time_utils.rs           #   Time range parsing utilities
+│   └── error.rs                #   Tool error types
+├── skills/                     # Skill system (v0.6.10)
+│   ├── mod.rs                  #   Skills module
+│   ├── types.rs                #   Skill data types
+│   ├── parser.rs               #   YAML frontmatter + Markdown parser
+│   ├── matcher.rs              #   Keyword matcher
+│   ├── registry.rs             #   Skill registry (CRUD + persistence)
+│   └── builtins/               #   Built-in skill definitions
 ├── prompts/
 │   └── builder.rs              # Prompt builder
 ├── config/
 │   └── mod.rs                  # Configuration
+├── context/                    # Context management
 ├── context_selector.rs         # Context selector
 ├── error.rs                    # Error types
 ├── hooks/                      # Hook system
 ├── llm.rs                      # LLM integration
+├── memory/                     # Memory system (see 08-memory.md)
+├── memory_extraction.rs        # Memory extraction from conversations
 ├── session.rs                  # Session management
+├── smart_conversation.rs       # Smart conversation features
 └── translation.rs              # Translation
 ```
 
-## Important Changes (v0.6.x)
+## Important Changes (v0.6.x - v0.8.0)
 
 ### Aggregated Tools (Token Efficiency)
 Agent now uses **aggregated tools** instead of individual tool functions. This significantly reduces token usage in function calling:
@@ -268,6 +287,21 @@ Parameters:
 ### Agent Status Sync (v0.6.12)
 
 Agent pause/activate actions now properly sync with the scheduler. Pausing an agent unschedules it from the executor; activating reschedules it. This ensures the UI state matches backend execution state.
+
+### Streaming Improvements (v0.7.0+)
+
+**List-Only Dead End Detection**: The streaming module detects when a user requests an action (create, delete, control, etc.) but the LLM only executed read-only commands (list, get, query). In this case, a forced continuation prompt is injected so the LLM completes the requested action.
+
+Key functions in `streaming.rs`:
+- `user_message_requires_action()` — detects action verbs in the user message (Chinese and English)
+- `all_tools_were_read_only()` — checks if all executed commands were read-only
+- `extract_action_hint()` — extracts a hint about what action was requested
+
+**Error Recovery Hints**: The shell tool detects failed CLI commands and appends domain-specific recovery hints via a `suggestion` field in the response, guiding the LLM to retry correctly.
+
+**Max Tool Iterations**: Default increased from 10 to 20, allowing more multi-step tool calls for complex workflows.
+
+**Thinking Model Fix**: For non-chat LLM calls (memory extraction, compression), `thinking_enabled` is set to `false` to avoid wasting tokens on thinking models (qwen3.x, deepseek-r1).
 
 ## Core Components
 
@@ -492,44 +526,304 @@ pub enum ToolCallStatus {
 
 ### Agent-Specific Tools
 ```rust
-/// Analysis tools
-- AnomaliesAnalysis     // Anomaly detection
-- TrendsAnalysis        // Trend analysis
-- DecisionsAnalysis     // Decision analysis
+/// Interaction tools (tools/)
+- AskUserTool              // Prompt user for input
+- ClarifyIntentTool        // Clarify ambiguous intent
+- ConfirmActionTool        // Confirm dangerous operations
 
-/// Automation tools
-- AutomationTool        // Automation operations
+/// Thinking tools (tools/)
+- ThinkTool                // Reasoning and thought recording
 
-/// DSL tools
-- DslTool               // DSL parsing and generation
+/// Tool search (tools/)
+- ToolSearchTool           // Tool lookup and discovery
 
-/// Event tools
-- EventIntegrationTool  // Event subscription
-
-/// Interaction tools
-- InteractionTool       // User interaction
-
-/// Mapping tools
-- MapperTool            // Data mapping
-
-/// MDL tools
-- MdlTool               // MDL operations
-
-/// Rule tools
-- RuleGenTool           // Rule generation
-
-/// Shell tools
-- ShellTool             // System command execution (v0.6.10)
-
-/// Skill tools
-- SkillTool             // User-defined skill management (v0.6.10)
-
-/// Thinking tools
-- ThinkTool             // Reasoning
-
-/// Tool search
-- ToolSearchTool        // Tool lookup
+/// Event integration (tools/)
+- EventIntegratedToolRegistry  // Tool execution with event bus tracking
 ```
+
+### Toolkit Tools (toolkit/)
+```rust
+/// Core tools
+- ShellTool                // System command execution via neomind CLI (v0.6.10)
+- SkillTool                // User-defined skill management (v0.6.10)
+- ExtensionTool            // Extension tool generator and executor
+- AiMetricTool             // AI metric query tools
+- SessionSearchTool        // Session history search
+
+/// Infrastructure
+- ToolRegistry             // Tool registration and lookup
+- EntityResolver           // Fuzzy name/ID matching (v0.6.4)
+- ToolNameMapper           // Tool name mapping and parameter resolution
+```
+
+## Skill System (Comprehensive)
+
+The Skill System provides scenario-driven operation guides that are dynamically injected into the LLM prompt at runtime. Skills help the AI agent execute complex multi-tool workflows correctly by providing step-by-step instructions, CLI command examples, and common error solutions.
+
+### Architecture Overview
+
+```
+[IDENTITY] → [TOOL_STRATEGY] → [TOOL_DEFINITIONS] → [SKILL_GUIDES] → [INTENT] → [CONTEXT]
+```
+
+Skills are injected into the `SKILL_GUIDES` position of the prompt pipeline. The system consists of four core components:
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| **Parser** | `skills/parser.rs` | Parses YAML frontmatter + Markdown body |
+| **Registry** | `skills/registry.rs` | Loads, indexes, and manages skills (CRUD + persistence) |
+| **Matcher** | `skills/matcher.rs` | Scores skills against user input |
+| **SkillTool** | `toolkit/skill_tool.rs` | LLM tool for searching, loading, creating, and managing skills |
+
+### What Are Skills?
+
+A **Skill** is a Markdown file with YAML frontmatter that describes a scenario-specific guide for the AI agent. Each skill contains:
+
+- **Metadata** (YAML frontmatter): ID, name, category, trigger keywords, tool-action targets, anti-triggers, priority, and token budget
+- **Body** (Markdown): Step-by-step instructions, CLI command examples, common errors and solutions
+
+Skills serve two roles:
+1. **Automatic prompt injection**: When a user message matches a skill's triggers, the skill guide is automatically injected into the LLM prompt (within the token budget)
+2. **On-demand loading**: The LLM can explicitly search and load skills via the `skill` tool when it needs guidance
+
+### Skill File Format
+
+Every skill file uses YAML frontmatter followed by a Markdown body:
+
+```yaml
+---
+id: my-custom-skill
+name: My Custom Skill
+category: general          # device | rule | agent | message | extension | general
+origin: user               # user | builtin (set automatically)
+priority: 50               # 0-100, higher = preferred when multiple match
+token_budget: 500          # max tokens injected into prompt
+triggers:
+  keywords: [delete device, remove device, 删除设备]
+  tool_target:
+    - tool: device
+      actions: [delete]
+anti_triggers:
+  keywords: [create device, 新建设备]
+---
+
+# My Custom Skill Guide
+
+## Steps
+
+1. First, list all devices to find the target ID
+2. Verify the device exists
+3. Delete the device
+
+## CLI Examples
+
+```bash
+neomind device list
+neomind device delete --id <device_id>
+```
+
+## Common Errors
+
+- **Device not found**: Check the device ID with `neomind device list`
+- **Device is in use by a rule**: Remove the rule first before deleting
+```
+
+#### YAML Frontmatter Fields
+
+| Field | Required | Type | Default | Description |
+|-------|----------|------|---------|-------------|
+| `id` | Yes | string | - | Unique identifier (alphanumeric, `-`, `_`) |
+| `name` | Yes | string | - | Human-readable name |
+| `category` | No | enum | `general` | One of: `device`, `rule`, `agent`, `message`, `extension`, `general` |
+| `origin` | No | enum | `user` | `builtin` or `user` (set automatically, do not set manually) |
+| `priority` | No | integer | `50` | 0-100, higher priority skills are preferred |
+| `token_budget` | No | integer | `500` | Maximum tokens to inject into the prompt |
+| `triggers.keywords` | No | string[] | `[]` | Keywords that trigger this skill (case-insensitive) |
+| `triggers.tool_target` | No | object[] | `[]` | Tool + action pairs that trigger this skill |
+| `anti_triggers.keywords` | No | string[] | `[]` | Keywords that exclude this skill from matching |
+
+#### Token Budget Guidelines
+
+The total skill injection budget depends on the model's context window size:
+
+| Context Size | Max Skill Tokens |
+|-------------|-----------------|
+| <= 4,000 | 400 |
+| <= 8,000 | 800 |
+| <= 16,000 | 4,000 |
+| > 16,000 | 8,000 |
+
+Individual skills specify their own `token_budget` (default: 500). Body content exceeding the budget is truncated at the nearest paragraph boundary.
+
+### Built-in Skills
+
+The system ships with 10 built-in skills embedded in the binary. These are loaded at startup and can be overridden by user-created skills with the same ID.
+
+| Skill ID | Category | Description |
+|----------|----------|-------------|
+| `device-onboarding` | device | Device connection, MQTT broker config, webhook setup, ESP32/Python examples |
+| `connector-management` | device | MQTT connector configuration and management |
+| `dashboard-management` | general | Dashboard CRUD, widget layout, data binding |
+| `rule-management` | rule | Rule DSL syntax, triggers, actions, CRUD operations |
+| `agent-management` | agent | AI Agent CRUD, scheduling, execution modes, control |
+| `message-management` | message | Message channel configuration, sending, querying |
+| `extension-development` | extension | Extension SDK usage, manifest format, build and deploy |
+| `transform-management` | general | Data transform CRUD and configuration |
+| `data-push-management` | message | Data push target configuration and delivery management |
+| `widget-development` | general | Custom widget development guide |
+
+### Skill Matching Algorithm
+
+When a user message is received, the matcher scores all registered skills:
+
+1. **Keyword matching** (+0.4 per match): Each trigger keyword found in the user input (case-insensitive substring match) adds 0.4 to the score.
+
+2. **Tool-action matching** (+0.5 for tool+action, +0.2 for tool only): If both the tool name and one of its actions appear in the user input, the skill receives 0.5. If only the tool name appears, it receives 0.2.
+
+3. **Anti-trigger exclusion** (-1.0 per match): If any anti-trigger keyword is found in the user input, 1.0 is subtracted from the score. This prevents, for example, a "delete rule" skill from matching when the user says "create rule".
+
+4. **Priority weight** (0-0.1): Adds `priority / 1000` to the score, giving higher-priority skills a slight boost.
+
+Skills with a score > 0 are sorted by score (descending) and injected into the prompt until the token budget is exhausted. Skills are truncated at paragraph boundaries if they exceed the remaining budget.
+
+### How Skills Are Discovered and Loaded
+
+```
+Startup:
+  1. Load builtin skills from compiled binary (include_str!)
+  2. Load user skills from data/skills/*.md (overrides builtin with same ID)
+  3. Build keyword index and tool-action index for fast lookup
+
+Per-message:
+  1. Score all skills against user input
+  2. Filter skills with score > 0
+  3. Sort by score descending
+  4. Inject into prompt within token budget
+```
+
+### The `skill` Tool
+
+The LLM has access to a `skill` tool for on-demand skill management:
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `search` | Search skills by keyword | `query` or `id` |
+| `load` | Load a skill's full guide content | `id` |
+| `create` | Create a new user skill | `content` (YAML + Markdown) |
+| `update` | Update an existing skill | `id`, `content` |
+| `delete` | Delete a user skill | `id` |
+
+The `skill` tool is especially useful when the LLM encounters an unfamiliar domain or needs specific CLI command syntax. It can search for relevant skills and load the full guide before executing operations.
+
+### Creating Custom Skills
+
+User skills are stored in `data/skills/*.md`. They can be created via:
+
+1. **LLM tool call**: The agent can create skills using `skill` tool with `action: "create"`
+2. **Manual file creation**: Place `.md` files with YAML frontmatter in the `data/skills/` directory
+3. **Frontend UI**: Use the Skills Panel in agent settings (code editor)
+
+User skills override builtin skills with the same ID. This allows customizing the behavior of built-in guides.
+
+Example: Creating a custom monitoring skill:
+
+```yaml
+---
+id: temperature-monitoring
+name: Temperature Monitoring Workflow
+category: device
+priority: 70
+token_budget: 600
+triggers:
+  keywords: [temperature alert, 温度告警, monitor temperature, 监控温度]
+  tool_target:
+    - tool: device
+      actions: [list, query, control]
+    - tool: rule
+      actions: [create]
+anti_triggers:
+  keywords: [delete, 删除]
+---
+
+# Temperature Monitoring Workflow
+
+## Setup Steps
+
+1. Find the temperature sensor device
+2. Create a monitoring rule with threshold
+3. Configure notification channel
+
+## CLI Commands
+
+```bash
+# List temperature devices
+neomind device list --type temperature
+
+# Create a temperature rule
+neomind rule create --dsl "RULE temp_alert WHEN device.temp > 30 DO notify"
+
+# Query latest readings
+neomind device latest --id <device_id>
+```
+
+## Common Errors
+- **No data**: Check device is online and sending telemetry
+- **Rule not firing**: Verify the metric name matches the device's data source ID format
+```
+
+### Skill System API
+
+Skills can also be managed programmatically:
+
+```rust
+use neomind_agent::skills::{SkillRegistry, create_shared_registry, match_skills, TokenBudgetConfig};
+
+// Create registry (loads builtin + user skills)
+let registry = create_shared_registry(Some(Path::new("data")));
+
+// Match skills against user input
+let budget = TokenBudgetConfig::for_context(8000);
+let matches = match_skills(&registry.read().await, "delete rule temp-alert", budget);
+
+// Access individual skills
+let skill = registry.read().await.get("rule-management");
+```
+
+### Agent Scheduling
+
+Agents support three scheduling modes via the `schedule` configuration:
+
+| Schedule Type | Description | Configuration |
+|--------------|-------------|---------------|
+| `event` | Triggered by system events (device data, alerts) | `schedule_type: "event"` |
+| `cron` | Cron expression-based scheduling | `schedule_type: "cron"`, `cron_expression: "*/5 * * * *"` |
+| `interval` | Fixed interval execution | `schedule_type: "interval"`, `interval_seconds: 300` |
+
+### Resource Binding
+
+Agents in **Focused mode** require bound resources that define the scope of data collection and analysis:
+
+```rust
+pub struct AgentResource {
+    pub resource_type: ResourceType,  // Metric, ExtensionMetric, Device, ExtensionTool
+    pub resource_id: String,          // e.g., "device:temp-sensor:temperature"
+    pub name: String,                 // Display name
+    pub config: serde_json::Value,    // Additional configuration
+}
+```
+
+Resource binding ensures focused agents only operate within their defined scope, with scope validation rejecting commands outside bound resources.
+
+### Agent Status Management
+
+```rust
+pub enum AgentStatus {
+    Active,    // Agent is running and scheduled
+    Paused,    // Agent is paused (unscheduled from executor)
+}
+```
+
+Status changes sync with the scheduler: pausing unschedules the agent, activating reschedules it.
 
 ## AgentExecutor - Executor
 

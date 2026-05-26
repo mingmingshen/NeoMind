@@ -1,8 +1,8 @@
 # Devices Module
 
 **Package**: `neomind-devices`
-**Version**: 0.5.9
-**Completion**: 85%
+**Version**: 0.8.0
+**Completion**: 90%
 **Purpose**: Device management and protocol adapters
 
 ## Overview
@@ -12,21 +12,25 @@ The Devices module is responsible for device registration, discovery, management
 ## Module Structure
 
 ```
-crates/devices/src/
-├── lib.rs                      # Public interface
+crates/neomind-devices/src/
+├── lib.rs                      # Public interface and re-exports
+├── adapter.rs                  # DeviceAdapter trait, DeviceEvent, ConnectionStatus
 ├── adapters/
-│   ├── mod.rs                  # Adapter factory
-│   ├── mqtt.rs                 # MQTT adapter
-│   ├── http.rs                 # HTTP polling adapter
-│   └── webhook.rs              # Webhook adapter
-├── mdl_format/
-│   ├── mod.rs                  # MDL format definitions
-│   ├── types.rs                # MDL types
-│   └── builder.rs              # MDL builder
-├── discovery.rs                # Device discovery
-├── crud.rs                     # Device CRUD operations
-├── registry.rs                 # Device registry
-└── service.rs                  # Device service
+│   ├── mod.rs                  # Adapter factory (create_adapter, available_adapters)
+│   ├── mqtt.rs                 # MQTT adapter (full implementation)
+│   └── webhook.rs              # Webhook adapter (passive data reception)
+├── mdl.rs                      # MDL core types (MetricValue, DeviceState, etc.)
+├── mdl_format.rs               # MDL format (DeviceTypeDefinition, CommandDefinition)
+├── mqtt.rs                     # MQTT protocol utilities
+├── protocol/
+│   ├── mod.rs                  # Protocol mapping module
+│   ├── mapping.rs              # Protocol mapping definitions
+│   └── mqtt_mapping.rs         # MQTT topic/payload mapping
+├── registry.rs                 # DeviceRegistry (DeviceConfig, DeviceTypeTemplate)
+├── service.rs                  # DeviceService (unified API, commands, health)
+├── telemetry.rs                # TimeSeriesStorage and MetricCache
+├── unified_extractor.rs        # UnifiedExtractor for all adapters
+└── embedded_broker.rs          # Embedded MQTT broker (feature-gated)
 ```
 
 ## Core Concepts
@@ -44,36 +48,31 @@ pub struct DeviceConfig {
     /// Device type (links to DeviceTypeTemplate)
     pub device_type: String,
 
-    /// Adapter type (mqtt, http, webhook)
+    /// Adapter type (mqtt, webhook, hass)
     pub adapter_type: String,
 
-    /// Connection configuration
+    /// Connection configuration (unified struct)
     pub connection_config: ConnectionConfig,
 
     /// ID of adapter managing this device
     pub adapter_id: Option<String>,
+
+    /// Last seen timestamp (0 = never connected)
+    pub last_seen: i64,
 }
 
-pub enum ConnectionConfig {
-    /// MQTT configuration
-    Mqtt {
-        topic: String,
-        qos: Option<u8>,
-        retain: Option<bool>,
-    },
+/// Unified connection configuration for different protocols
+pub struct ConnectionConfig {
+    // MQTT-specific
+    pub telemetry_topic: Option<String>,
+    pub command_topic: Option<String>,
+    pub json_path: Option<String>,
 
-    /// HTTP polling configuration
-    Http {
-        url: String,
-        interval_secs: u64,
-        headers: Option<HashMap<String, String>>,
-    },
+    // HASS-specific
+    pub entity_id: Option<String>,
 
-    /// Webhook configuration
-    Webhook {
-        webhook_path: String,
-        secret: Option<String>,
-    },
+    // Generic metadata
+    pub extra: HashMap<String, serde_json::Value>,
 }
 ```
 
@@ -93,33 +92,22 @@ pub struct DeviceTypeTemplate {
     /// Category tags (can be multiple)
     pub categories: Vec<String>,
 
+    /// Definition mode: Simple (raw data + LLM) or Full (structured)
+    pub mode: DeviceTypeMode,
+
     /// Metric definitions
     pub metrics: Vec<MetricDefinition>,
 
-    /// Parameter definitions
-    pub parameters: Vec<ParameterDefinition>,
+    /// Sample uplink data for Simple mode
+    pub uplink_samples: Vec<serde_json::Value>,
 
     /// Command definitions
     pub commands: Vec<CommandDefinition>,
 }
 
-pub struct MetricDefinition {
-    pub name: String,
-    pub display_name: String,
-    pub data_type: MetricDataType,
-    pub unit: String,
-    pub min: Option<f64>,
-    pub max: Option<f64>,
-    pub required: bool,
-}
-
-pub struct CommandDefinition {
-    pub name: String,
-    pub display_name: String,
-    pub payload_template: String,  // JSON template
-    pub parameters: Vec<ParameterDefinition>,
-    pub samples: Vec<CommandSample>,
-    pub llm_hints: String,  // AI hints
+pub enum DeviceTypeMode {
+    Simple,  // Raw data + LLM auto-discovery
+    Full,    // Structured definitions
 }
 ```
 
@@ -128,28 +116,44 @@ pub struct CommandDefinition {
 ```rust
 #[async_trait]
 pub trait DeviceAdapter: Send + Sync {
-    /// Get adapter ID
-    fn id(&self) -> &str;
+    /// Get adapter name
+    fn name(&self) -> &str;
 
-    /// Get adapter type
-    fn adapter_type(&self) -> &str;
+    /// Get adapter type identifier (e.g., "mqtt", "webhook")
+    fn adapter_type(&self) -> &'static str;
+
+    /// Check if adapter is running
+    fn is_running(&self) -> bool;
 
     /// Start adapter
-    async fn start(&self) -> Result<AdapterError>;
+    async fn start(&self) -> AdapterResult<()>;
 
     /// Stop adapter
-    async fn stop(&self) -> Result<AdapterError>;
+    async fn stop(&self) -> AdapterResult<()>;
+
+    /// Subscribe to device events
+    fn subscribe(&self) -> Pin<Box<dyn Stream<Item = DeviceEvent> + Send + '_>>;
 
     /// Send command to device
     async fn send_command(
         &self,
         device_id: &str,
-        command: &str,
-        payload: &serde_json::Value,
-    ) -> Result<serde_json::Value>;
+        command_name: &str,
+        payload: String,
+        topic: Option<String>,
+    ) -> AdapterResult<()>;
 
-    /// Subscribe to device events
-    fn subscribe(&self) -> Pin<Box<dyn Stream<Item = DeviceEvent> + Send>>;
+    /// Get connection status
+    fn connection_status(&self) -> ConnectionStatus;
+
+    /// Get device count
+    fn device_count(&self) -> usize;
+
+    /// Subscribe to a device's data stream
+    async fn subscribe_device(&self, device_id: &str) -> AdapterResult<()>;
+
+    /// Unsubscribe from a device's data stream
+    async fn unsubscribe_device(&self, device_id: &str) -> AdapterResult<()>;
 }
 ```
 
@@ -157,170 +161,101 @@ pub trait DeviceAdapter: Send + Sync {
 
 ### MQTT Adapter
 
-```rust
-pub struct MqttDeviceAdapter {
-    /// Adapter ID
-    id: String,
-
-    /// MQTT client
-    client: Arc<AsyncClient>,
-
-    /// Subscribed topics
-    subscriptions: Vec<String>,
-
-    /// Event sender
-    event_tx: mpsc::Sender<DeviceEvent>,
-}
-
-impl MqttDeviceAdapter {
-    /// Create new MQTT adapter
-    pub async fn new(
-        id: String,
-        broker_url: &str,
-        subscriptions: Vec<String>,
-    ) -> Result<Self>;
-
-    /// Publish to topic
-    pub async fn publish(
-        &self,
-        topic: &str,
-        payload: &[u8],
-        qos: u8,
-        retain: bool,
-    ) -> Result<()>;
-}
-```
+The MQTT adapter provides full MQTT connectivity with:
+- Auto-discovery of new devices
+- Template-based data parsing
+- Protocol mapping (topic/payload to metrics)
+- Command sending via MQTT topics
+- Integration with embedded broker (feature-gated)
 
 **MQTT Topic Specification**:
 ```
-sensors/{device_id}/data       # Device data
-sensors/{device_id}/status     # Device status
-actuators/{device_id}/command  # Device commands
-actuators/{device_id}/result   # Command result
-```
-
-### HTTP Polling Adapter
-
-```rust
-pub struct HttpPollingAdapter {
-    id: String,
-    client: reqwest::Client,
-    poll_tasks: Arc<RwLock<HashMap<String, JoinHandle<()>>>>,
-}
-
-impl HttpPollingAdapter {
-    /// Add polling task
-    pub async fn add_poll_task(
-        &self,
-        device_id: String,
-        url: String,
-        interval_secs: u64,
-    ) -> Result<()>;
-}
+{telemetry_topic}              # Device data (configurable per device)
+{command_topic}                # Device commands (configurable per device)
 ```
 
 ### Webhook Adapter
 
-```rust
-pub struct WebhookAdapter {
-    id: String,
-    webhook_path: String,
-    secret: Option<String>,
-}
+The Webhook adapter receives device data via HTTP POST:
 
-impl WebhookAdapter {
-    /// Verify webhook signature
-    pub fn verify_signature(
-        &self,
-        payload: &[u8],
-        signature: &str,
-    ) -> bool;
+```rust
+pub struct WebhookAdapterConfig {
+    pub name: String,
+    pub api_key: Option<String>,
+    pub allowed_ips: Vec<String>,
+    pub blocked_ips: Vec<String>,
+    pub rate_limit_per_minute: Option<u32>,
+    pub storage_dir: Option<String>,
 }
 ```
+
+**Webhook URL Format**: `POST /api/devices/{device_id}/webhook`
+
+**Features**:
+- Passive data reception via webhook endpoint
+- Device authentication support (API keys)
+- IP whitelist/blacklist
+- Request rate limiting
+- Automatic device discovery
+- Command support (via response body)
 
 ## Device Discovery
 
+Device discovery is handled through the adapter system. Discovered devices generate `DeviceEvent::Discovery` events that trigger auto-onboarding:
+
 ```rust
-pub struct DeviceDiscovery {
-    /// Timeout duration (milliseconds)
-    timeout_ms: u64,
-}
-
-impl DeviceDiscovery {
-    /// Scan host ports
-    pub async fn scan_ports(
-        &self,
-        host: &str,
-        ports: Vec<u16>,
-        timeout_ms: u64,
-    ) -> Result<Vec<u16>>;
-
-    /// Discover MQTT devices
-    pub async fn discover_mqtt(
-        &self,
-        host: &str,
-        port: u16,
-    ) -> Result<Vec<DiscoveredDevice>>;
-
-    /// Discover HTTP devices
-    pub async fn discover_http(
-        &self,
-        host: &str,
-        port: u16,
-    ) -> Result<Vec<DiscoveredDevice>>;
-}
-
-pub struct DiscoveredDevice {
-    pub device_type: Option<String>,
-    pub host: String,
-    pub port: u16,
-    pub confidence: f32,
-    pub info: HashMap<String, String>,
+pub struct DiscoveredDeviceInfo {
+    pub device_id: String,
+    pub device_type: String,
+    pub name: Option<String>,
+    pub endpoint: Option<String>,
+    pub capabilities: Vec<String>,
+    pub timestamp: i64,
+    pub metadata: serde_json::Value,
 }
 ```
+
+Discovered devices can be:
+1. Automatically analyzed with LLM
+2. Enhanced with suggested device types
+3. Approved or rejected by user
+4. Converted to full device instances
 
 ## Device Registry
 
 ```rust
 pub struct DeviceRegistry {
-    /// Storage backend
+    /// Storage backend (in-memory or persistent via redb)
     store: Arc<DeviceRegistryStore>,
 
     /// Device type templates
-    templates: RwLock<HashMap<String, DeviceTypeTemplate>>,
+    templates: DashMap<String, DeviceTypeTemplate>,
 }
 
 impl DeviceRegistry {
+    /// Create in-memory registry
+    pub fn new() -> Self;
+
+    /// Create with persistence (redb)
+    pub async fn with_persistence(path: impl AsRef<Path>) -> Result<Self>;
+
     /// Register device type template
-    pub async fn register_template(
-        &self,
-        template: DeviceTypeTemplate,
-    ) -> Result<()>;
+    pub async fn register_template(&self, template: DeviceTypeTemplate) -> Result<()>;
 
     /// Register device
-    pub async fn register_device(
-        &self,
-        config: DeviceConfig,
-    ) -> Result<()>;
+    pub async fn register_device(&self, config: DeviceConfig) -> Result<()>;
 
     /// Get device
-    pub async fn get_device(&self, id: &str) -> Option<Device>;
+    pub async fn get_device(&self, id: &str) -> Option<DeviceConfig>;
 
     /// List devices
-    pub async fn list_devices(&self) -> Vec<Device>;
+    pub async fn list_devices(&self) -> Vec<DeviceConfig>;
 
     /// Update device
-    pub async fn update_device(
-        &self,
-        id: &str,
-        config: DeviceConfig,
-    ) -> Result<()>;
+    pub async fn update_device(&self, id: &str, config: DeviceConfig) -> Result<()>;
 
     /// Delete device
     pub async fn delete_device(&self, id: &str) -> Result<()>;
-
-    /// Get device status
-    pub async fn get_device_status(&self, id: &str) -> DeviceStatus;
 }
 ```
 
@@ -331,13 +266,16 @@ pub struct DeviceService {
     registry: Arc<DeviceRegistry>,
     adapters: Arc<RwLock<HashMap<String, Arc<dyn DeviceAdapter>>>>,
     event_bus: Arc<EventBus>,
+    telemetry: Arc<TimeSeriesStorage>,
+    extension_command_router: Option<ExtensionCommandRouterFn>,
 }
 
 impl DeviceService {
     /// Create device service
     pub fn new(
         registry: Arc<DeviceRegistry>,
-        event_bus: Arc<EventBus>,
+        event_bus: EventBus,
+        telemetry: Arc<TimeSeriesStorage>,
     ) -> Self;
 
     /// Register adapter
@@ -347,16 +285,22 @@ impl DeviceService {
         adapter: Arc<dyn DeviceAdapter>,
     ) -> Result<()>;
 
-    /// Send command
+    /// Send command (auto-selects adapter and uses template for payload)
     pub async fn send_command(
         &self,
         device_id: &str,
-        command: &str,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value>;
+        command_name: &str,
+        params: HashMap<String, serde_json::Value>,
+    ) -> Result<CommandHistoryRecord>;
 
     /// Get adapter stats
     pub async fn get_adapter_stats(&self) -> AdapterStats;
+
+    /// Get device health
+    pub async fn get_device_health(&self, device_id: &str) -> DeviceHealth;
+
+    /// Set extension command router
+    pub fn set_extension_command_router(&self, router: ExtensionCommandRouterFn);
 }
 ```
 
@@ -413,24 +357,22 @@ POST   /api/devices                           # Add device
 GET    /api/devices/:id                       # Get device details
 PUT    /api/devices/:id                       # Update device
 DELETE /api/devices/:id                       # Delete device
-GET    /api/devices/:id/current               # Current value
+GET    /api/devices/:id/current               # Current metric value
 POST   /api/devices/current-batch             # Batch current values
-GET    /api/devices/:id/state                 # Device state
-GET    /api/devices/:id/health                # Health check
-POST   /api/devices/:id/refresh               # Refresh device
 
 # Commands
-POST   /api/devices/:id/command/:command     # Send command
+POST   /api/devices/:id/command/:command      # Send command
 GET    /api/devices/:id/commands              # Command history
 
 # Metrics Data
-GET    /api/devices/:id/metrics/:metric       # Read metric
-GET    /api/devices/:id/metrics/:metric/data  # Query data
-GET    /api/devices/:id/metrics/:metric/aggregate  # Aggregate data
+POST   /api/devices/:id/metrics               # Write metric data
 
 # Telemetry
 GET    /api/devices/:id/telemetry             # Telemetry data
 GET    /api/devices/:id/telemetry/summary     # Telemetry summary
+
+# BLE Provisioning
+POST   /api/devices/ble-provision             # BLE device provisioning
 
 # Device Types
 GET    /api/device-types                      # List device types
@@ -439,20 +381,25 @@ GET    /api/device-types/:id                  # Get device type
 PUT    /api/device-types                      # Validate device type
 DELETE /api/device-types/:id                  # Delete device type
 POST   /api/device-types/generate-from-samples  # Generate from samples
+POST   /api/device-types/cloud/import         # Import from cloud
 
 # MDL Generation
 POST   /api/devices/generate-mdl              # Generate MDL
 
 # Device Discovery & Auto-Onboarding (Drafts)
-POST   /api/devices/discover                   # Device discovery
 GET    /api/devices/drafts                    # List draft devices
-GET    /api/devices/drafts/:id                # Get draft device
-PUT    /api/devices/drafts/:id                # Update draft
-POST   /api/devices/drafts/:id/approve        # Approve draft
-POST   /api/devices/drafts/:id/reject         # Reject draft
-POST   /api/devices/drafts/:id/analyze        # Analyze with LLM
-POST   /api/devices/drafts/:id/enhance        # Enhance with LLM
-GET    /api/devices/drafts/:id/suggest-types  # Suggest types
+GET    /api/devices/drafts/:device_id         # Get draft device
+PUT    /api/devices/drafts/:device_id         # Update draft
+POST   /api/devices/drafts/:device_id/approve # Approve draft
+POST   /api/devices/drafts/:device_id/reject  # Reject draft
+POST   /api/devices/drafts/:device_id/analyze # Analyze with LLM
+POST   /api/devices/drafts/:device_id/enhance # Enhance with LLM
+GET    /api/devices/drafts/:device_id/suggest-types  # Suggest types
+POST   /api/devices/drafts/cleanup            # Cleanup drafts
+GET    /api/devices/drafts/type-signatures    # Get type signatures
+GET    /api/devices/drafts/config             # Get onboard config
+PUT    /api/devices/drafts/config             # Update onboard config
+POST   /api/devices/drafts/upload             # Upload device data
 ```
 
 ## Usage Examples
@@ -460,21 +407,12 @@ GET    /api/devices/drafts/:id/suggest-types  # Suggest types
 ### Register Device Type
 
 ```rust
-use neomind_devices::{DeviceTypeTemplate, MetricDefinition, MetricDataType};
+use neomind_devices::{DeviceTypeTemplate, DeviceTypeMode};
 
 let template = DeviceTypeTemplate::new("dht22_sensor", "DHT22 Temperature & Humidity Sensor")
     .with_description("DHT22-based temperature and humidity sensor")
     .with_category("sensor")
-    .with_category("climate")
-    .with_metric(MetricDefinition {
-        name: "temperature".to_string(),
-        display_name: "Temperature".to_string(),
-        data_type: MetricDataType::Float,
-        unit: "°C".to_string(),
-        min: Some(-40.0),
-        max: Some(80.0),
-        required: false,
-    });
+    .with_category("climate");
 
 service.register_template(template).await?;
 ```
@@ -489,11 +427,10 @@ let device = DeviceConfig {
     name: "Greenhouse Temperature Sensor 1".to_string(),
     device_type: "dht22_sensor".to_string(),
     adapter_type: "mqtt".to_string(),
-    connection_config: ConnectionConfig::mqtt(
-        "sensors/greenhouse/temp1",
-        None::<String>,
-    ),
+    connection_config: ConnectionConfig::new()
+        .with_telemetry_topic("sensors/greenhouse/temp1"),
     adapter_id: Some("main-mqtt".to_string()),
+    last_seen: 0,
 };
 
 service.register_device(device).await?;
@@ -505,20 +442,24 @@ service.register_device(device).await?;
 let result = service.send_command(
     "greenhouse_fan_1",
     "turn_on",
-    serde_json::json!({}),
+    HashMap::new(),
 ).await?;
 ```
 
 ## Cleaned Up Features
 
 The following features have been removed from the codebase:
-- ✅ Modbus adapter (not implemented)
-- ✅ Home Assistant discovery module (deprecated)
-- ✅ Agent analysis tools (anomaly detection, trend analysis - unused)
+- Modbus adapter (not implemented)
+- Home Assistant discovery module (deprecated)
+- Agent analysis tools (anomaly detection, trend analysis - unused)
+- HTTP polling adapter (replaced by webhook adapter)
+- Separate discovery module (now integrated into adapters)
 
 ## Design Principles
 
 1. **Protocol Decoupling**: Support multiple protocols via adapter pattern
 2. **Type-Driven**: Define device capabilities via DeviceTypeTemplate
 3. **Event-Driven**: Device state changes notified via EventBus
-4. **Extensible**: Easy to add new protocol adapters
+4. **Template-Based Parsing**: Adapters use device templates to parse protocol data
+5. **Extensible**: Easy to add new protocol adapters
+6. **Unified Extraction**: UnifiedExtractor handles data extraction from all adapters

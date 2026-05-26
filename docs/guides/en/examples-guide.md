@@ -1,453 +1,779 @@
-# NeoMind 扩展示例说明
+# NeoMind Examples Guide
 
-## 目录
+**Version**: 0.8.0
+**Last Updated**: 2026-05-26
 
-1. [扩展示例](#扩展示例)
+## Table of Contents
+
+1. [Extension Examples](#extension-examples)
    - [Virtual Metrics Extension](#virtual-metrics-extension)
    - [Event Monitor Extension](#event-monitor-extension)
    - [Virtual Weather Provider](#virtual-weather-provider)
    - [Device Helper Example](#device-helper-example)
-2. [Capability Provider 示例](#capability-provider-示例)
+2. [Capability Provider Examples](#capability-provider-examples)
    - [Device Capability Provider](#device-capability-provider)
    - [Runner Capability Provider](#runner-capability-provider)
+3. [Data Push Configuration](#data-push-configuration)
+4. [Notification Channel Setup](#notification-channel-setup)
+5. [Using AI Chat to Manage Devices](#using-ai-chat-to-manage-devices)
+6. [Creating Automation Rules](#creating-automation-rules)
 
 ---
 
-## 扩展示例
+## Extension Examples
 
 ### Virtual Metrics Extension
 
-**位置**: `examples/virtual-metrics-extension/`
+**Location**: `examples/virtual-metrics-extension/`
 
 **ID**: `virtual-metrics`
 
-**版本**: 0.1.0
+**Version**: 0.1.0
 
-#### 功能描述
+#### Description
 
-虚拟指标扩展示例，演示如何从外部数据源注入虚拟指标到设备遥测中。
+Virtual metrics extension example, demonstrating how to inject virtual metrics from external data sources into device telemetry.
 
-**场景**：模拟外部数据源（如 API、数据库、计算值）向设备注入数据。
+**Scenario**: Simulate external data sources (e.g., APIs, databases, computed values) injecting data into devices.
 
-#### 提供的指标
+#### Provided Metrics
 
-- `injection_count` (Integer) - 已注入的虚拟指标计数
+- `injection_count` (Integer) - Count of injected virtual metrics
 
-#### 提供的命令
+#### Provided Commands
 
 1. **set_target_device**
-   - 设置目标设备 ID，用于注入虚拟指标
-   - 参数：
-     - `device_id` (String, 必需) - 设备 ID
+   - Set target device ID for virtual metric injection
+   - Parameters:
+     - `device_id` (String, required) - Device ID
 
 2. **inject_virtual_metrics**
-   - 向目标设备注入虚拟指标
-   - 参数：
-     - `metric_name` (String, 必需) - 指标名称
-     - `value` (Float, 必需) - 指标值
+   - Inject virtual metrics into target device
+   - Parameters:
+     - `metric_name` (String, required) - Metric name
+     - `value` (Float, required) - Metric value
 
 3. **get_injection_count**
-   - 获取已注入的虚拟指标计数
-   - 无参数
+   - Get count of injected virtual metrics
+   - No parameters
 
-#### 使用场景
+#### Use Cases
 
-- 学习如何创建和注入虚拟指标
-- 理解扩展状态管理
-- 演示外部数据集成模式
+- Learn how to create and inject virtual metrics
+- Understand extension state management
+- Demonstrate external data integration patterns
 
 ---
 
 ### Event Monitor Extension
 
-**位置**: `examples/event-monitor-extension/`
+**Location**: `examples/event-monitor-extension/`
 
 **ID**: `event-monitor`
 
-**版本**: 0.1.0
+**Version**: 0.1.0
 
-#### 功能描述
+#### Description
 
-事件监控扩展示例，演示如何订阅和响应 NeoMind 系统事件。
+Event monitor extension example, demonstrating how to subscribe to and respond to NeoMind system events.
 
-**场景**：监听设备事件、规则事件、代理事件等，统计和分析事件。
+**Scenario**: Listen to device events, rule events, agent events, etc., for statistics and analysis.
 
-#### 提供的指标
+#### Provided Metrics
 
-- `total_events` (Integer) - 接收到的总事件数
-- `device_events` (Integer) - 设备相关事件数
-- `rule_events` (Integer) - 规则相关事件数
-- `agent_events` (Integer) - 代理相关事件数
-- `last_event_type` (String) - 最后一个事件的类型
-- `last_event_source` (String) - 最后一个事件源
+- `total_events` (Integer) - Total received events
+- `device_events` (Integer) - Device-related events
+- `rule_events` (Integer) - Rule-related events
+- `agent_events` (Integer) - Agent-related events
+- `last_event_type` (String) - Last event type
+- `last_event_source` (String) - Last event source
 
-#### 提供的命令
+#### Provided Commands
 
 1. **get_stats**
-   - 获取事件统计信息
-   - 无参数
+   - Get event statistics
+   - No parameters
 
 2. **reset_stats**
-   - 重置事件统计
-   - 无参数
+   - Reset event statistics
+   - No parameters
 
 3. **set_filter**
-   - 设置事件过滤器
-   - 参数：
-     - `event_type` (String, 可选) - 事件类型
-     - `source` (String, 可选) - 事件源
+   - Set event filter
+   - Parameters:
+     - `event_type` (String, optional) - Event type
+     - `source` (String, optional) - Event source
 
 4. **clear_filter**
-   - 清除事件过滤器
-   - 无参数
+   - Clear event filter
+   - No parameters
 
-#### 使用场景
+#### Use Cases
 
-- 学习事件订阅机制
-- 理解事件过滤和路由
-- 演示事件驱动的自动化
+- Learn event subscription mechanisms
+- Understand event filtering and routing
+- Demonstrate event-driven automation
 
 ---
 
 ### Virtual Weather Provider
 
-**位置**: `examples/virtual-weather-provider/`
+**Location**: `examples/virtual-weather-provider/`
 
 **ID**: `virtual-weather-provider`
 
-**版本**: 0.1.0
+**Version**: 0.1.0
 
-#### 功能描述
+#### Description
 
-虚拟天气提供者扩展示例，从 Open-Meteo API（免费，无需 API Key）获取天气数据，并作为虚拟指标注入到设备遥测中。
+Virtual weather provider extension example that fetches weather data from the Open-Meteo API (free, no API key required) and injects it as virtual metrics into device telemetry.
 
-**场景**：将真实世界的天气数据注入到智能家居系统，用于基于天气的自动化。
+**Scenario**: Inject real-world weather data into a smart home system for weather-based automation.
 
-#### 提供的指标
+#### Provided Metrics
 
-- `temperature` (Float, °C) - 当前温度
-- `humidity` (Float, %) - 当前湿度
-- `wind_speed` (Float, km/h) - 风速
-- `weather_code` (Integer) - 天气代码
-- `last_update` (Integer) - 最后更新时间戳
+- `temperature` (Float, C) - Current temperature
+- `humidity` (Float, %) - Current humidity
+- `wind_speed` (Float, km/h) - Wind speed
+- `weather_code` (Integer) - Weather code
+- `last_update` (Integer) - Last update timestamp
 
-#### 提供的命令
+#### Provided Commands
 
 1. **set_location**
-   - 设置地理位置（经纬度）
-   - 参数：
-     - `latitude` (Float, 必需) - 纬度
-     - `longitude` (Float, 必需) - 经度
+   - Set geographic location (latitude/longitude)
+   - Parameters:
+     - `latitude` (Float, required) - Latitude
+     - `longitude` (Float, required) - Longitude
 
 2. **update_weather**
-   - 手动更新天气数据
-   - 无参数
+   - Manually update weather data
+   - No parameters
 
 3. **inject_to_device**
-   - 将天气数据注入到指定设备
-   - 参数：
-     - `device_id` (String, 必需) - 设备 ID
+   - Inject weather data into specified device
+   - Parameters:
+     - `device_id` (String, required) - Device ID
 
 4. **get_current_weather**
-   - 获取当前天气数据
-   - 无参数
+   - Get current weather data
+   - No parameters
 
 5. **set_auto_update**
-   - 设置自动更新间隔
-   - 参数：
-     - `interval_minutes` (Integer, 必需) - 更新间隔（分钟）
+   - Set auto-update interval
+   - Parameters:
+     - `interval_minutes` (Integer, required) - Update interval (minutes)
 
-#### 使用场景
+#### Use Cases
 
-- 集成真实的天气数据到 IoT 系统
-- 学习如何从外部 API 获取数据
-- 理解虚拟指标的实际应用
-- 演示定时任务和后台更新
+- Integrate real weather data into IoT systems
+- Learn how to fetch data from external APIs
+- Understand virtual metrics in practice
+- Demonstrate scheduled tasks and background updates
 
-#### 注意事项
+#### Notes
 
-- 使用 Open-Meteo API（免费，无需注册）
-- 网络连接是必需的
-- API 有速率限制（通常每天 1000 次请求）
+- Uses Open-Meteo API (free, no registration required)
+- Network connection is required
+- API has rate limits (typically 1000 requests per day)
 
 ---
 
 ### Device Helper Example
 
-**位置**: `examples/device-helper-example/`
+**Location**: `examples/device-helper-example/`
 
 **ID**: `device-helper-example`
 
-**版本**: 1.0.0
+**Version**: 1.0.0
 
-#### 功能描述
+#### Description
 
-DeviceHelper 框架示例，演示如何使用类型安全的 DeviceHelper API 与设备交互。
+DeviceHelper framework example, demonstrating how to use the type-safe DeviceHelper API to interact with devices.
 
-**场景**：教学示例，展示 DeviceHelper 框架的所有功能。
+**Scenario**: Teaching example showcasing all DeviceHelper framework features.
 
-#### 提供的指标
+#### Provided Metrics
 
-- `processed_count` (Integer) - 已处理的设备数量
-- `avg_temperature` (Float, °C) - 平均温度
-- `virtual_outdoor_temp` (Float, °C) - 虚拟室外温度
+- `processed_count` (Integer) - Processed device count
+- `avg_temperature` (Float, C) - Average temperature
+- `virtual_outdoor_temp` (Float, C) - Virtual outdoor temperature
 
-#### 提供的命令
+#### Provided Commands
 
 1. **analyze_device**
-   - 分析设备：读取指标、计算统计、注入虚拟指标
-   - 参数：
-     - `device_id` (String, 必需) - 设备 ID
-   - 演示：
-     - 读取所有设备指标
-     - 获取特定类型的指标
-     - 注入分析结果作为虚拟指标
-     - 批量读取多个指标
+   - Analyze device: read metrics, compute statistics, inject virtual metrics
+   - Parameters:
+     - `device_id` (String, required) - Device ID
+   - Demonstrates:
+     - Read all device metrics
+     - Get metrics by specific type
+     - Inject analysis results as virtual metrics
+     - Batch read multiple metrics
 
 2. **update_weather**
-   - 更新天气：注入天气数据作为虚拟指标
-   - 参数：
-     - `device_id` (String, 必需) - 设备 ID
-     - `temperature` (Float, 可选, 默认 25.0) - 温度
-     - `humidity` (Float, 可选, 默认 60.0) - 湿度
-   - 演示：
-     - 批量写入虚拟指标
-     - 类型安全的指标写入
+   - Update weather: inject weather data as virtual metrics
+   - Parameters:
+     - `device_id` (String, required) - Device ID
+     - `temperature` (Float, optional, default 25.0) - Temperature
+     - `humidity` (Float, optional, default 60.0) - Humidity
+   - Demonstrates:
+     - Batch write virtual metrics
+     - Type-safe metric writing
 
 3. **get_device_stats**
-   - 获取设备统计：查询遥测并计算聚合
-   - 参数：
-     - `device_id` (String, 必需) - 设备 ID
-   - 演示：
-     - 查询 24 小时遥测历史
-     - 计算平均值、最大值聚合
+   - Get device statistics: query telemetry and compute aggregations
+   - Parameters:
+     - `device_id` (String, required) - Device ID
+   - Demonstrates:
+     - Query 24-hour telemetry history
+     - Compute average and max aggregations
 
-#### 使用场景
+#### Use Cases
 
-- **学习** DeviceHelper 框架的所有 API
-- **理解**类型安全的设备交互模式
-- **参考**用于开发自己的扩展
-- **测试** DeviceHelper 的各项功能
+- **Learn** all DeviceHelper framework APIs
+- **Understand** type-safe device interaction patterns
+- **Reference** for developing your own extensions
+- **Test** DeviceHelper features
 
-#### API 涵盖
+#### API Coverage
 
-✅ 读取设备指标
-✅ 写入虚拟指标
-✅ 发送设备命令
-✅ 查询遥测历史
-✅ 聚合指标
+- Read device metrics
+- Write virtual metrics
+- Send device commands
+- Query telemetry history
+- Aggregate metrics
 
 ---
 
-## Capability Provider 示例
+## Capability Provider Examples
 
 ### Device Capability Provider
 
-**位置**: `examples/device-capability-provider/`
+**Location**: `examples/device-capability-provider/`
 
-#### 功能描述
+#### Description
 
-设备 Capability Provider，为扩展提供设备相关的能力。
+Device Capability Provider, providing device-related capabilities to extensions.
 
-**注意**：这不是一个扩展，而是一个 capability provider 库。
+**Note**: This is not an extension, but a capability provider library.
 
-#### 提供的能力
+#### Provided Capabilities
 
-1. **DeviceMetricsRead** - 读取设备指标
-   - `get_current_metrics(device_id)` - 获取当前指标
-   - `get_metric(device_id, metric_name)` - 获取单个指标
+1. **DeviceMetricsRead** - Read device metrics
+   - `get_current_metrics(device_id)` - Get current metrics
+   - `get_metric(device_id, metric_name)` - Get single metric
 
-2. **DeviceMetricsWrite** - 写入设备指标（包括虚拟指标）
-   - `write_metric(device_id, metric, value, is_virtual)` - 写入指标
-   - `write_metrics(device_id, metrics)` - 批量写入指标
+2. **DeviceMetricsWrite** - Write device metrics (including virtual metrics)
+   - `write_metric(device_id, metric, value, is_virtual)` - Write metric
+   - `write_metrics(device_id, metrics)` - Batch write metrics
 
-3. **DeviceControl** - 控制设备
-   - `send_command(device_id, command, params)` - 发送命令
+3. **DeviceControl** - Control device
+   - `send_command(device_id, command, params)` - Send command
 
-4. **TelemetryHistory** - 查询遥测历史
-   - `query_telemetry(device_id, metric, start, end)` - 查询历史数据
+4. **TelemetryHistory** - Query telemetry history
+   - `query_telemetry(device_id, metric, start, end)` - Query historical data
 
-#### 使用场景
+#### Use Cases
 
-- 学习如何创建自定义 capability provider
-- 为扩展提供特定的系统能力
-- 理解 capability 系统架构
+- Learn how to create custom capability providers
+- Provide specific system capabilities to extensions
+- Understand capability system architecture
 
 ---
 
 ### Runner Capability Provider
 
-**位置**: `examples/runner-capability-provider/`
+**Location**: `examples/runner-capability-provider/`
 
-#### 功能描述
+#### Description
 
-Runner Capability Provider，为扩展提供能力（通过直接访问扩展运行器进程中的核心系统服务）。
+Runner Capability Provider, providing capabilities to extensions (through direct access to core system services within the extension runner process).
 
-**注意**：这不是一个扩展，而是一个 capability provider 库。
+**Note**: This is not an extension, but a capability provider library.
 
-#### 提供的能力
+#### Provided Capabilities
 
-通过直接访问核心服务提供更高效的 API 调用：
-- 设备服务
-- 事件总线
-- 存储服务
-- 代理系统
-- 规则引擎
+More efficient API calls through direct access to core services:
+- Device service
+- Event bus
+- Storage service
+- Agent system
+- Rule engine
 
-#### 使用场景
+#### Use Cases
 
-- 学习如何创建高性能的 capability provider
-- 在扩展运行器内部提供能力
-- 理解扩展运行器的内部架构
+- Learn how to create high-performance capability providers
+- Provide capabilities inside the extension runner
+- Understand extension runner internal architecture
 
 ---
 
-## 如何使用这些示例
+## Data Push Configuration
 
-### 1. 构建示例
+The Data Push module allows you to configure push targets that deliver device telemetry data to external services on a schedule.
+
+### CLI Examples
 
 ```bash
-# 构建所有示例
+# List all push targets
+neomind push list
+
+# Create a webhook push target
+neomind push create \
+  --name "temperature-webhook" \
+  --type webhook \
+  --config '{"url":"https://example.com/api/telemetry","headers":{"Authorization":"Bearer token123"}}' \
+  --schedule '{"type":"interval","interval_secs":60}' \
+  --sources '{"source_patterns":["device:sensor1:temperature"],"only_changes":true}'
+
+# Create an MQTT push target
+neomind push create \
+  --name "mqtt-broker" \
+  --type mqtt \
+  --config '{"broker":"mqtt://broker.example.com:1883","topic":"neomind/telemetry"}' \
+  --schedule '{"type":"event_driven","event_types":["device_metric"]}'
+
+# Test a push target
+neomind push test --id <target-id>
+
+# Start a push target
+neomind push start --id <target-id>
+
+# Stop a push target
+neomind push stop --id <target-id>
+
+# View delivery logs
+neomind push logs --id <target-id> --limit 50
+
+# View push statistics
+neomind push stats
+
+# Update a push target
+neomind push update --id <target-id> --config '{"url":"https://new-url.example.com/hook"}'
+
+# Delete a push target
+neomind push delete --id <target-id>
+```
+
+### API Examples
+
+```bash
+# Create a webhook push target
+curl -X POST http://localhost:9375/api/data-push \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "temperature-webhook",
+    "target_type": "webhook",
+    "config": {
+      "url": "https://example.com/api/telemetry",
+      "headers": {"Authorization": "Bearer token123"}
+    },
+    "schedule": {
+      "type": "interval",
+      "interval_secs": 60
+    },
+    "data_filter": {
+      "source_patterns": ["device:sensor1:temperature"],
+      "only_changes": true
+    }
+  }'
+
+# List push targets
+curl http://localhost:9375/api/data-push
+
+# Test a push target
+curl -X POST http://localhost:9375/api/data-push/<target-id>/test
+
+# View delivery logs
+curl "http://localhost:9375/api/data-push/<target-id>/logs?limit=20&offset=0"
+```
+
+### Push Target Types
+
+| Type | Description | Config Fields |
+|------|-------------|---------------|
+| `webhook` | HTTP POST to external URL | `url`, `headers`, `method` |
+| `mqtt` | Publish to MQTT broker | `broker`, `topic`, `username`, `password` |
+
+### Schedule Types
+
+| Type | Description |
+|------|-------------|
+| `interval` | Periodically pull latest data from time-series store |
+| `event_driven` | Push immediately when matching data arrives via EventBus |
+
+### Web UI
+
+Navigate to **Data Explorer** (`/data`) and switch to the **Push Targets** tab to manage push targets visually.
+
+---
+
+## Notification Channel Setup
+
+NeoMind supports 7 notification channel types for sending alerts and messages.
+
+### CLI Examples
+
+```bash
+# List available channel types
+neomind channel types
+
+# List configured channels
+neomind channel list
+
+# Create a webhook channel
+neomind channel create \
+  --name "alert-webhook" \
+  --type webhook \
+  --config '{"url":"https://hooks.example.com/alert","method":"POST"}'
+
+# Create a DingTalk robot channel
+neomind channel create \
+  --name "team-alerts" \
+  --type dingtalk \
+  --config '{"webhook_url":"https://oapi.dingtalk.com/robot/send?access_token=xxx","secret":"your-secret"}'
+
+# Create a WeCom robot channel
+neomind channel create \
+  --name "ops-alerts" \
+  --type wecom \
+  --config '{"webhook_url":"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"}'
+
+# Create an email channel
+neomind channel create \
+  --name "email-alerts" \
+  --type email \
+  --config '{"smtp_host":"smtp.example.com","smtp_port":587,"from":"neo@example.com","to":["admin@example.com"],"username":"neo","password":"pass"}'
+
+# Test a channel
+neomind channel test --name "alert-webhook"
+
+# Enable/disable a channel
+neomind channel enable --name "alert-webhook"
+neomind channel disable --name "alert-webhook"
+
+# Delete a channel
+neomind channel delete --name "alert-webhook"
+```
+
+### API Examples
+
+```bash
+# List channels
+curl http://localhost:9375/api/messages/channels
+
+# Create a webhook channel
+curl -X POST http://localhost:9375/api/messages/channels \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "alert-webhook",
+    "type": "webhook",
+    "config": {"url": "https://hooks.example.com/alert"}
+  }'
+
+# Test a channel
+curl -X POST http://localhost:9375/api/messages/channels/alert-webhook/test
+
+# Get channel stats
+curl http://localhost:9375/api/messages/channels/stats
+```
+
+### Supported Channel Types
+
+| Type | Description | Required Config |
+|------|-------------|-----------------|
+| `webhook` | HTTP webhook | `url` |
+| `email` | Email via SMTP | `smtp_host`, `from`, `to` |
+| `telegram` | Telegram Bot | `bot_token`, `chat_id` |
+| `dingtalk` | DingTalk robot | `webhook_url` |
+| `wecom` | WeCom robot | `webhook_url` |
+| `slack` | Slack webhook | `webhook_url` |
+| `feishu` | Feishu/Lark robot | `webhook_url` |
+
+### Web UI
+
+Navigate to **Messages** (`/messages`) and switch to the **Channels** tab. Click "Add Channel" to open the ChannelEditorDialog (FullScreenDialog with sidebar for channel type selection).
+
+---
+
+## Using AI Chat to Manage Devices
+
+NeoMind's AI chat interface allows you to manage devices through natural language. The AI agent uses CLI tools internally to execute commands.
+
+### Example Conversations
+
+**Register a new device:**
+
+```
+User: "I have a new temperature sensor I want to add. It connects via MQTT."
+AI: [Uses shell tool to run `neomind device create --name "temp-sensor-1" --type mqtt ...`]
+    "Device 'temp-sensor-1' has been created. It will connect to the embedded MQTT broker at localhost:1883."
+```
+
+**Check device status:**
+
+```
+User: "Show me all my devices"
+AI: [Runs `neomind device list`]
+    "You have 3 devices:
+    - temp-sensor-1 (online, last seen 2 min ago)
+    - camera-01 (offline)
+    - smart-plug-3 (online)"
+```
+
+**Send a command to a device:**
+
+```
+User: "Turn off smart-plug-3"
+AI: [Runs `neomind device command smart-plug-3 --command power_off`]
+    "Command 'power_off' sent to smart-plug-3."
+```
+
+**Get device onboarding info:**
+
+```
+User: "How do I connect an ESP32 device?"
+AI: [Runs `neomind system info` to get broker info]
+    "Your MQTT broker is running at localhost:1883. For ESP32, use this code:
+    ```cpp
+    WiFiClient espClient;
+    PubSubClient client(espClient);
+    client.setServer("YOUR_SERVER_IP", 1883);
+    client.connect("esp32-device-1");
+    client.publish("neomind/device/esp32-device-1/telemetry", "{\"temperature\":25.5}");
+    ```"
+```
+
+### Tips
+
+- Be specific about device names and types
+- The AI can create, list, update, and delete devices
+- Use the GlobalChatFab (floating button) for quick access from any page
+- The AI can diagnose offline devices and suggest fixes
+
+---
+
+## Creating Automation Rules
+
+NeoMind uses a DSL (Domain-Specific Language) for automation rules. Rules can be created via CLI, API, or AI chat.
+
+### Rule DSL Syntax
+
+```
+RULE <name>
+  WHEN <trigger_condition>
+  DO <action>
+END
+```
+
+### CLI Examples
+
+```bash
+# Create a temperature alert rule
+neomind rule create --dsl 'RULE high_temp_alert
+  WHEN device:sensor1:temperature > 30
+  DO notify(channel="alert-webhook", message="Temperature too high: {{value}}")
+END'
+
+# List all rules
+neomind rule list
+
+# Get rule details
+neomind rule get --id <rule-id>
+
+# Update a rule
+neomind rule update --id <rule-id> --dsl 'RULE high_temp_alert
+  WHEN device:sensor1:temperature > 35
+  DO notify(channel="alert-webhook", message="CRITICAL: Temperature {{value}}")
+END'
+
+# Delete a rule
+neomind rule delete --id <rule-id>
+```
+
+### API Examples
+
+```bash
+# Create a rule via API
+curl -X POST http://localhost:9375/api/rules \
+  -H "Content-Type: application/json" \
+  -d '{"dsl": "RULE high_temp_alert\n  WHEN device:sensor1:temperature > 30\n  DO notify(channel=\"alert-webhook\", message=\"Temperature too high\")\nEND"}'
+
+# List rules
+curl http://localhost:9375/api/rules
+```
+
+### Using AI Chat
+
+```
+User: "Create a rule that sends me a webhook notification when the temperature exceeds 30 degrees"
+AI: [Creates rule via CLI tool]
+    "Rule 'high_temp_alert' created. It will notify via 'alert-webhook' when device:sensor1:temperature > 30."
+```
+
+### Web UI
+
+Navigate to **Automation** (`/automation`) to manage rules visually with the rule builder interface.
+
+---
+
+## How to Use These Examples
+
+### 1. Build Examples
+
+```bash
+# Build all examples
 cargo build --workspace
 
-# 构建特定示例
+# Build specific example
 cargo build -p virtual-metrics-extension
 cargo build -p event-monitor-extension
 cargo build -p virtual-weather-provider
 cargo build -p device-helper-example
 ```
 
-### 2. 加载到 NeoMind
-
-在 NeoMind 中加载扩展：
+### 2. Load into NeoMind
 
 ```bash
-# 通过 CLI 加载
-neomind-cli extension load path/to/extension
+# Via CLI
+neomind extension load path/to/extension
 
-# 或通过 Web UI 加载
-# 导航到设置 -> 扩展 -> 添加扩展
+# Or via Web UI
+# Navigate to Extensions -> Add Extension
 ```
 
-### 3. 测试功能
-
-使用 NeoMind CLI 或 API 测试扩展命令：
+### 3. Test Features
 
 ```bash
-# 通过 CLI
-neomind-cli extension execute virtual-weather-provider set_location \
+# Via CLI
+neomind extension execute virtual-weather-provider set_location \
     --latitude 39.9 \
     --longitude 116.4
 
-neomind-cli extension execute virtual-weather-provider update_weather
+neomind extension execute virtual-weather-provider update_weather
 
-# 通过 API
+# Via API
 curl -X POST http://localhost:9375/api/extensions/virtual-weather-provider/commands/set_location \
     -H "Content-Type: application/json" \
     -d '{"latitude": 39.9, "longitude": 116.4}'
 ```
 
-### 4. 查看指标
-
-检查扩展提供的指标：
+### 4. View Metrics
 
 ```bash
-# 通过 CLI
-neomind-cli extension metrics virtual-weather-provider
+# Via CLI
+neomind extension metrics virtual-weather-provider
 
-# 通过 API
+# Via API
 curl http://localhost:9375/api/extensions/virtual-weather-provider/metrics
 ```
 
 ---
 
-## 示例对比
+## Example Comparison
 
-| 示例 | 类型 | 主要用途 | 学习重点 |
-|------|------|----------|----------|
-| **Virtual Metrics** | 扩展 | 注入虚拟指标 | 状态管理、虚拟指标 API |
-| **Event Monitor** | 扩展 | 监听系统事件 | 事件订阅、事件过滤 |
-| **Virtual Weather** | 扩展 | 集成外部天气数据 | 外部 API 调用、定时任务 |
-| **Device Helper** | 扩展示例 | 展示 DeviceHelper 框架 | 类型安全 API、设备交互 |
-| **Device Capability Provider** | Capability Provider | 提供设备能力 | Capability 系统架构 |
-| **Runner Capability Provider** | Capability Provider | 提供运行器能力 | 高性能能力提供 |
-
----
-
-## 扩展开发建议
-
-### 初学者
-
-推荐学习顺序：
-1. **Virtual Metrics Extension** - 最简单，了解基本结构
-2. **Device Helper Example** - 学习完整的设备交互 API
-3. **Event Monitor Extension** - 了解事件订阅机制
-
-### 进阶开发者
-
-推荐学习顺序：
-1. **Virtual Weather Provider** - 学习外部 API 集成
-2. **Device Capability Provider** - 了解 capability 系统设计
-3. **Runner Capability Provider** - 学习高性能架构
-
-### 实战项目
-
-基于这些示例，你可以开发：
-- 智能家居自动化扩展
-- 数据分析和可视化扩展
-- 第三方服务集成扩展
-- 自定义自动化规则扩展
-- 设备适配器扩展
+| Example | Type | Primary Use | Learning Focus |
+|---------|------|-------------|----------------|
+| **Virtual Metrics** | Extension | Inject virtual metrics | State management, virtual metrics API |
+| **Event Monitor** | Extension | Listen to system events | Event subscription, event filtering |
+| **Virtual Weather** | Extension | Integrate external weather data | External API calls, scheduled tasks |
+| **Device Helper** | Extension Example | Demonstrate DeviceHelper framework | Type-safe API, device interaction |
+| **Device Capability Provider** | Capability Provider | Provide device capabilities | Capability system architecture |
+| **Runner Capability Provider** | Capability Provider | Provide runner capabilities | High-performance capability provision |
 
 ---
 
-## 故障排查
+## Extension Development Recommendations
 
-### 示例无法加载
+### Beginners
 
-- 检查扩展是否编译成功：`cargo build -p <example-name>`
-- 检查 ABI 版本是否匹配
-- 查看日志文件中的错误信息
+Recommended learning order:
+1. **Virtual Metrics Extension** - Simplest, understand basic structure
+2. **Device Helper Example** - Learn complete device interaction API
+3. **Event Monitor Extension** - Understand event subscription mechanisms
 
-### 命令执行失败
+### Advanced Developers
 
-- 验证参数格式是否正确
-- 检查设备 ID 是否存在
-- 确认扩展有足够的权限
+Recommended learning order:
+1. **Virtual Weather Provider** - Learn external API integration
+2. **Device Capability Provider** - Understand capability system design
+3. **Runner Capability Provider** - Learn high-performance architecture
 
-### 虚拟指标未显示
+### Real-World Projects
 
-- 检查设备 ID 是否正确
-- 确认遥测存储已启用
-- 验证指标名称拼写是否正确
-
-### 事件监控无数据
-
-- 确认事件总线已启动
-- 检查事件过滤器配置
-- 验证事件源是否产生事件
+Based on these examples, you can develop:
+- Smart home automation extensions
+- Data analysis and visualization extensions
+- Third-party service integration extensions
+- Custom automation rule extensions
+- Device adapter extensions
 
 ---
 
-## 相关文档
+## Troubleshooting
 
-- **扩展开发指南**: `docs/guides/en/16-extension-dev.md`
-- **DeviceHelper 框架**: `docs/guides/en/framework-summary.md`
+### Extension Fails to Load
+
+- Check if the extension compiled successfully: `cargo build -p <example-name>`
+- Check if ABI version matches
+- Review log files for error messages
+
+### Command Execution Fails
+
+- Verify parameter format is correct
+- Check if device ID exists
+- Confirm extension has sufficient permissions
+
+### Virtual Metrics Not Showing
+
+- Check if device ID is correct
+- Confirm telemetry storage is enabled
+- Verify metric name spelling is correct
+
+### Event Monitor Shows No Data
+
+- Confirm event bus is running
+- Check event filter configuration
+- Verify event source is producing events
+
+### Push Target Not Delivering
+
+- Check if push target is started: `neomind push list`
+- Review delivery logs: `neomind push logs --id <target-id>`
+- Test the target: `neomind push test --id <target-id>`
+- Verify external endpoint is reachable
+
+### Notification Channel Not Working
+
+- Test the channel: `neomind channel test --name <channel-name>`
+- Check if channel is enabled: `neomind channel list`
+- Verify channel configuration (URL, credentials)
+
+---
+
+## Related Documentation
+
+- **Extension Development Guide**: `docs/guides/en/16-extension-dev.md`
+- **DeviceHelper Framework**: `docs/guides/en/framework-summary.md`
 - **Extension SDK**: `crates/neomind-extension-sdk/`
-- **Capability 系统**: `crates/neomind-core/src/extension/context.rs`
+- **Capability System**: `crates/neomind-core/src/extension/context.rs`
+- **API Reference**: `docs/guides/en/14-api.md`
+- **LLM Configuration**: `docs/guides/en/02-llm.md`
+- **Device Management**: `docs/guides/en/04-devices.md`
 
 ---
 
-## 贡献
+## Contributing
 
-如果你想添加新的扩展示例：
+If you want to add new extension examples:
 
-1. 在 `examples/` 下创建新目录
-2. 添加 `Cargo.toml` 和 `src/lib.rs`
-3. 在根 `Cargo.toml` 的 `members` 中添加你的示例
-4. 编写清晰的文档和注释
-5. 提交 Pull Request
+1. Create a new directory under `examples/`
+2. Add `Cargo.toml` and `src/lib.rs`
+3. Add your example to root `Cargo.toml` `members`
+4. Write clear documentation and comments
+5. Submit a Pull Request
 
 ---
 
-**最后更新**: 2026-03-08
+**Last Updated**: 2026-05-26

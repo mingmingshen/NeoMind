@@ -1,18 +1,40 @@
 # Web Frontend Module
 
-**Version**: 0.5.9
-**Completion**: 85%
+**Version**: 0.8.0
+**Completion**: 90%
 **Purpose**: React + TypeScript Web Application / Tauri Desktop Application
 
 ## Overview
 
 The Web module is NeoMind's frontend application, supporting both Web browser and Tauri desktop application (dual mode). Built with React 18 + TypeScript + Vite, using Zustand for state management, Radix UI + Tailwind CSS for the user interface.
 
-## Important Changes (v0.5.x)
+## Important Changes (v0.7.x – v0.8.x)
 
-### Plugin → Extension Migration
+### Design System Overhaul (v0.7)
 
-- **`/plugins` routes migrated to `/extensions`**
+- **OKLCH Color System** — CSS color tokens migrated from HSL to OKLCH for perceptually uniform colors across light and dark modes
+- **Design Tokens** — All hardcoded Tailwind palette colors replaced with semantic design tokens (`text-success`, `bg-error-light`, `text-accent-orange`, etc.)
+- **Aurora Background & Glass Morphism** — App-wide aurora gradient background with glass-style navigation
+- **Typography** — Plus Jakarta Sans (Latin) + Noto Sans SC (CJK) fonts
+- **UnifiedFormDialog** — Centralized dialog component for consistent form dialogs
+- **FullScreenDialog** — Full-screen builder dialog with sidebar layout for complex editors
+
+### Data Push & Notification Channels (v0.8)
+
+- **Data Explorer page** (`/data`) — Unified page with Data Explorer and Push Targets tabs
+- **PushTargetsTab** — Manage data push targets with create/edit/test workflows
+- **DeliveryHistoryPanel** — View delivery logs with pagination and status filtering
+- **ChannelEditorDialog** — FullScreenDialog for creating/editing notification channels (5 channel types: webhook, email, telegram, dingtalk, wecom)
+- **GlobalChatFab** — Floating action button for quick access to AI chat from any page
+
+### LLM Backends Management (v0.8)
+
+- **UnifiedLLMBackendsTab** — Unified tab in Settings page for managing LLM backend instances
+- **LLMBackendConfigDialog** — Dialog for configuring backend adapters (Ollama, OpenAI-compatible, etc.)
+
+### Plugin → Extension Migration (v0.5)
+
+- **`/plugins` routes migrated to `/extensions`** (redirect preserved)
 - `plugins.tsx` → `extensions.tsx`
 - Extension components unified in `components/extensions/` directory
 - API calls changed from `api.listPlugins()` to `api.listExtensions()`
@@ -50,6 +72,7 @@ web/src/
 │   │   ├── ThinkingBlock.tsx
 │   │   ├── StreamProgress.tsx
 │   │   ├── ToolCallVisualization.tsx
+│   │   ├── GlobalChatFab.tsx  # [v0.8] Floating AI chat button
 │   │   └── ...
 │   ├── dashboard/             # Dashboard components
 │   │   ├── DashboardGrid.tsx
@@ -57,14 +80,37 @@ web/src/
 │   │   └── config/
 │   ├── automation/            # Automation components
 │   │   ├── rule/
+│   │   ├── dialog/
+│   │   │   └── FullScreenDialog.tsx  # [v0.7] Full-screen builder dialog
 │   │   └── TransformTestDialog.tsx
 │   ├── devices/               # Device-related components
 │   │   ├── DeviceList.tsx
 │   │   ├── DeviceDetail.tsx
 │   │   └── ...
+│   ├── datapush/              # [v0.8] Data push components
+│   │   ├── PushTargetsTab.tsx
+│   │   ├── PushTargetDialog.tsx
+│   │   └── DeliveryHistoryPanel.tsx
+│   ├── llm/                   # [v0.8] LLM backend management
+│   │   ├── UnifiedLLMBackendsTab.tsx
+│   │   ├── LLMBackendConfigDialog.tsx
+│   │   └── index.ts
+│   ├── messages/              # Message/Notification components
+│   │   ├── ChannelEditorDialog.tsx  # [v0.8] FullScreenDialog channel editor
+│   │   ├── MessageChannelsTab.tsx
+│   │   ├── MessagesTab.tsx
+│   │   └── CreateMessageDialog.tsx
 │   ├── session/               # Session management components
 │   ├── extensions/            # Extension components (unified Extension management)
+│   ├── dialog/                # Shared dialog components
+│   │   └── UnifiedFormDialog.tsx    # [v0.7] Centralized form dialog
 │   ├── shared/                # Shared components
+│   │   ├── FullScreenEditor.tsx
+│   │   ├── ResponsiveTable.tsx      # [v0.7] Responsive table with mobile card view
+│   │   ├── PaginatedContent.tsx     # [v0.7] Pagination with infinite scroll
+│   │   ├── SearchBar.tsx
+│   │   ├── ErrorBoundary.tsx
+│   │   └── ...
 │   └── design-system/         # Design system
 ├── pages/                     # Page components
 │   ├── login.tsx              # Login page
@@ -73,9 +119,8 @@ web/src/
 │   ├── devices.tsx            # Devices page
 │   ├── automation.tsx         # Automation page
 │   ├── agents.tsx             # AI Agent page
-│   ├── settings.tsx           # Settings page
-│   ├── commands.tsx           # Commands page
-│   ├── decisions.tsx          # Decisions page
+│   ├── settings.tsx           # Settings page (with LLM backends tab)
+│   ├── data-explorer.tsx      # [v0.8] Data explorer + push targets
 │   ├── messages.tsx           # Messages page
 │   └── extensions.tsx         # Extensions page
 ├── store/                     # Zustand state management
@@ -87,10 +132,14 @@ web/src/
 │   │   ├── deviceSlice.ts     # Device state
 │   │   ├── alertSlice.ts      # Message/Alert state
 │   │   ├── settingsSlice.ts   # Settings state
-│   │   ├── decisionSlice.ts   # Decision state
 │   │   ├── extensionSlice.ts  # Extension state
 │   │   ├── llmBackendSlice.ts # LLM backend state
-│   │   └── dashboardSlice.ts  # Dashboard state
+│   │   ├── dashboardSlice.ts  # Dashboard state
+│   │   ├── dataPushSlice.ts   # [v0.8] Data push state
+│   │   ├── instanceSlice.ts   # [v0.7] Instance state
+│   │   ├── frontendComponentSlice.ts # [v0.7] Frontend component registry
+│   │   ├── aiAnalystSlice.ts  # AI analyst state
+│   │   └── updateSlice.ts     # Update state
 │   ├── selectors/             # Selectors
 │   └── persistence/           # Persistence
 ├── lib/                       # Utility libraries
@@ -99,17 +148,27 @@ web/src/
 │   ├── events.ts              # Event stream (SSE/WS)
 │   ├── auth/                  # Auth utilities
 │   ├── notify.ts              # Notification system
+│   ├── errors.ts              # Error handling utilities
+│   ├── portal.ts              # [v0.7] Portal root for modals/popovers
 │   └── utils/                 # Helper functions
 ├── hooks/                     # React Hooks
 │   ├── useDialog.ts
-│   ├── useForm.ts
+│   ├── useForm.ts             # [v0.7] Custom form hook with validation
 │   ├── use-toast.ts
-│   └── use-confirm.ts
+│   ├── use-confirm.ts
+│   ├── useErrorHandler.ts
+│   └── useMobile.ts           # Mobile detection
 ├── types/                     # TypeScript types
 │   └── index.ts               # Unified type definitions
 ├── design-system/             # Design system
 │   ├── components/
-│   └── tokens/
+│   ├── icons/                 # Entity type icon mappings
+│   ├── tokens/                # Design tokens
+│   │   ├── color.ts           # OKLCH color tokens
+│   │   ├── typography.ts
+│   │   ├── size.ts
+│   │   └── indicator.ts
+│   └── utils/                 # Format utilities (status colors, etc.)
 └── i18n/                      # Internationalization
 ```
 
@@ -187,10 +246,16 @@ web/src/
 /login                    // Login page (checks if setup needed)
 /setup                    // Initial setup
 
+// Shared routes (no auth required)
+/share/:token             // Shared dashboard (proxy access)
+
 // Protected routes (require auth)
 /                         // Default redirects to chat page
 /chat                    // AI chat page
 /chat/:sessionId         // Specific session chat
+/visual-dashboard        // Visual dashboard
+/visual-dashboard/:id    // Specific dashboard
+/data                    // [v0.8] Data explorer (telemetry data + push targets)
 /devices                 // Device management page
 /devices/:id             // Device details page
 /devices/types           // Device types page
@@ -198,14 +263,13 @@ web/src/
 /automation              // Automation page
 /automation/transforms   // Data transform page
 /agents                  // AI Agents page
-/settings                // Settings page
-/commands                // Commands page
-/decisions               // Decisions page
+/agents/memory           // Agent memory configuration
+/agents/skills           // Agent skill management
+/settings                // Settings page (includes LLM backends tab)
 /messages                // Messages page
 /messages/channels       // Message channels page
 /extensions              // Extension management page (unified Extension system)
-/visual-dashboard        // Visual dashboard
-/visual-dashboard/:id    // Specific dashboard
+/plugins                 // Redirects to /extensions (legacy)
 ```
 
 ## Dashboard Components
@@ -242,10 +306,12 @@ export type NeoMindStore = AuthSlice
   & AlertSlice
   & DeviceSlice
   & SettingsSlice
-  & DecisionSlice
   & ExtensionSlice
   & LlmBackendSlice
   & DashboardState
+  & DataPushSlice
+  & InstanceSlice
+  & FrontendComponentSlice
 ```
 
 ### AuthSlice - Auth State
@@ -482,12 +548,18 @@ const buttonVariants = cva(
 |-----------|-------------|
 | `StatsCard` | Statistics card |
 | `BulkActionBar` | Bulk action bar |
-| `Pagination` | Pagination component |
+| `Pagination` | Pagination component (default: 10 items per page) |
+| `PaginatedContent` | [v0.7] Pagination with infinite scroll for mobile |
+| `ResponsiveTable` | [v0.7] Responsive table with mobile card view and built-in skeleton loading |
 | `EmptyState` | Empty state indicator |
-| `LoadingState` | Loading state |
+| `LoadingState` | Loading state (skeleton for page-level, spinner for inline) |
 | `StatusBadge` | Status badge |
 | `ActionBar` | Action bar |
 | `MonitorStatsGrid` | Monitoring stats grid |
+| `ErrorBoundary` | React Error Boundary wrapper |
+| `SearchBar` | Search input with debounce |
+| `FullScreenEditor` | Full-screen editor wrapper |
+| `KeepAlive` | Component keep-alive wrapper |
 
 ### Chat Components
 
@@ -587,16 +659,16 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
+        border: 'var(--border)',
+        input: 'var(--input)',
+        ring: 'var(--ring)',
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
         primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+          DEFAULT: 'var(--primary)',
+          foreground: 'var(--primary-foreground)',
         },
-        // ...
+        // ... semantic design tokens using OKLCH CSS variables
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -611,54 +683,67 @@ module.exports = {
 
 ## Design System
 
-### Color System
+### Color System (OKLCH)
+
+All CSS color tokens use OKLCH for perceptually uniform colors:
 
 ```css
 :root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  --primary: 240 5.9% 10%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 240 5.9% 10%;
-  --radius: 0.5rem;
+  --background: oklch(1 0 0 / 97%);
+  --foreground: oklch(0.18 0.02 270);
+  --card: oklch(1 0 0 / 85%);
+  --card-foreground: oklch(0.18 0.02 270);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 270);
+  --primary: oklch(0.18 0.02 270);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0.003 270);
+  --secondary-foreground: oklch(0.18 0.02 270);
+  --muted: oklch(0.96 0.003 270);
+  --muted-foreground: oklch(0.45 0.01 270);
+  --accent: oklch(0.96 0.003 270);
+  --accent-foreground: oklch(0.18 0.02 270);
+  --destructive: oklch(0.577 0.245 27);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.88 0.01 270);
+  --input: oklch(0.88 0.01 270);
+  --ring: oklch(0.18 0.02 270);
+  --radius: 0.75rem;
 }
 
 .dark {
-  --background: 240 10% 3.9%;
-  --foreground: 0 0% 98%;
-  --card: 240 10% 3.9%;
-  --card-foreground: 0 0% 98%;
-  --popover: 240 10% 3.9%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 0 0% 98%;
-  --primary-foreground: 240 5.9% 10%;
-  --secondary: 240 3.7% 15.9%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  --accent: 240 3.7% 15.9%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 3.7% 15.9%;
-  --input: 240 3.7% 15.9%;
-  --ring: 240 4.9% 83.9%;
+  --background: oklch(0.14 0.02 270 / 97%);
+  --foreground: oklch(0.93 0.01 270);
+  --card: oklch(0.17 0.02 270 / 85%);
+  --card-foreground: oklch(0.93 0.01 270);
+  /* ... dark mode tokens follow same OKLCH pattern */
 }
 ```
+
+Design tokens defined in `web/src/design-system/tokens/color.ts`:
+
+```typescript
+// OKLCH chart colors — vibrant, high-contrast palette for data visualization
+export const chartColors = {
+  1: 'oklch(0.62 0.22 270)',   // Indigo-Blue
+  2: 'oklch(0.65 0.20 155)',   // Emerald
+  3: 'oklch(0.72 0.17 65)',    // Amber
+  4: 'oklch(0.67 0.20 25)',    // Orange
+  5: 'oklch(0.65 0.18 340)',   // Rose
+  6: 'oklch(0.68 0.12 210)',   // Sky Blue
+} as const
+
+// Status colors — tuned for semantic meaning
+export const statusColors = {
+  success: 'oklch(0.65 0.20 155)',   // Emerald green
+  warning: 'oklch(0.72 0.17 65)',    // Amber
+  error: 'oklch(0.58 0.22 25)',      // Deep red-orange
+  info: 'oklch(0.62 0.22 270)',      // Indigo-blue
+  neutral: 'oklch(0.55 0.02 260)',   // Cool gray
+} as const
+```
+
+**Important**: Only use design token classes (`text-success`, `bg-error-light`, `text-accent-orange`, etc.). NEVER use hardcoded Tailwind palette colors (`bg-blue-500`, `text-green-600`). CSS variable-based colors do NOT support Tailwind `/` opacity modifier — use pre-defined tokens (`bg-muted-30`, `bg-success-light`) instead.
 
 ### Icon System
 
@@ -736,3 +821,313 @@ const throttledSave = useThrottle(saveData, 1000)
 3. **Responsive**: Mobile and desktop adaptation
 4. **Accessibility**: Follow WCAG standards, use ARIA
 5. **Performance First**: Code splitting, lazy loading, virtual scrolling
+
+## Data Push Module (v0.8)
+
+The Data Push module provides configurable push targets that deliver device telemetry data to external services on a schedule.
+
+### Components
+
+| Component | Description |
+|-----------|-------------|
+| `PushTargetsTab` | Main tab showing list of push targets with CRUD operations |
+| `PushTargetDialog` | Dialog for creating/editing push target configuration |
+| `DeliveryHistoryPanel` | View delivery logs with pagination and status filtering |
+
+### State Management (DataPushSlice)
+
+```typescript
+interface DataPushSlice {
+  pushTargets: PushTarget[]
+  pushTargetsLoading: boolean
+  pushStats: PushStats | null
+  deliveryLogs: DeliveryLog[]
+  deliveryLogsTotal: number
+
+  fetchPushTargets: () => Promise<void>
+  createPushTarget: (data: CreatePushTargetRequest) => Promise<boolean>
+  updatePushTarget: (id: string, data: UpdatePushTargetRequest) => Promise<boolean>
+  deletePushTarget: (id: string) => Promise<boolean>
+  startPushTarget: (id: string) => Promise<boolean>
+  stopPushTarget: (id: string) => Promise<boolean>
+  testPushTarget: (id: string) => Promise<DeliveryLog | null>
+  fetchDeliveryLogs: (targetId: string, limit?: number, offset?: number) => Promise<void>
+}
+```
+
+## Notification Channels (v0.8)
+
+The notification channel system supports 5 channel types, each managed via the `ChannelEditorDialog` (a FullScreenDialog).
+
+### Supported Channel Types
+
+| Type | Description |
+|------|-------------|
+| `webhook` | HTTP webhook (POST to external URL) |
+| `email` | Email via SMTP configuration |
+| `telegram` | Telegram Bot API |
+| `dingtalk` | DingTalk robot webhook |
+| `wecom` | WeCom (WeChat Work) robot webhook |
+
+### ChannelEditorDialog
+
+Uses FullScreenDialog with sidebar layout:
+
+```typescript
+<FullScreenDialog open={open} onOpenChange={onOpenChange}>
+  <FullScreenDialogHeader />
+  <FullScreenDialogContent>
+    <FullScreenDialogSidebar>  {/* Channel type selector */}
+    <FullScreenDialogMain>     {/* Channel configuration form */}
+    <FullScreenDialogFooter>   {/* Actions */}
+  </FullScreenDialogContent>
+</FullScreenDialog>
+```
+
+## FetchCache Pattern (v0.7)
+
+Store-level fetch deduplication with TTL-based caching (default 10 seconds) prevents redundant API calls:
+
+```typescript
+// Pattern: shouldFetch -> markFetching -> API call -> markFetched
+// Invalidate on mutations
+
+// In slice:
+fetchCache: Record<string, { timestamp: number; fetching: boolean }>
+
+shouldFetch(key: string): boolean     // TTL expired and not currently fetching
+markFetching(key: string): void       // Set fetching flag
+markFetched(key: string): void        // Update timestamp
+invalidateCache(key?: string): void   // Clear cache (key or all)
+```
+
+Used in: `deviceSlice`, `extensionSlice`, `sessionSlice`, `llmBackendSlice`, `instanceSlice`, `frontendComponentSlice`.
+
+## Global Chat FAB (v0.8)
+
+The `GlobalChatFab` component renders a floating action button on all non-chat pages that expands into a full-screen chat overlay with a smooth scale-up animation from the FAB position.
+
+### Architecture
+
+- **File**: `web/src/components/chat/GlobalChatFab.tsx`
+- **Rendered in**: `App.tsx` inside the protected route layout, alongside `TopNav`
+- **Panel state machine**: `closed` -> `opening` -> `open` -> `closing` -> `closed`
+
+### Behavior
+
+| Feature | Description |
+|---------|-------------|
+| FAB visibility | Hidden on chat pages (`/`, `/chat`, `/chat/:sessionId`), visible on all other pages |
+| Panel session | Persistent across FAB close/reopen and page refreshes via `localStorage` key `neomind:panelSessionId` |
+| Auto-close | When user navigates to a chat page, the panel auto-closes (delayed if streaming is in progress) |
+| Streaming guard | If a response is streaming, the user is notified and the panel stays open |
+| Minimize button | Collapses back to FAB with reverse animation |
+
+### Visual Design
+
+- FAB: fixed `bottom-6 right-6`, 56px round button with glass morphism and orange glow ring
+- Overlay: `z-[90]` backdrop blur, click-to-close (disabled during streaming)
+- Panel: `z-[100]` full-screen on mobile, inset-4/inset-8 on larger screens, glass morphism background
+
+### Key Components
+
+```typescript
+// GlobalChatFab renders:
+<GlobalChatFab>
+  <button />              // FAB (hidden when open)
+  <div />                 // Backdrop overlay
+  <div>                   // Full-screen panel
+    <PanelChatView        // Reuses chat view logic
+      onClose={handleClose}
+      onStreamingChange={setIsStreaming}
+      ensureSession={ensurePanelSession}
+      showMinimize
+    />
+  </div>
+</GlobalChatFab>
+```
+
+## Dashboard Sharing (v0.7)
+
+Dashboard sharing allows generating public links that anyone can view without authentication. The system supports multiple share links per dashboard with configurable permissions and expiration.
+
+### Components
+
+| Component | File | Description |
+|-----------|------|-------------|
+| `ShareManagerDialog` | `components/dashboard/ShareManagerDialog.tsx` | FullScreenDialog for managing share links (list, create, delete) |
+| `SharedDashboard` | `pages/share/SharedDashboard.tsx` | Public-facing shared dashboard viewer (no auth required) |
+
+### API Endpoints
+
+```typescript
+// Share management (authenticated)
+GET    /api/dashboards/:id/share       // List share tokens
+POST   /api/dashboards/:id/share       // Create share link
+DELETE /api/dashboards/:id/share/:token // Revoke share link
+
+// Public access (no auth)
+GET    /api/share/:token               // Get shared dashboard data
+GET    /api/share/:token/proxy/*       // Proxy for widget data fetching
+```
+
+### Share Token Structure
+
+```typescript
+interface ShareToken {
+  token: string
+  permissions: { allow_interactive: boolean }
+  created_at: number
+  expires_at: number | null      // null = never expires
+  share_url: string
+}
+```
+
+### Share Link Creation Options
+
+- **Permissions**: Read-only (default) or Interactive (allows widget interactions)
+- **Expiration**: Optional, configurable in hours (1h, 6h, 24h, 7d, 30d, never)
+
+### Public Viewer Architecture
+
+The `SharedDashboard` page (`/share/:token`) is unique because it operates without authentication:
+
+1. **Fetch proxy**: All `/api/...` requests are rewritten to `/api/share/:token/proxy/...` via a global `window.fetch` interceptor (`installShareProxy()`)
+2. **Data conversion**: Backend returns snake_case fields; `fromDashboardDTO()` converts to camelCase
+3. **Component registries**: Community and extension component registries are loaded with `skipAuth: true`
+4. **Real-time updates**: No WebSocket available; device data is polled every 30 seconds instead
+5. **Error boundary**: Each component is wrapped in `ComponentErrorBoundary` for graceful degradation of unsupported components
+
+## Setup Wizard (v0.7)
+
+The Setup Wizard is the first-launch experience for new NeoMind installations. It creates the admin account and guides the user through initial configuration.
+
+### Flow
+
+```
+App.tsx checks /api/setup/status
+  -> setup_required: true  -> redirect to /setup
+  -> setup_required: false -> normal login flow
+```
+
+### Steps
+
+| Step | Component | Description |
+|------|-----------|-------------|
+| 1. Account | `AccountStep` | Create admin account (username, password, optional email) + timezone selection (auto-detected) |
+| 2. Complete | `CompleteStep` | Success screen with quick-start guide (Chat, LLM Setup, Explore) |
+
+### SetupRoute Guard
+
+```typescript
+// Only accessible when setup is required (no users exist yet)
+// If setup is already completed, redirects to /login
+// In Tauri: retries up to 15 times with backoff while waiting for backend
+```
+
+### API Endpoints
+
+```typescript
+GET  /api/setup/status     // { setup_required: boolean }
+POST /api/setup/complete   // Mark setup as done (requires JWT from account creation)
+```
+
+### Design Notes
+
+- LLM configuration is intentionally deferred -- users configure it when they first use AI features
+- Optional Mailchimp newsletter subscription via JSONP (AccountStep)
+- Setup background uses the same aurora gradient as the main app
+
+## Complete Store Slices Reference
+
+All Zustand store slices are composed into a single `NeoMindStore` type. Below is the complete reference with descriptions.
+
+| Slice | File | Description |
+|-------|------|-------------|
+| `AuthSlice` | `authSlice.ts` | User authentication with JWT tokens, API key support, login/register/logout, current user info |
+| `SessionSlice` | `sessionSlice.ts` | Chat session management -- create, switch, delete sessions; load message history; infinite scroll for session list |
+| `UISlice` | `uiSlice.ts` | UI state -- sidebar open/close toggle, WebSocket connection status |
+| `DeviceSlice` | `deviceSlice.ts` | Device management -- CRUD, device types, telemetry, batch current-value updates, BLE provisioning, MDL generation |
+| `AlertSlice` | `alertSlice.ts` | Alert/notification state -- fetch alerts, acknowledge, create (uses unified messages API internally) |
+| `SettingsSlice` | `settingsSlice.ts` | System settings -- config import/export/validation, settings dialog state |
+| `ExtensionSlice` | `extensionSlice.ts` | Extension management -- list/install/uninstall extensions, commands, data sources, logs, query execution |
+| `LlmBackendSlice` | `llmBackendSlice.ts` | LLM backend instances -- CRUD, activation switching, connection testing, backend type definitions |
+| `DashboardSlice` | `dashboardSlice.ts` | Dashboard management -- CRUD via persistence layer, component data source validation, agent cleanup on component removal |
+| `DataPushSlice` | `dataPushSlice.ts` | Push target management -- CRUD, start/stop, test, delivery logs with pagination, push statistics |
+| `InstanceSlice` | `instanceSlice.ts` | Remote NeoMind instance management -- CRUD, health testing, runtime switching with full-page reload strategy, API key decryption |
+| `FrontendComponentSlice` | `frontendComponentSlice.ts` | Community marketplace components -- fetch installed, browse market, install from market or manual ZIP upload, registry sync |
+| `AiAnalystSlice` | `aiAnalystSlice.ts` | AI Analyst widget configuration -- per-component system prompts and context window settings |
+| `UpdateSlice` | `updateSlice.ts` | Application update state -- available updates, download progress, installation status, update dialog |
+
+### Complete Store Type
+
+```typescript
+export type NeoMindStore = AuthSlice
+  & SessionSlice
+  & UISlice
+  & AlertSlice
+  & DeviceSlice
+  & SettingsSlice
+  & ExtensionSlice
+  & LlmBackendSlice
+  & DashboardSlice
+  & DataPushSlice
+  & InstanceSlice
+  & FrontendComponentSlice
+  & AiAnalystSlice
+  & UpdateSlice
+```
+
+## Complete Page Routes Reference
+
+### Public Routes (No Authentication)
+
+| Route | Page Component | Description |
+|-------|---------------|-------------|
+| `/login` | `LoginPage` | Login page with username/password; checks if setup is needed |
+| `/setup` | `SetupPage` | First-launch setup wizard (only accessible when no users exist) |
+| `/share/:token` | `SharedDashboardPage` | Public shared dashboard viewer (no auth required) |
+
+### Protected Routes (Authentication Required)
+
+| Route | Page Component | Nav Tab | Description |
+|-------|---------------|---------|-------------|
+| `/` | `ChatPage` | Chat | Default route; redirects to AI chat |
+| `/chat` | `ChatPage` | Chat | AI chat page with session management |
+| `/chat/:sessionId` | `ChatPage` | Chat | Specific chat session |
+| `/visual-dashboard` | `VisualDashboard` | Dashboard | Visual dashboard builder with drag-and-drop grid |
+| `/visual-dashboard/:id` | `VisualDashboard` | Dashboard | Edit specific dashboard |
+| `/data` | `DataExplorerPage` | Data | Data explorer (telemetry metrics) + push targets tab |
+| `/devices` | `DevicesPage` | Devices | Device management with tabs (list, types, drafts) |
+| `/devices/:id` | `DevicesPage` | Devices | Device detail view |
+| `/devices/types` | `DevicesPage` | Devices | Device type definitions |
+| `/devices/drafts` | `DevicesPage` | Devices | Auto-onboarded pending devices |
+| `/automation` | `AutomationPage` | Automation | Rule engine management |
+| `/automation/transforms` | `AutomationPage` | Automation | Data transform scripts |
+| `/agents` | `AgentsPage` | Agents | AI Agent management with tabs (list, memory, skills) |
+| `/agents/memory` | `AgentsPage` | Agents | Agent memory configuration |
+| `/agents/skills` | `AgentsPage` | Agents | Agent skill management |
+| `/settings` | `SettingsPage` | Settings | System settings (preferences, LLM backends, about) |
+| `/messages` | `MessagesPage` | Messages | Notification messages |
+| `/messages/channels` | `MessagesPage` | Messages | Notification channel configuration |
+| `/extensions` | `ExtensionsPage` | Extensions | Extension management (unified system) |
+| `/plugins` | Redirect | -- | Redirects to `/extensions` (legacy compatibility) |
+| `*` | Redirect | -- | Catch-all redirects to `/` |
+
+### Route Guards
+
+```typescript
+// SetupRoute - Only accessible when setup is required
+// ProtectedRoute - Checks JWT token or API key, redirects to /login if missing
+// Also checks /api/setup/status in background, redirects to /setup if needed
+```
+
+### Lazy Loading
+
+All page components are lazy-loaded via `React.lazy()` for code splitting:
+
+```typescript
+const ChatPage = lazy(() => import('@/pages/chat').then(m => ({ default: m.ChatPage })))
+const VisualDashboard = lazy(() => import('@/pages/dashboard-components/VisualDashboard').then(m => ({ default: m.VisualDashboard })))
+// ... all other pages similarly
+```

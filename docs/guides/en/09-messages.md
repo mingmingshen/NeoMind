@@ -1,8 +1,8 @@
 # Messages Module
 
 **Package**: `neomind-messages`
-**Version**: 0.5.9
-**Completion**: 70%
+**Version**: 0.8.0
+**Completion**: 90%
 **Purpose**: Message notification system
 
 ## Overview
@@ -17,9 +17,14 @@ crates/messages/src/
 ├── channels/                   # Notification channels
 │   ├── mod.rs
 │   ├── webhook.rs              # Webhook channel
-│   └── email.rs                # Email channel
+│   ├── email.rs                # Email (SMTP) channel
+│   ├── telegram.rs             # Telegram Bot API
+│   ├── wecom.rs                # WeCom robot webhook
+│   ├── dingtalk.rs             # DingTalk custom robot (HMAC-SHA256)
+│   ├── slack.rs                # Slack Incoming Webhook
+│   └── feishu.rs               # Feishu custom bot (HMAC-SHA256)
 ├── store.rs                    # Message storage
-├── notifier.rs                 # Notifier
+├── notifier.rs                 # Notifier with deduplication
 └── types.rs                    # Type definitions
 ```
 
@@ -209,17 +214,43 @@ impl AlertChannel for EmailChannel {
 }
 ```
 
-### Other Channel Types
+### Channel Types
 
 | Channel Type | Status | Description |
 |-------------|--------|-------------|
-| Webhook | ✅ | HTTP POST notification |
-| Email | ✅ | SMTP email |
-| DingTalk | 🟡 | To be implemented |
-| WeCom | 🟡 | To be implemented |
-| Feishu | 🟡 | To be implemented |
-| SMS | 🟡 | To be implemented |
-| Telegram | 🟡 | To be implemented |
+| Webhook | Implemented | HTTP POST notification with configurable timeout and HMAC signature |
+| Email | Implemented | SMTP email with TLS support, connection reuse, and atomic recipient management |
+| Telegram | Implemented | Bot API with Markdown-formatted messages |
+| WeCom | Implemented | Robot webhook with Markdown message format |
+| DingTalk | Implemented | Custom robot with HMAC-SHA256 signing |
+| Slack | Implemented | Incoming Webhook with Block Kit formatting |
+| Feishu | Implemented | Custom bot with HMAC-SHA256 signing and rich card support |
+
+### Channel Configuration
+
+Each channel type has its own configuration schema, exposed via `GET /api/messages/channels/types/:type/schema`:
+
+- **Webhook**: `url`, `secret` (optional), `timeout_secs` (default 30)
+- **Email**: `smtp_server`, `smtp_port`, `username`, `password`, `from`, `use_tls`
+- **Telegram**: `bot_token`, `chat_id`
+- **WeCom**: `webhook_url`
+- **DingTalk**: `webhook_url`, `secret` (for HMAC signing)
+- **Slack**: `webhook_url`
+- **Feishu**: `webhook_url`, `secret` (for HMAC signing)
+
+### Message Deduplication
+
+Messages with the same `title + source + severity` within a 60-second window are automatically deduplicated. The message is stored but channel delivery is skipped, preventing notification storms from high-frequency rule triggers.
+
+### Delivery Retry
+
+Failed message deliveries are automatically retried up to 3 times with a 2-minute interval. The `ChannelFilter` infrastructure tracks retry state via `can_retry`/`increment_retry`/`max_retries`.
+
+### Automatic Cleanup
+
+A background task runs every 6 hours to clean up:
+- Delivery logs older than 1 day
+- Messages older than 30 days
 
 ## Message Storage
 
@@ -372,9 +403,14 @@ GET    /api/messages/channels/stats         # Channel statistics
 
 ```toml
 [features]
-default = ["webhook", "email"]
+default = ["webhook", "email", "telegram", "wecom", "dingtalk", "slack", "feishu"]
 webhook = ["reqwest"]
 email = ["lettre"]
+telegram = ["reqwest"]
+wecom = ["reqwest"]
+dingtalk = ["reqwest", "hmac", "sha2"]
+slack = ["reqwest"]
+feishu = ["reqwest", "hmac", "sha2"]
 ```
 
 ## Usage Examples

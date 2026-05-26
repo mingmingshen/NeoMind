@@ -1,527 +1,240 @@
 # Automation Module
 
-**Package**: `neomind-automation`
-**Version**: 0.5.9
-**Completion**: 75%
-**Purpose**: Data transformation, automation, and intent analysis
+**Package**: `neomind-rules` (rule generation), `neomind-devices` (auto-onboarding)
+**Version**: 0.8.0
+**Completion**: 85%
+**Purpose**: Data transformation, rule generation from NL, auto-onboarding, and device type generation
 
 ## Overview
 
-The Automation module provides a data transformation engine, natural language to automation, and device type generation.
+The Automation module provides rule generation from natural language, device type generation from samples, and auto-onboarding for discovered devices. These features are distributed across the `neomind-rules` and `neomind-devices` crates.
 
-## Important Changes (v0.5.x)
+## Important Changes (v0.8.0)
 
-### Transform Metrics Storage
-Transform-generated virtual metrics are now unified in `data/telemetry.redb`:
+### Unified Architecture
 
-```
-DataSourceId: "transform:{transform_id}:{metric_name}"
-- device_part: "transform:{transform_id}"
-- metric_part: "{metric_name}"
-```
-
-Example:
-```
-transform:avg_temperature:temperature_avg
-transform:humidity_calc:indoor_humidity
-```
-
-This makes Transform metrics accessible by Agent, Rules, and other modules.
+Automation features are now integrated into the core crates rather than a separate `neomind-automation` crate:
+- **Rule Generation**: LLM-based rule generation is in `neomind-rules/src/generator.rs`
+- **Auto-Onboarding**: Draft device management is in `neomind-devices/src/service.rs`
+- **Device Type Generation**: LLM-based type generation is in the devices API layer
+- **Rule Validation**: Context-aware validation is in `neomind-rules/src/validator.rs`
 
 ## Module Structure
 
 ```
-crates/automation/src/
-├── lib.rs                      # Public interface
-├── transform.rs                # Transform engine
-├── types.rs                    # Type definitions
-├── conversion.rs               # Type conversion
-├── discovery.rs                # Data discovery
-├── intent.rs                   # Intent analysis
-├── nl2automation.rs            # NL2Automation
-├── threshold_recommender.rs    # Threshold recommender
-├── device_type_generator.rs    # Device type generator
-└── store.rs                    # Storage layer
+crates/neomind-rules/src/
+├── generator.rs                # LLM-based rule generation from NL
+├── validator.rs                # Rule validation with context awareness
+├── device_integration.rs       # Device action execution from rules
+├── extension_integration.rs    # Extension action execution from rules
+└── dsl.rs                      # DSL parser (RULE...WHEN...DO...END)
+
+crates/neomind-devices/src/
+├── service.rs                  # DeviceService with auto-onboarding
+├── registry.rs                 # DeviceRegistry with type management
+└── adapters/                   # Adapters with auto-discovery
 ```
 
 ## Core Features
 
-### 1. TransformEngine - Transformation Engine
+### 1. Rule Generation from Natural Language
 
 ```rust
-pub struct TransformEngine {
-    /// JS execution environment
-    js_runtime: Rc<RefCell<JsRuntime>>,
+// In neomind-rules/src/generator.rs
+
+pub struct GeneratorConfig {
+    pub model: String,
+    pub max_tokens: Option<usize>,
+    pub temperature: Option<f32>,
 }
-```
 
-```rust
-impl TransformEngine {
-    /// Create transform engine
-    pub fn new() -> Self;
-
-    /// Execute transform
-    pub async fn execute(
-        &self,
-        transform: &TransformAutomation,
-        input: &serde_json::Value,
-    ) -> Result<TransformResult>;
-
-    /// Validate transform
-    pub fn validate(&self, transform: &TransformAutomation) -> Result<()>;
-}
-```
-
-### 2. TransformAutomation - Transform Definition
-
-```rust
-pub struct TransformAutomation {
-    /// Transform ID
-    pub id: String,
-
-    /// Transform name
+/// Extracted information from natural language description
+pub struct ExtractedRuleInfo {
     pub name: String,
-
-    /// Transform scope
-    pub scope: TransformScope,
+    pub device_id: Option<String>,
+    pub metric: Option<String>,
+    pub operator: Option<ComparisonOperator>,
+    pub threshold: Option<f64>,
+    pub action_type: Option<ActionType>,
+    pub message: Option<String>,
 }
 ```
+
+### 2. Rule Validation with Context
 
 ```rust
-pub enum TransformScope {
-    /// Specific device
-    Device(String),
+// In neomind-rules/src/validator.rs
 
-    /// Device type
-    DeviceType(String),
+pub struct RuleValidator {
+    // Validates rules against available devices, metrics, commands
+}
 
-    /// Global
-    Global,
+pub struct ValidationContext {
+    pub devices: Vec<DeviceInfo>,
+    pub metrics: Vec<MetricInfo>,
+    pub commands: Vec<CommandInfo>,
+    pub alert_channels: Vec<AlertChannelInfo>,
+}
+
+pub struct RuleValidationResult {
+    pub is_valid: bool,
+    pub issues: Vec<ValidationIssue>,
+    pub resource_summary: ResourceSummary,
 }
 ```
 
-### 3. TransformOperation - Transform Operation
+### 3. Auto-Onboarding Pipeline
 
-```rust
-pub enum TransformOperation {
-    /// Field mapping
-    Map {
-        mappings: HashMap<String, String>,
-    },
-
-    /// Time window aggregation
-    TimeWindow {
-        window: TimeWindow,
-        aggregation: AggregationFunc,
-    },
-
-    /// Array aggregation
-    ArrayAggregation {
-        json_path: String,
-        aggregation: AggregationFunc,
-        value_path: Option<String>,
-        output_metric: String,
-    },
-
-    /// JavaScript expression
-    Expression {
-        code: String,
-    },
-
-    /// Pipeline
-    Pipeline {
-        stages: Vec<TransformOperation>,
-    },
-
-    /// Conditional branch
-    If {
-        condition: String,
-        then_op: Box<TransformOperation>,
-        else_op: Option<Box<TransformOperation>>,
-    },
-
-    /// Fork execution
-    Fork {
-        branches: Vec<TransformOperation>,
-    },
-
-    /// Custom WASM
-    Custom {
-        wasm_module: Vec<u8>,
-        function_name: String,
-    },
-}
+```
+Adapter Discovery -> Draft Device -> LLM Analysis -> Type Suggestion -> User Approval -> Full Device
 ```
 
-### 4. JsTransformExecutor - JS Executor
+The auto-onboarding flow:
+1. Adapters discover new devices and emit `DeviceEvent::Discovery`
+2. Discovered devices are stored as draft devices
+3. LLM analyzes sample data to suggest device types
+4. User reviews and approves/rejects
+5. Approved drafts become full device instances
 
-```rust
-pub struct JsTransformExecutor {
-    /// Boa JS runtime
-    runtime: Rc<RefCell<JsRuntime>>,
-}
+### 4. Device Type Generation from Samples
+
+```
+POST /api/device-types/generate-from-samples
 ```
 
-```rust
-impl JsTransformExecutor {
-    /// Execute JS expression
-    pub fn execute(
-        &self,
-        code: &str,
-        input: &serde_json::Value,
-    ) -> Result<serde_json::Value>;
+Generates device type templates from sample data using LLM analysis.
 
-    /// Register custom function
-    pub fn register_function(
-        &mut self,
-        name: &str,
-        func: NativeFunction,
-    );
-}
+## Rule DSL Syntax
+
+### Basic Rule
+
+```neo
+RULE "Temperature Alert"
+WHEN sensor.temperature > 50
+FOR 5 minutes
+DO
+    NOTIFY "Device temperature too high: {temperature}C"
+    EXECUTE device.fan(speed=100)
+    LOG alert, severity="high"
+END
 ```
 
-**Built-in JS Functions**:
-```javascript
-// Math functions
-Math.abs(x)
-Math.floor(x)
-Math.ceil(x)
-Math.round(x)
+### Extension Rule
 
-// String functions
-str.toUpperCase(s)
-str.toLowerCase(s)
-str.substring(s, start, end)
-
-// Array functions
-arr.sum(array)
-arr.avg(array)
-arr.max(array)
-arr.min(array)
-
-// Time functions
-time.now()
-time.format(timestamp, format)
+```neo
+RULE "Weather Alert"
+WHEN EXTENSION weather.temperature > 30
+DO
+    NOTIFY "Weather too hot"
+END
 ```
 
-## Data Discovery
+### Complex Rule with AND/OR
 
-```rust
-pub struct DataPathExtractor {
-    /// JSON path extractor
-    extractor: JsonPathExtractor,
-}
+```neo
+RULE "Compound Condition Alert"
+WHEN (sensor.temperature > 30) AND (EXTENSION weather.humidity < 20)
+DO
+    NOTIFY "High temperature and low humidity"
+    EXECUTE device.humidifier(on=true)
+END
 ```
 
-```rust
-impl DataPathExtractor {
-    /// Extract paths from sample data
-    pub fn extract_paths(
-        &self,
-        data: &serde_json::Value,
-    ) -> Vec<DiscoveredPath>;
+### Rule with Range Condition
 
-    /// Infer semantic type
-    pub fn infer_semantic_type(
-        &self,
-        path: &str,
-        value: &serde_json::Value,
-    ) -> SemanticType;
-}
+```neo
+RULE "Temperature Range Alert"
+WHEN sensor.temperature BETWEEN 20 AND 25
+DO
+    NOTIFY "Temperature in comfort range"
+END
 ```
 
-```rust
-pub enum SemanticType {
-    Temperature,
-    Humidity,
-    Pressure,
-    Boolean,
-    Enum(Vec<String>),
-    Unknown,
-}
-```
+### Scheduled Rule
 
-## NL2Automation
-
-```rust
-pub struct Nl2Automation {
-    /// LLM runtime
-    llm: Arc<dyn LlmRuntime>,
-}
-```
-
-```rust
-impl Nl2Automation {
-    /// Generate automation from natural language
-    pub async fn generate(
-        &self,
-        description: &str,
-    ) -> Result<SuggestedAutomation>;
-
-    /// Extract entities
-    pub async fn extract_entities(
-        &self,
-        text: &str,
-    ) -> Result<ExtractedEntities>;
-}
-```
-
-```rust
-pub struct ExtractedEntities {
-    pub triggers: Vec<TriggerEntity>,
-    pub conditions: Vec<ConditionEntity>,
-    pub actions: Vec<ActionEntity>,
-}
-```
-
-## Threshold Recommender
-
-```rust
-pub struct ThresholdRecommender {
-    /// History data window
-    window_size: usize,
-}
-```
-
-```rust
-impl ThresholdRecommender {
-    /// Analyze data and recommend threshold
-    pub async fn recommend(
-        &self,
-        data: &[f64],
-        intent: ThresholdIntent,
-    ) -> ThresholdRecommendation;
-
-    /// Validate threshold reasonableness
-    pub fn validate(
-        &self,
-        threshold: f64,
-        statistics: &Statistics,
-    ) -> ThresholdValidation;
-}
-```
-
-```rust
-pub enum ThresholdIntent {
-    /// Detect abnormally high values
-    DetectHigh,
-
-    /// Detect abnormally low values
-    DetectLow,
-
-    /// Detect outlier values
-    DetectOutliers,
-
-    /// Detect trend changes
-    DetectTrendChange,
-}
-```
-
-## Device Type Generator
-
-```rust
-pub struct DeviceTypeGenerator {
-    /// LLM runtime
-    llm: Arc<dyn LlmRuntime>,
-}
-```
-
-```rust
-impl DeviceTypeGenerator {
-    /// Generate device type from sample data
-    pub async fn generate_from_sample(
-        &self,
-        sample_data: &serde_json::Value,
-        device_info: &DeviceInfo,
-    ) -> Result<GeneratedDeviceType>;
-
-    /// Validate generated type
-    pub fn validate(
-        &self,
-        device_type: &DeviceTypeTemplate,
-    ) -> ValidationResult;
-}
-```
-
-```rust
-pub struct GeneratedDeviceType {
-    pub device_type: String,
-    pub name: String,
-    pub description: String,
-    pub metrics: Vec<MetricDefinition>,
-    pub commands: Vec<CommandDefinition>,
-}
-```
-
-## Auto-Onboarding
-
-```rust
-pub struct AutoOnboardManager {
-    /// Device registry
-    registry: Arc<DeviceRegistry>,
-
-    /// Generator
-    generator: DeviceTypeGenerator,
-
-    /// Threshold recommender
-    recommender: ThresholdRecommender,
-}
-```
-
-```rust
-impl AutoOnboardManager {
-    /// Process draft device
-    pub async fn process_draft_device(
-        &self,
-        draft: DraftDevice,
-    ) -> Result<RegistrationResult>;
-
-    /// Generate device type from sample
-    pub async fn generate_device_type(
-        &self,
-        sample: &DeviceSample,
-    ) -> Result<GeneratedDeviceType>;
-}
-```
-
-```rust
-pub struct DraftDevice {
-    pub id: String,
-    pub source: String,
-    pub sample_data: serde_json::Value,
-    pub status: DraftDeviceStatus,
-}
-```
-
-```rust
-pub enum DraftDeviceStatus {
-    Pending,
-    Processing,
-    Ready,
-    Failed(String),
-}
+```neo
+RULE "Periodic Check"
+TRIGGER SCHEDULE "0 */5 * * * *"
+DO
+    EXECUTE device.read_sensors()
+END
 ```
 
 ## API Endpoints
 
 ```
-# Transforms (part of unified automation API)
-GET    /api/automations/transforms              # List transforms
-POST   /api/automations/transforms              # Create transform
-GET    /api/automations/transforms/:id          # Get transform
-PUT    /api/automations/transforms/:id          # Update transform
-DELETE /api/automations/transforms/:id          # Delete transform
-POST   /api/automations/transforms/:id/test     # Test transform
-POST   /api/automations/transforms/process      # Process data
-GET    /api/automations/transforms/metrics      # Get virtual metrics
+# Rule Generation
+POST   /api/rules/validate                  # Validate rule DSL
 
-# Discovery
-POST   /api/automations/analyze-intent          # Intent analysis
-POST   /api/device-types/generate-from-samples  # Generate device types
+# Device Type Generation
+POST   /api/device-types/generate-from-samples  # Generate device types from samples
 
-# Thresholds
-POST   /api/thresholds/recommend                # Recommend threshold
-POST   /api/thresholds/validate                 # Validate threshold
-
-# Draft Devices (auto-onboarding)
+# Auto-Onboarding (Drafts)
 GET    /api/devices/drafts                      # List drafts
-GET    /api/devices/drafts/:id                  # Get draft
-PUT    /api/devices/drafts/:id                  # Update draft
-POST   /api/devices/drafts/:id/approve          # Approve device
-POST   /api/devices/drafts/:id/reject           # Reject device
-POST   /api/devices/drafts/:id/analyze          # LLM analysis
+GET    /api/devices/drafts/:device_id           # Get draft
+PUT    /api/devices/drafts/:device_id           # Update draft
+POST   /api/devices/drafts/:device_id/approve   # Approve device
+POST   /api/devices/drafts/:device_id/reject    # Reject device
+POST   /api/devices/drafts/:device_id/analyze   # LLM analysis
+POST   /api/devices/drafts/:device_id/enhance   # Enhance with LLM
+GET    /api/devices/drafts/:device_id/suggest-types  # Suggest types
 POST   /api/devices/drafts/cleanup              # Cleanup drafts
+GET    /api/devices/drafts/type-signatures      # Get type signatures
+GET    /api/devices/drafts/config               # Get onboard config
+PUT    /api/devices/drafts/config               # Update onboard config
+POST   /api/devices/drafts/upload               # Upload device data
 ```
 
 ## Usage Examples
 
-### Create Data Transform
-
-```rust
-use neomind_automation::{TransformAutomation, TransformOperation, TransformScope, AggregationFunc};
-
-let transform = TransformAutomation::new(
-    "avg_temperature",
-    "Calculate average temperature",
-    TransformScope::DeviceType("sensor".to_string()),
-)
-.with_operation(TransformOperation::ArrayAggregation {
-    json_path: "$.sensors".to_string(),
-    aggregation: AggregationFunc::Mean,
-    value_path: Some("temp".to_string()),
-    output_metric: "temperature_avg".to_string(),
-});
-
-let result = engine.execute(&transform, &input_data).await?;
-```
-
-### JavaScript Expression
-
-```rust
-let transform = TransformAutomation::new(
-    "temp_conversion",
-    "Temperature unit conversion",
-    TransformScope::Global,
-)
-.with_operation(TransformOperation::Expression {
-    code: r#"
-        // Fahrenheit to Celsius
-        input.temp * 1.8 + 32
-    "#.to_string(),
-});
-
-let result = engine.execute(&transform, &input_data).await?;
-```
-
 ### Natural Language Rule Generation
 
 ```rust
-use neomind_automation::Nl2Automation;
+use neomind_rules::generator::GeneratorConfig;
 
-let nl2auto = Nl2Automation::new(llm);
-
-let suggested = nl2auto.generate(
-    "Send alert when temperature exceeds 30 degrees"
-).await?;
-
-// suggested contains:
-// - trigger: DeviceMetric { metric: "temperature", compare: Gt, value: 30 }
-// - condition: ...
-// - action: SendAlert { message: "Temperature too high" }
+// The generator uses LLM to convert NL descriptions to DSL rules
+// Input: "Send alert when temperature exceeds 30 degrees"
+// Output:
+// RULE "Temperature Alert"
+// WHEN sensor.temperature > 30
+// DO
+//     NOTIFY "Temperature too high"
+// END
 ```
 
-### Threshold Recommendation
+### Rule Validation
 
 ```rust
-use neomind_automation::{ThresholdRecommender, ThresholdIntent};
+use neomind_rules::validator::{RuleValidator, ValidationContext};
 
-let recommender = ThresholdRecommender::new(100);
+let validator = RuleValidator::new();
+let context = ValidationContext {
+    devices: vec![/* available devices */],
+    metrics: vec![/* available metrics */],
+    commands: vec![/* available commands */],
+    alert_channels: vec![/* configured channels */],
+};
 
-let data = vec![22.5, 23.1, 22.8, 23.5, 22.9, 23.2];
-
-let recommendation = recommender.recommend(&data, ThresholdIntent::DetectHigh).await?;
-
-println!("Recommended threshold: {}", recommendation.threshold);
-println!("Confidence: {}", recommendation.confidence);
+let result = validator.validate(&rule, &context);
 ```
 
-## Transform Operation Status
+## Feature Status
 
-| Operation | Status | Description |
-|-----------|--------|-------------|
-| Map | ✅ | Field mapping complete |
-| TimeWindow | ✅ | Time window aggregation complete |
-| ArrayAggregation | ✅ | Array aggregation complete |
-| Expression | ✅ | JS expression execution complete |
-| Pipeline | 🟡 | Basic implementation |
-| Fork | 🟡 | Basic implementation |
-| If | 🟡 | Basic implementation |
-| Custom/WASM | ❌ | Not implemented |
+| Feature | Status | Description |
+|---------|--------|-------------|
+| DSL Rule Engine | Complete | Full DSL parser with RULE/WHEN/DO/END syntax |
+| NL Rule Generation | Complete | LLM-based rule generation from natural language |
+| Rule Validation | Complete | Context-aware validation against resources |
+| Extension Conditions | Complete | EXTENSION metric conditions in rules |
+| Device Type Generation | Complete | LLM-based type generation from samples |
+| Auto-Onboarding | Complete | Full draft device pipeline |
+| Agent Trigger Action | Complete | Rules can trigger AI agents |
+| Transform Engine | Planned | Data transformation pipeline |
 
 ## Design Principles
 
-1. **JS-First**: Use JavaScript as transformation language
-2. **Type Inference**: Automatically infer data types
-3. **Natural Language**: Support automation generation from natural language
-4. **Testable**: All transforms can be tested
-EOF
+1. **LLM-Powered**: Use LLM for NL-to-rule and sample-to-type generation
+2. **Context-Aware**: Validate rules against available devices and metrics
+3. **DSL-First**: Human-readable rule definition language
+4. **Extensible**: Support device and extension conditions in rules
+5. **Pipeline**: Auto-onboarding with LLM analysis and user approval

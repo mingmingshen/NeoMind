@@ -1,7 +1,7 @@
 # Memory Module
 
 **Package**: `neomind-agent` (memory submodule)
-**Version**: 0.6.5
+**Version**: 0.8.0
 **Completion**: 95%
 **Purpose**: Category-based memory system with LLM-powered extraction and compression
 
@@ -50,7 +50,7 @@ graph TB
 crates/neomind-agent/src/memory/
 ├── mod.rs              # Public interface
 ├── manager.rs          # MemoryManager - unified entry point
-├── extractor.rs        # LLM-powered memory extraction
+├── extractor.rs        # LLM-powered memory extraction (ChatExtractor, AgentExtractor)
 ├── compressor.rs       # LLM-powered compression
 ├── dedup.rs            # Semantic deduplication
 ├── scheduler.rs        # Background task scheduling
@@ -60,7 +60,11 @@ crates/neomind-agent/src/memory/
 ├── long_term.rs        # Long-term memory (knowledge base)
 ├── tiered.rs           # Unified tiered interface
 ├── bm25.rs             # Full-text search
-└── embeddings.rs       # Embedding vectors
+├── embeddings.rs       # Embedding vectors
+├── error.rs            # Memory error types
+├── security.rs         # Memory security scanner
+├── lifecycle.rs        # Memory lifecycle management
+└── snapshot.rs         # Memory snapshots
 ```
 
 ## Core Components

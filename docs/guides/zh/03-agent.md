@@ -1,7 +1,7 @@
 # Agent 模块
 
 **包名**: `neomind-agent`
-**版本**: 0.7.0
+**版本**: 0.8.0
 **完成度**: 95%
 **用途**: AI会话代理，集成LLM、内存和工具
 
@@ -26,7 +26,7 @@ crates/neomind-agent/src/
 │   │   ├── llm_planner.rs      #   LLMPlanner（结构化输出解析）
 │   │   └── coordinator.rs      #   PlanningCoordinator（路由选择规划器）
 │   ├── scheduler.rs            # 调度器
-│   ├── streaming.rs            # 流式响应
+│   ├── streaming.rs            # 流式响应（包含只读死胡同检测）
 │   └── tokenizer.rs            # 分词器
 ├── ai_agent/
 │   ├── mod.rs                  # 自主Agent
@@ -35,29 +35,48 @@ crates/neomind-agent/src/
 │   │   └── memory.rs           #   执行器内存集成
 │   └── intent_parser.rs        # 意图解析
 ├── tools/
-│   ├── mod.rs                  # Agent工具
-│   ├── dsl.rs                  # DSL工具
-│   ├── mapper.rs               # 映射工具
-│   ├── rule_gen.rs             # 规则生成
-│   ├── shell.rs                # Shell命令执行 (v0.6.10)
-│   └── skill.rs                # 技能管理 (v0.6.10)
+│   ├── mod.rs                  # Agent工具包装（事件集成）
+│   ├── event_integration.rs    #   带事件总线追踪的工具执行
+│   ├── interaction.rs          #   AskUser、ClarifyIntent、ConfirmAction工具
+│   ├── mapper.rs               #   工具名称映射和参数解析
+│   ├── think.rs                #   ThinkTool推理工具
+│   └── tool_search.rs          #   ToolSearchTool工具查找
 ├── toolkit/
 │   ├── mod.rs                  # 工具包模块
-│   ├── resolver.rs             # EntityResolver（模糊名称/ID匹配）(v0.6.4)
-│   └── simplified.rs           # 简化工具定义（用于提示词）
+│   ├── tool.rs                 #   Tool trait 和 ToolDefinition
+│   ├── registry.rs             #   ToolRegistry 和 ToolRegistryBuilder
+│   ├── resolver.rs             #   EntityResolver（模糊名称/ID匹配）(v0.6.4)
+│   ├── shell.rs                #   Shell命令执行 (v0.6.10)
+│   ├── skill_tool.rs           #   技能管理工具 (v0.6.10)
+│   ├── extension_tools.rs      #   扩展工具生成器和执行器
+│   ├── ai_metric.rs            #   AI指标查询工具
+│   ├── session_search.rs       #   会话搜索工具
+│   ├── time_utils.rs           #   时间范围解析工具
+│   └── error.rs                #   工具错误类型
+├── skills/                     # 技能系统 (v0.6.10)
+│   ├── mod.rs                  #   技能模块
+│   ├── types.rs                #   技能数据类型
+│   ├── parser.rs               #   YAML前置信息 + Markdown解析器
+│   ├── matcher.rs              #   关键词匹配器
+│   ├── registry.rs             #   技能注册表（CRUD + 持久化）
+│   └── builtins/               #   内置技能定义
 ├── prompts/
 │   └── builder.rs              # 提示词构建器
 ├── config/
 │   └── mod.rs                  # 配置
+├── context/                    # 上下文管理
 ├── context_selector.rs         # 上下文选择器
 ├── error.rs                    # 错误类型
 ├── hooks/                      # Hook系统
 ├── llm.rs                      # LLM集成
+├── memory/                     # 记忆系统（详见 08-memory.md）
+├── memory_extraction.rs        # 从对话中提取记忆
 ├── session.rs                  # 会话管理
+├── smart_conversation.rs       # 智能对话功能
 └── translation.rs              # 翻译
 ```
 
-## 重要变更 (v0.6.x)
+## 重要变更 (v0.6.x - v0.8.0)
 
 ### 聚合工具（Token 优化）
 智能体现在使用**聚合工具**代替独立的工具函数，显著减少函数调用中的 token 消耗：
@@ -268,6 +287,21 @@ let device_id = EntityResolver::resolve(
 ### Agent 状态同步 (v0.6.12)
 
 智能体的暂停/激活操作现在能正确与调度器同步。暂停智能体会将其从执行器中取消调度；激活智能体会重新调度。这确保了 UI 状态与后端执行状态一致。
+
+### 流式处理改进 (v0.7.0+)
+
+**只读死胡同检测**：流式处理模块检测用户请求执行操作（创建、删除、控制等）但 LLM 仅执行了只读命令（list、get、query）的情况。此时会注入强制续行提示，使 LLM 完成请求的操作。
+
+`streaming.rs` 中的关键函数：
+- `user_message_requires_action()` — 检测用户消息中的动作动词（中英文）
+- `all_tools_were_read_only()` — 检查所有已执行命令是否为只读
+- `extract_action_hint()` — 提取请求操作的提示信息
+
+**错误恢复提示**：Shell 工具检测失败的 CLI 命令，并在响应中通过 `suggestion` 字段追加领域相关的恢复提示，引导 LLM 正确重试。
+
+**最大工具迭代次数**：默认值从 10 提高到 20，允许更多多步骤工具调用以支持复杂工作流。
+
+**思考模型修复**：对于非聊天 LLM 调用（记忆提取、压缩），将 `thinking_enabled` 设为 `false`，避免在思考模型（qwen3.x、deepseek-r1）上浪费 token。
 
 ## 核心组件
 
@@ -490,41 +524,306 @@ pub enum ToolCallStatus {
 
 ## 内置工具
 
-### Agent专用工具
-
+### Agent专用工具 (tools/)
 ```rust
-/// 分析工具
-- AnomaliesAnalysis     // 异常分析
-- TrendsAnalysis        // 趋势分析
-- DecisionsAnalysis     // 决策分析
-
-/// 自动化工具
-- AutomationTool        // 自动化操作
-
-/// DSL工具
-- DslTool               // DSL解析和生成
-
-/// 事件工具
-- EventIntegrationTool  // 事件订阅
-
 /// 交互工具
-- InteractionTool       // 用户交互
-
-/// 映射工具
-- MapperTool            // 数据映射
-
-/// MDL工具
-- MdlTool               // MDL操作
-
-/// 规则工具
-- RuleGenTool           // 规则生成
+- AskUserTool              // 提示用户输入
+- ClarifyIntentTool        // 澄清模糊意图
+- ConfirmActionTool        // 确认危险操作
 
 /// 思考工具
-- ThinkTool             // 推理思考
+- ThinkTool                // 推理和思考记录
 
 /// 工具搜索
-- ToolSearchTool        // 工具查找
+- ToolSearchTool           // 工具查找和发现
+
+/// 事件集成
+- EventIntegratedToolRegistry  // 带事件总线追踪的工具执行
 ```
+
+### 工具包工具 (toolkit/)
+```rust
+/// 核心工具
+- ShellTool                // 通过 neomind CLI 执行系统命令 (v0.6.10)
+- SkillTool                // 用户自定义技能管理 (v0.6.10)
+- ExtensionTool            // 扩展工具生成器和执行器
+- AiMetricTool             // AI指标查询工具
+- SessionSearchTool        // 会话历史搜索
+
+/// 基础设施
+- ToolRegistry             // 工具注册和查找
+- EntityResolver           // 模糊名称/ID匹配 (v0.6.4)
+- ToolNameMapper           // 工具名称映射和参数解析
+```
+
+## 技能系统（详细）
+
+技能系统提供场景驱动的操作指南，在运行时动态注入到 LLM 提示词中。技能通过提供分步指令、CLI 命令示例和常见错误解决方案，帮助 AI 智能体正确执行复杂的多工具工作流。
+
+### 架构概览
+
+```
+[IDENTITY] → [TOOL_STRATEGY] → [TOOL_DEFINITIONS] → [SKILL_GUIDES] → [INTENT] → [CONTEXT]
+```
+
+技能注入到提示词流水线的 `SKILL_GUIDES` 位置。系统由四个核心组件构成：
+
+| 组件 | 文件 | 用途 |
+|------|------|------|
+| **Parser** | `skills/parser.rs` | 解析 YAML 前置信息 + Markdown 正文 |
+| **Registry** | `skills/registry.rs` | 加载、索引和管理技能（CRUD + 持久化） |
+| **Matcher** | `skills/matcher.rs` | 根据用户输入对技能评分 |
+| **SkillTool** | `toolkit/skill_tool.rs` | LLM 工具，用于搜索、加载、创建和管理技能 |
+
+### 什么是技能？
+
+**技能**是一个带有 YAML 前置信息的 Markdown 文件，描述了 AI 智能体在特定场景下的操作指南。每个技能包含：
+
+- **元数据**（YAML 前置信息）：ID、名称、分类、触发关键词、工具-动作目标、反触发词、优先级和 token 预算
+- **正文**（Markdown）：分步指令、CLI 命令示例、常见错误及解决方案
+
+技能具有两个作用：
+1. **自动提示词注入**：当用户消息匹配到技能的触发条件时，技能指南会自动注入到 LLM 提示词中（在 token 预算内）
+2. **按需加载**：LLM 可以通过 `skill` 工具主动搜索和加载技能，获取操作指导
+
+### 技能文件格式
+
+每个技能文件使用 YAML 前置信息后跟 Markdown 正文：
+
+```yaml
+---
+id: my-custom-skill
+name: 我的自定义技能
+category: general          # device | rule | agent | message | extension | general
+origin: user               # user | builtin（自动设置）
+priority: 50               # 0-100，值越高在多个匹配时越优先
+token_budget: 500          # 注入提示词的最大 token 数
+triggers:
+  keywords: [delete device, remove device, 删除设备]
+  tool_target:
+    - tool: device
+      actions: [delete]
+anti_triggers:
+  keywords: [create device, 新建设备]
+---
+
+# 我的自定义技能指南
+
+## 操作步骤
+
+1. 首先，列出所有设备以找到目标 ID
+2. 确认设备存在
+3. 删除设备
+
+## CLI 示例
+
+```bash
+neomind device list
+neomind device delete --id <device_id>
+```
+
+## 常见错误
+
+- **设备未找到**：使用 `neomind device list` 检查设备 ID
+- **设备正在被规则使用**：先删除相关规则再删除设备
+```
+
+#### YAML 前置信息字段
+
+| 字段 | 必需 | 类型 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `id` | 是 | string | - | 唯一标识符（字母数字、`-`、`_`） |
+| `name` | 是 | string | - | 人类可读的名称 |
+| `category` | 否 | enum | `general` | 取值：`device`、`rule`、`agent`、`message`、`extension`、`general` |
+| `origin` | 否 | enum | `user` | `builtin` 或 `user`（自动设置，无需手动指定） |
+| `priority` | 否 | integer | `50` | 0-100，优先级高的技能在多匹配时更受青睐 |
+| `token_budget` | 否 | integer | `500` | 注入提示词的最大 token 数 |
+| `triggers.keywords` | 否 | string[] | `[]` | 触发该技能的关键词（不区分大小写） |
+| `triggers.tool_target` | 否 | object[] | `[]` | 触发该技能的工具+动作对 |
+| `anti_triggers.keywords` | 否 | string[] | `[]` | 排除该技能匹配的关键词 |
+
+#### Token 预算指南
+
+技能注入的总预算取决于模型的上下文窗口大小：
+
+| 上下文大小 | 最大技能 Token |
+|-----------|--------------|
+| <= 4,000 | 400 |
+| <= 8,000 | 800 |
+| <= 16,000 | 4,000 |
+| > 16,000 | 8,000 |
+
+每个技能通过 `token_budget` 指定自己的预算（默认：500）。超过预算的正文内容会在最近的段落边界处截断。
+
+### 内置技能
+
+系统附带 10 个编译嵌入的内置技能，在启动时加载。用户创建的同 ID 技能可以覆盖内置技能。
+
+| 技能 ID | 分类 | 说明 |
+|--------|------|------|
+| `device-onboarding` | device | 设备接入、MQTT broker 配置、Webhook 设置、ESP32/Python 示例 |
+| `connector-management` | device | MQTT 连接器配置和管理 |
+| `dashboard-management` | general | 仪表盘 CRUD、组件布局、数据绑定 |
+| `rule-management` | rule | 规则 DSL 语法、触发器、动作、CRUD 操作 |
+| `agent-management` | agent | AI Agent CRUD、调度、执行模式、控制 |
+| `message-management` | message | 消息通道配置、发送、查询 |
+| `extension-development` | extension | 扩展 SDK 使用、manifest 格式、构建和部署 |
+| `transform-management` | general | 数据转换 CRUD 和配置 |
+| `data-push-management` | message | 数据推送目标配置和投递管理 |
+| `widget-development` | general | 自定义组件开发指南 |
+
+### 技能匹配算法
+
+当收到用户消息时，匹配器对所有已注册技能进行评分：
+
+1. **关键词匹配**（每次匹配 +0.4）：用户输入中每找到一个触发关键词（不区分大小写的子串匹配），分数增加 0.4。
+
+2. **工具-动作匹配**（工具+动作 +0.5，仅工具 +0.2）：如果工具名称和其中一个动作同时出现在用户输入中，技能获得 0.5 分。如果只有工具名称出现，获得 0.2 分。
+
+3. **反触发排除**（每次匹配 -1.0）：如果用户输入中找到任何反触发关键词，分数减去 1.0。例如，这可以防止"删除规则"技能在用户说"创建规则"时匹配。
+
+4. **优先级权重**（0-0.1）：将 `priority / 1000` 加到分数中，给高优先级技能一个轻微的提升。
+
+分数 > 0 的技能按分数降序排列，在 token 预算耗尽前注入到提示词中。超出剩余预算的技能会在段落边界处截断。
+
+### 技能发现与加载过程
+
+```
+启动时：
+  1. 从编译的二进制文件加载内置技能（include_str!）
+  2. 从 data/skills/*.md 加载用户技能（同 ID 覆盖内置技能）
+  3. 构建关键词索引和工具-动作索引以支持快速查找
+
+每条消息：
+  1. 对所有技能针对用户输入进行评分
+  2. 过滤出分数 > 0 的技能
+  3. 按分数降序排列
+  4. 在 token 预算内注入到提示词
+```
+
+### `skill` 工具
+
+LLM 可以使用 `skill` 工具按需管理技能：
+
+| 操作 | 说明 | 参数 |
+|------|------|------|
+| `search` | 按关键词搜索技能 | `query` 或 `id` |
+| `load` | 加载技能的完整指南内容 | `id` |
+| `create` | 创建新的用户技能 | `content`（YAML + Markdown） |
+| `update` | 更新已有技能 | `id`、`content` |
+| `delete` | 删除用户技能 | `id` |
+
+`skill` 工具在 LLM 遇到不熟悉的领域或需要特定 CLI 命令语法时特别有用。它可以在执行操作之前搜索相关技能并加载完整指南。
+
+### 创建自定义技能
+
+用户技能存储在 `data/skills/*.md` 中。可以通过以下方式创建：
+
+1. **LLM 工具调用**：智能体可以使用 `skill` 工具配合 `action: "create"` 创建技能
+2. **手动创建文件**：在 `data/skills/` 目录中放置带 YAML 前置信息的 `.md` 文件
+3. **前端 UI**：在智能体设置的技能面板中使用代码编辑器
+
+用户技能会覆盖同 ID 的内置技能，允许自定义内置指南的行为。
+
+示例：创建自定义温度监控技能：
+
+```yaml
+---
+id: temperature-monitoring
+name: 温度监控工作流
+category: device
+priority: 70
+token_budget: 600
+triggers:
+  keywords: [temperature alert, 温度告警, monitor temperature, 监控温度]
+  tool_target:
+    - tool: device
+      actions: [list, query, control]
+    - tool: rule
+      actions: [create]
+anti_triggers:
+  keywords: [delete, 删除]
+---
+
+# 温度监控工作流
+
+## 设置步骤
+
+1. 查找温度传感器设备
+2. 创建带阈值的监控规则
+3. 配置通知通道
+
+## CLI 命令
+
+```bash
+# 列出温度设备
+neomind device list --type temperature
+
+# 创建温度规则
+neomind rule create --dsl "RULE temp_alert WHEN device.temp > 30 DO notify"
+
+# 查询最新读数
+neomind device latest --id <device_id>
+```
+
+## 常见错误
+- **无数据**：检查设备是否在线并发送遥测数据
+- **规则未触发**：确认指标名称与设备的数据源 ID 格式匹配
+```
+
+### 技能系统 API
+
+技能也可以通过代码管理：
+
+```rust
+use neomind_agent::skills::{SkillRegistry, create_shared_registry, match_skills, TokenBudgetConfig};
+
+// 创建注册表（加载内置 + 用户技能）
+let registry = create_shared_registry(Some(Path::new("data")));
+
+// 根据用户输入匹配技能
+let budget = TokenBudgetConfig::for_context(8000);
+let matches = match_skills(&registry.read().await, "删除规则 temp-alert", budget);
+
+// 访问单个技能
+let skill = registry.read().await.get("rule-management");
+```
+
+### Agent 调度
+
+智能体支持三种调度模式，通过 `schedule` 配置：
+
+| 调度类型 | 说明 | 配置 |
+|---------|------|------|
+| `event` | 由系统事件触发（设备数据、告警） | `schedule_type: "event"` |
+| `cron` | 基于 Cron 表达式的调度 | `schedule_type: "cron"`, `cron_expression: "*/5 * * * *"` |
+| `interval` | 固定间隔执行 | `schedule_type: "interval"`, `interval_seconds: 300` |
+
+### 资源绑定
+
+**聚焦模式**的智能体需要绑定资源，定义数据采集和分析的范围：
+
+```rust
+pub struct AgentResource {
+    pub resource_type: ResourceType,  // Metric, ExtensionMetric, Device, ExtensionTool
+    pub resource_id: String,          // 例如 "device:temp-sensor:temperature"
+    pub name: String,                 // 显示名称
+    pub config: serde_json::Value,    // 额外配置
+}
+```
+
+资源绑定确保聚焦智能体仅在定义范围内操作，超出绑定资源的命令会被范围校验拒绝。
+
+### Agent 状态管理
+
+```rust
+pub enum AgentStatus {
+    Active,    // 智能体正在运行且已调度
+    Paused,    // 智能体已暂停（已从执行器取消调度）
+}
+```
+
+状态变更会与调度器同步：暂停会取消调度，激活会重新调度。
 
 ## AgentExecutor - 执行器
 

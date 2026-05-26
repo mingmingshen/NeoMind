@@ -1,8 +1,8 @@
 # Messages 模块
 
 **包名**: `neomind-messages`
-**版本**: 0.5.9
-**完成度**: 70%
+**版本**: 0.8.0
+**完成度**: 90%
 **用途**: 消息通知系统
 
 ## 概述
@@ -16,10 +16,15 @@ crates/messages/src/
 ├── lib.rs                      # 公开接口
 ├── channels/                   # 通知通道
 │   ├── mod.rs
-│   ├── webhook.rs              # Webhook通道
-│   └── email.rs                # Email通道
+│   ├── webhook.rs              # Webhook 通道
+│   ├── email.rs                # 邮件（SMTP）通道
+│   ├── telegram.rs             # Telegram Bot API
+│   ├── wecom.rs                # 企业微信机器人 Webhook
+│   ├── dingtalk.rs             # 钉钉自定义机器人（HMAC-SHA256）
+│   ├── slack.rs                # Slack Incoming Webhook
+│   └── feishu.rs               # 飞书自定义机器人（HMAC-SHA256）
 ├── store.rs                    # 消息存储
-├── notifier.rs                 # 通知器
+├── notifier.rs                 # 通知器（含去重）
 └── types.rs                    # 类型定义
 ```
 
@@ -209,17 +214,43 @@ impl AlertChannel for EmailChannel {
 }
 ```
 
-### 其他通道类型
+### 通道类型
 
 | 通道类型 | 状态 | 说明 |
 |---------|------|------|
-| Webhook | ✅ | HTTP POST通知 |
-| Email | ✅ | SMTP邮件 |
-| 钉钉 | 🟡 | 待实现 |
-| 企业微信 | 🟡 | 待实现 |
-| 飞书 | 🟡 | 待实现 |
-| 短信 | 🟡 | 待实现 |
-| Telegram | 🟡 | 待实现 |
+| Webhook | 已实现 | HTTP POST 通知，支持可配置超时和 HMAC 签名 |
+| 邮件 | 已实现 | SMTP 邮件，支持 TLS、连接复用和原子性收件人管理 |
+| Telegram | 已实现 | Bot API，Markdown 格式消息 |
+| 企业微信 | 已实现 | 机器人 Webhook，Markdown 消息格式 |
+| 钉钉 | 已实现 | 自定义机器人，HMAC-SHA256 签名 |
+| Slack | 已实现 | Incoming Webhook，Block Kit 格式 |
+| 飞书 | 已实现 | 自定义机器人，HMAC-SHA256 签名，富文本卡片 |
+
+### 通道配置
+
+每种通道类型有自己的配置 Schema，通过 `GET /api/messages/channels/types/:type/schema` 获取：
+
+- **Webhook**: `url`、`secret`（可选）、`timeout_secs`（默认 30）
+- **邮件**: `smtp_server`、`smtp_port`、`username`、`password`、`from`、`use_tls`
+- **Telegram**: `bot_token`、`chat_id`
+- **企业微信**: `webhook_url`
+- **钉钉**: `webhook_url`、`secret`（用于 HMAC 签名）
+- **Slack**: `webhook_url`
+- **飞书**: `webhook_url`、`secret`（用于 HMAC 签名）
+
+### 消息去重
+
+相同 `title + source + severity` 的消息在 60 秒窗口内自动去重。消息仍会存储，但跳过通道投递，防止高频规则触发造成通知风暴。
+
+### 投递重试
+
+失败的消息投递自动重试最多 3 次，间隔 2 分钟。`ChannelFilter` 基础设施通过 `can_retry`/`increment_retry`/`max_retries` 跟踪重试状态。
+
+### 自动清理
+
+后台任务每 6 小时运行一次，清理：
+- 超过 1 天的投递日志
+- 超过 30 天的消息
 
 ## 消息存储
 
@@ -372,9 +403,14 @@ GET    /api/messages/channels/stats         # 通道统计
 
 ```toml
 [features]
-default = ["webhook", "email"]
+default = ["webhook", "email", "telegram", "wecom", "dingtalk", "slack", "feishu"]
 webhook = ["reqwest"]
 email = ["lettre"]
+telegram = ["reqwest"]
+wecom = ["reqwest"]
+dingtalk = ["reqwest", "hmac", "sha2"]
+slack = ["reqwest"]
+feishu = ["reqwest", "hmac", "sha2"]
 ```
 
 ## 使用示例

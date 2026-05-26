@@ -1,28 +1,30 @@
 # Rules 模块
 
 **包名**: `neomind-rules`
-**版本**: 0.5.9
-**完成度**: 75%
-**用途**: DSL规则引擎
+**版本**: 0.8.0
+**完成度**: 85%
+**用途**: 带LLM生成的DSL规则引擎
 
 ## 概述
 
-Rules模块实现了基于DSL（领域特定语言）的规则引擎，支持从自然语言创建和管理自动化规则。
+Rules模块实现了基于DSL（领域特定语言）的规则引擎，支持设备和扩展指标条件、基于LLM的自然语言规则生成、上下文感知验证和多种动作类型。
 
 ## 模块结构
 
 ```
-crates/rules/src/
-├── lib.rs                      # 公开接口
-├── parser/                     # Pest DSL解析器
-│   ├── mod.rs
-│   └── grammar.pest             # Pest语法文件
-├── engine/                     # 规则执行引擎
-│   ├── mod.rs
-│   ├── executor.rs
-│   └── context.rs
-├── types.rs                    # 规则类型
-└── store.rs                    # 规则存储
+crates/neomind-rules/src/
+├── lib.rs                      # 公开接口与重导出
+├── dsl.rs                      # DSL解析器和类型
+├── engine.rs                   # 规则评估引擎
+├── generator.rs                # 基于LLM的自然语言规则生成
+├── validator.rs                # 上下文感知的规则验证
+├── store.rs                    # 规则持久化（redb）
+├── history.rs                  # 规则执行历史
+├── dependencies.rs             # 依赖管理
+├── device_integration.rs       # 设备动作执行
+├── extension_integration.rs    # 扩展动作执行
+├── unified_provider.rs         # 统一值提供者
+└── error.rs                    # 错误类型
 ```
 
 ## DSL语法
@@ -30,357 +32,304 @@ crates/rules/src/
 ### 规则结构
 
 ```neo
-# 触发器
-ON <trigger>
-
-# 条件
-WHEN <conditions>
-
-# 动作
-THEN <actions>
+RULE "<名称>"
+[TRIGGER SCHEDULE "<cron>"]
+WHEN <条件>
+[FOR <持续时间>]
+DO
+    <动作>
+    [<动作> ...]
+END
 ```
 
 ### 完整示例
 
 ```neo
-# 简单规则
-ON device.temperature > 30
-WHEN device.location == "greenhouse"
-THEN send_alert("温度过高: {temperature}°C")
+# 简单设备规则
+RULE "温度告警"
+WHEN sensor.temperature > 50
+DO
+    NOTIFY "设备温度过高: {temperature}C"
+END
 
-# 复杂规则
-ON device.temperature
-WHEN device.temperature > 30
-   AND device.location == "greenhouse"
-   AND time.between(9, 18)
-THEN device.set_fan(true)
-   AND send_alert("已开启风扇")
+# 带持续时间的设备规则
+RULE "持续高温"
+WHEN sensor.temperature > 30
+FOR 5 minutes
+DO
+    NOTIFY "温度持续过高5分钟"
+    EXECUTE device.fan(speed=100)
+END
+
+# 扩展指标规则
+RULE "天气告警"
+WHEN EXTENSION weather.temperature > 30
+DO
+    NOTIFY "天气过热"
+END
+
+# 带AND/OR的复杂规则
+RULE "复合告警"
+WHEN (sensor.temperature > 30) AND (EXTENSION weather.humidity < 20)
+DO
+    NOTIFY "高温且低湿度"
+    EXECUTE device.humidifier(on=true)
+END
+
+# 范围条件
+RULE "温度范围"
+WHEN sensor.temperature BETWEEN 20 AND 25
+DO
+    NOTIFY "温度在舒适范围内"
+END
 
 # 定时规则
-ON schedule.every(1h)
-THEN device.read_all_sensors()
-   AND log_temperature()
+RULE "周期检查"
+TRIGGER SCHEDULE "0 */5 * * * *"
+DO
+    EXECUTE device.read_sensors()
+END
 
-# 多条件规则
-ON ANY(
-    device.temperature > 35,
-    device.humidity > 80
-)
-WHEN device.status == "online"
-THEN send_alert("温室环境异常")
+# Agent触发规则
+RULE "自动分析"
+WHEN sensor.temperature > 40
+DO
+    TRIGGER_AGENT "analyzer" INPUT "检查温度异常"
+END
 ```
 
 ## 核心类型
 
-### 1. Rule - 规则定义
+### 1. ParsedRule - 解析后的规则定义
 
 ```rust
-pub struct Rule {
-    /// 规则ID
-    pub id: String,
-
+pub struct ParsedRule {
     /// 规则名称
     pub name: String,
-
-    /// 规则描述
-    pub description: String,
-
-    /// 是否启用
-    pub enabled: bool,
-
-    /// 触发器
-    pub trigger: Trigger,
-
-    /// 条件列表
-    pub conditions: Vec<Condition>,
-
-    /// 动作列表
-    pub actions: Vec<Action>,
-
-    /// 元数据
-    pub metadata: RuleMetadata,
+    /// 要评估的条件
+    pub condition: RuleCondition,
+    /// 条件触发前需要持续的时长
+    pub for_duration: Option<Duration>,
+    /// 要执行的动作
+    pub actions: Vec<RuleAction>,
+    /// 描述（可选）
+    pub description: Option<String>,
+    /// 标签
+    pub tags: Vec<String>,
+    /// 触发类型
+    pub trigger_type: TriggerType,
 }
 ```
 
-### 2. Trigger - 触发器
+### 2. TriggerType - 触发类型
 
 ```rust
-pub enum Trigger {
-    /// 设备事件触发
+pub enum TriggerType {
+    /// 设备状态变化触发（默认）
+    DeviceState,
+    /// Cron定时触发
+    Schedule { cron: String },
+    /// 手动通过API触发
+    Manual,
+}
+```
+
+### 3. RuleCondition - 条件定义
+
+```rust
+pub enum RuleCondition {
+    /// 设备条件: device.metric 操作符 值
     Device {
         device_id: String,
-        event_type: DeviceEventType,
-    },
-
-    /// 定时器触发
-    Schedule {
-        schedule: ScheduleConfig,
-    },
-
-    /// 数据条件触发
-    Data {
         metric: String,
-        comparison: ComparisonOperator,
-        value: f64,
+        operator: ComparisonOperator,
+        threshold: f64,
     },
-
-    /// 复合触发器
-    Any(Vec<Trigger>),
-    All(Vec<Trigger>),
-}
-
-pub enum ScheduleConfig {
-    /// 间隔执行
-    Every {
-        value: u64,
-        unit: TimeUnit,
+    /// 扩展条件: extension.metric 操作符 值
+    Extension {
+        extension_id: String,
+        metric: String,
+        operator: ComparisonOperator,
+        threshold: f64,
     },
-
-    /// Cron表达式
-    Cron(String),
-
-    /// 特定时间
-    At {
-        hour: u8,
-        minute: u8,
+    /// 设备范围条件
+    DeviceRange {
+        device_id: String,
+        metric: String,
+        min: f64,
+        max: f64,
     },
+    /// 扩展范围条件
+    ExtensionRange {
+        extension_id: String,
+        metric: String,
+        min: f64,
+        max: f64,
+    },
+    /// 逻辑与
+    And(Vec<RuleCondition>),
+    /// 逻辑或
+    Or(Vec<RuleCondition>),
+    /// 逻辑非
+    Not(Box<RuleCondition>),
+    /// 始终为真（用于定时/手动规则）
+    Always,
 }
 ```
 
-### 3. Condition - 条件
-
 ```rust
-pub struct Condition {
-    /// 左值
-    pub left: ConditionValue,
-
-    /// 比较操作
-    pub operator: ComparisonOperator,
-
-    /// 右值
-    pub right: ConditionValue,
-
-    /// 逻辑连接符
-    pub logic: Option<LogicOperator>,
-}
-
 pub enum ComparisonOperator {
-    Eq,    // ==
-    Ne,    // !=
-    Gt,    // >
-    Ge,    // >=
-    Lt,    // <
-    Le,    // <=
-    Contains,
-    Matches,  // 正则匹配
-}
-
-pub enum LogicOperator {
-    And,
-    Or,
-    Xor,
+    GreaterThan,    // >
+    LessThan,       // <
+    GreaterEqual,   // >=
+    LessEqual,      // <=
+    Equal,          // ==
+    NotEqual,       // !=
 }
 ```
 
-### 4. Action - 动作
+### 4. RuleAction - 动作定义
 
 ```rust
-pub enum Action {
-    /// 设备控制
-    Device {
+pub enum RuleAction {
+    /// 发送通知
+    Notify {
+        message: String,
+        channels: Option<Vec<String>>,
+    },
+    /// 执行设备命令
+    Execute {
         device_id: String,
         command: String,
-        parameters: serde_json::Value,
+        params: HashMap<String, serde_json::Value>,
     },
-
-    /// 发送消息
-    SendMessage {
-        channel: String,
+    /// 记录日志
+    Log {
+        level: LogLevel,
         message: String,
+        severity: Option<String>,
     },
-
-    /// 发送告警
-    SendAlert {
-        severity: AlertSeverity,
-        message: String,
-    },
-
-    /// HTTP请求
-    Http {
-        url: String,
-        method: HttpMethod,
-        headers: HashMap<String, String>,
-        body: Option<String>,
-    },
-
-    /// 设置变量
-    SetVariable {
-        name: String,
+    /// 设置设备属性
+    Set {
+        device_id: String,
+        property: String,
         value: serde_json::Value,
     },
-
-    /// 延迟
-    Delay {
-        duration_ms: u64,
+    /// 延迟执行
+    Delay { duration: Duration },
+    /// 创建告警
+    CreateAlert {
+        title: String,
+        message: String,
+        severity: AlertSeverity,
+    },
+    /// 发送HTTP请求
+    HttpRequest {
+        method: HttpMethod,
+        url: String,
+        headers: Option<HashMap<String, String>>,
+        body: Option<String>,
+    },
+    /// 触发AI Agent
+    TriggerAgent {
+        agent_id: String,
+        input: Option<String>,
+        data: Option<serde_json::Value>,
     },
 }
 ```
 
-## 规则解析器
-
-```rust
-pub struct RuleParser {
-    /// Pest解析器
-    parser: PestParser,
-}
-
-impl RuleParser {
-    /// 解析规则文本
-    pub fn parse(&self, input: &str) -> Result<Rule>;
-
-    /// 验证规则语法
-    pub fn validate(&self, input: &str) -> Result<()>;
-}
-```
-
-### Pest语法
-
-```pest
-// grammar.pest
-
-rule = { SOI ~ trigger ~ conditions? ~ actions ~ EOI }
-
-trigger = { "ON" ~ ~condition }
-
-condition = { comparison }
-
-comparison = {
-    ~ value ~ operator ~ value
-    | "ANY(" ~ condition_list ~ ")"
-    | "ALL(" ~ condition_list ~ ")"
-}
-
-operator = {
-    "==" | "!=" | ">" | ">=" | "<" | "<="
-    | "contains" | "matches"
-}
-
-action = {
-    device_action
-    | send_alert_action
-    | send_message_action
-    | http_action
-    | delay_action
-}
-
-value = {
-    string | number | boolean
-    | device_ref | time_ref
-}
-```
-
-## 规则执行引擎
+## 规则引擎
 
 ```rust
 pub struct RuleEngine {
-    /// 规则存储
     store: Arc<RuleStore>,
-
-    /// 事件总线
-    event_bus: Arc<EventBus>,
-
-    /// 设备服务
-    device_service: Arc<DeviceService>,
-
-    /// 消息服务
-    message_service: Arc<MessageService>,
+    value_provider: Arc<dyn ValueProvider>,
+    device_executor: Option<Arc<DeviceActionExecutor>>,
+    extension_executor: Option<Arc<ExtensionActionExecutor>>,
+    message_manager: Option<Arc<MessageManager>>,
+    agent_trigger: Option<AgentTriggerCallback>,
 }
 
 impl RuleEngine {
     /// 创建规则引擎
-    pub fn new(
-        store: Arc<RuleStore>,
-        event_bus: Arc<EventBus>,
-    ) -> Self;
+    pub fn new(value_provider: Arc<dyn ValueProvider>) -> Self;
 
-    /// 注册规则
-    pub async fn register_rule(&self, rule: Rule) -> Result<()>;
+    /// 从DSL文本添加规则
+    pub async fn add_rule_from_dsl(&self, dsl: &str) -> Result<RuleId>;
 
     /// 启用/禁用规则
-    pub async fn set_rule_enabled(&self, id: &str, enabled: bool) -> Result<()>;
+    pub async fn set_rule_enabled(&self, id: &RuleId, enabled: bool) -> Result<()>;
 
-    /// 评估规则
-    pub async fn evaluate_rule(
-        &self,
-        rule_id: &str,
-        context: &EvaluationContext,
-    ) -> RuleResult;
+    /// 评估所有规则
+    pub async fn evaluate_all(&self) -> Vec<RuleExecutionResult>;
 
-    /// 执行动作
-    pub async fn execute_actions(
-        &self,
-        actions: &[Action],
-        context: &EvaluationContext,
-    ) -> Result<Vec<ActionResult>>;
+    /// 获取规则状态
+    pub async fn get_rule_state(&self, id: &RuleId) -> Option<RuleState>;
 
-    /// 启动引擎
+    /// 启动评估循环
     pub async fn start(&self) -> Result<()>;
 
-    /// 停止引擎
+    /// 停止评估循环
     pub async fn stop(&self) -> Result<()>;
 }
 ```
 
-### 评估上下文
+### 规则执行结果
 
 ```rust
-pub struct EvaluationContext {
-    /// 当前时间
-    pub timestamp: i64,
+pub struct RuleExecutionResult {
+    pub rule_id: RuleId,
+    pub rule_name: String,
+    pub triggered: bool,
+    pub condition_met: bool,
+    pub actions_executed: usize,
+    pub action_results: Vec<ActionResult>,
+    pub evaluation_duration: Duration,
+}
+```
 
-    /// 设备状态
-    pub device_states: HashMap<String, DeviceState>,
+## 规则验证
 
-    /// 变量
-    pub variables: HashMap<String, serde_json::Value>,
+```rust
+pub struct RuleValidator {
+    // 根据可用资源验证规则
+}
 
-    /// 触发数据
-    pub trigger_data: Option<serde_json::Value>,
+pub struct ValidationContext {
+    pub devices: Vec<DeviceInfo>,
+    pub metrics: Vec<MetricInfo>,
+    pub commands: Vec<CommandInfo>,
+    pub alert_channels: Vec<AlertChannelInfo>,
+}
+
+pub struct RuleValidationResult {
+    pub is_valid: bool,
+    pub issues: Vec<ValidationIssue>,
+    pub resource_summary: ResourceSummary,
+}
+
+pub enum ValidationSeverity {
+    Error,
+    Warning,
+    Info,
 }
 ```
 
 ## 规则历史
 
 ```rust
-pub struct RuleExecutionRecord {
-    /// 执行ID
-    pub id: String,
-
-    /// 规则ID
+pub struct RuleHistoryEntry {
     pub rule_id: String,
-
-    /// 触发时间
+    pub rule_name: String,
     pub triggered_at: i64,
-
-    /// 执行结果
-    pub result: RuleExecutionResult,
-
-    /// 动作结果
-    pub action_results: Vec<ActionResult>,
-
-    /// 耗时
+    pub condition_met: bool,
+    pub actions_executed: usize,
     pub duration_ms: u64,
 }
 
-pub enum RuleExecutionResult {
-    /// 触发并成功
-    Triggered,
-
-    /// 触发但失败
-    Failed { error: String },
-
-    /// 未触发
-    NotTriggered,
+pub struct RuleHistoryStorage {
+    db: Database,
 }
 ```
 
@@ -389,72 +338,35 @@ pub enum RuleExecutionResult {
 ```
 # Rules CRUD
 GET    /api/rules                           # 列出规则
-POST   /api/rules                           # 创建规则
+POST   /api/rules                           # 创建规则（需要 {"dsl": "RULE ... END"}）
 GET    /api/rules/:id                       # 获取规则
 PUT    /api/rules/:id                       # 更新规则
 DELETE /api/rules/:id                       # 删除规则
 POST   /api/rules/:id/enable                # 启用/禁用规则
 
-# Rule Operations
+# 规则操作
 POST   /api/rules/:id/test                  # 测试规则
 GET    /api/rules/:id/history               # 规则执行历史
 POST   /api/rules/validate                  # 验证规则DSL
 
-# Rule Templates
-GET    /api/rules/templates                 # 规则模板
-POST   /api/rules/from-nl                   # 从自然语言生成规则
+# 规则导入/导出
+GET    /api/rules/export                    # 导出所有规则
+POST   /api/rules/import                    # 导入规则
+
+# 规则资源
+GET    /api/rules/resources                 # 验证可用的资源
 ```
 
 ## 使用示例
 
-### 创建规则
+### 通过DSL创建规则
 
-```rust
-use neomind-rules::{Rule, Trigger, Condition, Action, ComparisonOperator};
-
-let rule = Rule {
-    id: "temp_alert".to_string(),
-    name: "温度告警".to_string(),
-    description: "温室温度过高时告警".to_string(),
-    enabled: true,
-    trigger: Trigger::Data {
-        metric: "temperature".to_string(),
-        comparison: ComparisonOperator::Gt,
-        value: 30.0,
-    },
-    conditions: vec![
-        Condition {
-            left: ConditionValue::DeviceField("location".to_string()),
-            operator: ComparisonOperator::Eq,
-            right: ConditionValue::String("greenhouse".to_string()),
-            logic: None,
-        },
-    ],
-    actions: vec![
-        Action::SendAlert {
-            severity: AlertSeverity::Warning,
-            message: "温度过高: {temperature}°C".to_string(),
-        },
-    ],
-    metadata: RuleMetadata::default(),
-};
-```
-
-### DSL解析
-
-```rust
-use neomind-rules::RuleParser;
-
-let parser = RuleParser::new();
-
-let rule_text = r#"
-ON device.temperature > 30
-WHEN device.location == "greenhouse"
-THEN send_alert("温度过高")
-"#;
-
-let rule = parser.parse(rule_text)?;
-engine.register_rule(rule).await?;
+```bash
+curl -X POST http://localhost:9375/api/rules \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dsl": "RULE \"温度告警\" WHEN sensor.temperature > 30 DO NOTIFY \"高温\" END"
+  }'
 ```
 
 ### 测试规则
@@ -463,19 +375,31 @@ engine.register_rule(rule).await?;
 curl -X POST http://localhost:9375/api/rules/test \
   -H "Content-Type: application/json" \
   -d '{
-    "rule": "ON device.temperature > 30 THEN send_alert(\"高温\")",
+    "dsl": "RULE \"测试\" WHEN sensor.temperature > 30 DO NOTIFY \"高温\" END",
     "context": {
-      "device": {
-        "temperature": 32,
-        "location": "greenhouse"
+      "sensor": {
+        "temperature": 35
       }
     }
   }'
 ```
 
+### 验证规则
+
+```bash
+curl -X POST http://localhost:9375/api/rules/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dsl": "RULE \"测试\" WHEN sensor.temperature > 30 DO NOTIFY \"高温\" END"
+  }'
+```
+
 ## 设计原则
 
-1. **DSL优先**: 使用简洁的DSL语法
-2. **可测试**: 所有规则都可以测试
-3. **事件驱动**: 基于EventBus触发
-4. **可组合**: 支持复杂条件组合
+1. **DSL优先**: 人类可读的规则定义语言（RULE/WHEN/DO/END）
+2. **可测试**: 所有规则都可以用模拟上下文测试
+3. **事件驱动**: 规则基于数据变化评估
+4. **可组合**: 支持复杂条件组合（AND/OR/NOT）
+5. **可扩展**: 支持设备、扩展和定时触发
+6. **验证**: 上下文感知的资源验证
+7. **Agent集成**: 规则可触发AI Agent进行复杂分析

@@ -1,7 +1,7 @@
 # Memory 模块
 
 **包名**: `neomind-agent` (memory submodule)
-**版本**: 0.6.5
+**版本**: 0.8.0
 **完成度**: 95%
 **用途**: 分类记忆系统，支持 LLM 自动提取和压缩
 
@@ -50,7 +50,7 @@ graph TB
 crates/neomind-agent/src/memory/
 ├── mod.rs              # 公开接口
 ├── manager.rs          # MemoryManager - 统一入口
-├── extractor.rs        # LLM 驱动的记忆提取
+├── extractor.rs        # LLM 驱动的记忆提取（ChatExtractor、AgentExtractor）
 ├── compressor.rs       # LLM 驱动的压缩
 ├── dedup.rs            # 语义去重
 ├── scheduler.rs        # 后台任务调度
@@ -60,7 +60,11 @@ crates/neomind-agent/src/memory/
 ├── long_term.rs        # 长期记忆（知识库）
 ├── tiered.rs           # 统一分层接口
 ├── bm25.rs             # 全文搜索
-└── embeddings.rs       # 嵌入向量
+├── embeddings.rs       # 嵌入向量
+├── error.rs            # 记忆错误类型
+├── security.rs         # 记忆安全扫描器
+├── lifecycle.rs        # 记忆生命周期管理
+└── snapshot.rs         # 记忆快照
 ```
 
 ## 核心组件

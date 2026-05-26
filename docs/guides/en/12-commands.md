@@ -1,332 +1,201 @@
 # Commands Module
 
-**Package**: `neomind-commands`
-**Version**: 0.5.9
-**Completion**: 70%
-**Purpose**: Device command queue and downlink adapter
+**Package**: `neomind-devices` (command execution in DeviceService)
+**Version**: 0.8.0
+**Completion**: 80%
+**Purpose**: Device command execution and status tracking
 
 ## Overview
 
-The Commands module is responsible for managing device command sending, retry, and status tracking.
+The Commands functionality is integrated into the DeviceService within the `neomind-devices` crate. It manages device command sending, status tracking, and history persistence. Commands are routed through the appropriate adapter based on the device's configuration.
 
-## Module Structure
+## Architecture
 
-```
-crates/commands/src/
-├── lib.rs                      # Public interface
-├── adapter.rs                  # Downlink adapter
-├── queue.rs                    # Command queue
-├── store.rs                    # Command storage
-└── types.rs                    # Type definitions
-```
+Commands are not a separate crate. They are handled by:
+- `DeviceService` in `neomind-devices/src/service.rs` - command execution and routing
+- `DeviceAdapter` trait - protocol-specific command sending
+- `neomind-storage` - command history persistence (CommandHistoryRecord)
 
 ## Core Types
 
-### 1. DeviceCommand - Device Command
+### 1. CommandHistoryRecord - Command Record
 
 ```rust
-pub struct DeviceCommand {
-    /// Command ID
-    pub id: String,
+pub struct CommandHistoryRecord {
+    /// Unique command ID
+    pub command_id: String,
 
     /// Device ID
     pub device_id: String,
 
     /// Command name
-    pub command: String,
+    pub command_name: String,
 
     /// Command parameters
-    pub payload: serde_json::Value,
+    pub parameters: HashMap<String, serde_json::Value>,
 
     /// Command status
     pub status: CommandStatus,
 
-    /// Created at
+    /// Result message (if available)
+    pub result: Option<String>,
+
+    /// Error message (if failed)
+    pub error: Option<String>,
+
+    /// Created timestamp
     pub created_at: i64,
 
-    /// Updated at
-    pub updated_at: i64,
-
-    /// Executed at
-    pub executed_at: Option<i64>,
-
-    /// Retry count
-    pub retry_count: u32,
-
-    /// Error message
-    pub error: Option<String>,
+    /// Completed timestamp
+    pub completed_at: Option<i64>,
 }
+```
 
+### 2. CommandStatus - Command Status
+
+```rust
 pub enum CommandStatus {
-    /// Pending to send
+    /// Pending execution
     Pending,
-
-    /// Sending
-    Sending,
-
-    /// Sent (waiting for acknowledgment)
-    Sent,
-
-    /// Success
+    /// Currently executing
+    Executing,
+    /// Completed successfully
     Success,
-
     /// Failed
-    Failed {
-        error: String,
-        retryable: bool,
-    },
-
-    /// Cancelled
-    Cancelled,
-
-    /// Timeout
+    Failed,
+    /// Timed out
     Timeout,
 }
 ```
 
-### 2. DownlinkAdapter - Downlink Adapter
+### 3. Command Execution Flow
 
-```rust
-#[async_trait]
-pub trait DownlinkAdapter: Send + Sync {
-    /// Adapter type
-    fn adapter_type(&self) -> &str;
-
-    /// Send command
-    async fn send_command(
-        &self,
-        device_id: &str,
-        command: &str,
-        payload: &serde_json::Value,
-    ) -> Result<serde_json::Value>;
-
-    /// Test connection
-    async fn test_connection(&self) -> Result<bool>;
-
-    /// Get statistics
-    fn stats(&self) -> AdapterStats;
-}
+```
+API -> DeviceService::send_command()
+     -> Build payload from device template
+     -> Route to appropriate handler:
+        a. Extension device -> ExtensionCommandRouter
+        b. MQTT device -> MqttAdapter::send_command()
+        c. Other -> DeviceAdapter::send_command()
+     -> Record command history
+     -> Update status (Success/Failed)
 ```
 
-### 3. Adapter Implementations
+## Command Routing
 
-#### MQTT Downlink Adapter
+### MQTT Commands
 
-```rust
-pub struct MqttDownlinkAdapter {
-    /// MQTT client
-    client: Arc<AsyncClient>,
+Commands are sent to MQTT devices via the adapter:
+1. DeviceService looks up the device's adapter
+2. Builds the command payload from the device type template
+3. Calls `adapter.send_command()` with the device ID, command name, and payload
+4. The adapter publishes to the configured command topic
 
-    /// Command topic template
-    topic_template: String,
+### Extension Commands
 
-    /// QoS level
-    qos: u8,
-
-    /// Statistics
-    stats: Arc<AdapterStats>,
-}
-
-pub struct MqttAdapterConfig {
-    /// Adapter ID
-    pub id: String,
-
-    /// MQTT Broker
-    pub broker: String,
-
-    /// Command topic template, {device_id} will be replaced
-    pub topic_prefix: String,
-
-    /// QoS
-    pub qos: u8,
-}
-```
-
-#### HTTP Downlink Adapter
-
-```rust
-pub struct HttpDownlinkAdapter {
-    client: reqwest::Client,
-    base_url: String,
-    stats: Arc<AdapterStats>,
-}
-
-pub struct HttpAdapterConfig {
-    pub id: String,
-    pub base_url: String,
-    pub headers: HashMap<String, String>,
-    pub timeout_secs: u64,
-}
-```
-
-### 4. Command Queue
-
-```rust
-pub struct CommandQueue {
-    /// Storage backend
-    store: Arc<CommandStore>,
-
-    /// Adapter registry
-    adapters: Arc<RwLock<HashMap<String, Arc<dyn DownlinkAdapter>>>>,
-
-    /// Event bus
-    event_bus: Arc<EventBus>,
-
-    /// Queue configuration
-    config: QueueConfig,
-}
-
-pub struct QueueConfig {
-    /// Queue capacity
-    pub capacity: usize,
-
-    /// Worker threads
-    pub workers: usize,
-
-    /// Retry policy
-    pub retry_policy: RetryPolicy,
-
-    /// Retry interval (milliseconds)
-    pub retry_interval_ms: u64,
-
-    /// Max retry count
-    pub max_retries: u32,
-}
-
-pub enum RetryPolicy {
-    /// Fixed interval
-    Fixed,
-
-    /// Exponential backoff
-    Exponential {
-        base_ms: u64,
-        max_ms: u64,
-        multiplier: f64,
-    },
-
-    /// Linear increase
-    Linear {
-        initial_ms: u64,
-        increment_ms: u64,
-    },
-}
-```
-
-### 5. Command Storage
-
-```rust
-pub struct CommandStore {
-    db: Database,
-}
-
-impl CommandStore {
-    /// Open storage
-    pub fn open(path: impl AsRef<Path>) -> Result<Self>;
-
-    /// Add command
-    pub fn add(&self, command: &DeviceCommand) -> Result<()>;
-
-    /// Get command
-    pub fn get(&self, id: &str) -> Result<Option<DeviceCommand>>;
-
-    /// Update status
-    pub fn update_status(
-        &self,
-        id: &str,
-        status: CommandStatus,
-    ) -> Result<()>;
-
-    /// List device commands
-    pub fn list_by_device(
-        &self,
-        device_id: &str,
-        limit: usize,
-    ) -> Result<Vec<DeviceCommand>>;
-
-    /// List pending commands
-    pub fn list_pending(&self) -> Result<Vec<DeviceCommand>>;
-
-    /// Cleanup old commands
-    pub fn cleanup(&self, older_than: i64) -> Result<usize>;
-}
-```
-
-## Command Execution Flow
-
-```mermaid
-sequenceDiagram
-    API->>Queue: enqueue(device_id, command, payload)
-    Queue->>Store: save command (Pending)
-    Queue->>Adapter: send_command()
-    Adapter->>Device: send via protocol
-    Queue->>Store: update (Sending)
-    Device-->>Adapter: result/timeout
-    Adapter-->>Queue: result
-    Queue->>Store: update (Success/Failed)
-    Queue->>EventBus: publish result
-```
+Commands to extension-managed devices use the ExtensionCommandRouter:
+1. DeviceService detects the device is extension-managed
+2. Routes command through the `ExtensionCommandRouterFn` callback
+3. The extension processes the command and returns result
 
 ## API Endpoints
 
 ```
-# Commands
-GET    /api/commands                       # List commands
-GET    /api/commands/:id                   # Get command
-POST   /api/commands/:id/retry             # Retry command
-POST   /api/commands/:id/cancel            # Cancel command
-GET    /api/commands/stats                 # Command statistics
-POST   /api/commands/cleanup               # Cleanup history
+# Device Commands
+POST   /api/devices/:id/command/:command      # Send command to device
+GET    /api/devices/:id/commands              # Get command history
+```
+
+### Send Command
+
+```bash
+# Send command with parameters
+curl -X POST http://localhost:9375/api/devices/relay_1/command/turn_on \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Send command with parameters
+curl -X POST http://localhost:9375/api/devices/fan_1/command/set_speed \
+  -H "Content-Type: application/json" \
+  -d '{"speed": 100, "direction": "clockwise"}'
+```
+
+### Get Command History
+
+```bash
+curl http://localhost:9375/api/devices/relay_1/commands
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "command_id": "cmd_abc123",
+      "device_id": "relay_1",
+      "command_name": "turn_on",
+      "parameters": {},
+      "status": "Success",
+      "result": "Command sent successfully",
+      "error": null,
+      "created_at": 1717000000,
+      "completed_at": 1717000001
+    }
+  ]
+}
+```
+
+## Command Status Lifecycle
+
+```
+Pending -> Executing -> Success
+                    -> Failed
+                    -> Timeout
 ```
 
 ## Usage Examples
 
-### Send Command
+### Send Command via DeviceService
 
 ```rust
-use neomind_commands::{CommandQueue, DeviceCommand, CommandStatus};
+use neomind_devices::DeviceService;
 
-let command = DeviceCommand {
-    id: "cmd_001".to_string(),
-    device_id: "relay_1".to_string(),
-    command: "turn_on".to_string(),
-    payload: serde_json::json!({}),
-    status: CommandStatus::Pending,
-    created_at: chrono::Utc::now().timestamp(),
-    updated_at: chrono::Utc::now().timestamp(),
-    executed_at: None,
-    retry_count: 0,
-    error: None,
-};
+let result = service.send_command(
+    "greenhouse_fan_1",
+    "turn_on",
+    HashMap::new(),
+).await?;
 
-queue.enqueue(command).await?;
+println!("Command status: {:?}", result.status);
 ```
 
-### Register Adapter
+### Send Command with Parameters
 
 ```rust
-use neomind_commands::{MqttDownlinkAdapter, MqttAdapterConfig, DownlinkAdapter};
+let mut params = HashMap::new();
+params.insert("speed".to_string(), serde_json::json!(100));
+params.insert("direction".to_string(), serde_json::json!("clockwise"));
 
-let config = MqttAdapterConfig {
-    id: "main_mqtt".to_string(),
-    broker: "tcp://localhost:1883".to_string(),
-    topic_prefix: "actuators/{device_id}/command".to_string(),
-    qos: 1,
-};
-
-let adapter: Arc<dyn DownlinkAdapter> = Arc::new(
-    MqttDownlinkAdapter::new(config).await?
-);
-
-queue.register_adapter(adapter).await?;
+let result = service.send_command(
+    "fan_1",
+    "set_speed",
+    params,
+).await?;
 ```
 
 ## Cleaned Up Features
 
-- ✅ Modbus downlink adapter (not implemented)
+The following were removed as part of architecture simplification:
+- Separate `neomind-commands` crate (merged into DeviceService)
+- CommandQueue with background workers (now synchronous in DeviceService)
+- DownlinkAdapter trait (replaced by DeviceAdapter.send_command())
+- RetryPolicy/QueueConfig (simplified - commands fail immediately)
 
 ## Design Principles
 
-1. **Async Queue**: Commands sent asynchronously, non-blocking
-2. **Retry Mechanism**: Failed commands auto-retry
-3. **State Tracking**: Complete command lifecycle tracking
-4. **Protocol Decoupling**: Support multiple downlink protocols via adapters
+1. **Unified**: Commands are part of DeviceService, not a separate module
+2. **Template-Based**: Command payloads are built from device type templates
+3. **Adapter-Routed**: Commands automatically use the correct adapter
+4. **Extension-Support**: Extension-managed devices route through extension router
+5. **History-Tracked**: All commands are recorded with status and timestamps

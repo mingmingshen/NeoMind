@@ -1,18 +1,40 @@
 # Web 前端模块
 
-**版本**: 0.5.9
-**完成度**: 85%
+**版本**: 0.8.0
+**完成度**: 90%
 **用途**: React + TypeScript Web 应用 / Tauri 桌面应用
 
 ## 概述
 
 Web 模块是 NeoMind 的前端应用，支持 Web 浏览器和 Tauri 桌面应用（双模式）。基于 React 18 + TypeScript + Vite 构建，使用 Zustand 进行状态管理，Radix UI + Tailwind CSS 构建用户界面。
 
-## 重要变更 (v0.5.x)
+## 重要变更 (v0.7.x – v0.8.x)
 
-### Plugin → Extension 迁移
+### 设计体系重构 (v0.7)
 
-- **`/plugins` 路由已迁移到 `/extensions`**
+- **OKLCH 色彩系统** — CSS 色彩令牌从 HSL 迁移至 OKLCH，实现感知均匀的色彩过渡
+- **设计令牌** — 所有硬编码的 Tailwind 调色板颜色替换为语义化设计令牌（`text-success`、`bg-error-light`、`text-accent-orange` 等）
+- **极光背景与毛玻璃效果** — 全局极光渐变背景，导航栏采用毛玻璃风格
+- **字体** — Plus Jakarta Sans（拉丁文）+ Noto Sans SC（中日韩）字体
+- **UnifiedFormDialog** — 集中化的表单对话框组件
+- **FullScreenDialog** — 全屏构建器对话框，带侧边栏布局，用于复杂编辑器
+
+### 数据推送与通知通道 (v0.8)
+
+- **数据探索页** (`/data`) — 统一页面，包含数据探索和推送目标选项卡
+- **PushTargetsTab** — 管理数据推送目标，支持创建/编辑/测试操作
+- **DeliveryHistoryPanel** — 查看投递日志，支持分页和状态过滤
+- **ChannelEditorDialog** — FullScreenDialog 用于创建/编辑通知通道（5 种通道类型：webhook、email、telegram、dingtalk、wecom）
+- **GlobalChatFab** — 浮动操作按钮，从任何页面快速访问 AI 聊天
+
+### LLM 后端管理 (v0.8)
+
+- **UnifiedLLMBackendsTab** — 设置页中的统一选项卡，管理 LLM 后端实例
+- **LLMBackendConfigDialog** — 配置后端适配器的对话框（Ollama、OpenAI 兼容等）
+
+### Plugin → Extension 迁移 (v0.5)
+
+- **`/plugins` 路由已迁移到 `/extensions`**（保留重定向）
 - `plugins.tsx` → `extensions.tsx`
 - 扩展组件统一在 `components/extensions/` 目录
 - API调用从 `api.listPlugins()` 改为 `api.listExtensions()`
@@ -50,6 +72,7 @@ web/src/
 │   │   ├── ThinkingBlock.tsx
 │   │   ├── StreamProgress.tsx
 │   │   ├── ToolCallVisualization.tsx
+│   │   ├── GlobalChatFab.tsx  # [v0.8] 浮动 AI 聊天按钮
 │   │   └── ...
 │   ├── dashboard/             # 仪表板组件
 │   │   ├── DashboardGrid.tsx
@@ -57,14 +80,37 @@ web/src/
 │   │   └── config/
 │   ├── automation/            # 自动化组件
 │   │   ├── rule/
+│   │   ├── dialog/
+│   │   │   └── FullScreenDialog.tsx  # [v0.7] 全屏构建器对话框
 │   │   └── TransformTestDialog.tsx
 │   ├── devices/               # 设备相关组件
 │   │   ├── DeviceList.tsx
 │   │   ├── DeviceDetail.tsx
 │   │   └── ...
+│   ├── datapush/              # [v0.8] 数据推送组件
+│   │   ├── PushTargetsTab.tsx
+│   │   ├── PushTargetDialog.tsx
+│   │   └── DeliveryHistoryPanel.tsx
+│   ├── llm/                   # [v0.8] LLM 后端管理
+│   │   ├── UnifiedLLMBackendsTab.tsx
+│   │   ├── LLMBackendConfigDialog.tsx
+│   │   └── index.ts
+│   ├── messages/              # 消息/通知组件
+│   │   ├── ChannelEditorDialog.tsx  # [v0.8] FullScreenDialog 通道编辑器
+│   │   ├── MessageChannelsTab.tsx
+│   │   ├── MessagesTab.tsx
+│   │   └── CreateMessageDialog.tsx
 │   ├── session/               # 会话管理组件
 │   ├── extensions/            # 扩展组件（统一管理Extension）
+│   ├── dialog/                # 共享对话框组件
+│   │   └── UnifiedFormDialog.tsx    # [v0.7] 集中化表单对话框
 │   ├── shared/                # 共享组件
+│   │   ├── FullScreenEditor.tsx
+│   │   ├── ResponsiveTable.tsx      # [v0.7] 响应式表格，移动端卡片视图
+│   │   ├── PaginatedContent.tsx     # [v0.7] 分页，支持无限滚动
+│   │   ├── SearchBar.tsx
+│   │   ├── ErrorBoundary.tsx
+│   │   └── ...
 │   └── design-system/         # 设计系统
 ├── pages/                     # 页面组件
 │   ├── login.tsx              # 登录页
@@ -73,9 +119,8 @@ web/src/
 │   ├── devices.tsx            # 设备页
 │   ├── automation.tsx         # 自动化页
 │   ├── agents.tsx             # AI Agent 页
-│   ├── settings.tsx           # 设置页
-│   ├── commands.tsx           # 命令页
-│   ├── decisions.tsx          # 决策页
+│   ├── settings.tsx           # 设置页（含 LLM 后端选项卡）
+│   ├── data-explorer.tsx      # [v0.8] 数据探索 + 推送目标
 │   ├── messages.tsx           # 消息页
 │   └── extensions.tsx         # 扩展页
 ├── store/                     # Zustand 状态管理
@@ -87,10 +132,14 @@ web/src/
 │   │   ├── deviceSlice.ts     # 设备状态
 │   │   ├── alertSlice.ts      # 消息/告警状态
 │   │   ├── settingsSlice.ts   # 设置状态
-│   │   ├── decisionSlice.ts   # 决策状态
 │   │   ├── extensionSlice.ts  # 扩展状态
 │   │   ├── llmBackendSlice.ts # LLM 后端状态
-│   │   └── dashboardSlice.ts  # 仪表板状态
+│   │   ├── dashboardSlice.ts  # 仪表板状态
+│   │   ├── dataPushSlice.ts   # [v0.8] 数据推送状态
+│   │   ├── instanceSlice.ts   # [v0.7] 实例状态
+│   │   ├── frontendComponentSlice.ts # [v0.7] 前端组件注册
+│   │   ├── aiAnalystSlice.ts  # AI 分析师状态
+│   │   └── updateSlice.ts     # 更新状态
 │   ├── selectors/             # 选择器
 │   └── persistence/           # 持久化
 ├── lib/                       # 工具库
@@ -99,17 +148,27 @@ web/src/
 │   ├── events.ts              # 事件流 (SSE/WS)
 │   ├── auth/                  # 认证工具
 │   ├── notify.ts              # 通知系统
+│   ├── errors.ts              # 错误处理工具
+│   ├── portal.ts              # [v0.7] 模态框/弹出框的 Portal 根节点
 │   └── utils/                 # 工具函数
 ├── hooks/                     # React Hooks
 │   ├── useDialog.ts
-│   ├── useForm.ts
+│   ├── useForm.ts             # [v0.7] 自定义表单 Hook，带验证
 │   ├── use-toast.ts
-│   └── use-confirm.ts
+│   ├── use-confirm.ts
+│   ├── useErrorHandler.ts
+│   └── useMobile.ts           # 移动端检测
 ├── types/                     # TypeScript 类型
 │   └── index.ts               # 统一类型定义
 ├── design-system/             # 设计系统
 │   ├── components/
-│   └── tokens/
+│   ├── icons/                 # 实体类型图标映射
+│   ├── tokens/                # 设计令牌
+│   │   ├── color.ts           # OKLCH 色彩令牌
+│   │   ├── typography.ts
+│   │   ├── size.ts
+│   │   └── indicator.ts
+│   └── utils/                 # 格式化工具（状态颜色等）
 └── i18n/                      # 国际化
 ```
 
@@ -187,10 +246,16 @@ web/src/
 /login                    // 登录页（检查是否需要初始化）
 /setup                    // 初始化设置页
 
+// 共享路由（无需认证）
+/share/:token             // 共享仪表板（代理访问）
+
 // 受保护路由（需要认证）
 /                         // 默认跳转到聊天页
 /chat                    // AI 聊天页
 /chat/:sessionId         // 指定会话聊天
+/visual-dashboard        // 可视化仪表板
+/visual-dashboard/:id    // 指定仪表板
+/data                    // [v0.8] 数据探索（遥测数据 + 推送目标）
 /devices                 // 设备管理页
 /devices/:id             // 设备详情页
 /devices/types           // 设备类型页
@@ -198,14 +263,13 @@ web/src/
 /automation              // 自动化页
 /automation/transforms   // 数据转换页
 /agents                  // AI Agents 页
-/settings                // 设置页
-/commands                // 命令页
-/decisions               // 决策页
+/agents/memory           // Agent 记忆配置
+/agents/skills           // Agent 技能管理
+/settings                // 设置页（包含 LLM 后端选项卡）
 /messages                // 消息页
 /messages/channels       // 消息通道页
 /extensions              // 扩展管理页（统一Extension系统）
-/visual-dashboard        // 可视化仪表板
-/visual-dashboard/:id    // 指定仪表板
+/plugins                 // 重定向到 /extensions（兼容旧版）
 ```
 
 ## 仪表板组件
@@ -242,10 +306,12 @@ export type NeoMindStore = AuthSlice
   & AlertSlice
   & DeviceSlice
   & SettingsSlice
-  & DecisionSlice
   & ExtensionSlice
   & LlmBackendSlice
   & DashboardState
+  & DataPushSlice
+  & InstanceSlice
+  & FrontendComponentSlice
 ```
 
 ### AuthSlice - 认证状态
@@ -482,12 +548,18 @@ const buttonVariants = cva(
 |------|------|
 | `StatsCard` | 统计卡片 |
 | `BulkActionBar` | 批量操作栏 |
-| `Pagination` | 分页组件 |
+| `Pagination` | 分页组件（默认每页 10 条） |
+| `PaginatedContent` | [v0.7] 分页组件，移动端支持无限滚动 |
+| `ResponsiveTable` | [v0.7] 响应式表格，移动端卡片视图，内置骨架屏加载 |
 | `EmptyState` | 空状态提示 |
-| `LoadingState` | 加载状态 |
+| `LoadingState` | 加载状态（页面级使用骨架屏，行内使用加载动画） |
 | `StatusBadge` | 状态徽章 |
 | `ActionBar` | 操作栏 |
 | `MonitorStatsGrid` | 监控统计网格 |
+| `ErrorBoundary` | React 错误边界包装器 |
+| `SearchBar` | 带防抖的搜索输入 |
+| `FullScreenEditor` | 全屏编辑器包装器 |
+| `KeepAlive` | 组件保活包装器 |
 
 ### 聊天组件
 
@@ -587,16 +659,16 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
+        border: 'var(--border)',
+        input: 'var(--input)',
+        ring: 'var(--ring)',
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
         primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+          DEFAULT: 'var(--primary)',
+          foreground: 'var(--primary-foreground)',
         },
-        // ...
+        // ... 使用 OKLCH CSS 变量的语义化设计令牌
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -611,54 +683,67 @@ module.exports = {
 
 ## 设计系统
 
-### 颜色系统
+### 色彩系统 (OKLCH)
+
+所有 CSS 色彩令牌使用 OKLCH 实现感知均匀的色彩过渡：
 
 ```css
 :root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  --primary: 240 5.9% 10%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 240 5.9% 10%;
-  --radius: 0.5rem;
+  --background: oklch(1 0 0 / 97%);
+  --foreground: oklch(0.18 0.02 270);
+  --card: oklch(1 0 0 / 85%);
+  --card-foreground: oklch(0.18 0.02 270);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 270);
+  --primary: oklch(0.18 0.02 270);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0.003 270);
+  --secondary-foreground: oklch(0.18 0.02 270);
+  --muted: oklch(0.96 0.003 270);
+  --muted-foreground: oklch(0.45 0.01 270);
+  --accent: oklch(0.96 0.003 270);
+  --accent-foreground: oklch(0.18 0.02 270);
+  --destructive: oklch(0.577 0.245 27);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.88 0.01 270);
+  --input: oklch(0.88 0.01 270);
+  --ring: oklch(0.18 0.02 270);
+  --radius: 0.75rem;
 }
 
 .dark {
-  --background: 240 10% 3.9%;
-  --foreground: 0 0% 98%;
-  --card: 240 10% 3.9%;
-  --card-foreground: 0 0% 98%;
-  --popover: 240 10% 3.9%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 0 0% 98%;
-  --primary-foreground: 240 5.9% 10%;
-  --secondary: 240 3.7% 15.9%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  --accent: 240 3.7% 15.9%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 3.7% 15.9%;
-  --input: 240 3.7% 15.9%;
-  --ring: 240 4.9% 83.9%;
+  --background: oklch(0.14 0.02 270 / 97%);
+  --foreground: oklch(0.93 0.01 270);
+  --card: oklch(0.17 0.02 270 / 85%);
+  --card-foreground: oklch(0.93 0.01 270);
+  /* ... 暗模式令牌遵循相同的 OKLCH 模式 */
 }
 ```
+
+设计令牌定义在 `web/src/design-system/tokens/color.ts`：
+
+```typescript
+// OKLCH 图表颜色 — 高对比度调色板，用于数据可视化
+export const chartColors = {
+  1: 'oklch(0.62 0.22 270)',   // 靛蓝
+  2: 'oklch(0.65 0.20 155)',   // 翡翠绿
+  3: 'oklch(0.72 0.17 65)',    // 琥珀
+  4: 'oklch(0.67 0.20 25)',    // 橙色
+  5: 'oklch(0.65 0.18 340)',   // 玫红
+  6: 'oklch(0.68 0.12 210)',   // 天蓝
+} as const
+
+// 状态颜色 — 按语义含义调整
+export const statusColors = {
+  success: 'oklch(0.65 0.20 155)',   // 翡翠绿
+  warning: 'oklch(0.72 0.17 65)',    // 琥珀
+  error: 'oklch(0.58 0.22 25)',      // 深红橙
+  info: 'oklch(0.62 0.22 270)',      // 靛蓝
+  neutral: 'oklch(0.55 0.02 260)',   // 冷灰
+} as const
+```
+
+**重要**：只使用设计令牌类名（`text-success`、`bg-error-light`、`text-accent-orange` 等）。禁止使用硬编码的 Tailwind 调色板颜色（`bg-blue-500`、`text-green-600`）。基于 CSS 变量的颜色不支持 Tailwind `/` 透明度修饰符 — 请使用预定义的令牌（`bg-muted-30`、`bg-success-light`）。
 
 ### 图标系统
 
@@ -736,3 +821,313 @@ const throttledSave = useThrottle(saveData, 1000)
 3. **响应式**: 移动端和桌面端适配
 4. **可访问性**: 遵循 WCAG 标准，使用 ARIA
 5. **性能优先**: 代码分割、懒加载、虚拟滚动
+
+## 数据推送模块 (v0.8)
+
+数据推送模块提供可配置的推送目标，按计划将设备遥测数据投递到外部服务。
+
+### 组件
+
+| 组件 | 描述 |
+|------|------|
+| `PushTargetsTab` | 主选项卡，显示推送目标列表，支持 CRUD 操作 |
+| `PushTargetDialog` | 创建/编辑推送目标配置的对话框 |
+| `DeliveryHistoryPanel` | 查看投递日志，支持分页和状态过滤 |
+
+### 状态管理 (DataPushSlice)
+
+```typescript
+interface DataPushSlice {
+  pushTargets: PushTarget[]
+  pushTargetsLoading: boolean
+  pushStats: PushStats | null
+  deliveryLogs: DeliveryLog[]
+  deliveryLogsTotal: number
+
+  fetchPushTargets: () => Promise<void>
+  createPushTarget: (data: CreatePushTargetRequest) => Promise<boolean>
+  updatePushTarget: (id: string, data: UpdatePushTargetRequest) => Promise<boolean>
+  deletePushTarget: (id: string) => Promise<boolean>
+  startPushTarget: (id: string) => Promise<boolean>
+  stopPushTarget: (id: string) => Promise<boolean>
+  testPushTarget: (id: string) => Promise<DeliveryLog | null>
+  fetchDeliveryLogs: (targetId: string, limit?: number, offset?: number) => Promise<void>
+}
+```
+
+## 通知通道 (v0.8)
+
+通知通道系统支持 5 种通道类型，通过 `ChannelEditorDialog`（FullScreenDialog）进行管理。
+
+### 支持的通道类型
+
+| 类型 | 描述 |
+|------|------|
+| `webhook` | HTTP Webhook（POST 到外部 URL） |
+| `email` | 通过 SMTP 配置发送邮件 |
+| `telegram` | Telegram Bot API |
+| `dingtalk` | 钉钉机器人 Webhook |
+| `wecom` | 企业微信机器人 Webhook |
+
+### ChannelEditorDialog
+
+使用带侧边栏布局的 FullScreenDialog：
+
+```typescript
+<FullScreenDialog open={open} onOpenChange={onOpenChange}>
+  <FullScreenDialogHeader />
+  <FullScreenDialogContent>
+    <FullScreenDialogSidebar>  {/* 通道类型选择器 */}
+    <FullScreenDialogMain>     {/* 通道配置表单 */}
+    <FullScreenDialogFooter>   {/* 操作按钮 */}
+  </FullScreenDialogContent>
+</FullScreenDialog>
+```
+
+## FetchCache 模式 (v0.7)
+
+Store 层级的请求去重，基于 TTL 的缓存（默认 10 秒），防止重复 API 调用：
+
+```typescript
+// 模式：shouldFetch -> markFetching -> API 调用 -> markFetched
+// 变更时失效缓存
+
+// 在 slice 中：
+fetchCache: Record<string, { timestamp: number; fetching: boolean }>
+
+shouldFetch(key: string): boolean     // TTL 过期且未在请求中
+markFetching(key: string): void       // 设置请求标志
+markFetched(key: string): void        // 更新时间戳
+invalidateCache(key?: string): void   // 清除缓存（指定 key 或全部）
+```
+
+用于：`deviceSlice`、`extensionSlice`、`sessionSlice`、`llmBackendSlice`、`instanceSlice`、`frontendComponentSlice`。
+
+## 全局聊天 FAB (v0.8)
+
+`GlobalChatFab` 组件在所有非聊天页面上渲染一个浮动操作按钮，点击后展开为全屏聊天覆盖层，带有从 FAB 位置缩放的平滑动画。
+
+### 架构
+
+- **文件**: `web/src/components/chat/GlobalChatFab.tsx`
+- **渲染位置**: `App.tsx` 中受保护路由布局内，与 `TopNav` 并列
+- **面板状态机**: `closed` -> `opening` -> `open` -> `closing` -> `closed`
+
+### 行为
+
+| 功能 | 描述 |
+|------|------|
+| FAB 可见性 | 在聊天页（`/`、`/chat`、`/chat/:sessionId`）隐藏，其他页面显示 |
+| 面板会话 | 通过 `localStorage` 键 `neomind:panelSessionId` 跨关闭/刷新持久化 |
+| 自动关闭 | 用户导航到聊天页时自动关闭（流式输出中则延迟） |
+| 流式保护 | 流式响应进行中时通知用户，面板保持打开 |
+| 最小化按钮 | 反向动画折叠回 FAB |
+
+### 视觉设计
+
+- FAB：固定 `bottom-6 right-6`，56px 圆形按钮，毛玻璃效果 + 橙色光晕
+- 覆盖层：`z-[90]` 背景模糊，点击关闭（流式输出中禁用）
+- 面板：`z-[100]` 移动端全屏，大屏幕 inset-4/inset-8，毛玻璃背景
+
+### 关键组件
+
+```typescript
+// GlobalChatFab 渲染：
+<GlobalChatFab>
+  <button />              // FAB（打开时隐藏）
+  <div />                 // 背景覆盖层
+  <div>                   // 全屏面板
+    <PanelChatView        // 复用聊天视图逻辑
+      onClose={handleClose}
+      onStreamingChange={setIsStreaming}
+      ensureSession={ensurePanelSession}
+      showMinimize
+    />
+  </div>
+</GlobalChatFab>
+```
+
+## 仪表板分享 (v0.7)
+
+仪表板分享功能允许生成公开链接，任何人无需认证即可查看仪表板。系统支持每个仪表板创建多个分享链接，可配置权限和过期时间。
+
+### 组件
+
+| 组件 | 文件 | 描述 |
+|------|------|------|
+| `ShareManagerDialog` | `components/dashboard/ShareManagerDialog.tsx` | FullScreenDialog 管理分享链接（列表、创建、删除） |
+| `SharedDashboard` | `pages/share/SharedDashboard.tsx` | 公开分享仪表板查看器（无需认证） |
+
+### API 端点
+
+```typescript
+// 分享管理（需认证）
+GET    /api/dashboards/:id/share       // 列出分享令牌
+POST   /api/dashboards/:id/share       // 创建分享链接
+DELETE /api/dashboards/:id/share/:token // 撤销分享链接
+
+// 公开访问（无需认证）
+GET    /api/share/:token               // 获取分享仪表板数据
+GET    /api/share/:token/proxy/*       // 小组件数据获取代理
+```
+
+### 分享令牌结构
+
+```typescript
+interface ShareToken {
+  token: string
+  permissions: { allow_interactive: boolean }
+  created_at: number
+  expires_at: number | null      // null = 永不过期
+  share_url: string
+}
+```
+
+### 分享链接创建选项
+
+- **权限**: 只读（默认）或交互式（允许小组件交互）
+- **过期时间**: 可选，以小时为单位配置（1h、6h、24h、7d、30d、永不过期）
+
+### 公开查看器架构
+
+`SharedDashboard` 页面（`/share/:token`）的独特之处在于无需认证运行：
+
+1. **请求代理**: 所有 `/api/...` 请求通过全局 `window.fetch` 拦截器（`installShareProxy()`）重写为 `/api/share/:token/proxy/...`
+2. **数据转换**: 后端返回 snake_case 字段；`fromDashboardDTO()` 转换为 camelCase
+3. **组件注册表**: 社区和扩展组件注册表使用 `skipAuth: true` 加载
+4. **实时更新**: 无 WebSocket 可用；设备数据改为每 30 秒轮询一次
+5. **错误边界**: 每个组件用 `ComponentErrorBoundary` 包裹，优雅降级不支持的组件
+
+## 初始化向导 (v0.7)
+
+初始化向导是新 NeoMind 安装的首次启动体验，创建管理员账户并引导用户完成初始配置。
+
+### 流程
+
+```
+App.tsx 检查 /api/setup/status
+  -> setup_required: true  -> 重定向到 /setup
+  -> setup_required: false -> 正常登录流程
+```
+
+### 步骤
+
+| 步骤 | 组件 | 描述 |
+|------|------|------|
+| 1. 账户 | `AccountStep` | 创建管理员账户（用户名、密码、可选邮箱）+ 时区选择（自动检测） |
+| 2. 完成 | `CompleteStep` | 成功界面 + 快速入门指南（聊天、LLM 设置、探索） |
+
+### SetupRoute 守卫
+
+```typescript
+// 仅在需要设置时（无用户存在）可访问
+// 如果已完成设置，重定向到 /login
+// Tauri 环境：等待后端启动时最多重试 15 次，带退避策略
+```
+
+### API 端点
+
+```typescript
+GET  /api/setup/status     // { setup_required: boolean }
+POST /api/setup/complete   // 标记设置完成（需要账户创建返回的 JWT）
+```
+
+### 设计说明
+
+- LLM 配置有意延后 -- 用户首次使用 AI 功能时再配置
+- 可选 Mailchimp 新闻订阅（通过 JSONP，AccountStep 中）
+- 设置背景使用与主应用相同的极光渐变
+
+## 完整 Store Slices 参考
+
+所有 Zustand store slices 组合为单一的 `NeoMindStore` 类型。以下是完整参考及描述。
+
+| Slice | 文件 | 描述 |
+|-------|------|------|
+| `AuthSlice` | `authSlice.ts` | 用户认证，JWT 令牌，API 密钥支持，登录/注册/登出，当前用户信息 |
+| `SessionSlice` | `sessionSlice.ts` | 聊天会话管理 -- 创建、切换、删除会话；加载消息历史；会话列表无限滚动 |
+| `UISlice` | `uiSlice.ts` | UI 状态 -- 侧边栏开关切换，WebSocket 连接状态 |
+| `DeviceSlice` | `deviceSlice.ts` | 设备管理 -- CRUD、设备类型、遥测、批量当前值更新、BLE 配网、MDL 生成 |
+| `AlertSlice` | `alertSlice.ts` | 告警/通知状态 -- 获取告警、确认、创建（内部使用统一消息 API） |
+| `SettingsSlice` | `settingsSlice.ts` | 系统设置 -- 配置导入/导出/验证，设置对话框状态 |
+| `ExtensionSlice` | `extensionSlice.ts` | 扩展管理 -- 列表/安装/卸载扩展，命令，数据源，日志，查询执行 |
+| `LlmBackendSlice` | `llmBackendSlice.ts` | LLM 后端实例 -- CRUD，激活切换，连接测试，后端类型定义 |
+| `DashboardSlice` | `dashboardSlice.ts` | 仪表板管理 -- 通过持久化层 CRUD，组件数据源验证，组件移除时清理 Agent |
+| `DataPushSlice` | `dataPushSlice.ts` | 推送目标管理 -- CRUD，启动/停止，测试，带分页的投递日志，推送统计 |
+| `InstanceSlice` | `instanceSlice.ts` | 远程 NeoMind 实例管理 -- CRUD，健康测试，运行时切换（全页刷新策略），API 密钥解密 |
+| `FrontendComponentSlice` | `frontendComponentSlice.ts` | 社区市场组件 -- 获取已安装、浏览市场、从市场安装或手动 ZIP 上传，注册表同步 |
+| `AiAnalystSlice` | `aiAnalystSlice.ts` | AI 分析师小组件配置 -- 每组件系统提示和上下文窗口设置 |
+| `UpdateSlice` | `updateSlice.ts` | 应用更新状态 -- 可用更新，下载进度，安装状态，更新对话框 |
+
+### 完整 Store 类型
+
+```typescript
+export type NeoMindStore = AuthSlice
+  & SessionSlice
+  & UISlice
+  & AlertSlice
+  & DeviceSlice
+  & SettingsSlice
+  & ExtensionSlice
+  & LlmBackendSlice
+  & DashboardSlice
+  & DataPushSlice
+  & InstanceSlice
+  & FrontendComponentSlice
+  & AiAnalystSlice
+  & UpdateSlice
+```
+
+## 完整页面路由参考
+
+### 公开路由（无需认证）
+
+| 路由 | 页面组件 | 描述 |
+|------|---------|------|
+| `/login` | `LoginPage` | 登录页，用户名/密码；检查是否需要初始化 |
+| `/setup` | `SetupPage` | 首次启动初始化向导（仅无用户时可用） |
+| `/share/:token` | `SharedDashboardPage` | 公开分享仪表板查看器（无需认证） |
+
+### 受保护路由（需要认证）
+
+| 路由 | 页面组件 | 导航标签 | 描述 |
+|------|---------|---------|------|
+| `/` | `ChatPage` | 聊天 | 默认路由；跳转到 AI 聊天 |
+| `/chat` | `ChatPage` | 聊天 | AI 聊天页，带会话管理 |
+| `/chat/:sessionId` | `ChatPage` | 聊天 | 指定聊天会话 |
+| `/visual-dashboard` | `VisualDashboard` | 仪表板 | 可视化仪表板构建器，拖拽网格布局 |
+| `/visual-dashboard/:id` | `VisualDashboard` | 仪表板 | 编辑指定仪表板 |
+| `/data` | `DataExplorerPage` | 数据 | 数据探索（遥测指标）+ 推送目标选项卡 |
+| `/devices` | `DevicesPage` | 设备 | 设备管理，带选项卡（列表、类型、草稿） |
+| `/devices/:id` | `DevicesPage` | 设备 | 设备详情视图 |
+| `/devices/types` | `DevicesPage` | 设备 | 设备类型定义 |
+| `/devices/drafts` | `DevicesPage` | 设备 | 自动入板的待确认设备 |
+| `/automation` | `AutomationPage` | 自动化 | 规则引擎管理 |
+| `/automation/transforms` | `AutomationPage` | 自动化 | 数据转换脚本 |
+| `/agents` | `AgentsPage` | Agent | AI Agent 管理，带选项卡（列表、记忆、技能） |
+| `/agents/memory` | `AgentsPage` | Agent | Agent 记忆配置 |
+| `/agents/skills` | `AgentsPage` | Agent | Agent 技能管理 |
+| `/settings` | `SettingsPage` | 设置 | 系统设置（偏好、LLM 后端、关于） |
+| `/messages` | `MessagesPage` | 消息 | 通知消息 |
+| `/messages/channels` | `MessagesPage` | 消息 | 通知通道配置 |
+| `/extensions` | `ExtensionsPage` | 扩展 | 扩展管理（统一系统） |
+| `/plugins` | 重定向 | -- | 重定向到 `/extensions`（兼容旧版） |
+| `*` | 重定向 | -- | 兜底路由重定向到 `/` |
+
+### 路由守卫
+
+```typescript
+// SetupRoute - 仅在需要设置时可访问
+// ProtectedRoute - 检查 JWT 令牌或 API 密钥，缺失则重定向到 /login
+// 同时后台检查 /api/setup/status，需要时重定向到 /setup
+```
+
+### 懒加载
+
+所有页面组件通过 `React.lazy()` 懒加载实现代码分割：
+
+```typescript
+const ChatPage = lazy(() => import('@/pages/chat').then(m => ({ default: m.ChatPage })))
+const VisualDashboard = lazy(() => import('@/pages/dashboard-components/VisualDashboard').then(m => ({ default: m.VisualDashboard })))
+// ... 其他所有页面类似
+```

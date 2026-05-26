@@ -1,8 +1,8 @@
 # API Module
 
 **Package**: `neomind-api`
-**Version**: 0.5.9
-**Completion**: 90%
+**Version**: 0.8.0
+**Completion**: 95%
 **Purpose**: REST/WebSocket API server
 
 ## Overview
@@ -14,18 +14,12 @@ The API module is based on Axum framework, providing REST API, WebSocket, and SS
 ```
 crates/neomind-api/src/
 ├── lib.rs                      # Public interface
-├── main.rs                     # Program entry
 ├── server/
 │   ├── mod.rs                  # Server configuration
 │   ├── router.rs               # Route definitions
 │   ├── types.rs                # Server state
 │   ├── assets.rs               # Static assets
-│   ├── extension_metrics.rs    # Extension metrics storage service
-│   ├── state/
-│   │   ├── mod.rs              # State management
-│   │   ├── agent_state.rs      # Agent state
-│   │   ├── core_state.rs       # Core state
-│   │   └── extension_state.rs  # Extension state
+│   ├── state/                  # State management
 │   └── middleware/             # Middleware
 ├── handlers/                   # Request handlers
 │   ├── mod.rs
@@ -42,13 +36,11 @@ crates/neomind-api/src/
 │   │   ├── auto_onboard.rs     # Auto-onboarding
 │   │   └── mdl.rs              # MDL format
 │   ├── agents.rs               # Agent API
-│   ├── automations.rs          # Automation API
+│   ├── automations.rs          # Automation API (rules + transforms)
 │   ├── rules.rs                # Rules API
 │   ├── messages.rs             # Messages API
-│   ├── commands.rs             # Commands API
-│   ├── decisions.rs            # Decisions API
 │   ├── tools.rs                # Tools API
-│   ├── memory.rs               # Memory API
+│   ├── memory.rs               # Memory API (Markdown-based)
 │   ├── llm_backends.rs         # LLM backend API
 │   ├── settings.rs             # Settings API
 │   ├── mqtt/                   # MQTT API
@@ -58,50 +50,74 @@ crates/neomind-api/src/
 │   │   ├── status.rs           # Status queries
 │   │   └── subscriptions.rs    # Subscription management
 │   ├── extensions.rs           # Extensions API
-│   ├── plugins.rs              # Plugins API (deprecated)
+│   ├── extension_stream.rs     # Extension streaming (WebSocket)
+│   ├── frontend_components.rs  # Frontend component API
 │   ├── message_channels.rs     # Message channels API
+│   ├── data_push.rs            # Data push API
+│   ├── data.rs                 # Telemetry & data source API
 │   ├── events.rs               # Events API
 │   ├── ws/                     # WebSocket handlers
-│   ├── bulk/                   # Bulk operations API
-│   ├── auth.rs                 # Auth related
-│   ├── auth_users.rs           # User management
+│   ├── auth.rs                 # Auth (API keys)
+│   ├── auth_users.rs           # User management (JWT)
 │   ├── basic.rs                # Basic endpoints
+│   ├── capabilities.rs         # Capability API
 │   ├── config.rs               # Config management
-│   ├── dashboards.rs           # Dashboard API
-│   ├── search.rs               # Search API
+│   ├── dashboards.rs           # Dashboard API (with sharing)
+│   ├── instances.rs            # Instance management API
+│   ├── skills.rs               # Skills API
 │   ├── stats.rs                # Statistics API
 │   ├── suggestions.rs          # Suggestions API
-│   ├── setup.rs                # Initial setup
-│   └── test_data.rs            # Test data
+│   ├── summarization.rs        # Summarization API
+│   └── setup.rs                # Initial setup
 ├── models/                     # Data models
-│   ├── error.rs                # Error response
-│   └── openapi.rs              # OpenAPI documentation
-└── utils/                      # Utility functions
+├── automation/                 # Automation engine
+├── auth.rs                     # Auth middleware
+├── auth_users.rs               # User auth
+├── config.rs                   # Server config
+├── rate_limit.rs               # Rate limiting
+├── cache.rs                    # Response caching
+├── crypto.rs                   # Crypto utilities
+├── validator.rs                # Input validation
+├── event_services.rs           # Event services
+├── capability_providers.rs     # Capability providers
+├── shutdown.rs                 # Graceful shutdown
+└── startup.rs                  # Startup logic
 ```
 
-## Important Changes (v0.5.x)
+## Important Changes (v0.8.0)
 
 ### New Modules
-- `server/extension_metrics.rs` - Extension metrics storage service, unified management of extension time-series data
-- `server/state/extension_state.rs` - Extension state management
+- `handlers/data_push.rs` - Data push API (scheduled data delivery to external endpoints)
+- `handlers/frontend_components.rs` - Frontend component marketplace and management
+- `handlers/instances.rs` - Remote instance management API
+- `handlers/skills.rs` - Agent skill matching and management API
+- `handlers/capabilities.rs` - Capability discovery API
+- `handlers/summarization.rs` - Content summarization API
+- `handlers/data.rs` - Unified telemetry and data source API
+- `automation/` - Automation engine module
 
-### Extension Metrics Storage
-Extension metrics are now stored in `data/telemetry.redb` via ExtensionMetricsStorage:
+### Security Model
+Routes are organized into four tiers:
+- **Public routes**: Health checks, auth, setup, static metadata, extension read-only, share proxy, webhook
+- **JWT routes**: User session management (me, logout, change-password)
+- **Protected routes** (hybrid auth - API Key or JWT): All data operations, CRUD, write endpoints
+- **Admin routes** (JWT + Admin role): User management (list, create, delete)
+
+### Data Push API
+Scheduled data delivery to external endpoints:
 
 ```rust
-pub struct ExtensionMetricsStorage {
-    metrics_storage: Arc<TimeSeriesStore>,
-}
+GET    /api/data-push           # List push targets
+POST   /api/data-push           # Create push target
+GET    /api/data-push/stats     # Push statistics
+GET    /api/data-push/:id       # Get push target
+PUT    /api/data-push/:id       # Update push target
+DELETE /api/data-push/:id       # Delete push target
+POST   /api/data-push/:id/test  # Test push target
+POST   /api/data-push/:id/start # Start push target
+POST   /api/data-push/:id/stop  # Stop push target
+GET    /api/data-push/:id/logs  # List delivery logs
 ```
-
-Storage format uses DataSourceId:
-- `device_part`: `extension:{extension_id}`
-- `metric_part`: `{metric_name}`
-
-### Agent Status Update Fix
-Fixed issue where Agent status stuck in "Executing" after completion:
-- Removed `loadItems()` call after event handling
-- WebSocket events now serve as single source of truth for status
 
 ## Route Overview
 
@@ -113,11 +129,11 @@ GET /api/health
 GET /api/health/status
 GET /api/health/live
 GET /api/health/ready
+GET /api/system/network-info
 
-// Auth status
-GET /api/auth/status
-
-// User registration/login
+// Auth
+GET  /api/auth/status
+GET  /api/auth/verify
 POST /api/auth/login
 POST /api/auth/register
 
@@ -127,48 +143,117 @@ POST /api/setup/initialize
 POST /api/setup/complete
 POST /api/setup/llm-config
 
-// Read-only metadata
+// Read-only metadata (public - static schemas only)
 GET /api/llm-backends/types
-GET /api/llm-backends
-GET /api/llm-backends/:id
-GET /api/llm-backends/stats
-GET /api/llm-backends/ollama/models
-GET /api/device-adapters/types
+GET /api/llm-backends/types/:type/schema
 GET /api/messages/channels/types
-GET /api/messages/channels
+GET /api/messages/channels/types/:type/schema
 GET /api/extensions
 GET /api/extensions/types
-GET /api/plugins/*  // Deprecated, kept for compatibility
+GET /api/extensions/dashboard-components
+GET /api/extensions/capabilities
+GET /api/extensions/:id                # Get extension info
+GET /api/extensions/:id/health         # Health check
+GET /api/extensions/:id/commands       # List commands
+GET /api/extensions/:id/components     # Dashboard components
+GET /api/extensions/:id/assets/*       # Static assets
+GET /api/extensions/:id/event-subscriptions
+GET /api/extensions/:id/stream/capability
+GET /api/extensions/:id/stream/sessions
 
-// System info
-GET /api/stats/system
+// Capabilities & Tools (public - static metadata)
+GET /api/capabilities
+GET /api/capabilities/:name
+GET /api/tools
+GET /api/tools/:name
+
+// Marketplace (public - read-only)
+GET /api/extensions/market/list
+GET /api/extensions/market/:id
+GET /api/extensions/market/updates
+GET /api/frontend-components/market/list
+GET /api/frontend-components/:id/bundle
+GET /api/device-types/cloud/list
+
+// Suggestions (public - input hints)
 GET /api/suggestions
-GET /api/test-data/*
+GET /api/suggestions/categories
+
+// Share API (public - access shared dashboards without auth)
+GET /api/share/:token
+ANY /api/share/:token/proxy/*path
+
+// Webhook (public - external devices cannot carry JWT)
+POST /api/devices/:id/webhook
+POST /api/devices/webhook
+GET  /api/devices/:id/webhook-url
 ```
 
 ### JWT Protected Routes
 
 ```rust
-// User info
+// User info and session management
 GET  /api/auth/me
 POST /api/auth/logout
 POST /api/auth/change-password
 ```
 
-### WebSocket Routes (Token via ?token=)
+### WebSocket Routes (Auth handled in handler)
 
 ```rust
-// Events stream
+// Event streaming WebSocket/SSE
 GET /api/events/ws
 GET /api/events/stream
 
-// Chat WebSocket
+// Chat WebSocket (JWT via ?token= parameter)
 GET /api/chat
+
+// Extension streaming WebSocket
+GET /api/extensions/:id/stream
 ```
 
-### API Key Protected Routes
+### Protected Routes (API Key or JWT)
 
 ```rust
+// Telemetry & Data
+GET /api/telemetry
+GET /api/telemetry/stats
+GET /api/data/sources
+GET /api/stats/system
+
+// LLM Backends (read - moved from public)
+GET /api/llm-backends
+GET /api/llm-backends/:id
+GET /api/llm-backends/stats
+GET /api/llm-backends/ollama/models
+GET /api/llm-backends/llamacpp/server-info
+
+// LLM Backends (write)
+POST   /api/llm-backends
+PUT    /api/llm-backends/:id
+DELETE /api/llm-backends/:id
+POST   /api/llm-backends/:id/test
+POST   /api/llm-backends/:id/activate
+GET    /api/llm-backends/:id/models
+POST   /api/llm/generate
+
+// Skills
+GET    /api/skills
+POST   /api/skills
+POST   /api/skills/reload
+GET    /api/skills/match
+GET    /api/skills/:id
+PUT    /api/skills/:id
+DELETE /api/skills/:id
+
+// Instances (remote backend management)
+GET    /api/instances
+POST   /api/instances
+GET    /api/instances/:id
+PUT    /api/instances/:id
+DELETE /api/instances/:id
+POST   /api/instances/:id/test
+
 // Session management
 GET    /api/sessions
 POST   /api/sessions
@@ -177,238 +262,259 @@ PUT    /api/sessions/:id
 DELETE /api/sessions/:id
 POST   /api/sessions/:id/chat
 GET    /api/sessions/:id/history
+PUT    /api/sessions/:id/memory-toggle
+GET    /api/sessions/:id/pending
+DELETE /api/sessions/:id/pending
 POST   /api/sessions/cleanup
 
 // Device management
 GET    /api/devices
 POST   /api/devices
+POST   /api/devices/ble-provision
 GET    /api/devices/:id
 PUT    /api/devices/:id
 DELETE /api/devices/:id
 GET    /api/devices/:id/current
 POST   /api/devices/current-batch
-GET    /api/devices/:id/state
-GET    /api/devices/:id/health
 POST   /api/devices/:id/command/:command
+GET    /api/devices/:id/telemetry
+POST   /api/devices/:id/metrics
+GET    /api/devices/:id/telemetry/summary
+GET    /api/devices/:id/commands
 
-// Device types
+// Device Types
 GET    /api/device-types
 POST   /api/device-types
 GET    /api/device-types/:id
-PUT    /api/device-types/:id
+PUT    /api/device-types          # validate
 DELETE /api/device-types/:id
-PUT    /api/device-types/:id/validate
-POST   /api/device-types/generate-mdl
-POST   /api/device-types/from-sample
+POST   /api/device-types/generate-from-samples
+POST   /api/device-types/cloud/import
+POST   /api/devices/generate-mdl
 
-// Device discovery
-POST   /api/devices/discover
-GET    /api/devices/pending
-POST   /api/devices/pending/:id/confirm
-DELETE /api/devices/pending/:id/dismiss
-
-// Device metrics
-GET    /api/devices/:id/metrics/:metric
-GET    /api/devices/:id/metrics/:metric/data
-GET    /api/devices/:id/metrics/:metric/aggregate
-
-// Device telemetry
-GET    /api/devices/:id/telemetry
-GET    /api/devices/:id/telemetry/summary
+// Draft Devices (auto-onboarding)
+GET    /api/devices/drafts
+GET    /api/devices/drafts/:device_id
+PUT    /api/devices/drafts/:device_id
+POST   /api/devices/drafts/:device_id/approve
+POST   /api/devices/drafts/:device_id/reject
+POST   /api/devices/drafts/:device_id/analyze
+POST   /api/devices/drafts/:device_id/enhance
+GET    /api/devices/drafts/:device_id/suggest-types
+POST   /api/devices/drafts/cleanup
+GET    /api/devices/drafts/type-signatures
+GET    /api/devices/drafts/config
+PUT    /api/devices/drafts/config
+POST   /api/devices/drafts/upload
 
 // Rules management
 GET    /api/rules
 POST   /api/rules
+GET    /api/rules/export
+POST   /api/rules/import
+GET    /api/rules/resources
+POST   /api/rules/validate
 GET    /api/rules/:id
 PUT    /api/rules/:id
 DELETE /api/rules/:id
 POST   /api/rules/:id/enable
 POST   /api/rules/:id/test
 GET    /api/rules/:id/history
-POST   /api/rules/validate
-POST   /api/rules/from-nl
 
-// Automations
-GET    /api/transforms
-POST   /api/transforms
-GET    /api/transforms/:id
-PUT    /api/transforms/:id
-DELETE /api/transforms/:id
-POST   /api/transforms/:id/enable
-POST   /api/transforms/:id/test
-GET    /api/transforms/:id/history
+// Automations (unified rules + transforms)
+GET    /api/automations
+POST   /api/automations
+GET    /api/automations/export
+POST   /api/automations/import
+POST   /api/automations/analyze-intent
+GET    /api/automations/templates
+GET    /api/automations/:id
+PUT    /api/automations/:id
+DELETE /api/automations/:id
+POST   /api/automations/:id/enable
+GET    /api/automations/:id/executions
+
+// Transforms (data processing)
+GET    /api/automations/transforms
+POST   /api/automations/transforms/process
+POST   /api/automations/transforms/:id/test
+POST   /api/automations/transforms/test-code
+GET    /api/automations/transforms/metrics
+GET    /api/automations/transforms/data-sources
+GET    /api/automations/transforms/:id/data-sources
+GET    /api/automations/transforms/data-sources/:data_source_id
 
 // Messages
 GET    /api/messages
 POST   /api/messages
+GET    /api/messages/stats
+POST   /api/messages/cleanup
+POST   /api/messages/acknowledge     # bulk
+POST   /api/messages/resolve         # bulk
+POST   /api/messages/delete          # bulk
 GET    /api/messages/:id
 DELETE /api/messages/:id
 POST   /api/messages/:id/acknowledge
 POST   /api/messages/:id/resolve
 POST   /api/messages/:id/archive
-POST   /api/messages/acknowledge
-POST   /api/messages/resolve
-POST   /api/messages/delete
-POST   /api/messages/cleanup
-GET    /api/messages/stats
 
-// Message channels
+// Message Channels
 GET    /api/messages/channels
 POST   /api/messages/channels
+GET    /api/messages/channels/stats
 GET    /api/messages/channels/:name
 PUT    /api/messages/channels/:name
 DELETE /api/messages/channels/:name
 POST   /api/messages/channels/:name/test
-GET    /api/messages/channels/stats
+GET    /api/messages/channels/:name/recipients
+POST   /api/messages/channels/:name/recipients
+DELETE /api/messages/channels/:name/recipients/:email
+GET    /api/messages/channels/:name/filter
+PUT    /api/messages/channels/:name/filter
+PUT    /api/messages/channels/:name/enabled
 
-// Agents
+// Data Push
+GET    /api/data-push
+POST   /api/data-push
+GET    /api/data-push/stats
+GET    /api/data-push/:id
+PUT    /api/data-push/:id
+DELETE /api/data-push/:id
+POST   /api/data-push/:id/test
+POST   /api/data-push/:id/start
+POST   /api/data-push/:id/stop
+GET    /api/data-push/:id/logs
+
+// AI Agents
 GET    /api/agents
 POST   /api/agents
 GET    /api/agents/:id
 PUT    /api/agents/:id
 DELETE /api/agents/:id
 POST   /api/agents/:id/execute
+POST   /api/agents/:id/invoke
 POST   /api/agents/:id/status
 GET    /api/agents/:id/executions
-GET    /api/agents/:id/executions/:exec_id
-GET    /api/agents/:id/conversation
+GET    /api/agents/:id/executions/:execution_id
+POST   /api/agents/:id/executions/details  # batch get
 GET    /api/agents/:id/memory
 DELETE /api/agents/:id/memory
 GET    /api/agents/:id/stats
-POST   /api/agents/:id/control
+GET    /api/agents/:id/available-resources
+POST   /api/agents/validate-cron
+POST   /api/agents/validate-llm
 GET    /api/agents/:id/messages
 POST   /api/agents/:id/messages
 DELETE /api/agents/:id/messages
-DELETE /api/agents/:id/messages/:msg_id
-POST   /api/agents/validate-cron
-POST   /api/agents/validate-llm
+DELETE /api/agents/:id/messages/:message_id
 
-// Decisions
-GET    /api/decisions
-GET    /api/decisions/:id
-POST /api/decisions/:id/execute
-POST /api/decisions/:id/approve
-POST /api/decisions/:id/reject
-DELETE /api/decisions/:id
-GET /api/decisions/stats
-
-// Commands
-GET    /api/commands
-GET    /api/commands/:id
-POST   /api/commands/:id/retry
-POST   /api/commands/:id/cancel
-GET    /api/commands/stats
-POST   /api/commands/cleanup
-
-// Tools
-GET    /api/tools
-GET    /api/tools/:name/schema
-POST /api/tools/:name/execute
-GET    /api/tools/format-for-llm
-GET    /api/tools/metrics
-
-// Memory
+// Memory (Markdown-based)
+GET    /api/memory
+GET    /api/memory/export
 GET    /api/memory/stats
-POST   /api/memory/query
-GET    /api/memory/short-term
-POST   /api/memory/short-term
-DELETE /api/memory/short-term
-GET    /api/memory/mid-term/:session_id
-GET    /api/memory/long-term/search
-GET    /api/memory/long-term/category/:category
-POST   /api/memory/long-term
-POST   /api/memory/consolidate/:session_id
+GET    /api/memory/config
+PUT    /api/memory/config
+POST   /api/memory/extract
+POST   /api/memory/compress
+GET    /api/memory/category/:category
+PUT    /api/memory/category/:category
+GET    /api/memory/:source_type/:id
+PUT    /api/memory/:source_type/:id
+DELETE /api/memory/:source_type/:id
 
-// LLM backends
-POST /api/llm-backends
-PUT  /api/llm-backends/:id
-DELETE /api/llm-backends/:id
-POST /api/llm-backends/:id/test
-POST /api/llm-backends/:id/activate
-POST /api/llm-backends/apply-settings
-GET  /api/llm-backends/:id/models
-POST /api/llm/generate
+// MQTT Management
+GET  /api/mqtt/status
+GET  /api/mqtt/subscriptions
+POST /api/mqtt/subscribe
+POST /api/mqtt/unsubscribe
+POST /api/mqtt/subscribe/:device_id
+POST /api/mqtt/unsubscribe/:device_id
+
+// External Brokers
+GET    /api/brokers
+POST   /api/brokers
+GET    /api/brokers/:id
+PUT    /api/brokers/:id
+DELETE /api/brokers/:id
+POST   /api/brokers/:id/test
 
 // Settings
-POST /api/settings/llm
-GET  /api/settings/llm
-POST /api/settings/llm/test
-GET  /api/settings/mqtt
-POST /api/settings/mqtt
-POST /api/settings/timezone
-
-// MQTT Brokers
-GET  /api/mqtt/brokers
-POST /api/mqtt/brokers
-GET  /api/mqtt/brokers/:id
-PUT    /api/mqtt/brokers/:id
-DELETE /api/mqtt/brokers/:id
-POST /api/mqtt/brokers/:id/start
-POST /api/mqtt/brokers/:id/stop
-GET  /api/mqtt/brokers/:id/status
-GET  /api/mqtt/brokers/:id/subscriptions
-PUT    /api/mqtt/brokers/:id/subscriptions
-
-// Extensions
-POST /api/extensions/discover
-POST /api/extensions/register-all
-POST /api/extensions
-POST /api/extensions/upload/file
-DELETE /api/extensions/:id
-DELETE /api/extensions/:id/uninstall
-POST /api/extensions/:id/start
-POST /api/extensions/:id/stop
-POST /api/extensions/:id/reload
-POST /api/extensions/:id/command
-PUT  /api/extensions/:id/config
-GET  /api/extensions/:id/components
-GET  /api/extensions/:id/data-sources
-GET  /api/extensions/:id/metrics
-
-// Extension Marketplace
-GET  /api/extensions/market/list
-GET  /api/extensions/market/:id
-GET  /api/extensions/market/updates
-POST /api/extensions/market/install
-
-// Extension Streaming (WebSocket)
-GET  /api/extensions/:id/stream
-GET  /api/extensions/:id/stream/capability
-GET  /api/extensions/:id/stream/sessions
+GET  /api/settings/timezone
+PUT  /api/settings/timezone
+GET  /api/settings/timezones
+GET  /api/settings/retention
+PUT  /api/settings/retention
+POST /api/settings/retention/cleanup
 
 // Dashboards
 GET    /api/dashboards
-POST /api/dashboards
+POST   /api/dashboards
 GET    /api/dashboards/:id
 PUT    /api/dashboards/:id
 DELETE /api/dashboards/:id
-POST /api/dashboards/:id/execute
-GET /api/dashboards/templates
-GET /api/dashboards/widgets
+POST   /api/dashboards/:id/components      # add
+DELETE /api/dashboards/:id/components       # remove
+POST   /api/dashboards/:id/default
+GET    /api/dashboards/templates
+GET    /api/dashboards/templates/:id
+POST   /api/dashboards/:id/share            # create share
+GET    /api/dashboards/:id/share            # list shares
+DELETE /api/dashboards/:id/share/:token     # revoke share
 
-// Search
-GET    /api/search
-GET    /api/search/suggestions
+// Extensions (write operations)
+POST   /api/extensions
+POST   /api/extensions/sync
+GET    /api/extensions/sync-status
+DELETE /api/extensions/:id                  # unregister
+DELETE /api/extensions/:id/uninstall
+POST   /api/extensions/:id/start
+POST   /api/extensions/:id/stop
+POST   /api/extensions/:id/reload
+POST   /api/extensions/:id/command
+POST   /api/extensions/:id/invoke
+GET    /api/extensions/:id/config
+PUT    /api/extensions/:id/config
+GET    /api/extensions/:id/logs
+DELETE /api/extensions/:id/logs
+GET    /api/extensions/:id/descriptor
+GET    /api/extensions/:id/data-sources
+GET    /api/extensions/:id/metrics/:metric/data
+POST   /api/extensions/:id/push-metrics
+POST   /api/extensions/market/install
+POST   /api/extensions/upload/file          # 100MB limit
+
+// Frontend Components
+GET    /api/frontend-components
+POST   /api/frontend-components             # install (5MB limit)
+GET    /api/frontend-components/:id
+DELETE /api/frontend-components/:id
+POST   /api/frontend-components/market/install
+
+// Event publishing
+POST /api/events
 
 // Statistics
-GET    /api/stats/devices
-GET    /api/stats/rules
-GET    /api/stats/automation
+GET /api/stats/devices
+GET /api/stats/rules
 
-// Bulk Operations
-POST   /api/bulk/alerts
-POST   /api/bulk/alerts/resolve
-POST   /api/bulk/alerts/acknowledge
-POST   /api/bulk/alerts/delete
-POST   /api/bulk/sessions/delete
-POST   /api/bulk/devices/delete
-POST   /api/bulk/devices/command
-POST   /api/bulk/device-types/delete
+// Auth keys management
+GET    /api/auth/keys
+POST   /api/auth/keys
+DELETE /api/auth/keys/:id
 
-// Config
-GET    /api/config/export
-POST   /api/config/import
-POST   /api/config/validate
+// Config Import/Export
+GET  /api/config/export
+POST /api/config/import
+POST /api/config/validate
+```
+
+### Admin Routes (JWT + Admin Role)
+
+```rust
+// User management
+GET    /api/users
+POST   /api/users
+DELETE /api/users/:username
 ```
 
 ## Server State

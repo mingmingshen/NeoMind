@@ -1,7 +1,7 @@
 # LLM Module
 
 **Package**: `neomind-agent`
-**Version**: 0.6.1
+**Version**: 0.8.0
 **Completion**: 95%
 **Purpose**: Provides multi-backend LLM support
 
@@ -38,10 +38,10 @@ crates/neomind-agent/src/llm_backends/
 │   └── openai.rs               # Cloud backends (OpenAI/Anthropic/Google/xAI/Qwen/DeepSeek/GLM/MiniMax)
 ├── backend_plugin.rs           # Backend plugin system
 ├── config.rs                   # Configuration definitions
-├── factories.rs                # Backend factories
+├── factories/
+│   └── mod.rs                  # Backend factories
 ├── instance_manager.rs         # Instance manager
-├── rate_limited_client.rs      # Rate-limited client
-└── tokenizer.rs                # Tokenizer wrapper
+└── rate_limited_client.rs      # Rate-limited client
 ```
 
 ## Ollama Backend
@@ -439,25 +439,6 @@ pub struct RateLimiter {
     pub tokens_per_day: u64,
 }
 ```
-
-## Tokenizer
-
-```rust
-pub struct TokenizerWrapper {
-    // Internal tokenizer
-    inner: Option<Box<dyn Tokenizer>>,
-}
-
-pub trait Tokenizer {
-    /// Count tokens
-    fn count_tokens(&self, text: &str) -> usize;
-
-    /// Count message tokens
-    fn count_message_tokens(&self, message: &Message) -> usize;
-}
-```
-
-> **Note**: The candle tokenizer is currently disabled due to dependency issues.
 
 ## Configuration Management
 

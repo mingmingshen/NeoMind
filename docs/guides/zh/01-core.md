@@ -1,7 +1,7 @@
 # Core 模块
 
 **包名**: `neomind-core`
-**版本**: 0.5.11
+**版本**: 0.8.0
 **完成度**: 95%
 **用途**: 定义整个项目的核心trait和类型
 
@@ -12,37 +12,61 @@ Core 模块是 NeoMind 项目的基石，定义了所有其他模块依赖的核
 ## 模块结构
 
 ```
-crates/core/src/
+crates/neomind-core/src/
 ├── lib.rs                  # 公开接口导出
+├── brand.rs                # 品牌常量
 ├── event.rs                # 事件类型定义
 ├── eventbus.rs             # 事件总线实现
-├── priority_eventbus.rs    # 优先级事件总线
 ├── message.rs              # 消息类型定义
+├── message/
+│   └── convert.rs          # 消息转换工具
 ├── session.rs              # 会话类型定义
 ├── llm/
-│   ├── backend.rs          # LLM运行时trait
+│   ├── backend.rs          # LLM运行时trait + BackendRegistry
+│   ├── capability.rs       # 能力定义
 │   ├── modality.rs         # 多模态内容支持
-│   └── memory_consolidation.rs  # 内存整合
+│   ├── memory_consolidation.rs  # 内存整合
+│   ├── models.rs           # 模型定义
+│   ├── compaction.rs       # 上下文压缩
+│   └── token_counter.rs    # Token计数工具
 ├── tools/
 │   └── mod.rs              # 工具trait定义
 ├── storage/
 │   └── mod.rs              # 存储trait定义
-├── integration/
-│   ├── mod.rs              # 集成trait
-│   ├── connector.rs        # 连接器trait
-│   └── transformer.rs      # 数据转换trait
 ├── datasource/
-│   ├── mod.rs              # 数据源ID系统
-│   └── types.rs            # DataSourceId类型
+│   ├── mod.rs              # 数据源ID系统 + 类型
+│   └── query.rs            # 统一查询服务
 ├── extension/
 │   ├── mod.rs              # 扩展系统
 │   ├── types.rs            # 扩展类型
 │   ├── registry.rs         # 扩展注册表
-│   └── loader/             # 扩展加载器
-├── alerts/
-│   └── mod.rs              # 告警系统
+│   ├── executor.rs         # 扩展执行器
+│   ├── proxy.rs            # 扩展代理
+│   ├── runtime.rs          # 扩展运行时
+│   ├── safety.rs           # 安全/崩溃保护
+│   ├── system.rs           # 扩展系统管理
+│   ├── context.rs          # 扩展上下文
+│   ├── package.rs          # 包管理
+│   ├── stream.rs           # 流式支持
+│   ├── tracing.rs          # 追踪工具
+│   ├── capability_services.rs  # 能力服务
+│   ├── event_dispatcher.rs     # 事件分发
+│   ├── event_subscription.rs   # 事件订阅
+│   ├── extension_event_subscription.rs  # 扩展事件订阅
+│   ├── loader/                 # 扩展加载器
+│   │   ├── mod.rs
+│   │   ├── native.rs       # 原生扩展加载器
+│   │   └── isolated.rs     # 隔离进程加载器
+│   └── isolated/           # 进程隔离扩展
+│       ├── mod.rs
+│       ├── manager.rs      # 进程管理器
+│       ├── process.rs      # 进程生命周期
+│       ├── ipc_local.rs    # 本地IPC
+│       └── in_flight.rs    # 在途请求追踪
+├── error/
+│   ├── mod.rs              # 错误类型
+│   └── redb.rs             # Redb特定错误
 ├── config.rs               # 配置常量
-├── error.rs                # 错误类型
 └── macros.rs               # 宏定义
 ```
 
@@ -55,31 +79,65 @@ crates/core/src/
 ```rust
 #[async_trait]
 pub trait LlmRuntime: Send + Sync {
-    /// 获取后端能力
-    fn capabilities(&self) -> BackendCapabilities;
+    /// 获取后端类型标识符
+    fn backend_id(&self) -> BackendId;
+
+    /// 获取当前模型名称
+    fn model_name(&self) -> &str;
+
+    /// 检查后端是否可用
+    async fn is_available(&self) -> bool { true }
+
+    /// 预热模型（可选，消除首次请求延迟）
+    async fn warmup(&self) -> Result<(), LlmError> { Ok(()) }
 
     /// 生成文本（非流式）
-    fn generate(&self, input: &LlmInput) -> Result<LlmOutput>;
+    async fn generate(&self, input: LlmInput) -> Result<LlmOutput, LlmError>;
 
     /// 生成文本（流式）
-    fn generate_stream(&self, input: &LlmInput) -> StreamResult;
+    async fn generate_stream(
+        &self,
+        input: LlmInput,
+    ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError>;
 
-    /// 嵌入向量生成（可选）
-    fn embed(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>>;
+    /// 获取最大上下文长度
+    fn max_context_length(&self) -> usize;
+
+    /// 估算token数量
+    fn estimate_tokens(&self, text: &str) -> usize { text.len() / 4 }
+
+    /// 是否支持多模态（视觉）
+    fn supports_multimodal(&self) -> bool { false }
+
+    /// 获取后端能力
+    fn capabilities(&self) -> BackendCapabilities { BackendCapabilities::default() }
+
+    /// 获取后端指标（如支持）
+    fn metrics(&self) -> BackendMetrics { BackendMetrics::default() }
 }
 ```
 
 **BackendCapabilities**:
 ```rust
 pub struct BackendCapabilities {
-    /// 支持流式输出
+    /// 支持流式生成
     pub streaming: bool,
+    /// 支持多模态（视觉）
+    pub multimodal: bool,
     /// 支持函数调用
     pub function_calling: bool,
-    /// 支持视觉输入
-    pub vision: bool,
-    /// 支持thinking模式
-    pub thinking: bool,
+    /// 支持多模型
+    pub multiple_models: bool,
+    /// 最大上下文长度
+    pub max_context: Option<usize>,
+    /// 支持的模态
+    pub modalities: Vec<String>,
+    /// 支持thinking/推理显示
+    pub thinking_display: bool,
+    /// 支持图片输入
+    pub supports_images: bool,
+    /// 支持音频输入
+    pub supports_audio: bool,
 }
 ```
 
@@ -260,28 +318,88 @@ pub enum ContentPart {
 ```rust
 pub enum NeoMindEvent {
     // 设备事件
-    DeviceOnline { device_id: String, timestamp: i64 },
-    DeviceOffline { device_id: String, timestamp: i64 },
-    DeviceMetric { device_id: String, metric: String, value: MetricValue },
-    DeviceCommandResult { device_id: String, command: String, success: bool },
+    DeviceOnline { device_id: String, device_type: String, timestamp: i64 },
+    DeviceOffline { device_id: String, reason: Option<String>, timestamp: i64 },
+    DeviceMetric { device_id: String, metric: String, value: MetricValue, timestamp: i64,
+                   quality: Option<f32>, is_virtual: Option<bool> },
+    DeviceCommandResult { device_id: String, command: String, success: bool,
+                          result: Option<serde_json::Value>, timestamp: i64 },
+    DeviceDiscovered { device_id: String, source: String, adapter_id: Option<String>,
+                       metadata: serde_json::Value, sample: serde_json::Value,
+                       is_binary: bool, timestamp: i64 },
 
     // 规则事件
-    RuleEvaluated { rule_id: String, result: bool },
-    RuleTriggered { rule_id: String, trigger_value: serde_json::Value },
+    RuleEvaluated { rule_id: String, rule_name: String, condition_met: bool, timestamp: i64 },
+    RuleTriggered { rule_id: String, rule_name: String, trigger_value: f64,
+                    actions: Vec<String>, timestamp: i64 },
+    RuleExecuted { rule_id: String, rule_name: String, success: bool,
+                   duration_ms: u64, timestamp: i64 },
 
     // 工作流事件
-    WorkflowTriggered { workflow_id: String },
-    WorkflowStepCompleted { workflow_id: String, step: String },
-    WorkflowCompleted { workflow_id: String },
+    WorkflowTriggered { workflow_id: String, trigger_type: String,
+                        trigger_data: Option<serde_json::Value>, execution_id: String, timestamp: i64 },
+    WorkflowStepCompleted { workflow_id: String, execution_id: String, step_id: String,
+                            result: serde_json::Value, timestamp: i64 },
+    WorkflowCompleted { workflow_id: String, execution_id: String, success: bool,
+                        duration_ms: u64, timestamp: i64 },
 
-    // LLM事件
-    PeriodicReviewTriggered { review_id: String },
-    LlmDecisionProposed { decision_id: String, title: String },
-    LlmDecisionExecuted { decision_id: String, success: bool },
+    // 告警事件
+    AlertCreated { alert_id: String, title: String, severity: String, message: String, timestamp: i64 },
+    AlertAcknowledged { alert_id: String, acknowledged_by: String, timestamp: i64 },
 
     // 消息事件
-    MessageCreated { message_id: String, severity: MessageSeverity },
-    MessageAcknowledged { message_id: String },
+    MessageCreated { message_id: String, title: String, severity: String, message: String, timestamp: i64 },
+    MessageAcknowledged { message_id: String, acknowledged_by: String, timestamp: i64 },
+    MessageResolved { message_id: String, timestamp: i64 },
+
+    // Agent事件（用户自定义AI Agent）
+    AgentExecutionStarted { agent_id: String, agent_name: String, execution_id: String,
+                            trigger_type: String, timestamp: i64 },
+    AgentThinking { agent_id: String, execution_id: String, step_number: u32,
+                    step_type: String, description: String, details: Option<serde_json::Value>, timestamp: i64 },
+    AgentDecision { agent_id: String, execution_id: String, description: String,
+                    rationale: String, action: String, confidence: f32, timestamp: i64 },
+    AgentProgress { agent_id: String, execution_id: String, stage: String, stage_label: String,
+                    progress: Option<f32>, details: Option<String>, timestamp: i64 },
+    AgentExecutionCompleted { agent_id: String, execution_id: String, success: bool,
+                              duration_ms: u64, error: Option<String>, timestamp: i64 },
+    AgentMemoryUpdated { agent_id: String, memory_type: String, timestamp: i64 },
+
+    // LLM事件（自主Agent）
+    PeriodicReviewTriggered { review_id: String, review_type: String, timestamp: i64 },
+    LlmDecisionProposed { decision_id: String, title: String, description: String,
+                          reasoning: String, actions: Vec<ProposedAction>,
+                          confidence: f32, timestamp: i64 },
+    LlmDecisionExecuted { decision_id: String, success: bool,
+                          result: Option<serde_json::Value>, timestamp: i64 },
+
+    // 用户事件
+    UserMessage { session_id: String, content: String, timestamp: i64 },
+    LlmResponse { session_id: String, content: String, tools_used: Vec<String>,
+                  processing_time_ms: u64, timestamp: i64 },
+
+    // 工具执行事件
+    ToolExecutionStart { tool_name: String, arguments: serde_json::Value,
+                         session_id: Option<String>, timestamp: i64 },
+    ToolExecutionSuccess { tool_name: String, arguments: serde_json::Value, result: serde_json::Value,
+                           duration_ms: u64, session_id: Option<String>, timestamp: i64 },
+    ToolExecutionFailure { tool_name: String, arguments: serde_json::Value, error: String,
+                           error_type: String, duration_ms: u64, session_id: Option<String>, timestamp: i64 },
+
+    // 扩展事件（Phase 2.1）
+    ExtensionOutput { extension_id: String, output_name: String, value: MetricValue,
+                      timestamp: i64, labels: Option<HashMap<String, String>>, quality: Option<f32> },
+    ExtensionLifecycle { extension_id: String, state: String, message: Option<String>, timestamp: i64 },
+    ExtensionCommandStarted { extension_id: String, extension_name: String, command_id: String,
+                              execution_id: String, args: serde_json::Value, timestamp: i64 },
+    ExtensionCommandCompleted { extension_id: String, extension_name: String, command_id: String,
+                                execution_id: String, args: serde_json::Value, outputs: Vec<serde_json::Value>,
+                                duration_ms: u64, timestamp: i64 },
+    ExtensionCommandFailed { extension_id: String, extension_name: String, command_id: String,
+                             execution_id: String, error: String, duration_ms: u64, timestamp: i64 },
+
+    // 自定义事件（用于扩展和插件）
+    Custom { event_type: String, data: serde_json::Value },
 }
 ```
 
@@ -361,8 +479,6 @@ pub const DEFAULT_OPENAI_ENDPOINT: &str = "https://api.openai.com/v1";
 pub fn models() -> Vec<&'static str> {
     vec![
         "qwen3.5:4b",      // Ollama默认
-        "gpt-4o-mini",     // OpenAI
-        "claude-3-5-sonnet", // Anthropic
     ]
 }
 
@@ -393,6 +509,7 @@ async fn main() {
     // 发布事件
     bus.publish(NeoMindEvent::DeviceOnline {
         device_id: "sensor_1".to_string(),
+        device_type: "sensor".to_string(),
         timestamp: chrono::Utc::now().timestamp(),
     });
 
@@ -408,18 +525,13 @@ async fn main() {
 ### 使用LlmRuntime trait
 
 ```rust
-use neomind-core::llm::backend::{LlmRuntime, LlmInput, GenerationParams};
+use neomind_core::llm::backend::{LlmRuntime, LlmInput, GenerationParams};
 
-async fn call_llm(runtime: &dyn LlmRuntime, prompt: &str) -> Result<String> {
-    let input = LlmInput {
-        messages: vec![
-            Message::user(prompt)
-        ],
-        params: GenerationParams::default(),
-        model: None,
-    };
+async fn call_llm(runtime: &dyn LlmRuntime, prompt: &str) -> Result<String, LlmError> {
+    let input = LlmInput::new(prompt)
+        .with_params(GenerationParams::default());
 
-    let output = runtime.generate(&input)?;
+    let output = runtime.generate(input).await?;
     Ok(output.text)
 }
 ```

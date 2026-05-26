@@ -1,27 +1,37 @@
 # Tools 模块
 
-**包名**: `neomind-tools`
-**版本**: 0.5.9
-**完成度**: 80%
+**包名**: `neomind-agent` (toolkit 和 tools 子模块)
+**版本**: 0.8.0
+**完成度**: 90%
 **用途**: AI函数调用工具
 
 ## 概述
 
-Tools模块实现了AI可调用的工具系统，包括设备控制、规则管理、数据分析等功能。
+Tools模块实现了AI可调用的工具系统，包括设备控制、规则管理、数据分析等功能。工具组织在 `neomind-agent` 的两个子模块中：`tools/` 用于智能体专用工具包装（事件集成、交互），`toolkit/` 用于核心工具实现（shell、技能、扩展、指标）。
 
 ## 模块结构
 
 ```
-crates/neomind-tools/src/
-├── lib.rs                      # 公开接口
-├── tool.rs                     # Tool trait
-├── registry.rs                 # 工具注册表
-├── core_tools.rs               # 核心业务工具
-├── agent_tools.rs              # Agent工具
-├── system_tools.rs             # 系统工具
-├── extension_tools.rs          # 扩展工具
-├── real.rs                     # 真实实现（feature-gated）
-└── simplified.rs               # 简化接口
+crates/neomind-agent/src/
+├── toolkit/                            # 核心工具实现
+│   ├── mod.rs                          # 公开接口和导出
+│   ├── tool.rs                         # Tool trait 和 ToolDefinition
+│   ├── registry.rs                     # ToolRegistry 和 ToolRegistryBuilder
+│   ├── resolver.rs                     # EntityResolver（模糊名称/ID匹配）
+│   ├── shell.rs                        # Shell工具（neomind CLI执行）
+│   ├── skill_tool.rs                   # 技能管理工具
+│   ├── extension_tools.rs              # 扩展工具生成器和执行器
+│   ├── ai_metric.rs                    # AI指标查询工具
+│   ├── session_search.rs              # 会话历史搜索工具
+│   ├── time_utils.rs                  # 时间范围解析工具
+│   └── error.rs                        # 工具错误类型
+├── tools/                              # 智能体工具包装
+│   ├── mod.rs                          # 公开接口和导出
+│   ├── event_integration.rs            # 带事件总线追踪的工具执行
+│   ├── interaction.rs                  # AskUser、ClarifyIntent、ConfirmAction
+│   ├── mapper.rs                       # 工具名称映射和参数解析
+│   ├── think.rs                        # ThinkTool推理工具
+│   └── tool_search.rs                  # ToolSearchTool工具查找
 ```
 
 ## 核心Trait
@@ -174,6 +184,77 @@ impl ToolRegistryBuilder {
 
 ## 内置工具
 
+### Shell 工具（CLI驱动）
+
+主要工具接口使用 `shell` 工具执行 `neomind` CLI 命令。LLM 构建 CLI 命令，shell 工具将其路由到进程内 CLI 操作。
+
+```rust
+/// Shell 工具，用于 neomind CLI 执行
+pub struct ShellTool;
+
+// 10 个 CLI 域：device、dashboard、rule、extension、widget、
+//   transform、agent、message、system、data-push
+// 输入: { "command": "neomind device list --type sensor" }
+// 输出: { "success": true, "data": {...}, "suggestion": null }
+```
+
+**CLI 命令参考**（嵌入工具描述中供 LLM 发现）：
+
+| 域 | 操作 |
+|----|------|
+| `device` | list, get, create, update, delete, control |
+| `dashboard` | list, get, create, update, delete |
+| `rule` | list, get, create, update, delete, enable, disable |
+| `extension` | list, get, install, uninstall, enable, disable |
+| `widget` | list, get, create, update, delete |
+| `transform` | list, get, create, update, delete |
+| `agent` | list, get, create, update, delete, status, executions |
+| `message` | list, get, send, channel-list, channel-create, channel-update, channel-delete |
+| `system` | info |
+| `data-push` | list, get, create, update, delete |
+
+### 技能工具
+
+```rust
+/// 用户自定义技能管理
+pub struct SkillTool;
+
+// 操作：search、list、get、create、update、delete
+// 输入: { "action": "search", "keyword": "temperature" }
+```
+
+### 扩展工具
+
+```rust
+/// 扩展工具生成器和执行器
+pub struct ExtensionTool;
+pub struct ExtensionToolGenerator;
+
+// 从扩展清单动态生成工具定义
+// 通过扩展运行器执行扩展工具调用
+```
+
+### AI 指标工具
+
+```rust
+/// AI 指标查询工具
+pub struct AiMetricTool;
+pub struct AiMetricsRegistry;
+
+// 查询设备和扩展的时序指标
+// 输入: { "data_source_id": "device:sensor_1:temperature", "time_range": "1h" }
+```
+
+### 会话搜索工具
+
+```rust
+/// 会话历史搜索
+pub struct SessionSearchTool;
+
+// 搜索对话历史
+// 输入: { "query": "温度告警", "limit": 5 }
+```
+
 ### 设备工具
 
 ```rust
@@ -199,16 +280,8 @@ pub struct ControlDeviceTool {
     device_service: Arc<DeviceService>,
 }
 
-// 输入: { "device_id": "relay_1", "command": "turn_on", "params": {} }
+// 输入: { "device_id": "relay_1", "command": "turn_on" }
 // 输出: { "success": true, "result": ... }
-
-/// 设备状态
-pub struct QueryDeviceStatusTool {
-    device_service: Arc<DeviceService>,
-}
-
-// 输入: { "device_id": "sensor_1" }
-// 输出: { "online": true, "last_seen": ..., "state": {...} }
 ```
 
 ### 规则工具
@@ -224,27 +297,6 @@ pub struct CreateRuleTool {
     rule_service: Arc<RuleService>,
     parser: RuleParser,
 }
-
-// 输入: { "name": "温度告警", "rule": "ON temp > 30 THEN alert()" }
-
-/// 更新规则
-pub struct UpdateRuleTool {
-    rule_service: Arc<RuleService>,
-}
-
-/// 删除规则
-pub struct DeleteRuleTool {
-    rule_service: Arc<RuleService>,
-}
-
-/// 启用/禁用规则
-pub struct EnableRuleTool {
-    rule_service: Arc<RuleService>,
-}
-
-pub struct DisableRuleTool {
-    rule_service: Arc<RuleService>,
-}
 ```
 
 ### Agent工具
@@ -253,170 +305,6 @@ pub struct DisableRuleTool {
 /// 列出Agent
 pub struct ListAgentsTool {
     agent_service: Arc<AgentService>,
-}
-
-/// 获取Agent详情
-pub struct GetAgentTool {
-    agent_service: Arc<AgentService>,
-}
-
-/// 执行Agent
-pub struct ExecuteAgentTool {
-    agent_service: Arc<AgentService>,
-}
-
-/// 控制Agent
-pub struct ControlAgentTool {
-    agent_service: Arc<AgentService>,
-}
-
-/// 创建Agent
-pub struct CreateAgentTool {
-    agent_service: Arc<AgentService>,
-}
-
-/// Agent内存
-pub struct AgentMemoryTool {
-    agent_service: Arc<AgentService>,
-}
-
-/// Agent执行列表
-pub struct GetAgentExecutionsTool {
-    agent_service: Arc<AgentService>,
-}
-
-/// Agent执行详情
-pub struct GetAgentExecutionDetailTool {
-    agent_service: Arc<AgentService>,
-}
-
-/// Agent对话历史
-pub struct GetAgentConversationTool {
-    agent_service: Arc<AgentService>,
-}
-```
-
-### 交互工具
-
-NeoMind 提供交互工具，用于在智能体执行过程中与用户通信：
-
-#### AskUserTool
-
-在执行过程中提示用户输入：
-
-```rust
-/// 向用户提问
-pub struct AskUserTool;
-
-// 输入: { "question": "要控制哪个设备？", "options": ["device_1", "device_2"] }
-// 输出: { "type": "ask_user", "awaiting_user_response": true }
-```
-
-#### ConfirmActionTool
-
-在执行危险操作前请求确认：
-
-```rust
-/// 执行前确认操作
-pub struct ConfirmActionTool;
-
-// 输入: { "action": "删除所有设备", "risk_level": "high" }
-// 输出: { "type": "confirm_action", "awaiting_confirmation": true }
-```
-
-**危险操作检测**：系统自动检测中英文的危险操作：
-
-| 英文关键词 | 中文关键词 |
-|-----------|-----------|
-| delete, remove, clear | 删除, 移除, 清空 |
-| reset, format | 重置, 格式化 |
-| close all, turn off all | 关闭所有 |
-| delete all, batch delete | 删除所有, 批量删除 |
-
-**示例**：
-```rust
-// 以下会触发确认：
-tool.requires_confirmation("delete all rules");      // 英文
-tool.requires_confirmation("关闭所有设备");           // 中文
-tool.requires_confirmation("删除所有自动化规则");    // 中文
-
-// 以下不会触发确认：
-tool.requires_confirmation("show temperature");
-tool.requires_confirmation("获取温度");
-```
-
-### 系统工具
-
-```rust
-/// 系统信息
-pub struct SystemInfoTool;
-
-// 输出: { "version": "...", "uptime": ..., "memory": ... }
-
-/// 系统配置
-pub struct SystemConfigTool;
-
-/// 重启服务
-pub struct ServiceRestartTool;
-
-/// 系统帮助
-pub struct SystemHelpTool;
-
-/// 创建告警
-pub struct CreateAlertTool {
-    alert_service: Arc<AlertService>,
-}
-
-/// 列出告警
-pub struct ListAlertsTool {
-    alert_service: Arc<AlertService>,
-}
-
-/// 确认告警
-pub struct AcknowledgeAlertTool {
-    alert_service: Arc<AlertService>,
-}
-
-/// 导出CSV
-pub struct ExportToCsvTool;
-
-/// 导出JSON
-pub struct ExportToJsonTool;
-
-/// 生成报告
-pub struct GenerateReportTool {
-    report_service: Arc<ReportService>,
-}
-```
-
-### 核心业务工具
-
-```rust
-/// 设备发现
-pub struct DeviceDiscoverTool {
-    discovery: Arc<DeviceDiscovery>,
-}
-
-/// 设备查询
-pub struct DeviceQueryTool {
-    device_service: Arc<DeviceService>,
-}
-
-/// 设备控制
-pub struct DeviceControlTool {
-    device_service: Arc<DeviceService>,
-}
-
-/// 设备分析
-pub struct DeviceAnalyzeTool {
-    device_service: Arc<DeviceService>,
-    analytics: Arc<AnalyticsService>,
-}
-
-/// 从上下文提取规则
-pub struct RuleFromContextTool {
-    rule_service: Arc<RuleService>,
-    nl2auto: Arc<Nl2Automation>,
 }
 ```
 
@@ -518,26 +406,24 @@ GET    /api/tools/metrics                   # 工具执行统计
 ### 创建工具注册表
 
 ```rust
-use neomind-tools::{ToolRegistryBuilder, QueryDataTool, ControlDeviceTool};
+use neomind_agent::toolkit::{ToolRegistryBuilder, ShellTool, SkillTool};
 use std::sync::Arc;
 
 let registry = ToolRegistryBuilder::new()
-    .with_tool(Arc::new(QueryDataTool::mock()))
-    .with_tool(Arc::new(ControlDeviceTool::mock()))
-    .with_standard_tools()  // 添加所有标准工具
+    .with_tool(Arc::new(ShellTool::new(shell_config)))
+    .with_tool(Arc::new(SkillTool::new(skill_registry)))
     .build();
 ```
 
-### 执行工具
+### 通过 Shell 执行工具
 
 ```rust
-use neomind-tools::ToolRegistry;
+use neomind_agent::toolkit::ToolRegistry;
 
 let result = registry.execute(
-    "query_data",
+    "shell",
     serde_json::json!({
-        "device_id": "sensor_1",
-        "metric": "temperature"
+        "command": "neomind device list --type sensor"
     }),
 ).await?;
 
@@ -548,60 +434,11 @@ if result.success {
 }
 ```
 
-### 格式化为LLM格式
-
-```rust
-let tools_json = registry.format_for_llm();
-
-// 输出OpenAI function calling格式
-{
-  "tools": [
-    {
-      "type": "function",
-      "function": {
-        "name": "query_data",
-        "description": "查询设备数据",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "device_id": { "type": "string" },
-            "metric": { "type": "string" }
-          },
-          "required": ["device_id", "metric"]
-        }
-      }
-    }
-  ]
-}
-```
-
-## 实现状态
-
-| 工具类型 | 状态 | 说明 |
-|---------|------|------|
-| 设备工具 | ✅ | 完整实现 |
-| 规则工具 | ✅ | 完整实现 |
-| Agent工具 | ✅ | 完整实现 |
-| 系统工具 | ✅ | 完整实现 |
-| 业务工具 | ✅ | 完整实现 |
-| Mock实现 | ✅ | 用于测试 |
-| Real实现 | 🟡 | feature-gated |
-
-## Feature Flags
-
-```toml
-[features]
-default = ["device", "rule", "agent", "system"]
-device = ["mqtt", "http", "webhook"]
-rule = ["pest", "executor"]
-agent = ["llm"]
-system = ["stats", "restart"]
-```
-
 ## 设计原则
 
 1. **接口统一**: 所有工具实现相同的Trait
 2. **类型安全**: 输入输出使用强类型
-3. **可测试**: 提供Mock实现
-4. **LLM友好**: 生成标准化的函数调用格式
-5. **可追踪**: 记录所有执行历史
+3. **CLI优先**: 工具通过 shell 工具使用 `neomind` CLI 命令，保持一致性
+4. **LLM友好**: 标准化的函数调用格式，嵌入 CLI 参考供 LLM 发现
+5. **可追踪**: 通过事件总线集成记录所有执行历史
+6. **错误恢复**: 失败的 CLI 命令返回领域相关的恢复提示

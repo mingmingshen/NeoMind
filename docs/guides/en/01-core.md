@@ -1,8 +1,8 @@
 # Core Module
 
 **Package**: `neomind-core`
-**Version**: 0.5.9
-**Completion**: 90%
+**Version**: 0.8.0
+**Completion**: 95%
 **Purpose**: Defines core traits and types for the entire project
 
 ## Overview
@@ -12,37 +12,61 @@ The Core module is the foundation of the NeoMind project, defining the core abst
 ## Module Structure
 
 ```
-crates/core/src/
+crates/neomind-core/src/
 ├── lib.rs                  # Public interface exports
+├── brand.rs                # Branding constants
 ├── event.rs                # Event type definitions
 ├── eventbus.rs             # Event bus implementation
-├── priority_eventbus.rs    # Priority event bus
 ├── message.rs              # Message type definitions
+├── message/
+│   └── convert.rs          # Message conversion utilities
 ├── session.rs              # Session type definitions
 ├── llm/
-│   ├── backend.rs          # LLM runtime trait
+│   ├── backend.rs          # LLM runtime trait + BackendRegistry
+│   ├── capability.rs       # Capability definitions
 │   ├── modality.rs         # Multi-modal content support
-│   └── memory_consolidation.rs  # Memory consolidation
+│   ├── memory_consolidation.rs  # Memory consolidation
+│   ├── models.rs           # Model definitions
+│   ├── compaction.rs       # Context compaction
+│   └── token_counter.rs    # Token counting utilities
 ├── tools/
 │   └── mod.rs              # Tool trait definitions
 ├── storage/
 │   └── mod.rs              # Storage trait definitions
-├── integration/
-│   ├── mod.rs              # Integration trait
-│   ├── connector.rs        # Connector trait
-│   └── transformer.rs      # Data transformer trait
 ├── datasource/
-│   ├── mod.rs              # Data source ID system
-│   └── types.rs            # DataSourceId types
+│   ├── mod.rs              # Data source ID system + types
+│   └── query.rs            # Unified query service
 ├── extension/
 │   ├── mod.rs              # Extension system
 │   ├── types.rs            # Extension types
 │   ├── registry.rs         # Extension registry
-│   └── loader/             # Extension loaders
-├── alerts/
-│   └── mod.rs              # Alert system
+│   ├── executor.rs         # Extension executor
+│   ├── proxy.rs            # Extension proxy
+│   ├── runtime.rs          # Extension runtime
+│   ├── safety.rs           # Safety/crash protection
+│   ├── system.rs           # Extension system management
+│   ├── context.rs          # Extension context
+│   ├── package.rs          # Package management
+│   ├── stream.rs           # Streaming support
+│   ├── tracing.rs          # Tracing utilities
+│   ├── capability_services.rs  # Capability services
+│   ├── event_dispatcher.rs     # Event dispatching
+│   ├── event_subscription.rs   # Event subscriptions
+│   ├── extension_event_subscription.rs  # Extension event subscriptions
+│   ├── loader/                 # Extension loaders
+│   │   ├── mod.rs
+│   │   ├── native.rs       # Native extension loader
+│   │   └── isolated.rs     # Isolated process loader
+│   └── isolated/           # Process-isolated extensions
+│       ├── mod.rs
+│       ├── manager.rs      # Process manager
+│       ├── process.rs      # Process lifecycle
+│       ├── ipc_local.rs    # Local IPC
+│       └── in_flight.rs    # In-flight request tracking
+├── error/
+│   ├── mod.rs              # Error types
+│   └── redb.rs             # Redb-specific errors
 ├── config.rs               # Configuration constants
-├── error.rs                # Error types
 └── macros.rs               # Macro definitions
 ```
 
@@ -55,31 +79,65 @@ Defines the interface that all LLM backends must implement.
 ```rust
 #[async_trait]
 pub trait LlmRuntime: Send + Sync {
-    /// Get backend capabilities
-    fn capabilities(&self) -> BackendCapabilities;
+    /// Get the backend type identifier
+    fn backend_id(&self) -> BackendId;
+
+    /// Get the current model name
+    fn model_name(&self) -> &str;
+
+    /// Check if the backend is available
+    async fn is_available(&self) -> bool { true }
+
+    /// Warm up the model (optional, eliminates first-request latency)
+    async fn warmup(&self) -> Result<(), LlmError> { Ok(()) }
 
     /// Generate text (non-streaming)
-    fn generate(&self, input: &LlmInput) -> Result<LlmOutput>;
+    async fn generate(&self, input: LlmInput) -> Result<LlmOutput, LlmError>;
 
     /// Generate text (streaming)
-    fn generate_stream(&self, input: &LlmInput) -> StreamResult;
+    async fn generate_stream(
+        &self,
+        input: LlmInput,
+    ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError>;
 
-    /// Embedding generation (optional)
-    fn embed(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>>;
+    /// Get max context length
+    fn max_context_length(&self) -> usize;
+
+    /// Estimate token count
+    fn estimate_tokens(&self, text: &str) -> usize { text.len() / 4 }
+
+    /// Check if multimodal (vision) is supported
+    fn supports_multimodal(&self) -> bool { false }
+
+    /// Get backend capabilities
+    fn capabilities(&self) -> BackendCapabilities { BackendCapabilities::default() }
+
+    /// Get backend metrics (if supported)
+    fn metrics(&self) -> BackendMetrics { BackendMetrics::default() }
 }
 ```
 
 **BackendCapabilities**:
 ```rust
 pub struct BackendCapabilities {
-    /// Supports streaming output
+    /// Supports streaming generation
     pub streaming: bool,
+    /// Supports multimodal (vision)
+    pub multimodal: bool,
     /// Supports function calling
     pub function_calling: bool,
-    /// Supports vision input
-    pub vision: bool,
-    /// Supports thinking mode
-    pub thinking: bool,
+    /// Supports multiple models
+    pub multiple_models: bool,
+    /// Maximum context length
+    pub max_context: Option<usize>,
+    /// Supported modalities
+    pub modalities: Vec<String>,
+    /// Supports thinking/reasoning display
+    pub thinking_display: bool,
+    /// Supports image input
+    pub supports_images: bool,
+    /// Supports audio input
+    pub supports_audio: bool,
 }
 ```
 
@@ -260,28 +318,88 @@ pub enum ContentPart {
 ```rust
 pub enum NeoMindEvent {
     // Device events
-    DeviceOnline { device_id: String, timestamp: i64 },
-    DeviceOffline { device_id: String, timestamp: i64 },
-    DeviceMetric { device_id: String, metric: String, value: MetricValue },
-    DeviceCommandResult { device_id: String, command: String, success: bool },
+    DeviceOnline { device_id: String, device_type: String, timestamp: i64 },
+    DeviceOffline { device_id: String, reason: Option<String>, timestamp: i64 },
+    DeviceMetric { device_id: String, metric: String, value: MetricValue, timestamp: i64,
+                   quality: Option<f32>, is_virtual: Option<bool> },
+    DeviceCommandResult { device_id: String, command: String, success: bool,
+                          result: Option<serde_json::Value>, timestamp: i64 },
+    DeviceDiscovered { device_id: String, source: String, adapter_id: Option<String>,
+                       metadata: serde_json::Value, sample: serde_json::Value,
+                       is_binary: bool, timestamp: i64 },
 
     // Rule events
-    RuleEvaluated { rule_id: String, result: bool },
-    RuleTriggered { rule_id: String, trigger_value: serde_json::Value },
+    RuleEvaluated { rule_id: String, rule_name: String, condition_met: bool, timestamp: i64 },
+    RuleTriggered { rule_id: String, rule_name: String, trigger_value: f64,
+                    actions: Vec<String>, timestamp: i64 },
+    RuleExecuted { rule_id: String, rule_name: String, success: bool,
+                   duration_ms: u64, timestamp: i64 },
 
     // Workflow events
-    WorkflowTriggered { workflow_id: String },
-    WorkflowStepCompleted { workflow_id: String, step: String },
-    WorkflowCompleted { workflow_id: String },
+    WorkflowTriggered { workflow_id: String, trigger_type: String,
+                        trigger_data: Option<serde_json::Value>, execution_id: String, timestamp: i64 },
+    WorkflowStepCompleted { workflow_id: String, execution_id: String, step_id: String,
+                            result: serde_json::Value, timestamp: i64 },
+    WorkflowCompleted { workflow_id: String, execution_id: String, success: bool,
+                        duration_ms: u64, timestamp: i64 },
 
-    // LLM events
-    PeriodicReviewTriggered { review_id: String },
-    LlmDecisionProposed { decision_id: String, title: String },
-    LlmDecisionExecuted { decision_id: String, success: bool },
+    // Alert events
+    AlertCreated { alert_id: String, title: String, severity: String, message: String, timestamp: i64 },
+    AlertAcknowledged { alert_id: String, acknowledged_by: String, timestamp: i64 },
 
     // Message events
-    MessageCreated { message_id: String, severity: MessageSeverity },
-    MessageAcknowledged { message_id: String },
+    MessageCreated { message_id: String, title: String, severity: String, message: String, timestamp: i64 },
+    MessageAcknowledged { message_id: String, acknowledged_by: String, timestamp: i64 },
+    MessageResolved { message_id: String, timestamp: i64 },
+
+    // Agent events (User-defined AI Agents)
+    AgentExecutionStarted { agent_id: String, agent_name: String, execution_id: String,
+                            trigger_type: String, timestamp: i64 },
+    AgentThinking { agent_id: String, execution_id: String, step_number: u32,
+                    step_type: String, description: String, details: Option<serde_json::Value>, timestamp: i64 },
+    AgentDecision { agent_id: String, execution_id: String, description: String,
+                    rationale: String, action: String, confidence: f32, timestamp: i64 },
+    AgentProgress { agent_id: String, execution_id: String, stage: String, stage_label: String,
+                    progress: Option<f32>, details: Option<String>, timestamp: i64 },
+    AgentExecutionCompleted { agent_id: String, execution_id: String, success: bool,
+                              duration_ms: u64, error: Option<String>, timestamp: i64 },
+    AgentMemoryUpdated { agent_id: String, memory_type: String, timestamp: i64 },
+
+    // LLM events (Autonomous Agent)
+    PeriodicReviewTriggered { review_id: String, review_type: String, timestamp: i64 },
+    LlmDecisionProposed { decision_id: String, title: String, description: String,
+                          reasoning: String, actions: Vec<ProposedAction>,
+                          confidence: f32, timestamp: i64 },
+    LlmDecisionExecuted { decision_id: String, success: bool,
+                          result: Option<serde_json::Value>, timestamp: i64 },
+
+    // User events
+    UserMessage { session_id: String, content: String, timestamp: i64 },
+    LlmResponse { session_id: String, content: String, tools_used: Vec<String>,
+                  processing_time_ms: u64, timestamp: i64 },
+
+    // Tool execution events
+    ToolExecutionStart { tool_name: String, arguments: serde_json::Value,
+                         session_id: Option<String>, timestamp: i64 },
+    ToolExecutionSuccess { tool_name: String, arguments: serde_json::Value, result: serde_json::Value,
+                           duration_ms: u64, session_id: Option<String>, timestamp: i64 },
+    ToolExecutionFailure { tool_name: String, arguments: serde_json::Value, error: String,
+                           error_type: String, duration_ms: u64, session_id: Option<String>, timestamp: i64 },
+
+    // Extension events (Phase 2.1)
+    ExtensionOutput { extension_id: String, output_name: String, value: MetricValue,
+                      timestamp: i64, labels: Option<HashMap<String, String>>, quality: Option<f32> },
+    ExtensionLifecycle { extension_id: String, state: String, message: Option<String>, timestamp: i64 },
+    ExtensionCommandStarted { extension_id: String, extension_name: String, command_id: String,
+                              execution_id: String, args: serde_json::Value, timestamp: i64 },
+    ExtensionCommandCompleted { extension_id: String, extension_name: String, command_id: String,
+                                execution_id: String, args: serde_json::Value, outputs: Vec<serde_json::Value>,
+                                duration_ms: u64, timestamp: i64 },
+    ExtensionCommandFailed { extension_id: String, extension_name: String, command_id: String,
+                             execution_id: String, error: String, duration_ms: u64, timestamp: i64 },
+
+    // Custom events (for extensions and plugins)
+    Custom { event_type: String, data: serde_json::Value },
 }
 ```
 
@@ -361,8 +479,6 @@ pub const DEFAULT_OPENAI_ENDPOINT: &str = "https://api.openai.com/v1";
 pub fn models() -> Vec<&'static str> {
     vec![
         "qwen3.5:4b",      // Ollama default
-        "gpt-4o-mini",     // OpenAI
-        "claude-3-5-sonnet", // Anthropic
     ]
 }
 
@@ -393,6 +509,7 @@ async fn main() {
     // Publish event
     bus.publish(NeoMindEvent::DeviceOnline {
         device_id: "sensor_1".to_string(),
+        device_type: "sensor".to_string(),
         timestamp: chrono::Utc::now().timestamp(),
     });
 
@@ -410,16 +527,11 @@ async fn main() {
 ```rust
 use neomind_core::llm::backend::{LlmRuntime, LlmInput, GenerationParams};
 
-async fn call_llm(runtime: &dyn LlmRuntime, prompt: &str) -> Result<String> {
-    let input = LlmInput {
-        messages: vec![
-            Message::user(prompt)
-        ],
-        params: GenerationParams::default(),
-        model: None,
-    };
+async fn call_llm(runtime: &dyn LlmRuntime, prompt: &str) -> Result<String, LlmError> {
+    let input = LlmInput::new(prompt)
+        .with_params(GenerationParams::default());
 
-    let output = runtime.generate(&input)?;
+    let output = runtime.generate(input).await?;
     Ok(output.text)
 }
 ```

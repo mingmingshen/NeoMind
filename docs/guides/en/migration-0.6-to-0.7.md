@@ -1,5 +1,7 @@
 # Migration Guide: v0.6 → v0.7
 
+> **Note**: This guide covers the migration path from v0.6 to v0.7. If you are upgrading from v0.7.x to v0.8.0 or later, please refer to `CHANGELOG.md` for the latest changes, as v0.8.0 is backward-compatible with v0.7.x.
+
 ## Overview
 
 v0.7.0 is a quality-focused release with stability improvements, a complete UI design system overhaul, and comprehensive testing. There are no breaking API changes from v0.6.12.

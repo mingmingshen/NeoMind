@@ -1,7 +1,7 @@
 # LLM 模块
 
 **包名**: `neomind-agent`
-**版本**: 0.6.1
+**版本**: 0.8.0
 **完成度**: 95%
 **用途**: 提供多后端LLM支持
 
@@ -38,10 +38,10 @@ crates/neomind-agent/src/llm_backends/
 │   └── openai.rs               # 云端后端 (OpenAI/Anthropic/Google/xAI/Qwen/DeepSeek/GLM/MiniMax)
 ├── backend_plugin.rs           # 后端插件系统
 ├── config.rs                   # 配置定义
-├── factories.rs                # 后端工厂
+├── factories/
+│   └── mod.rs                  # 后端工厂
 ├── instance_manager.rs         # 实例管理
-├── rate_limited_client.rs      # 限流客户端
-└── tokenizer.rs                # 分词器包装
+└── rate_limited_client.rs      # 限流客户端
 ```
 
 ## Ollama 后端
@@ -439,25 +439,6 @@ pub struct RateLimiter {
     tokens_per_day: u64,
 }
 ```
-
-## 分词器
-
-```rust
-pub struct TokenizerWrapper {
-    // 内部tokenizer
-    inner: Option<Box<dyn Tokenizer>>,
-}
-
-pub trait Tokenizer {
-    /// 计算token数
-    fn count_tokens(&self, text: &str) -> usize;
-
-    /// 计算消息token数
-    fn count_message_tokens(&self, message: &Message) -> usize;
-}
-```
-
-> **注意**: 当前candle分词器因依赖问题暂时禁用。
 
 ## 配置管理
 
