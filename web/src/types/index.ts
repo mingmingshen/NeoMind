@@ -2941,6 +2941,11 @@ export interface RetryConfig {
   max_backoff_secs: number
 }
 
+export interface BatchConfig {
+  batch_size: number
+  batch_interval_ms: number
+}
+
 export interface PushTarget {
   id: string
   name: string
@@ -2951,6 +2956,7 @@ export interface PushTarget {
   data_filter: DataSourceFilter
   template?: string
   retry_config: RetryConfig
+  batch_config: BatchConfig
   created_at: number
   updated_at: number
 }
@@ -2985,6 +2991,7 @@ export interface CreatePushTargetRequest {
   template?: string
   enabled?: boolean
   retry_config?: RetryConfig
+  batch_config?: BatchConfig
 }
 
 export interface UpdatePushTargetRequest {
@@ -2996,6 +3003,7 @@ export interface UpdatePushTargetRequest {
   template?: string
   enabled?: boolean
   retry_config?: RetryConfig
+  batch_config?: BatchConfig
 }
 
 

@@ -16,15 +16,7 @@ fn format_human(resp: &CliResponse) -> String {
             out.push_str(&format!("✅ {}\n", msg));
         }
         if let Some(data) = &resp.data {
-            if let Some(obj) = data.as_object() {
-                for (key, value) in obj {
-                    if let Some(s) = value.as_str() {
-                        out.push_str(&format!("  {}: {}\n", key, s));
-                    } else if value.is_number() || value.is_boolean() {
-                        out.push_str(&format!("  {}: {}\n", key, value));
-                    }
-                }
-            }
+            format_value(data, &mut out, 0);
         }
         out
     } else {
@@ -33,6 +25,58 @@ fn format_human(resp: &CliResponse) -> String {
             out.push_str(&format!("💡 Suggestion: {}\n", suggestion));
         }
         out
+    }
+}
+
+/// Recursively format a JSON value for human-readable display.
+fn format_value(value: &serde_json::Value, out: &mut String, indent: usize) {
+    let prefix = "  ".repeat(indent);
+
+    match value {
+        serde_json::Value::Object(obj) => {
+            for (key, val) in obj {
+                match val {
+                    serde_json::Value::String(s) => {
+                        out.push_str(&format!("{}{}: {}\n", prefix, key, s));
+                    }
+                    serde_json::Value::Number(_) | serde_json::Value::Bool(_) => {
+                        out.push_str(&format!("{}{}: {}\n", prefix, key, val));
+                    }
+                    serde_json::Value::Array(arr) if !arr.is_empty() && arr[0].is_object() => {
+                        // Array of objects → table-like display
+                        out.push_str(&format!("{}{}:\n", prefix, key));
+                        for (i, item) in arr.iter().enumerate() {
+                            if i > 0 {
+                                out.push_str(&format!("{}  ---\n", prefix));
+                            }
+                            format_value(item, out, indent + 2);
+                        }
+                    }
+                    serde_json::Value::Array(arr) if !arr.is_empty() => {
+                        // Array of primitives → single line
+                        let items: Vec<String> = arr.iter().map(|v| format!("{}", v)).collect();
+                        out.push_str(&format!("{}{}: [{}]\n", prefix, key, items.join(", ")));
+                    }
+                    serde_json::Value::Object(_) => {
+                        out.push_str(&format!("{}{}:\n", prefix, key));
+                        format_value(val, out, indent + 1);
+                    }
+                    serde_json::Value::Null => {}
+                    serde_json::Value::Array(_) => {
+                        out.push_str(&format!("{}{}: []\n", prefix, key));
+                    }
+                }
+            }
+        }
+        serde_json::Value::Array(arr) if !arr.is_empty() && arr[0].is_object() => {
+            for (i, item) in arr.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(&format!("{}---\n", prefix));
+                }
+                format_value(item, out, indent);
+            }
+        }
+        _ => {}
     }
 }
 

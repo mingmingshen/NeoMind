@@ -667,7 +667,9 @@
     "editTarget": "Edit Push Target",
     "deliveryHistory": "Delivery History",
     "noLogs": "No delivery logs",
+    "noLogsHint": "Logs will appear here after data is pushed",
     "attempts": "{{count}} attempts",
+    "attemptsLabel": "Attempts",
     "stepBasics": "Basics",
     "stepBasicsDesc": "Name and target type",
     "stepTarget": "Target",
@@ -710,6 +712,11 @@
     "testSuccessDesc": "{{name}} responded successfully",
     "testFailed": "Test Failed",
     "testFailedDesc": "{{name}} test returned no response",
-    "deleted": "Deleted"
+    "deleted": "Deleted",
+    "batchConfig": "Batch Aggregation",
+    "batchSize": "Batch Size",
+    "batchInterval": "Max Interval (ms)",
+    "batchConfigHint": "Aggregates multiple events into a single batch payload: {\"batch\":true,\"count\":N,\"items\":[...]}",
+    "sourcePatternsHint": "Comma-separated patterns, e.g. device:sensor1:, extension:weather:"
   }
 }

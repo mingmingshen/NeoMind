@@ -60,6 +60,7 @@ impl SkillRegistry {
             include_str!("../skills/builtins/transform-management.md"),
             include_str!("../skills/builtins/connector-management.md"),
             include_str!("../skills/builtins/message-management.md"),
+            include_str!("../skills/builtins/data-push-management.md"),
             include_str!("../skills/builtins/widget-development.md"),
         ];
 

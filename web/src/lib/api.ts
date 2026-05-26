@@ -2229,8 +2229,11 @@ export const api = {
     }),
 
   /** List delivery logs for a push target */
-  listPushDeliveryLogs: (id: string, limit?: number) => {
-    const qs = limit ? `?limit=${limit}` : ''
+  listPushDeliveryLogs: (id: string, limit?: number, offset?: number) => {
+    const params = new URLSearchParams()
+    if (limit) params.set('limit', String(limit))
+    if (offset) params.set('offset', String(offset))
+    const qs = params.toString() ? `?${params.toString()}` : ''
     return fetchAPI<{ logs: import('@/types').DeliveryLog[]; total: number }>(`/data-push/${id}/logs${qs}`)
   },
 

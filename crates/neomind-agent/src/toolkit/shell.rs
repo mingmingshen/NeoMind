@@ -1393,6 +1393,13 @@ impl ShellTool {
             "channel-types" => {
                 neomind_cli_ops::message::list_channel_types(client).await
             }
+            "channel-type-schema" => {
+                let channel_type = args.get(3).map(|s| s.as_str()).unwrap_or("");
+                if channel_type.is_empty() {
+                    anyhow::bail!("Usage: neomind message channel-type-schema <TYPE>. Available: webhook, email, telegram, wecom, dingtalk, slack, feishu. Run `neomind message channel-types` to discover.");
+                }
+                neomind_cli_ops::message::get_channel_type_schema(client, channel_type).await
+            }
             "channel-create" => {
                 let name = Self::get_flag_value(args, "--name").unwrap_or("").to_string();
                 let channel_type = Self::get_flag_value(args, "--type").unwrap_or("").to_string();
@@ -2052,13 +2059,14 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 | agent | list, get, create, update, delete, control, invoke, executions, latest-execution, conversation, memory, send-message | Must `control --status active` after create. **Shortcut**: `--every 5m` (or `30s`, `1h`, `2d`) replaces `--schedule-type interval --schedule-config "300"`. Or use `--schedule-type event` for device-triggered agents |
 | transform | list, get, create, update, delete, test, metrics, data-sources | JS code transforms; `input` is raw metric value. `--scope` defaults to `global`. `metrics` lists virtual outputs |
 | extension | list, get/info, status, logs, config, install, uninstall, market-list, market-install, reload | `get <ID>` returns commands, metrics, config details. `config <ID>` reads config, `config <ID> --set '<JSON>'` updates |
-| message | list, get, send, read/ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-test, channel-types | Send requires `--title` + `--message` + `--severity` |
+| message | list, get, send, read/ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-test, channel-types, channel-type-schema | Send requires `--title` + `--message` + `--severity`. Use `channel-types` to discover types, `channel-type-schema <TYPE>` for config schema. |
 | system | info | MQTT broker, webhook URL, network info |
 | connector | list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe | Data connectors (MQTT, webhook, etc.) |
 | llm | list, get, models, create, update, delete, activate, test | LLM backend management; `models` lists Ollama models |
 | settings | timezone, timezones, retention, cleanup | System settings: timezone, data retention, manual cleanup |
 | config | export, import, validate | Full system configuration backup/restore |
 | automation | list, get, export, import, enable, disable, executions | Unified automation management (rules, transforms, agents) |
+| push | list, get, create, update, delete, start, stop, test, logs, stats | Data push targets. `create` needs `--name` + `--type` (webhook/mqtt) + `--config`. `--schedule` (event/interval) + `--sources` for filtering. |
 
 > **Discover command details**: run `neomind <domain> <action> --help` to see all flags, examples, and usage notes.
 

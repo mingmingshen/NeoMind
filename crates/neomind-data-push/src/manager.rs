@@ -94,6 +94,7 @@ impl PushManager {
             data_filter: config.data_filter,
             template: config.template,
             retry_config: config.retry_config.unwrap_or_default(),
+            batch_config: config.batch_config.unwrap_or_default(),
             created_at: now,
             updated_at: now,
         };
@@ -144,6 +145,9 @@ impl PushManager {
         }
         if let Some(retry_config) = config.retry_config {
             target.retry_config = retry_config;
+        }
+        if let Some(batch_config) = config.batch_config {
+            target.batch_config = batch_config;
         }
 
         target.updated_at = chrono::Utc::now().timestamp();
@@ -254,8 +258,8 @@ impl PushManager {
     }
 
     /// List delivery logs for a target.
-    pub fn list_delivery_logs(&self, target_id: &str, limit: usize) -> Result<Vec<DeliveryLog>> {
-        self.store.list_delivery_logs(target_id, limit)
+    pub fn list_delivery_logs(&self, target_id: &str, limit: usize, offset: usize) -> Result<(Vec<DeliveryLog>, usize)> {
+        self.store.list_delivery_logs(target_id, limit, offset)
     }
 
     /// Get aggregated push statistics.
@@ -290,6 +294,7 @@ pub struct CreateTargetRequest {
     pub template: Option<String>,
     pub enabled: Option<bool>,
     pub retry_config: Option<RetryConfig>,
+    pub batch_config: Option<BatchConfig>,
 }
 
 /// Request to update an existing push target.
@@ -303,4 +308,5 @@ pub struct UpdateTargetRequest {
     pub template: Option<String>,
     pub enabled: Option<bool>,
     pub retry_config: Option<RetryConfig>,
+    pub batch_config: Option<BatchConfig>,
 }

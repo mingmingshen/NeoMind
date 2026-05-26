@@ -133,6 +133,14 @@ enum Command {
         #[command(subcommand)]
         message_cmd: MessageCommand,
     },
+    /// Data push management commands.
+    ///
+    /// Forward device metrics and extension outputs to external systems.
+    /// Target types: webhook, mqtt. Schedule types: event (real-time), interval.
+    Push {
+        #[command(subcommand)]
+        push_cmd: PushCommand,
+    },
     /// Widget management commands.
     Widget {
         #[command(subcommand)]
@@ -1390,26 +1398,45 @@ enum MessageCommand {
     },
     /// List available channel types.
     ///
-    /// Shows channel types that can be created (webhook, email, etc.).
+    /// Shows channel types that can be created (webhook, email, telegram, wecom, dingtalk, slack, feishu).
     /// Example: `neomind message channel-types`
     ChannelTypes,
+    /// Get config schema and examples for a channel type.
+    ///
+    /// Shows required/optional fields and full config JSON examples.
+    /// Run before `channel-create` to know what --config needs.
+    /// Example: `neomind message channel-type-schema telegram`
+    ChannelTypeSchema {
+        /// Channel type (webhook, email, telegram, wecom, dingtalk, slack, feishu).
+        #[arg(required = true)]
+        channel_type: String,
+    },
     /// Create a message channel.
     ///
-    /// Registers a notification channel. Config is JSON specific to the channel type.
     /// Workflow:
     ///   1. `message channel-types` — see available types
-    ///   2. `message channel-create --name "slack" --type webhook --config '{"url":"https://..."}'`
-    ///   3. `message channel-test slack` — verify it works
+    ///   2. `message channel-type-schema <TYPE>` — get config fields & examples
+    ///   3. `message channel-create --name <N> --type <TYPE> --config '<JSON>'`
+    ///   4. `message channel-test <NAME>` — verify it works
+    ///
+    /// Config examples by type:
+    ///   webhook:  '{"url":"https://example.com/webhook","headers":{"Authorization":"Bearer TOKEN"},"timeout_secs":30}'
+    ///   email:    '{"smtp_server":"smtp.example.com","smtp_port":587,"username":"user","password":"pass","from_address":"noreply@example.com","use_tls":true}'
+    ///   telegram: '{"token":"123456:ABCdefGHIjklMNO","chat_id":"-1001234567890"}'
+    ///   wecom:    '{"key":"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"}'
+    ///   dingtalk: '{"access_token":"xxxx","secret":"SECxxxx"}'
+    ///   slack:    '{"webhook_url":"https://hooks.slack.com/services/T00/B00/xxx"}'
+    ///   feishu:   '{"hook_id":"xxxxxxxx","secret":"optional_sign_secret"}'
     ///
     /// Example: `neomind message channel-create --name "alerts" --type webhook --config '{"url":"https://hooks.slack.com/..."}'`
     ChannelCreate {
-        /// Channel name (unique).
+        /// Channel name (unique identifier).
         #[arg(long)]
         name: String,
-        /// Channel type (e.g., webhook, email).
-        #[arg(long)]
+        /// Channel type. Run `channel-types` to see available types.
+        #[arg(long, visible_alias = "type")]
         channel_type: String,
-        /// Channel config (JSON string).
+        /// Channel config as JSON. Run `channel-type-schema <TYPE>` for field details.
         #[arg(long)]
         config: String,
     },
@@ -1443,6 +1470,121 @@ enum MessageCommand {
         #[arg(required = true)]
         name: String,
     },
+}
+
+/// Push subcommands.
+#[derive(Subcommand, Debug)]
+enum PushCommand {
+    /// List push targets.
+    ///
+    /// Shows all data push targets and their status.
+    /// Example: `neomind push list`
+    List,
+    /// Get push target details.
+    ///
+    /// Shows target config, schedule, delivery stats.
+    /// Example: `neomind push get <ID>`
+    Get {
+        /// Target ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Create a push target.
+    ///
+    /// Forwards device metrics / extension outputs to an external system.
+    ///
+    /// Target types & config:
+    ///   webhook: '{"url":"https://example.com/api","headers":{"Authorization":"Bearer TOKEN"}}'
+    ///   mqtt:    '{"broker":"tcp://broker:1883","topic":"neomind/data","username":"user","password":"pass"}'
+    ///
+    /// Example: `neomind push create --name my-webhook --type webhook --config '{"url":"https://httpbin.org/post"}'`
+    Create {
+        /// Target name (unique identifier).
+        #[arg(long)]
+        name: String,
+        /// Target type (webhook, mqtt).
+        #[arg(long, visible_alias = "target-type")]
+        target_type: Option<String>,
+        /// Target config as JSON.
+        #[arg(long)]
+        config: Option<String>,
+        /// Schedule type: event (real-time) or interval (every 60s). Default: event.
+        #[arg(long)]
+        schedule: Option<String>,
+        /// Comma-separated source patterns to filter (e.g., "device:sensor-001:temperature").
+        #[arg(long)]
+        sources: Option<String>,
+    },
+    /// Update a push target.
+    ///
+    /// Updates target name, config, or enabled status.
+    /// Example: `neomind push update <ID> --config '{"url":"https://new-url.com"}'`
+    Update {
+        /// Target ID.
+        #[arg(required = true)]
+        id: String,
+        /// New name.
+        #[arg(long)]
+        name: Option<String>,
+        /// New config as JSON.
+        #[arg(long)]
+        config: Option<String>,
+        /// Enable or disable.
+        #[arg(long)]
+        enabled: Option<bool>,
+    },
+    /// Delete a push target.
+    ///
+    /// Removes the target and its delivery history.
+    /// Example: `neomind push delete <ID>`
+    Delete {
+        /// Target ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Start a push target.
+    ///
+    /// Enables real-time or scheduled data forwarding.
+    /// Example: `neomind push start <ID>`
+    Start {
+        /// Target ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Stop a push target.
+    ///
+    /// Pauses data forwarding without deleting the target.
+    /// Example: `neomind push stop <ID>`
+    Stop {
+        /// Target ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Test a push target.
+    ///
+    /// Sends a test payload to verify the target works.
+    /// Example: `neomind push test <ID>`
+    Test {
+        /// Target ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Show delivery logs for a target.
+    ///
+    /// Example: `neomind push logs <ID> --limit 20`
+    Logs {
+        /// Target ID.
+        #[arg(required = true)]
+        id: String,
+        /// Max log entries to return.
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    /// Show push statistics.
+    ///
+    /// Displays aggregated delivery stats across all targets.
+    /// Example: `neomind push stats`
+    Stats,
 }
 
 /// Widget subcommands.
@@ -1838,6 +1980,7 @@ async fn main() -> Result<()> {
         Command::Transform { transform_cmd } => run_transform_cmd(transform_cmd).await,
         Command::Agent { agent_cmd } => run_agent_cmd(agent_cmd).await,
         Command::Message { message_cmd } => run_message_cmd(message_cmd).await,
+        Command::Push { push_cmd } => run_push_cmd(push_cmd).await,
         Command::Widget { widget_cmd } => run_widget_cmd(widget_cmd).await,
         Command::System { system_cmd } => run_system_cmd(system_cmd).await,
         Command::Connector { connector_cmd } => run_connector_cmd(connector_cmd).await,
@@ -3733,6 +3876,9 @@ async fn run_message_cmd(cmd: MessageCommand) -> Result<()> {
         MessageCommand::ChannelTypes => {
             list_channel_types(&client).await?
         }
+        MessageCommand::ChannelTypeSchema { channel_type } => {
+            get_channel_type_schema(&client, &channel_type).await?
+        }
         MessageCommand::ChannelCreate { name, channel_type, config } => {
             create_channel(&client, &name, &channel_type, &config).await?
         }
@@ -3748,6 +3894,45 @@ async fn run_message_cmd(cmd: MessageCommand) -> Result<()> {
     };
 
     // Format and print output
+    format_output(&response, output_format);
+    Ok(())
+}
+
+/// Run push management commands.
+async fn run_push_cmd(cmd: PushCommand) -> Result<()> {
+    use neomind_cli_ops::{ApiClient, data_push::*, output::format_output};
+    use neomind_cli_ops::types::OutputFormat;
+
+    let api_base = std::env::var("NEOMIND_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+    let client = ApiClient::with_base_url(&api_base);
+    let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+
+    let response = match cmd {
+        PushCommand::List => list_targets(&client).await?,
+        PushCommand::Get { id } => get_target(&client, &id).await?,
+        PushCommand::Create { name, target_type, config, schedule, sources } => {
+            let t_type = target_type.as_deref().unwrap_or("webhook");
+            let cfg = config.as_deref().unwrap_or("{}");
+            let sched = schedule.as_deref().unwrap_or("event");
+            let src = sources.as_deref().unwrap_or("");
+            create_target(&client, &name, t_type, cfg, sched, src).await?
+        }
+        PushCommand::Update { id, name, config, enabled } => {
+            update_target(&client, &id, name.as_deref(), config.as_deref(), enabled).await?
+        }
+        PushCommand::Delete { id } => delete_target(&client, &id).await?,
+        PushCommand::Start { id } => start_target(&client, &id).await?,
+        PushCommand::Stop { id } => stop_target(&client, &id).await?,
+        PushCommand::Test { id } => test_target(&client, &id).await?,
+        PushCommand::Logs { id, limit } => list_logs(&client, &id, Some(limit)).await?,
+        PushCommand::Stats => get_stats(&client).await?,
+    };
+
     format_output(&response, output_format);
     Ok(())
 }

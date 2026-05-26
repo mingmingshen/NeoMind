@@ -663,7 +663,9 @@
     "editTarget": "编辑推送目标",
     "deliveryHistory": "投递历史",
     "noLogs": "暂无投递日志",
+    "noLogsHint": "数据推送后将在此显示日志",
     "attempts": "{{count}} 次尝试",
+    "attemptsLabel": "尝试次数",
     "stepBasics": "基本信息",
     "stepBasicsDesc": "名称和目标类型",
     "stepTarget": "目标配置",
@@ -706,6 +708,11 @@
     "testSuccessDesc": "{{name}} 响应成功",
     "testFailed": "测试失败",
     "testFailedDesc": "{{name}} 测试未返回响应",
-    "deleted": "已删除"
+    "deleted": "已删除",
+    "batchConfig": "批量聚合",
+    "batchSize": "批量大小",
+    "batchInterval": "最大间隔 (ms)",
+    "batchConfigHint": "将多条事件聚合为单次推送：{\"batch\":true,\"count\":N,\"items\":[...]}",
+    "sourcePatternsHint": "逗号分隔的模式，如 device:sensor1:, extension:weather:"
   }
 }

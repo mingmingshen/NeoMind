@@ -18,6 +18,7 @@ export interface DataPushSlice {
   pushTargetDialogOpen: boolean
   editingPushTarget: PushTarget | null
   deliveryLogs: DeliveryLog[]
+  deliveryLogsTotal: number
   deliveryLogsLoading: boolean
   deliveryLogsTargetId: string | null
 
@@ -30,7 +31,7 @@ export interface DataPushSlice {
   stopPushTarget: (id: string) => Promise<boolean>
   testPushTarget: (id: string) => Promise<DeliveryLog | null>
   fetchPushStats: () => Promise<void>
-  fetchDeliveryLogs: (targetId: string, limit?: number) => Promise<void>
+  fetchDeliveryLogs: (targetId: string, limit?: number, offset?: number) => Promise<void>
   setPushTargetDialogOpen: (open: boolean) => void
   setEditingPushTarget: (target: PushTarget | null) => void
 }
@@ -49,6 +50,7 @@ export const createDataPushSlice: StateCreator<
   pushTargetDialogOpen: false,
   editingPushTarget: null,
   deliveryLogs: [],
+  deliveryLogsTotal: 0,
   deliveryLogsLoading: false,
   deliveryLogsTargetId: null,
 
@@ -143,14 +145,14 @@ export const createDataPushSlice: StateCreator<
     }
   },
 
-  fetchDeliveryLogs: async (targetId: string, limit?: number) => {
+  fetchDeliveryLogs: async (targetId: string, limit?: number, offset?: number) => {
     set({ deliveryLogsLoading: true, deliveryLogsTargetId: targetId })
     try {
-      const response = await api.listPushDeliveryLogs(targetId, limit)
-      set({ deliveryLogs: response.logs || [] })
+      const response = await api.listPushDeliveryLogs(targetId, limit, offset)
+      set({ deliveryLogs: response.logs || [], deliveryLogsTotal: response.total || 0 })
     } catch (error) {
       logError(error, { operation: 'Fetch delivery logs' })
-      set({ deliveryLogs: [] })
+      set({ deliveryLogs: [], deliveryLogsTotal: 0 })
     } finally {
       set({ deliveryLogsLoading: false })
     }

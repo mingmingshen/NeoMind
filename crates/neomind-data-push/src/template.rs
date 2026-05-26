@@ -65,7 +65,7 @@ fn json_helper(
     _: &mut handlebars::RenderContext,
     out: &mut dyn handlebars::Output,
 ) -> handlebars::HelperResult {
-    let param = h.param(0).ok_or_else(|| handlebars::RenderError::new("json helper requires 1 parameter"))?;
+    let param = h.param(0).ok_or_else(|| handlebars::RenderErrorReason::ParamNotFoundForIndex("json", 0))?;
     let json_val = param.value();
     out.write(&serde_json::to_string(json_val).unwrap_or_default())?;
     Ok(())
@@ -79,7 +79,7 @@ fn timestamp_format_helper(
     _: &mut handlebars::RenderContext,
     out: &mut dyn handlebars::Output,
 ) -> handlebars::HelperResult {
-    let param = h.param(0).ok_or_else(|| handlebars::RenderError::new("timestamp_format helper requires 1 parameter"))?;
+    let param = h.param(0).ok_or_else(|| handlebars::RenderErrorReason::ParamNotFoundForIndex("timestamp_format", 0))?;
     let ts = param.value().as_i64().unwrap_or(0);
     let dt = chrono::DateTime::from_timestamp(ts, 0)
         .unwrap_or_default()

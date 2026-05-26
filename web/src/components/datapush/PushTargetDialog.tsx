@@ -12,7 +12,7 @@ import { useStore } from '@/store'
 import { useTranslation } from 'react-i18next'
 import {
   Send, Server, Puzzle, Workflow, Activity,
-  Search, X, Loader2, ChevronRight, ChevronDown,
+  Search, X, Loader2, ChevronRight, ChevronDown, KeyRound, Link2,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -37,7 +37,7 @@ import {
   FullScreenDialogFooter,
   FullScreenDialogMain,
 } from '@/components/automation/dialog'
-import { PushTargetType, CreatePushTargetRequest, UpdatePushTargetRequest, UnifiedDataSourceInfo } from '@/types'
+import { PushTargetType, CreatePushTargetRequest, UpdatePushTargetRequest, UnifiedDataSourceInfo, ExternalBroker } from '@/types'
 import { useFormSubmit } from '@/hooks/useErrorHandler'
 
 // ---------------------------------------------------------------------------
@@ -125,6 +125,18 @@ export function PushTargetDialog() {
   const [webhookUrlError, setWebhookUrlError] = useState<string | null>(null)
   const [mqttBroker, setMqttBroker] = useState('')
   const [mqttTopic, setMqttTopic] = useState('')
+  const [mqttPort, setMqttPort] = useState(1883)
+  const [mqttUsername, setMqttUsername] = useState('')
+  const [mqttPassword, setMqttPassword] = useState('')
+  const [mqttQos, setMqttQos] = useState(1)
+  const [mqttMode, setMqttMode] = useState<'select' | 'manual'>('select')
+  const [brokers, setBrokers] = useState<ExternalBroker[]>([])
+  const [selectedBrokerId, setSelectedBrokerId] = useState('')
+  // Webhook auth
+  const [webhookAuthType, setWebhookAuthType] = useState<'none' | 'token' | 'basic'>('none')
+  const [webhookAuthToken, setWebhookAuthToken] = useState('')
+  const [webhookAuthUser, setWebhookAuthUser] = useState('')
+  const [webhookAuthPass, setWebhookAuthPass] = useState('')
   const [scheduleType, setScheduleType] = useState<'event_driven' | 'interval'>('event_driven')
   const [intervalSecs, setIntervalSecs] = useState(60)
   // Source picker state
@@ -135,6 +147,10 @@ export function PushTargetDialog() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [manualPatterns, setManualPatterns] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  // Batch config
+  const [batchEnabled, setBatchEnabled] = useState(false)
+  const [batchSize, setBatchSize] = useState(10)
+  const [batchIntervalMs, setBatchIntervalMs] = useState(1000)
 
   const toggleGroupExpand = useCallback((key: string) => {
     setExpandedGroups(prev => {
@@ -162,9 +178,21 @@ export function PushTargetDialog() {
         setIntervalSecs(editingPushTarget.schedule.interval_secs || 60)
         if (editingPushTarget.target_type === 'webhook') {
           setWebhookUrl(editingPushTarget.config?.url || '')
+          if (editingPushTarget.config?.auth_token) {
+            setWebhookAuthType('token')
+            setWebhookAuthToken(editingPushTarget.config.auth_token)
+          } else if (editingPushTarget.config?.auth_basic) {
+            setWebhookAuthType('basic')
+            setWebhookAuthUser(editingPushTarget.config.auth_basic.username || '')
+            setWebhookAuthPass(editingPushTarget.config.auth_basic.password || '')
+          }
         } else {
           setMqttBroker(editingPushTarget.config?.broker || '')
           setMqttTopic(editingPushTarget.config?.topic || '')
+          setMqttPort(editingPushTarget.config?.port || 1883)
+          setMqttUsername(editingPushTarget.config?.username || '')
+          setMqttPassword(editingPushTarget.config?.password || '')
+          setMqttQos(editingPushTarget.config?.qos ?? 1)
         }
 
         const patterns = editingPushTarget.data_filter.source_patterns
@@ -184,13 +212,21 @@ export function PushTargetDialog() {
             setManualPatterns(patterns.join(', '))
           }
         }
+
+        // Batch config
+        const bc = editingPushTarget.batch_config
+        if (bc && bc.batch_size > 1) {
+          setBatchEnabled(true)
+          setBatchSize(bc.batch_size)
+          setBatchIntervalMs(bc.batch_interval_ms || 1000)
+        }
       } else {
         resetForm()
       }
     }
   }, [pushTargetDialogOpen, editingPushTarget])
 
-  // Fetch data sources when dialog opens
+  // Fetch data sources + external brokers when dialog opens
   useEffect(() => {
     if (pushTargetDialogOpen) {
       setSourcesLoading(true)
@@ -198,6 +234,9 @@ export function PushTargetDialog() {
         .then(res => setSources(res.data || []))
         .catch(() => setSources([]))
         .finally(() => setSourcesLoading(false))
+      api.getBrokers()
+        .then(res => setBrokers(res.brokers || []))
+        .catch(() => setBrokers([]))
     }
   }, [pushTargetDialogOpen])
 
@@ -207,14 +246,27 @@ export function PushTargetDialog() {
     setWebhookUrlError(null)
     setTargetType('webhook')
     setWebhookUrl('')
+    setWebhookAuthType('none')
+    setWebhookAuthToken('')
+    setWebhookAuthUser('')
+    setWebhookAuthPass('')
     setMqttBroker('')
     setMqttTopic('')
+    setMqttPort(1883)
+    setMqttUsername('')
+    setMqttPassword('')
+    setMqttQos(1)
+    setMqttMode('select')
+    setSelectedBrokerId('')
     setScheduleType('event_driven')
     setIntervalSecs(60)
     setSelectedSources(new Set())
     setSourceSearch('')
     setShowAdvanced(false)
     setManualPatterns('')
+    setBatchEnabled(false)
+    setBatchSize(10)
+    setBatchIntervalMs(1000)
   }
 
   // Group sources by type → then by source_name
@@ -291,9 +343,31 @@ export function PushTargetDialog() {
       return
     }
 
-    const config = targetType === 'webhook'
-      ? { url: webhookUrl, method: 'POST', timeout_secs: 30 }
-      : { broker: mqttBroker, port: 1883, topic: mqttTopic, qos: 1 }
+    // Resolve MQTT broker from selected external broker or manual input
+    const resolvedMqttBroker = mqttMode === 'select' && selectedBrokerId
+      ? brokers.find(b => b.id === selectedBrokerId)
+      : null
+
+    const config: Record<string, unknown> = targetType === 'webhook'
+      ? {
+          url: webhookUrl,
+          method: 'POST',
+          timeout_secs: 30,
+          ...(webhookAuthType === 'token' && webhookAuthToken.trim()
+            ? { auth_token: webhookAuthToken.trim() }
+            : {}),
+          ...(webhookAuthType === 'basic' && webhookAuthUser.trim()
+            ? { auth_basic: { username: webhookAuthUser.trim(), password: webhookAuthPass } }
+            : {}),
+        }
+      : {
+          broker: resolvedMqttBroker ? resolvedMqttBroker.broker : mqttBroker,
+          port: resolvedMqttBroker ? resolvedMqttBroker.port : mqttPort,
+          topic: mqttTopic,
+          qos: mqttQos,
+          ...(resolvedMqttBroker?.username ? { username: resolvedMqttBroker.username } : mqttUsername.trim() ? { username: mqttUsername } : {}),
+          ...(resolvedMqttBroker?.password ? { password: resolvedMqttBroker.password } : mqttPassword ? { password: mqttPassword } : {}),
+        }
 
     const schedule = scheduleType === 'event_driven'
       ? { type: 'event_driven' as const, event_types: ['device_metric', 'extension_output'] }
@@ -311,6 +385,11 @@ export function PushTargetDialog() {
       only_changes: false,
     }
 
+    const batchConfig = batchEnabled ? {
+      batch_size: batchSize,
+      batch_interval_ms: batchIntervalMs,
+    } : undefined
+
     await wrapSubmit(async () => {
       if (isEditing && editingPushTarget) {
         const update: UpdatePushTargetRequest = {
@@ -319,6 +398,7 @@ export function PushTargetDialog() {
           config,
           schedule,
           data_filter: dataFilter,
+          batch_config: batchConfig,
         }
         const ok = await updatePushTarget(editingPushTarget.id, update)
         if (!ok) throw new Error('Update failed')
@@ -329,12 +409,13 @@ export function PushTargetDialog() {
           config,
           schedule,
           data_filter: dataFilter,
+          batch_config: batchConfig,
         }
         const ok = await createPushTarget(create)
         if (!ok) throw new Error('Create failed')
       }
     })()
-  }, [wrapSubmit, isEditing, editingPushTarget, name, targetType, webhookUrl, mqttBroker, mqttTopic, scheduleType, intervalSecs, showAdvanced, manualPatterns, selectedSources, sources, createPushTarget, updatePushTarget, t])
+  }, [wrapSubmit, isEditing, editingPushTarget, name, targetType, webhookUrl, webhookAuthType, webhookAuthToken, webhookAuthUser, webhookAuthPass, mqttBroker, mqttTopic, mqttPort, mqttUsername, mqttPassword, mqttQos, mqttMode, selectedBrokerId, brokers, scheduleType, intervalSecs, showAdvanced, manualPatterns, selectedSources, sources, batchEnabled, batchSize, batchIntervalMs, createPushTarget, updatePushTarget, t])
 
   return (
     <FullScreenDialog open={pushTargetDialogOpen} onOpenChange={setPushTargetDialogOpen}>
@@ -409,15 +490,12 @@ export function PushTargetDialog() {
               </div>
 
               {/* ── Target Config ── */}
-              <div className="space-y-2">
-                <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>
-                  {targetType === 'webhook'
-                    ? t('common:dataPush.webhookUrl', 'Webhook URL')
-                    : t('common:dataPush.mqttBroker', 'MQTT Broker')}
-                  {targetType === 'webhook' && <span className="text-destructive">*</span>}
-                </Label>
-                {targetType === 'webhook' ? (
-                  <>
+              {targetType === 'webhook' ? (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>
+                      {t('common:dataPush.webhookUrl', 'Webhook URL')} <span className="text-destructive">*</span>
+                    </Label>
                     <Input
                       type="url"
                       value={webhookUrl}
@@ -426,24 +504,178 @@ export function PushTargetDialog() {
                       className={cn(isMobile ? "h-12 text-base" : "h-10", webhookUrlError && "border-destructive")}
                     />
                     {webhookUrlError && <p className="text-sm text-destructive mt-1">{webhookUrlError}</p>}
-                  </>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Input
-                      value={mqttBroker}
-                      onChange={(e) => setMqttBroker(e.target.value)}
-                      placeholder="broker.example.com"
-                      className={isMobile ? "h-12 text-base" : "h-10"}
-                    />
-                    <Input
-                      value={mqttTopic}
-                      onChange={(e) => setMqttTopic(e.target.value)}
-                      placeholder="neomind/data"
-                      className={isMobile ? "h-12 text-base" : "h-10"}
-                    />
                   </div>
-                )}
-              </div>
+
+                  {/* Auth type selector */}
+                  <div className="space-y-2">
+                    <Label className={cn("font-medium flex items-center gap-1.5", isMobile ? "text-base" : "text-sm")}>
+                      <KeyRound className="h-4 w-4 text-muted-foreground" />
+                      {t('common:dataPush.webhookAuthType', 'Authentication')}
+                    </Label>
+                    <div className="flex gap-2">
+                      {(['none', 'token', 'basic'] as const).map(type => (
+                        <Button
+                          key={type}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setWebhookAuthType(type)}
+                          className={cn(
+                            "flex-1",
+                            webhookAuthType === type && "border-primary bg-primary/10 text-primary"
+                          )}
+                        >
+                          {t(`common:dataPush.webhook${type === 'none' ? 'NoAuth' : type === 'token' ? 'AuthToken' : 'BasicAuth'}`, type)}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Bearer Token */}
+                  {webhookAuthType === 'token' && (
+                    <Input
+                      value={webhookAuthToken}
+                      onChange={(e) => setWebhookAuthToken(e.target.value)}
+                      placeholder={t('common:dataPush.webhookAuthTokenPlaceholder', 'Authorization token')}
+                      className={isMobile ? "h-12 text-base" : "h-10"}
+                    />
+                  )}
+
+                  {/* Basic Auth */}
+                  {webhookAuthType === 'basic' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Input
+                        value={webhookAuthUser}
+                        onChange={(e) => setWebhookAuthUser(e.target.value)}
+                        placeholder={t('common:dataPush.webhookUsername', 'Username')}
+                        className={isMobile ? "h-12 text-base" : "h-10"}
+                      />
+                      <Input
+                        type="password"
+                        value={webhookAuthPass}
+                        onChange={(e) => setWebhookAuthPass(e.target.value)}
+                        placeholder={t('common:dataPush.webhookPassword', 'Password')}
+                        className={isMobile ? "h-12 text-base" : "h-10"}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* MQTT mode: select broker or manual */}
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setMqttMode('select')}
+                      className={cn("flex-1", mqttMode === 'select' && "border-primary bg-primary/10 text-primary")}
+                    >
+                      <Link2 className="h-4 w-4 mr-1" />
+                      {t('common:dataPush.mqttSelectBroker', 'Select broker')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setMqttMode('manual')}
+                      className={cn("flex-1", mqttMode === 'manual' && "border-primary bg-primary/10 text-primary")}
+                    >
+                      {t('common:dataPush.mqttManualInput', 'Manual input')}
+                    </Button>
+                  </div>
+
+                  {mqttMode === 'select' ? (
+                    <div className="space-y-2">
+                      <Select value={selectedBrokerId} onValueChange={(id) => {
+                        setSelectedBrokerId(id)
+                        const b = brokers.find(br => br.id === id)
+                        if (b) {
+                          setMqttBroker(b.broker)
+                          setMqttPort(b.port)
+                          setMqttUsername(b.username || '')
+                          setMqttPassword(b.password || '')
+                        }
+                      }}>
+                        <SelectTrigger className={isMobile ? "h-12 text-base" : "h-10"}>
+                          <SelectValue placeholder={t('common:dataPush.mqttSelectBroker')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {brokers.length === 0 ? (
+                            <SelectItem value="_none" disabled>
+                              {t('common:dataPush.sourceEmpty', 'No brokers found')}
+                            </SelectItem>
+                          ) : (
+                            brokers.map(b => (
+                              <SelectItem key={b.id} value={b.id}>
+                                <span className="flex items-center gap-2">
+                                  <span className="truncate">{b.name}</span>
+                                  <span className={cn(textNano, "text-muted-foreground")}>{b.broker}:{b.port}</span>
+                                </span>
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <Input
+                          value={mqttBroker}
+                          onChange={(e) => setMqttBroker(e.target.value)}
+                          placeholder="broker.example.com"
+                          className={isMobile ? "h-12 text-base" : "h-10"}
+                        />
+                        <Input
+                          type="number"
+                          value={mqttPort}
+                          onChange={(e) => setMqttPort(Number(e.target.value))}
+                          placeholder={t('common:dataPush.mqttPort', 'Port')}
+                          className={isMobile ? "h-12 text-base" : "h-10"}
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <Input
+                          value={mqttUsername}
+                          onChange={(e) => setMqttUsername(e.target.value)}
+                          placeholder={t('common:dataPush.mqttUsername', 'Username')}
+                          className={isMobile ? "h-12 text-base" : "h-10"}
+                        />
+                        <Input
+                          type="password"
+                          value={mqttPassword}
+                          onChange={(e) => setMqttPassword(e.target.value)}
+                          placeholder={t('common:dataPush.mqttPassword', 'Password')}
+                          className={isMobile ? "h-12 text-base" : "h-10"}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Topic + QoS — always shown */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <Input
+                        value={mqttTopic}
+                        onChange={(e) => setMqttTopic(e.target.value)}
+                        placeholder="neomind/data"
+                        className={isMobile ? "h-12 text-base" : "h-10"}
+                      />
+                    </div>
+                    <Select value={String(mqttQos)} onValueChange={(v) => setMqttQos(Number(v))}>
+                      <SelectTrigger className={isMobile ? "h-12 text-base" : "h-10"}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">QoS 0</SelectItem>
+                        <SelectItem value="1">QoS 1</SelectItem>
+                        <SelectItem value="2">QoS 2</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
 
               {/* ── Schedule ── */}
               <div className="space-y-2">
@@ -471,6 +703,56 @@ export function PushTargetDialog() {
                     />
                   )}
                 </div>
+              </div>
+
+              {/* ── Batch / Aggregation ── */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>
+                    {t('common:dataPush.batchConfig', 'Batch Aggregation')}
+                  </Label>
+                  <Checkbox
+                    checked={batchEnabled}
+                    onCheckedChange={(v) => setBatchEnabled(!!v)}
+                  />
+                </div>
+                {batchEnabled && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className={cn(textMini, "text-muted-foreground")}>
+                        {t('common:dataPush.batchSize', 'Batch Size')}
+                      </Label>
+                      <Input
+                        type="number"
+                        value={batchSize}
+                        onChange={(e) => setBatchSize(Number(e.target.value))}
+                        min={2}
+                        max={1000}
+                        placeholder="10"
+                        className={isMobile ? "h-12 text-base" : "h-10"}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className={cn(textMini, "text-muted-foreground")}>
+                        {t('common:dataPush.batchInterval', 'Max Interval (ms)')}
+                      </Label>
+                      <Input
+                        type="number"
+                        value={batchIntervalMs}
+                        onChange={(e) => setBatchIntervalMs(Number(e.target.value))}
+                        min={100}
+                        max={60000}
+                        placeholder="1000"
+                        className={isMobile ? "h-12 text-base" : "h-10"}
+                      />
+                    </div>
+                  </div>
+                )}
+                {batchEnabled && (
+                  <p className={cn(textMini, "text-muted-foreground")}>
+                    {t('common:dataPush.batchConfigHint', 'Aggregates multiple events into a single batch payload: {"batch":true,"count":N,"items":[...]}')}
+                  </p>
+                )}
               </div>
 
               {/* ── Data Source Selection ── */}

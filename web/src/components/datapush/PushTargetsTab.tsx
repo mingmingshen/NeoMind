@@ -217,13 +217,12 @@ export function PushTargetsTab() {
         }
       />
 
-      {/* Delivery History Panel */}
-      {logsTargetId && (
-        <DeliveryHistoryPanel
-          targetId={logsTargetId}
-          onClose={() => setLogsTargetId(null)}
-        />
-      )}
+      {/* Delivery History Dialog */}
+      <DeliveryHistoryPanel
+        targetId={logsTargetId || ''}
+        open={!!logsTargetId}
+        onOpenChange={(open) => { if (!open) setLogsTargetId(null) }}
+      />
 
       {/* Create/Edit Dialog */}
       <PushTargetDialog />

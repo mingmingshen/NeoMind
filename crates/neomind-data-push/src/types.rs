@@ -41,6 +41,43 @@ impl Default for RetryConfig {
     }
 }
 
+/// Batch/aggregation configuration for push delivery.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchConfig {
+    /// Maximum number of events to aggregate before flushing.
+    /// Default: 1 (no batching, send immediately).
+    #[serde(default = "default_batch_size")]
+    pub batch_size: usize,
+    /// Maximum time in milliseconds to wait before flushing a partial batch.
+    /// Default: 1000ms.
+    #[serde(default = "default_batch_interval_ms")]
+    pub batch_interval_ms: u64,
+}
+
+fn default_batch_size() -> usize {
+    1
+}
+
+fn default_batch_interval_ms() -> u64 {
+    1000
+}
+
+impl Default for BatchConfig {
+    fn default() -> Self {
+        Self {
+            batch_size: default_batch_size(),
+            batch_interval_ms: default_batch_interval_ms(),
+        }
+    }
+}
+
+impl BatchConfig {
+    /// Returns true if batching is enabled (batch_size > 1).
+    pub fn is_enabled(&self) -> bool {
+        self.batch_size > 1
+    }
+}
+
 /// The type of push destination.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -96,6 +133,8 @@ pub struct PushTarget {
     pub template: Option<String>,
     #[serde(default)]
     pub retry_config: RetryConfig,
+    #[serde(default)]
+    pub batch_config: BatchConfig,
     pub created_at: i64,
     pub updated_at: i64,
 }

@@ -6,23 +6,25 @@ origin: builtin
 priority: 80
 token_budget: 8000
 triggers:
-  keywords: [message, 消息, 通知, notification, channel, 通道, alert, 告警, 报警, send message, 发送消息, webhook channel, email channel, 邮件通道, 消息管理, severity, 严重程度, acknowledge, 确认, message channel]
+  keywords: [message, 消息, 通知, notification, channel, 通道, alert, 告警, 报警, send message, 发送消息, webhook channel, email channel, 邮件通道, 消息管理, severity, 严重程度, acknowledge, 确认, message channel, telegram, 钉钉, dingtalk, wecom, 企业微信, slack, feishu, 飞书, 飞书通知]
   tool_target:
     - tool: message
-      actions: [list, get, send, read, ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-test, channel-types]
+      actions: [list, get, send, read, ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-test, channel-types, channel-type-schema]
 anti_triggers:
-  keywords: [dashboard, 仪表盘, agent, 代理, extension develop, 扩展开发, rule, 规则, device connect, 设备连接]
+  keywords: [dashboard, 仪表盘, agent, 代理, extension develop, 扩展开发, rule, 规则, device connect, 设备连接, push, 推送, data push]
 ---
 
 # Message Management & Channel Configuration
 
-Messages are platform notifications that can be sent programmatically and delivered through configurable channels (webhook, email, etc.).
+Messages are platform notifications delivered through configurable channels. 7 channel types are supported: webhook, email, telegram, wecom, dingtalk, slack, feishu.
 
 ## CRITICAL Rules
 
 1. **`--title` and `--message` are required** for sending — not `--body` or `--channel`
-2. **Channels must be created before rules can use them** for notifications
-3. **Always test a channel** after creation with `message channel-test <NAME>`
+2. **Severity values**: `info`, `warning`, `critical`, `emergency` (NOT `error`)
+3. **Channels must be created before rules can use them** for notifications
+4. **Always discover types dynamically**: `channel-types` → `channel-type-schema <TYPE>` → `channel-create`
+5. **Always test a channel** after creation with `message channel-test <NAME>`
 
 ## Command Reference
 
@@ -36,7 +38,7 @@ neomind message send --title '<TITLE>' --message '<TEXT>' [--severity <LEVEL>] [
 |------|----------|---------|-------------|
 | `--title` | Yes | — | Message title |
 | `--message` | Yes | — | Message body text |
-| `--severity` | No | info | Severity: `info`, `warning`, `error`, `critical` |
+| `--severity` | No | info | Severity: `info`, `warning`, `critical`, `emergency` |
 | `--source` | No | — | Source identifier |
 
 ### List & Read Messages
@@ -51,8 +53,9 @@ neomind message read <ID>                         # Mark as read (alias: ack)
 ### Channel Management
 
 ```bash
-neomind message channel-list                      # List all channels
 neomind message channel-types                     # List available channel types
+neomind message channel-type-schema <TYPE>        # Get config schema for a type
+neomind message channel-list                      # List all channels
 neomind message channel-get <NAME>                # Get channel details
 neomind message channel-create --name <N> --type <T> --config '<JSON>'  # Create channel
 neomind message channel-update <NAME> --config '<JSON>'                 # Update channel config
@@ -60,57 +63,115 @@ neomind message channel-delete <NAME>             # Delete channel
 neomind message channel-test <NAME>               # Test channel delivery
 ```
 
-## Channel Types
+## Channel Type Discovery Workflow
 
-### Webhook Channel
-
-Sends HTTP POST with message payload to a configured URL.
+**ALWAYS follow this workflow** when creating a channel for a user:
 
 ```bash
-neomind message channel-create --name alerts --type webhook \
-  --config '{"url": "https://hooks.example.com/notify", "headers": {"Authorization": "Bearer token123"}}'
+# Step 1: Discover available types
+neomind message channel-types
+
+# Step 2: Get config schema for the desired type
+neomind message channel-type-schema telegram
+
+# Step 3: Create the channel with proper config
+neomind message channel-create --name my-telegram --type telegram --config '{"token":"...","chat_id":"..."}'
+
+# Step 4: Test the channel
+neomind message channel-test my-telegram
 ```
 
-**Config fields:**
-- `url` (required): Webhook endpoint URL
-- `headers` (optional): Custom HTTP headers
+## Channel Types & Config Examples
 
-### Email Channel
+### Webhook (HTTP POST)
 
-Sends messages via SMTP.
+```bash
+neomind message channel-create --name webhook-alerts --type webhook \
+  --config '{"url": "https://example.com/webhook", "headers": {"Authorization": "Bearer TOKEN"}, "timeout_secs": 30}'
+```
+
+**Required fields**: `url`
+**Optional fields**: `headers` (object), `timeout_secs` (number)
+
+### Email (SMTP)
 
 ```bash
 neomind message channel-create --name email-alerts --type email \
-  --config '{"smtp_server": "smtp.example.com", "smtp_port": 587, "username": "user@example.com", "password": "pass", "from_address": "neo@example.com", "use_tls": true}'
+  --config '{"smtp_server": "smtp.example.com", "smtp_port": 587, "username": "user@example.com", "password": "pass", "from_address": "noreply@example.com", "use_tls": true}'
 ```
 
-**Config fields:**
-- `smtp_server` (required): SMTP server hostname
-- `smtp_port` (optional, default 587): SMTP port
-- `username` (required): SMTP auth username
-- `password` (required): SMTP auth password
-- `from_address` (required): Sender email
-- `use_tls` (optional, default true): Enable TLS
+**Required fields**: `smtp_server`, `username`, `password`, `from_address`
+**Optional fields**: `smtp_port` (default 587), `use_tls` (default true)
 
-**To discover available channel types and their schemas:**
+### Telegram Bot
+
 ```bash
-neomind message channel-types
+neomind message channel-create --name tg-alerts --type telegram \
+  --config '{"token": "123456:ABCdefGHIjklMNO", "chat_id": "-1001234567890"}'
 ```
+
+**Required fields**: `token`, `chat_id`
+**How to get**: Create bot via @BotFather, get chat_id via `https://api.telegram.org/bot<TOKEN>/getUpdates`
+
+### WeCom (企业微信) Webhook
+
+```bash
+neomind message channel-create --name wecom-alerts --type wecom \
+  --config '{"key": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"}'
+```
+
+**Required fields**: `key`
+**How to get**: Group robot settings in WeCom admin console
+
+### DingTalk (钉钉) Robot
+
+```bash
+neomind message channel-create --name dingtalk-alerts --type dingtalk \
+  --config '{"access_token": "xxxx", "secret": "SECxxxx"}'
+```
+
+**Required fields**: `access_token`
+**Optional fields**: `secret` (for sign verification)
+
+### Slack Webhook
+
+```bash
+neomind message channel-create --name slack-alerts --type slack \
+  --config '{"webhook_url": "https://hooks.slack.com/services/T00/B00/xxx"}'
+```
+
+**Required fields**: `webhook_url`
+
+### Feishu (飞书) Webhook
+
+```bash
+neomind message channel-create --name feishu-alerts --type feishu \
+  --config '{"hook_id": "xxxxxxxx", "secret": "optional_sign_secret"}'
+```
+
+**Required fields**: `hook_id`
+**Optional fields**: `secret` (for sign verification)
 
 ## Workflow Examples
 
-### Set Up Webhook Alert Channel
+### Set Up DingTalk Notification Channel
 
 ```bash
-# Step 1: Create the channel
-neomind message channel-create --name alerts --type webhook \
-  --config '{"url": "https://hooks.slack.com/services/T00/B00/xxx"}'
+# Step 1: Verify dingtalk is available
+neomind message channel-types
 
-# Step 2: Test the channel
-neomind message channel-test alerts
+# Step 2: Get config schema
+neomind message channel-type-schema dingtalk
 
-# Step 3: Send a test message
-neomind message send --title 'Test' --message 'Channel setup complete' --severity info
+# Step 3: Create the channel
+neomind message channel-create --name dingtalk-ops --type dingtalk \
+  --config '{"access_token": "your-token", "secret": "SECyour-secret"}'
+
+# Step 4: Test delivery
+neomind message channel-test dingtalk-ops
+
+# Step 5: Send a test message
+neomind message send --title 'Test' --message 'DingTalk channel setup complete' --severity info
 ```
 
 ### Send Warning Alert
@@ -122,20 +183,20 @@ neomind message send --title 'Low Battery' \
   --source sensor-001
 ```
 
-### Send Critical Alert
+### Send Emergency Alert
 
 ```bash
 neomind message send --title 'System Overheating' \
   --message 'Temperature sensor reads 95°C — immediate action required' \
-  --severity critical
+  --severity emergency
 ```
 
 ### Review & Acknowledge Messages
 
 ```bash
-# List unread warnings and errors
+# List unread warnings and critical messages
 neomind message list --severity warning
-neomind message list --severity error
+neomind message list --severity critical
 
 # Acknowledge a message
 neomind message read <ID>
@@ -178,9 +239,12 @@ neomind rule enable <RULE_ID>
 
 | Error | Cause | Solution |
 |-------|-------|----------|
+| "Channel name is required" | Missing --name | Use `--name <NAME>` |
+| "Unknown channel type 'discord'" | Unsupported type | Run `message channel-types` for available types |
+| "Invalid config JSON" | Malformed JSON in --config | Validate JSON syntax. Run `channel-type-schema <TYPE>` for examples |
 | "Missing required field: title" | Using wrong flag names | Use `--title` and `--message` (not `--body` or `--channel`) |
 | "Channel not found" | Wrong channel name | Run `message channel-list` for valid names |
 | Webhook not delivering | Wrong URL or network issue | Test with `message channel-test <NAME>` |
-| "Invalid channel type" | Unsupported type | Run `message channel-types` for available types |
 | "SMTP auth failed" | Wrong email credentials | Verify SMTP settings and update with `channel-update` |
 | "Message not found" | Wrong message ID | Run `message list` for valid IDs |
+| Telegram "Unauthorized" | Invalid bot token | Verify token from @BotFather, update with `channel-update` |

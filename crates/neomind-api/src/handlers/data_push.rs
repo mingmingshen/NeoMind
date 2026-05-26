@@ -36,6 +36,7 @@ pub struct ListTargetsQuery {
 #[derive(Debug, Deserialize)]
 pub struct ListLogsQuery {
     pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
 /// Create a new push target.
@@ -222,13 +223,14 @@ pub async fn list_delivery_logs_handler(
         .ok_or_else(|| ErrorResponse::internal("Data push manager not initialized"))?;
 
     let limit = params.limit.unwrap_or(50).min(200);
-    let logs = manager
-        .list_delivery_logs(&id, limit)
+    let offset = params.offset.unwrap_or(0);
+    let (logs, total) = manager
+        .list_delivery_logs(&id, limit, offset)
         .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
 
     ok(json!({
         "logs": logs,
-        "total": logs.len(),
+        "total": total,
     }))
 }
 

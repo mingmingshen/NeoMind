@@ -107,22 +107,21 @@ impl DataPushStore {
         self.save_delivery_log(log)
     }
 
-    pub fn list_delivery_logs(&self, target_id: &str, limit: usize) -> Result<Vec<DeliveryLog>> {
+    pub fn list_delivery_logs(&self, target_id: &str, limit: usize, offset: usize) -> Result<(Vec<DeliveryLog>, usize)> {
         let read_tx = self.db.begin_read()?;
         let table = read_tx.open_table(LOGS_TABLE)?;
-        let mut logs = Vec::new();
+        let mut all = Vec::new();
         for entry in table.iter()?.rev() {
             let (_, value) = entry?;
             if let Ok(l) = serde_json::from_str::<DeliveryLog>(value.value()) {
                 if l.target_id == target_id {
-                    logs.push(l);
-                    if logs.len() >= limit {
-                        break;
-                    }
+                    all.push(l);
                 }
             }
         }
-        Ok(logs)
+        let total = all.len();
+        let logs: Vec<DeliveryLog> = all.into_iter().skip(offset).take(limit).collect();
+        Ok((logs, total))
     }
 
     /// Remove logs older than the given unix timestamp.
@@ -173,6 +172,7 @@ mod tests {
             },
             template: None,
             retry_config: RetryConfig::default(),
+            batch_config: BatchConfig::default(),
             created_at: 1700000000,
             updated_at: 1700000000,
         };
@@ -205,8 +205,9 @@ mod tests {
         };
 
         store.save_delivery_log(&log).unwrap();
-        let logs = store.list_delivery_logs("t-1", 10).unwrap();
+        let (logs, total) = store.list_delivery_logs("t-1", 10, 0).unwrap();
         assert_eq!(logs.len(), 1);
+        assert_eq!(total, 1);
 
         // Cleanup old logs
         let cleaned = store.cleanup_logs(1700000001).unwrap();

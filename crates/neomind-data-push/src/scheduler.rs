@@ -136,16 +136,37 @@ impl PushScheduler {
                 }
             };
 
-            tracing::info!(target_id = %target.id, "Event-driven push target started");
+            let batch_enabled = target.batch_config.is_enabled();
+            let batch_size = target.batch_config.batch_size;
+            let batch_interval = std::time::Duration::from_millis(target.batch_config.batch_interval_ms);
+
+            tracing::info!(
+                target_id = %target.id,
+                batch_enabled,
+                batch_size,
+                batch_interval_ms = target.batch_config.batch_interval_ms,
+                "Event-driven push target started"
+            );
+
+            // Buffer for batched events
+            let mut buffer: Vec<(String, serde_json::Value, i64)> = Vec::new();
+            let mut flush_timer = tokio::time::Instant::now() + batch_interval;
 
             loop {
                 tokio::select! {
                     _ = cancel.changed() => {
+                        // Flush remaining buffer before stopping
+                        if !buffer.is_empty() {
+                            flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                        }
                         tracing::info!(target_id = %target.id, "Event-driven target stopped");
                         return;
                     }
                     result = rx.recv() => {
                         if cancel.has_changed().unwrap_or(false) {
+                            if !buffer.is_empty() {
+                                flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                            }
                             return;
                         }
                         match result {
@@ -156,22 +177,41 @@ impl PushScheduler {
                                 if let Some((source_id, value, ts)) = extract_event_data(&event) {
                                     let value_str = value.to_string();
                                     if matcher.should_push(&source_id, &value_str) {
-                                        if let Err(e) = deliver_with_retry(
-                                            &target,
-                                            &store,
-                                            &renderer,
-                                            dest.as_ref(),
-                                            &source_id,
-                                            &value,
-                                            ts,
-                                        ).await {
-                                            tracing::warn!(target_id = %target.id, error = %e, "Delivery failed after retries");
+                                        if !batch_enabled {
+                                            // Immediate delivery (batch_size=1)
+                                            if let Err(e) = deliver_with_retry(
+                                                &target,
+                                                &store,
+                                                &renderer,
+                                                dest.as_ref(),
+                                                &source_id,
+                                                &value,
+                                                ts,
+                                            ).await {
+                                                tracing::warn!(target_id = %target.id, error = %e, "Delivery failed after retries");
+                                            }
+                                        } else {
+                                            // Buffer for batch
+                                            buffer.push((source_id, value, ts));
+                                            if buffer.len() >= batch_size {
+                                                flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                                                flush_timer = tokio::time::Instant::now() + batch_interval;
+                                            }
                                         }
                                     }
                                 }
                             }
-                            None => return,
+                            None => {
+                                if !buffer.is_empty() {
+                                    flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                                }
+                                return;
+                            }
                         }
+                    }
+                    _ = tokio::time::sleep_until(flush_timer), if batch_enabled && !buffer.is_empty() => {
+                        flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                        flush_timer = tokio::time::Instant::now() + batch_interval;
                     }
                 }
             }
@@ -341,4 +381,116 @@ async fn deliver_with_retry(
     }
 
     Err(anyhow::anyhow!("Max retries exceeded"))
+}
+
+/// Flush a batch of buffered events as a single aggregated payload.
+async fn flush_batch(
+    target: &PushTarget,
+    store: &DataPushStore,
+    renderer: &TemplateRenderer,
+    dest: &dyn crate::targets::PushDestination,
+    buffer: &mut Vec<(String, serde_json::Value, i64)>,
+) {
+    if buffer.is_empty() {
+        return;
+    }
+
+    let items: Vec<serde_json::Value> = buffer
+        .iter()
+        .map(|(source_id, value, ts)| {
+            let ctx = TemplateContext {
+                source_id: source_id.clone(),
+                value: value.clone(),
+                timestamp: *ts,
+                metadata: None,
+            };
+            // Try to render each item; fall back to raw JSON
+            renderer
+                .render(&target.template, &ctx)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_else(|| json!({"source_id": source_id, "value": value, "timestamp": ts, "metadata": null}))
+        })
+        .collect();
+
+    let count = items.len();
+    let source_ids: Vec<&str> = buffer.iter().map(|(s, _, _)| s.as_str()).collect();
+
+    let batch_payload = json!({
+        "batch": true,
+        "count": count,
+        "items": items,
+    });
+
+    let payload_str = serde_json::to_string(&batch_payload).unwrap_or_default();
+
+    let log_id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().timestamp();
+
+    let mut log = DeliveryLog {
+        id: log_id,
+        target_id: target.id.clone(),
+        status: DeliveryStatus::Pending,
+        data_source_id: source_ids.join(","),
+        payload_sent: payload_str.clone(),
+        response: None,
+        attempts: 0,
+        created_at: now,
+        completed_at: None,
+        error: None,
+    };
+
+    let max_retries = target.retry_config.max_retries;
+    let mut backoff = target.retry_config.backoff_secs;
+
+    for attempt in 0..=max_retries {
+        log.attempts = attempt + 1;
+        match dest.send(&payload_str).await {
+            Ok(()) => {
+                log.status = DeliveryStatus::Success;
+                log.completed_at = Some(chrono::Utc::now().timestamp());
+                let _ = store.save_delivery_log(&log);
+                tracing::debug!(
+                    target_id = %target.id,
+                    batch_count = count,
+                    attempt,
+                    "Batch delivery successful"
+                );
+                buffer.clear();
+                return;
+            }
+            Err(e) => {
+                log.error = Some(e.to_string());
+                if attempt < max_retries {
+                    log.status = DeliveryStatus::Retrying;
+                    let _ = store.save_delivery_log(&log);
+                    let effective_backoff = backoff.min(target.retry_config.max_backoff_secs);
+                    tracing::warn!(
+                        target_id = %target.id,
+                        batch_count = count,
+                        attempt,
+                        backoff_secs = effective_backoff,
+                        error = %e,
+                        "Batch delivery failed, retrying"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(effective_backoff)).await;
+                    backoff *= 2;
+                } else {
+                    log.status = DeliveryStatus::Failed;
+                    log.completed_at = Some(chrono::Utc::now().timestamp());
+                    let _ = store.save_delivery_log(&log);
+                    tracing::warn!(
+                        target_id = %target.id,
+                        batch_count = count,
+                        error = %e,
+                        "Batch delivery failed after retries"
+                    );
+                    buffer.clear();
+                    return;
+                }
+            }
+        }
+    }
+
+    buffer.clear();
 }

@@ -335,13 +335,14 @@ Use `shell(command="neomind <domain> <action> [args]")` for ALL operations.
 | **widget** | `list, get, create, install, uninstall, market-list, market-install` | `list` shows config_schema. `get <TYPE>` shows full schema with display/config fields. |
 | **transform** | `list, get, create --code 'JS', update, delete, test, metrics, data-sources` | Code uses `input` variable (NOT `value`). `--scope` defaults to `global`. |
 | **extension** | `list, get/info, status, logs, config, install, uninstall, market-list, market-install, reload` | `get <ID>` returns commands, metrics, config. Use for "what data does X provide" questions. |
-| **message** | `list, get, send --title --message, read/ack` + `channel-list/get/create/update/delete/test/types` | Send requires `--title` + `--message`. Channels: webhook, email, dingtalk. |
+| **message** | `list, get, send --title --message, read/ack` + `channel-list/get/create/update/delete/test/types/type-schema` | Send requires `--title` + `--message`. Use `channel-types` to discover types, `channel-type-schema <TYPE>` for config schema. |
 | **system** | `info` | Returns MQTT broker address, webhook URL, network info. Use for onboarding questions. |
 | **connector** | `list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe` | External MQTT/data connectors. `test` checks real connectivity. |
 | **llm** | `list, get, models, create, update, delete, activate, test` | LLM backend management. `models` lists available Ollama models. |
 | **settings** | `timezone, timezones, retention, cleanup` | System settings: timezone, data retention config, manual cleanup trigger. |
 | **config** | `export, import, validate` | Full system configuration backup/restore. |
 | **automation** | `list, get, export, import, enable, disable, executions` | Unified management for rules, transforms, agents. |
+| **push** | `list, get, create --name --type --config, update, delete, start, stop, test, logs, stats` | Data push targets. `--type`: webhook/mqtt. `--schedule`: event/interval. `--sources` for filtering. |
 
 ### Critical Decision Rules
 

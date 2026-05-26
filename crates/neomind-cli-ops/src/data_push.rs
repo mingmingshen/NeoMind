@@ -6,16 +6,21 @@ use serde_json::json;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
 
+/// Extract the inner `data` field from an API response.
+fn extract_inner_data(resp: serde_json::Value) -> serde_json::Value {
+    resp.get("data").cloned().unwrap_or(resp)
+}
+
 /// List push targets.
 pub async fn list_targets(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/data-push").await?;
-    Ok(CliResponse::success(data, "Push targets listed"))
+    Ok(CliResponse::success(extract_inner_data(data), "Push targets listed"))
 }
 
 /// Get a push target by ID.
 pub async fn get_target(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let data = client.get(&format!("/data-push/{}", id)).await?;
-    Ok(CliResponse::success(data, "Push target retrieved"))
+    Ok(CliResponse::success(extract_inner_data(data), "Push target retrieved"))
 }
 
 /// Create a push target.
@@ -27,8 +32,47 @@ pub async fn create_target(
     schedule_type: &str,
     source_patterns: &str,
 ) -> Result<CliResponse> {
-    let config_val: serde_json::Value =
-        serde_json::from_str(config).unwrap_or_else(|_| json!({"url": config}));
+    // 1. Validate name is non-empty
+    if name.is_empty() {
+        return Ok(CliResponse::error("Target name is required. Use --name <NAME>", "MISSING_NAME"));
+    }
+
+    // 2. Validate target_type
+    if target_type.is_empty() {
+        return Ok(CliResponse::error_with_suggestion(
+            "Target type is required. Use --type <TYPE>.",
+            "MISSING_TYPE",
+            "Valid types: webhook, mqtt.",
+        ));
+    }
+
+    // 3. Validate config is valid JSON
+    let config_val: serde_json::Value = match serde_json::from_str(config) {
+        Ok(v) => v,
+        Err(e) => {
+            return Ok(CliResponse::error_with_suggestion(
+                &format!("Invalid config JSON: {}", e),
+                "INVALID_JSON",
+                match target_type {
+                    "webhook" => "Example: --config '{\"url\":\"https://example.com/webhook\"}'",
+                    "mqtt" => "Example: --config '{\"broker\":\"tcp://broker:1883\",\"topic\":\"neomind/data\"}'",
+                    _ => "Provide a valid JSON object for --config.",
+                },
+            ));
+        }
+    };
+
+    // 4. Validate target_type is known
+    match target_type {
+        "webhook" | "mqtt" => {}
+        _ => {
+            return Ok(CliResponse::error_with_suggestion(
+                &format!("Unknown target type '{}'.", target_type),
+                "UNKNOWN_TYPE",
+                "Valid types: webhook, mqtt.",
+            ));
+        }
+    }
 
     let schedule = match schedule_type {
         "interval" => json!({
@@ -53,6 +97,7 @@ pub async fn create_target(
     });
 
     let data = client.post("/data-push", &body).await?;
+    let data = extract_inner_data(data);
     let target_id = data["id"]
         .as_str()
         .unwrap_or("unknown")
@@ -90,31 +135,31 @@ pub async fn update_target(
     }
 
     let data = client.put(&format!("/data-push/{}", id), &body).await?;
-    Ok(CliResponse::success(data, "Push target updated"))
+    Ok(CliResponse::success(extract_inner_data(data), "Push target updated"))
 }
 
 /// Delete a push target.
 pub async fn delete_target(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let data = client.delete(&format!("/data-push/{}", id)).await?;
-    Ok(CliResponse::success(data, "Push target deleted"))
+    Ok(CliResponse::success(extract_inner_data(data), "Push target deleted"))
 }
 
 /// Start a push target.
 pub async fn start_target(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let data = client.post(&format!("/data-push/{}/start", id), &json!({})).await?;
-    Ok(CliResponse::success(data, "Push target started"))
+    Ok(CliResponse::success(extract_inner_data(data), "Push target started"))
 }
 
 /// Stop a push target.
 pub async fn stop_target(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let data = client.post(&format!("/data-push/{}/stop", id), &json!({})).await?;
-    Ok(CliResponse::success(data, "Push target stopped"))
+    Ok(CliResponse::success(extract_inner_data(data), "Push target stopped"))
 }
 
 /// Test a push target.
 pub async fn test_target(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let data = client.post(&format!("/data-push/{}/test", id), &json!({})).await?;
-    Ok(CliResponse::success(data, "Push target test completed"))
+    Ok(CliResponse::success(extract_inner_data(data), "Push target test completed"))
 }
 
 /// List delivery logs for a push target.
@@ -125,11 +170,11 @@ pub async fn list_logs(client: &ApiClient, id: &str, limit: Option<usize>) -> Re
         format!("/data-push/{}/logs", id)
     };
     let data = client.get(&path).await?;
-    Ok(CliResponse::success(data, "Delivery logs listed"))
+    Ok(CliResponse::success(extract_inner_data(data), "Delivery logs listed"))
 }
 
 /// Get push statistics.
 pub async fn get_stats(client: &ApiClient) -> Result<CliResponse> {
     let data = client.get("/data-push/stats").await?;
-    Ok(CliResponse::success(data, "Push stats retrieved"))
+    Ok(CliResponse::success(extract_inner_data(data), "Push stats retrieved"))
 }
