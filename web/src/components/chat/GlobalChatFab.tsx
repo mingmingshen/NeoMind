@@ -16,13 +16,17 @@ import { cn } from "@/lib/utils"
 import { useStore } from "@/store"
 import { selectChatActions } from "@/store/selectors"
 
+const PANEL_SESSION_KEY = "neomind:panelSessionId"
+
 type PanelState = "closed" | "opening" | "open" | "closing"
 
 export function GlobalChatFab() {
   const [panelState, setPanelState] = useState<PanelState>("closed")
   const [isStreaming, setIsStreaming] = useState(false)
-  // Persist panel session at parent level — survives panel unmount
-  const panelSessionIdRef = useRef<string | null>(null)
+  // Persist panel session — survives panel unmount AND page refresh
+  const panelSessionIdRef = useRef<string | null>(
+    localStorage.getItem(PANEL_SESSION_KEY)
+  )
   const { createSession } = useStore(selectChatActions)
   const location = useLocation()
   const { t } = useTranslation("chat")
@@ -58,6 +62,7 @@ export function GlobalChatFab() {
     const id = await createSession()
     if (id) {
       panelSessionIdRef.current = id
+      localStorage.setItem(PANEL_SESSION_KEY, id)
     }
     return id!
   }, [createSession])

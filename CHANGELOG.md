@@ -9,21 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **Global AI chat entry (FAB)** — Floating action button on all non-chat pages opens a full-screen glass-morphism chat overlay with smooth scale-up animation. Panel shares WebSocket connection and Zustand store with the main `/chat` page, using an independent persistent session that survives panel close/reopen
-
-### Changed
-
-- **Chat message styling** — AI messages now use Bot icon (lucide) instead of logo image. User message bubbles use neutral black/white instead of blue. User avatar uses brand orange accent. Streaming "thinking" text internationalized via `t()`
-
-### Fixed
-
-- **Panel session persistence** — Panel session ID is held at parent component level (`GlobalChatFab`), preventing session loss on panel unmount. No longer creates duplicate sessions on repeated panel open/close
-
 ---
 
-## [v0.8.0] - 2026-05-25
+## [v0.8.0] - 2026-05-26
 
 ### Added
 
@@ -32,11 +20,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Message deduplication** — Messages with the same title+source+severity within a 60-second window are automatically deduplicated. The message is still stored but channel delivery is skipped, preventing message bombing from high-frequency rule triggers
 - **Automatic delivery log cleanup** — A background task now runs every 6 hours to clean up delivery logs older than 1 day and messages older than 30 days. Runs on startup and periodically via `tokio::select!` alongside the retry scheduler
 - **Automatic updater fixes** — Fixed app restart and version placeholder replacement after in-app updates. Fixed service config, sudo handling, and upgrade support for the install/update flow
+- **Global AI chat entry (FAB)** — Floating action button on all non-chat pages opens a full-screen glass-morphism chat overlay with smooth scale-up animation. Panel uses an independent session persisted via localStorage, shares WebSocket with the main `/chat` page. Brand orange styling, Bot icon for AI messages, i18n empty state
+- **5 new notification channels** — Telegram (Bot API), WeCom (robot webhook), DingTalk (custom robot with HMAC-SHA256 sign), Slack (Incoming Webhook), Feishu (custom bot with HMAC-SHA256 sign). Each channel is feature-gated in `Cargo.toml` and registered via `ChannelFactory`. All use platform-native message formats (markdown, Block Kit, HTML)
+- **Channel editor FullScreenDialog** — Replaced inline `UnifiedFormDialog` with dedicated `ChannelEditorDialog` component using `FullScreenDialog` + Sidebar layout. Left sidebar shows all 7 channel types with icons and descriptions; main area shows dynamic config form. Mobile-friendly with horizontal tab bar
+- **Data push module** — New `neomind-data-push` crate for pushing device telemetry and extension output to external systems. Supports Webhook and MQTT targets with event-driven and interval-based scheduling, configurable retry with exponential backoff, data filtering, and Jinja-like template rendering. Full REST API and frontend management UI with `PushTargetDialog` and `DeliveryHistoryPanel`
+- **Channel type registry** — Backend now exposes channel type schemas via `GET /api/messages/channels/types/:type/schema` with per-type JSON Schema for config validation. Frontend auto-discovers available types
 
 ### Changed
 
 - **Email SMTP connection reuse** — `EmailChannel` now builds and caches the `SmtpTransport` at creation time via `Arc<Mutex>`, eliminating per-send SMTP connection setup overhead
 - **Email recipients atomicity** — `add_recipient`/`remove_recipient` now recreate the email channel before persisting to storage, with automatic rollback on failure. Previously a failed recreation could leave `state.recipients` and `EmailChannel.to_addresses` out of sync
+- **Chat message styling** — AI messages use Bot icon instead of logo image. User message bubbles use neutral black/white. User avatar uses brand orange accent. Streaming text internationalized
+- **Messages page refactored** — Extracted ~500 lines of channel create/edit logic from `messages.tsx` into standalone `ChannelEditorDialog` component. Main page reduced by 40%
+- **Delivery log removed** — Removed monolithic `delivery_log.rs` (591 lines). Delivery tracking now handled by channel-level retry in `ChannelFilter` with simpler dedup logic
 
 ### Fixed
 
@@ -44,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI robustness** — Fixed widget install multipart mismatch, added border styling to widget scaffolds, aligned CLI docs/skills/prompts with actual system behavior
 - **CI build** — Fixed Tauri externalBin by building `neomind-cli` alongside `neomind-extension-runner`
 - **Device auto-discovery** — Fixed `adapter_type` when registering auto-discovered devices
+- **Channel config field alignment** — Email config now sends `smtp_server`/`username`/`password` (was `smtp_host`/`smtp_username`/`smtp_password`). Webhook timeout field now sends `timeout_secs` (was `timeout`). All fields match backend factory expectations
+- **Channel edit form initialization** — Edit mode now correctly populates form via `useEffect` watching `open`/`editingChannel` instead of relying on `onOpenChange` callback which only fires on user actions
+- **DingTalk dead code** — Removed unused `webhook_url` method that caused Rust compiler warning
 
 ---
 
