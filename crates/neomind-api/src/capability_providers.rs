@@ -145,23 +145,10 @@ impl DeviceCapabilityProvider {
         };
 
         let write_source_id = format!("device:{}", device_id);
-        tracing::info!(
-            "[METRICS_WRITE_DEBUG] Writing metric: source_id={} metric={} timestamp_secs={} value_type={}",
-            write_source_id, metric, timestamp_secs, if value.is_string() { "string" } else if value.is_number() { "number" } else { "other" }
-        );
-
         telemetry_storage
             .write(&write_source_id, metric, data_point)
             .await
-            .map_err(|e| {
-                tracing::error!("[METRICS_WRITE_DEBUG] Write FAILED: {}", e);
-                CapabilityError::ProviderError(e.to_string())
-            })?;
-
-        // Force flush after each virtual metric write to ensure immediate persistence
-        if let Err(e) = telemetry_storage.flush() {
-            tracing::warn!("[METRICS_WRITE_DEBUG] Flush after write failed: {}", e);
-        }
+            .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 
         // Update last_seen so the device doesn't show "Never Connected"
         if let Some(device_service) = self.services.get::<DeviceService>(keys::DEVICE_SERVICE) {
