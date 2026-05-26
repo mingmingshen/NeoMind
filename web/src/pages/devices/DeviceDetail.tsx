@@ -10,20 +10,18 @@ import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogContentBody,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { ChevronLeft, Send, Clock, Zap, Settings, Info, ChevronRight, X, Image as ImageIcon, Database, Download, Loader2 } from "lucide-react"
+  FullScreenDialog,
+  FullScreenDialogHeader,
+  FullScreenDialogContent,
+  FullScreenDialogMain,
+} from "@/components/automation/dialog"
+import { ResponsiveTable, type TableColumn, EmptyState, Pagination } from "@/components/shared"
+import { ChevronLeft, Send, Clock, Zap, Settings, Info, ChevronRight, X, Image as ImageIcon, Database, Download } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { Device, DeviceType, CommandDefinition, ParameterDefinition, TelemetryDataResponse, DeviceCurrentStateResponse } from "@/types"
@@ -444,6 +442,76 @@ export function DeviceDetail({
     await onMetricClick(selectedMetric, offset, PAGE_SIZE)
   }
 
+  // Metric history table columns
+  const metricHistoryColumns: TableColumn[] = [
+    { key: 'timestamp', label: t('devices:detailPage.timeLabel'), width: '40%' },
+    { key: 'value', label: t('devices:detailPage.valueLabel'), width: '60%' },
+  ]
+
+  const renderMetricHistoryCell = (columnKey: string, rowData: Record<string, unknown>) => {
+    const point = rowData as unknown as { timestamp: number; value: unknown }
+    switch (columnKey) {
+      case 'timestamp':
+        return (
+          <span className="text-sm text-muted-foreground">
+            {formatTimestamp(point.timestamp)}
+          </span>
+        )
+      case 'value': {
+        if (isMetricImage(point.value)) {
+          return (
+            <div className="flex items-center gap-2">
+              <div
+                className="cursor-pointer hover:opacity-80 transition-opacity inline-block"
+                onClick={() => {
+                  setPreviewImageSrc(String(point.value))
+                  setImagePreviewOpen(true)
+                }}
+              >
+                <img src={String(point.value)} alt="metric" className="h-12 w-12 object-cover rounded-lg" loading="lazy" />
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  downloadImage(String(point.value), formatTimestamp(point.timestamp))
+                }}
+                title={t('devices:detailPage.downloadImage')}
+              >
+                <Download className="h-4 w-4" />
+              </Button>
+            </div>
+          )
+        }
+        const isComplexValue = typeof point.value === 'object' && point.value !== null
+        const isLongString = typeof point.value === 'string' && point.value.length > 100
+        if (isComplexValue || isLongString) {
+          return (
+            <details className="group">
+              <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground transition-colors list-none flex items-center gap-2">
+                <span>{t('devices:detailPage.clickToViewFull')}</span>
+                <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
+              </summary>
+              <div className="mt-2 p-3 bg-muted-50 rounded-lg max-h-[300px] overflow-auto">
+                <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                  {typeof point.value === 'string'
+                    ? point.value
+                    : JSON.stringify(point.value, null, 2)
+                  }
+                </pre>
+              </div>
+            </details>
+          )
+        }
+        return <span className="text-sm">{renderMetricValue(point.value, undefined, false)}</span>
+      }
+      default:
+        return null
+    }
+  }
+
   return (
     <>
       <div className="flex flex-col flex-1 bg-gradient-to-b from-background to-muted">
@@ -695,136 +763,54 @@ export function DeviceDetail({
       </div>
 
       {/* Metric History Dialog */}
-      <Dialog open={metricHistoryOpen} onOpenChange={(open) => {
+      <FullScreenDialog open={metricHistoryOpen} onOpenChange={(open) => {
         setMetricHistoryOpen(open)
         if (!open) onMetricBack()
       }}>
-        <DialogContent className={cn("flex flex-col", isMobile ? "max-w-full" : "sm:max-w-3xl")}>
-          <DialogHeader>
-            <DialogTitle className="text-lg sm:text-xl flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              {selectedMetric && getMetricDisplayName(selectedMetric)}
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              {t('devices:detailPage.metricHistory')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogContentBody className={cn("overflow-y-auto", isMobile ? "max-h-[60vh]" : "max-h-[500px] pr-4")}>
-              {currentMetricData.length > 0 ? (
-                <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent border-border">
-                      <TableHead className="text-muted-foreground w-[180px]">{t('devices:detailPage.timeLabel')}</TableHead>
-                      <TableHead className="text-muted-foreground">{t('devices:detailPage.valueLabel')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {currentMetricData.map((point, i) => {
-                      const isComplexValue = typeof point.value === 'object' && point.value !== null
-                      const isLongString = typeof point.value === 'string' && point.value.length > 100
-                      return (
-                        <TableRow key={i} className="hover:bg-muted-30 border-border">
-                          <TableCell className="text-sm text-muted-foreground align-top">
-                            {formatTimestamp(point.timestamp)}
-                          </TableCell>
-                          <TableCell>
-                            {isMetricImage(point.value) ? (
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="cursor-pointer hover:opacity-80 transition-opacity inline-block"
-                                  onClick={() => {
-                                    setPreviewImageSrc(String(point.value))
-                                    setImagePreviewOpen(true)
-                                  }}
-                                >
-                                  <img src={String(point.value)} alt="metric" className="h-12 w-12 object-cover rounded-lg" loading="lazy" />
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 shrink-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    downloadImage(String(point.value), formatTimestamp(point.timestamp))
-                                  }}
-                                  title={t('devices:detailPage.downloadImage')}
-                                >
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            ) : isComplexValue || isLongString ? (
-                              <details className="group">
-                                <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground transition-colors list-none flex items-center gap-2">
-                                  <span>{t('devices:detailPage.clickToViewFull')}</span>
-                                  <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
-                                </summary>
-                                <div className="mt-2 p-3 bg-muted-50 rounded-lg max-h-[300px] overflow-auto">
-                                  <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-                                    {typeof point.value === 'string'
-                                      ? point.value
-                                      : JSON.stringify(point.value, null, 2)
-                                    }
-                                  </pre>
-                                </div>
-                              </details>
-                            ) : (
-                              <span className="text-sm">{renderMetricValue(point.value, undefined, false)}</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
+        <FullScreenDialogHeader
+          icon={<Clock className="h-5 w-5" />}
+          iconBg="bg-accent-indigo-light"
+          iconColor="text-accent-indigo"
+          title={selectedMetric ? getMetricDisplayName(selectedMetric) : t('devices:detailPage.metricHistory')}
+          onClose={() => { setMetricHistoryOpen(false); onMetricBack() }}
+        />
+        <FullScreenDialogContent>
+          <FullScreenDialogMain className="overflow-hidden">
+            <div className="h-full flex flex-col">
+              <div className="flex-1 overflow-y-auto px-4 py-4">
+                <ResponsiveTable
+                  columns={metricHistoryColumns}
+                  data={currentMetricData as unknown as Record<string, unknown>[]}
+                  renderCell={renderMetricHistoryCell}
+                  rowKey={(row) => String((row as { timestamp: number }).timestamp)}
+                  loading={telemetryLoading}
+                  flexHeight={false}
+                  emptyState={
+                    <EmptyState
+                      icon={<Clock className="h-12 w-12" />}
+                      title={t('devices:detailPage.noHistoryData')}
+                    />
+                  }
+                />
+              </div>
+              {totalCount > PAGE_SIZE && (
+                <div className="border-t px-4 py-3">
+                  <Pagination
+                    total={totalCount}
+                    pageSize={PAGE_SIZE}
+                    currentPage={currentPage}
+                    onPageChange={handlePageChange}
+                  />
                 </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">{t('devices:detailPage.noHistoryData')}</div>
               )}
-          </DialogContentBody>
-          {/* Pagination Footer */}
-          {totalCount > 0 && (
-            <div className={cn("flex items-center justify-between border-t border-border", isMobile ? "px-3 py-2" : "px-6 py-3")}>
-              <div className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-sm")}>
-                {t('devices:detailPage.paginationInfo', { 
-                  start: (currentPage - 1) * PAGE_SIZE + 1, 
-                  end: Math.min(currentPage * PAGE_SIZE, totalCount), 
-                  total: totalCount 
-                })}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={!hasPrevPage || telemetryLoading}
-                  className="rounded-lg"
-                >
-                  <ChevronLeft className="h-4 w-4 mr-1" />
-                  {t('common:previous')}
-                </Button>
-                <span className="text-sm text-muted-foreground px-2">
-                  {currentPage} / {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={!hasNextPage || telemetryLoading}
-                  className="rounded-lg"
-                >
-                  {t('common:next')}
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          </FullScreenDialogMain>
+        </FullScreenDialogContent>
+      </FullScreenDialog>
 
       {/* Image Preview Dialog */}
       <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
-        <DialogContent className="sm:max-w-4xl p-2">
+        <DialogContent className="sm:max-w-4xl p-2 z-[110]">
           <DialogHeader className="sr-only">
             <DialogTitle>{t('devices:detailPage.preview')}</DialogTitle>
             <DialogDescription>{t('devices:detailPage.imagePreview')}</DialogDescription>
