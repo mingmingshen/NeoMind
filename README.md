@@ -27,13 +27,17 @@
 <div align="center">
   <table>
     <tr>
-      <td align="center">
+      <td align="center" width="35%">
         <img src="docs/img/dashboard_light.png" alt="Dashboard" width="480" style="border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);" />
         <br/><sub><b>Dashboard</b></sub>
       </td>
-      <td align="center">
+      <td align="center" width="35%">
         <img src="docs/img/dashboard_dark.png" alt="Dark Mode" width="480" style="border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);" />
         <br/><sub><b>Dark Mode</b></sub>
+      </td>
+      <td align="center" width="30%" valign="top">
+        <img src="docs/img/mobile_web.png" alt="Mobile" width="200" style="border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);" />
+        <br/><sub><b>Mobile Web</b></sub>
       </td>
     </tr>
     <tr>
@@ -45,6 +49,7 @@
         <img src="docs/img/devices.png" alt="Devices" width="480" style="border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);" />
         <br/><sub><b>Device Management</b></sub>
       </td>
+      <td></td>
     </tr>
   </table>
 </div>
