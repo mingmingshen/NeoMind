@@ -1504,6 +1504,7 @@ enum PushCommand {
         name: String,
         /// Target type (webhook, mqtt).
         #[arg(long, visible_alias = "target-type")]
+        #[arg(short = 't', long = "type", hide = true)]
         target_type: Option<String>,
         /// Target config as JSON.
         #[arg(long)]
