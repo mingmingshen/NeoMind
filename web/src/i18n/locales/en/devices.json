@@ -993,7 +993,24 @@
     "webhookTokenNone": "No token set (open access)",
     "webhookTokenCopied": "Token copied",
     "webhookAuthHeader": "Authentication",
-    "webhookAuthDesc": "Include the token in requests:"
+    "webhookAuthDesc": "Include the token in requests:",
+    "connectionGuide": "Connection Guide",
+    "connectionGuideDesc": "Reference these details when configuring your device",
+    "selectBroker": "Broker",
+    "selectBrokerPlaceholder": "Select a broker",
+    "protocol": "Protocol",
+    "serverAddress": "Server",
+    "authStatus": "Auth",
+    "tlsStatus": "TLS",
+    "caCertDownload": "Download CA Cert",
+    "caCertDownloaded": "CA certificate downloaded",
+    "authRequired": "Required",
+    "authNotRequired": "Not Required",
+    "brokerNotRunning": "Broker is not running",
+    "brokerNotConnected": "Not connected",
+    "credentialsNeeded": "Username and password required",
+    "tlsWithCa": "Enabled — download CA cert for device",
+    "tlsNoCa": "Enabled"
   },
   "detailPage": {
     "deviceInfo": "Device Information",
@@ -1206,6 +1223,19 @@
     "externalBroker": "External Broker",
     "tlsEnabled": "TLS",
     "authInfo": "Authentication",
-    "subscribeTopics": "Subscribed Topics"
+    "subscribeTopics": "Subscribed Topics",
+    "protocol": "Protocol",
+    "authRequired": "Auth Required",
+    "authNotRequired": "No Auth",
+    "caCertDownload": "Download CA Cert",
+    "caCertDownloaded": "CA certificate downloaded",
+    "connectionGuide": "Connection Guide",
+    "connectionGuideDesc": "Connection details for your selected broker",
+    "selectBroker": "Select Broker",
+    "brokerNotRunning": "Broker is not running",
+    "brokerNotConnected": "Not connected",
+    "credentialsNeeded": "Username and password required",
+    "tlsWithCa": "TLS enabled — download CA cert for device",
+    "tlsNoCa": "TLS enabled"
   }
 }

@@ -994,7 +994,24 @@
     "webhookTokenNone": "未设置令牌（开放访问）",
     "webhookTokenCopied": "令牌已复制",
     "webhookAuthHeader": "认证方式",
-    "webhookAuthDesc": "在请求中携带令牌："
+    "webhookAuthDesc": "在请求中携带令牌：",
+    "connectionGuide": "连接指南",
+    "connectionGuideDesc": "配置设备时请参考以下连接信息",
+    "selectBroker": "Broker",
+    "selectBrokerPlaceholder": "选择 Broker",
+    "protocol": "协议",
+    "serverAddress": "服务器",
+    "authStatus": "认证",
+    "tlsStatus": "TLS",
+    "caCertDownload": "下载 CA 证书",
+    "caCertDownloaded": "CA 证书已下载",
+    "authRequired": "需要",
+    "authNotRequired": "不需要",
+    "brokerNotRunning": "Broker 未运行",
+    "brokerNotConnected": "未连接",
+    "credentialsNeeded": "需要用户名和密码",
+    "tlsWithCa": "已启用 — 下载 CA 证书用于设备端",
+    "tlsNoCa": "已启用"
   },
   "detailPage": {
     "deviceInfo": "设备信息",
@@ -1207,6 +1224,19 @@
     "externalBroker": "外部 Broker",
     "tlsEnabled": "TLS",
     "authInfo": "认证信息",
-    "subscribeTopics": "订阅主题"
+    "subscribeTopics": "订阅主题",
+    "protocol": "协议",
+    "authRequired": "需要认证",
+    "authNotRequired": "无需认证",
+    "caCertDownload": "下载 CA 证书",
+    "caCertDownloaded": "CA 证书已下载",
+    "connectionGuide": "连接指南",
+    "connectionGuideDesc": "所选 Broker 的连接详情",
+    "selectBroker": "选择 Broker",
+    "brokerNotRunning": "Broker 未运行",
+    "brokerNotConnected": "未连接",
+    "credentialsNeeded": "需要用户名和密码",
+    "tlsWithCa": "已启用 TLS — 下载 CA 证书用于设备端",
+    "tlsNoCa": "已启用 TLS"
   }
 }

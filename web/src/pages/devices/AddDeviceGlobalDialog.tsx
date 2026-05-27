@@ -4,7 +4,7 @@ import {
   Bluetooth, Pencil, Search, RefreshCw, Cpu, Plus,
   Wifi, Globe, Radio,
   CheckCircle2, XCircle, Loader2,
-  Copy, LucideIcon, KeyRound,
+  Copy, LucideIcon, KeyRound, Download, Lock, ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { textMini } from "@/design-system/tokens/typography"
@@ -276,6 +276,12 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
   const isMobile = useIsMobile()
   const [mqttStatus, setMqttStatus] = useState<MqttStatus | null>(null)
   const [brokers, setBrokers] = useState<ExternalBroker[]>([])
+  const [embeddedConfig, setEmbeddedConfig] = useState<{
+    auth_enabled: boolean
+    tls_enabled: boolean
+    tls_ca_path: string | null
+    credentials: { username: string; password: string }[]
+  } | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeMethod, setActiveMethod] = useState<'mqtt' | 'webhook'>('mqtt')
 
@@ -283,14 +289,23 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
     renderFooter(null)
   }, [renderFooter])
 
-  // Fetch MQTT status + full broker details
+  // Fetch MQTT status + full broker details + embedded config
   useEffect(() => {
     Promise.all([
       api.getMqttStatus().catch(() => null),
       api.getBrokers().catch(() => null),
-    ]).then(([statusRes, brokersRes]) => {
+      api.getEmbeddedBrokerConfig().catch(() => null),
+    ]).then(([statusRes, brokersRes, embeddedRes]) => {
       setMqttStatus(statusRes?.status ?? null)
       setBrokers(brokersRes?.brokers ?? [])
+      if (embeddedRes) {
+        setEmbeddedConfig({
+          auth_enabled: embeddedRes.auth_enabled,
+          tls_enabled: embeddedRes.tls_enabled,
+          tls_ca_path: embeddedRes.tls_ca_path,
+          credentials: embeddedRes.credentials || [],
+        })
+      }
     }).finally(() => setLoading(false))
   }, [])
 
@@ -396,21 +411,81 @@ function AutoDiscoveryTab({ renderFooter }: { renderFooter: (node: ReactNode) =>
                 {t('devices:auto.builtInBroker')}
                 <span className="ml-auto">{brokerRunning ? t('devices:auto.brokerRunning') : t('devices:auto.brokerStopped')}</span>
               </div>
-              <div className="p-4">
+              <div className="p-4 space-y-3">
                 <div className={cn("gap-3", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
+                  <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground">{t('devices:auto.protocol')}</span>
+                    <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
+                      {embeddedConfig?.tls_enabled ? 'mqtts://' : 'mqtt://'}{serverIp}:{brokerPort}
+                    </code>
+                  </div>
                   <div className="space-y-1">
                     <span className="text-xs text-muted-foreground">{t('devices:auto.brokerAddress')}</span>
                     <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
-                      {serverIp}
-                    </code>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground">{t('devices:auto.brokerPort')}</span>
-                    <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
-                      {brokerPort}
+                      {serverIp}:{brokerPort}
                     </code>
                   </div>
                 </div>
+                {/* TLS & Auth status badges */}
+                <div className="flex flex-wrap gap-2">
+                  {embeddedConfig?.tls_enabled && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-success-light text-success text-xs font-medium">
+                      <Lock className="h-3 w-3" />
+                      {t('devices:auto.tlsEnabled')}
+                    </div>
+                  )}
+                  {embeddedConfig?.auth_enabled ? (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-warning-light text-warning text-xs font-medium">
+                      <ShieldCheck className="h-3 w-3" />
+                      {t('devices:auto.authRequired')}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted-30 text-muted-foreground text-xs font-medium">
+                      {t('devices:auto.authNotRequired')}
+                    </div>
+                  )}
+                </div>
+                {/* CA cert download */}
+                {embeddedConfig?.tls_enabled && embeddedConfig.tls_ca_path && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={async () => {
+                      try {
+                        await api.downloadMqttCaCert()
+                        toast({ title: t('devices:auto.caCertDownloaded') })
+                      } catch { /* ignore */ }
+                    }}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    {t('devices:auto.caCertDownload')}
+                  </Button>
+                )}
+                {/* Credentials */}
+                {embeddedConfig?.auth_enabled && embeddedConfig.credentials.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground">{t('devices:auto.authInfo')}</span>
+                    {embeddedConfig.credentials.map((cred) => (
+                      <div key={cred.username} className="flex items-center gap-2">
+                        <code className="flex-1 text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
+                          {cred.username} / {cred.password}
+                        </code>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0 h-7 w-7"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${cred.username}:${cred.password}`)
+                            toast({ title: t('common:copied') })
+                          }}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -560,13 +635,43 @@ function ManualAddForm({
   const [serverIp, setServerIp] = useState('')
   const [webhookToken, setWebhookToken] = useState('')
 
-  // Fetch server IP for webhook URL
+  // Broker connection guide state
+  const [selectedBrokerId, setSelectedBrokerId] = useState<string>('embedded')
+  const [mqttStatus, setMqttStatus] = useState<MqttStatus | null>(null)
+  const [embeddedConfig, setEmbeddedConfig] = useState<{
+    listen: string
+    port: number
+    auth_enabled: boolean
+    tls_enabled: boolean
+    tls_ca_path: string | null
+    credentials: { username: string; password: string }[]
+  } | null>(null)
+  const [externalBrokers, setExternalBrokers] = useState<ExternalBroker[]>([])
+
+  // Fetch server IP + broker data
   useEffect(() => {
-    api.getMqttStatus().then((res) => {
-      if (res?.status?.server_ip) {
-        setServerIp(res.status.server_ip)
+    Promise.all([
+      api.getMqttStatus().catch(() => null),
+      api.getEmbeddedBrokerConfig().catch(() => null),
+      api.getBrokers().catch(() => null),
+    ]).then(([statusRes, embeddedRes, brokersRes]) => {
+      if (statusRes?.status) {
+        setMqttStatus(statusRes.status)
+        setServerIp(statusRes.status.server_ip)
       }
-    }).catch(() => {})
+      if (embeddedRes) {
+        setEmbeddedConfig({
+          listen: embeddedRes.listen,
+          port: embeddedRes.port,
+          auth_enabled: embeddedRes.auth_enabled,
+          tls_enabled: embeddedRes.tls_enabled,
+          tls_ca_path: embeddedRes.tls_ca_path,
+          credentials: embeddedRes.credentials || [],
+        })
+      }
+      const enabled = (brokersRes?.brokers ?? []).filter((b: ExternalBroker) => b.enabled)
+      setExternalBrokers(enabled)
+    })
   }, [])
 
   useEffect(() => {
@@ -731,7 +836,194 @@ function ManualAddForm({
         {/* MQTT Config */}
         {adapterType === 'mqtt' && (
           <div className="space-y-3 pt-1">
-            <FormField label={t('devices:add.telemetryTopic')}>
+            {/* Broker connection guide */}
+            <div className="rounded-lg border bg-muted-30/50 p-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Radio className="h-4 w-4 text-accent-orange" />
+                {t('devices:add.connectionGuide')}
+              </div>
+              <p className="text-xs text-muted-foreground">{t('devices:add.connectionGuideDesc')}</p>
+
+              {/* Broker selector */}
+              <FormField label={t('devices:add.selectBroker')}>
+                <Select value={selectedBrokerId} onValueChange={setSelectedBrokerId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('devices:add.selectBrokerPlaceholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {/* Embedded broker option */}
+                    <SelectItem value="embedded" disabled={!mqttStatus?.connected}>
+                      <span className="flex items-center gap-2">
+                        {mqttStatus?.connected ? (
+                          <CheckCircle2 className="h-3 w-3 text-success" />
+                        ) : (
+                          <XCircle className="h-3 w-3 text-error" />
+                        )}
+                        {t('devices:auto.builtInBroker')}
+                      </span>
+                    </SelectItem>
+                    {/* External brokers */}
+                    {externalBrokers.map((b) => (
+                      <SelectItem key={b.id} value={b.id}>
+                        <span className="flex items-center gap-2">
+                          {b.connected ? (
+                            <CheckCircle2 className="h-3 w-3 text-success" />
+                          ) : (
+                            <XCircle className="h-3 w-3 text-error" />
+                          )}
+                          {b.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
+
+              {/* Connection details card */}
+              {selectedBrokerId === 'embedded' && embeddedConfig && (
+                <div className="space-y-2">
+                  <div className={cn("gap-3", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">{t('devices:add.protocol')}</span>
+                      <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
+                        {embeddedConfig.tls_enabled ? 'mqtts' : 'mqtt'}
+                      </code>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">{t('devices:add.serverAddress')}</span>
+                      <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
+                        {serverIp || mqttStatus?.server_ip || 'localhost'}:{embeddedConfig.port}
+                      </code>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {embeddedConfig.tls_enabled && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-success-light text-success text-xs font-medium">
+                        <Lock className="h-3 w-3" />
+                        TLS: {embeddedConfig.tls_ca_path ? t('devices:add.tlsWithCa') : t('devices:add.tlsNoCa')}
+                      </div>
+                    )}
+                    {embeddedConfig.auth_enabled ? (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-warning-light text-warning text-xs font-medium">
+                        <ShieldCheck className="h-3 w-3" />
+                        {t('devices:add.authStatus')}: {t('devices:add.authRequired')}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted-30 text-muted-foreground text-xs font-medium">
+                        {t('devices:add.authStatus')}: {t('devices:add.authNotRequired')}
+                      </div>
+                    )}
+                  </div>
+                  {embeddedConfig.tls_enabled && embeddedConfig.tls_ca_path && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={async () => {
+                        try {
+                          await api.downloadMqttCaCert()
+                          toast({ title: t('devices:add.caCertDownloaded') })
+                        } catch { /* ignore */ }
+                      }}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      {t('devices:add.caCertDownload')}
+                    </Button>
+                  )}
+                  {/* Credentials */}
+                  {embeddedConfig.auth_enabled && embeddedConfig.credentials.length > 0 && (
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">{t('devices:auto.authInfo')}</span>
+                      {embeddedConfig.credentials.map((cred) => (
+                        <div key={cred.username} className="flex items-center gap-2">
+                          <code className="flex-1 text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
+                            {cred.username} / {cred.password}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="shrink-0 h-7 w-7"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${cred.username}:${cred.password}`)
+                              toast({ title: t('common:copied') })
+                            }}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {selectedBrokerId !== 'embedded' && (() => {
+                const broker = externalBrokers.find(b => b.id === selectedBrokerId)
+                if (!broker) return null
+                return (
+                  <div className="space-y-2">
+                    <div className={cn("gap-3", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
+                      <div className="space-y-1">
+                        <span className="text-xs text-muted-foreground">{t('devices:add.protocol')}</span>
+                        <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
+                          {broker.tls ? 'mqtts' : 'mqtt'}
+                        </code>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-xs text-muted-foreground">{t('devices:add.serverAddress')}</span>
+                        <code className="block text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
+                          {broker.broker}:{broker.port}
+                        </code>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {broker.tls && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-success-light text-success text-xs font-medium">
+                          <Lock className="h-3 w-3" />
+                          TLS: {t('devices:add.tlsEnabled')}
+                        </div>
+                      )}
+                      {broker.username ? (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-warning-light text-warning text-xs font-medium">
+                          <ShieldCheck className="h-3 w-3" />
+                          {t('devices:add.authStatus')}: {t('devices:add.authRequired')}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted-30 text-muted-foreground text-xs font-medium">
+                          {t('devices:add.authStatus')}: {t('devices:add.authNotRequired')}
+                        </div>
+                      )}
+                    </div>
+                    {/* Credentials */}
+                    {broker.username && (
+                      <div className="space-y-1">
+                        <span className="text-xs text-muted-foreground">{t('devices:auto.authInfo')}</span>
+                        <div className="flex items-center gap-2">
+                          <code className="flex-1 text-sm font-mono bg-muted-30 rounded-md px-3 py-1.5">
+                            {broker.username}{broker.password ? ` / ${broker.password}` : ' / ••••••••'}
+                          </code>
+                          {broker.password && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="shrink-0 h-7 w-7"
+                              onClick={() => {
+                                navigator.clipboard.writeText(`${broker.username}:${broker.password}`)
+                                toast({ title: t('common:copied') })
+                              }}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+
+            <FormField label={t('devices:add.telemetryTopic')} helpText={t('devices:add.telemetryTopicHelp')}>
               <Input
                 value={connectionConfig.telemetry_topic || ''}
                 onChange={(e) => setConnectionConfig({ ...connectionConfig, telemetry_topic: e.target.value })}
@@ -740,7 +1032,7 @@ function ManualAddForm({
               />
             </FormField>
             {hasCommands && (
-              <FormField label={t('devices:add.commandTopic')}>
+              <FormField label={t('devices:add.commandTopic')} helpText={t('devices:add.commandTopicHelp')}>
                 <Input
                   value={connectionConfig.command_topic || ''}
                   onChange={(e) => setConnectionConfig({ ...connectionConfig, command_topic: e.target.value })}
