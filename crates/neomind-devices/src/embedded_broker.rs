@@ -16,7 +16,8 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use serde::{Deserialize, Serialize};
@@ -76,6 +77,26 @@ pub struct EmbeddedBrokerConfig {
     /// Enable dynamic topic filters
     #[serde(default = "default_dynamic_filters")]
     pub dynamic_filters: bool,
+
+    /// Enable authentication
+    #[serde(default)]
+    pub auth_enabled: bool,
+
+    /// Enable TLS
+    #[serde(default)]
+    pub tls_enabled: bool,
+
+    /// Path to TLS certificate file
+    #[serde(default)]
+    pub tls_cert_path: Option<String>,
+
+    /// Path to TLS private key file
+    #[serde(default)]
+    pub tls_key_path: Option<String>,
+
+    /// Path to TLS CA certificate file
+    #[serde(default)]
+    pub tls_ca_path: Option<String>,
 }
 
 fn default_listen_addr() -> String {
@@ -111,6 +132,11 @@ impl Default for EmbeddedBrokerConfig {
             max_payload_size: default_max_payload(),
             connection_timeout_ms: default_connection_timeout(),
             dynamic_filters: default_dynamic_filters(),
+            auth_enabled: false,
+            tls_enabled: false,
+            tls_cert_path: None,
+            tls_key_path: None,
+            tls_ca_path: None,
         }
     }
 }
@@ -151,16 +177,22 @@ impl EmbeddedBrokerConfig {
 ///
 /// This handle manages the lifecycle of the embedded broker.
 pub struct EmbeddedBroker {
-    config: EmbeddedBrokerConfig,
-    running: Arc<std::sync::atomic::AtomicBool>,
+    config: Mutex<EmbeddedBrokerConfig>,
+    running: Arc<AtomicBool>,
+    stop: Arc<AtomicBool>,
+    auth_handler: Option<rumqttd::AuthHandler>,
+    thread_handle: Mutex<Option<thread::JoinHandle<()>>>,
 }
 
 impl EmbeddedBroker {
     /// Create a new embedded broker with the given configuration
     pub fn new(config: EmbeddedBrokerConfig) -> Self {
         Self {
-            config,
-            running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            config: Mutex::new(config),
+            running: Arc::new(AtomicBool::new(false)),
+            stop: Arc::new(AtomicBool::new(false)),
+            auth_handler: None,
+            thread_handle: Mutex::new(None),
         }
     }
 
@@ -171,7 +203,53 @@ impl EmbeddedBroker {
 
     /// Check if the broker is running
     pub fn is_running(&self) -> bool {
-        self.running.load(std::sync::atomic::Ordering::Relaxed)
+        self.running.load(Ordering::Relaxed)
+    }
+
+    /// Set the authentication handler for external auth
+    pub fn set_auth_handler<F, O>(&mut self, handler: F)
+    where
+        F: Fn(String, String, String) -> O + Send + Sync + 'static,
+        O: std::future::Future<Output = bool> + Send + 'static,
+    {
+        self.auth_handler = Some(Arc::new(move |client_id, username, password| {
+            Box::pin(handler(client_id, username, password))
+                as std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>
+        }));
+    }
+
+    /// Get the broker configuration
+    pub fn config(&self) -> EmbeddedBrokerConfig {
+        self.config.lock().unwrap().clone()
+    }
+
+    /// Stop the broker
+    pub fn stop(&self) -> Result<(), EmbeddedBrokerError> {
+        if !self.is_running() {
+            return Ok(());
+        }
+        tracing::info!("Stopping embedded MQTT broker...");
+        self.stop.store(true, Ordering::Relaxed);
+
+        // Connect to own port to unblock accept loop
+        let port = self.config.lock().unwrap().port;
+        let _ = std::net::TcpStream::connect(format!("127.0.0.1:{}", port));
+
+        // Wait for thread to finish (with timeout)
+        if let Some(handle) = self.thread_handle.lock().unwrap().take() {
+            let _ = handle.join();
+        }
+
+        self.running.store(false, Ordering::Relaxed);
+        tracing::info!("Embedded MQTT broker stopped");
+        Ok(())
+    }
+
+    /// Restart the broker with new configuration
+    pub fn restart(&self, config: EmbeddedBrokerConfig) -> Result<(), EmbeddedBrokerError> {
+        self.stop()?;
+        *self.config.lock().unwrap() = config;
+        self.start()
     }
 
     /// Start the embedded broker in a background thread
@@ -185,26 +263,35 @@ impl EmbeddedBroker {
         }
 
         // Check if port is already in use (possibly by a previous instance)
-        if is_broker_running(self.config.port) {
+        let config = self.config.lock().unwrap().clone();
+        if is_broker_running(config.port) {
             tracing::info!(
                 "Embedded broker port {} already in use, assuming already running",
-                self.config.port
+                config.port
             );
             self.running
-                .store(true, std::sync::atomic::Ordering::Relaxed);
+                .store(true, Ordering::Relaxed);
             return Ok(());
         }
 
-        let addr = self.config.socket_addr()?;
+        let addr = config.socket_addr()?;
         let running = self.running.clone();
-        let max_connections = self.config.max_connections;
-        let max_payload = self.config.max_payload_size;
-        let connection_timeout = self.config.connection_timeout_ms;
-        let dynamic_filters = self.config.dynamic_filters;
+        let _stop = self.stop.clone();
+        let max_connections = config.max_connections;
+        let max_payload = config.max_payload_size;
+        let connection_timeout = config.connection_timeout_ms;
+        let dynamic_filters = config.dynamic_filters;
+        let auth_enabled = config.auth_enabled;
+        let tls_enabled = config.tls_enabled;
+        let tls_cert_path = config.tls_cert_path.clone();
+        let tls_key_path = config.tls_key_path.clone();
+        let tls_ca_path = config.tls_ca_path.clone();
+        let auth_handler = self.auth_handler.clone();
 
-        running.store(true, std::sync::atomic::Ordering::Relaxed);
+        running.store(true, Ordering::Relaxed);
+        self.stop.store(false, Ordering::Relaxed);
 
-        let _handle = thread::Builder::new()
+        let handle = thread::Builder::new()
             .name("neomind-broker".to_string())
             .spawn(move || {
                 tracing::info!("Starting embedded MQTT broker on {}", addr);
@@ -233,6 +320,20 @@ impl EmbeddedBroker {
                     metrics: None,
                 };
 
+                // Configure TLS if enabled
+                let tls = if tls_enabled {
+                    let cert_path = tls_cert_path.expect("TLS certificate path required when TLS is enabled");
+                    let key_path = tls_key_path.expect("TLS key path required when TLS is enabled");
+                    tracing::info!("TLS enabled with cert: {}, key: {}", cert_path, key_path);
+                    Some(rumqttd::TlsConfig::Rustls {
+                        capath: tls_ca_path,
+                        certpath: cert_path,
+                        keypath: key_path,
+                    })
+                } else {
+                    None
+                };
+
                 // Configure v4 (MQTT 3.1.1) server
                 let mut v4_config = HashMap::new();
                 v4_config.insert(
@@ -240,14 +341,18 @@ impl EmbeddedBroker {
                     rumqttd::ServerSettings {
                         name: "neomind-broker".to_string(),
                         listen: addr,
-                        tls: None,
+                        tls,
                         next_connection_delay_ms: 1,
                         connections: rumqttd::ConnectionSettings {
                             connection_timeout_ms: connection_timeout,
                             max_payload_size: max_payload,
                             max_inflight_count: 200,
                             auth: None,
-                            external_auth: None,
+                            external_auth: if auth_enabled {
+                                auth_handler
+                            } else {
+                                None
+                            },
                             dynamic_filters,
                         },
                     },
@@ -267,8 +372,11 @@ impl EmbeddedBroker {
                     }
                 }
 
-                running.store(false, std::sync::atomic::Ordering::Relaxed);
+                running.store(false, Ordering::Relaxed);
             })?;
+
+        // Store the thread handle
+        *self.thread_handle.lock().unwrap() = Some(handle);
 
         tracing::info!("Embedded MQTT broker thread started");
 
@@ -279,7 +387,7 @@ impl EmbeddedBroker {
         let start = std::time::Instant::now();
 
         loop {
-            if is_broker_running(self.config.port) {
+            if is_broker_running(config.port) {
                 break;
             }
             if start.elapsed() >= max_wait {
@@ -292,17 +400,10 @@ impl EmbeddedBroker {
 
         tracing::info!(
             "Embedded broker started successfully on port {}",
-            self.config.port
+            config.port
         );
 
-        // Detach the thread so it runs independently
-        // The thread will stop when the program exits or broker fails
         Ok(())
-    }
-
-    /// Get the broker configuration
-    pub fn config(&self) -> &EmbeddedBrokerConfig {
-        &self.config
     }
 }
 
