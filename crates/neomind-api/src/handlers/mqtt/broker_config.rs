@@ -156,7 +156,7 @@ pub async fn get_broker_config_handler() -> HandlerResult<serde_json::Value> {
 /// already be uploaded. When enabling authentication for the first time,
 /// a system credential is auto-generated if none exists.
 pub async fn update_broker_config_handler(
-    #[cfg(feature = "embedded-broker")] State(state): State<ServerState>,
+    #[cfg(feature = "embedded-broker")] State(_state): State<ServerState>,
     #[cfg(not(feature = "embedded-broker"))] State(_state): State<ServerState>,
     Json(req): Json<UpdateBrokerConfigRequest>,
 ) -> HandlerResult<serde_json::Value> {
@@ -202,9 +202,9 @@ pub async fn update_broker_config_handler(
         config.tls_enabled = tls_enabled;
     }
 
-    // Only port/listen/tls changes require a broker restart.
-    // Auth changes take effect immediately via the dynamic auth handler
-    // which reads auth_enabled from redb on each connection.
+    // All changes require a broker restart.
+    // When auth_enabled changes, external_auth is only set when enabled,
+    // so the broker must restart to add/remove the auth handler.
     #[cfg(feature = "embedded-broker")]
     let needs_restart = old_config.listen != config.listen
         || old_config.port != config.port
@@ -228,6 +228,7 @@ pub async fn update_broker_config_handler(
     }
 
     // Save to redb
+    let auth_enabled = config.auth_enabled;
     let config_value = serde_json::to_value(config)
         .map_err(|e| ErrorResponse::internal(format!("Failed to serialize config: {}", e)))?;
 
@@ -243,16 +244,37 @@ pub async fn update_broker_config_handler(
         "Updated embedded broker configuration"
     );
 
-    // Restart broker only when port/listen/tls changed (auth is dynamic via redb)
+    // When port/listen/tls changed, the broker must restart.
+    // rmqtt restart is fast (abort old task + start new task).
+    // auth_enabled changes take effect dynamically via the shared AtomicBool
+    // — no broker restart needed, just update the flag.
     #[cfg(feature = "embedded-broker")]
     if needs_restart {
-        if let Err(e) = state.restart_embedded_broker().await {
-            tracing::error!("Failed to restart embedded broker: {}", e);
-            return ok(json!({
-                "message": format!("Configuration saved but broker restart failed: {}", e),
-                "config": config_value,
-            }));
+        tracing::info!(
+            "Broker restart required (port/TLS changed). Applying restart..."
+        );
+        match _state.restart_embedded_broker().await {
+            Ok(()) => {
+                return ok(json!({
+                    "message": "Broker configuration updated and applied successfully",
+                    "config": config_value,
+                }));
+            }
+            Err(e) => {
+                tracing::warn!("Broker restart failed: {}", e);
+                return ok(json!({
+                    "message": "Configuration saved but broker restart failed. Try restarting the server.",
+                    "config": config_value,
+                    "restart_required": true,
+                }));
+            }
         }
+    }
+
+    // Update the dynamic auth_enabled flag (takes effect immediately on new connections)
+    #[cfg(feature = "embedded-broker")]
+    if let Some(broker) = _state.embedded_broker() {
+        broker.set_auth_enabled(auth_enabled);
     }
 
     ok(json!({

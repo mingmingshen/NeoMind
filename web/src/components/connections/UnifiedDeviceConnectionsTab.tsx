@@ -947,6 +947,7 @@ export function UnifiedDeviceConnectionsTab() {
         <EmbeddedBrokerConfigDialog
           open={brokerConfigDialogOpen}
           onOpenChange={setBrokerConfigDialogOpen}
+          onConfigSaved={loadData}
         />
 
         {/* Delete Confirmation Dialog */}

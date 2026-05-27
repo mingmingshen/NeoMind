@@ -135,8 +135,9 @@ pub struct ExternalBrokerContext {
 /// Resolve credentials for an external broker connection.
 ///
 /// If the broker points to the embedded broker (localhost / 127.0.0.1 on the
-/// same port) and has no credentials of its own, inject the system credential
-/// so it can authenticate against the embedded broker's `external_auth` handler.
+/// same port) and has no credentials of its own, inject the system credential.
+/// The embedded broker always has external_auth set, so credentials are always
+/// required for connection.
 fn resolve_broker_credentials(broker: &ExternalBroker) -> (Option<String>, Option<String>) {
     use crate::config::{get_embedded_broker_config, open_settings_store};
 
@@ -154,7 +155,7 @@ fn resolve_broker_credentials(broker: &ExternalBroker) -> (Option<String>, Optio
         || broker_addr == "0.0.0.0";
 
     if is_localhost && broker.port == embedded_config.port {
-        // Try to get system credential
+        // Inject system credential for embedded broker
         if let Ok(store) = open_settings_store() {
             if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
                 tracing::debug!(

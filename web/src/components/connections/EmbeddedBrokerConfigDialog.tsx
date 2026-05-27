@@ -43,9 +43,10 @@ type CertMode = 'auto' | 'manual' | null
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onConfigSaved?: () => void
 }
 
-export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
+export function EmbeddedBrokerConfigDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const { t } = useTranslation('settings')
   const { toast } = useToast()
   const { handleError } = useErrorHandler()
@@ -190,7 +191,7 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
     if (!config) return
     setSaving(true)
     try {
-      await api.updateEmbeddedBrokerConfig({
+      const result = await api.updateEmbeddedBrokerConfig({
         listen,
         port,
         auth_enabled: authEnabled,
@@ -204,11 +205,22 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
 
       await loadConfig()
       setHasUnsavedChanges(false)
-      onOpenChange(false)
-      toast({
-        title: t('broker.configSaved'),
-        description: t('broker.restartRequired'),
-      })
+
+      // Notify parent to refresh broker status
+      onConfigSaved?.()
+
+      if (result.restart_required) {
+        onOpenChange(false)
+        toast({
+          title: t('broker.configSaved'),
+          description: t('broker.restartRequired'),
+        })
+      } else {
+        onOpenChange(false)
+        toast({
+          title: t('broker.configSaved'),
+        })
+      }
     } catch (error) {
       handleError(error)
     } finally {

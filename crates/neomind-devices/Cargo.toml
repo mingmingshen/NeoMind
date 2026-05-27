@@ -22,7 +22,7 @@ redb = { workspace = true }
 
 # MQTT
 rumqttc = { version = "0.24", optional = true, features = ["use-rustls"] }
-rumqttd = { version = "0.20", optional = true }
+rmqtt = { version = "0.20", default-features = false, features = ["tls", "plugin"], optional = true }
 rustls = { version = "0.23", optional = true }
 rustls-pki-types = { version = "1", optional = true }
 rustls-pemfile = { version = "2", optional = true }
@@ -40,7 +40,7 @@ bcrypt = { workspace = true, optional = true }
 [features]
 default = ["mqtt"]
 mqtt = ["rumqttc", "rustls", "rustls-pki-types", "rustls-pemfile", "rustls-native-certs", "async-channel"]
-embedded-broker = ["rumqttd", "bcrypt"]
+embedded-broker = ["rmqtt", "bcrypt"]
 all = ["mqtt", "embedded-broker"]
 
 [dev-dependencies]

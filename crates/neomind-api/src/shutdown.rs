@@ -53,13 +53,14 @@ pub async fn cleanup_resources(state: &ServerState) {
     });
     let _ = tokio::time::timeout(Duration::from_secs(5), mqtt_task).await;
 
-    // 2. Note embedded broker status (feature-gated)
+    // 2. Stop embedded broker (feature-gated)
     #[cfg(feature = "embedded-broker")]
     if let Some(broker) = state.devices.embedded_broker.read().unwrap().as_ref() {
         if broker.is_running() {
-            tracing::info!("Embedded MQTT broker was running");
-            // Note: EmbeddedBroker doesn't have a stop method,
-            // it will be cleaned up when the process exits
+            tracing::info!("Stopping embedded MQTT broker...");
+            if let Err(e) = broker.stop().await {
+                tracing::warn!("Embedded broker stop error: {}", e);
+            }
         }
     }
 

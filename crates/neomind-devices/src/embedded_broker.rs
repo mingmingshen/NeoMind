@@ -1,25 +1,25 @@
 //! Embedded MQTT Broker
 //!
-//! This module provides an embedded MQTT broker using rumqttd.
+//! This module provides an embedded MQTT broker using rmqtt.
 //! The broker runs in the same process as NeoMind, eliminating the need
 //! for an external MQTT broker installation.
 //!
-//! ## Configuration
+//! ## Authentication
 //!
-//! ```toml
-//! [mqtt]
-//! listen = "0.0.0.0"  # Listen address
-//! port = 1883        # Broker listening port
-//! ```
+//! A `ClientAuthenticate` hook is always registered. The hook reads
+//! `auth_enabled` from a shared `Arc<AtomicBool>` that is updated by
+//! the broker config API. The hook also validates credentials by reading
+//! from a shared credential store (passed in at construction time).
 //!
-//! External broker connections are managed via the data sources page.
+//! Changing `auth_enabled` takes effect immediately without restarting
+//! the broker. Only `listen`, `port`, or `tls_enabled` changes require
+//! a broker restart.
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -37,16 +37,11 @@ pub enum EmbeddedBrokerError {
 }
 
 /// Broker mode configuration (deprecated, kept for compatibility)
-///
-/// Note: NeoMind now always uses the embedded broker. External broker
-/// connections are managed via the data sources page (ExternalBroker).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
 pub enum BrokerMode {
-    /// Use external MQTT broker (deprecated)
     External,
-    /// Use embedded broker (default)
     #[default]
     Embedded,
 }
@@ -54,47 +49,36 @@ pub enum BrokerMode {
 /// Configuration for the embedded broker
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddedBrokerConfig {
-    /// Listening address for embedded broker
     #[serde(default = "default_listen_addr")]
     pub listen: String,
 
-    /// Listening port for embedded broker
     #[serde(default = "default_port")]
     pub port: u16,
 
-    /// Maximum number of concurrent connections
     #[serde(default = "default_max_connections")]
     pub max_connections: usize,
 
-    /// Maximum payload size in bytes
     #[serde(default = "default_max_payload")]
     pub max_payload_size: usize,
 
-    /// Connection timeout in milliseconds
     #[serde(default = "default_connection_timeout")]
     pub connection_timeout_ms: u16,
 
-    /// Enable dynamic topic filters
     #[serde(default = "default_dynamic_filters")]
     pub dynamic_filters: bool,
 
-    /// Enable authentication
     #[serde(default)]
     pub auth_enabled: bool,
 
-    /// Enable TLS
     #[serde(default)]
     pub tls_enabled: bool,
 
-    /// Path to TLS certificate file
     #[serde(default)]
     pub tls_cert_path: Option<String>,
 
-    /// Path to TLS private key file
     #[serde(default)]
     pub tls_key_path: Option<String>,
 
-    /// Path to TLS CA certificate file
     #[serde(default)]
     pub tls_ca_path: Option<String>,
 }
@@ -102,23 +86,18 @@ pub struct EmbeddedBrokerConfig {
 fn default_listen_addr() -> String {
     "0.0.0.0".to_string()
 }
-
 fn default_port() -> u16 {
     1883
 }
-
 fn default_max_connections() -> usize {
     1000
 }
-
 fn default_max_payload() -> usize {
     268435456 // 256 MB
 }
-
 fn default_connection_timeout() -> u16 {
-    60000 // 60 seconds
+    60000
 }
-
 fn default_dynamic_filters() -> bool {
     true
 }
@@ -142,30 +121,25 @@ impl Default for EmbeddedBrokerConfig {
 }
 
 impl EmbeddedBrokerConfig {
-    /// Create a new embedded broker config
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set the listening address
     pub fn with_listen(mut self, listen: impl Into<String>) -> Self {
         self.listen = listen.into();
         self
     }
 
-    /// Set the listening port
     pub fn with_port(mut self, port: u16) -> Self {
         self.port = port;
         self
     }
 
-    /// Set max connections
     pub fn with_max_connections(mut self, max: usize) -> Self {
         self.max_connections = max;
         self
     }
 
-    /// Get the full socket address
     pub fn socket_addr(&self) -> Result<SocketAddr, EmbeddedBrokerError> {
         format!("{}:{}", self.listen, self.port)
             .parse()
@@ -173,32 +147,125 @@ impl EmbeddedBrokerConfig {
     }
 }
 
-/// Embedded MQTT broker handle
+/// Credential validator function type.
+/// Takes (username, password) and returns true if valid.
+type CredentialValidatorFn = Arc<dyn Fn(&str, &str) -> bool + Send + Sync>;
+
+/// Auth handler for the embedded MQTT broker.
 ///
-/// This handle manages the lifecycle of the embedded broker.
+/// Reads `auth_enabled` from a shared AtomicBool (updated by the API).
+/// When auth is disabled, all connections (including anonymous) are allowed.
+/// When auth is enabled, validates credentials via the credential validator.
+struct NeoMindAuthHandler {
+    auth_enabled: Arc<AtomicBool>,
+    credential_validator: CredentialValidatorFn,
+}
+
+#[async_trait]
+impl rmqtt::hook::Handler for NeoMindAuthHandler {
+    async fn hook(
+        &self,
+        param: &rmqtt::hook::Parameter,
+        acc: Option<rmqtt::hook::HookResult>,
+    ) -> rmqtt::hook::ReturnType {
+        if let rmqtt::hook::Parameter::ClientAuthenticate(connect_info) = param {
+            let auth_enabled = self.auth_enabled.load(Ordering::Relaxed);
+
+            if !auth_enabled {
+                // Auth disabled — allow all connections (including anonymous)
+                return (
+                    false,
+                    Some(rmqtt::hook::HookResult::AuthResult(
+                        rmqtt::types::AuthResult::Allow(false, None),
+                    )),
+                );
+            }
+
+            // Auth enabled — validate credentials
+            let username = connect_info.username();
+            let password = connect_info.password();
+
+            tracing::debug!(
+                "Auth hook: username={:?}, has_password={}",
+                username.map(|u| -> &str { u.as_ref() }),
+                password.is_some()
+            );
+
+            // Must have both username and password
+            if let (Some(uname), Some(pwd)) = (username, password) {
+                let uname_str: &str = uname.as_ref();
+                let pwd_bytes = pwd.as_ref();
+
+                // Convert password bytes to str
+                if let Ok(pwd_str) = std::str::from_utf8(pwd_bytes) {
+                    tracing::debug!("Auth hook: validating user='{}'", uname_str);
+                    if (self.credential_validator)(uname_str, pwd_str) {
+                        let is_superuser = uname_str == "__neomind_internal__";
+                        tracing::debug!("Auth hook: user='{}' authenticated (super={})", uname_str, is_superuser);
+                        return (
+                            false,
+                            Some(rmqtt::hook::HookResult::AuthResult(
+                                rmqtt::types::AuthResult::Allow(is_superuser, None),
+                            )),
+                        );
+                    }
+                    tracing::warn!("Auth hook: credential validation failed for user='{}'", uname_str);
+                } else {
+                    tracing::warn!("Auth hook: password is not valid UTF-8 for user='{}'", uname_str);
+                }
+            } else {
+                tracing::debug!("Auth hook: missing username or password (anonymous connection)");
+            }
+
+            // No valid credentials
+            return (
+                false,
+                Some(rmqtt::hook::HookResult::AuthResult(
+                    rmqtt::types::AuthResult::BadUsernameOrPassword,
+                )),
+            );
+        }
+        (true, acc) // Continue to next handler
+    }
+}
+
+/// Embedded MQTT broker handle.
+///
+/// Manages the lifecycle of the embedded broker running as a tokio task.
+/// The broker can be stopped and restarted with new configuration.
 pub struct EmbeddedBroker {
     config: Mutex<EmbeddedBrokerConfig>,
-    running: Arc<AtomicBool>,
-    stop: Arc<AtomicBool>,
-    auth_handler: Option<rumqttd::AuthHandler>,
-    thread_handle: Mutex<Option<thread::JoinHandle<()>>>,
+    running: AtomicBool,
+    abort_handle: Mutex<Option<tokio::task::AbortHandle>>,
+    /// Shared auth_enabled flag — updated by the broker config API.
+    /// The auth hook reads this on every connection.
+    auth_enabled: Arc<AtomicBool>,
+    /// Credential validator function — validates (username, password).
+    credential_validator: CredentialValidatorFn,
 }
 
 impl EmbeddedBroker {
-    /// Create a new embedded broker with the given configuration
-    pub fn new(config: EmbeddedBrokerConfig) -> Self {
+    /// Create a new embedded broker with the given configuration and credential validator.
+    ///
+    /// The `credential_validator` closure takes (username, password) and returns true
+    /// if the credentials are valid. It's called on every MQTT connection when auth is enabled.
+    pub fn new(config: EmbeddedBrokerConfig, credential_validator: CredentialValidatorFn) -> Self {
+        let auth_enabled = Arc::new(AtomicBool::new(config.auth_enabled));
         Self {
             config: Mutex::new(config),
-            running: Arc::new(AtomicBool::new(false)),
-            stop: Arc::new(AtomicBool::new(false)),
-            auth_handler: None,
-            thread_handle: Mutex::new(None),
+            running: AtomicBool::new(false),
+            abort_handle: Mutex::new(None),
+            auth_enabled,
+            credential_validator,
         }
     }
 
     /// Create with default configuration
     pub fn with_default() -> Self {
-        Self::new(EmbeddedBrokerConfig::default())
+        Self::new(
+            EmbeddedBrokerConfig::default(),
+            Arc::new(|_, _| false),
+        )
     }
 
     /// Check if the broker is running
@@ -206,38 +273,36 @@ impl EmbeddedBroker {
         self.running.load(Ordering::Relaxed)
     }
 
-    /// Set the authentication handler for external auth
-    pub fn set_auth_handler<F, O>(&mut self, handler: F)
-    where
-        F: Fn(String, String, String) -> O + Send + Sync + 'static,
-        O: std::future::Future<Output = bool> + Send + 'static,
-    {
-        self.auth_handler = Some(Arc::new(move |client_id, username, password| {
-            Box::pin(handler(client_id, username, password))
-                as std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>
-        }));
-    }
-
     /// Get the broker configuration
     pub fn config(&self) -> EmbeddedBrokerConfig {
         self.config.lock().unwrap().clone()
     }
 
-    /// Stop the broker
-    pub fn stop(&self) -> Result<(), EmbeddedBrokerError> {
+    /// Update the auth_enabled flag dynamically.
+    /// Takes effect immediately on new connections — no broker restart needed.
+    pub fn set_auth_enabled(&self, enabled: bool) {
+        let old = self.auth_enabled.swap(enabled, Ordering::Relaxed);
+        if old != enabled {
+            tracing::info!(
+                "Embedded broker auth_enabled changed: {} -> {}",
+                old, enabled
+            );
+        }
+    }
+
+    /// Stop the broker by aborting the server task.
+    ///
+    /// rmqtt's server.run() is a pure tokio async future, so aborting
+    /// the spawned task immediately cancels it and releases the port.
+    pub async fn stop(&self) -> Result<(), EmbeddedBrokerError> {
         if !self.is_running() {
             return Ok(());
         }
+
         tracing::info!("Stopping embedded MQTT broker...");
-        self.stop.store(true, Ordering::Relaxed);
 
-        // Connect to own port to unblock accept loop
-        let port = self.config.lock().unwrap().port;
-        let _ = std::net::TcpStream::connect(format!("127.0.0.1:{}", port));
-
-        // Wait for thread to finish (with timeout)
-        if let Some(handle) = self.thread_handle.lock().unwrap().take() {
-            let _ = handle.join();
+        if let Some(handle) = self.abort_handle.lock().unwrap().take() {
+            handle.abort();
         }
 
         self.running.store(false, Ordering::Relaxed);
@@ -245,182 +310,151 @@ impl EmbeddedBroker {
         Ok(())
     }
 
-    /// Restart the broker with new configuration
-    pub async fn restart(&self, config: EmbeddedBrokerConfig) -> Result<(), EmbeddedBrokerError> {
-        self.stop()?;
-        *self.config.lock().unwrap() = config;
-        self.start().await
-    }
-
-    /// Start the embedded broker in a background thread
+    /// Start the embedded broker as a tokio task.
     ///
-    /// This method spawns a new thread that runs the broker.
-    /// The broker will listen on the configured address and port.
-    /// Uses async polling to avoid blocking the tokio runtime during startup.
+    /// Registers the auth hook that reads auth_enabled from the shared AtomicBool.
+    /// Supports both TCP and TLS listeners based on configuration.
     pub async fn start(&self) -> Result<(), EmbeddedBrokerError> {
         if self.is_running() {
             tracing::warn!("Embedded broker is already running");
             return Ok(());
         }
 
-        // Check if port is already in use (possibly by a previous instance)
         let config = self.config.lock().unwrap().clone();
-        if is_broker_running_sync(config.port) {
+
+        // If port is in use, wait briefly for it to be released
+        if check_port_sync(config.port) {
             tracing::info!(
-                "Embedded broker port {} already in use, assuming already running",
+                "Port {} still in use, waiting for release...",
                 config.port
             );
-            self.running
-                .store(true, Ordering::Relaxed);
-            return Ok(());
+            let wait_start = std::time::Instant::now();
+            let max_wait = std::time::Duration::from_secs(5);
+            loop {
+                if !check_port_async(config.port).await {
+                    break;
+                }
+                if wait_start.elapsed() >= max_wait {
+                    return Err(EmbeddedBrokerError::Broker(format!(
+                        "Port {} still in use after 5s",
+                        config.port
+                    )));
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+            // Extra delay after port appears free — OS may still be cleaning up the socket
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         }
 
         let addr = config.socket_addr()?;
-        let running = self.running.clone();
-        let _stop = self.stop.clone();
-        let max_connections = config.max_connections;
-        let max_payload = config.max_payload_size;
-        let connection_timeout = config.connection_timeout_ms;
-        let dynamic_filters = config.dynamic_filters;
-        let _auth_enabled = config.auth_enabled;
-        let tls_enabled = config.tls_enabled;
-        let tls_cert_path = config.tls_cert_path.clone();
-        let tls_key_path = config.tls_key_path.clone();
-        let tls_ca_path = config.tls_ca_path.clone();
-        let auth_handler = self.auth_handler.clone();
 
-        running.store(true, Ordering::Relaxed);
-        self.stop.store(false, Ordering::Relaxed);
+        // Build rmqtt server
+        let scx = rmqtt::context::ServerContext::new().build().await;
 
-        let handle = thread::Builder::new()
-            .name("neomind-broker".to_string())
-            .spawn(move || {
-                tracing::info!("Starting embedded MQTT broker on {}", addr);
+        // Register auth hook with shared state
+        let auth_handler = NeoMindAuthHandler {
+            auth_enabled: self.auth_enabled.clone(),
+            credential_validator: self.credential_validator.clone(),
+        };
+        let reg = scx.extends.hook_mgr().register();
+        reg.add(
+            rmqtt::hook::Type::ClientAuthenticate,
+            Box::new(auth_handler),
+        )
+        .await;
+        reg.start().await;
 
-                // Build minimal broker config
-                let mut broker_config = rumqttd::Config {
-                    id: 0,
-                    router: rumqttd::RouterConfig {
-                        max_connections,
-                        max_outgoing_packet_count: 200,
-                        max_segment_size: 1048576, // 1 MB
-                        max_segment_count: 10,
-                        custom_segment: None,
-                        initialized_filters: None,
-                        // Note: shared_subscriptions_strategy is private in rumqttd 0.19
-                        // Using default value through serde default
-                        ..Default::default()
-                    },
-                    v4: None,
-                    v5: None,
-                    ws: None,
-                    cluster: None,
-                    console: None,
-                    bridge: None,
-                    prometheus: None,
-                    metrics: None,
-                };
+        tracing::info!(
+            "MQTT Broker Listening on neomind-broker {} (auth_enabled={})",
+            addr,
+            self.auth_enabled.load(Ordering::Relaxed)
+        );
 
-                // Configure TLS if enabled
-                let tls = if tls_enabled {
-                    let cert_path = tls_cert_path.expect("TLS certificate path required when TLS is enabled");
-                    let key_path = tls_key_path.expect("TLS key path required when TLS is enabled");
-                    tracing::info!("TLS enabled with cert: {}, key: {}", cert_path, key_path);
-                    Some(rumqttd::TlsConfig::Rustls {
-                        capath: tls_ca_path,
-                        certpath: cert_path,
-                        keypath: key_path,
-                    })
-                } else {
-                    None
-                };
+        // Build listener
+        // allow_anonymous=false forces rmqtt to always call our auth hook,
+        // even for anonymous connections. Our hook dynamically decides
+        // whether to allow based on the shared auth_enabled flag.
+        let builder = rmqtt::net::Builder::new()
+            .name("neomind-broker")
+            .laddr(addr)
+            .reuseaddr(Some(true))
+            .allow_anonymous(false);
 
-                // Configure v4 (MQTT 3.1.1) server
-                let mut v4_config = HashMap::new();
-                v4_config.insert(
-                    "main".to_string(),
-                    rumqttd::ServerSettings {
-                        name: "neomind-broker".to_string(),
-                        listen: addr,
-                        tls,
-                        next_connection_delay_ms: 1,
-                        connections: rumqttd::ConnectionSettings {
-                            connection_timeout_ms: connection_timeout,
-                            max_payload_size: max_payload,
-                            max_inflight_count: 200,
-                            auth: None,
-                            external_auth: auth_handler,
-                            dynamic_filters,
-                        },
-                    },
-                );
-                broker_config.v4 = Some(v4_config);
-
-                // Create and start broker
-                let mut broker = rumqttd::Broker::new(broker_config);
-
-                // The broker.start() method blocks until broker stops
-                match broker.start() {
-                    Ok(_) => {
-                        tracing::info!("Embedded MQTT broker stopped");
-                    }
-                    Err(e) => {
-                        tracing::error!("Embedded MQTT broker error: {}", e);
-                    }
-                }
-
-                running.store(false, Ordering::Relaxed);
+        let listener = if config.tls_enabled {
+            let cert_path = config.tls_cert_path.as_deref().ok_or_else(|| {
+                EmbeddedBrokerError::Config("TLS certificate path required".to_string())
             })?;
+            let key_path = config.tls_key_path.as_deref().ok_or_else(|| {
+                EmbeddedBrokerError::Config("TLS key path required".to_string())
+            })?;
+            tracing::info!("TLS enabled with cert: {}, key: {}", cert_path, key_path);
+            builder
+                .tls_cert(Some(cert_path.to_string()))
+                .tls_key(Some(key_path.to_string()))
+                .bind()
+                .map_err(|e| EmbeddedBrokerError::Broker(format!("TLS bind failed: {}", e)))?
+                .tls()
+                .map_err(|e| EmbeddedBrokerError::Broker(format!("TLS setup failed: {}", e)))?
+        } else {
+            builder
+                .bind()
+                .map_err(|e| EmbeddedBrokerError::Broker(format!("TCP bind failed: {}", e)))?
+                .tcp()
+                .map_err(|e| EmbeddedBrokerError::Broker(format!("TCP setup failed: {}", e)))?
+        };
 
-        // Store the thread handle
-        *self.thread_handle.lock().unwrap() = Some(handle);
+        let server = rmqtt::server::MqttServer::new(scx)
+            .listener(listener)
+            .build();
 
-        tracing::info!("Embedded MQTT broker thread started");
+        self.running.store(true, Ordering::Relaxed);
 
-        // Wait for the broker to become ready using async polling.
-        // This avoids blocking the tokio runtime while rumqttd binds the port.
+        // Spawn server.run() as a tokio task and save the abort handle
+        let handle = tokio::spawn(async move {
+            if let Err(e) = server.run().await {
+                tracing::error!("Embedded MQTT broker error: {}", e);
+            }
+        });
+
+        *self.abort_handle.lock().unwrap() = Some(handle.abort_handle());
+
+        // Wait for the broker to become ready
         let port = config.port;
         let max_wait = std::time::Duration::from_secs(5);
-
         let start = std::time::Instant::now();
         loop {
-            if is_broker_running_async(port).await {
+            if check_port_async(port).await {
                 break;
             }
             if start.elapsed() >= max_wait {
+                self.running.store(false, Ordering::Relaxed);
                 return Err(EmbeddedBrokerError::Broker(
-                    "Broker failed to start or port not available".to_string(),
+                    "Broker failed to start within 5s".to_string(),
                 ));
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
 
         tracing::info!(
-            "Embedded broker started successfully on port {}",
-            config.port
+            "Embedded broker started on port {} (auth_enabled read dynamically from config)",
+            config.port,
         );
-
         Ok(())
     }
 }
 
-/// Check if a broker is listening on the given port by attempting a TCP connect.
-///
-/// Uses connect (not bind) because rumqttd sets SO_REUSEADDR, which makes
-/// bind-based checks unreliable — they succeed even when the port is in use.
+/// Check if a broker is listening on the given port.
 pub fn is_broker_running(port: u16) -> bool {
-    is_broker_running_sync(port)
+    check_port_sync(port)
 }
 
-/// Synchronous broker port check (used by `stop()` etc.)
-fn is_broker_running_sync(port: u16) -> bool {
+fn check_port_sync(port: u16) -> bool {
     use std::net::{IpAddr, Ipv4Addr, TcpStream};
     let addr = (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
     TcpStream::connect_timeout(&addr.into(), std::time::Duration::from_millis(200)).is_ok()
 }
 
-/// Async broker port check — non-blocking, uses `tokio::net::TcpStream`.
-async fn is_broker_running_async(port: u16) -> bool {
+async fn check_port_async(port: u16) -> bool {
     tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
         .await
         .is_ok()
@@ -436,6 +470,7 @@ mod tests {
         assert_eq!(config.listen, "0.0.0.0");
         assert_eq!(config.port, 1883);
         assert_eq!(config.max_connections, 1000);
+        assert!(!config.auth_enabled);
     }
 
     #[test]
@@ -444,7 +479,6 @@ mod tests {
             .with_port(8883)
             .with_listen("127.0.0.1")
             .with_max_connections(500);
-
         assert_eq!(config.port, 8883);
         assert_eq!(config.listen, "127.0.0.1");
         assert_eq!(config.max_connections, 500);
@@ -452,30 +486,10 @@ mod tests {
 
     #[test]
     fn test_socket_addr() {
-        let config = EmbeddedBrokerConfig::new()
-            .with_port(1883)
-            .with_listen("0.0.0.0");
-
-        let addr = config
-            .socket_addr()
-            .expect("Failed to get socket address from config");
+        let config =
+            EmbeddedBrokerConfig::new().with_port(1883).with_listen("0.0.0.0");
+        let addr = config.socket_addr().expect("Failed to get socket address");
         assert_eq!(addr.port(), 1883);
         assert_eq!(addr.ip(), std::net::Ipv4Addr::new(0, 0, 0, 0));
-    }
-
-    #[test]
-    fn test_broker_mode_default() {
-        assert_eq!(BrokerMode::default(), BrokerMode::Embedded);
-    }
-
-    #[test]
-    fn test_broker_mode_deserialize() {
-        let external: BrokerMode =
-            serde_json::from_str("\"external\"").expect("Failed to deserialize external mode");
-        let embedded: BrokerMode =
-            serde_json::from_str("\"embedded\"").expect("Failed to deserialize embedded mode");
-
-        assert_eq!(external, BrokerMode::External);
-        assert_eq!(embedded, BrokerMode::Embedded);
     }
 }

@@ -162,7 +162,7 @@ impl ServerState {
     /// Restart the embedded MQTT broker and internal adapter with updated config.
     ///
     /// Called by the broker config API after saving new settings to redb.
-    /// Stops the running broker, restarts it with the new config, then
+    /// Stops the running broker (abort), restarts it with the new config, then
     /// recreates the internal-mqtt adapter so it picks up new TLS/auth settings.
     #[cfg(feature = "embedded-broker")]
     pub async fn restart_embedded_broker(&self) -> Result<(), String> {
@@ -172,31 +172,34 @@ impl ServerState {
 
         let broker_config = get_embedded_broker_config();
 
-        // 1. Stop existing broker if running (non-blocking with timeout)
+        // 1. Stop existing broker — rmqtt abort is instant, port released immediately
         {
             let old_broker = self.devices.embedded_broker.read().unwrap().clone();
             if let Some(broker) = old_broker {
                 if broker.is_running() {
                     tracing::info!("Stopping embedded broker for config change...");
-                    // broker.stop() calls join() which blocks indefinitely because
-                    // rumqttd has no graceful shutdown. Use spawn_blocking + timeout.
-                    let stop_result = tokio::time::timeout(
-                        std::time::Duration::from_secs(3),
-                        tokio::task::spawn_blocking(move || {
-                            // Just drop the broker — the thread will exit when
-                            // the process closes the port. Setting stop flag is
-                            // not reliable with rumqttd.
-                            drop(broker);
-                        }),
-                    ).await;
-
-                    if stop_result.is_err() {
-                        tracing::warn!("Broker stop timed out, proceeding with restart");
-                    }
+                    broker.stop().await.map_err(|e| format!("Broker stop failed: {}", e))?;
                 }
             }
-            // Clear the old handle
             *self.devices.embedded_broker.write().unwrap() = None;
+        }
+
+        // Wait for port to be released (up to 5s)
+        {
+            let port = broker_config.port;
+            let max_wait = std::time::Duration::from_secs(5);
+            let wait_start = std::time::Instant::now();
+            loop {
+                if !neomind_devices::embedded_broker::is_broker_running(port) {
+                    // Small additional delay to ensure OS has fully released the socket
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    break;
+                }
+                if wait_start.elapsed() >= max_wait {
+                    return Err(format!("Port {} not released after 5s", port));
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
         }
 
         // 2. Stop existing internal-mqtt adapter
@@ -208,54 +211,55 @@ impl ServerState {
             self.devices.service.unregister_adapter("internal-mqtt").await;
         }
 
-        // 3. Create new broker with updated config
-        let mut broker = EmbeddedBroker::new(broker_config.clone());
+        // 3. Create new broker with updated config and credential validator
+        let credential_validator: std::sync::Arc<dyn Fn(&str, &str) -> bool + Send + Sync> =
+            std::sync::Arc::new(move |username: &str, password: &str| {
+                let store = match crate::config::open_settings_store() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!("Credential validator: failed to open settings store: {}", e);
+                        return false;
+                    }
+                };
 
-        // Always install dynamic auth handler that reads config from redb on each
-        // connection. This allows toggling auth without restarting the broker.
-        broker.set_auth_handler(move |_client_id: String, username: String, password: String| {
-            let store = match open_settings_store() {
-                Ok(s) => s,
-                Err(_) => return std::future::ready(false),
-            };
-
-            // Dynamically check if auth is enabled
-            let auth_enabled = store
-                .load_embedded_broker_config()
-                .ok()
-                .flatten()
-                .and_then(|v| v.get("auth_enabled").and_then(|v| v.as_bool()))
-                .unwrap_or(false);
-
-            if !auth_enabled {
-                // Auth disabled — accept all connections
-                return std::future::ready(true);
-            }
-
-            // Auth enabled — validate credentials
-            if username == "__neomind_internal__" {
-                if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
-                    return std::future::ready(password == system_pass);
+                if username == "__neomind_internal__" {
+                    if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
+                        return password == system_pass;
+                    }
+                    tracing::warn!("Credential validator: no system credential found");
+                    return false;
                 }
-                return std::future::ready(false);
-            }
 
-            let creds = match store.list_mqtt_credentials() {
-                Ok(c) => c,
-                Err(_) => return std::future::ready(false),
-            };
+                let creds = match store.list_mqtt_credentials() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::error!("Credential validator: failed to list credentials: {}", e);
+                        return false;
+                    }
+                };
 
-            for cred in creds {
-                if cred.username == username {
-                    return std::future::ready(
-                        bcrypt::verify(&password, &cred.password_hash).unwrap_or(false)
-                    );
+                for cred in &creds {
+                    if cred.username == username {
+                        tracing::debug!(
+                            "Credential validator: found user '{}', verifying bcrypt (hash len={})",
+                            username, cred.password_hash.len()
+                        );
+                        let result = bcrypt::verify(password, &cred.password_hash).unwrap_or(false);
+                        tracing::debug!("Credential validator: bcrypt verify result = {}", result);
+                        return result;
+                    }
                 }
-            }
-            std::future::ready(false)
-        });
 
-        // Start new broker
+                tracing::warn!(
+                    "Credential validator: no matching user for '{}'. Available: {:?}",
+                    username,
+                    creds.iter().map(|c| c.username.as_str()).collect::<Vec<_>>()
+                );
+                false
+            });
+
+        let broker = EmbeddedBroker::new(broker_config.clone(), credential_validator);
+
         if let Err(e) = broker.start().await {
             return Err(format!("Failed to start broker: {}", e));
         }
@@ -265,14 +269,9 @@ impl ServerState {
             broker_config.auth_enabled, broker_config.tls_enabled
         );
 
-        // Store new broker handle
         *self.devices.embedded_broker.write().unwrap() = Some(Arc::new(broker));
 
         // 4. Create new internal-mqtt adapter with updated config
-        // Always use system credentials — the external_auth handler accepts
-        // all connections when auth is disabled, so providing credentials
-        // is harmless and ensures connectivity even if the old broker thread
-        // (which always has external_auth set) is still running.
         let (adapter_username, adapter_password) = {
             if let Ok(store) = open_settings_store() {
                 match store.get_system_mqtt_credential() {
@@ -280,7 +279,7 @@ impl ServerState {
                         (Some("__neomind_internal__".to_string()), Some(pass))
                     }
                     _ => {
-                        tracing::warn!("No system credential found for adapter restart");
+                        tracing::warn!("No system credential found for adapter, connecting without auth");
                         (None, None)
                     }
                 }
@@ -299,8 +298,9 @@ impl ServerState {
                 password: adapter_password,
                 tls: broker_config.tls_enabled,
                 ca_cert: broker_config.tls_ca_path.clone(),
-                client_cert: broker_config.tls_cert_path.clone(),
-                client_key: broker_config.tls_key_path.clone(),
+                // One-way TLS: client only needs CA to verify server, no client cert/key
+                client_cert: None,
+                client_key: None,
                 keep_alive: 60,
                 clean_session: true,
                 qos: 1,
@@ -1264,6 +1264,7 @@ impl ServerState {
     #[cfg(feature = "embedded-broker")]
     pub async fn start_embedded_broker(&self) {
         use crate::config::{get_embedded_broker_config, open_settings_store};
+        use std::sync::Arc;
 
         let broker_config = get_embedded_broker_config();
         let port = broker_config.port;
@@ -1283,73 +1284,69 @@ impl ServerState {
             }
         }
 
-        let mut broker = EmbeddedBroker::new(broker_config.clone());
+        // Credential validator closure: validates username/password against redb.
+        // Called by the auth hook on every MQTT CONNECT when auth_enabled is true.
+        let credential_validator: Arc<dyn Fn(&str, &str) -> bool + Send + Sync> =
+            Arc::new(move |username: &str, password: &str| {
+                let store = match open_settings_store() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!("Credential validator: failed to open settings store: {}", e);
+                        return false;
+                    }
+                };
 
-        // Always install dynamic auth handler.
-        broker.set_auth_handler(move |_client_id: String, username: String, password: String| {
-            let store = match open_settings_store() {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::error!("Auth handler: failed to open settings store: {}", e);
-                    return std::future::ready(false);
+                // System credential check (plaintext comparison)
+                if username == "__neomind_internal__" {
+                    if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
+                        return password == system_pass;
+                    }
+                    tracing::warn!("Credential validator: no system credential found");
+                    return false;
                 }
-            };
 
-            let auth_enabled = store.load_embedded_broker_config()
-                .ok()
-                .flatten()
-                .and_then(|v| v.get("auth_enabled").and_then(|v| v.as_bool()))
-                .unwrap_or(false);
+                // User credential check (bcrypt)
+                let creds = match store.list_mqtt_credentials() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::error!("Credential validator: failed to list credentials: {}", e);
+                        return false;
+                    }
+                };
 
-            tracing::debug!(
-                client_id = %_client_id,
-                username = %username,
-                has_password = !password.is_empty(),
-                auth_enabled,
-                "Broker auth handler invoked"
-            );
+                tracing::debug!(
+                    "Credential validator: found {} user credentials, looking for '{}'",
+                    creds.len(), username
+                );
 
-            if !auth_enabled {
-                return std::future::ready(true);
-            }
-
-            // Check for internal system credential
-            if username == "__neomind_internal__" {
-                if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
-                    let match_result = password == system_pass;
-                    tracing::debug!(
-                        password_match = match_result,
-                        "Internal credential check"
-                    );
-                    return std::future::ready(match_result);
+                for cred in &creds {
+                    if cred.username == username {
+                        tracing::debug!(
+                            "Credential validator: found matching user '{}', verifying bcrypt (hash len={})",
+                            username, cred.password_hash.len()
+                        );
+                        let result = bcrypt::verify(password, &cred.password_hash).unwrap_or(false);
+                        tracing::debug!("Credential validator: bcrypt verify result = {}", result);
+                        return result;
+                    }
                 }
-                tracing::warn!("No system MQTT credential found in store");
-                return std::future::ready(false);
-            }
 
-            // Check user credentials
-            let creds = match store.list_mqtt_credentials() {
-                Ok(c) => c,
-                Err(_) => return std::future::ready(false),
-            };
+                tracing::warn!(
+                    "Credential validator: no matching user found for '{}'. Available: {:?}",
+                    username,
+                    creds.iter().map(|c| c.username.as_str()).collect::<Vec<_>>()
+                );
+                false
+            });
 
-            for cred in creds {
-                if cred.username == username {
-                    return std::future::ready(
-                        bcrypt::verify(&password, &cred.password_hash).unwrap_or(false)
-                    );
-                }
-            }
-            tracing::debug!(username = %username, "No matching credential found");
-            std::future::ready(false)
-        });
+        let broker = EmbeddedBroker::new(broker_config.clone(), credential_validator);
 
         match broker.start().await {
             Ok(_) => {
-                tracing::info!("Embedded MQTT broker started on :{}", port);
-                if broker_config.auth_enabled {
-                    tracing::info!("Embedded broker authentication enabled (external auth handler)");
-                }
+                tracing::info!(
+                    "Embedded MQTT broker started on :{} (auth_enabled read dynamically)",
+                    port,
+                );
             }
             Err(e) => {
                 tracing::error!("Failed to start embedded broker: {}", e);
@@ -1375,9 +1372,9 @@ impl ServerState {
         self.devices.service.start().await;
 
         // Create and register the internal MQTT adapter.
-        // Always use system credentials so the adapter works whether auth is
-        // enabled or disabled — the external_auth handler accepts all
-        // connections when auth is off.
+        // When auth is enabled, system credentials are needed for the handler.
+        // When auth is disabled, providing credentials is harmless since
+        // rumqttd accepts connections with or without login.
         let broker_config = get_embedded_broker_config();
         let (adapter_username, adapter_password) = {
             #[cfg(feature = "embedded-broker")]
@@ -1411,8 +1408,9 @@ impl ServerState {
                 password: adapter_password,
                 tls: broker_config.tls_enabled, // Use TLS setting from config
                 ca_cert: broker_config.tls_ca_path.clone(),
-                client_cert: broker_config.tls_cert_path.clone(),
-                client_key: broker_config.tls_key_path.clone(),
+                // One-way TLS: client only needs CA to verify server, no client cert/key
+                client_cert: None,
+                client_key: None,
                 keep_alive: 60,
                 clean_session: true,
                 qos: 1,

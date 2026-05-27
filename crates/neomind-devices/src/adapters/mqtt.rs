@@ -323,6 +323,17 @@ impl MqttAdapter {
             mqttoptions.set_credentials(&user, &pass);
         }
 
+        // Configure TLS from adapter config
+        if self.config.mqtt.tls {
+            let transport = Self::build_tls_transport(
+                self.config.mqtt.ca_cert.as_deref(),
+                self.config.mqtt.client_cert.as_deref(),
+                self.config.mqtt.client_key.as_deref(),
+            )?;
+            mqttoptions.set_transport(transport);
+            info!("MQTT adapter configured with TLS for broker '{}'", broker_id);
+        }
+
         // Create client
         let (client, eventloop) = rumqttc::AsyncClient::new(mqttoptions, 10);
 
@@ -719,6 +730,18 @@ impl MqttAdapter {
         Ok(())
     }
 
+    /// Resolve a string that is either PEM content or a file path to PEM content.
+    fn resolve_pem(input: &str) -> Result<String, Box<dyn std::error::Error>> {
+        if input.contains("-----BEGIN") {
+            // Already PEM content
+            Ok(input.to_string())
+        } else {
+            // Treat as file path
+            let content = std::fs::read_to_string(input)?;
+            Ok(content)
+        }
+    }
+
     /// Build TLS transport with optional certificates.
     pub fn build_tls_transport(
         ca_cert: Option<&str>,
@@ -731,8 +754,11 @@ impl MqttAdapter {
         let mut root_cert_store = RootCertStore::empty();
 
         // Load custom CA certificate if provided
-        if let Some(ca_pem) = ca_cert {
-            let ca_certs = Self::load_certs(ca_pem).map_err(|e| {
+        if let Some(ca_input) = ca_cert {
+            let ca_pem = Self::resolve_pem(ca_input).map_err(|e| {
+                AdapterError::Configuration(format!("Failed to read CA cert: {}", e))
+            })?;
+            let ca_certs = Self::load_certs(&ca_pem).map_err(|e| {
                 AdapterError::Configuration(format!("Failed to load CA cert: {}", e))
             })?;
             let ca_cert_count = ca_certs.len();
@@ -761,11 +787,17 @@ impl MqttAdapter {
             .with_no_client_auth();
 
         // Configure mTLS if client certificates are provided
-        if let (Some(cert_pem), Some(key_pem)) = (client_cert, client_key) {
-            let client_certs = Self::load_certs(cert_pem).map_err(|e| {
+        if let (Some(cert_input), Some(key_input)) = (client_cert, client_key) {
+            let cert_pem = Self::resolve_pem(cert_input).map_err(|e| {
+                AdapterError::Configuration(format!("Failed to read client cert: {}", e))
+            })?;
+            let key_pem = Self::resolve_pem(key_input).map_err(|e| {
+                AdapterError::Configuration(format!("Failed to read client key: {}", e))
+            })?;
+            let client_certs = Self::load_certs(&cert_pem).map_err(|e| {
                 AdapterError::Configuration(format!("Failed to load client cert: {}", e))
             })?;
-            let client_key = Self::load_private_key(key_pem).map_err(|e| {
+            let client_key = Self::load_private_key(&key_pem).map_err(|e| {
                 AdapterError::Configuration(format!("Failed to load client key: {}", e))
             })?;
 

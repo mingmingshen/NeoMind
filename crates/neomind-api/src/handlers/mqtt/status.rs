@@ -78,12 +78,13 @@ pub async fn get_mqtt_status_handler(
         None
     };
 
-    // Get MQTT settings
+    // Get MQTT settings — prefer embedded broker config for port/listen
     let store = crate::config::open_settings_store()
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
-    let settings = store.get_mqtt_settings();
-    let listen_address = settings.listen_address();
-    let listen_port = settings.port;
+
+    let broker_config = crate::config::get_embedded_broker_config();
+    let listen_address = broker_config.listen.clone();
+    let listen_port = broker_config.port;
 
     // Get the actual server IP for embedded broker
     let server_ip = get_server_ip();
