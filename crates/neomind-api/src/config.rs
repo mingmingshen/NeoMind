@@ -451,22 +451,50 @@ pub fn load_embedded_broker_config() -> Option<EmbeddedBrokerConfig> {
 }
 
 /// Get embedded broker configuration (redb > config.toml > default).
+///
+/// On first call, if no config exists in redb, the resolved config (from
+/// config.toml or defaults) is persisted to redb so that all subsequent
+/// reads — including the dynamic auth handler — return consistent values.
 pub fn get_embedded_broker_config() -> EmbeddedBrokerConfig {
     // Priority 1: redb database (set via API)
     if let Ok(store) = open_settings_store() {
-        if let Ok(Some(config_value)) = store.load_embedded_broker_config() {
-            if let Ok(config) = serde_json::from_value::<EmbeddedBrokerConfig>(config_value) {
-                info!(
-                    category = "mqtt",
-                    "Using embedded broker configuration from database: 0.0.0.0:{}",
-                    config.port
-                );
+        match store.load_embedded_broker_config() {
+            Ok(Some(config_value)) => {
+                if let Ok(config) = serde_json::from_value::<EmbeddedBrokerConfig>(config_value) {
+                    info!(
+                        category = "mqtt",
+                        "Using embedded broker configuration from database: 0.0.0.0:{}",
+                        config.port
+                    );
+                    return config;
+                }
+            }
+            Ok(None) => {
+                // First run: resolve from config.toml/defaults and persist to redb
+                // so the dynamic auth handler reads the same values
+                let config = load_embedded_broker_config()
+                    .unwrap_or_else(EmbeddedBrokerConfig::default);
+
+                if let Ok(config_value) = serde_json::to_value(&config) {
+                    if let Err(e) = store.save_embedded_broker_config(&config_value) {
+                        tracing::warn!("Failed to persist initial broker config to redb: {}", e);
+                    } else {
+                        info!(
+                            category = "mqtt",
+                            "Initialized broker config in database: 0.0.0.0:{}",
+                            config.port
+                        );
+                    }
+                }
                 return config;
+            }
+            Err(e) => {
+                tracing::warn!("Failed to load broker config from redb: {}", e);
             }
         }
     }
 
-    // Priority 2: config.toml
+    // Fallback: config.toml
     if let Some(config) = load_embedded_broker_config() {
         info!(
             category = "mqtt",

@@ -205,6 +205,13 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
         tokio::spawn(async move {
             let t_bg = std::time::Instant::now();
 
+            // Start embedded MQTT broker immediately so devices can connect
+            // while extensions and other services load in parallel.
+            #[cfg(feature = "embedded-broker")]
+            {
+                bg_state.start_embedded_broker().await;
+            }
+
             // Kill orphaned extension runner processes from a previous session.
             // MUST run before init_extensions() to avoid killing newly spawned runners.
             // Orphaned runners hold dylib files open and cause dlopen() hangs.

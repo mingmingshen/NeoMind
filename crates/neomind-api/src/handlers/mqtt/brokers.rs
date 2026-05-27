@@ -132,6 +132,44 @@ pub struct ExternalBrokerContext {
     pub event_bus: Arc<neomind_core::EventBus>,
 }
 
+/// Resolve credentials for an external broker connection.
+///
+/// If the broker points to the embedded broker (localhost / 127.0.0.1 on the
+/// same port) and has no credentials of its own, inject the system credential
+/// so it can authenticate against the embedded broker's `external_auth` handler.
+fn resolve_broker_credentials(broker: &ExternalBroker) -> (Option<String>, Option<String>) {
+    use crate::config::{get_embedded_broker_config, open_settings_store};
+
+    // If user provided credentials, use those as-is
+    if broker.username.is_some() && broker.password.is_some() {
+        return (broker.username.clone(), broker.password.clone());
+    }
+
+    // Check if this broker points to the embedded broker
+    let embedded_config = get_embedded_broker_config();
+    let broker_addr = broker.broker.to_lowercase();
+    let is_localhost = broker_addr == "localhost"
+        || broker_addr == "127.0.0.1"
+        || broker_addr == "::1"
+        || broker_addr == "0.0.0.0";
+
+    if is_localhost && broker.port == embedded_config.port {
+        // Try to get system credential
+        if let Ok(store) = open_settings_store() {
+            if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
+                tracing::debug!(
+                    broker_id = %broker.id,
+                    "Injecting system credential for localhost external broker"
+                );
+                return (Some("__neomind_internal__".to_string()), Some(system_pass));
+            }
+        }
+    }
+
+    // Default: use whatever the broker had (possibly None)
+    (broker.username.clone(), broker.password.clone())
+}
+
 /// Create and connect to an external MQTT broker.
 ///
 /// This function creates the MQTT adapter, sets up the shared device registry,
@@ -146,6 +184,10 @@ pub async fn create_and_connect_broker(
     use neomind_devices::adapter::AdapterResult;
     use neomind_devices::adapters::mqtt::MqttAdapter;
 
+    // If the external broker points to the embedded broker (localhost) and has
+    // no credentials, inject the system credential so it can authenticate.
+    let (resolved_username, resolved_password) = resolve_broker_credentials(broker);
+
     // Create MqttAdapter config
     let mqtt_config = MqttAdapterConfig {
         name: format!("external-{}", broker.id),
@@ -156,8 +198,8 @@ pub async fn create_and_connect_broker(
                 .client_id
                 .clone()
                 .or_else(|| Some(format!("neomind-external-{}", broker.id))),
-            username: broker.username.clone(),
-            password: broker.password.clone(),
+            username: resolved_username.clone(),
+            password: resolved_password.clone(),
             tls: broker.tls,
             ca_cert: broker.ca_cert.clone(),
             client_cert: broker.client_cert.clone(),
@@ -199,8 +241,8 @@ pub async fn create_and_connect_broker(
                         &broker.id,
                         &broker.broker,
                         broker.port,
-                        broker.username.clone(),
-                        broker.password.clone(),
+                        resolved_username.clone(),
+                        resolved_password.clone(),
                         broker.tls,
                         broker.ca_cert.clone(),
                         broker.client_cert.clone(),

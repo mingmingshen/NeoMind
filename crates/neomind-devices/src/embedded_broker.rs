@@ -246,17 +246,18 @@ impl EmbeddedBroker {
     }
 
     /// Restart the broker with new configuration
-    pub fn restart(&self, config: EmbeddedBrokerConfig) -> Result<(), EmbeddedBrokerError> {
+    pub async fn restart(&self, config: EmbeddedBrokerConfig) -> Result<(), EmbeddedBrokerError> {
         self.stop()?;
         *self.config.lock().unwrap() = config;
-        self.start()
+        self.start().await
     }
 
     /// Start the embedded broker in a background thread
     ///
     /// This method spawns a new thread that runs the broker.
     /// The broker will listen on the configured address and port.
-    pub fn start(&self) -> Result<(), EmbeddedBrokerError> {
+    /// Uses async polling to avoid blocking the tokio runtime during startup.
+    pub async fn start(&self) -> Result<(), EmbeddedBrokerError> {
         if self.is_running() {
             tracing::warn!("Embedded broker is already running");
             return Ok(());
@@ -264,7 +265,7 @@ impl EmbeddedBroker {
 
         // Check if port is already in use (possibly by a previous instance)
         let config = self.config.lock().unwrap().clone();
-        if is_broker_running(config.port) {
+        if is_broker_running_sync(config.port) {
             tracing::info!(
                 "Embedded broker port {} already in use, assuming already running",
                 config.port
@@ -281,7 +282,7 @@ impl EmbeddedBroker {
         let max_payload = config.max_payload_size;
         let connection_timeout = config.connection_timeout_ms;
         let dynamic_filters = config.dynamic_filters;
-        let auth_enabled = config.auth_enabled;
+        let _auth_enabled = config.auth_enabled;
         let tls_enabled = config.tls_enabled;
         let tls_cert_path = config.tls_cert_path.clone();
         let tls_key_path = config.tls_key_path.clone();
@@ -348,11 +349,7 @@ impl EmbeddedBroker {
                             max_payload_size: max_payload,
                             max_inflight_count: 200,
                             auth: None,
-                            external_auth: if auth_enabled {
-                                auth_handler
-                            } else {
-                                None
-                            },
+                            external_auth: auth_handler,
                             dynamic_filters,
                         },
                     },
@@ -380,14 +377,14 @@ impl EmbeddedBroker {
 
         tracing::info!("Embedded MQTT broker thread started");
 
-        // Wait for the broker to become ready with retries
-        // rumqttd binds the port asynchronously, so we poll until it's listening
+        // Wait for the broker to become ready using async polling.
+        // This avoids blocking the tokio runtime while rumqttd binds the port.
+        let port = config.port;
         let max_wait = std::time::Duration::from_secs(5);
-        let check_interval = std::time::Duration::from_millis(100);
-        let start = std::time::Instant::now();
 
+        let start = std::time::Instant::now();
         loop {
-            if is_broker_running(config.port) {
+            if is_broker_running_async(port).await {
                 break;
             }
             if start.elapsed() >= max_wait {
@@ -395,7 +392,7 @@ impl EmbeddedBroker {
                     "Broker failed to start or port not available".to_string(),
                 ));
             }
-            std::thread::sleep(check_interval);
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
 
         tracing::info!(
@@ -412,9 +409,21 @@ impl EmbeddedBroker {
 /// Uses connect (not bind) because rumqttd sets SO_REUSEADDR, which makes
 /// bind-based checks unreliable — they succeed even when the port is in use.
 pub fn is_broker_running(port: u16) -> bool {
+    is_broker_running_sync(port)
+}
+
+/// Synchronous broker port check (used by `stop()` etc.)
+fn is_broker_running_sync(port: u16) -> bool {
     use std::net::{IpAddr, Ipv4Addr, TcpStream};
     let addr = (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
     TcpStream::connect_timeout(&addr.into(), std::time::Duration::from_millis(200)).is_ok()
+}
+
+/// Async broker port check — non-blocking, uses `tokio::net::TcpStream`.
+async fn is_broker_running_async(port: u16) -> bool {
+    tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
+        .await
+        .is_ok()
 }
 
 #[cfg(test)]

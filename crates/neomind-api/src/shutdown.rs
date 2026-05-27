@@ -55,7 +55,7 @@ pub async fn cleanup_resources(state: &ServerState) {
 
     // 2. Note embedded broker status (feature-gated)
     #[cfg(feature = "embedded-broker")]
-    if let Some(broker) = &state.devices.embedded_broker {
+    if let Some(broker) = state.devices.embedded_broker.read().unwrap().as_ref() {
         if broker.is_running() {
             tracing::info!("Embedded MQTT broker was running");
             // Note: EmbeddedBroker doesn't have a stop method,

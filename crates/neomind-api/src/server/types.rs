@@ -153,10 +153,195 @@ impl ServerState {
         self.automation.transform_engine.clone()
     }
 
-    /// Get embedded broker (backward compatibility).
+    /// Get embedded broker.
     #[cfg(feature = "embedded-broker")]
     pub fn embedded_broker(&self) -> Option<Arc<EmbeddedBroker>> {
-        self.devices.embedded_broker.clone()
+        self.devices.embedded_broker.read().unwrap().clone()
+    }
+
+    /// Restart the embedded MQTT broker and internal adapter with updated config.
+    ///
+    /// Called by the broker config API after saving new settings to redb.
+    /// Stops the running broker, restarts it with the new config, then
+    /// recreates the internal-mqtt adapter so it picks up new TLS/auth settings.
+    #[cfg(feature = "embedded-broker")]
+    pub async fn restart_embedded_broker(&self) -> Result<(), String> {
+        use neomind_devices::adapter::DeviceAdapter;
+        use neomind_devices::adapters::{create_adapter, mqtt::MqttAdapterConfig};
+        use crate::config::{get_embedded_broker_config, open_settings_store};
+
+        let broker_config = get_embedded_broker_config();
+
+        // 1. Stop existing broker if running (non-blocking with timeout)
+        {
+            let old_broker = self.devices.embedded_broker.read().unwrap().clone();
+            if let Some(broker) = old_broker {
+                if broker.is_running() {
+                    tracing::info!("Stopping embedded broker for config change...");
+                    // broker.stop() calls join() which blocks indefinitely because
+                    // rumqttd has no graceful shutdown. Use spawn_blocking + timeout.
+                    let stop_result = tokio::time::timeout(
+                        std::time::Duration::from_secs(3),
+                        tokio::task::spawn_blocking(move || {
+                            // Just drop the broker — the thread will exit when
+                            // the process closes the port. Setting stop flag is
+                            // not reliable with rumqttd.
+                            drop(broker);
+                        }),
+                    ).await;
+
+                    if stop_result.is_err() {
+                        tracing::warn!("Broker stop timed out, proceeding with restart");
+                    }
+                }
+            }
+            // Clear the old handle
+            *self.devices.embedded_broker.write().unwrap() = None;
+        }
+
+        // 2. Stop existing internal-mqtt adapter
+        if let Some(adapter) = self.devices.service.get_adapter("internal-mqtt").await {
+            tracing::info!("Stopping internal-mqtt adapter for config change...");
+            if let Err(e) = adapter.stop().await {
+                tracing::warn!("Adapter stop error: {}", e);
+            }
+            self.devices.service.unregister_adapter("internal-mqtt").await;
+        }
+
+        // 3. Create new broker with updated config
+        let mut broker = EmbeddedBroker::new(broker_config.clone());
+
+        // Always install dynamic auth handler that reads config from redb on each
+        // connection. This allows toggling auth without restarting the broker.
+        broker.set_auth_handler(move |_client_id: String, username: String, password: String| {
+            let store = match open_settings_store() {
+                Ok(s) => s,
+                Err(_) => return std::future::ready(false),
+            };
+
+            // Dynamically check if auth is enabled
+            let auth_enabled = store
+                .load_embedded_broker_config()
+                .ok()
+                .flatten()
+                .and_then(|v| v.get("auth_enabled").and_then(|v| v.as_bool()))
+                .unwrap_or(false);
+
+            if !auth_enabled {
+                // Auth disabled — accept all connections
+                return std::future::ready(true);
+            }
+
+            // Auth enabled — validate credentials
+            if username == "__neomind_internal__" {
+                if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
+                    return std::future::ready(password == system_pass);
+                }
+                return std::future::ready(false);
+            }
+
+            let creds = match store.list_mqtt_credentials() {
+                Ok(c) => c,
+                Err(_) => return std::future::ready(false),
+            };
+
+            for cred in creds {
+                if cred.username == username {
+                    return std::future::ready(
+                        bcrypt::verify(&password, &cred.password_hash).unwrap_or(false)
+                    );
+                }
+            }
+            std::future::ready(false)
+        });
+
+        // Start new broker
+        if let Err(e) = broker.start().await {
+            return Err(format!("Failed to start broker: {}", e));
+        }
+        tracing::info!(
+            "Embedded broker restarted: listen={}, port={}, auth={}, tls={}",
+            broker_config.listen, broker_config.port,
+            broker_config.auth_enabled, broker_config.tls_enabled
+        );
+
+        // Store new broker handle
+        *self.devices.embedded_broker.write().unwrap() = Some(Arc::new(broker));
+
+        // 4. Create new internal-mqtt adapter with updated config
+        let (adapter_username, adapter_password) = if broker_config.auth_enabled {
+            if let Ok(store) = open_settings_store() {
+                if let Ok(Some(pass)) = store.get_system_mqtt_credential() {
+                    (Some("__neomind_internal__".to_string()), Some(pass))
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        let mqtt_config = MqttAdapterConfig {
+            name: "internal-mqtt".to_string(),
+            mqtt: neomind_devices::mqtt::MqttConfig {
+                broker: "127.0.0.1".to_string(),
+                port: broker_config.port,
+                client_id: Some("neomind-internal".to_string()),
+                username: adapter_username,
+                password: adapter_password,
+                tls: broker_config.tls_enabled,
+                ca_cert: broker_config.tls_ca_path.clone(),
+                client_cert: broker_config.tls_cert_path.clone(),
+                client_key: broker_config.tls_key_path.clone(),
+                keep_alive: 60,
+                clean_session: true,
+                qos: 1,
+                topic_prefix: "device".to_string(),
+                command_topic: "downlink".to_string(),
+            },
+            subscribe_topics: vec!["#".to_string()],
+            discovery_topic: Some("device/+/+/uplink".to_string()),
+            discovery_prefix: "device".to_string(),
+            auto_discovery: true,
+            storage_dir: Some("data".to_string()),
+        };
+
+        let Some(event_bus) = self.core.event_bus.as_ref() else {
+            return Err("EventBus not initialized".to_string());
+        };
+
+        let mqtt_config_value = serde_json::to_value(&mqtt_config)
+            .map_err(|e| format!("Failed to serialize MQTT config: {}", e))?;
+
+        let mqtt_adapter: Arc<dyn DeviceAdapter> = {
+            create_adapter("mqtt", &mqtt_config_value, event_bus)
+                .map_err(|e| format!("Failed to create MQTT adapter: {}", e))?
+        };
+
+        mqtt_adapter.set_telemetry_storage(self.devices.telemetry.clone());
+
+        if let Some(mqtt) = mqtt_adapter
+            .as_any()
+            .downcast_ref::<neomind_devices::adapters::mqtt::MqttAdapter>()
+        {
+            mqtt.set_shared_device_registry(self.devices.service.get_registry())
+                .await;
+        }
+
+        self.devices
+            .service
+            .register_adapter("internal-mqtt".to_string(), mqtt_adapter.clone())
+            .await;
+
+        if let Err(e) = mqtt_adapter.start().await {
+            tracing::warn!("Failed to start internal-mqtt adapter: {}", e);
+        } else {
+            tracing::info!("Internal-mqtt adapter restarted successfully");
+        }
+
+        Ok(())
     }
 
     /// Get event bus (backward compatibility).
@@ -1067,6 +1252,108 @@ impl ServerState {
         }
     }
 
+    /// Start the embedded MQTT broker early so it's ready for connections.
+    /// Called before extension loading so devices can connect sooner.
+    /// The internal MQTT adapter is created later in `init_device_adapters`.
+    #[cfg(feature = "embedded-broker")]
+    pub async fn start_embedded_broker(&self) {
+        use crate::config::{get_embedded_broker_config, open_settings_store};
+
+        let broker_config = get_embedded_broker_config();
+        let port = broker_config.port;
+
+        // Always ensure system credential exists.
+        if let Ok(store) = open_settings_store() {
+            if let Ok(None) = store.get_system_mqtt_credential() {
+                let system_password = uuid::Uuid::new_v4()
+                    .to_string()
+                    .replace("-", "");
+
+                if let Err(e) = store.set_system_mqtt_credential(&system_password) {
+                    tracing::error!("Failed to set system MQTT credential: {}", e);
+                } else {
+                    tracing::info!("Generated system MQTT credential for internal broker");
+                }
+            }
+        }
+
+        let mut broker = EmbeddedBroker::new(broker_config.clone());
+
+        // Always install dynamic auth handler.
+        broker.set_auth_handler(move |_client_id: String, username: String, password: String| {
+            let store = match open_settings_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::error!("Auth handler: failed to open settings store: {}", e);
+                    return std::future::ready(false);
+                }
+            };
+
+            let auth_enabled = store.load_embedded_broker_config()
+                .ok()
+                .flatten()
+                .and_then(|v| v.get("auth_enabled").and_then(|v| v.as_bool()))
+                .unwrap_or(false);
+
+            tracing::debug!(
+                client_id = %_client_id,
+                username = %username,
+                has_password = !password.is_empty(),
+                auth_enabled,
+                "Broker auth handler invoked"
+            );
+
+            if !auth_enabled {
+                return std::future::ready(true);
+            }
+
+            // Check for internal system credential
+            if username == "__neomind_internal__" {
+                if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
+                    let match_result = password == system_pass;
+                    tracing::debug!(
+                        password_match = match_result,
+                        "Internal credential check"
+                    );
+                    return std::future::ready(match_result);
+                }
+                tracing::warn!("No system MQTT credential found in store");
+                return std::future::ready(false);
+            }
+
+            // Check user credentials
+            let creds = match store.list_mqtt_credentials() {
+                Ok(c) => c,
+                Err(_) => return std::future::ready(false),
+            };
+
+            for cred in creds {
+                if cred.username == username {
+                    return std::future::ready(
+                        bcrypt::verify(&password, &cred.password_hash).unwrap_or(false)
+                    );
+                }
+            }
+            tracing::debug!(username = %username, "No matching credential found");
+            std::future::ready(false)
+        });
+
+        match broker.start().await {
+            Ok(_) => {
+                tracing::info!("Embedded MQTT broker started on :{}", port);
+                if broker_config.auth_enabled {
+                    tracing::info!("Embedded broker authentication enabled (external auth handler)");
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to start embedded broker: {}", e);
+                tracing::warn!("Device management may not work properly");
+            }
+        }
+
+        *self.devices.embedded_broker.write().unwrap() = Some(Arc::new(broker));
+    }
+
     /// Initialize MQTT adapter for device communication.
     /// Creates and starts a real MQTT client that connects to the embedded broker.
     /// Initialize all built-in device adapters (MQTT, Webhook).
@@ -1081,94 +1368,24 @@ impl ServerState {
         // Start device service to listen for EventBus events
         self.devices.service.start().await;
 
-        #[cfg(feature = "embedded-broker")]
-        {
-            let broker_config = get_embedded_broker_config();
-            let port = broker_config.port;
-
-            // Ensure system credential exists if auth is enabled
-            if broker_config.auth_enabled {
-                if let Ok(store) = open_settings_store() {
-                    if let Ok(None) = store.get_system_mqtt_credential() {
-                        // Generate a random system password using UUID
-                        let system_password = uuid::Uuid::new_v4()
-                            .to_string()
-                            .replace("-", "");
-
-                        if let Err(e) = store.set_system_mqtt_credential(&system_password) {
-                            tracing::error!("Failed to set system MQTT credential: {}", e);
-                        } else {
-                            tracing::info!(
-                                "Generated system MQTT credential for internal broker authentication"
-                            );
-                        }
-                    }
-                }
-            }
-
-            let mut broker = EmbeddedBroker::new(broker_config.clone());
-
-            // Set up external auth handler if enabled
-            if broker_config.auth_enabled {
-                broker.set_auth_handler(move |_client_id: String, username: String, password: String| {
-                    let store = match open_settings_store() {
-                        Ok(s) => s,
-                        Err(_) => return std::future::ready(false),
-                    };
-
-                    // Check for internal system credential
-                    if username == "__neomind_internal__" {
-                        if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
-                            return std::future::ready(password == system_pass);
-                        }
-                        return std::future::ready(false);
-                    }
-
-                    // Check user credentials
-                    let creds = match store.list_mqtt_credentials() {
-                        Ok(c) => c,
-                        Err(_) => return std::future::ready(false),
-                    };
-
-                    for cred in creds {
-                        if cred.username == username {
-                            return std::future::ready(
-                                bcrypt::verify(&password, &cred.password_hash).unwrap_or(false)
-                            );
-                        }
-                    }
-                    std::future::ready(false)
-                });
-            }
-
-            match broker.start() {
-                Ok(_) => {
-                    tracing::info!("Embedded MQTT broker started on :{}", port);
-                    if broker_config.auth_enabled {
-                        tracing::info!("Embedded broker authentication enabled (external auth handler)");
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Failed to start embedded broker: {}", e);
-                    tracing::warn!("Device management may not work properly");
-                }
-            }
-        }
-
-        // Create and register the internal MQTT adapter
+        // Create and register the internal MQTT adapter.
+        // Always use system credentials so the adapter works whether auth is
+        // enabled or disabled — the external_auth handler accepts all
+        // connections when auth is off.
         let broker_config = get_embedded_broker_config();
         let (adapter_username, adapter_password) = {
             #[cfg(feature = "embedded-broker")]
             {
-                if broker_config.auth_enabled {
-                    if let Ok(store) = open_settings_store() {
-                        if let Ok(Some(pass)) = store.get_system_mqtt_credential() {
+                if let Ok(store) = open_settings_store() {
+                    match store.get_system_mqtt_credential() {
+                        Ok(Some(pass)) => {
+                            tracing::debug!("Internal MQTT adapter: using system credential");
                             (Some("__neomind_internal__".to_string()), Some(pass))
-                        } else {
+                        }
+                        _ => {
+                            tracing::warn!("Internal MQTT adapter: no system credential found, connecting without auth");
                             (None, None)
                         }
-                    } else {
-                        (None, None)
                     }
                 } else {
                     (None, None)

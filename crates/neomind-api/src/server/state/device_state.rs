@@ -31,7 +31,7 @@ pub struct DeviceState {
 
     /// Embedded MQTT broker (only used in embedded mode).
     #[cfg(feature = "embedded-broker")]
-    pub embedded_broker: Option<Arc<EmbeddedBroker>>,
+    pub embedded_broker: Arc<std::sync::RwLock<Option<Arc<EmbeddedBroker>>>>,
 
     /// Device status update broadcast sender.
     pub update_tx: broadcast::Sender<DeviceStatusUpdate>,
@@ -52,7 +52,7 @@ impl DeviceState {
             telemetry,
             update_tx,
             #[cfg(feature = "embedded-broker")]
-            embedded_broker: None,
+            embedded_broker: Arc::new(std::sync::RwLock::new(None)),
         }
     }
 }

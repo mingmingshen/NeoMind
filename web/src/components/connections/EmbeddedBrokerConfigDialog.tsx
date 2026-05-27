@@ -56,6 +56,8 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
   // Form state for general settings
   const [listen, setListen] = useState('0.0.0.0')
   const [port, setPort] = useState(1883)
+  const [authEnabled, setAuthEnabled] = useState(false)
+  const [tlsEnabled, setTlsEnabled] = useState(false)
 
   // Form state for TLS certificates
   const [certPem, setCertPem] = useState('')
@@ -83,57 +85,42 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
     }
   }, [open])
 
-  const loadConfig = async () => {
+  const loadConfig = async (preserveUnsaved = false) => {
     try {
       const data = await api.getEmbeddedBrokerConfig()
       setConfig(data)
-      setListen(data.listen || '0.0.0.0')
-      setPort(data.port || 1883)
-      setCertPem('')
-      setKeyPem('')
-      setCaPem('')
-      setCertMode(null)
-      setHasUnsavedChanges(false)
+      if (!preserveUnsaved) {
+        setListen(data.listen || '0.0.0.0')
+        setPort(data.port || 1883)
+        setAuthEnabled(data.auth_enabled ?? false)
+        setTlsEnabled(data.tls_enabled ?? false)
+        setCertPem('')
+        setKeyPem('')
+        setCaPem('')
+        setCertMode(null)
+        setHasUnsavedChanges(false)
+      }
     } catch (error) {
       handleError(error)
     }
   }
 
-  const handleToggleAuth = async (enabled: boolean) => {
-    if (!config) return
-    try {
-      await api.updateEmbeddedBrokerConfig({ auth_enabled: enabled })
-      setConfig({ ...config, auth_enabled: enabled })
-      toast({
-        title: enabled ? t('broker.authEnabled') : t('broker.authDisabled'),
-        description: t('broker.authUpdateSuccess'),
-      })
-    } catch (error) {
-      handleError(error)
-    }
+  const handleToggleAuth = (enabled: boolean) => {
+    setAuthEnabled(enabled)
+    setHasUnsavedChanges(true)
   }
 
-  const handleToggleTls = async (enabled: boolean) => {
-    if (!config) return
-    try {
-      await api.updateEmbeddedBrokerConfig({ tls_enabled: enabled })
-      setConfig({ ...config, tls_enabled: enabled })
-      setCertMode(null)
-      setHasUnsavedChanges(true)
-      toast({
-        title: enabled ? t('broker.tlsEnabled') : t('broker.tlsDisabled'),
-        description: t('broker.restartWarning'),
-      })
-    } catch (error) {
-      handleError(error)
-    }
+  const handleToggleTls = (enabled: boolean) => {
+    setTlsEnabled(enabled)
+    setCertMode(null)
+    setHasUnsavedChanges(true)
   }
 
   const handleGenerateCert = async () => {
     setGenerating(true)
     try {
       await api.generateMqttTlsCert()
-      await loadConfig()
+      await loadConfig(true)
       setHasUnsavedChanges(true)
       toast({
         title: t('broker.certGenerated'),
@@ -171,7 +158,7 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
     setAddingCredential(true)
     try {
       await api.addMqttCredential(newUsername.trim(), newPassword)
-      await loadConfig()
+      await loadConfig(true)
       setNewUsername('')
       setNewPassword('')
       setShowAddCredential(false)
@@ -189,7 +176,7 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
   const handleDeleteCredential = async (username: string) => {
     try {
       await api.deleteMqttCredential(username)
-      await loadConfig()
+      await loadConfig(true)
       toast({
         title: t('broker.userDeleted'),
         description: t('broker.userDeleteSuccess', { username }),
@@ -206,6 +193,8 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
       await api.updateEmbeddedBrokerConfig({
         listen,
         port,
+        auth_enabled: authEnabled,
+        tls_enabled: tlsEnabled,
       })
 
       // Only upload manual certs if in manual mode and fields are filled
@@ -288,12 +277,12 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
                 </p>
               </div>
               <Switch
-                checked={config?.auth_enabled ?? false}
+                checked={authEnabled}
                 onCheckedChange={handleToggleAuth}
               />
             </div>
 
-            {config?.auth_enabled && (
+            {authEnabled && config && (
               <div className="space-y-2">
                 {config.credentials.length === 0 && (
                   <p className="text-xs text-muted-foreground py-2">
@@ -398,12 +387,12 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
                 </p>
               </div>
               <Switch
-                checked={config?.tls_enabled ?? false}
+                checked={tlsEnabled}
                 onCheckedChange={handleToggleTls}
               />
             </div>
 
-            {config?.tls_enabled && (
+            {tlsEnabled && (
               <>
                 {certsExist ? (
                   /* Certs already configured — show status + download */

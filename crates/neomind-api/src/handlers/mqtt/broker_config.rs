@@ -156,7 +156,8 @@ pub async fn get_broker_config_handler() -> HandlerResult<serde_json::Value> {
 /// already be uploaded. When enabling authentication for the first time,
 /// a system credential is auto-generated if none exists.
 pub async fn update_broker_config_handler(
-    State(_state): State<ServerState>,
+    #[cfg(feature = "embedded-broker")] State(state): State<ServerState>,
+    #[cfg(not(feature = "embedded-broker"))] State(_state): State<ServerState>,
     Json(req): Json<UpdateBrokerConfigRequest>,
 ) -> HandlerResult<serde_json::Value> {
     let store = config::open_settings_store()
@@ -181,6 +182,8 @@ pub async fn update_broker_config_handler(
     };
 
     let mut config = config;
+    #[cfg(feature = "embedded-broker")]
+    let old_config = config.clone();
 
     // Update fields if provided
     if let Some(listen) = req.listen {
@@ -198,6 +201,14 @@ pub async fn update_broker_config_handler(
     if let Some(tls_enabled) = req.tls_enabled {
         config.tls_enabled = tls_enabled;
     }
+
+    // Only port/listen/tls changes require a broker restart.
+    // Auth changes take effect immediately via the dynamic auth handler
+    // which reads auth_enabled from redb on each connection.
+    #[cfg(feature = "embedded-broker")]
+    let needs_restart = old_config.listen != config.listen
+        || old_config.port != config.port
+        || old_config.tls_enabled != config.tls_enabled;
 
     // Auto-generate system credential if enabling auth for the first time
     if config.auth_enabled {
@@ -232,8 +243,20 @@ pub async fn update_broker_config_handler(
         "Updated embedded broker configuration"
     );
 
+    // Restart broker only when port/listen/tls changed (auth is dynamic via redb)
+    #[cfg(feature = "embedded-broker")]
+    if needs_restart {
+        if let Err(e) = state.restart_embedded_broker().await {
+            tracing::error!("Failed to restart embedded broker: {}", e);
+            return ok(json!({
+                "message": format!("Configuration saved but broker restart failed: {}", e),
+                "config": config_value,
+            }));
+        }
+    }
+
     ok(json!({
-        "message": "Broker configuration updated successfully. Restart the broker to apply changes.",
+        "message": "Broker configuration updated and applied successfully",
         "config": config_value,
     }))
 }
