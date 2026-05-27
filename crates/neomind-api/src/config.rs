@@ -450,10 +450,29 @@ pub fn load_embedded_broker_config() -> Option<EmbeddedBrokerConfig> {
     })
 }
 
-/// Get embedded broker configuration (config.toml > default).
+/// Get embedded broker configuration (redb > config.toml > default).
 pub fn get_embedded_broker_config() -> EmbeddedBrokerConfig {
-    // Try config.toml
+    // Priority 1: redb database (set via API)
+    if let Ok(store) = open_settings_store() {
+        if let Ok(Some(config_value)) = store.load_embedded_broker_config() {
+            if let Ok(config) = serde_json::from_value::<EmbeddedBrokerConfig>(config_value) {
+                info!(
+                    category = "mqtt",
+                    "Using embedded broker configuration from database: 0.0.0.0:{}",
+                    config.port
+                );
+                return config;
+            }
+        }
+    }
+
+    // Priority 2: config.toml
     if let Some(config) = load_embedded_broker_config() {
+        info!(
+            category = "mqtt",
+            "Using embedded broker configuration from config.toml: 0.0.0.0:{}",
+            config.port
+        );
         return config;
     }
 

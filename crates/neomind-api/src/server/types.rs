@@ -1076,20 +1076,77 @@ impl ServerState {
     pub async fn init_device_adapters(&self) {
         use neomind_devices::adapter::DeviceAdapter;
         use neomind_devices::adapters::{create_adapter, mqtt::MqttAdapterConfig};
+        use crate::config::{get_embedded_broker_config, open_settings_store};
 
         // Start device service to listen for EventBus events
         self.devices.service.start().await;
 
         #[cfg(feature = "embedded-broker")]
         {
-            use crate::config::get_embedded_broker_config;
+            let broker_config = get_embedded_broker_config();
+            let port = broker_config.port;
 
-            let config = get_embedded_broker_config();
-            let port = config.port;
-            let broker = EmbeddedBroker::new(config);
+            // Ensure system credential exists if auth is enabled
+            if broker_config.auth_enabled {
+                if let Ok(store) = open_settings_store() {
+                    if let Ok(None) = store.get_system_mqtt_credential() {
+                        // Generate a random system password using UUID
+                        let system_password = uuid::Uuid::new_v4()
+                            .to_string()
+                            .replace("-", "");
+
+                        if let Err(e) = store.set_system_mqtt_credential(&system_password) {
+                            tracing::error!("Failed to set system MQTT credential: {}", e);
+                        } else {
+                            tracing::info!(
+                                "Generated system MQTT credential for internal broker authentication"
+                            );
+                        }
+                    }
+                }
+            }
+
+            let mut broker = EmbeddedBroker::new(broker_config.clone());
+
+            // Set up external auth handler if enabled
+            if broker_config.auth_enabled {
+                broker.set_auth_handler(move |_client_id: String, username: String, password: String| {
+                    let store = match open_settings_store() {
+                        Ok(s) => s,
+                        Err(_) => return std::future::ready(false),
+                    };
+
+                    // Check for internal system credential
+                    if username == "__neomind_internal__" {
+                        if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
+                            return std::future::ready(password == system_pass);
+                        }
+                        return std::future::ready(false);
+                    }
+
+                    // Check user credentials
+                    let creds = match store.list_mqtt_credentials() {
+                        Ok(c) => c,
+                        Err(_) => return std::future::ready(false),
+                    };
+
+                    for cred in creds {
+                        if cred.username == username {
+                            return std::future::ready(
+                                bcrypt::verify(&password, &cred.password_hash).unwrap_or(false)
+                            );
+                        }
+                    }
+                    std::future::ready(false)
+                });
+            }
+
             match broker.start() {
                 Ok(_) => {
                     tracing::info!("Embedded MQTT broker started on :{}", port);
+                    if broker_config.auth_enabled {
+                        tracing::info!("Embedded broker authentication enabled (external auth handler)");
+                    }
                 }
                 Err(e) => {
                     tracing::error!("Failed to start embedded broker: {}", e);
@@ -1099,18 +1156,40 @@ impl ServerState {
         }
 
         // Create and register the internal MQTT adapter
+        let broker_config = get_embedded_broker_config();
+        let (adapter_username, adapter_password) = {
+            #[cfg(feature = "embedded-broker")]
+            {
+                if broker_config.auth_enabled {
+                    if let Ok(store) = open_settings_store() {
+                        if let Ok(Some(pass)) = store.get_system_mqtt_credential() {
+                            (Some("__neomind_internal__".to_string()), Some(pass))
+                        } else {
+                            (None, None)
+                        }
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            #[cfg(not(feature = "embedded-broker"))]
+            { (None, None) }
+        };
+
         let mqtt_config = MqttAdapterConfig {
             name: "internal-mqtt".to_string(),
             mqtt: neomind_devices::mqtt::MqttConfig {
                 broker: "127.0.0.1".to_string(), // Use IPv4 literal to avoid IPv6 resolution on Windows
-                port: 1883,
+                port: broker_config.port, // Dynamic port from config
                 client_id: Some("neomind-internal".to_string()),
-                username: None,
-                password: None,
-                tls: false,
-                ca_cert: None,
-                client_cert: None,
-                client_key: None,
+                username: adapter_username,
+                password: adapter_password,
+                tls: broker_config.tls_enabled, // Use TLS setting from config
+                ca_cert: broker_config.tls_ca_path.clone(),
+                client_cert: broker_config.tls_cert_path.clone(),
+                client_key: broker_config.tls_key_path.clone(),
                 keep_alive: 60,
                 clean_session: true,
                 qos: 1,
