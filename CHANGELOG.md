@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI: extension config** — New `neomind extension config <ID>` to view config, `--set '<JSON>'` to update. Replaces manual API calls for extension configuration
 - **CLI: API client auth retry** — All API client methods (GET/POST/PUT/DELETE/multipart) now automatically retry on 401 with refreshed API key from redb. API key stored in `RwLock` for thread-safe refresh
 - **CLI: health check via API** — `neomind health` now queries actual LLM backend status via API instead of checking environment variables. Shows backend count, active backend ID, and setup hints
+- **CLI: system info with TLS/auth/credentials** — `neomind system info` now exposes MQTT broker TLS status, auth mode, and credentials for AI agent onboarding guidance
+- **Broker connection guide in Add Device dialog** — New step showing embedded broker connection details (host, port, credentials) to simplify device onboarding
 
 ### Changed
 
@@ -32,13 +34,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI: DSL parser validation** — Rule engine now rejects function-call syntax (e.g., `device.metric(temperature)`) and empty source/metric with clear error messages
 - **Session preview auto-extraction** — Session list now includes preview text auto-extracted from the first user message (50-char limit), improving session sidebar display
 - **User guide improvements** — Updated documentation with Skills tab references, Data page guidance, and content fixes
+- **Embedded broker migrated to rmqtt** — Replaced rumqttd with rmqtt for improved stability, plugin support, and standards compliance. Broker restart uses system credentials from redb
 
 ### Fixed
 
 - **Storage lifetime issue** — Fixed lifetime annotation in `delete_mqtt_credential` preventing compilation
-- **Base64 image normalization** — Normalized base64 image data handling across image display components
 - **macOS resource limits** — Fixed macOS file descriptor limits for stable operation under high connection counts
-- **Image history display** — Fixed image display and history components for correct rendering in dashboards
+- **MQTT InvalidAuth loop** — Resolved broker authentication loop caused by credential mismatch; parallelized broker startup for faster initialization
+- **MQTT broker restart credentials** — Broker restart adapter now correctly uses system credentials from redb instead of stale values
+- **Backend base64 image stripping reverted** — Reverted commit 49c1086 which stripped `data:image/...;base64,` prefix from metric/telemetry API responses, breaking all image consumers (dashboard widgets and external extensions). Backend now returns string values as-is
+- **Base64 image detection** — Fixed `/9j/` (JPEG) rejection in `isPureBase64`/`isBase64Image` across ImageDisplay, ImageHistory, AgentMonitorWidget, and helpers. All components now correctly detect JPEG base64 data
+- **Image URL normalization** — Fixed double-prefixed data URL handling and non-standard `data:` prefix cases using magic bytes detection in normalizeImageUrl
+- **Image dynamic refresh** — Device→telemetry conversion in ImageDisplay and ImageHistory now includes `refresh` interval for live image updates
+- **External placeholder SSL error** — Replaced external `via.placeholder.com` with local empty state, eliminating SSL errors for missing images
+- **React setState-during-render warning** — Fixed `UnifiedDataSourceConfig` calling `onChange()` inside `setSelectedItems` updater; moved to useEffect
+- **Floating chat session isolation** — PanelChatView and GlobalChatFab now share session key constant; added new conversation button; fixed session history loading on mount
+- **Floating chat panel redesign** — Complete overhaul of the global floating chat panel: independent session with local state (no longer shares global store with chat page), proper LLM backend loading with "not configured" empty state, skeleton loading when reopening panel, session not found auto-recovery (silently creates new session)
+- **AI response tool call rendering fixed** — `ToolCallVisualization` was deprecated (returned `null`), causing tool calls and execution process to be invisible in `MergedMessageList` and `MessageItem`. Replaced with `ToolProcessBlock` to match the main chat page's rendering
+- **Floating panel card-style AI responses** — Added `assistantCard` prop to `MessageItem`/`MergedMessageList` for wrapping AI responses (thinking + tool calls + content) in a subtle card background, improving readability over the glass morphism panel background
+- **Streaming cursor positioning** — Fixed floating cursor in streaming content caused by `relative inline` CSS on the wrapper; now uses proper `align-text-bottom` alignment
+- **Streaming-to-saved message flash fix** — Panel's `"end"` handler now uses `currentStreamMessageId` as the saved message ID, enabling smooth transition from streaming block to persisted message without visual flash
+- **Session cleanup on delete** — `deleteSession` in sessionSlice now clears the panel's persisted session ID from localStorage when the deleted session matches, preventing "Session not found" errors on next panel open
+- **Missing i18n translations** — Added translations for "Edit Dashboard", "Internal Broker", "Built-in" labels in en/zh locales
 
 ---
 
