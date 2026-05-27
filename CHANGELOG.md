@@ -11,6 +11,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.8.1] - 2026-05-27
+
+### Added
+
+- **Embedded MQTT broker auth & TLS management** — Redesigned `EmbeddedBroker` with `external_auth` callback for redb-backed credential validation, stop/restart lifecycle, and TLS support (cert/key paths). Broker now loads config from redb at startup and validates connections against stored credentials
+- **MQTT credential storage** — New redb tables (`mqtt_credentials`, `mqtt_credentials_by_username`) for MQTT username/password management. Full CRUD methods with automatic index maintenance in `neomind-storage`
+- **Embedded broker config API** — New endpoints `GET/PUT /api/settings/broker` for reading and updating embedded broker configuration (auth mode, TLS, credentials). Changes take effect on broker restart
+- **Embedded broker config UI** — New `EmbeddedBrokerConfigDialog` component with auth mode toggle (anonymous/credential), credential management (add/delete), and TLS configuration (cert/key paths). Full en/zh i18n support
+- **CLI: device drafts commands** — New `neomind device drafts` subcommand group (`list`, `get`, `approve`, `reject`, `config`) for managing auto-discovered device drafts. Full workflow: list pending → inspect samples → approve with name/type → or reject
+- **CLI: device webhook-url** — New `neomind device webhook-url <ID>` command to retrieve the HTTP push URL for webhook adapter devices
+- **CLI: extension config** — New `neomind extension config <ID>` to view config, `--set '<JSON>'` to update. Replaces manual API calls for extension configuration
+- **CLI: API client auth retry** — All API client methods (GET/POST/PUT/DELETE/multipart) now automatically retry on 401 with refreshed API key from redb. API key stored in `RwLock` for thread-safe refresh
+- **CLI: health check via API** — `neomind health` now queries actual LLM backend status via API instead of checking environment variables. Shows backend count, active backend ID, and setup hints
+
+### Changed
+
+- **CLI: shell tool reference updates** — `transform test` renamed to `test-code`, `extension get` aliased to `info`, agents created as `active` by default (no longer need `control <ID> active`), push target type auto-detected from config
+- **CLI: shell operator fallthrough** — Commands containing pipes (`|`), redirects (`>`), or stderr redirects (`2>`) now fall through to real shell execution instead of internal routing
+- **CLI: DSL parser validation** — Rule engine now rejects function-call syntax (e.g., `device.metric(temperature)`) and empty source/metric with clear error messages
+- **Session preview auto-extraction** — Session list now includes preview text auto-extracted from the first user message (50-char limit), improving session sidebar display
+- **User guide improvements** — Updated documentation with Skills tab references, Data page guidance, and content fixes
+
+### Fixed
+
+- **Storage lifetime issue** — Fixed lifetime annotation in `delete_mqtt_credential` preventing compilation
+- **Base64 image normalization** — Normalized base64 image data handling across image display components
+- **macOS resource limits** — Fixed macOS file descriptor limits for stable operation under high connection counts
+- **Image history display** — Fixed image display and history components for correct rendering in dashboards
+
+---
+
 ## [v0.8.0] - 2026-05-26
 
 ### Added

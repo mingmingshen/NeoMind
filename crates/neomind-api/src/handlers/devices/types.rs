@@ -137,6 +137,10 @@ pub async fn register_device_type_handler(
     State(state): State<ServerState>,
     Json(template): Json<DeviceTypeTemplate>,
 ) -> HandlerResult<serde_json::Value> {
+    // Save ID before moving the template
+    let type_id = template.device_type.clone();
+    let type_name = template.name.clone();
+
     // Register the template directly (already in simplified format)
     state
         .devices
@@ -150,6 +154,8 @@ pub async fn register_device_type_handler(
     ok(json!({
         "success": true,
         "registered": true,
+        "device_type": type_id,
+        "name": type_name,
     }))
 }
 

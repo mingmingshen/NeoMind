@@ -135,8 +135,8 @@ function detectFormatFromMimeType(mime: string): { type: ImageFormatType; mime: 
  */
 function isPureBase64(str: string): boolean {
   if (!str || str.length < 100) return false
-  // Remove any whitespace
-  const cleaned = str.trim()
+  // Strip whitespace/newlines first (backend may include them)
+  const cleaned = str.trim().replace(/[\s\r\n]+/g, '')
 
   // Check if it starts with http(s) - then it's a URL, not base64
   if (cleaned.startsWith('http://') || cleaned.startsWith('https://') || cleaned.startsWith('/')) {
@@ -278,6 +278,19 @@ function normalizeImageUrl(value: string | number | undefined | null): {
       format: 'unknown',
       isBase64: false,
       isDataUrl: false,
+      originalValue: valueStr,
+    }
+  }
+
+  // 8. Last resort: try sanitizing and using as raw base64
+  const sanitized = trimmed.replace(/[\s\r\n]+/g, '')
+  if (sanitized.length >= 100 && /^[A-Za-z0-9+/=_-]+$/.test(sanitized)) {
+    const formatInfo = detectImageFormatFromMagicBytes(sanitized) || { type: 'png', mime: 'image/png' }
+    return {
+      src: `data:${formatInfo.mime};base64,${sanitized}`,
+      format: formatInfo.type,
+      isBase64: true,
+      isDataUrl: true,
       originalValue: valueStr,
     }
   }

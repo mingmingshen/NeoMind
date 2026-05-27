@@ -19,18 +19,17 @@ all = ["ollama", "cloud", "llamacpp", "openai", "anthropic", "google", "xai"]
 
 [dependencies]
 neomind-core = { path = "../neomind-core" }
+neomind-cli-ops = { path = "../neomind-cli-ops" }
 neomind-devices = { path = "../neomind-devices" }
 neomind-storage = { path = "../neomind-storage" }
 neomind-rules = { path = "../neomind-rules" }
 neomind-messages = { path = "../neomind-messages" }
-neomind-cli-ops = { path = "../neomind-cli-ops" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 glob = "0.3"
 regex = { workspace = true }
-shell-words = "1.1"
 uuid = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }

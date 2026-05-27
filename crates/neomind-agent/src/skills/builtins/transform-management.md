@@ -6,10 +6,10 @@ origin: builtin
 priority: 80
 token_budget: 10000
 triggers:
-  keywords: [transform, 转换, 数据转换, data transform, 计算, calculate, formula, 公式, virtual metric, 虚拟指标, 转换数据, process data, 数据处理, 脚本, script, JS code, javascript, 华氏, 摄氏, 单位转换, unit conversion, transform create, transform test]
+  keywords: [transform, 转换, 数据转换, data transform, 计算, calculate, formula, 公式, virtual metric, 虚拟指标, 转换数据, process data, 数据处理, 脚本, script, JS code, javascript, 华氏, 摄氏, 单位转换, unit conversion, transform create, transform test-code]
   tool_target:
     - tool: transform
-      actions: [list, get, create, update, delete, test, metrics, data-sources]
+      actions: [list, get, create, update, delete, test-code, metrics, data-sources]
 anti_triggers:
   keywords: [dashboard, 仪表盘, agent, 代理, extension develop, 扩展开发, device connect, 设备连接, rule, 规则]
 ---
@@ -112,7 +112,7 @@ neomind transform data-sources
 
 **Workflow: Discover → Test → Create**
 1. Run discovery commands above to learn actual field names
-2. `neomind transform test --code '...' --input '<actual_data>'` to verify
+2. `neomind transform test-code --code '...' --input '<actual_data>'` to verify
 3. `neomind transform create --name ... --code ... --scope ...` to save
 
 **Output DataSourceId**: `transform:<output_prefix>:<field>`
@@ -137,7 +137,7 @@ Optional: `--scope` (default: `global`), `--output-prefix`, `--description`, `--
 
 ```bash
 # Test code with sample input
-neomind transform test --code 'return (input - 32) * 5 / 9' --input '{"value": 212}'
+neomind transform test-code --code 'return (input - 32) * 5 / 9' --input '{"value": 212}'
 ```
 
 **Always test before creating** to verify the code works correctly.
@@ -165,7 +165,7 @@ neomind transform delete <ID>                       # Delete transform
 
 ```bash
 # Step 1: Test the code
-neomind transform test --code 'return (input - 32) * 5 / 9' --input '{"value": 212}'
+neomind transform test-code --code 'return (input - 32) * 5 / 9' --input '{"value": 212}'
 
 # Step 2: Create the transform
 neomind transform create --name 'Fahrenheit to Celsius' \
@@ -179,7 +179,7 @@ neomind transform metrics
 ### Battery Health Classification
 
 ```bash
-neomind transform test --code 'if (input > 80) return "good"; if (input > 20) return "ok"; return "low"' --input '{"value": 15}'
+neomind transform test-code --code 'if (input > 80) return "good"; if (input > 20) return "ok"; return "low"' --input '{"value": 15}'
 
 neomind transform create --name 'Battery Health' \
   --scope global \
@@ -216,7 +216,7 @@ neomind transform create --name 'Status Text' \
 
 ```bash
 # Uses extensions.invoke() to fetch external data and combine with device input
-neomind transform test --code 'const w = extensions.invoke("weather", "current", {city: "Shanghai"}); return {outdoor: w.temperature, indoor: input}' --input '{"value": 22}'
+neomind transform test-code --code 'const w = extensions.invoke("weather", "current", {city: "Shanghai"}); return {outdoor: w.temperature, indoor: input}' --input '{"value": 22}'
 
 neomind transform create --name 'Indoor vs Outdoor' \
   --scope global \
@@ -250,7 +250,7 @@ neomind dashboard add-components <DASHBOARD_ID> --components '[{
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| "Transform code error" | JS syntax error | Test with `transform test --code '...' --input '...'` first |
+| "Transform code error" | JS syntax error | Test with `transform test-code --code '...' --input '...'` first |
 | "Unexpected token return" | Missing semicolons or bad syntax | Use simple one-liner expressions |
 | No virtual metric appears | Transform disabled or scope mismatch | Check `transform get <ID>` for enabled status and scope |
 | "input is not defined" | Using wrong variable name | Must use `input` (not `inputs` or `value`) |

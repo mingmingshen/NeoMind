@@ -969,16 +969,18 @@ export const api = {
   // Embedded Broker Config
   getEmbeddedBrokerConfig: () =>
     fetchAPI<{
-      listen: string
-      port: number
-      max_connections: number
-      auth_enabled: boolean
-      credentials: { username: string; password: string }[]
-      tls_enabled: boolean
-      tls_cert_path: string | null
-      tls_key_path: string | null
-      tls_ca_path: string | null
-    }>('/mqtt/broker-config'),
+      config: {
+        listen: string
+        port: number
+        max_connections: number
+        auth_enabled: boolean
+        credentials: { username: string; password: string }[]
+        tls_enabled: boolean
+        tls_cert_path: string | null
+        tls_key_path: string | null
+        tls_ca_path: string | null
+      }
+    }>('/mqtt/broker-config').then((res) => res.config),
 
   updateEmbeddedBrokerConfig: (config: {
     listen?: string
@@ -1007,6 +1009,35 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ cert_pem: certPem, key_pem: keyPem, ca_pem: caPem }),
     }),
+
+  generateMqttTlsCert: () =>
+    fetchAPI<{ message: string; ca_path: string }>('/mqtt/broker-config/tls/generate', {
+      method: 'POST',
+    }),
+
+  downloadMqttCaCert: async () => {
+    const base = getApiBase()
+    const headers: Record<string, string> = {}
+    const token = tokenManager.getToken()
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    const apiKey = getApiKey()
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey
+    }
+    const response = await fetch(`${base}/mqtt/broker-config/tls/ca-cert`, { headers })
+    if (!response.ok) throw new Error('Failed to download CA certificate')
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'mqtt-ca.crt'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  },
 
   // Sessions
   // Note: Backend returns paginated response with data as array (auto-unwrapped by fetchAPI)

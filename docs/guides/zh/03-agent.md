@@ -619,7 +619,7 @@ anti_triggers:
 
 ```bash
 neomind device list
-neomind device delete --id <device_id>
+neomind device delete <device_id>
 ```
 
 ## 常见错误
@@ -763,7 +763,7 @@ neomind device list --type temperature
 neomind rule create --dsl "RULE temp_alert WHEN device.temp > 30 DO notify"
 
 # 查询最新读数
-neomind device latest --id <device_id>
+neomind device latest <device_id>
 ```
 
 ## 常见错误

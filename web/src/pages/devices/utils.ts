@@ -28,23 +28,12 @@ function sanitizeBase64(data: string): string {
   return data.replace(/[\s\r\n]+/g, '')
 }
 
-// Validate that a string is valid base64 (quick check via atob)
-function isValidBase64(data: string): boolean {
-  if (!data || data.length === 0) return false
-  try {
-    // Only decode a small portion for performance on large images
-    atob(data.length > 200 ? data.slice(0, 100) + data.slice(-100) : data)
-    return true
-  } catch {
-    return false
-  }
-}
-
 // Get the data URL for a base64 image value.
 // Handles: raw base64, data:image/ URLs, and malformed data URLs.
 export function getImageDataUrl(value: unknown): string | null {
   if (typeof value !== "string") return null
   const str = value.trim()
+  if (!str) return null
 
   // Already a data:image URL
   if (str.startsWith("data:image/")) {
@@ -59,18 +48,18 @@ export function getImageDataUrl(value: unknown): string | null {
       return getImageDataUrl(b64)
     }
 
-    if (!isValidBase64(b64)) return null
     return `${prefix}${b64}`
   }
 
-  // Any other data: prefix (malformed)
+  // Any other data: prefix (malformed) — strip it and retry
   if (str.startsWith('data:')) {
-    return getImageDataUrl(str.replace(/^data:[^,]*,/, ''))
+    const afterComma = str.slice(str.indexOf(',') + 1)
+    if (afterComma && afterComma !== str) return getImageDataUrl(afterComma)
+    return null
   }
 
   // Sanitize base64 data (backend may include newlines)
   const clean = sanitizeBase64(str)
-  if (!isValidBase64(clean)) return null
 
   // Detect image type from signature and add data URL prefix
   if (clean.startsWith("iVBORw0KGgo")) return `data:image/png;base64,${clean}`
@@ -79,8 +68,12 @@ export function getImageDataUrl(value: unknown): string | null {
   if (clean.startsWith("UklGR")) return `data:image/webp;base64,${clean}`
   if (clean.startsWith("Qk")) return `data:image/bmp;base64,${clean}`
 
-  // Fallback - try as PNG
-  return `data:image/png;base64,${clean}`
+  // Fallback: if it looks like valid base64 (long enough, only base64 chars), try as PNG
+  if (clean.length >= 100 && /^[A-Za-z0-9+/=_-]+$/.test(clean)) {
+    return `data:image/png;base64,${clean}`
+  }
+
+  return null
 }
 
 // Format metric value for display

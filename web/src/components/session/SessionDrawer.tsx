@@ -94,7 +94,7 @@ function SessionItem({
               "text-sm font-medium truncate",
               isActive ? "text-foreground" : "text-muted-foreground"
             )}>
-              {session.title || t('defaultTitle')}
+              {session.title || session.preview || t('defaultTitle')}
             </h4>
             <span className={cn(
               "flex items-center gap-1 text-xs flex-shrink-0",

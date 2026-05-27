@@ -335,25 +335,25 @@ neomind push create \
   --schedule '{"type":"event_driven","event_types":["device_metric"]}'
 
 # Test a push target
-neomind push test --id <target-id>
+neomind push test <target-id>
 
 # Start a push target
-neomind push start --id <target-id>
+neomind push start <target-id>
 
 # Stop a push target
-neomind push stop --id <target-id>
+neomind push stop <target-id>
 
 # View delivery logs
-neomind push logs --id <target-id> --limit 50
+neomind push logs <target-id> --limit 50
 
 # View push statistics
 neomind push stats
 
 # Update a push target
-neomind push update --id <target-id> --config '{"url":"https://new-url.example.com/hook"}'
+neomind push update <target-id> --config '{"url":"https://new-url.example.com/hook"}'
 
 # Delete a push target
-neomind push delete --id <target-id>
+neomind push delete <target-id>
 ```
 
 ### API Examples
@@ -580,16 +580,16 @@ END'
 neomind rule list
 
 # Get rule details
-neomind rule get --id <rule-id>
+neomind rule get <rule-id>
 
 # Update a rule
-neomind rule update --id <rule-id> --dsl 'RULE high_temp_alert
+neomind rule update <rule-id> --dsl 'RULE high_temp_alert
   WHEN device:sensor1:temperature > 35
   DO notify(channel="alert-webhook", message="CRITICAL: Temperature {{value}}")
 END'
 
 # Delete a rule
-neomind rule delete --id <rule-id>
+neomind rule delete <rule-id>
 ```
 
 ### API Examples
@@ -740,8 +740,8 @@ Based on these examples, you can develop:
 ### Push Target Not Delivering
 
 - Check if push target is started: `neomind push list`
-- Review delivery logs: `neomind push logs --id <target-id>`
-- Test the target: `neomind push test --id <target-id>`
+- Review delivery logs: `neomind push logs <target-id>`
+- Test the target: `neomind push test <target-id>`
 - Verify external endpoint is reachable
 
 ### Notification Channel Not Working

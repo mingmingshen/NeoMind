@@ -194,9 +194,9 @@ curl -X POST http://localhost:9375/api/rules \
 # CLI commands
 neomind rule list
 neomind rule create --dsl 'RULE "Alert" WHEN sensor.temp > 30 DO NOTIFY "Hot" END'
-neomind rule enable --id <rule_id>
-neomind rule disable --id <rule_id>
-neomind rule delete --id <rule_id>
+neomind rule enable <rule_id>
+neomind rule disable <rule_id>
+neomind rule delete <rule_id>
 ```
 
 ---

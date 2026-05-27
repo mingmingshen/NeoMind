@@ -2,30 +2,29 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
 import {
-  Settings,
   Trash2,
   Plus,
   Loader2,
   AlertTriangle,
+  ShieldCheck,
+  Lock,
+  Server,
+  Download,
+  Zap,
+  FileText,
+  ArrowLeft,
+  CheckCircle2,
 } from 'lucide-react'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogContentBody,
-} from '@/components/ui/dialog'
+import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
+import { FormField } from '@/components/ui/field'
+import { FormSection, FormSectionGroup } from '@/components/ui/form-section'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
-import { cn } from '@/lib/utils'
 
 interface BrokerConfig {
   listen: string
@@ -39,6 +38,8 @@ interface BrokerConfig {
   tls_ca_path: string | null
 }
 
+type CertMode = 'auto' | 'manual' | null
+
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -50,17 +51,20 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
   const { handleError } = useErrorHandler()
 
   const [config, setConfig] = useState<BrokerConfig | null>(null)
-  const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // Form state for general settings
-  const [listen, setListen] = useState('')
+  const [listen, setListen] = useState('0.0.0.0')
   const [port, setPort] = useState(1883)
 
   // Form state for TLS certificates
   const [certPem, setCertPem] = useState('')
   const [keyPem, setKeyPem] = useState('')
   const [caPem, setCaPem] = useState('')
+
+  // TLS cert mode and generation state
+  const [certMode, setCertMode] = useState<CertMode>(null)
+  const [generating, setGenerating] = useState(false)
 
   // Form state for adding credential
   const [showAddCredential, setShowAddCredential] = useState(false)
@@ -71,6 +75,8 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
   // Track if config has unsaved changes that require restart
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
+  const certsExist = !!config?.tls_cert_path
+
   useEffect(() => {
     if (open) {
       loadConfig()
@@ -78,20 +84,18 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
   }, [open])
 
   const loadConfig = async () => {
-    setLoading(true)
     try {
       const data = await api.getEmbeddedBrokerConfig()
       setConfig(data)
-      setListen(data.listen)
-      setPort(data.port)
+      setListen(data.listen || '0.0.0.0')
+      setPort(data.port || 1883)
       setCertPem('')
       setKeyPem('')
       setCaPem('')
+      setCertMode(null)
       setHasUnsavedChanges(false)
     } catch (error) {
       handleError(error)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -114,10 +118,40 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
     try {
       await api.updateEmbeddedBrokerConfig({ tls_enabled: enabled })
       setConfig({ ...config, tls_enabled: enabled })
+      setCertMode(null)
       setHasUnsavedChanges(true)
       toast({
         title: enabled ? t('broker.tlsEnabled') : t('broker.tlsDisabled'),
         description: t('broker.restartWarning'),
+      })
+    } catch (error) {
+      handleError(error)
+    }
+  }
+
+  const handleGenerateCert = async () => {
+    setGenerating(true)
+    try {
+      await api.generateMqttTlsCert()
+      await loadConfig()
+      setHasUnsavedChanges(true)
+      toast({
+        title: t('broker.certGenerated'),
+        description: t('broker.certGeneratedSuccess'),
+      })
+    } catch (error) {
+      handleError(error)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleDownloadCaCert = async () => {
+    try {
+      await api.downloadMqttCaCert()
+      toast({
+        title: t('broker.caCertDownloaded'),
+        description: t('broker.caCertDownloadSuccess'),
       })
     } catch (error) {
       handleError(error)
@@ -169,14 +203,13 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
     if (!config) return
     setSaving(true)
     try {
-      // Update basic settings
       await api.updateEmbeddedBrokerConfig({
         listen,
         port,
       })
 
-      // Upload TLS certificates if provided
-      if (certPem && keyPem) {
+      // Only upload manual certs if in manual mode and fields are filled
+      if (certMode === 'manual' && certPem && keyPem) {
         await api.uploadMqttTlsCert(certPem, keyPem, caPem || undefined)
       }
 
@@ -194,79 +227,79 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
     }
   }
 
-  if (loading) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[600px]">
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        </DialogContent>
-      </Dialog>
-    )
-  }
-
-  if (!config) return null
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{t('broker.settings')}</DialogTitle>
-          <DialogDescription>
-            {t('broker.settingsDescription')}
-          </DialogDescription>
-        </DialogHeader>
-
-        <DialogContentBody className="space-y-6">
-          {/* General Settings */}
+    <UnifiedFormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('broker.settings')}
+      description={t('broker.settingsDescription')}
+      icon={<Server className="h-5 w-5 text-muted-foreground" />}
+      width="lg"
+      loading={!config}
+      isSubmitting={saving}
+      onSubmit={handleSave}
+      submitLabel={t('broker.save')}
+      cancelLabel={t('broker.cancel')}
+      submitDisabled={!config}
+    >
+      <FormSectionGroup>
+        {/* General Settings */}
+        <FormSection title={t('broker.general')} defaultExpanded>
           <div className="space-y-4">
-            <h3 className="text-sm font-medium">{t('broker.general')}</h3>
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="listen">{t('broker.listen')}</Label>
-                <Input
-                  id="listen"
-                  value={listen}
-                  onChange={(e) => {
-                    setListen(e.target.value)
-                    setHasUnsavedChanges(true)
-                  }}
-                  placeholder="0.0.0.0"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="port">{t('broker.port')}</Label>
-                <Input
-                  id="port"
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={port}
-                  onChange={(e) => {
-                    setPort(Number(e.target.value))
-                    setHasUnsavedChanges(true)
-                  }}
-                />
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {t('broker.maxConnections')}: {config.max_connections}
-              </div>
-            </div>
+            <FormField label={t('broker.listen')} helpText="0.0.0.0">
+              <Input
+                value={listen}
+                onChange={(e) => {
+                  setListen(e.target.value)
+                  setHasUnsavedChanges(true)
+                }}
+                placeholder="0.0.0.0"
+              />
+            </FormField>
+            <FormField
+              label={t('broker.port')}
+              helpText={`${t('broker.maxConnections')}: ${config?.max_connections ?? '-'}`}
+            >
+              <Input
+                type="number"
+                min={1024}
+                max={65535}
+                value={port}
+                onChange={(e) => {
+                  setPort(Number(e.target.value))
+                  setHasUnsavedChanges(true)
+                }}
+              />
+            </FormField>
           </div>
+        </FormSection>
 
-          {/* Authentication */}
+        {/* Authentication */}
+        <FormSection title={t('broker.auth')} defaultExpanded>
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">{t('broker.auth')}</h3>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="text-sm font-medium flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+                  {t('broker.authEnabled')}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {t('broker.authDescription')}
+                </p>
+              </div>
               <Switch
-                checked={config.auth_enabled}
+                checked={config?.auth_enabled ?? false}
                 onCheckedChange={handleToggleAuth}
               />
             </div>
 
-            {config.auth_enabled && (
+            {config?.auth_enabled && (
               <div className="space-y-2">
+                {config.credentials.length === 0 && (
+                  <p className="text-xs text-muted-foreground py-2">
+                    {t('broker.noCredentials')}
+                  </p>
+                )}
                 {config.credentials.map((cred) => (
                   <div
                     key={cred.username}
@@ -275,14 +308,15 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-mono">{cred.username}</span>
                       <Badge variant="secondary" className="text-xs">
-                        ••••••••
+                        &bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;
                       </Badge>
                     </div>
                     <Button
                       variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
                       onClick={() => handleDeleteCredential(cred.username)}
+                      aria-label={t('broker.deleteUser')}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -291,7 +325,7 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
 
                 {showAddCredential ? (
                   <div className="space-y-2 p-3 rounded border bg-background">
-                    <div className="grid gap-2">
+                    <FormField label={t('broker.username')}>
                       <Input
                         placeholder={t('broker.username')}
                         value={newUsername}
@@ -300,6 +334,8 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
                           if (e.key === 'Enter') handleAddCredential()
                         }}
                       />
+                    </FormField>
+                    <FormField label={t('broker.password')}>
                       <Input
                         type="password"
                         placeholder={t('broker.password')}
@@ -309,18 +345,15 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
                           if (e.key === 'Enter') handleAddCredential()
                         }}
                       />
-                    </div>
+                    </FormField>
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         onClick={handleAddCredential}
                         disabled={addingCredential}
                       >
-                        {addingCredential ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          t('broker.add')
-                        )}
+                        {addingCredential && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        {t('broker.add')}
                       </Button>
                       <Button
                         size="sm"
@@ -349,95 +382,174 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange }: Props) {
               </div>
             )}
           </div>
+        </FormSection>
 
-          {/* TLS */}
+        {/* TLS */}
+        <FormSection title={t('broker.tls')} defaultExpanded>
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">{t('broker.tls')}</h3>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="text-sm font-medium flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-muted-foreground" />
+                  {t('broker.tlsEnabled')}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {t('broker.tlsDescription')}
+                </p>
+              </div>
               <Switch
-                checked={config.tls_enabled}
+                checked={config?.tls_enabled ?? false}
                 onCheckedChange={handleToggleTls}
               />
             </div>
 
-            {config.tls_enabled && (
-              <div className="space-y-3">
-                <div className="grid gap-2">
-                  <Label htmlFor="cert">{t('broker.serverCert')}</Label>
-                  <Textarea
-                    id="cert"
-                    placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-                    value={certPem}
-                    onChange={(e) => {
-                      setCertPem(e.target.value)
-                      setHasUnsavedChanges(true)
-                    }}
-                    rows={4}
-                    className="font-mono text-xs"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="key">{t('broker.privateKey')}</Label>
-                  <Textarea
-                    id="key"
-                    placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"
-                    value={keyPem}
-                    onChange={(e) => {
-                      setKeyPem(e.target.value)
-                      setHasUnsavedChanges(true)
-                    }}
-                    rows={4}
-                    className="font-mono text-xs"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="ca">{t('broker.caCert')} ({t('broker.optional')})</Label>
-                  <Textarea
-                    id="ca"
-                    placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-                    value={caPem}
-                    onChange={(e) => {
-                      setCaPem(e.target.value)
-                      setHasUnsavedChanges(true)
-                    }}
-                    rows={4}
-                    className="font-mono text-xs"
-                  />
-                </div>
-                {config.tls_cert_path && (
-                  <div className="text-xs text-muted-foreground">
-                    {t('broker.currentCert')}: {config.tls_cert_path}
+            {config?.tls_enabled && (
+              <>
+                {certsExist ? (
+                  /* Certs already configured — show status + download */
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 p-3 rounded border bg-success-light">
+                      <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-success">
+                          {t('broker.certsConfigured')}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {config.tls_cert_path}
+                        </p>
+                      </div>
+                    </div>
+                    {config.tls_ca_path && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={handleDownloadCaCert}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        {t('broker.downloadCaCert')}
+                      </Button>
+                    )}
+                  </div>
+                ) : certMode === null ? (
+                  /* No certs, no mode selected — show choice cards */
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      {t('broker.noCertsDescription')}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setCertMode('auto')}
+                        className="flex flex-col items-start gap-1.5 p-4 rounded-lg border text-left transition-colors hover:border-primary hover:bg-primary/5"
+                      >
+                        <Zap className="h-5 w-5 text-accent-orange" />
+                        <span className="text-sm font-medium">{t('broker.autoGenerate')}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {t('broker.autoGenerateDescription')}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCertMode('manual')}
+                        className="flex flex-col items-start gap-1.5 p-4 rounded-lg border text-left transition-colors hover:border-primary hover:bg-primary/5"
+                      >
+                        <FileText className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('broker.manualUpload')}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {t('broker.manualUploadDescription')}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                ) : certMode === 'auto' ? (
+                  /* Auto-generate selected */
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      {t('broker.autoGenerateInfo')}
+                    </p>
+                    <Button
+                      onClick={handleGenerateCert}
+                      disabled={generating}
+                      className="w-full"
+                    >
+                      {generating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      <Zap className="h-4 w-4 mr-2" />
+                      {t('broker.generateCert')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setCertMode(null)}
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      {t('broker.back')}
+                    </Button>
+                  </div>
+                ) : (
+                  /* Manual upload selected */
+                  <div className="space-y-4">
+                    <FormField label={t('broker.serverCert')}>
+                      <Textarea
+                        placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                        value={certPem}
+                        onChange={(e) => {
+                          setCertPem(e.target.value)
+                          setHasUnsavedChanges(true)
+                        }}
+                        rows={4}
+                        className="font-mono text-xs"
+                      />
+                    </FormField>
+                    <FormField label={t('broker.privateKey')}>
+                      <Textarea
+                        placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"
+                        value={keyPem}
+                        onChange={(e) => {
+                          setKeyPem(e.target.value)
+                          setHasUnsavedChanges(true)
+                        }}
+                        rows={4}
+                        className="font-mono text-xs"
+                      />
+                    </FormField>
+                    <FormField label={`${t('broker.caCert')} (${t('broker.optional')})`}>
+                      <Textarea
+                        placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                        value={caPem}
+                        onChange={(e) => {
+                          setCaPem(e.target.value)
+                          setHasUnsavedChanges(true)
+                        }}
+                        rows={4}
+                        className="font-mono text-xs"
+                      />
+                    </FormField>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setCertMode(null)}
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      {t('broker.back')}
+                    </Button>
                   </div>
                 )}
-              </div>
+              </>
             )}
           </div>
+        </FormSection>
+      </FormSectionGroup>
 
-          {/* Warning */}
-          {hasUnsavedChanges && (
-            <div className="flex items-start gap-2 p-3 rounded bg-warning-light text-warning dark:bg-warning-light dark:text-warning">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              <p className="text-sm">{t('broker.restartWarning')}</p>
-            </div>
-          )}
-        </DialogContentBody>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('broker.cancel')}
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {t('broker.saving')}
-              </>
-            ) : (
-              t('broker.save')
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {/* Restart warning */}
+      {hasUnsavedChanges && (
+        <div className="flex items-start gap-2 p-3 rounded bg-warning-light text-warning mt-4">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <p className="text-sm">{t('broker.restartWarning')}</p>
+        </div>
+      )}
+    </UnifiedFormDialog>
   )
 }

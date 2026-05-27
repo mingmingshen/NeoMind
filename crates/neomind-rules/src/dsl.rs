@@ -913,10 +913,27 @@ impl RuleDslParser {
     /// after the source ID should be preserved (e.g., "metadata.height").
     fn parse_source_metric(input: &str) -> Result<(String, String), RuleError> {
         let input = input.trim();
+
+        // Reject function-call syntax like "device.metric(temperature)"
+        // Users should write "device.temperature" not "device.metric(temperature)"
+        if input.contains('(') || input.contains(')') {
+            return Err(RuleError::Parse(format!(
+                "Invalid condition '{}': function-call syntax is not supported. Use 'device_id.metric_name' format (e.g., 'sensor.temperature' instead of 'sensor.metric(temperature)')",
+                input
+            )));
+        }
+
         // Find the first dot to separate source_id from metric
         if let Some(dot_pos) = input.find('.') {
             let source_id = input[..dot_pos].to_string();
             let metric = input[dot_pos + 1..].to_string(); // Everything after the first dot
+            // Validate that source_id is not empty and metric is not empty
+            if source_id.is_empty() || metric.is_empty() {
+                return Err(RuleError::Parse(format!(
+                    "Invalid source.metric format '{}': both source ID and metric name are required",
+                    input
+                )));
+            }
             Ok((source_id, metric))
         } else {
             // No source specified, use the whole thing as metric
@@ -3178,5 +3195,46 @@ DO NOTIFY \"High temperature\" END"#;
         assert_eq!(format!("{}", LogLevel::Info), "info");
         assert_eq!(format!("{}", LogLevel::Warning), "warning");
         assert_eq!(format!("{}", LogLevel::Error), "error");
+    }
+
+    #[test]
+    fn test_reject_function_call_syntax() {
+        // "device.metric(temperature) > 50" should be rejected with clear error
+        let dsl = r#"
+            RULE "Bad Syntax"
+            WHEN device.metric(temperature) > 50
+            DO
+                NOTIFY "Error"
+            END
+        "#;
+        let result = RuleDslParser::parse(dsl);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("function-call syntax is not supported"),
+            "Expected function-call rejection, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_reject_empty_source_or_metric() {
+        // ".temperature > 50" should be rejected (empty source_id)
+        let dsl = r#"
+            RULE "Empty Source"
+            WHEN .temperature > 50
+            DO
+                NOTIFY "Error"
+            END
+        "#;
+        let result = RuleDslParser::parse(dsl);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("both source ID and metric name are required"),
+            "Expected empty source rejection, got: {}",
+            err
+        );
     }
 }

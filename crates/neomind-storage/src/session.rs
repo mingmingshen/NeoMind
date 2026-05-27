@@ -43,6 +43,9 @@ pub struct SessionMetadata {
     /// Index of the last message that has been summarized (messages up to this index can be removed)
     #[serde(default)]
     pub summary_up_to_index: Option<u64>,
+    /// Preview text derived from the first user message (truncated)
+    #[serde(default)]
+    pub preview: Option<String>,
 }
 
 /// A message in a session.
@@ -1416,6 +1419,7 @@ mod tests {
             memory_enabled: true,
             conversation_summary: Some("This is a summary".to_string()),
             summary_up_to_index: Some(5),
+            preview: None,
         };
         store.save_session_metadata("test-session", &metadata).unwrap();
 

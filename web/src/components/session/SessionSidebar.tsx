@@ -297,6 +297,9 @@ export function SessionSidebar({
     if (session.title && session.title !== "新对话" && session.title !== "New Chat") {
       return session.title
     }
+    if (session.preview) {
+      return session.preview.length > 30 ? session.preview.slice(0, 30) + '...' : session.preview
+    }
     return t('session.defaultTitle')
   }
 

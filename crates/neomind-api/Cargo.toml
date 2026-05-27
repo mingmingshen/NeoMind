@@ -68,6 +68,9 @@ tempfile = { workspace = true }
 dashmap = { workspace = true }
 parking_lot = { workspace = true }
 
+# TLS certificate generation
+rcgen = { workspace = true }
+
 # Encryption
 aes-gcm = { workspace = true }
 sha2 = { workspace = true }

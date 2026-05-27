@@ -1,14 +1,16 @@
 use anyhow::Result;
 use reqwest::Client;
+use std::sync::RwLock;
 use std::time::Duration;
 
 const DEFAULT_BASE_URL: &str = "http://localhost:9375/api";
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
+const MAX_RETRIES: usize = 1;
 
 pub struct ApiClient {
     base_url: String,
     client: Client,
-    api_key: Option<String>,
+    api_key: RwLock<Option<String>>,
 }
 
 impl Default for ApiClient {
@@ -25,9 +27,7 @@ impl ApiClient {
     }
 
     pub fn with_base_url(base_url: &str) -> Self {
-        // 1. Try env var first
         let api_key = std::env::var("NEOMIND_API_KEY").ok()
-            // 2. Fall back to auto-reading from local redb
             .or_else(crate::auto_auth::read_default_api_key);
         let client = Client::builder()
             .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
@@ -36,7 +36,7 @@ impl ApiClient {
         Self {
             base_url: base_url.to_string(),
             client,
-            api_key,
+            api_key: RwLock::new(api_key),
         }
     }
 
@@ -45,76 +45,109 @@ impl ApiClient {
     }
 
     fn add_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        if let Some(key) = &self.api_key {
+        let key = self.api_key.read().unwrap().clone();
+        if let Some(key) = key {
             req.header("Authorization", format!("Bearer {}", key))
         } else {
             req
         }
     }
 
+    /// Refresh the API key from storage (re-read from env or redb).
+    fn refresh_api_key(&self) {
+        let new_key = std::env::var("NEOMIND_API_KEY").ok()
+            .or_else(crate::auto_auth::read_default_api_key);
+        *self.api_key.write().unwrap() = new_key;
+    }
+
     pub async fn get(&self, path: &str) -> Result<serde_json::Value> {
-        let url = format!("{}{}", self.base_url, path);
-        let req = self.client.get(&url);
-        let resp = self.add_auth(req).send().await?;
-        let status = resp.status();
-        let body: serde_json::Value = resp.json().await?;
-        if !status.is_success() {
-            let msg = extract_error_message(&body);
-            anyhow::bail!("API error ({}): {}", status, msg);
+        for attempt in 0..=MAX_RETRIES {
+            let url = format!("{}{}", self.base_url, path);
+            let resp = self.add_auth(self.client.get(&url)).send().await?;
+            let status = resp.status();
+            if status.as_u16() == 401 && attempt < MAX_RETRIES {
+                self.refresh_api_key();
+                continue;
+            }
+            let body: serde_json::Value = resp.json().await.unwrap_or_default();
+            if !status.is_success() {
+                anyhow::bail!("API error ({}): {}", status, extract_error_message(&body));
+            }
+            return Ok(body);
         }
-        Ok(body)
+        anyhow::bail!("API request failed after retry")
     }
 
     pub async fn post(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
-        let url = format!("{}{}", self.base_url, path);
-        let req = self.client.post(&url).json(body);
-        let resp = self.add_auth(req).send().await?;
-        let status = resp.status();
-        let resp_body: serde_json::Value = resp.json().await?;
-        if !status.is_success() {
-            let msg = extract_error_message(&resp_body);
-            anyhow::bail!("API error ({}): {}", status, msg);
+        for attempt in 0..=MAX_RETRIES {
+            let url = format!("{}{}", self.base_url, path);
+            let resp = self.add_auth(self.client.post(&url).json(body)).send().await?;
+            let status = resp.status();
+            if status.as_u16() == 401 && attempt < MAX_RETRIES {
+                self.refresh_api_key();
+                continue;
+            }
+            let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
+            if !status.is_success() {
+                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+            }
+            return Ok(resp_body);
         }
-        Ok(resp_body)
+        anyhow::bail!("API request failed after retry")
     }
 
     pub async fn post_raw(&self, path: &str) -> Result<serde_json::Value> {
-        let url = format!("{}{}", self.base_url, path);
-        let req = self.client.post(&url);
-        let resp = self.add_auth(req).send().await?;
-        let status = resp.status();
-        let resp_body: serde_json::Value = resp.json().await?;
-        if !status.is_success() {
-            let msg = extract_error_message(&resp_body);
-            anyhow::bail!("API error ({}): {}", status, msg);
+        for attempt in 0..=MAX_RETRIES {
+            let url = format!("{}{}", self.base_url, path);
+            let resp = self.add_auth(self.client.post(&url)).send().await?;
+            let status = resp.status();
+            if status.as_u16() == 401 && attempt < MAX_RETRIES {
+                self.refresh_api_key();
+                continue;
+            }
+            let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
+            if !status.is_success() {
+                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+            }
+            return Ok(resp_body);
         }
-        Ok(resp_body)
+        anyhow::bail!("API request failed after retry")
     }
 
     pub async fn put(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
-        let url = format!("{}{}", self.base_url, path);
-        let req = self.client.put(&url).json(body);
-        let resp = self.add_auth(req).send().await?;
-        let status = resp.status();
-        let resp_body: serde_json::Value = resp.json().await?;
-        if !status.is_success() {
-            let msg = extract_error_message(&resp_body);
-            anyhow::bail!("API error ({}): {}", status, msg);
+        for attempt in 0..=MAX_RETRIES {
+            let url = format!("{}{}", self.base_url, path);
+            let resp = self.add_auth(self.client.put(&url).json(body)).send().await?;
+            let status = resp.status();
+            if status.as_u16() == 401 && attempt < MAX_RETRIES {
+                self.refresh_api_key();
+                continue;
+            }
+            let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
+            if !status.is_success() {
+                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+            }
+            return Ok(resp_body);
         }
-        Ok(resp_body)
+        anyhow::bail!("API request failed after retry")
     }
 
     pub async fn delete(&self, path: &str) -> Result<serde_json::Value> {
-        let url = format!("{}{}", self.base_url, path);
-        let req = self.client.delete(&url);
-        let resp = self.add_auth(req).send().await?;
-        let status = resp.status();
-        let resp_body: serde_json::Value = resp.json().await?;
-        if !status.is_success() {
-            let msg = extract_error_message(&resp_body);
-            anyhow::bail!("API error ({}): {}", status, msg);
+        for attempt in 0..=MAX_RETRIES {
+            let url = format!("{}{}", self.base_url, path);
+            let resp = self.add_auth(self.client.delete(&url)).send().await?;
+            let status = resp.status();
+            if status.as_u16() == 401 && attempt < MAX_RETRIES {
+                self.refresh_api_key();
+                continue;
+            }
+            let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
+            if !status.is_success() {
+                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+            }
+            return Ok(resp_body);
         }
-        Ok(resp_body)
+        anyhow::bail!("API request failed after retry")
     }
 
     pub async fn delete_with_body(
@@ -122,16 +155,21 @@ impl ApiClient {
         path: &str,
         body: &serde_json::Value,
     ) -> Result<serde_json::Value> {
-        let url = format!("{}{}", self.base_url, path);
-        let req = self.client.delete(&url).json(body);
-        let resp = self.add_auth(req).send().await?;
-        let status = resp.status();
-        let resp_body: serde_json::Value = resp.json().await?;
-        if !status.is_success() {
-            let msg = extract_error_message(&resp_body);
-            anyhow::bail!("API error ({}): {}", status, msg);
+        for attempt in 0..=MAX_RETRIES {
+            let url = format!("{}{}", self.base_url, path);
+            let resp = self.add_auth(self.client.delete(&url).json(body)).send().await?;
+            let status = resp.status();
+            if status.as_u16() == 401 && attempt < MAX_RETRIES {
+                self.refresh_api_key();
+                continue;
+            }
+            let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
+            if !status.is_success() {
+                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+            }
+            return Ok(resp_body);
         }
-        Ok(resp_body)
+        anyhow::bail!("API request failed after retry")
     }
 
     /// Upload a single file as multipart with the specified field name.
@@ -155,19 +193,25 @@ impl ApiClient {
         let mut file_content = Vec::new();
         file.read_to_end(&mut file_content)?;
 
-        let part = multipart::Part::bytes(file_content)
-            .file_name(file_name.to_string());
-        let form = multipart::Form::new().part(field_name.to_string(), part);
-
-        let req = self.client.post(&url).multipart(form);
-        let resp = self.add_auth(req).send().await?;
-        let status = resp.status();
-        let resp_body: serde_json::Value = resp.json().await?;
-        if !status.is_success() {
-            let msg = extract_error_message(&resp_body);
-            anyhow::bail!("API error ({}): {}", status, msg);
+        for attempt in 0..=MAX_RETRIES {
+            let form = {
+                let part = multipart::Part::bytes(file_content.clone())
+                    .file_name(file_name.to_string());
+                multipart::Form::new().part(field_name.to_string(), part)
+            };
+            let resp = self.add_auth(self.client.post(&url).multipart(form)).send().await?;
+            let status = resp.status();
+            if status.as_u16() == 401 && attempt < MAX_RETRIES {
+                self.refresh_api_key();
+                continue;
+            }
+            let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
+            if !status.is_success() {
+                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+            }
+            return Ok(resp_body);
         }
-        Ok(resp_body)
+        anyhow::bail!("API request failed after retry")
     }
 
     /// Upload multiple named parts as multipart/form-data.
@@ -180,32 +224,38 @@ impl ApiClient {
         use reqwest::multipart;
 
         let url = format!("{}{}", self.base_url, path);
-        let mut form = multipart::Form::new();
-        for (field_name, bytes, filename) in parts {
-            let part = multipart::Part::bytes(bytes).file_name(filename);
-            form = form.part(field_name.to_string(), part);
-        }
 
-        let req = self.client.post(&url).multipart(form);
-        let resp = self.add_auth(req).send().await?;
-        let status = resp.status();
-        let resp_body: serde_json::Value = resp.json().await?;
-        if !status.is_success() {
-            let msg = extract_error_message(&resp_body);
-            anyhow::bail!("API error ({}): {}", status, msg);
+        // Clone parts data for retry rebuilds
+        let parts_clone: Vec<(String, Vec<u8>, String)> = parts
+            .into_iter()
+            .map(|(name, bytes, filename)| (name.to_string(), bytes, filename))
+            .collect();
+
+        for attempt in 0..=MAX_RETRIES {
+            let mut form = multipart::Form::new();
+            for (field_name, bytes, filename) in &parts_clone {
+                let part = multipart::Part::bytes(bytes.clone()).file_name(filename.clone());
+                form = form.part(field_name.clone(), part);
+            }
+            let req = self.client.post(&url).multipart(form);
+            let resp = self.add_auth(req).send().await?;
+            let status = resp.status();
+            if status.as_u16() == 401 && attempt < MAX_RETRIES {
+                self.refresh_api_key();
+                continue;
+            }
+            let resp_body: serde_json::Value = resp.json().await.unwrap_or_default();
+            if !status.is_success() {
+                anyhow::bail!("API error ({}): {}", status, extract_error_message(&resp_body));
+            }
+            return Ok(resp_body);
         }
-        Ok(resp_body)
+        anyhow::bail!("API request failed after retry")
     }
 }
 
 /// Extract error message from API response body.
-/// Handles multiple response formats:
-/// - {"error":{"message":"..."}} (standard ErrorResponse wrapped)
-/// - {"error":{"code":"...","message":"..."}} (standard ErrorResponse)
-/// - {"message":"..."} (flat message)
-/// - {"error":"..."} (legacy string error)
 fn extract_error_message(body: &serde_json::Value) -> String {
-    // Nested: body.error.message
     body.get("error")
         .and_then(|e| e.get("message").and_then(|v| v.as_str()))
         .or_else(|| body.get("message").and_then(|v| v.as_str()))
@@ -245,5 +295,21 @@ mod tests {
     #[test]
     fn test_api_client_timeout_const() {
         assert_eq!(DEFAULT_TIMEOUT_SECS, 30);
+    }
+
+    #[test]
+    fn test_api_key_rwlock_works() {
+        let client = ApiClient::with_base_url("http://localhost:9375/api");
+        let key = client.api_key.read().unwrap().clone();
+        let _ = key; // Key may or may not exist depending on environment
+    }
+
+    #[test]
+    fn test_refresh_api_key_idempotent() {
+        let client = ApiClient::with_base_url("http://localhost:9375/api");
+        let first = client.api_key.read().unwrap().clone();
+        client.refresh_api_key();
+        let second = client.api_key.read().unwrap().clone();
+        assert_eq!(first, second); // Same source, should be the same
     }
 }

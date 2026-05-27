@@ -17,7 +17,9 @@ pub async fn get_extension(client: &ApiClient, id: &str) -> Result<CliResponse> 
 
 /// Get extension health status
 pub async fn get_extension_status(client: &ApiClient, id: &str) -> Result<CliResponse> {
-    let data = client.get(&format!("/extensions/{}/health", id)).await?;
+    let resp = client.get(&format!("/extensions/{}/health", id)).await?;
+    // Extract inner data to avoid double-wrapping (API already has success/data structure)
+    let data = resp.get("data").cloned().unwrap_or(resp);
     Ok(CliResponse::success(data, "Extension status retrieved"))
 }
 

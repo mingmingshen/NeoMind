@@ -47,7 +47,9 @@ function detectImageFormatFromMagicBytes(base64Data: string): { type: ImageForma
 
 function isPureBase64(str: string): boolean {
   if (!str || str.length < 100) return false
-  const cleaned = str.trim()
+
+  // Strip whitespace/newlines first (backend may include them)
+  const cleaned = str.trim().replace(/[\s\r\n]+/g, '')
 
   if (cleaned.startsWith('http://') || cleaned.startsWith('https://') || cleaned.startsWith('/')) {
     return false
@@ -107,6 +109,13 @@ function normalizeImageUrl(value: string): string | null {
     const clean = trimmed.replace(/[\s\r\n]+/g, '')
     const formatInfo = detectImageFormatFromMagicBytes(clean) || { type: 'png', mime: 'image/png' }
     return `data:${formatInfo.mime};base64,${clean}`
+  }
+
+  // Last resort: try sanitizing and using as raw base64
+  const sanitized = trimmed.replace(/[\s\r\n]+/g, '')
+  if (sanitized.length >= 100 && /^[A-Za-z0-9+/=_-]+$/.test(sanitized)) {
+    const formatInfo = detectImageFormatFromMagicBytes(sanitized) || { type: 'png', mime: 'image/png' }
+    return `data:${formatInfo.mime};base64,${sanitized}`
   }
 
   return null

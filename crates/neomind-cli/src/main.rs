@@ -366,6 +366,20 @@ enum ExtensionCommand {
         #[arg(required = true)]
         id: String,
     },
+    /// Get or update extension configuration.
+    ///
+    /// Without --set: shows current config.
+    /// With --set: updates config (JSON format).
+    /// Example: `neomind extension config weather-forecast`
+    /// Example: `neomind extension config weather-forecast --set '{"city":"Beijing"}'`
+    Config {
+        /// Extension ID.
+        #[arg(required = true)]
+        id: String,
+        /// Set config value (JSON). Omit to view current config.
+        #[arg(long)]
+        set: Option<String>,
+    },
 }
 
 /// Device subcommands.
@@ -575,6 +589,103 @@ enum DeviceCommand {
         /// Output in JSON format.
         #[arg(long)]
         json: bool,
+    },
+    /// Get webhook URL for a device.
+    ///
+    /// Returns the full URL for pushing data to this device via HTTP POST.
+    /// Only available for webhook adapter devices.
+    /// Example: `neomind device webhook-url <ID>`
+    WebhookUrl {
+        /// Device ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Manage device auto-discovery drafts.
+    ///
+    /// When unknown devices send data via MQTT/Webhook, they appear as drafts
+    /// awaiting approval. Use these commands to review, approve, or reject them.
+    ///
+    /// Workflow:
+    ///   1. `device drafts list` — see pending devices
+    ///   2. `device drafts get <ID>` — inspect sample data
+    ///   3. `device drafts approve <ID> --name "My Device" --type temp_sensor` — register
+    ///   4. Or `device drafts reject <ID>` — discard
+    ///
+    /// Example: `neomind device drafts list`
+    Drafts {
+        #[command(subcommand)]
+        draft_cmd: DraftCommand,
+    },
+}
+
+/// Device draft subcommands.
+#[derive(Subcommand, Debug)]
+enum DraftCommand {
+    /// List pending device drafts.
+    ///
+    /// Shows all unapproved devices that have sent data but aren't registered yet.
+    /// Example: `neomind device drafts list`
+    List {
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get draft details including sample data.
+    ///
+    /// Shows the device's auto-detected metrics and recent data samples.
+    /// Example: `neomind device drafts get <DEVICE_ID>`
+    Get {
+        /// Device ID of the draft.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Approve a device draft and register it.
+    ///
+    /// Converts the draft into a registered device. You can override the name and type.
+    /// After approval, the device starts receiving data normally.
+    /// Example: `neomind device drafts approve <ID> --name "Temperature Sensor" --type temp_sensor`
+    Approve {
+        /// Device ID of the draft.
+        #[arg(required = true)]
+        id: String,
+        /// Device display name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Device type to assign.
+        #[arg(long)]
+        r#type: Option<String>,
+    },
+    /// Reject and discard a device draft.
+    ///
+    /// Removes the draft and its sample data. The device can re-send data
+    /// to create a new draft if auto-discovery is still enabled.
+    /// Example: `neomind device drafts reject <ID>`
+    Reject {
+        /// Device ID of the draft.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// View or configure auto-discovery settings.
+    ///
+    /// Without flags: shows current config.
+    /// With flags: updates config values.
+    ///
+    /// Settings:
+    ///   --enabled true/false     Enable/disable auto-discovery
+    ///   --auto-approve true/false  Auto-approve new drafts
+    ///   --max-samples <N>        Max samples to keep per draft
+    ///
+    /// Example: `neomind device drafts config --enabled true --auto-approve false`
+    Config {
+        /// Enable or disable auto-discovery.
+        #[arg(long)]
+        enabled: Option<bool>,
+        /// Auto-approve new drafts without manual review.
+        #[arg(long)]
+        auto_approve: Option<bool>,
+        /// Maximum data samples to keep per draft.
+        #[arg(long)]
+        max_samples: Option<u32>,
     },
 }
 
@@ -2546,19 +2657,37 @@ async fn run_health() -> Result<()> {
 
     println!();
 
-    // Check LLM backend
+    // Check LLM backend (use authenticated API client)
     println!("🔍 Checking LLM backend...");
-    if std::env::var("OLLAMA_ENDPOINT").is_ok() || std::env::var("OPENAI_API_KEY").is_ok() {
-        if std::env::var("OLLAMA_ENDPOINT").is_ok() {
-            let endpoint = std::env::var("OLLAMA_ENDPOINT").unwrap_or_default();
-            println!("  ✅ Ollama configured: {}", endpoint);
+    let api_client = neomind_cli_ops::ApiClient::new();
+    match neomind_cli_ops::llm::list_backends(&api_client).await {
+        Ok(response) => {
+            if response.success {
+                if let Some(data) = &response.data {
+                    // Navigate past the CliResponse -> API response double-wrap
+                    let inner = data.get("data").unwrap_or(data);
+                    let count = inner.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let active_id = inner.get("active_id").and_then(|v| v.as_str());
+                    if count > 0 {
+                        println!("  ✅ {} LLM backend(s) configured", count);
+                        if let Some(id) = active_id {
+                            println!("  ✅ Active backend: {}", id);
+                        } else {
+                            println!("  ⚠️  No active backend selected");
+                            println!("  Hint: Use 'neomind llm activate <id>' to activate a backend");
+                        }
+                    } else {
+                        println!("  ⚠️  No LLM backend configured");
+                        println!("  Hint: Use 'neomind llm add' to add an LLM backend");
+                    }
+                }
+            } else {
+                println!("  ⚠️  Could not query LLM backends");
+            }
         }
-        if std::env::var("OPENAI_API_KEY").is_ok() {
-            println!("  ✅ OpenAI configured");
+        Err(e) => {
+            println!("  ⚠️  Could not query LLM backends: {}", e);
         }
-    } else {
-        println!("  ⚠️  No LLM backend configured");
-        println!("  Hint: Set OLLAMA_ENDPOINT or OPENAI_API_KEY environment variable");
     }
 
     println!();
@@ -2787,6 +2916,19 @@ async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
         ExtensionCommand::Reload { id } => {
             let client = neomind_cli_ops::ApiClient::new();
             let response = neomind_cli_ops::extension::reload_extension(&client, &id).await?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+            Ok(())
+        }
+        ExtensionCommand::Config { id, set } => {
+            let client = neomind_cli_ops::ApiClient::new();
+            let response = match set {
+                Some(json_str) => {
+                    let config = serde_json::from_str(&json_str)
+                        .unwrap_or(serde_json::json!(json_str));
+                    neomind_cli_ops::extension::update_extension_config(&client, &id, config).await?
+                }
+                None => neomind_cli_ops::extension::get_extension_config(&client, &id).await?,
+            };
             println!("{}", serde_json::to_string_pretty(&response)?);
             Ok(())
         }
@@ -3462,10 +3604,50 @@ async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
             };
             (write_metric(&client, &id, &metric, value_json, timestamp).await?, output_format)
         }
+        DeviceCommand::WebhookUrl { id } => {
+            (get_webhook_url(&client, &id).await?, OutputFormat::Human)
+        }
+        DeviceCommand::Drafts { draft_cmd } => {
+            return run_draft_cmd(draft_cmd).await;
+        }
     };
 
     // Format and print output
     format_output(&response, output_format);
+    Ok(())
+}
+
+/// Run device draft management commands.
+async fn run_draft_cmd(cmd: DraftCommand) -> Result<()> {
+    use neomind_cli_ops::device::*;
+    use neomind_cli_ops::output::format_output;
+    use neomind_cli_ops::types::OutputFormat;
+
+    let client = neomind_cli_ops::ApiClient::new();
+    let response = match cmd {
+        DraftCommand::List { json } => {
+            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            (list_drafts(&client).await?, output_format)
+        }
+        DraftCommand::Get { id } => {
+            (get_draft(&client, &id).await?, OutputFormat::Human)
+        }
+        DraftCommand::Approve { id, name, r#type } => {
+            (approve_draft(&client, &id, name.as_deref(), r#type.as_deref()).await?, OutputFormat::Human)
+        }
+        DraftCommand::Reject { id } => {
+            (reject_draft(&client, &id).await?, OutputFormat::Human)
+        }
+        DraftCommand::Config { enabled, auto_approve, max_samples } => {
+            if enabled.is_some() || auto_approve.is_some() || max_samples.is_some() {
+                (update_onboard_config(&client, enabled, max_samples, auto_approve).await?, OutputFormat::Human)
+            } else {
+                (get_onboard_config(&client).await?, OutputFormat::Human)
+            }
+        }
+    };
+
+    format_output(&response.0, response.1);
     Ok(())
 }
 

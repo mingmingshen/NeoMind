@@ -4,7 +4,7 @@
 //! configuration, including authentication settings, TLS certificates, and
 //! credential management.
 
-use axum::{extract::State, Json};
+use axum::{extract::State, http::{header, StatusCode}, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -13,6 +13,7 @@ use neomind_storage::settings::MqttCredential;
 
 use crate::config;
 use crate::handlers::common::{ok, HandlerResult};
+use crate::handlers::mqtt::cert_gen;
 use crate::models::ErrorResponse;
 use crate::server::types::ServerState;
 
@@ -161,14 +162,25 @@ pub async fn update_broker_config_handler(
     let store = config::open_settings_store()
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
 
-    // Load existing config
-    let config_value = store
+    // Load existing config (fall back to config.toml/defaults if never saved to redb)
+    let config = if let Some(config_value) = store
         .load_embedded_broker_config()
         .map_err(|e| ErrorResponse::internal(format!("Failed to load broker config: {}", e)))?
-        .ok_or_else(|| ErrorResponse::not_found("Broker configuration not found".to_string()))?;
+    {
+        serde_json::from_value::<EmbeddedBrokerConfig>(config_value)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to parse broker config: {}", e)))?
+    } else {
+        // First time: use config.toml or defaults, then persist to redb
+        let default_config = config::get_embedded_broker_config();
+        let config_value = serde_json::to_value(&default_config)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to serialize config: {}", e)))?;
+        store
+            .save_embedded_broker_config(&config_value)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to save broker config: {}", e)))?;
+        default_config
+    };
 
-    let mut config: EmbeddedBrokerConfig = serde_json::from_value(config_value)
-        .map_err(|e| ErrorResponse::internal(format!("Failed to parse broker config: {}", e)))?;
+    let mut config = config;
 
     // Update fields if provided
     if let Some(listen) = req.listen {
@@ -184,17 +196,6 @@ pub async fn update_broker_config_handler(
         config.auth_enabled = auth_enabled;
     }
     if let Some(tls_enabled) = req.tls_enabled {
-        // Validate that TLS certificates exist if enabling TLS
-        if tls_enabled {
-            let cert_exists = config.tls_cert_path.as_ref().map_or(false, |p| std::path::Path::new(p).exists());
-            let key_exists = config.tls_key_path.as_ref().map_or(false, |p| std::path::Path::new(p).exists());
-
-            if !cert_exists || !key_exists {
-                return Err(ErrorResponse::bad_request(
-                    "TLS certificates must be uploaded before enabling TLS".to_string()
-                ).into());
-            }
-        }
         config.tls_enabled = tls_enabled;
     }
 
@@ -372,13 +373,21 @@ pub async fn upload_tls_handler(
     let store = config::open_settings_store()
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
 
-    let config_value = store
+    let mut config = if let Some(config_value) = store
         .load_embedded_broker_config()
         .map_err(|e| ErrorResponse::internal(format!("Failed to load broker config: {}", e)))?
-        .ok_or_else(|| ErrorResponse::not_found("Broker configuration not found".to_string()))?;
-
-    let mut config: EmbeddedBrokerConfig = serde_json::from_value(config_value)
-        .map_err(|e| ErrorResponse::internal(format!("Failed to parse broker config: {}", e)))?;
+    {
+        serde_json::from_value::<EmbeddedBrokerConfig>(config_value)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to parse broker config: {}", e)))?
+    } else {
+        let default_config = config::get_embedded_broker_config();
+        let config_value = serde_json::to_value(&default_config)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to serialize config: {}", e)))?;
+        store
+            .save_embedded_broker_config(&config_value)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to save broker config: {}", e)))?;
+        default_config
+    };
 
     config.tls_cert_path = Some(cert_path.to_string_lossy().to_string());
     config.tls_key_path = Some(key_path.to_string_lossy().to_string());
@@ -441,4 +450,101 @@ fn generate_random_password(length: usize) -> String {
             CHARSET[idx] as char
         })
         .collect()
+}
+
+/// Auto-generate self-signed TLS certificates.
+///
+/// POST /api/mqtt/broker-config/tls/generate
+///
+/// Generates a CA certificate and a server certificate signed by it.
+/// Writes PEM files to `data/tls/` and updates the broker configuration.
+pub async fn generate_tls_handler() -> HandlerResult<serde_json::Value> {
+    let paths = cert_gen::generate_self_signed_certs()
+        .map_err(|e| ErrorResponse::internal(format!("Certificate generation failed: {}", e)))?;
+
+    // Load broker config (same fallback pattern as update handler)
+    let store = config::open_settings_store()
+        .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
+
+    let mut config = if let Some(config_value) = store
+        .load_embedded_broker_config()
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load broker config: {}", e)))?
+    {
+        serde_json::from_value::<EmbeddedBrokerConfig>(config_value)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to parse broker config: {}", e)))?
+    } else {
+        let default_config = config::get_embedded_broker_config();
+        let config_value = serde_json::to_value(&default_config)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to serialize config: {}", e)))?;
+        store
+            .save_embedded_broker_config(&config_value)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to save broker config: {}", e)))?;
+        default_config
+    };
+
+    config.tls_cert_path = Some(paths.server_cert_path.clone());
+    config.tls_key_path = Some(paths.server_key_path.clone());
+    config.tls_ca_path = Some(paths.ca_cert_path.clone());
+
+    let config_value = serde_json::to_value(&config)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to serialize config: {}", e)))?;
+
+    store
+        .save_embedded_broker_config(&config_value)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to save broker config: {}", e)))?;
+
+    tracing::info!(
+        ca_path = %paths.ca_cert_path,
+        cert_path = %paths.server_cert_path,
+        "Generated self-signed TLS certificates for embedded broker"
+    );
+
+    ok(json!({
+        "message": "Self-signed certificates generated successfully",
+        "ca_path": paths.ca_cert_path,
+        "cert_path": paths.server_cert_path,
+        "key_path": paths.server_key_path,
+    }))
+}
+
+/// Download the CA certificate file.
+///
+/// GET /api/mqtt/broker-config/tls/ca-cert
+///
+/// Returns the CA certificate PEM file as a downloadable attachment.
+pub async fn download_ca_cert_handler() -> Result<axum::response::Response, ErrorResponse> {
+    let store = config::open_settings_store()
+        .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
+
+    let config = if let Some(config_value) = store
+        .load_embedded_broker_config()
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load broker config: {}", e)))?
+    {
+        serde_json::from_value::<EmbeddedBrokerConfig>(config_value)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to parse broker config: {}", e)))?
+    } else {
+        let default_config = config::get_embedded_broker_config();
+        default_config
+    };
+
+    let ca_path = config
+        .tls_ca_path
+        .ok_or_else(|| ErrorResponse::not_found("No CA certificate configured".to_string()))?;
+
+    let ca_pem = std::fs::read_to_string(&ca_path).map_err(|e| {
+        ErrorResponse::not_found(format!("CA certificate file not found: {}", e))
+    })?;
+
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/x-pem-file".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"mqtt-ca.crt\"".to_string(),
+            ),
+        ],
+        ca_pem,
+    )
+        .into_response())
 }

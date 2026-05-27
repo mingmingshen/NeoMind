@@ -773,6 +773,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/mqtt/broker-config/credentials", post(mqtt::add_credential_handler))
         .route("/api/mqtt/broker-config/credentials/delete", post(mqtt::delete_credential_handler))
         .route("/api/mqtt/broker-config/tls", put(mqtt::upload_tls_handler))
+        .route("/api/mqtt/broker-config/tls/generate", post(mqtt::generate_tls_handler))
+        .route("/api/mqtt/broker-config/tls/ca-cert", get(mqtt::download_ca_cert_handler))
         // Stats API (devices and rules require auth, system info is public)
         .route("/api/stats/devices", get(stats::get_device_stats_handler))
         .route("/api/stats/rules", get(stats::get_rule_stats_handler))

@@ -1023,13 +1023,14 @@ impl SessionManager {
                 .get_session_metadata(&session_id)
                 .unwrap_or_default();
             let title = metadata.title.filter(|t| !t.is_empty());
+            let preview = metadata.preview.filter(|p| !p.is_empty());
 
             infos.push(SessionInfo {
                 session_id: session_id.clone(),
                 created_at: timestamp_ms,
                 message_count: 0, // Not loaded in light version
                 title,
-                preview: None, // Not loaded in light version
+                preview,
                 memory_enabled: metadata.memory_enabled,
             });
         }
@@ -1424,6 +1425,30 @@ impl SessionManager {
                 error = %e,
                 "Failed to persist history"
             );
+        }
+
+        // Update preview from first user message if not already set
+        if let Ok(mut metadata) = self.store.get_session_metadata(session_id) {
+            if metadata.preview.is_none() || metadata.preview.as_ref().map_or(true, |p| p.is_empty()) {
+                if let Some(first_user_msg) = messages.iter().find(|m| m.role == "user") {
+                    let content = first_user_msg.content.trim();
+                    let preview = if content.chars().count() > 50 {
+                        format!("{}...", content.chars().take(50).collect::<String>())
+                    } else {
+                        content.to_string()
+                    };
+                    if !preview.is_empty() {
+                        metadata.preview = Some(preview);
+                        if let Err(e) = self.store.save_session_metadata(session_id, &metadata) {
+                            tracing::debug!(
+                                session_id = %session_id,
+                                error = %e,
+                                "Failed to save session preview"
+                            );
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())

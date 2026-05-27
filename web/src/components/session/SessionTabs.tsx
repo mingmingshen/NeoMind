@@ -129,12 +129,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
   // Format session title
   const defaultTitle = t('dashboard.defaultTitle')
   const getSessionTitle = (session: ChatSession): string => {
-    if (session.title && session.title !== defaultTitle) {
-      return session.title.length > 16
-        ? session.title.slice(0, 16) + "..."
-        : session.title
-    }
-    return defaultTitle
+    return session.title || session.preview || defaultTitle
   }
 
   // Sort sessions by update time (newest first)
@@ -202,8 +197,8 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
               key={session.sessionId}
               onClick={() => handleSwitchSession(session.sessionId)}
               className={cn(
-                "group flex items-center gap-1.5 min-w-0",
-                "px-2.5 py-1.5 rounded-lg text-sm whitespace-nowrap",
+                "group flex items-center gap-1.5 min-w-0 max-w-[160px] sm:max-w-[180px]",
+                "px-2.5 py-1.5 rounded-lg text-sm",
                 "transition-all duration-150",
                 isActive
                   ? "bg-muted text-foreground font-medium"
@@ -211,7 +206,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
               )}
             >
               <MessageSquare className="h-4 w-4 flex-shrink-0 opacity-60" />
-              <span className="truncate max-w-[120px] sm:max-w-[140px]">
+              <span className="flex-1 min-w-0 truncate">
                 {getSessionTitle(session)}
               </span>
 

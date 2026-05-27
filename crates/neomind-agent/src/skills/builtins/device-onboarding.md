@@ -6,12 +6,12 @@ origin: builtin
 priority: 90
 token_budget: 12000
 triggers:
-  keywords: [设备接入, 接入, onboarding, 连接设备, connect device, MQTT, mqtt, broker, webhook, 传感器, sensor, 如何连接, how to connect, 怎么接入, 设备配置, device setup, device connect, 设备上线, provision, 配置设备, device provisioning, 网关, gateway, 接入方式, connection method, 接入协议, protocol, broker地址, broker address, 服务器地址, server address, topic, 主题, 订阅, subscribe, 发布, publish]
+  keywords: [设备接入, 接入, onboarding, 连接设备, connect device, MQTT, mqtt, broker, webhook, 传感器, sensor, 如何连接, how to connect, 怎么接入, 设备配置, device setup, device connect, 设备上线, provision, 配置设备, device provisioning, 网关, gateway, 接入方式, connection method, 接入协议, protocol, broker地址, broker address, 服务器地址, server address, topic, 主题, 订阅, subscribe, 发布, publish, draft, 草稿, 待审批, pending device, auto-discovery, 自动发现]
   tool_target:
     - tool: system
       actions: [info]
     - tool: device
-      actions: [create, list, types, control, latest]
+      actions: [create, list, types, control, latest, drafts, webhook-url]
 anti_triggers:
   keywords: [rule, 规则, agent, 代理, dashboard, 仪表盘, transform, 转换]
 ---
@@ -200,8 +200,29 @@ void loop() {
 
 4. **After device sends data, it appears as a draft.** Help user find and approve it:
 ```bash
-# Check if device appeared
-neomind device list
+# Check pending device drafts
+neomind device drafts list
+
+# View draft details (sample data, detected metrics)
+neomind device drafts get <DRAFT_ID>
+
+# Approve and register the device
+neomind device drafts approve <DRAFT_ID> --name "ESP32 Sensor" --type temp_sensor
+
+# Or reject if unrecognized
+neomind device drafts reject <DRAFT_ID>
+```
+
+**Auto-discovery configuration:**
+```bash
+# View current settings
+neomind device drafts config
+
+# Enable auto-approve (skip manual review)
+neomind device drafts config --auto-approve true
+
+# Disable auto-discovery
+neomind device drafts config --enabled false
 ```
 
 ---
@@ -330,6 +351,12 @@ These typically require a **gateway** that translates the protocol to MQTT or HT
 | `neomind device types list` | List device types |
 | `neomind device types create --name <N> --metrics '<JSON>'` | Create device type |
 | `neomind device types get <ID>` | Get device type details |
+| `neomind device webhook-url <ID>` | Get webhook push URL |
+| `neomind device drafts list` | List pending device drafts |
+| `neomind device drafts get <ID>` | View draft details and sample data |
+| `neomind device drafts approve <ID> --name <N> --type <T>` | Approve and register draft |
+| `neomind device drafts reject <ID>` | Reject and discard draft |
+| `neomind device drafts config [--enabled] [--auto-approve] [--max-samples]` | View/configure auto-discovery |
 
 ## Connector Management
 
@@ -371,3 +398,5 @@ curl -X POST http://<SERVER_IP>:9375/api/devices/<DEVICE_ID>/webhook \
 - **"Webhook returns 404"**: The device must be created first via `neomind device create` before sending webhook data. Use the exact device ID from the create response.
 - **"Connection refused"**: Check if the server is running and the port (1883 for MQTT, 9375 for HTTP) is accessible. Firewall may be blocking the port.
 - **"Data not updating"**: Run `neomind device latest <ID>` to check latest readings. If stale, verify the device is still publishing. Check `neomind system info` for MQTT connection status.
+- **"Device sent data but not in device list"**: New devices appear as drafts. Run `neomind device drafts list` to find pending devices, then `neomind device drafts approve <ID>` to register.
+- **"Too many unknown devices appearing"**: Adjust auto-discovery settings with `neomind device drafts config --max-samples 5` or disable with `--enabled false`.

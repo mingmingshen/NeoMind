@@ -335,25 +335,25 @@ neomind push create \
   --schedule '{"type":"event_driven","event_types":["device_metric"]}'
 
 # 测试推送目标
-neomind push test --id <target-id>
+neomind push test <target-id>
 
 # 启动推送目标
-neomind push start --id <target-id>
+neomind push start <target-id>
 
 # 停止推送目标
-neomind push stop --id <target-id>
+neomind push stop <target-id>
 
 # 查看投递日志
-neomind push logs --id <target-id> --limit 50
+neomind push logs <target-id> --limit 50
 
 # 查看推送统计
 neomind push stats
 
 # 更新推送目标
-neomind push update --id <target-id> --config '{"url":"https://new-url.example.com/hook"}'
+neomind push update <target-id> --config '{"url":"https://new-url.example.com/hook"}'
 
 # 删除推送目标
-neomind push delete --id <target-id>
+neomind push delete <target-id>
 ```
 
 ### API 示例
@@ -580,16 +580,16 @@ END'
 neomind rule list
 
 # 获取规则详情
-neomind rule get --id <rule-id>
+neomind rule get <rule-id>
 
 # 更新规则
-neomind rule update --id <rule-id> --dsl 'RULE high_temp_alert
+neomind rule update <rule-id> --dsl 'RULE high_temp_alert
   WHEN device:sensor1:temperature > 35
   DO notify(channel="alert-webhook", message="严重: 温度 {{value}}")
 END'
 
 # 删除规则
-neomind rule delete --id <rule-id>
+neomind rule delete <rule-id>
 ```
 
 ### API 示例
@@ -740,8 +740,8 @@ curl http://localhost:9375/api/extensions/virtual-weather-provider/metrics
 ### 推送目标未投递
 
 - 检查推送目标是否已启动：`neomind push list`
-- 查看投递日志：`neomind push logs --id <target-id>`
-- 测试目标：`neomind push test --id <target-id>`
+- 查看投递日志：`neomind push logs <target-id>`
+- 测试目标：`neomind push test <target-id>`
 - 确认外部端点可访问
 
 ### 通知通道不工作
