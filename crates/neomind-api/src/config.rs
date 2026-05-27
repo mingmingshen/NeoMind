@@ -442,6 +442,11 @@ pub fn load_embedded_broker_config() -> Option<EmbeddedBrokerConfig> {
         max_payload_size: 268435456,
         connection_timeout_ms: 60000,
         dynamic_filters: true,
+        auth_enabled: false,
+        tls_enabled: false,
+        tls_cert_path: None,
+        tls_key_path: None,
+        tls_ca_path: None,
     })
 }
 
