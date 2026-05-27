@@ -1272,8 +1272,8 @@ impl SettingsStore {
         let write_txn = self.db.begin_write()?;
         let existed = {
             let mut table = write_txn.open_table(MQTT_CREDENTIALS_TABLE)?;
-            let removed = table.remove(username)?.is_some();
-            removed
+            let removed = table.remove(username)?;
+            removed.is_some()
         };
         write_txn.commit()?;
         Ok(existed)
