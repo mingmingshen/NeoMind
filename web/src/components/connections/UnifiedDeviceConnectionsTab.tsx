@@ -17,6 +17,7 @@ import {
   Loader2,
   AlertTriangle,
   KeyRound,
+  Settings,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -36,6 +37,7 @@ import { EmptyState, LoadingState } from '@/components/shared'
 import { cn } from '@/lib/utils'
 import { api, getServerOrigin } from '@/lib/api'
 import { UniversalPluginConfigDialog, type PluginInstance, type UnifiedPluginType } from '@/components/plugins/UniversalPluginConfigDialog'
+import { EmbeddedBrokerConfigDialog } from './EmbeddedBrokerConfigDialog'
 import type { PluginConfigSchema, AdapterType } from '@/types'
 import { useToast } from '@/hooks/use-toast'
 import { ADAPTER_TYPES } from '@/constants/deviceAdapters'
@@ -232,7 +234,7 @@ function WebhookTokenDisplay({ token }: { token?: string }) {
 }
 
 export function UnifiedDeviceConnectionsTab() {
-  const { t } = useTranslation(['plugins', 'devices', 'common'])
+  const { t } = useTranslation(['plugins', 'devices', 'common', 'settings'])
   const { handleError } = useErrorHandler()
   const { toast } = useToast()
   const [view, setView] = useState<View>('list')
@@ -252,6 +254,7 @@ export function UnifiedDeviceConnectionsTab() {
   const [editingInstance, setEditingInstance] = useState<PluginInstance | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
   const [testingId, setTestingId] = useState<string | null>(null)
+  const [brokerConfigDialogOpen, setBrokerConfigDialogOpen] = useState(false)
 
   // Delete confirmation dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -807,6 +810,20 @@ export function UnifiedDeviceConnectionsTab() {
                         </CardDescription>
                       </div>
                       <div className="flex items-center gap-1 shrink-0 ml-2">
+                        {isMqtt && isBuiltin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setBrokerConfigDialogOpen(true)
+                            }}
+                            aria-label={t('settings:broker.settings')}
+                          >
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                        )}
                         {isMqtt && !isBuiltin && (
                           <>
                             <Button
@@ -924,6 +941,12 @@ export function UnifiedDeviceConnectionsTab() {
           onRefresh={loadData}
           testResults={testResults}
           setTestResults={setTestResults}
+        />
+
+        {/* Embedded Broker Config Dialog */}
+        <EmbeddedBrokerConfigDialog
+          open={brokerConfigDialogOpen}
+          onOpenChange={setBrokerConfigDialogOpen}
         />
 
         {/* Delete Confirmation Dialog */}

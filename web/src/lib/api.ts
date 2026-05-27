@@ -966,6 +966,48 @@ export const api = {
       method: 'POST',
     }),
 
+  // Embedded Broker Config
+  getEmbeddedBrokerConfig: () =>
+    fetchAPI<{
+      listen: string
+      port: number
+      max_connections: number
+      auth_enabled: boolean
+      credentials: { username: string; password: string }[]
+      tls_enabled: boolean
+      tls_cert_path: string | null
+      tls_key_path: string | null
+      tls_ca_path: string | null
+    }>('/mqtt/broker-config'),
+
+  updateEmbeddedBrokerConfig: (config: {
+    listen?: string
+    port?: number
+    auth_enabled?: boolean
+    tls_enabled?: boolean
+  }) => fetchAPI<{ message: string }>('/mqtt/broker-config', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  }),
+
+  addMqttCredential: (username: string, password: string) =>
+    fetchAPI<{ message: string }>('/mqtt/broker-config/credentials', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+
+  deleteMqttCredential: (username: string) =>
+    fetchAPI<{ message: string }>('/mqtt/broker-config/credentials/delete', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    }),
+
+  uploadMqttTlsCert: (certPem: string, keyPem: string, caPem?: string) =>
+    fetchAPI<{ message: string }>('/mqtt/broker-config/tls', {
+      method: 'PUT',
+      body: JSON.stringify({ cert_pem: certPem, key_pem: keyPem, ca_pem: caPem }),
+    }),
+
   // Sessions
   // Note: Backend returns paginated response with data as array (auto-unwrapped by fetchAPI)
   listSessions: (page = 1, pageSize = 10) =>
