@@ -30,6 +30,14 @@ const EXTERNAL_BROKERS_TABLE: TableDefinition<&str, &[u8]> =
 // Config history table: key = timestamp_id, value = ConfigChangeEntry (serialized)
 const CONFIG_HISTORY_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("config_history");
 
+// MQTT credentials table: key = username, value = MqttCredential (serialized)
+pub const MQTT_CREDENTIALS_TABLE: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("mqtt_credentials");
+
+// Settings keys for embedded broker
+pub const KEY_MQTT_BROKER_CONFIG: &str = "embedded_broker_config";
+pub const KEY_SYSTEM_MQTT_CREDENTIAL: &str = "system_mqtt_internal_credential";
+
 /// Configuration change history entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigChangeEntry {
@@ -68,6 +76,13 @@ impl ConfigChangeEntry {
             source,
         }
     }
+}
+
+/// MQTT broker credential (username + bcrypt hash).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MqttCredential {
+    pub username: String,
+    pub password_hash: String,
 }
 
 /// Global settings store singleton (thread-safe).
@@ -680,6 +695,8 @@ impl SettingsStore {
             let _ = write_txn.open_table(EXTERNAL_BROKERS_TABLE)?;
             // Open or create the config_history table
             let _ = write_txn.open_table(CONFIG_HISTORY_TABLE)?;
+            // Open or create the mqtt_credentials table
+            let _ = write_txn.open_table(MQTT_CREDENTIALS_TABLE)?;
         }
         write_txn.commit()?;
         Ok(())
@@ -1200,6 +1217,107 @@ impl SettingsStore {
             .ok()
             .flatten()
             .unwrap_or_default()
+    }
+
+    // ========================================================================
+    // Embedded MQTT Broker Configuration
+    // ========================================================================
+
+    /// Save embedded broker configuration (JSON value).
+    pub fn save_embedded_broker_config(&self, config: &serde_json::Value) -> Result<(), Error> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(SETTINGS_TABLE)?;
+            let value =
+                serde_json::to_vec(config).map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(KEY_MQTT_BROKER_CONFIG, value.as_slice())?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Load embedded broker configuration.
+    pub fn load_embedded_broker_config(&self) -> Result<Option<serde_json::Value>, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(SETTINGS_TABLE)?;
+
+        if let Some(data) = table.get(KEY_MQTT_BROKER_CONFIG)? {
+            let config: serde_json::Value = serde_json::from_slice(data.value())
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            Ok(Some(config))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Add an MQTT credential (username + bcrypt hash).
+    pub fn add_mqtt_credential(&self, username: &str, password_hash: &str) -> Result<(), Error> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(MQTT_CREDENTIALS_TABLE)?;
+            let credential = MqttCredential {
+                username: username.to_string(),
+                password_hash: password_hash.to_string(),
+            };
+            let value =
+                serde_json::to_vec(&credential).map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(username, value.as_slice())?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Delete an MQTT credential by username.
+    pub fn delete_mqtt_credential(&self, username: &str) -> Result<bool, Error> {
+        let write_txn = self.db.begin_write()?;
+        let existed = {
+            let mut table = write_txn.open_table(MQTT_CREDENTIALS_TABLE)?;
+            let removed = table.remove(username)?.is_some();
+            removed
+        };
+        write_txn.commit()?;
+        Ok(existed)
+    }
+
+    /// List all MQTT credentials.
+    pub fn list_mqtt_credentials(&self) -> Result<Vec<MqttCredential>, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(MQTT_CREDENTIALS_TABLE)?;
+
+        let mut credentials = Vec::new();
+        let iter = table.iter()?;
+        for result in iter {
+            let (_, data) = result?;
+            let credential: MqttCredential = serde_json::from_slice(data.value())
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            credentials.push(credential);
+        }
+        Ok(credentials)
+    }
+
+    /// Get the system MQTT credential (internal password for system components).
+    pub fn get_system_mqtt_credential(&self) -> Result<Option<String>, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(SETTINGS_TABLE)?;
+
+        if let Some(data) = table.get(KEY_SYSTEM_MQTT_CREDENTIAL)? {
+            let password =
+                std::str::from_utf8(data.value()).map_err(|e| Error::Serialization(e.to_string()))?;
+            Ok(Some(password.to_string()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Set the system MQTT credential (internal password for system components).
+    pub fn set_system_mqtt_credential(&self, password: &str) -> Result<(), Error> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(SETTINGS_TABLE)?;
+            table.insert(KEY_SYSTEM_MQTT_CREDENTIAL, password.as_bytes())?;
+        }
+        write_txn.commit()?;
+        Ok(())
     }
 }
 
