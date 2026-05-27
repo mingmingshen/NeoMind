@@ -19,8 +19,11 @@ import {
   selectChatActions,
 } from "@/store/selectors"
 import { MergedMessageList } from "./MergedMessageList"
-import { Send, X, Minimize2, Bot } from "lucide-react"
+import { Send, X, Minimize2, Bot, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
+
+// Shared with GlobalChatFab for panel session persistence
+export const PANEL_SESSION_KEY = "neomind:panelSessionId"
 
 interface PanelChatViewProps {
   onClose: () => void
@@ -167,7 +170,7 @@ export function PanelChatView({ onClose, onStreamingChange, ensureSession, showM
 
   // Store state
   const messages = useStore(selectMessages)
-  const { addMessage } = useStore(selectChatActions)
+  const { addMessage, switchSession, createSession } = useStore(selectChatActions)
 
   // Panel session ID — received from parent via ensureSession, survives unmount
   const panelSessionIdRef = useRef<string | null>(null)
@@ -198,13 +201,29 @@ export function PanelChatView({ onClose, onStreamingChange, ensureSession, showM
     })
   }, [messages, streamState.streamingContent, streamState.isStreaming])
 
-  // Initialize panel session once — independent from main chat
+  // Initialize panel session once — load history independently from main chat
   useEffect(() => {
-    ensureSession().then(id => {
+    ensureSession().then(async id => {
       panelSessionIdRef.current = id
-      ws.setSessionId(id)
+      // Load panel session history so we don't show stale messages from chat page
+      await switchSession(id)
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // New conversation handler
+  const handleNewConversation = useCallback(async () => {
+    if (streamState.isStreaming) return
+    // Clear the persisted panel session and create a fresh one
+    localStorage.removeItem(PANEL_SESSION_KEY)
+    panelSessionIdRef.current = null
+    const id = await createSession()
+    if (id) {
+      panelSessionIdRef.current = id
+      localStorage.setItem(PANEL_SESSION_KEY, id)
+      // switchSession already calls ws.setSessionId + loads history
+      await switchSession(id)
+    }
+  }, [streamState.isStreaming, createSession, switchSession])
 
   // Handle WebSocket events
   useEffect(() => {
@@ -342,15 +361,27 @@ export function PanelChatView({ onClose, onStreamingChange, ensureSession, showM
             )}
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
-          aria-label={t("closePanel")}
-        >
-          {showMinimize ? <Minimize2 className="h-4 w-4" /> : <X className="h-4 w-4" />}
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleNewConversation}
+            disabled={streamState.isStreaming}
+            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+            aria-label={t("newChat", "New conversation")}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+            aria-label={t("closePanel")}
+          >
+            {showMinimize ? <Minimize2 className="h-4 w-4" /> : <X className="h-4 w-4" />}
+          </Button>
+        </div>
       </div>
 
       {/* Messages */}

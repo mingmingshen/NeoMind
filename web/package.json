@@ -4,7 +4,7 @@
   "version": "0.8.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "NODE_OPTIONS='--max-http-header-size=65536' vite",
     "build": "tsc && vite build",
     "build:check": "tsc && vite build 2>&1 | grep -i 'circular' && echo 'ERROR: Circular dependencies detected!' && exit 1 || echo 'Build OK - no circular dependencies'",
     "preview": "vite preview",

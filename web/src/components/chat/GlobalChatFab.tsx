@@ -10,13 +10,11 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { useLocation } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { MessageSquare, Minimize2 } from "lucide-react"
-import { PanelChatView } from "./PanelChatView"
+import { PanelChatView, PANEL_SESSION_KEY } from "./PanelChatView"
 import { notifyInfo } from "@/lib/notify"
 import { cn } from "@/lib/utils"
 import { useStore } from "@/store"
 import { selectChatActions } from "@/store/selectors"
-
-const PANEL_SESSION_KEY = "neomind:panelSessionId"
 
 type PanelState = "closed" | "opening" | "open" | "closing"
 
@@ -49,6 +47,11 @@ export function GlobalChatFab() {
   }, [isChatPage, isOpen, isStreaming, t])
 
   const handleOpen = () => {
+    // Re-sync from localStorage in case panel session was reset by PanelChatView
+    const stored = localStorage.getItem(PANEL_SESSION_KEY)
+    if (stored) panelSessionIdRef.current = stored
+    else panelSessionIdRef.current = null
+
     setPanelState("opening")
     // Let CSS animation play, then mark as fully open
     requestAnimationFrame(() => {

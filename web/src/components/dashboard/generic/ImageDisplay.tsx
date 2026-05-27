@@ -14,6 +14,7 @@ import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { Maximize2, Minimize2, Download, ImageOff, AlertTriangle, RefreshCw, Image as ImageIcon } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
 import { LoadingState } from '../shared'
 
 export interface ImageDisplayProps {
@@ -139,7 +140,8 @@ function isPureBase64(str: string): boolean {
   const cleaned = str.trim().replace(/[\s\r\n]+/g, '')
 
   // Check if it starts with http(s) - then it's a URL, not base64
-  if (cleaned.startsWith('http://') || cleaned.startsWith('https://') || cleaned.startsWith('/')) {
+  // NOTE: do NOT reject strings starting with '/' — JPEG base64 starts with '/9j/'
+  if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
     return false
   }
 
@@ -186,12 +188,7 @@ function normalizeImageUrl(value: string | number | undefined | null): {
 
   // 1. Already a proper data URL
   if (trimmed.startsWith('data:image/')) {
-    // Extract mime type
-    const mimeMatch = trimmed.match(/data:image\/([^;,]+)/i)
-    const mime = mimeMatch ? `image/${mimeMatch[1].toLowerCase()}` : 'image/png'
-    const formatInfo = detectFormatFromMimeType(mime) || { type: 'png', mime }
     const commaIdx = trimmed.indexOf(',')
-    const prefix = commaIdx !== -1 ? trimmed.slice(0, commaIdx + 1) : trimmed
     let b64 = commaIdx !== -1 ? trimmed.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '') : ''
 
     // Unwrap double-prefixed data URLs (e.g., data:image/png;base64,data:image/jpeg;base64,...)
@@ -200,10 +197,17 @@ function normalizeImageUrl(value: string | number | undefined | null): {
       if (unwrapped) return unwrapped
     }
 
+    // Detect actual format from magic bytes — backend may declare wrong mime type
+    const detectedFormat = detectImageFormatFromMagicBytes(b64)
+    const mimeMatch = trimmed.match(/data:image\/([^;,]+)/i)
+    const declaredMime = mimeMatch ? `image/${mimeMatch[1].toLowerCase()}` : 'image/png'
+    const finalMime = detectedFormat?.mime || declaredMime
+    const formatInfo = detectedFormat || detectFormatFromMimeType(declaredMime) || { type: 'png', mime: 'image/png' }
+
     return {
-      src: `${prefix}${b64}`,
+      src: `data:${finalMime};base64,${b64}`,
       format: formatInfo.type,
-      isBase64: trimmed.includes('base64'),
+      isBase64: true,
       isDataUrl: true,
       originalValue: valueStr,
     }
@@ -222,15 +226,16 @@ function normalizeImageUrl(value: string | number | undefined | null): {
     }
   }
 
-  // 3. Data URL with charset (e.g., data:image/jpeg;charset=utf-8;base64,...)
+  // 3. Non-standard data URL (e.g., data:png;base64,... or data:image/jpeg;charset=utf-8;base64,...)
   if (trimmed.startsWith('data:')) {
     const commaIdx = trimmed.indexOf(',')
-    const prefix = commaIdx !== -1 ? trimmed.slice(0, commaIdx + 1) : trimmed
     const b64 = commaIdx !== -1 ? trimmed.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '') : ''
+    // Detect actual format from magic bytes — the declared prefix may be invalid
+    const formatInfo = detectImageFormatFromMagicBytes(b64) || { type: 'png', mime: 'image/png' }
     return {
-      src: `${prefix}${b64}`,
-      format: 'png',
-      isBase64: trimmed.includes('base64'),
+      src: `data:${formatInfo.mime};base64,${b64}`,
+      format: formatInfo.type,
+      isBase64: true,
       isDataUrl: true,
       originalValue: valueStr,
     }
@@ -370,11 +375,21 @@ function normalizeDataSourceForImage(
     }
   }
 
-  // For device/metric sources, also set a larger time range
+  // For device/metric sources, convert to telemetry for reliable image data fetching
+  // (same approach as ImageHistory — device current_values may have nested structures)
   if (ds.type === 'device' || ds.type === 'metric') {
+    const sourceId = getSourceId(ds)
     return {
-      ...ds,
+      type: 'telemetry',
+      sourceId,
+      metricId: ds.metricId ?? ds.property ?? 'image',
       timeRange: ds.timeRange && ds.timeRange > 24 ? ds.timeRange : 24,
+      limit: 200,
+      aggregate: 'raw',
+      params: {
+        includeRawPoints: true,
+      },
+      transform: 'raw',
     }
   }
 

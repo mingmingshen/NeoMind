@@ -179,7 +179,7 @@ export function isImageData(p: unknown): boolean {
     const val = (o.value ?? o.v) as string | undefined
     if (typeof val === 'string') {
       return val.startsWith('data:image/') || val.startsWith('data:base64,') ||
-             val.startsWith('http') || val.startsWith('/') || val.length > 2000
+             val.startsWith('http') || val.length > 2000
     }
   }
   if ('data' in o && typeof o.data === 'string' && o.data.length > 100) return true

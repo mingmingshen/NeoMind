@@ -31,6 +31,7 @@ import {
 import { cn } from '@/lib/utils'
 import { textMicro, badgeSize, textNano, textMini } from '@/design-system/tokens/typography'
 import { api } from '@/lib/api'
+import { MarkdownMessage } from '@/components/chat/MarkdownMessage'
 import { useEvents } from '@/hooks/useEvents'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -87,7 +88,7 @@ function detectImageFormat(base64Data: string): string | null {
 function isBase64Image(str: string): boolean {
   if (!str || str.length < 100) return false
   if (str.startsWith('data:image/')) return true
-  if (str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/')) return false
+  if (str.startsWith('http://') || str.startsWith('https://')) return false
   return detectImageFormat(str) !== null
 }
 
@@ -98,7 +99,18 @@ function normalizeToDataUrl(str: string): string {
     let b64 = str.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '')
     // Unwrap double-prefixed data URLs
     if (b64.startsWith('data:image/') || b64.startsWith('data:')) return normalizeToDataUrl(b64)
+    // Verify mime type against actual magic bytes — backend may declare wrong type
+    const detected = detectImageFormat(b64)
+    if (detected) return `data:${detected};base64,${b64}`
     return str.slice(0, commaIdx + 1) + b64
+  }
+  // Handle non-standard data: prefix (e.g., data:png;base64,...)
+  if (str.startsWith('data:')) {
+    const commaIdx = str.indexOf(',')
+    const b64 = commaIdx !== -1 ? str.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '') : ''
+    const detected = detectImageFormat(b64)
+    if (detected) return `data:${detected};base64,${b64}`
+    return `data:image/png;base64,${b64}`
   }
   const clean = str.replace(/[\s\r\n]+/g, '')
   const mime = detectImageFormat(clean)
@@ -469,7 +481,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
                           <CheckCircle2 className="h-4 w-4" />
                           Conclusion
                         </div>
-                        <p className="text-sm bg-success-light p-3 rounded-lg border border-success-light">{decisionProcess.conclusion}</p>
+                        <div className="text-sm bg-success-light p-3 rounded-lg border border-success-light prose prose-sm max-w-none"><MarkdownMessage content={decisionProcess.conclusion} /></div>
                       </div>
                     )}
                   </div>
@@ -648,7 +660,7 @@ const FlowNode = memo(function FlowNode({ execution, isLatest, isRunning, onClic
       {/* Conclusion preview */}
       {dp?.conclusion && (
         <div className="px-3 py-2">
-          <p className={cn(textMini, "text-foreground line-clamp-2")}>{dp.conclusion}</p>
+          <div className={cn(textMini, "text-foreground line-clamp-2")}><MarkdownMessage content={dp.conclusion} /></div>
         </div>
       )}
 

@@ -51,7 +51,7 @@ function isPureBase64(str: string): boolean {
   // Strip whitespace/newlines first (backend may include them)
   const cleaned = str.trim().replace(/[\s\r\n]+/g, '')
 
-  if (cleaned.startsWith('http://') || cleaned.startsWith('https://') || cleaned.startsWith('/')) {
+  if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
     return false
   }
   if (cleaned.startsWith('data:')) {
