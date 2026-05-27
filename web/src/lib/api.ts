@@ -987,7 +987,7 @@ export const api = {
     port?: number
     auth_enabled?: boolean
     tls_enabled?: boolean
-  }) => fetchAPI<{ message: string }>('/mqtt/broker-config', {
+  }) => fetchAPI<{ message: string; restart_required?: boolean }>('/mqtt/broker-config', {
     method: 'PUT',
     body: JSON.stringify(config),
   }),

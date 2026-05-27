@@ -77,6 +77,7 @@ export function useChartDimensions() {
         rafId = requestAnimationFrame(scheduleMeasure)
       } else {
         measure()
+        initialDone = true
       }
     }
     rafId = requestAnimationFrame(scheduleMeasure)

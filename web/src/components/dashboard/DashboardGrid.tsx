@@ -71,6 +71,9 @@ export function DashboardGrid({
     }
   }, [])
 
+  // Re-observe when componentIdKey changes (dashboard switch) so width is
+  // re-measured immediately, preventing the "grid disappears" bug caused by
+  // stale width=0 after ResponsiveGridLayout remounts via key={componentIdKey}.
   useEffect(() => {
     updateWidth()
     const resizeObserver = new ResizeObserver(() => {
@@ -80,7 +83,7 @@ export function DashboardGrid({
     return () => {
       resizeObserver.disconnect()
     }
-  }, [updateWidth])
+  }, [updateWidth, componentIdKey])
 
   // Build layouts — include `width` in deps so the object reference changes
   // whenever the container resizes. This forces react-grid-layout to fully
@@ -102,6 +105,19 @@ export function DashboardGrid({
     return { lg: layout, md: layout, sm: layout, xs: layout }
     // width in deps: forces react-grid-layout to recalculate on container resize
   }, [componentIdKey, width, components])
+
+  // When dashboard switches (componentIdKey changes), synchronously re-measure
+  // container width to avoid the grid being hidden by the `width > 0` guard.
+  // ResizeObserver fires asynchronously which can leave width=0 for one render.
+  useEffect(() => {
+    if (containerRef.current) {
+      const w = containerRef.current.offsetWidth
+      if (w > 0) {
+        widthRef.current = w
+        setWidth(w)
+      }
+    }
+  }, [componentIdKey])
 
   // Drag/resize handlers — only persist to parent, don't feed back into layouts
   const handleDragStop = useCallback((layout: any) => {

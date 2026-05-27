@@ -27,7 +27,8 @@ neomind system info
 ```
 
 This returns:
-- **MQTT broker address** and connection status
+- **MQTT broker address**, protocol (`mqtt://` or `mqtts://`), and connection status
+- **TLS status** (`tls_enabled`), **auth status** (`auth_enabled`), and **credentials** if auth is enabled
 - **Webhook URL** for HTTP-based devices
 - **Network info** (server IP, WiFi SSID)
 - **Device connection details** (topics, payload formats)
@@ -53,10 +54,14 @@ neomind connector subscriptions
 MQTT is the primary device connection protocol. NeoMind includes an **embedded MQTT broker** — no external broker needed.
 
 **Broker Info** (from `neomind system info`):
-- Address: `tcp://<SERVER_IP>:1883`
+- Address: `mqtt://<SERVER_IP>:1883` (or `mqtts://` if TLS enabled)
 - Protocol: MQTT 3.1.1
-- No authentication required (by default)
+- Authentication: check `auth_enabled` in system info output
+- TLS: check `tls_enabled` in system info output
+- Credentials: listed in `credentials` array if auth is enabled
 - Auto-discovery enabled
+
+> **IMPORTANT**: Always run `neomind system info` first to get the actual broker URL, TLS, auth status, and credentials. The values above are defaults and may differ on the user's system.
 
 **How devices connect:**
 
@@ -162,22 +167,23 @@ neomind device get <DEVICE_ID>
 ```bash
 neomind system info
 ```
-→ Note the MQTT broker address (e.g., `tcp://192.168.1.100:1883`)
+→ Note the MQTT broker URL (e.g., `mqtt://192.168.1.100:1883` or `mqtts://...`), TLS status, auth status, and credentials.
 
 2. **Give the user the connection info:**
-   - Broker: `192.168.1.100`
-   - Port: `1883`
+   - Broker: from `mqtt.broker_address` (e.g., `192.168.1.100:1883`)
+   - Protocol: from `mqtt.broker_url` scheme (`mqtt://` or `mqtts://`)
    - Topic: any (e.g., `sensors/esp32-01/temperature`)
-   - No auth needed
+   - Auth: if `auth_enabled` is true, provide credentials from `mqtt.credentials` array
+   - TLS: if `tls_enabled` is true, inform user that device needs to trust the CA cert
 
-3. **Example Arduino code to share with user:**
+3. **Example Arduino code (plain MQTT, no TLS):**
 ```cpp
 #include <WiFi.h>
 #include <PubSubClient.h>
 
 const char* ssid = "YOUR_WIFI";
 const char* password = "YOUR_PASSWORD";
-const char* mqtt_server = "192.168.1.100";  // NeoMind server IP
+const char* mqtt_server = "192.168.1.100";  // from neomind system info
 const int mqtt_port = 1883;
 
 WiFiClient espClient;
@@ -186,6 +192,7 @@ PubSubClient client(espClient);
 void setup() {
   WiFi.begin(ssid, password);
   client.setServer(mqtt_server, mqtt_port);
+  // If auth is enabled, use: client.connect("esp32-sensor-01", "username", "password");
   client.connect("esp32-sensor-01");
 }
 
@@ -196,6 +203,29 @@ void loop() {
   client.publish("sensors/esp32-01/temperature", msg);
   delay(5000);
 }
+```
+
+4. **Example Python code (with TLS + auth):**
+```python
+import ssl
+import paho.mqtt.client as mqtt
+import json, time
+
+client = mqtt.Client("python-sensor-01")
+
+# If TLS is enabled
+# client.tls_set(ca_certs="ca-cert.pem")  # Download from system info → CA cert
+# client.tls_insecure_set(False)
+
+# If auth is enabled
+# client.username_pw_set("username", "password")
+
+client.connect("192.168.1.100", 1883)
+
+while True:
+    data = {"temperature": 25.3, "humidity": 60.5}
+    client.publish("sensors/python-01/data", json.dumps(data))
+    time.sleep(10)
 ```
 
 4. **After device sends data, it appears as a draft.** Help user find and approve it:
@@ -231,18 +261,7 @@ neomind device drafts config --enabled false
 
 **User wants to send data from a Python application.**
 
-```python
-import paho.mqtt.client as mqtt
-import json, time
-
-client = mqtt.Client("python-sensor-01")
-client.connect("192.168.1.100", 1883)  # NeoMind MQTT broker
-
-while True:
-    data = {"temperature": 25.3, "humidity": 60.5}
-    client.publish("sensors/python-01/data", json.dumps(data))
-    time.sleep(10)
-```
+Use the same connection info from `neomind system info`. See the Python example in Scenario A above for TLS + auth configuration.
 
 ---
 
@@ -289,13 +308,16 @@ Content-Type: application/json
 ## Common Questions & Answers
 
 ### "What's the MQTT broker address?"
-Run `neomind system info` and check `mqtt.broker_address`. By default it's `<SERVER_IP>:1883`.
+Run `neomind system info` and check `mqtt.broker_address` and `mqtt.broker_url`. The URL includes the protocol scheme (`mqtt://` or `mqtts://`).
 
 ### "Do I need to install an MQTT broker?"
 No. NeoMind includes an embedded MQTT broker. Devices can connect directly.
 
 ### "Does MQTT require authentication?"
-By default, no. The embedded broker accepts anonymous connections. TLS and auth can be configured for production.
+Check `neomind system info` → `mqtt.auth_enabled`. If true, use the credentials from `mqtt.credentials` array. If false, anonymous connections are accepted.
+
+### "Is TLS enabled?"
+Check `neomind system info` → `mqtt.tls_enabled`. If true, use `mqtts://` scheme and ensure the device trusts the CA cert. If `tls_ca_available` is true, the CA cert can be downloaded from the web UI (Settings → MQTT Broker).
 
 ### "How do I know if my device is connected?"
 ```bash
@@ -328,10 +350,11 @@ These typically require a **gateway** that translates the protocol to MQTT or HT
 
 | Item | Value |
 |------|-------|
-| MQTT Broker | `<SERVER_IP>:1883` (embedded) |
-| MQTT Protocol | MQTT 3.1.1 |
-| MQTT Auth | None (default) |
+| MQTT Broker | `<SERVER_IP>:1883` (embedded, check `neomind system info` for actual) |
+| MQTT Protocol | MQTT 3.1.1, `mqtt://` or `mqtts://` (check `tls_enabled`) |
+| MQTT Auth | Check `auth_enabled` in system info, credentials in `credentials` array |
 | Auto-Discovery | Enabled (`neomind/discovery/#`) |
+| External Brokers | `neomind connector list` to see all |
 | Webhook URL | `POST http://<SERVER_IP>:9375/api/devices/{device_id}/webhook` |
 | API Base | `http://<SERVER_IP>:9375/api` |
 | Check System | `neomind system info` |
@@ -395,8 +418,11 @@ curl -X POST http://<SERVER_IP>:9375/api/devices/<DEVICE_ID>/webhook \
 
 - **"MQTT broker not connected"**: The server may not be running. Check with `neomind system info`. If `mqtt.connected` is false, restart the server.
 - **"Device not appearing after sending data"**: Verify the device is sending to the correct broker IP/port. Check network connectivity. Run `neomind device list` to see registered devices.
-- **"Webhook returns 404"**: The device must be created first via `neomind device create` before sending webhook data. Use the exact device ID from the create response.
 - **"Connection refused"**: Check if the server is running and the port (1883 for MQTT, 9375 for HTTP) is accessible. Firewall may be blocking the port.
+- **"Auth failed / Not authorized"**: Auth is enabled on the broker. Run `neomind system info` to get valid credentials from `mqtt.credentials`, then configure the device with username/password.
+- **"TLS handshake failed"**: TLS is enabled on the broker (port uses `mqtts://`). The device must be configured to use TLS and trust the CA certificate. The CA cert can be downloaded from the web UI.
+- **"Received corrupt message"**: Device is connecting with plain TCP to a TLS-enabled port. Switch to `mqtts://` or configure TLS on the device side.
+- **"Webhook returns 404"**: The device must be created first via `neomind device create` before sending webhook data. Use the exact device ID from the create response.
 - **"Data not updating"**: Run `neomind device latest <ID>` to check latest readings. If stale, verify the device is still publishing. Check `neomind system info` for MQTT connection status.
 - **"Device sent data but not in device list"**: New devices appear as drafts. Run `neomind device drafts list` to find pending devices, then `neomind device drafts approve <ID>` to register.
 - **"Too many unknown devices appearing"**: Adjust auto-discovery settings with `neomind device drafts config --max-samples 5` or disable with `--enabled false`.

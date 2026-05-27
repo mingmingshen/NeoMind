@@ -44,7 +44,7 @@ export default defineConfig({
     port: 5173,
     // Faster HMR
     hmr: {
-      overlay: true
+      overlay: true,
     },
     // Allow external access for mobile/LAN testing
     strictPort: false,

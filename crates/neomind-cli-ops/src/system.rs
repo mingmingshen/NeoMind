@@ -5,11 +5,13 @@ use crate::ApiClient;
 
 /// Get system infrastructure info: MQTT broker, network, webhook URLs
 pub async fn system_info(client: &ApiClient) -> Result<CliResponse> {
-    // Fetch MQTT status and network info in parallel
+    // Fetch MQTT status, embedded broker config, and network info in parallel
     let mqtt_fut = client.get("/mqtt/status");
+    let broker_config_fut = client.get("/mqtt/broker-config");
     let net_fut = client.get("/system/network-info");
 
-    let (mqtt_result, net_result) = tokio::join!(mqtt_fut, net_fut);
+    let (mqtt_result, broker_config_result, net_result) =
+        tokio::join!(mqtt_fut, broker_config_fut, net_fut);
 
     // Extract MQTT info
     let mqtt_data = mqtt_result.ok();
@@ -38,6 +40,44 @@ pub async fn system_info(client: &ApiClient) -> Result<CliResponse> {
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
+    // Extract embedded broker config (TLS, auth, credentials)
+    let broker_config = broker_config_result.ok();
+    let tls_enabled = broker_config
+        .as_ref()
+        .and_then(|c| c.get("config"))
+        .and_then(|c| c.get("tls_enabled"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let auth_enabled = broker_config
+        .as_ref()
+        .and_then(|c| c.get("config"))
+        .and_then(|c| c.get("auth_enabled"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let credentials: Vec<serde_json::Value> = broker_config
+        .as_ref()
+        .and_then(|c| c.get("config"))
+        .and_then(|c| c.get("credentials"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .map(|cred| json!({
+                    "username": cred.get("username").and_then(|v| v.as_str()).unwrap_or(""),
+                    "password": cred.get("password").and_then(|v| v.as_str()).unwrap_or(""),
+                }))
+                .collect()
+        })
+        .unwrap_or_default();
+    let tls_ca_path = broker_config
+        .as_ref()
+        .and_then(|c| c.get("config"))
+        .and_then(|c| c.get("tls_ca_path"))
+        .and_then(|v| v.as_str());
+
+    // Determine protocol scheme
+    let protocol_scheme = if tls_enabled { "mqtts" } else { "mqtt" };
+    let broker_url = format!("{}://{}:{}", protocol_scheme, mqtt_ip, mqtt_port);
+
     // Extract network info
     let net_data = net_result.ok();
     let server_ip = net_data
@@ -52,7 +92,6 @@ pub async fn system_info(client: &ApiClient) -> Result<CliResponse> {
 
     // Build the info response
     let api_base = client.base_url();
-    // api_base includes /api suffix (e.g. http://host:9375/api), strip it for device-facing URLs
     let server_base = api_base.trim_end_matches("/api");
     let webhook_url = format!("{}/api/devices/{{device_id}}/webhook", server_base);
     let api_url = api_base.to_string();
@@ -60,9 +99,14 @@ pub async fn system_info(client: &ApiClient) -> Result<CliResponse> {
     let info = json!({
         "mqtt": {
             "broker_address": format!("{}:{}", server_ip, mqtt_port),
+            "broker_url": broker_url,
             "connected": mqtt_connected,
             "port": mqtt_port,
             "protocol": "MQTT 3.1.1",
+            "tls_enabled": tls_enabled,
+            "auth_enabled": auth_enabled,
+            "credentials": credentials,
+            "tls_ca_available": tls_ca_path.is_some(),
             "devices_connected": devices_count,
             "discovery_topic": "neomind/discovery/#",
         },
@@ -73,11 +117,13 @@ pub async fn system_info(client: &ApiClient) -> Result<CliResponse> {
         },
         "device_connection": {
             "mqtt": {
-                "broker": format!("tcp://{}:{}", server_ip, mqtt_port),
+                "broker": broker_url,
                 "topic_format": "any/topic/{metric_name}",
                 "payload_format": "JSON {\"value\": <number>}",
                 "auto_discovery": true,
                 "discovery_prefix": "neomind/discovery",
+                "tls": tls_enabled,
+                "auth_required": auth_enabled,
             },
             "webhook": {
                 "url": webhook_url,
