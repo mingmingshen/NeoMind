@@ -6,7 +6,9 @@ export function isBase64Image(value: unknown): boolean {
   // Check for data URL prefix
   if (str.startsWith("data:image/")) return true
 
-  // Check for base64 pattern that looks like an image
+  // Check for raw base64 with known image signatures
+  if (str.length < 100) return false
+
   const imageSignatures = [
     "iVBORw0KGgo",  // PNG
     "/9j/",          // JPEG
@@ -14,22 +16,16 @@ export function isBase64Image(value: unknown): boolean {
     "UklGR",         // WebP
     "Qk",            // BMP
   ]
-
-  // Base64 string should be reasonably long and have valid padding
-  if (str.length < 100) return false
-  if (!/^[A-Za-z0-9+/=]+$/.test(str)) return false
-
-  // Check for known image signatures
   return imageSignatures.some(sig => str.startsWith(sig))
 }
 
-// Strip whitespace/newlines from base64 data (browsers can't decode base64 with line breaks)
+// Strip whitespace/newlines from base64 data
 function sanitizeBase64(data: string): string {
   return data.replace(/[\s\r\n]+/g, '')
 }
 
 // Get the data URL for a base64 image value.
-// Handles: raw base64, data:image/ URLs, and malformed data URLs.
+// Handles: data:image/ URLs (with double-prefix unwrap), raw base64.
 export function getImageDataUrl(value: unknown): string | null {
   if (typeof value !== "string") return null
   const str = value.trim()
@@ -39,36 +35,32 @@ export function getImageDataUrl(value: unknown): string | null {
   if (str.startsWith("data:image/")) {
     const commaIdx = str.indexOf(',')
     if (commaIdx === -1) return str
-    const prefix = str.slice(0, commaIdx + 1)
     let b64 = sanitizeBase64(str.slice(commaIdx + 1))
 
-    // Detect if the "base64" portion is actually another data URL (double-prefix bug)
+    // Unwrap double-prefixed data URLs
     if (b64.startsWith('data:image/') || b64.startsWith('data:')) {
-      // Recursively unwrap: the inner data URL is the real one
       return getImageDataUrl(b64)
     }
 
-    return `${prefix}${b64}`
+    return str.slice(0, commaIdx + 1) + b64
   }
 
-  // Any other data: prefix (malformed) — strip it and retry
+  // Any other data: prefix (malformed) — strip and retry
   if (str.startsWith('data:')) {
     const afterComma = str.slice(str.indexOf(',') + 1)
     if (afterComma && afterComma !== str) return getImageDataUrl(afterComma)
     return null
   }
 
-  // Sanitize base64 data (backend may include newlines)
+  // Raw base64 — detect format from signature
   const clean = sanitizeBase64(str)
-
-  // Detect image type from signature and add data URL prefix
   if (clean.startsWith("iVBORw0KGgo")) return `data:image/png;base64,${clean}`
   if (clean.startsWith("/9j/")) return `data:image/jpeg;base64,${clean}`
   if (clean.startsWith("R0lGODlh")) return `data:image/gif;base64,${clean}`
   if (clean.startsWith("UklGR")) return `data:image/webp;base64,${clean}`
   if (clean.startsWith("Qk")) return `data:image/bmp;base64,${clean}`
 
-  // Fallback: if it looks like valid base64 (long enough, only base64 chars), try as PNG
+  // Fallback: long enough and looks like base64 → try as PNG
   if (clean.length >= 100 && /^[A-Za-z0-9+/=_-]+$/.test(clean)) {
     return `data:image/png;base64,${clean}`
   }

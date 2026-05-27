@@ -3,6 +3,9 @@
  * Used when adding a new component to the grid.
  */
 
+/** Empty placeholder — image components show default empty state when no data source is bound */
+export const IMAGE_PLACEHOLDER_SRC = ''
+
 export const DEFAULT_COMPONENT_CONFIGS: Record<string, Record<string, unknown>> = {
   // Charts (series color set dynamically via chartColorsHex[0])
   'line-chart': {
@@ -37,7 +40,7 @@ export const DEFAULT_COMPONENT_CONFIGS: Record<string, Record<string, unknown>> 
   },
   // Display & Content
   'image-display': {
-    src: 'https://via.placeholder.com/400x200',
+    src: IMAGE_PLACEHOLDER_SRC,
     alt: 'Sample Image',
     fit: 'contain',
     rounded: true,

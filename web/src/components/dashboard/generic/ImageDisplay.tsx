@@ -181,6 +181,11 @@ function normalizeImageUrl(value: string | number | undefined | null): {
   const valueStr = String(value)
   const trimmed = valueStr.trim()
 
+  // Treat external placeholder URLs as empty — show default empty state instead
+  if (trimmed.includes('via.placeholder.com') || trimmed.includes('placehold.co')) {
+    return null
+  }
+
   // Handle empty/placeholder values
   if (trimmed === '-' || trimmed === 'undefined' || trimmed === 'null' || trimmed === '') {
     return null
@@ -390,6 +395,9 @@ function normalizeDataSourceForImage(
         includeRawPoints: true,
       },
       transform: 'raw',
+      // Poll every 30s — device/metric sources lose WebSocket real-time updates
+      // after converting to telemetry, so periodic refresh is needed
+      refresh: ds.refresh ?? 30,
     }
   }
 

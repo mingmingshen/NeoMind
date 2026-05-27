@@ -391,6 +391,8 @@ function normalizeDataSourceForImages(
         includeRawPoints: true,
       },
       transform: 'raw',
+      // Poll every 60s for new images
+      refresh: ds.refresh ?? 60,
     }
   }
 

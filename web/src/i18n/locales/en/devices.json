@@ -1137,6 +1137,7 @@
     "cellular": "Cellular",
     "broker": "MQTT Broker",
     "embeddedBroker": "Built-in Broker",
+    "builtin": "Built-in",
     "scanNetwork": "Scan Networks",
     "scanWifi": "Scan WiFi",
     "serverWifi": "Server WiFi:",

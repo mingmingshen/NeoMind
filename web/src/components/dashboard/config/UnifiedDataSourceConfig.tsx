@@ -807,10 +807,6 @@ export function UnifiedDataSourceConfig({
         }
       }
 
-      // Auto-apply selection
-      const dataSource = selectedItemsToDataSource(next, multiple)
-      onChange(dataSource as any)
-
       return next
     })
   }
@@ -820,10 +816,6 @@ export function UnifiedDataSourceConfig({
     setSelectedItems(prev => {
       const next = new Set(prev)
       next.delete(itemKey)
-
-      const dataSource = selectedItemsToDataSource(next, multiple)
-      onChange(dataSource as any)
-
       return next
     })
   }
@@ -831,8 +823,13 @@ export function UnifiedDataSourceConfig({
   // Clear all selections
   const handleClearSelection = () => {
     setSelectedItems(new Set())
-    onChange(undefined)
   }
+
+  // Notify parent of data source changes via effect (avoids setState-during-render warning)
+  useEffect(() => {
+    const dataSource = selectedItemsToDataSource(selectedItems, multiple)
+    onChange(dataSource as any)
+  }, [selectedItems, multiple])
 
   // Get current category config
   const categoryConfig = getCategories(t).find(c => c.id === selectedCategory)

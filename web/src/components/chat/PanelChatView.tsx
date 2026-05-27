@@ -17,9 +17,10 @@ import { filterPartialMessages } from "@/lib/messageUtils"
 import {
   selectMessages,
   selectChatActions,
+  selectLlmBackends,
 } from "@/store/selectors"
 import { MergedMessageList } from "./MergedMessageList"
-import { Send, X, Minimize2, Bot, Plus } from "lucide-react"
+import { Send, X, Minimize2, Bot, Plus, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 // Shared with GlobalChatFab for panel session persistence
@@ -30,6 +31,7 @@ interface PanelChatViewProps {
   onStreamingChange: (streaming: boolean) => void
   ensureSession: () => Promise<string>
   showMinimize?: boolean
+  onNavigateToSettings?: () => void
 }
 
 // Stream state - same structure as ChatContainer
@@ -165,11 +167,12 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
   }
 }
 
-export function PanelChatView({ onClose, onStreamingChange, ensureSession, showMinimize }: PanelChatViewProps) {
+export function PanelChatView({ onClose, onStreamingChange, ensureSession, showMinimize, onNavigateToSettings }: PanelChatViewProps) {
   const { t } = useTranslation("chat")
 
   // Store state
   const messages = useStore(selectMessages)
+  const llmBackends = useStore(selectLlmBackends)
   const { addMessage, switchSession, createSession } = useStore(selectChatActions)
 
   // Panel session ID — received from parent via ensureSession, survives unmount
@@ -389,7 +392,29 @@ export function PanelChatView({ onClose, onStreamingChange, ensureSession, showM
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-4 py-5 min-h-0"
       >
-        {filteredMessages.length === 0 && !streamState.isStreaming ? (
+        {!llmBackends || llmBackends.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 px-4">
+            <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center">
+              <Settings className="h-7 w-7 text-muted-foreground" />
+            </div>
+            <h3 className="text-sm font-semibold mt-1">{t("notConfigured.title")}</h3>
+            <p className="text-xs text-muted-foreground text-center leading-relaxed">
+              {t("notConfigured.description")}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2 gap-1.5"
+              onClick={() => {
+                onClose()
+                onNavigateToSettings?.()
+              }}
+            >
+              <Settings className="h-3.5 w-3.5" />
+              {t("notConfigured.goToSettings")}
+            </Button>
+          </div>
+        ) : filteredMessages.length === 0 && !streamState.isStreaming ? (
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <div className="w-12 h-12 rounded-2xl bg-accent-orange-bg flex items-center justify-center">
               <Bot className="h-6 w-6 text-accent-orange" />

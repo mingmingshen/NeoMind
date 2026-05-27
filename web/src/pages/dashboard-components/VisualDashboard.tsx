@@ -1940,7 +1940,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       // Display & Content
       case 'image-display':
         defaultConfig = {
-          src: 'https://via.placeholder.com/400x200',
+          src: '',
           alt: 'Sample Image',
           fit: 'contain',
           rounded: true,
@@ -5558,8 +5558,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 ) : (
                   <>
                     <Settings2 className="h-4 w-4 mr-1" />
-                    <span className="hidden sm:inline">Edit Dashboard</span>
-                    <span className="sm:hidden">Edit</span>
+                    <span className="hidden sm:inline">{t('common:editDashboard')}</span>
+                    <span className="sm:hidden">{t('common:edit', 'Edit')}</span>
                   </>
                 )}
               </Button>

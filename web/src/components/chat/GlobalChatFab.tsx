@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { useLocation } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { MessageSquare, Minimize2 } from "lucide-react"
 import { PanelChatView, PANEL_SESSION_KEY } from "./PanelChatView"
@@ -27,6 +27,7 @@ export function GlobalChatFab() {
   )
   const { createSession } = useStore(selectChatActions)
   const location = useLocation()
+  const navigate = useNavigate()
   const { t } = useTranslation("chat")
   const fabRef = useRef<HTMLButtonElement>(null)
 
@@ -146,6 +147,7 @@ export function GlobalChatFab() {
             onStreamingChange={setIsStreaming}
             ensureSession={ensurePanelSession}
             showMinimize
+            onNavigateToSettings={() => navigate('/settings')}
           />
         )}
       </div>

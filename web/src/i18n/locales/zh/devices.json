@@ -1138,6 +1138,7 @@
     "cellular": "蜂窝网络",
     "broker": "MQTT 服务器",
     "embeddedBroker": "内置服务器",
+    "builtin": "内置",
     "scanNetwork": "扫描网络",
     "scanWifi": "扫描 WiFi",
     "serverWifi": "服务器 WiFi：",

@@ -148,19 +148,7 @@ pub fn value_to_json(value: &MetricValue) -> serde_json::Value {
     match value {
         MetricValue::Integer(v) => json!(v),
         MetricValue::Float(v) => json!(v),
-        MetricValue::String(v) => {
-            // Normalize: if device sent a data URL like "data:image/png;base64,iVBOR...",
-            // strip the prefix so the frontend gets raw base64 (consistent with Binary path).
-            if let Some(rest) = v.strip_prefix("data:image/") {
-                if let Some(b64) = rest.split("base64,").nth(1) {
-                    json!(b64)
-                } else {
-                    json!(v)
-                }
-            } else {
-                json!(v)
-            }
-        }
+        MetricValue::String(v) => json!(v),
         MetricValue::Boolean(v) => json!(v),
         // Encode binary data as base64 string for frontend image detection
         MetricValue::Binary(v) => json!(STANDARD.encode(v)),

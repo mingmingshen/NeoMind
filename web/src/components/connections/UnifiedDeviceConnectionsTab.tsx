@@ -709,7 +709,7 @@ export function UnifiedDeviceConnectionsTab() {
       if (mqttStatus?.connected || mqttStatus !== null) {
         pluginInstances.push({
           id: 'builtin',
-          name: 'Internal Broker',
+          name: t('devices:mqtt.builtinMqtt.name'),
           plugin_type: 'mqtt',
           enabled: true,
           running: mqttStatus?.connected || false,
@@ -794,7 +794,7 @@ export function UnifiedDeviceConnectionsTab() {
                         <div className="flex items-center gap-2 mb-1">
                           <CardTitle className="text-base truncate">{instance.name}</CardTitle>
                           {isBuiltin && (
-                            <Badge variant="outline" className="text-xs shrink-0">内置</Badge>
+                            <Badge variant="outline" className="text-xs shrink-0">{t('devices:onboarding.builtin')}</Badge>
                           )}
                           {instance.running && (
                             <Badge variant="default" className="text-xs shrink-0">{t('plugins:llm.running')}</Badge>
