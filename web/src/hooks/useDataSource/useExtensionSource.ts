@@ -42,6 +42,27 @@ export function useExtensionSource(
   const lastProcessedExtEventIdRef = useRef<string | null>(null)
 
   // ============================================================================
+  // Extension WebSocket (must be before fetch effect so extWsConnected is available)
+  // ============================================================================
+
+  const { events: extensionEvents, isConnected: extWsConnected } = useEvents({
+    enabled: enabled && extensionSources.length > 0,
+    category: 'extension',
+    onConnected: () => {
+      processedExtEventsRef.current.clear()
+      lastProcessedExtEventIdRef.current = null
+      // Invalidate caches so next fetch cycle gets fresh data
+      extensionSources.forEach((ds) => {
+        if (ds.extensionId && ds.extensionMetric) {
+          const cacheKey = `${ds.extensionId}|${ds.extensionMetric}|`
+          extensionDataCache.deleteWhere((_, key) => key.startsWith(cacheKey))
+        }
+      })
+      extInitialDoneRef.current = false
+    },
+  })
+
+  // ============================================================================
   // Extension fetch
   // ============================================================================
 
@@ -286,33 +307,19 @@ export function useExtensionSource(
     if (extensionIntervalRef.current) { clearInterval(extensionIntervalRef.current); extensionIntervalRef.current = null }
     fetchExtensionData()
 
-    const refreshIntervals = extensionSources.map((ds) => ds.refresh).filter(Boolean) as number[]
-    const minRefresh = refreshIntervals.length > 0 ? Math.min(...refreshIntervals) : null
-    if (minRefresh) extensionIntervalRef.current = setInterval(fetchExtensionData, minRefresh * 1000)
+    // Only start polling when WS is disconnected (fallback mode)
+    if (!extWsConnected) {
+      const refreshIntervals = extensionSources.map((ds) => ds.refresh).filter(Boolean) as number[]
+      const minRefresh = refreshIntervals.length > 0 ? Math.min(...refreshIntervals) : 30 // Default 30s fallback
+      extensionIntervalRef.current = setInterval(fetchExtensionData, minRefresh * 1000)
+    }
 
     return () => { if (extensionIntervalRef.current) { clearInterval(extensionIntervalRef.current); extensionIntervalRef.current = null } }
-  }, [extensionKey, enabled])
+  }, [extensionKey, enabled, extWsConnected])
 
   // ============================================================================
   // Extension WebSocket event processing
   // ============================================================================
-
-  const { events: extensionEvents } = useEvents({
-    enabled: enabled && extensionSources.length > 0,
-    category: 'extension',
-    onConnected: () => {
-      processedExtEventsRef.current.clear()
-      lastProcessedExtEventIdRef.current = null
-      // Invalidate caches so next fetch cycle gets fresh data
-      extensionSources.forEach((ds) => {
-        if (ds.extensionId && ds.extensionMetric) {
-          const cacheKey = `${ds.extensionId}|${ds.extensionMetric}|`
-          extensionDataCache.deleteWhere((_, key) => key.startsWith(cacheKey))
-        }
-      })
-      extInitialDoneRef.current = false
-    },
-  })
 
   const extensionEventsKey = useMemo(() => {
     if (extensionEvents.length === 0) return 'empty'

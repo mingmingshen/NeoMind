@@ -1,6 +1,6 @@
 import { type Message, type ExecutionPlan } from "@/types"
 import { ThinkingBlock } from "./ThinkingBlock"
-import { ToolCallVisualization } from "./ToolCallVisualization"
+import { ToolProcessBlock } from "./ToolCallVisualization"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { MessageItem } from "./MessageItem"
 import { ExecutionPlanPanel } from "./ExecutionPlanPanel"
@@ -21,6 +21,8 @@ interface MergedMessageListProps {
   executionPlan?: ExecutionPlan | null
   planStepStates?: Record<number, 'pending' | 'running' | 'completed' | 'failed'>
   roundContents?: Record<number, string>
+  /** Wrap assistant messages in card style */
+  assistantCard?: boolean
 }
 
 export function MergedMessageList({
@@ -33,6 +35,7 @@ export function MergedMessageList({
   executionPlan,
   planStepStates,
   roundContents = {},
+  assistantCard = false,
 }: MergedMessageListProps) {
   const user = useStore((s) => s.user)
   const { t } = useTranslation("chat")
@@ -104,6 +107,7 @@ export function MergedMessageList({
                       message={message}
                       user={user}
                       getUserInitials={getUserInitials}
+                      assistantCard={assistantCard}
                     />
                   </div>
                 )
@@ -119,6 +123,7 @@ export function MergedMessageList({
               message={message}
               user={user}
               getUserInitials={getUserInitials}
+              assistantCard={assistantCard}
             />
           ))}
 
@@ -128,7 +133,7 @@ export function MergedMessageList({
               <div className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5 bg-accent-orange-bg flex items-center justify-center">
                 <Bot className="h-4.5 w-4.5 text-accent-orange" />
               </div>
-              <div className="flex-1 min-w-0">
+              <div className={`flex-1 min-w-0 ${assistantCard ? 'rounded-xl bg-muted-30 px-3.5 py-3' : ''}`}>
                 {/* Execution plan */}
                 {executionPlan && (
                   <ExecutionPlanPanel
@@ -144,7 +149,7 @@ export function MergedMessageList({
 
                 {/* Tool calls with per-round intermediate text */}
                 {streamingToolCalls.length > 0 && (
-                  <ToolCallVisualization
+                  <ToolProcessBlock
                     toolCalls={streamingToolCalls}
                     isStreaming={true}
                     roundContents={roundContents}
@@ -153,9 +158,9 @@ export function MergedMessageList({
 
                 {/* Streaming content with blinking cursor */}
                 {streamingContent ? (
-                  <div className="relative inline">
+                  <div>
                     <MarkdownMessage content={streamingContent} />
-                    <span className="inline-block w-0.5 h-4 ml-0.5 bg-current align-middle animate-pulse" />
+                    <span className="inline-block w-0.5 h-[1.1em] ml-0.5 bg-current align-text-bottom animate-pulse" />
                   </div>
                 ) : !streamingThinking && streamingToolCalls.length === 0 && (
                   <div className="flex items-center gap-3 py-2">

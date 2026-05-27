@@ -1,7 +1,7 @@
 /**
- * PanelChatView - Simplified chat interface for the global side panel
+ * PanelChatView - Independent chat interface for the global side panel
  *
- * Shares session with ChatContainer via Zustand store.
+ * Has its own session and messages, completely independent from the main chat page.
  * Handles WebSocket streaming, message rendering, and input.
  * No model selector, skill selector, or session history.
  */
@@ -11,13 +11,13 @@ import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { generateId } from "@/lib/id"
 import { ws } from "@/lib/websocket"
-import type { ServerMessage, ExecutionPlan } from "@/types"
+import { api } from "@/lib/api"
+import type { ServerMessage, ExecutionPlan, Message } from "@/types"
 import type { StreamProgress as StreamProgressType } from "@/types"
-import { filterPartialMessages } from "@/lib/messageUtils"
+import { filterPartialMessages, mergeMessagesForDisplay as mergeAssistantMessages } from "@/lib/messageUtils"
 import {
-  selectMessages,
+  selectLlmBackendState,
   selectChatActions,
-  selectLlmBackends,
 } from "@/store/selectors"
 import { MergedMessageList } from "./MergedMessageList"
 import { Send, X, Minimize2, Bot, Plus, Settings } from "lucide-react"
@@ -29,7 +29,6 @@ export const PANEL_SESSION_KEY = "neomind:panelSessionId"
 interface PanelChatViewProps {
   onClose: () => void
   onStreamingChange: (streaming: boolean) => void
-  ensureSession: () => Promise<string>
   showMinimize?: boolean
   onNavigateToSettings?: () => void
 }
@@ -167,20 +166,22 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
   }
 }
 
-export function PanelChatView({ onClose, onStreamingChange, ensureSession, showMinimize, onNavigateToSettings }: PanelChatViewProps) {
+export function PanelChatView({ onClose, onStreamingChange, showMinimize, onNavigateToSettings }: PanelChatViewProps) {
   const { t } = useTranslation("chat")
 
-  // Store state
-  const messages = useStore(selectMessages)
-  const llmBackends = useStore(selectLlmBackends)
-  const { addMessage, switchSession, createSession } = useStore(selectChatActions)
+  // Only read LLM backend state from global store (read-only, never affects chat page)
+  const { llmBackends, llmBackendLoading } = useStore(selectLlmBackendState)
+  const { loadBackends } = useStore(selectChatActions)
 
-  // Panel session ID — received from parent via ensureSession, survives unmount
+  // Independent panel state — does NOT touch global messages/sessionId
+  const [panelMessages, setPanelMessages] = useState<Message[]>([])
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true)
   const panelSessionIdRef = useRef<string | null>(null)
 
   // Streaming state
   const [streamState, dispatch] = useReducer(streamReducer, initialStreamState)
   const [currentStreamMessageId, setCurrentStreamMessageId] = useState<string | null>(null)
+  const currentStreamMessageIdRef = useRef<string | null>(null)
   const [input, setInput] = useState("")
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -202,33 +203,62 @@ export function PanelChatView({ onClose, onStreamingChange, ensureSession, showM
     messagesEndRef.current?.scrollIntoView({
       behavior: streamState.isStreaming ? "smooth" : "instant",
     })
-  }, [messages, streamState.streamingContent, streamState.isStreaming])
+  }, [panelMessages, streamState.streamingContent, streamState.isStreaming])
 
-  // Initialize panel session once — load history independently from main chat
+  // Add message to local panel state (NOT global store)
+  const addPanelMessage = useCallback((msg: Message) => {
+    setPanelMessages(prev => [...prev, msg])
+  }, [])
+
+  // Initialize panel: load backends + create/load independent session
   useEffect(() => {
-    ensureSession().then(async id => {
-      panelSessionIdRef.current = id
-      // Load panel session history so we don't show stale messages from chat page
-      await switchSession(id)
-    })
+    loadBackends()
+
+    // Try to reuse persisted panel session, otherwise create new
+    const persistedId = localStorage.getItem(PANEL_SESSION_KEY)
+    if (persistedId) {
+      // Load history for persisted session
+      api.getSessionHistory(persistedId).then(result => {
+        panelSessionIdRef.current = persistedId
+        ws.setSessionId(persistedId)
+        const merged = mergeAssistantMessages(result.messages || [])
+        setPanelMessages(merged)
+        setIsHistoryLoading(false)
+      }).catch(() => {
+        // Session no longer exists — silently create a new one
+        localStorage.removeItem(PANEL_SESSION_KEY)
+        createPanelSession()
+      })
+    } else {
+      createPanelSession()
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Create a new panel session
+  const createPanelSession = useCallback(async () => {
+    try {
+      const result = await api.createSession()
+      if (result?.sessionId) {
+        panelSessionIdRef.current = result.sessionId
+        localStorage.setItem(PANEL_SESSION_KEY, result.sessionId)
+        ws.setSessionId(result.sessionId)
+        setPanelMessages([])
+      }
+    } catch { /* ignore — panel just won't work until backend is available */ }
+    setIsHistoryLoading(false)
+  }, [])
 
   // New conversation handler
   const handleNewConversation = useCallback(async () => {
     if (streamState.isStreaming) return
-    // Clear the persisted panel session and create a fresh one
     localStorage.removeItem(PANEL_SESSION_KEY)
     panelSessionIdRef.current = null
-    const id = await createSession()
-    if (id) {
-      panelSessionIdRef.current = id
-      localStorage.setItem(PANEL_SESSION_KEY, id)
-      // switchSession already calls ws.setSessionId + loads history
-      await switchSession(id)
-    }
-  }, [streamState.isStreaming, createSession, switchSession])
+    setPanelMessages([])
+    dispatch({ type: 'RESET' })
+    await createPanelSession()
+  }, [streamState.isStreaming, createPanelSession])
 
-  // Handle WebSocket events
+  // Handle WebSocket events — all messages go to local panel state
   useEffect(() => {
     let streamingContentAcc = ""
     let streamingThinkingAcc = ""
@@ -291,8 +321,11 @@ export function PanelChatView({ onClose, onStreamingChange, ensureSession, showM
           if (streamingContentAcc || streamingThinkingAcc || streamingToolCallsAcc.length > 0) {
             if (streamingContentAcc) roundContentsAcc[currentRound] = streamingContentAcc
             const hasMultipleRounds = Object.keys(roundContentsAcc).length > 1
-            addMessage({
-              id: generateId(),
+            // Use currentStreamMessageId as the message ID so the streaming block
+            // transitions smoothly to the saved message without flash
+            const msgId = currentStreamMessageIdRef.current || generateId()
+            addPanelMessage({
+              id: msgId,
               role: "assistant",
               content: streamingContentAcc,
               timestamp: Math.floor(Date.now() / 1000),
@@ -303,6 +336,7 @@ export function PanelChatView({ onClose, onStreamingChange, ensureSession, showM
           }
           dispatch({ type: 'END_STREAM' })
           setCurrentStreamMessageId(null)
+          currentStreamMessageIdRef.current = null
           streamingContentAcc = ""
           streamingThinkingAcc = ""
           streamingToolCallsAcc = []
@@ -310,7 +344,7 @@ export function PanelChatView({ onClose, onStreamingChange, ensureSession, showM
           currentRound = 1
           break
         case "Error":
-          addMessage({
+          addPanelMessage({
             id: generateId(),
             role: "assistant",
             content: `**${t("errors.llmError")}**\n\n${data.message}`,
@@ -323,14 +357,19 @@ export function PanelChatView({ onClose, onStreamingChange, ensureSession, showM
 
     const unsubscribe = ws.onMessage(handleMessage)
     return () => { void unsubscribe() }
-  }, [addMessage, t])
+  }, [addPanelMessage, t])
 
-  // Send message
-  const handleSend = useCallback(() => {
+  // Send message — ensure session is ready before sending
+  const handleSend = useCallback(async () => {
     const text = input.trim()
     if (!text || streamState.isStreaming) return
 
-    addMessage({
+    // Ensure we have a session before sending
+    if (!panelSessionIdRef.current) {
+      await createPanelSession()
+    }
+
+    addPanelMessage({
       id: generateId(),
       role: "user",
       content: text,
@@ -340,12 +379,14 @@ export function PanelChatView({ onClose, onStreamingChange, ensureSession, showM
     setInput("")
     if (inputRef.current) inputRef.current.style.height = "auto"
     dispatch({ type: 'START_STREAM' })
-    setCurrentStreamMessageId(generateId())
+    const streamMsgId = generateId()
+    setCurrentStreamMessageId(streamMsgId)
+    currentStreamMessageIdRef.current = streamMsgId
     ws.sendMessage(text)
     requestAnimationFrame(() => inputRef.current?.focus())
-  }, [input, streamState.isStreaming, addMessage])
+  }, [input, streamState.isStreaming, addPanelMessage, createPanelSession])
 
-  const filteredMessages = useMemo(() => filterPartialMessages(messages), [messages])
+  const filteredMessages = useMemo(() => filterPartialMessages(panelMessages), [panelMessages])
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -392,52 +433,90 @@ export function PanelChatView({ onClose, onStreamingChange, ensureSession, showM
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-4 py-5 min-h-0"
       >
-        {!llmBackends || llmBackends.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3 px-4">
-            <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center">
-              <Settings className="h-7 w-7 text-muted-foreground" />
+        {!llmBackendLoading && (!llmBackends || llmBackends.length === 0) ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 px-4">
+              <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center">
+                <Settings className="h-7 w-7 text-muted-foreground" />
+              </div>
+              <h3 className="text-sm font-semibold mt-1">{t("notConfigured.title")}</h3>
+              <p className="text-xs text-muted-foreground text-center leading-relaxed">
+                {t("notConfigured.description")}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 gap-1.5"
+                onClick={() => {
+                  onClose()
+                  onNavigateToSettings?.()
+                }}
+              >
+                <Settings className="h-3.5 w-3.5" />
+                {t("notConfigured.goToSettings")}
+              </Button>
             </div>
-            <h3 className="text-sm font-semibold mt-1">{t("notConfigured.title")}</h3>
-            <p className="text-xs text-muted-foreground text-center leading-relaxed">
-              {t("notConfigured.description")}
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2 gap-1.5"
-              onClick={() => {
-                onClose()
-                onNavigateToSettings?.()
-              }}
-            >
-              <Settings className="h-3.5 w-3.5" />
-              {t("notConfigured.goToSettings")}
-            </Button>
-          </div>
-        ) : filteredMessages.length === 0 && !streamState.isStreaming ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-accent-orange-bg flex items-center justify-center">
-              <Bot className="h-6 w-6 text-accent-orange" />
+          ) : isHistoryLoading ? (
+            <div className="flex flex-col justify-end h-full">
+              <div className="space-y-4">
+                {/* Skeleton - assistant bubble */}
+                <div className="flex gap-3 justify-start animate-pulse">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-muted" />
+                  <div className="max-w-[80%]">
+                    <div className="rounded-2xl px-4 py-3 bg-muted">
+                      <div className="space-y-2">
+                        <div className="h-3.5 w-full bg-muted-foreground/10 rounded" />
+                        <div className="h-3.5 w-3/4 bg-muted-foreground/10 rounded" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {/* Skeleton - user bubble */}
+                <div className="flex gap-3 justify-end animate-pulse">
+                  <div className="max-w-[70%]">
+                    <div className="rounded-2xl px-4 py-2.5 bg-muted">
+                      <div className="h-3.5 w-32 bg-muted-foreground/10 rounded" />
+                    </div>
+                  </div>
+                </div>
+                {/* Skeleton - assistant bubble */}
+                <div className="flex gap-3 justify-start animate-pulse">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-muted" />
+                  <div className="max-w-[80%]">
+                    <div className="rounded-2xl px-4 py-3 bg-muted">
+                      <div className="space-y-2">
+                        <div className="h-3.5 w-full bg-muted-foreground/10 rounded" />
+                        <div className="h-3.5 w-2/3 bg-muted-foreground/10 rounded" />
+                        <div className="h-3.5 w-1/2 bg-muted-foreground/10 rounded" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground text-center">{t("input.startNewConversation")}</p>
-          </div>
-        ) : (
-        <div className="space-y-4">
-          <MergedMessageList
-            messages={filteredMessages}
-            scrollElementRef={scrollContainerRef}
-            isStreaming={streamState.isStreaming && !(currentStreamMessageId && filteredMessages.some(m => m.id === currentStreamMessageId))}
-            streamingContent={streamState.streamingContent}
-            streamingThinking={streamState.streamingThinking}
-            streamingToolCalls={streamState.streamingToolCalls}
-            executionPlan={streamState.executionPlan}
-            planStepStates={streamState.planStepStates}
-            roundContents={streamState.roundContents}
-          />
+          ) : filteredMessages.length === 0 && !streamState.isStreaming ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-accent-orange-bg flex items-center justify-center">
+                <Bot className="h-6 w-6 text-accent-orange" />
+              </div>
+              <p className="text-sm text-muted-foreground text-center">{t("input.startNewConversation")}</p>
+            </div>
+          ) : (
+            <MergedMessageList
+              messages={filteredMessages}
+              scrollElementRef={scrollContainerRef}
+              isStreaming={streamState.isStreaming && !(currentStreamMessageId && filteredMessages.some(m => m.id === currentStreamMessageId))}
+              streamingContent={streamState.streamingContent}
+              streamingThinking={streamState.streamingThinking}
+              streamingToolCalls={streamState.streamingToolCalls}
+              executionPlan={streamState.executionPlan}
+              planStepStates={streamState.planStepStates}
+              roundContents={streamState.roundContents}
+              assistantCard
+            />
+          )}
 
+          {/* Scroll anchor */}
           <div ref={messagesEndRef} />
-        </div>
-        )}
       </div>
 
       {/* Input area */}

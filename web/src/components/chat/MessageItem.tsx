@@ -1,7 +1,7 @@
 import React from "react"
 import { type Message, type UserInfo } from "@/types"
 import { ThinkingBlock } from "./ThinkingBlock"
-import { ToolCallVisualization } from "./ToolCallVisualization"
+import { ToolProcessBlock } from "./ToolCallVisualization"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Bot } from "lucide-react"
@@ -11,6 +11,8 @@ interface MessageItemProps {
   message: Message
   user: UserInfo | null
   getUserInitials: (username: string) => string
+  /** Wrap assistant response in a subtle card background */
+  assistantCard?: boolean
 }
 
 /**
@@ -18,7 +20,7 @@ interface MessageItemProps {
  * Only re-renders when message.id, content, thinking, tool_calls, or role changes.
  */
 export const MessageItem = React.memo<MessageItemProps>(
-  ({ message, user, getUserInitials }) => {
+  ({ message, user, getUserInitials, assistantCard }) => {
     const isAssistant = message.role === "assistant"
 
     return (
@@ -32,8 +34,7 @@ export const MessageItem = React.memo<MessageItemProps>(
         )}
 
         {isAssistant ? (
-          /* Assistant: no bubble, content flows naturally — width is stable */
-          <div className="flex-1 min-w-0">
+          <div className={`flex-1 min-w-0 ${assistantCard ? 'rounded-xl bg-muted-30 px-3.5 py-3' : ''}`}>
             {/* Thinking block */}
             {message.thinking && (
               <ThinkingBlock thinking={message.thinking} />
@@ -41,8 +42,9 @@ export const MessageItem = React.memo<MessageItemProps>(
 
             {/* Tool calls */}
             {message.tool_calls && message.tool_calls.length > 0 && (
-              <ToolCallVisualization
+              <ToolProcessBlock
                 toolCalls={message.tool_calls}
+                roundContents={message.round_contents}
                 isStreaming={false}
               />
             )}
@@ -92,7 +94,8 @@ export const MessageItem = React.memo<MessageItemProps>(
       prev.message.thinking === next.message.thinking &&
       prev.message.tool_calls === next.message.tool_calls &&
       prev.message.role === next.message.role &&
-      prev.message.images === next.message.images
+      prev.message.images === next.message.images &&
+      prev.assistantCard === next.assistantCard
     )
   }
 )

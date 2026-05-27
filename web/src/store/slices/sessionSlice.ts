@@ -13,6 +13,9 @@ import { mergeMessagesForDisplay as mergeAssistantMessages } from '@/lib/message
 import type { SessionState } from '../types'
 import type { ChatSession } from '@/types'
 import { api } from '@/lib/api'
+
+// Must match PANEL_SESSION_KEY in PanelChatView.tsx
+const PANEL_SESSION_KEY = 'neomind:panelSessionId'
 import { normalizeSessions, normalizeSessionsResponse } from '@/lib/api/transforms'
 import { fetchCache } from '@/lib/utils/async'
 
@@ -214,6 +217,16 @@ export const createSessionSlice: StateCreator<
 
   deleteSession: async (sessionIdToDelete: string) => {
     fetchCache.invalidate('sessions')
+
+    // If the deleted session is the panel's persisted session, clear it
+    // so the floating chat doesn't try to switch to a deleted session
+    try {
+      const panelId = localStorage.getItem(PANEL_SESSION_KEY)
+      if (panelId === sessionIdToDelete) {
+        localStorage.removeItem(PANEL_SESSION_KEY)
+      }
+    } catch { /* localStorage may be unavailable */ }
+
     try {
       await api.deleteSession(sessionIdToDelete)
 

@@ -4,28 +4,23 @@
  * Shows a FAB on all non-chat pages. Clicking expands to a full-screen chat overlay
  * with smooth scale-up animation from the FAB position.
  * Minimize button collapses back to FAB with reverse animation.
+ *
+ * The panel chat has its own independent session — does not affect the main chat page.
  */
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { MessageSquare, Minimize2 } from "lucide-react"
-import { PanelChatView, PANEL_SESSION_KEY } from "./PanelChatView"
+import { MessageSquare } from "lucide-react"
+import { PanelChatView } from "./PanelChatView"
 import { notifyInfo } from "@/lib/notify"
 import { cn } from "@/lib/utils"
-import { useStore } from "@/store"
-import { selectChatActions } from "@/store/selectors"
 
 type PanelState = "closed" | "opening" | "open" | "closing"
 
 export function GlobalChatFab() {
   const [panelState, setPanelState] = useState<PanelState>("closed")
   const [isStreaming, setIsStreaming] = useState(false)
-  // Persist panel session — survives panel unmount AND page refresh
-  const panelSessionIdRef = useRef<string | null>(
-    localStorage.getItem(PANEL_SESSION_KEY)
-  )
-  const { createSession } = useStore(selectChatActions)
   const location = useLocation()
   const navigate = useNavigate()
   const { t } = useTranslation("chat")
@@ -48,28 +43,11 @@ export function GlobalChatFab() {
   }, [isChatPage, isOpen, isStreaming, t])
 
   const handleOpen = () => {
-    // Re-sync from localStorage in case panel session was reset by PanelChatView
-    const stored = localStorage.getItem(PANEL_SESSION_KEY)
-    if (stored) panelSessionIdRef.current = stored
-    else panelSessionIdRef.current = null
-
     setPanelState("opening")
-    // Let CSS animation play, then mark as fully open
     requestAnimationFrame(() => {
       setTimeout(() => setPanelState("open"), 300)
     })
   }
-
-  // Panel calls this once to get a persistent session
-  const ensurePanelSession = useCallback(async (): Promise<string> => {
-    if (panelSessionIdRef.current) return panelSessionIdRef.current
-    const id = await createSession()
-    if (id) {
-      panelSessionIdRef.current = id
-      localStorage.setItem(PANEL_SESSION_KEY, id)
-    }
-    return id!
-  }, [createSession])
 
   const handleClose = () => {
     setPanelState("closing")
@@ -145,7 +123,6 @@ export function GlobalChatFab() {
           <PanelChatView
             onClose={handleClose}
             onStreamingChange={setIsStreaming}
-            ensureSession={ensurePanelSession}
             showMinimize
             onNavigateToSettings={() => navigate('/settings')}
           />

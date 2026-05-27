@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useDashboardStore } from '../store'
 import { DashboardGrid } from './DashboardGrid'
-import { DashboardEventBridge } from './DashboardEventBridge'
 import { WidgetConfigPanel } from './config/WidgetConfigPanel'
 import { InstallWidgetDialog } from './InstallWidgetDialog'
 import { WidgetShell } from './WidgetShell'
@@ -66,9 +65,6 @@ export function VisualDashboard() {
 
   return (
     <div className="relative flex h-full overflow-hidden">
-      {/* Real-time event bridge (renders nothing) */}
-      <DashboardEventBridge />
-
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header bar */}

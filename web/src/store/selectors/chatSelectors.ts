@@ -57,6 +57,7 @@ export const selectActiveBackend = (state: NeoMindStore) =>
 export const selectLlmBackendState = (state: NeoMindStore) => ({
   llmBackends: state.llmBackends,
   activeBackendId: state.activeBackendId,
+  llmBackendLoading: state.llmBackendLoading,
 })
 
 // ============================================================================
@@ -72,6 +73,7 @@ export const selectChatActions = (state: NeoMindStore) => ({
   createSession: state.createSession,
   switchSession: state.switchSession,
   activateBackend: state.activateBackend,
+  loadBackends: state.loadBackends,
 })
 
 // ============================================================================

@@ -211,7 +211,7 @@ export function useDataSource<T = unknown>(
   // D+E+J. Store source (readDataFromStore + store subscription + device WS)
   // ============================================================================
 
-  const { readDataFromStore } = useStoreSource<T>(
+  const { readDataFromStore, wsConnected } = useStoreSource<T>(
     dataSources, currentKey, enabled,
     relevantDeviceIds, deviceInfoIds, hasTelemetrySource, needsWebSocket,
     {
@@ -225,7 +225,7 @@ export function useDataSource<T = unknown>(
   // F+G. Telemetry fetch + devices loading watcher (delegated to useTelemetrySource)
   // ============================================================================
 
-  useTelemetrySource(telemetrySources, telemetryKey, enabled, hasTelemetrySource, relevantDeviceIds, {
+  useTelemetrySource(telemetrySources, telemetryKey, enabled, hasTelemetrySource, relevantDeviceIds, wsConnected, {
     setData: (updater) => setData((prev) => typeof updater === 'function' ? (updater as (p: unknown) => unknown)(prev) as T : updater as T),
     setDataRaw, setLoading, setError, setLastUpdate, optionsRef,
     readDataFromStore,

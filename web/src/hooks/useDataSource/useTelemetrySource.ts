@@ -39,6 +39,7 @@ export function useTelemetrySource(
   enabled: boolean,
   hasTelemetrySource: boolean,
   relevantDeviceIds: Set<string>,
+  wsConnected: boolean,
   state: TelemetrySourceState
 ): void {
   const initialTelemetryFetchDoneRef = useRef(false)
@@ -220,10 +221,13 @@ export function useTelemetrySource(
     if (telemetryIntervalRef.current) { clearInterval(telemetryIntervalRef.current); telemetryIntervalRef.current = null }
     fetchTelemetryData()
 
-    const refreshIntervals = telemetrySources.map((ds) => ds.refresh).filter(Boolean) as number[]
-    const minRefresh = refreshIntervals.length > 0 ? Math.min(...refreshIntervals) : null
-    if (minRefresh) telemetryIntervalRef.current = setInterval(fetchTelemetryData, minRefresh * 1000)
+    // Only start polling when WS is disconnected (fallback mode)
+    if (!wsConnected) {
+      const refreshIntervals = telemetrySources.map((ds) => ds.refresh).filter(Boolean) as number[]
+      const minRefresh = refreshIntervals.length > 0 ? Math.min(...refreshIntervals) : 30 // Default 30s fallback
+      telemetryIntervalRef.current = setInterval(fetchTelemetryData, minRefresh * 1000)
+    }
 
     return () => { if (telemetryIntervalRef.current) { clearInterval(telemetryIntervalRef.current); telemetryIntervalRef.current = null } }
-  }, [telemetryKey, enabled])
+  }, [telemetryKey, enabled, wsConnected])
 }

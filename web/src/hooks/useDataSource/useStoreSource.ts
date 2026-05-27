@@ -102,7 +102,7 @@ export function useStoreSource<T = unknown>(
   needsWebSocket: boolean,
   state: StoreSourceState<T>,
   hasExtensionSource?: boolean
-): { readDataFromStore: () => void } {
+): { readDataFromStore: () => void; wsConnected: boolean } {
   const initialFetchDoneRef = useRef<Set<string>>(new Set())
   const lastValidDataRef = useRef<Record<string, unknown>>({})
   const prevStoreStateRef = useRef<{ devices: NeoMindStore['devices'] } | null>(null)
@@ -401,7 +401,7 @@ export function useStoreSource<T = unknown>(
   // Device WebSocket event processing
   // ============================================================================
 
-  const { events } = useEvents({
+  const { events, isConnected: wsConnected } = useEvents({
     enabled: enabled && needsWebSocket,
     category: 'device',
     onConnected: () => {
@@ -529,6 +529,6 @@ export function useStoreSource<T = unknown>(
     perfEnd('events')
   }, [enabled, dataSourceKey, eventsKey])
 
-  // Expose readDataFromStore for useTelemetrySource
-  return { readDataFromStore }
+  // Expose readDataFromStore for useTelemetrySource and wsConnected for polling fallback
+  return { readDataFromStore, wsConnected }
 }
