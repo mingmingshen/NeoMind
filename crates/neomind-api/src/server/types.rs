@@ -269,18 +269,24 @@ impl ServerState {
         *self.devices.embedded_broker.write().unwrap() = Some(Arc::new(broker));
 
         // 4. Create new internal-mqtt adapter with updated config
-        let (adapter_username, adapter_password) = if broker_config.auth_enabled {
+        // Always use system credentials — the external_auth handler accepts
+        // all connections when auth is disabled, so providing credentials
+        // is harmless and ensures connectivity even if the old broker thread
+        // (which always has external_auth set) is still running.
+        let (adapter_username, adapter_password) = {
             if let Ok(store) = open_settings_store() {
-                if let Ok(Some(pass)) = store.get_system_mqtt_credential() {
-                    (Some("__neomind_internal__".to_string()), Some(pass))
-                } else {
-                    (None, None)
+                match store.get_system_mqtt_credential() {
+                    Ok(Some(pass)) => {
+                        (Some("__neomind_internal__".to_string()), Some(pass))
+                    }
+                    _ => {
+                        tracing::warn!("No system credential found for adapter restart");
+                        (None, None)
+                    }
                 }
             } else {
                 (None, None)
             }
-        } else {
-            (None, None)
         };
 
         let mqtt_config = MqttAdapterConfig {
