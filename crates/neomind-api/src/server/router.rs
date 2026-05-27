@@ -767,6 +767,12 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/brokers/:id", put(mqtt::update_broker_handler))
         .route("/api/brokers/:id", delete(mqtt::delete_broker_handler))
         .route("/api/brokers/:id/test", post(mqtt::test_broker_handler))
+        // Embedded Broker Config API
+        .route("/api/mqtt/broker-config", get(mqtt::get_broker_config_handler))
+        .route("/api/mqtt/broker-config", put(mqtt::update_broker_config_handler))
+        .route("/api/mqtt/broker-config/credentials", post(mqtt::add_credential_handler))
+        .route("/api/mqtt/broker-config/credentials/delete", post(mqtt::delete_credential_handler))
+        .route("/api/mqtt/broker-config/tls", put(mqtt::upload_tls_handler))
         // Stats API (devices and rules require auth, system info is public)
         .route("/api/stats/devices", get(stats::get_device_stats_handler))
         .route("/api/stats/rules", get(stats::get_rule_stats_handler))
