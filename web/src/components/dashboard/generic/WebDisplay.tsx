@@ -189,8 +189,8 @@ export function WebDisplay({
     )
   }
 
-  // No source
-  if (!src) {
+  // No source — only show empty state when loading is done
+  if (!loading && !src) {
     return (
       <EmptyState
         size={size}

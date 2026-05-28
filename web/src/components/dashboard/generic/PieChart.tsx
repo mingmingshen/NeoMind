@@ -198,7 +198,7 @@ export const PieChart = memo(function PieChart({
   const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
 
-  // Shared data pipeline
+  // Shared data pipeline — same pattern as LineChart/AreaChart
   const {
     sources, data, loading, effectiveAggregate,
     hasData, showLoading, getSeriesName, getDeviceName,
@@ -207,11 +207,7 @@ export const PieChart = memo(function PieChart({
     aggregate,
     limit,
     timeRange,
-    fallback: propData ?? [
-      { name: t('chart.categoryA'), value: 30 },
-      { name: t('chart.categoryB'), value: 45 },
-      { name: t('chart.categoryC'), value: 25 },
-    ],
+    fallback: propData ?? [],
     preserveMultiple: true,
   })
 
@@ -341,7 +337,8 @@ export const PieChart = memo(function PieChart({
     )
   }
 
-  if (chartData.length === 0) {
+  // Only show empty state when loading is fully complete
+  if (!loading && chartData.length === 0) {
     return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 

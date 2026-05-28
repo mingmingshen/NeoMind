@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { findDevice } from '@/lib/deviceUtils'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { useDataSource } from '@/hooks/useDataSource'
 import { toast } from '@/components/ui/use-toast'
@@ -802,7 +803,7 @@ export function MapDisplay({
   // Helper function to get device metric value with fuzzy matching
   const getDeviceMetricValue = useCallback((deviceId: string, metricId: string): string | number | undefined => {
     if (!deviceId) return undefined
-    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+    const device = findDevice(devices, deviceId)
     if (!device?.current_values) return undefined
     const value = findMetricValue(device.current_values, metricId)
     if (value !== undefined && value !== null) {
@@ -814,7 +815,7 @@ export function MapDisplay({
   // Helper function to get device status
   const getDeviceStatus = useCallback((deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
     if (!deviceId) return undefined
-    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+    const device = findDevice(devices, deviceId)
     if (!device) return undefined
     return device.online ? 'online' : 'offline'
   }, [devices])

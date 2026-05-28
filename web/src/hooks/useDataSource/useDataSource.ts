@@ -9,8 +9,8 @@
  */
 
 import { useState, useCallback, useRef, useMemo } from 'react'
-import type { DataSourceOrList } from '@/types/dashboard'
-import { normalizeDataSource, getSourceId } from '@/types/dashboard'
+import type { DataSourceOrList, DataSource } from '@/types/dashboard'
+import { normalizeDataSource, getSourceId, isRealtimeSource, isCommandSource, isTelemetrySource, isDeviceInfoSource, isTransformSource, isAIMetricSource, isSystemSource, isExtensionSource } from '@/types/dashboard'
 import { toNumberArray } from '@/design-system/utils/format'
 import { createStableKey } from '@/lib/stable-key'
 import { isImageDataSource } from './helpers'
@@ -35,6 +35,7 @@ export interface UseDataSourceResult<T = unknown> {
   loading: boolean
   error: string | null
   lastUpdate: number | null
+  sources: DataSource[]
   sendCommand?: (value?: unknown) => Promise<boolean>
   sending?: boolean
 }
@@ -50,40 +51,100 @@ export function useDataSource<T = unknown>(
     transform?: (data: unknown) => T
     fallback?: T
     preserveMultiple?: boolean
+    sourceTransform?: (ds: DataSource) => DataSource | undefined
   }
 ): UseDataSourceResult<T> {
-  const { enabled = true, transform, fallback, preserveMultiple = false } = options ?? {}
+  const { enabled = true, transform, fallback, preserveMultiple = false, sourceTransform } = options ?? {}
 
   const hasDataSourceValue = dataSource !== undefined &&
                              dataSource !== null &&
                              (Array.isArray(dataSource) ? dataSource.length > 0 : true)
 
   // ============================================================================
-  // A. State + Refs
+  // A. State — flat useState instead of useReducer
   // ============================================================================
-  // v0.7.0 approach: simple useState for data. React 18 automatically batches
-  // state updates, preventing mid-scroll re-renders that produce blank frames.
-  // The useReducer + RAF approach caused forceUpdate to fire during animation
-  // frames, conflicting with browser scroll compositing.
 
-  const [data, setData] = useState<T | null>(fallback ?? null)
-  const [loading, setLoading] = useState(!enabled || !hasDataSourceValue ? false : true)
-  const [error, setError] = useState<string | null>(null)
-  const [lastUpdate, setLastUpdate] = useState<number | null>(null)
+  const [data, setDataInternal] = useState<T | null>(fallback ?? null)
+  const [error, setErrorInternal] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
+  const [lastUpdate, setLastUpdateInternal] = useState<number | null>(null)
 
-  // Stable wrapper for setData — handles functional updates
-  const setDataRaw = useCallback((d: unknown) => {
-    setData(d as T)
+  // Loading tracked via ref counter: loading = counter > 0
+  const loadingRef = useRef(hasDataSourceValue && enabled ? 1 : 0)
+  const [loading, setLoading] = useState(loadingRef.current > 0)
+
+  // Track current data key for reset detection
+  const currentKey = useMemo(() => createStableKey(dataSource), [dataSource])
+  const prevKeyRef = useRef(currentKey)
+  const initialRef = useRef(true)
+
+  // Stable callbacks
+  const setData = useCallback((value: T | ((prev: T | null) => T | null)) => {
+    setDataInternal(prev => typeof value === 'function' ? (value as (p: T | null) => T | null)(prev) : value)
   }, [])
 
-  const dataSources = useMemo(() => dataSource ? normalizeDataSource(dataSource) : [], [dataSource])
+  const setDataRaw = useCallback((d: unknown) => {
+    setDataInternal(d as T)
+  }, [])
+
+  const setError = useCallback((e: string | null) => {
+    setErrorInternal(e)
+  }, [])
+
+  const setLastUpdate = useCallback((ts: number | null) => {
+    if (ts !== null) setLastUpdateInternal(ts)
+  }, [])
+
+  const startLoading = useCallback(() => {
+    loadingRef.current++
+    if (loadingRef.current === 1) setLoading(true)
+  }, [])
+
+  const finishLoading = useCallback(() => {
+    loadingRef.current = Math.max(0, loadingRef.current - 1)
+    if (loadingRef.current === 0) setLoading(false)
+    setLastUpdateInternal(Date.now())
+  }, [])
+
+  const setErrorLoading = useCallback((err: string) => {
+    loadingRef.current = Math.max(0, loadingRef.current - 1)
+    if (loadingRef.current === 0) setLoading(false)
+    setErrorInternal(err)
+  }, [])
+
+  // ============================================================================
+  // A2. Reset when dataSource changes
+  // ============================================================================
+
+  if (prevKeyRef.current !== currentKey) {
+    prevKeyRef.current = currentKey
+    loadingRef.current = 1
+    setLoading(true)
+    setErrorInternal(null)
+  }
+  // Skip initial loading clear on first render when no data source
+  if (initialRef.current) {
+    initialRef.current = false
+    if (!hasDataSourceValue || !enabled) {
+      loadingRef.current = 0
+    }
+  }
+
+  // ============================================================================
+  // B. Data source normalization + computed values
+  // ============================================================================
+
+  const dataSources = useMemo(() => {
+    const normalized = dataSource ? normalizeDataSource(dataSource) : []
+    if (sourceTransform) return normalized.map(sourceTransform).filter(Boolean) as DataSource[]
+    return normalized
+  }, [dataSource, sourceTransform])
 
   const relevantDeviceIds = useMemo(() => {
     return new Set(
       dataSources
         .map((ds) =>
-          ds.type === 'device' || ds.type === 'command' || ds.type === 'telemetry' || ds.type === 'device-info'
+          isRealtimeSource(ds) || isDeviceInfoSource(ds) || isCommandSource(ds)
             ? getSourceId(ds) : null
         )
         .filter(Boolean) as string[]
@@ -92,7 +153,7 @@ export function useDataSource<T = unknown>(
 
   const deviceInfoIds = useMemo(() => {
     return new Set(
-      dataSources.filter((ds) => ds.type === 'device-info').map((ds) => getSourceId(ds)).filter(Boolean) as string[]
+      dataSources.filter(isDeviceInfoSource).map((ds) => getSourceId(ds)).filter(Boolean) as string[]
     )
   }, [dataSources])
 
@@ -101,43 +162,21 @@ export function useDataSource<T = unknown>(
   const dataSourcesRef = useRef(dataSources)
   dataSourcesRef.current = dataSources
 
-  // ============================================================================
-  // A2. Reset state when dataSource changes (e.g., switching dashboards)
-  // ============================================================================
-  // Keep previous data visible while new fetch is in progress to avoid
-  // chart flicker. Only reset error and loading states.
-  const currentKey = useMemo(() => createStableKey(dataSource), [dataSource])
-  const prevDataSourceKeyRef = useRef(currentKey)
-  if (prevDataSourceKeyRef.current !== currentKey) {
-    prevDataSourceKeyRef.current = currentKey
-    setLoading(true)
-    setError(null)
-  }
-
-  // ============================================================================
-  // B. Computed values
-  // ============================================================================
-
-  const hasCommandSource = dataSources.some((ds) => ds.type === 'command')
-  const commandSource = dataSources.find((ds) => ds.type === 'command')
+  const hasCommandSource = dataSources.some(isCommandSource)
+  const commandSource = dataSources.find(isCommandSource)
 
   const telemetrySources = useMemo(() =>
-    dataSources.filter((ds) => ds.type === 'telemetry' || ds.type === 'transform' || ds.type === 'ai-metric'),
+    dataSources.filter((ds) => isTelemetrySource(ds) || isTransformSource(ds) || isAIMetricSource(ds)),
     [dataSources]
   )
 
-  const systemSources = useMemo(() => dataSources.filter((ds) => ds.type === 'system'), [dataSources])
-  const extensionSources = useMemo(() => dataSources.filter((ds) => ds.type === 'extension'), [dataSources])
+  const systemSources = useMemo(() => dataSources.filter(isSystemSource), [dataSources])
+  const extensionSources = useMemo(() => dataSources.filter(isExtensionSource), [dataSources])
 
   const hasTelemetrySource = telemetrySources.length > 0
-  const hasSystemSource = systemSources.length > 0
   const hasExtensionSource = extensionSources.length > 0
-  const needsWebSocket = dataSources.some((ds) =>
-    ds.type === 'device' || ds.type === 'metric' || ds.type === 'command' || ds.type === 'telemetry'
-  )
-  const needsExtWebSocket = extensionSources.length > 0
+  const needsWebSocket = dataSources.some(isRealtimeSource)
 
-  // Telemetry stable key for fetch effect
   const telemetryKey = useMemo(() => {
     return telemetrySources
       .map((ds) => {
@@ -177,7 +216,6 @@ export function useDataSource<T = unknown>(
   const sendCommand = useCallback(async (value?: unknown): Promise<boolean> => {
     if (!commandSource || !enabled) return false
     setSending(true)
-    setError(null)
 
     try {
       const deviceId = getSourceId(commandSource)
@@ -200,7 +238,7 @@ export function useDataSource<T = unknown>(
       await api.sendCommand(deviceId!, command, params)
       return true
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Command failed')
+      setErrorInternal(err instanceof Error ? err.message : 'Command failed')
       return false
     } finally {
       setSending(false)
@@ -208,44 +246,70 @@ export function useDataSource<T = unknown>(
   }, [commandSource, enabled])
 
   // ============================================================================
-  // D+E+J. Store source (readDataFromStore + store subscription + device WS)
+  // D-J. Sub-hook adapters (bridge to legacy sub-hook interface)
+  // ============================================================================
+
+  // Sub-hooks expect { startLoading, finishLoading, retryLoading, failLoading }
+  const makeAdapters = useCallback((_source: string) => ({
+    startLoading,
+    finishLoading,
+    retryLoading: startLoading, // retry = keep loading active
+    failLoading: setErrorLoading,
+  }), [startLoading, finishLoading, setErrorLoading])
+
+  const storeAdapters = useMemo(() => makeAdapters('store'), [makeAdapters])
+  const telemetryAdapters = useMemo(() => makeAdapters('telemetry'), [makeAdapters])
+  const systemAdapters = useMemo(() => makeAdapters('system'), [makeAdapters])
+  const extensionAdapters = useMemo(() => makeAdapters('extension'), [makeAdapters])
+
+  // Legacy setLoading adapter for sub-hooks that use it
+  const legacySetLoading = useCallback((_l: boolean) => {
+    // No-op: loading is managed via ref counter
+  }, [])
+
+  // ============================================================================
+  // D. Store source
   // ============================================================================
 
   const { readDataFromStore, wsConnected } = useStoreSource<T>(
     dataSources, currentKey, enabled,
     relevantDeviceIds, deviceInfoIds, hasTelemetrySource, needsWebSocket,
     {
-      data, setData, setDataRaw, setLoading, setError, setLastUpdate,
+      data, setData, setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate,
       dataSourcesRef, optionsRef,
+      sourceAdapters: storeAdapters,
     },
     hasExtensionSource
   )
 
   // ============================================================================
-  // F+G. Telemetry fetch + devices loading watcher (delegated to useTelemetrySource)
+  // F+G. Telemetry source
   // ============================================================================
 
   useTelemetrySource(telemetrySources, telemetryKey, enabled, hasTelemetrySource, relevantDeviceIds, wsConnected, {
     setData: (updater) => setData((prev) => typeof updater === 'function' ? (updater as (p: unknown) => unknown)(prev) as T : updater as T),
-    setDataRaw, setLoading, setError, setLastUpdate, optionsRef,
+    setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate, optionsRef,
     readDataFromStore,
+    sourceAdapters: telemetryAdapters,
   })
 
   // ============================================================================
-  // H. System fetch (delegated to useSystemSource)
+  // H. System source
   // ============================================================================
 
   useSystemSource(systemSources, systemKey, enabled, {
-    setDataRaw, setLoading, setError, setLastUpdate, optionsRef,
+    setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate, optionsRef,
+    sourceAdapters: systemAdapters,
   })
 
   // ============================================================================
-  // I+K. Extension fetch + WebSocket (delegated to useExtensionSource)
+  // I+K. Extension source
   // ============================================================================
 
   useExtensionSource(extensionSources, extensionKey, enabled, currentKey, relevantExtensionIds, {
     setData: (updater) => setData((prev) => typeof updater === 'function' ? (updater as (p: unknown) => unknown)(prev) as T : updater as T),
-    setDataRaw, setLoading, setError, setLastUpdate, dataSourcesRef, optionsRef,
+    setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate, dataSourcesRef, optionsRef,
+    sourceAdapters: extensionAdapters,
   })
 
   return {
@@ -253,6 +317,7 @@ export function useDataSource<T = unknown>(
     loading,
     error,
     lastUpdate,
+    sources: dataSources,
     ...(hasCommandSource && { sendCommand, sending }),
   }
 }
@@ -276,4 +341,3 @@ export function useNumberArrayDataSource(
 
   return { data: data ?? [], loading, error, lastUpdate }
 }
-

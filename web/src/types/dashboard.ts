@@ -76,9 +76,144 @@ export interface TimeWindowConfig {
 }
 
 // ============================================================================
-// Data Source Interface
+// Data Source — shared base fields
 // ============================================================================
 
+interface DataSourceBase {
+  endpoint?: string
+  transform?: string
+  refresh?: number
+  params?: Record<string, unknown>
+  staticValue?: unknown
+  // CustomLayer specific
+  text?: string
+  icon?: string
+  // Legacy telemetry fields
+  timeRange?: number
+  limit?: number
+  aggregate?: 'raw' | 'avg' | 'min' | 'max' | 'sum'
+  timeWindow?: TimeWindowConfig
+  aggregateExt?: TelemetryAggregate
+}
+
+// ============================================================================
+// Data Source — discriminated union by type
+// ============================================================================
+
+// Device-related sources (WS event-driven)
+export interface DeviceDataSource extends DataSourceBase {
+  type: 'device'
+  sourceId: string
+  property?: string
+}
+
+export interface MetricDataSource extends DataSourceBase {
+  type: 'metric'
+  sourceId: string
+  metricId?: string
+}
+
+export interface CommandDataSource extends DataSourceBase {
+  type: 'command'
+  sourceId: string
+  command?: string
+  commandParams?: Record<string, unknown>
+  valueMapping?: ValueMapping
+  currentValue?: unknown
+}
+
+export interface TelemetryDataSource extends DataSourceBase {
+  type: 'telemetry'
+  sourceId: string
+  metricId?: string
+}
+
+export interface DeviceInfoDataSource extends DataSourceBase {
+  type: 'device-info'
+  sourceId: string
+  infoProperty?: 'name' | 'status' | 'online' | 'last_seen' | 'device_type' | 'plugin_name' | 'adapter_id'
+}
+
+// System (polled)
+export interface SystemDataSource extends DataSourceBase {
+  type: 'system'
+  systemMetric?: 'uptime' | 'cpu_count' | 'total_memory' | 'used_memory' | 'free_memory' | 'available_memory' | 'memory_percent' | 'platform' | 'arch' | 'version'
+}
+
+// Extension (WS event-driven)
+export interface ExtensionDataSource extends DataSourceBase {
+  type: 'extension'
+  extensionId?: string
+  extensionMetric?: string
+  extensionCommand?: string
+  extensionDisplayName?: string
+  extensionDataType?: string
+  extensionUnit?: string
+  sourceId?: string
+}
+
+export interface ExtensionMetricDataSource extends DataSourceBase {
+  type: 'extension-metric'
+  extensionId?: string
+  extensionMetric?: string
+  sourceId?: string
+}
+
+export interface ExtensionCommandDataSource extends DataSourceBase {
+  type: 'extension-command'
+  extensionId?: string
+  extensionCommand?: string
+  sourceId?: string
+}
+
+// Transform (polled via telemetry)
+export interface TransformDataSource extends DataSourceBase {
+  type: 'transform'
+  transformId?: string
+  sourceId?: string
+  metricId?: string
+}
+
+// AI Metric (polled via telemetry)
+export interface AIMetricDataSource extends DataSourceBase {
+  type: 'ai-metric'
+  aiGroup?: string
+  sourceId?: string
+  metricId?: string
+}
+
+// Agent
+export interface AgentDataSource extends DataSourceBase {
+  type: 'agent'
+  agentId?: string
+  sourceId?: string
+}
+
+// ============================================================================
+// Data Source — union + legacy interface
+// ============================================================================
+
+/** Discriminated union of all data source types */
+export type StrictDataSource =
+  | DeviceDataSource
+  | MetricDataSource
+  | CommandDataSource
+  | TelemetryDataSource
+  | DeviceInfoDataSource
+  | SystemDataSource
+  | ExtensionDataSource
+  | ExtensionMetricDataSource
+  | ExtensionCommandDataSource
+  | TransformDataSource
+  | AIMetricDataSource
+  | AgentDataSource
+
+/**
+ * Legacy flat DataSource interface.
+ *
+ * @deprecated Prefer using StrictDataSource with type guards for new code.
+ * This interface is kept for backward compatibility with existing consumers.
+ */
 export interface DataSource {
   type: DataSourceType
   endpoint?: string
@@ -86,60 +221,85 @@ export interface DataSource {
   refresh?: number
   params?: Record<string, unknown>
   staticValue?: unknown
-  // Device-specific fields (for reading device telemetry)
   sourceId?: string
   property?: string
-  // Metric-specific fields
   metricId?: string
-  // Command-specific fields (for controlling devices)
   command?: string
   commandParams?: Record<string, unknown>
   valueMapping?: ValueMapping
-  // Current value for command sources (for display)
   currentValue?: unknown
-
-  // === CustomLayer specific fields ===
-  // Text content for text-type layer items
   text?: string
-  // Icon content for icon-type layer items
   icon?: string
-
-  // === Telemetry fields ===
-  // Legacy: simple time range in hours (kept for backward compatibility)
   timeRange?: number
-  // Legacy: max number of data points
   limit?: number
-  // Legacy: simple aggregation
   aggregate?: 'raw' | 'avg' | 'min' | 'max' | 'sum'
-
-  // === New: Time-series data transformation ===
-  // Time window configuration
   timeWindow?: TimeWindowConfig
-  // Extended aggregation method
   aggregateExt?: TelemetryAggregate
-
-  // === Device-info fields ===
   infoProperty?: 'name' | 'status' | 'online' | 'last_seen' | 'device_type' | 'plugin_name' | 'adapter_id'
-
-  // === System fields ===
   systemMetric?: 'uptime' | 'cpu_count' | 'total_memory' | 'used_memory' | 'free_memory' | 'available_memory' | 'memory_percent' | 'platform' | 'arch' | 'version'
-
-  // === Extension fields ===
   extensionId?: string
   extensionMetric?: string
   extensionCommand?: string
   extensionDisplayName?: string
   extensionDataType?: string
   extensionUnit?: string
+  transformId?: string
+  aiGroup?: string
+  agentId?: string
+}
 
-  // === Transform fields ===
-  transformId?: string      // transform automation ID
+// ============================================================================
+// Type guards
+// ============================================================================
 
-  // === AI Metric fields ===
-  aiGroup?: string          // AI metric group name
+export function isDeviceSource(ds: DataSource): ds is DeviceDataSource {
+  return ds.type === 'device'
+}
 
-  // === Agent fields ===
-  agentId?: string          // AI agent ID for agent-monitor-widget binding
+export function isMetricSource(ds: DataSource): ds is MetricDataSource {
+  return ds.type === 'metric'
+}
+
+export function isCommandSource(ds: DataSource): ds is CommandDataSource {
+  return ds.type === 'command'
+}
+
+export function isTelemetrySource(ds: DataSource): ds is TelemetryDataSource {
+  return ds.type === 'telemetry'
+}
+
+export function isDeviceInfoSource(ds: DataSource): ds is DeviceInfoDataSource {
+  return ds.type === 'device-info'
+}
+
+export function isSystemSource(ds: DataSource): ds is SystemDataSource {
+  return ds.type === 'system'
+}
+
+export function isExtensionSource(ds: DataSource): ds is ExtensionDataSource {
+  return ds.type === 'extension'
+}
+
+export function isTransformSource(ds: DataSource): ds is TransformDataSource {
+  return ds.type === 'transform'
+}
+
+export function isAIMetricSource(ds: DataSource): ds is AIMetricDataSource {
+  return ds.type === 'ai-metric'
+}
+
+export function isAgentSource(ds: DataSource): ds is AgentDataSource {
+  return ds.type === 'agent'
+}
+
+/** Check if a data source uses WebSocket events (device/metric/command/telemetry) */
+export function isRealtimeSource(ds: DataSource): boolean {
+  return ds.type === 'device' || ds.type === 'metric' || ds.type === 'command' || ds.type === 'telemetry'
+}
+
+/** Check if a data source uses polled fetching (telemetry/transform/system/extension) */
+export function isPolledSource(ds: DataSource): boolean {
+  return ds.type === 'telemetry' || ds.type === 'transform' || ds.type === 'ai-metric' || ds.type === 'system'
 }
 
 // Union type for single or multiple data sources

@@ -2,14 +2,13 @@
  * Shared Chart Data Pipeline Hook
  *
  * Encapsulates the repeated pattern across all chart components:
- * normalizeDataSource → effectiveAggregate → toTelemetrySource → useDataSource → getSeriesName wrappers
+ * effectiveAggregate → toTelemetrySource → useDataSource → getSeriesName wrappers
  */
 
 import { useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDataSource } from '@/hooks/useDataSource'
 import type { DataSource, DataSourceOrList, TelemetryAggregate } from '@/types/dashboard'
-import { normalizeDataSource } from '@/types/dashboard'
 import { toTelemetrySource } from '@/lib/chartTelemetry'
 import { createChartTimeFormatter } from '@/lib/telemetryTransform'
 import { DataMapper, type TimeSeriesMappingConfig } from '@/lib/dataMapping'
@@ -119,38 +118,28 @@ export function useChartPipeline<T = unknown>(
 
   const { t } = useTranslation('dashboardComponents')
 
-  // Normalize data sources
-  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
+  // Convert to telemetry sources — applied as sourceTransform inside useDataSource
+  const telemetrySourceTransform = useCallback((ds: DataSource): DataSource | undefined => {
+    return toTelemetrySource(ds, ds.limit ?? limit, ds.timeRange ?? timeRange)
+  }, [limit, timeRange])
+
+  // Fetch data — useDataSource normalizes internally, returns normalized sources
+  const { data, loading, error, sources } = useDataSource<T>(
+    dataSource,
+    {
+      fallback: fallback as T,
+      preserveMultiple,
+      sourceTransform: telemetrySourceTransform,
+    }
+  )
 
   // Get effective aggregate from dataSource or props
-  // After resolveDataSource(), aggregateExt is canonical
   const effectiveAggregate = useMemo<TelemetryAggregate>(() => {
     if (sources.length > 0 && sources[0].aggregateExt) {
       return sources[0].aggregateExt
     }
-    // Fallback to prop-level aggregate for sources without explicit aggregateExt
     return aggregate
   }, [sources, aggregate])
-
-  // Convert to telemetry sources
-  // Each source may have its own limit/timeRange set via DataTransformConfig;
-  // fall back to the pipeline-level defaults only when the source doesn't specify.
-  const telemetrySources = useMemo(() => {
-    return sources.map(ds =>
-      toTelemetrySource(ds, ds.limit ?? limit, ds.timeRange ?? timeRange)
-    ).filter((ds): ds is DataSource => ds !== undefined)
-  }, [sources, limit, timeRange])
-
-  // Fetch data
-  const { data, loading, error } = useDataSource<T>(
-    telemetrySources.length > 0
-      ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources)
-      : undefined,
-    {
-      fallback: fallback as T,
-      preserveMultiple,
-    }
-  )
 
   // Derived states
   const hasData = data !== null && data !== undefined && (Array.isArray(data) ? data.length > 0 : true)

@@ -25,7 +25,9 @@ import {
 // ============================================================================
 
 const LOCAL_STORAGE_KEY = 'neomind_dashboards'
+const LOCAL_STORAGE_CACHE_TIMESTAMP_KEY = 'neomind_dashboards_cache_ts'
 const CURRENT_DASHBOARD_KEY = 'neomind_current_dashboard_id'
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
 export class LocalStorageDashboardStorage implements DashboardStorage {
   private storageKey: string
@@ -351,22 +353,24 @@ export class HybridDashboardStorage implements DashboardStorage {
                              errorMessage.includes('does not exist')
 
       if (isTableNotExist) {
-        // Dashboards table does not exist on backend, using localStorage
-        // Don't clear localStorage - let users work with local data
-        // When backend becomes available, data can be synced
         return this.localStorage.load()
       }
 
-      // For other errors, also fall back to localStorage
+      // For other errors, fall back to localStorage but check cache freshness
+      const cacheAge = this.getCacheAge()
+      if (cacheAge !== null && cacheAge > CACHE_TTL_MS) {
+        console.warn('[HybridStorage] Cache is stale (' + Math.round(cacheAge / 1000) + 's old), returning empty')
+        return { data: [], error: null }
+      }
+
       console.warn('[HybridStorage] API load failed, falling back to localStorage')
       return this.localStorage.load()
     }
 
-    // Cache to localStorage if enabled
+    // Cache to localStorage if enabled and update timestamp
     if (this.cacheEnabled && apiResult.data) {
-      this.localStorage.save(apiResult.data).catch(() => {
-        // Ignore cache save errors
-      })
+      this.localStorage.save(apiResult.data).catch(() => {})
+      this.updateCacheTimestamp()
     }
 
     return apiResult
@@ -501,6 +505,25 @@ export class HybridDashboardStorage implements DashboardStorage {
 
   clear(): void {
     this.localStorage.clear()
+    try { localStorage.removeItem(LOCAL_STORAGE_CACHE_TIMESTAMP_KEY) } catch {}
+  }
+
+  /** Get cache age in milliseconds, or null if no timestamp */
+  private getCacheAge(): number | null {
+    try {
+      const ts = localStorage.getItem(LOCAL_STORAGE_CACHE_TIMESTAMP_KEY)
+      if (!ts) return null
+      return Date.now() - parseInt(ts, 10)
+    } catch {
+      return null
+    }
+  }
+
+  /** Update the cache timestamp to now */
+  private updateCacheTimestamp(): void {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_CACHE_TIMESTAMP_KEY, String(Date.now()))
+    } catch {}
   }
 }
 

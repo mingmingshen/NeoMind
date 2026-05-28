@@ -215,13 +215,17 @@ export function LEDIndicator({
   const showLoading = loading && !hasData
 
   // Determine state, label, and color from matching rule
+  const hasDataSource = dataSource !== undefined
   const { state: ledState, label: ruleLabel, color: ruleColor } = useMemo(() => {
     if (error) return { state: 'error' as LEDState }
     if (loading) return { state: 'unknown' as LEDState }
+    // When data is empty but we have a dataSource, stay in unknown state
+    // (the pipeline may still be retrying/polling)
+    if (hasDataSource && !hasData) return { state: 'unknown' as LEDState }
 
     // Find first matching rule
     return findMatch(rules, data, defaultState)
-  }, [data, rules, defaultState, error, loading])
+  }, [data, rules, defaultState, error, loading, hasDataSource, hasData])
 
   const stateCfg = stateConfig[ledState] || stateConfig.unknown
   const isActive = ledState === 'on' || ledState === 'error' || ledState === 'warning'

@@ -59,7 +59,10 @@ import { createDeviceSlice } from './slices/deviceSlice'
 import { createSettingsSlice } from './slices/settingsSlice'
 import { createExtensionSlice } from './slices/extensionSlice'
 import { createLlmBackendSlice } from './slices/llmBackendSlice'
-import { createDashboardSlice } from './slices/dashboardSlice'
+import { createDashboardCrudSlice } from './slices/dashboardCrudSlice'
+import { createDashboardLayoutSlice } from './slices/dashboardLayoutSlice'
+import { createDashboardConfigSlice } from './slices/dashboardConfigSlice'
+import { createDashboardUISlice } from './slices/dashboardUISlice'
 import { createUpdateSlice } from './slices/updateSlice'
 import { createAiAnalystSlice } from './slices/aiAnalystSlice'
 import { createInstanceSlice } from './slices/instanceSlice'
@@ -75,7 +78,10 @@ import type { DeviceSlice } from './slices/deviceSlice'
 import type { SettingsSlice } from './slices/settingsSlice'
 import type { ExtensionSlice } from './slices/extensionSlice'
 import type { LlmBackendSlice } from './slices/llmBackendSlice'
-import type { DashboardState } from './slices/dashboardSlice'
+import type { DashboardCrudSlice } from './slices/dashboardCrudSlice'
+import type { DashboardLayoutSlice } from './slices/dashboardLayoutSlice'
+import type { DashboardConfigSlice } from './slices/dashboardConfigSlice'
+import type { DashboardUISlice } from './slices/dashboardUISlice'
 import type { UpdateSlice } from './slices/updateSlice'
 import type { AiAnalystSlice } from './slices/aiAnalystSlice'
 import type { InstanceSlice } from './slices/instanceSlice'
@@ -94,7 +100,10 @@ export type NeoMindStore = AuthSlice
   & SettingsSlice
   & ExtensionSlice
   & LlmBackendSlice
-  & DashboardState
+  & DashboardCrudSlice
+  & DashboardLayoutSlice
+  & DashboardConfigSlice
+  & DashboardUISlice
   & UpdateSlice
   & AiAnalystSlice
   & InstanceSlice
@@ -118,7 +127,10 @@ export const useStore = create<NeoMindStore>()(
         ...createSettingsSlice(set, get, api),
         ...createExtensionSlice(set, get, api),
         ...createLlmBackendSlice(set, get, api),
-        ...createDashboardSlice(set, get, api),
+        ...createDashboardCrudSlice(set, get, api),
+        ...createDashboardLayoutSlice(set, get, api),
+        ...createDashboardConfigSlice(set, get, api),
+        ...createDashboardUISlice(set, get, api),
         ...createUpdateSlice(set, get, api),
         ...createAiAnalystSlice(set, get, api),
         ...createInstanceSlice(set, get, api),

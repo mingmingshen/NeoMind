@@ -127,21 +127,21 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
 
       // Handle post-update restart: detect if an update was just applied
       // by comparing the stored target version with the current app version.
-      // This is more reliable than comparing with the update check result.
+      // If detected, show success toast and skip server check to prevent
+      // the update dialog from re-appearing on the new version.
       const pendingVersion = localStorage.getItem('neomind_installed_version')
       if (pendingVersion) {
-        try {
-          const currentVersion = await invoke<string>('get_app_version')
-          if (normalizeVersion(currentVersion) === normalizeVersion(pendingVersion)) {
-            // Update was successfully applied
-            notifySuccess(
-              t('settings:updateApplied', { version: currentVersion }),
-              t('settings:newVersionAvailable')
-            )
-          }
-        } catch { /* ignore version check failure */ }
-        // Always clear marker — if update failed, re-showing the dialog won't help
         localStorage.removeItem('neomind_installed_version')
+
+        notifySuccess(
+          t('settings:updateApplied'),
+          t('settings:newVersionAvailable')
+        )
+
+        // Skip server check — we just updated, no need to re-check immediately
+        setUpdateStatus('up-to-date')
+        onUpToDateRef.current?.()
+        return
       }
 
       const info = await invoke<UpdateInfo>('check_update')
@@ -255,22 +255,24 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
     }
   }, [setDownloadProgress])
 
-  // Auto-check on mount
+  // Auto-check on mount — use a ref-based stable callback to avoid
+  // resetting the interval when checkUpdate is recreated (e.g. on language change)
+  const checkUpdateRef = useRef(checkUpdate)
+  checkUpdateRef.current = checkUpdate
+
   useEffect(() => {
     if (autoCheck) {
-      // Check on mount
-      checkUpdate()
+      checkUpdateRef.current()
 
-      // Set up interval for periodic checks
       intervalRef.current = setInterval(() => {
-        checkUpdate()
+        checkUpdateRef.current()
       }, checkInterval)
 
       return () => {
         clearInterval(intervalRef.current)
       }
     }
-  }, [autoCheck, checkInterval, checkUpdate])
+  }, [autoCheck, checkInterval])
 
   return {
     checkUpdate,

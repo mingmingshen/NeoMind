@@ -246,7 +246,10 @@ const LineChartInner = function LineChart({
       if (validSeries.length > 0) return validSeries
     }
 
-    // Default fallback
+    // When dataSource is configured but produced no data, show empty state (not sample data)
+    if (dataSource) return []
+
+    // Default fallback (no dataSource = preview mode)
     return [{
       name: 'Sample',
       data: [10, 15, 12, 18, 14, 20, 16, 22, 19, 25],
@@ -328,7 +331,7 @@ const LineChartInner = function LineChart({
     return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
-  if (chartData.length === 0) {
+  if (!loading && chartData.length === 0) {
     return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
@@ -538,36 +541,32 @@ export const AreaChart = memo(function AreaChart({
 }: AreaChartProps) {
   const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
-  const effectiveSeries = propSeries || DEFAULT_AREA_DATA
 
-  // Shared data pipeline
+  // Shared data pipeline — same pattern as LineChart
   const {
-    sources, data: sourceData, loading, error,
+    sources, data, loading, error,
     hasData, showLoading, getSeriesName,
-  } = useChartPipeline<SeriesData[] | number | number[] | SeriesData[][]>({
+  } = useChartPipeline<any>({
     dataSource,
     aggregate,
     limit,
     timeRange,
-    fallback: effectiveSeries,
+    fallback: propSeries ?? [],
     preserveMultiple: true,
   })
 
-  const shouldFetch = sources.length > 0
-  const rawData = shouldFetch ? sourceData : effectiveSeries
-
+  // Transform data to series format — same pattern as LineChart
   const normalizedSeries: SeriesData[] = useMemo(() => {
-    // Multi-source case
-    if (isMultiSourceData(rawData, sources.length)) {
-      return sources.map((ds, idx) => {
-        const sourceData = rawData[idx]
-        // Transform telemetry points for this source
+
+    // Multi-source case - data should be array of arrays from useDataSource with preserveMultiple
+    if (isMultiSourceData(data, sources.length)) {
+      const seriesResult = sources.map((ds, idx) => {
+        const sourceData = idx < data.length ? data[idx] : []
         let values: number[] = []
         if (Array.isArray(sourceData)) {
-          if (typeof sourceData[0] === 'number') {
-            values = sourceData as unknown as number[]
+          if (isNumberArray(sourceData)) {
+            values = sourceData as number[]
           } else {
-            // Transform telemetry points
             const { values: v } = transformTelemetryToChartData(sourceData, dataMapping)
             values = v
           }
@@ -580,29 +579,39 @@ export const AreaChart = memo(function AreaChart({
           color: undefined,
         } as SeriesData
       })
+
+      // If ALL series have empty data, fall through to fallback/sample data
+      const hasAnyData = seriesResult.some(s => s.data.length > 0)
+      if (hasAnyData) {
+        return seriesResult
+      }
+      // Fall through to use fallback or sample data below
     }
 
-    // Handle telemetry data FIRST (when dataSource is provided)
-    if (dataSource && Array.isArray(rawData) && rawData.length > 0) {
-      const first = rawData[0]
-      if (typeof first === 'object' && first !== null && 'data' in first && Array.isArray(first.data)) {
-        return rawData as SeriesData[]
-      }
+    // Handle telemetry raw data FIRST (when dataSource is provided)
+    if (dataSource && isSeriesDataArray(data)) {
+      return data
+    }
 
-      // Transform telemetry points
-      const { values } = transformTelemetryToChartData(rawData, dataMapping)
+    if (dataSource && Array.isArray(data) && data.length > 0 && !isSeriesDataArray(data)) {
+
+      // Single source - transform telemetry points
+      const { labels: telemetryLabels, values } = transformTelemetryToChartData(data, dataMapping)
       if (values.length > 0) {
-        const seriesName = sources[0] ? getSeriesName(sources[0], 0) : 'Value'
+        const singleSource = sources[0]
+        const seriesName = singleSource ? getSeriesName(singleSource, 0) : 'Value'
         return [{ name: seriesName, data: values, color: undefined } as SeriesData]
       }
     }
 
-    if (dataSource && typeof rawData === 'number') {
-      return [{ name: 'Value', data: [rawData], color: undefined } as SeriesData]
+    // Handle single number from data source
+    if (dataSource && typeof data === 'number') {
+      return [{ name: 'Value', data: [data], color: undefined } as SeriesData]
     }
 
-    if (dataSource && Array.isArray(rawData) && rawData.length > 0 && typeof rawData[0] === 'number') {
-      return [{ name: 'Value', data: rawData as number[], color: undefined } as SeriesData]
+    // Handle number array from data source
+    if (dataSource && isNumberArray(data)) {
+      return [{ name: 'Value', data: data as number[], color: undefined } as SeriesData]
     }
 
     // If no dataSource, use propSeries (static data) — filter out items without data
@@ -611,24 +620,26 @@ export const AreaChart = memo(function AreaChart({
       if (validSeries.length > 0) return validSeries
     }
 
+    // When dataSource is configured but produced no data, show empty state (not sample data)
+    if (dataSource) return []
+
+    // Default fallback (no dataSource = preview mode)
     return DEFAULT_AREA_DATA
-  }, [rawData, propSeries, sources, dataMapping, getSeriesName])
+  }, [data, propSeries, dataSource, dataMapping])
 
-  const series = normalizedSeries
-
-  // Extract timestamp-aligned labels and series data
+  // Extract timestamp-aligned data for multi-source, or sorted labels for single-source
   const { chartLabels, alignedSeries } = useMemo(() => {
     // --- Multi-source with timestamps: align by timestamp ---
-    if (isMultiSourceData(rawData, sources.length)) {
-      const aligned = alignMultiSource(rawData, sources, getSeriesName, dataMapping)
+    if (sources.length > 1 && isMultiSourceData(data, sources.length)) {
+      const aligned = alignMultiSource(data, sources, getSeriesName, dataMapping)
       if (aligned) return { chartLabels: aligned.chartLabels, alignedSeries: aligned.series }
     }
 
     // --- Single source with timestamps ---
-    if (dataSource && Array.isArray(rawData) && rawData.length > 0) {
-      const first = rawData[0]
+    if (dataSource && Array.isArray(data) && data.length > 0) {
+      const first = data[0]
       if (typeof first === 'object' && first !== null && ('timestamp' in first || 't' in first || 'time' in first)) {
-        const { labels: telemetryLabels, values } = transformTelemetryToChartData(rawData, dataMapping)
+        const { labels: telemetryLabels, values } = transformTelemetryToChartData(data, dataMapping)
         if (telemetryLabels.length > 0) {
           const singleSource = sources[0]
           const seriesName = singleSource ? getSeriesName(singleSource, 0) : 'Value'
@@ -640,29 +651,30 @@ export const AreaChart = memo(function AreaChart({
       }
     }
 
-    // --- Fallback ---
+    // --- Fallback: index-based labels ---
     if (!dataSource && labels && labels.length > 0) {
-      return { chartLabels: labels, alignedSeries: series }
+      return { chartLabels: labels, alignedSeries: normalizedSeries }
     }
 
-    const maxDataLength = Math.max(...series.map(s => s.data?.length ?? 0), 0)
+    const maxDataLength = Math.max(...normalizedSeries.map(s => s.data?.length ?? 0), 0)
     return {
       chartLabels: Array.from({ length: maxDataLength }, (_, i) => `${i}`),
-      alignedSeries: series,
+      alignedSeries: normalizedSeries,
     }
-  }, [rawData, sources, dataMapping, series, dataSource, labels])
+  }, [data, sources, dataMapping, normalizedSeries, dataSource, labels])
 
-  const finalSeries = alignedSeries.length > 0 ? alignedSeries : series
+  const series = alignedSeries.length > 0 ? alignedSeries : normalizedSeries
 
+  // Build chart data for recharts
   const chartData = useMemo(() => {
     return chartLabels.map((label, idx) => {
       const point: any = { name: label }
-      finalSeries.forEach((s, i) => {
+      series.forEach((s, i) => {
         point[`series${i}`] = s.data?.[idx] ?? null
       })
       return point
     })
-  }, [chartLabels, finalSeries])
+  }, [chartLabels, series])
 
   // Loading state
   if (showLoading) {
@@ -686,7 +698,7 @@ export const AreaChart = memo(function AreaChart({
     return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
-  if (chartData.length === 0) {
+  if (!loading && chartData.length === 0) {
     return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
@@ -696,7 +708,7 @@ export const AreaChart = memo(function AreaChart({
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
       <ChartContainer>
-        <AreaChartWithDimensions data={chartData} series={finalSeries} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} smooth={smooth} />
+        <AreaChartWithDimensions data={chartData} series={series} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} smooth={smooth} />
       </ChartContainer>
     </div>
   )

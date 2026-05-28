@@ -5,12 +5,12 @@
 
 import type { DataSource } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
-import type { Device } from '@/types'
 import { useStore } from '@/store'
 import {
   extractValueFromData, safeExtractValue, eventMetricMatches,
   getPointValue, isImageDataSource, getDataSourceLimit,
-  isDuplicatePoint, dedupeTelemetryPoints, sortAndDedup,
+  isDuplicatePoint, sortAndDedup,
+  findDevice, resolveDeviceInfoValue, insertAndMaintain,
 } from './helpers'
 import { timeWindowToHours } from '@/lib/telemetryTransform'
 
@@ -75,23 +75,26 @@ export function mergeLiveData(
   preserveMultiple: boolean, sources: DataSource[]
 ): unknown {
   if (preserveMultiple && sources.length > 1 && Array.isArray(fetchedData)) {
-    const maxLimit = (ds: DataSource) => getDataSourceLimit(ds)
     return sources.map((ds, i) => {
       const fetched = (fetchedData as unknown[][])[i] ?? []
       const live = livePoints[i] ?? []
-      const merged = [...live, ...fetched]
-      const sorted = sortAndDedup(merged, tsFn, maxLimit(ds), isImageDataSource(ds.params, ds.transform, ds.metricId))
-      sorted.reverse()  // sortAndDedup returns newest-first; reverse to oldest-first for chart X-axis
-      return sorted
+      const isImg = isImageDataSource(ds.params, ds.transform, ds.metricId)
+      const maxLimit = getDataSourceLimit(ds)
+      let result: unknown[] = []
+      for (const p of fetched) result = insertAndMaintain(result, p, tsFn, maxLimit, isImg)
+      for (const p of live) result = insertAndMaintain(result, p, tsFn, maxLimit, isImg)
+      return result
     })
   }
   const fetched = Array.isArray(fetchedData) ? fetchedData : []
   const live = livePoints[0] ?? []
   const ds = sources[0]
   const maxLimit = ds ? getDataSourceLimit(ds) : 50
-  const sorted = sortAndDedup([...live, ...fetched], tsFn, maxLimit, ds ? isImageDataSource(ds.params, ds.transform, ds.metricId) : false)
-  sorted.reverse()  // sortAndDedup returns newest-first; reverse to oldest-first for chart X-axis
-  return sorted
+  const isImg = ds ? isImageDataSource(ds.params, ds.transform, ds.metricId) : false
+  let result: unknown[] = []
+  for (const p of fetched) result = insertAndMaintain(result, p, tsFn, maxLimit, isImg)
+  for (const p of live) result = insertAndMaintain(result, p, tsFn, maxLimit, isImg)
+  return result
 }
 
 // ============================================================================
@@ -103,22 +106,15 @@ export function normalizeOutputName(outputName: string): string {
   return outputName.split(':').slice(1).join(':')
 }
 
-export function sortArrayByTs(points: unknown[], tsFn: (p: unknown) => number): unknown[] {
-  const idx = points.map((p, i) => ({ p, i }))
-  idx.sort((a, b) => { const d = tsFn(b.p) - tsFn(a.p); return d !== 0 ? d : a.i - b.i })
-  return idx.map(({ p }) => p)
-}
-
 export function sortTelemetryResults(finalData: unknown, sources: DataSource[], preserveMultiple: boolean): unknown {
   const isPM = preserveMultiple && sources.length > 1
   const process = (points: unknown[], ds: DataSource): unknown[] => {
     if (!Array.isArray(points) || points.length === 0) return points
     const isImg = isImageDataSource(ds.params, ds.transform, ds.metricId)
     const maxLimit = getDataSourceLimit(ds)
+    // Sort descending (newest-first), dedup, then reverse to ascending (oldest-first)
     const sorted = sortAndDedup(points, getTs, maxLimit, isImg)
-    // Reverse to ascending order (oldest first) so charts render left→right timeline
-    sorted.reverse()
-    return sorted
+    return sorted.slice().reverse()
   }
   if (isPM && Array.isArray(finalData)) return sources.map((ds, i) => process((finalData as unknown[][])[i], ds))
   if (Array.isArray(finalData) && sources.length > 0) return process(finalData, sources[0])
@@ -187,10 +183,7 @@ export function processTelemetryEvent(
 
       if (matched.isImg && isDuplicatePoint(currentArray, eventTimestamp, matched.eventValue, getTs)) return undefined
 
-      const sorted = sortArrayByTs([newPoint, ...currentArray], getTs)
-      // sortArrayByTs returns newest-first; reverse to oldest-first for chart X-axis
-      sorted.reverse()
-      return matched.isImg ? sorted.slice(0, maxLimit) : dedupeTelemetryPoints(sorted, getTs, maxLimit)
+      return insertAndMaintain(currentArray, newPoint, getTs, maxLimit, matched.isImg)
     })
 
     if (!updatedResults.some((r) => r !== undefined)) return currentData
@@ -225,14 +218,14 @@ export function processNonTelemetryEvent(
           const deviceId = getSourceId(ds)!
           const property = ds.property as string | undefined
           if (!property) {
-            result = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId) ?? null; break
+            result = findDevice(currentDevices, deviceId) ?? null; break
           }
           if (isDeviceMetricEvent && eventData.device_id === deviceId) {
             const metricMatches = eventMetric === property || eventMetricMatches(eventMetric, property)
             if ('metric' in eventData && 'value' in eventData && metricMatches) { result = eventData.value; break }
             if (!eventMetric) { const extracted = extractValueFromData(eventData, property); if (extracted !== undefined) { result = extracted; break } }
           }
-          const device = currentDevices.find((d: Device) => d.id === deviceId)
+          const device = findDevice(currentDevices, deviceId)
           if (device?.current_values && typeof device.current_values === 'object') {
             result = extractValueFromData(device.current_values, property) ?? '-'
           } else { result = '-' }
@@ -264,7 +257,7 @@ export function processNonTelemetryEvent(
             if ('metric' in eventData && 'value' in eventData && metricMatches) { result = eventData.value; break }
             if (!eventMetric) { const extracted = extractValueFromData(eventData, property); if (extracted !== undefined) { result = extracted; break } }
           }
-          const device = currentDevices.find((d: Device) => d.id === deviceId)
+          const device = findDevice(currentDevices, deviceId)
           result = device?.current_values ? (extractValueFromData(device.current_values, property) ?? false) : false
           result = safeExtractValue(result, false)
           break
@@ -272,20 +265,8 @@ export function processNonTelemetryEvent(
         case 'device-info': {
           const deviceId = getSourceId(ds)
           const infoProperty = ds.infoProperty || 'name'
-          const device = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
-          if (!device) { result = fallback ?? '-' }
-          else {
-            switch (infoProperty) {
-              case 'name': result = device.name || '-'; break
-              case 'status': result = device.status || 'unknown'; break
-              case 'online': result = device.online ?? false; break
-              case 'last_seen': result = device.last_seen || '-'; break
-              case 'device_type': result = device.device_type || '-'; break
-              case 'plugin_name': result = device.plugin_name || device.adapter_id || '-'; break
-              case 'adapter_id': result = device.adapter_id || '-'; break
-              default: result = fallback ?? '-'
-            }
-          }
+          const device = findDevice(currentDevices, deviceId)
+          result = resolveDeviceInfoValue(device, infoProperty, fallback)
           result = safeExtractValue(result as unknown, (fallback ?? '-') as any)
           break
         }

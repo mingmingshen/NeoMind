@@ -5,8 +5,9 @@
 
 import type { TelemetryAggregate, TimeWindowConfig } from '@/types/dashboard'
 import { useStore } from '@/store'
-import { logError } from '@/lib/errors'
+import { logError, isNetworkError } from '@/lib/errors'
 import { getTimeRange } from '@/lib/telemetryTransform'
+import { insertAndMaintain } from './helpers'
 
 // ============================================================================
 // Cache (replaces TypedCache class instances)
@@ -94,7 +95,8 @@ export async function fetchHistoricalTelemetry(
   aggregate: TelemetryAggregate = 'raw',
   includeRawPoints: boolean = false,
   bypassCache: boolean = false,
-  timeWindow?: TimeWindowConfig
+  timeWindow?: TimeWindowConfig,
+  isImageSource: boolean = false,
 ): Promise<{ data: number[]; raw?: unknown[]; success: boolean }> {
   // Include a time bucket (minute-aligned) in the cache key so that stale data
   // from a previous time period is never served when fresh data is available.
@@ -123,14 +125,26 @@ export async function fetchHistoricalTelemetry(
         endSec = Math.floor(now / 1000)
       }
 
-      // Scale fetch limit based on time range for adequate coverage.
-      // TODO: Re-enable server-side bucketed downsampling after fixing
-      // stability issues with live data updates. For now, fetch raw points
-      // and let the frontend handle display.
-      const useBucketed = false // !!timeWindow
+      // Image/large-payload metrics: use server-side time-bucket downsampling.
+      // Backend divides the time range into `limit` equal buckets and returns
+      // one newest point per bucket — gives full temporal coverage without
+      // downloading hundreds of large base64 blobs.
+      // Numeric metrics: scale fetchLimit with timeRange for chart resolution.
+      // Detection: explicit isImageSource flag from caller OR metricId naming heuristic.
+      const isImgByMetric = !!(metricId && (
+        metricId.toLowerCase().includes('image') ||
+        metricId.toLowerCase().includes('img') ||
+        metricId.toLowerCase().includes('frame') ||
+        metricId.toLowerCase().includes('snapshot') ||
+        metricId.toLowerCase().includes('values.image')
+      ))
+      const isImgMetric = isImageSource || isImgByMetric
+      const useBucketed = isImgMetric && !timeWindow
       const fetchLimit = timeWindow
         ? 3000
-        : Math.max(limit * 2, timeRange <= 1 ? 100 : Math.min(Math.ceil(timeRange * 17), 1000))
+        : isImgMetric
+          ? limit                 // One per bucket → exactly what user configured
+          : Math.max(limit * 2, timeRange <= 1 ? 100 : Math.min(Math.ceil(timeRange * 17), 1000))
 
       // Use unified telemetry endpoint for transform/ai sources, device endpoint otherwise
       const isUnifiedSource = deviceId.startsWith('transform:') || deviceId.startsWith('ai:')
@@ -238,22 +252,25 @@ export async function fetchHistoricalTelemetry(
           // raw — points are already the right count:
           //   - timeWindow queries: backend did bucketed downsampling
           //   - default queries: backend returned limited newest points
-          // Just sort descending as a safety net and apply display limit.
-          const sorted = [...metricData].sort((a, b) => {
-            const tsA = extractTimestamp(a)
-            const tsB = extractTimestamp(b)
-            return tsB - tsA // descending (newest first)
-          })
+          // Build ascending array via insertAndMaintain, apply display limit.
+          // Use content-based dedup (isImage=true) for includeRawPoints to avoid
+          // collapsing multiple images that share the same second-precision timestamp.
           const displayLimit = limit || 50
-          const rawData = sorted.length > displayLimit ? sorted.slice(0, displayLimit) : sorted
-          values = rawData.map(extractValue).filter((v: number) => typeof v === 'number' && !isNaN(v))
-          rawPoints = includeRawPoints ? rawData.map((point) => {
+          const preserveAll = includeRawPoints
+          const getPointTs = (p: unknown): number => extractTimestamp(p)
+          let ascData: unknown[] = []
+          for (const p of metricData) {
+            ascData = insertAndMaintain(ascData, p, getPointTs, displayLimit, preserveAll)
+          }
+          values = ascData.map(extractValue).filter((v: number) => typeof v === 'number' && !isNaN(v))
+          rawPoints = includeRawPoints ? ascData.map((point) => {
             if (typeof point === 'number') return { timestamp: Math.floor(Date.now() / 1000), value: point }
             if (typeof point === 'object' && point !== null) {
               const p = point as Record<string, unknown>
               const ts = p.timestamp ?? p.time ?? p.t
               const timestamp = typeof ts === 'number' ? (ts > 10000000000 ? Math.floor(ts / 1000) : ts) : Math.floor(Date.now() / 1000)
-              return { timestamp, value: p.value ?? p.v ?? 0 }
+              // Preserve ALL original fields (image, data, src, etc.) — not just value/v
+              return { ...p, timestamp }
             }
             return { timestamp: Math.floor(Date.now() / 1000), value: point }
           }) : undefined
@@ -265,7 +282,12 @@ export async function fetchHistoricalTelemetry(
 
       return { data: [], success: false }
     } catch (error) {
-      logError(error, { operation: 'Fetch historical telemetry' })
+      // Network errors are expected when offline — log as warning, not error
+      if (isNetworkError(error)) {
+        console.warn('[Fetch historical telemetry] Network error (offline?)')
+      } else {
+        logError(error, { operation: 'Fetch historical telemetry' })
+      }
       return { data: [], success: false }
     }
   })()
@@ -312,7 +334,11 @@ export async function fetchSystemStats(metric: string): Promise<{ data: unknown;
     systemStatsCache.set(cacheKey, value)
     return { data: value, success: true }
   } catch (error) {
-    logError(error, { operation: 'Fetch system stats' })
+    if (isNetworkError(error)) {
+      console.warn('[Fetch system stats] Network error (offline?)')
+    } else {
+      logError(error, { operation: 'Fetch system stats' })
+    }
     return { data: null, success: false }
   }
 }
@@ -377,7 +403,9 @@ async function flushBatch() {
       }
     }
   } catch (error) {
-    logError(error, { operation: 'Batch fetch devices, falling back to individual' })
+    if (!isNetworkError(error)) {
+      logError(error, { operation: 'Batch fetch devices, falling back to individual' })
+    }
     // Fallback to individual fetches
     try {
       const api = (await import('@/lib/api')).api

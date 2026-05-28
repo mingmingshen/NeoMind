@@ -12,6 +12,7 @@ import { Power, Lightbulb, Fan, Lock, Play, ChevronRight, Info } from 'lucide-re
 import { useTranslation } from 'react-i18next'
 import { useState, useCallback, useEffect } from 'react'
 import { cn } from '@/lib/utils'
+import { findDevice } from '@/lib/deviceUtils'
 import type { DataSource } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
 import type { ParameterDefinition } from '@/types'
@@ -291,7 +292,7 @@ export function CommandButton({
   const storeDeviceName = useStore(useCallback(
     (state) => {
       if (!isDeviceCommand || !deviceId) return null
-      const device = state.devices.find(d => d.id === deviceId || d.device_id === deviceId)
+      const device = findDevice(state.devices, deviceId)
       return device?.name || null
     },
     [isDeviceCommand, deviceId]

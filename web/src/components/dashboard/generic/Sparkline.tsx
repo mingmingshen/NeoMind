@@ -377,26 +377,26 @@ function SparklineComponent({
   editMode = false,
   className,
 }: SparklineProps) {
+  // Normalize data sources once
+  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
+
   // Get effective aggregate and time window from dataSource or props
   const effectiveAggregate = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     if (sources.length > 0 && sources[0].aggregateExt) {
       return sources[0].aggregateExt
     }
     return aggregate
-  }, [dataSource, aggregate])
+  }, [sources, aggregate])
 
   const effectiveTimeWindow = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     if (sources.length > 0 && sources[0].timeWindow?.type) {
       return sources[0].timeWindow.type
     }
     return timeWindow ?? 'last_24hours'
-  }, [dataSource, timeWindow])
+  }, [sources, timeWindow])
 
   // Normalize data sources to telemetry type with transform settings
   const telemetrySources = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     const timeRange = timeWindowToHours(effectiveTimeWindow)
 
     // Determine aggregate value with proper type
@@ -437,7 +437,7 @@ function SparklineComponent({
 
       return ds
     })
-  }, [dataSource, effectiveAggregate, effectiveTimeWindow])
+  }, [sources, effectiveAggregate, effectiveTimeWindow])
 
   // Use telemetry sources if available, otherwise use original dataSource
   const finalDataSource = telemetrySources.length > 0
@@ -458,33 +458,36 @@ function SparklineComponent({
   // Check if dataSource is configured
   const hasDataSource = dataSource !== undefined
 
-  // Convert data to number array using the updated toNumberArray function
+  // Convert data to number array — same pattern as LineChart/AreaChart
   const chartData = useMemo(() => {
     // In edit mode, always show data (sample if real data unavailable)
     if (error && !editMode) return []
 
-    // Use propData only when there's no dataSource (static mode)
-    // When dataSource exists, always use live data to avoid stale data during drag
-    let rawData = hasDataSource ? data : propData
-    if (Array.isArray(rawData) && rawData.length > 0 && Array.isArray(rawData[0])) {
-      // Multi-source detected: combine all sources into one array
-      // For sparkline, we interleave or append data from all sources
-      const allData: unknown[] = []
-      for (const sourceData of rawData) {
-        if (Array.isArray(sourceData)) {
-          allData.push(...sourceData)
+    // When dataSource is configured, use live data only
+    if (hasDataSource) {
+      let rawData = data
+      // Multi-source: flatten into single array
+      if (Array.isArray(rawData) && rawData.length > 0 && Array.isArray(rawData[0])) {
+        const allData: unknown[] = []
+        for (const sourceData of rawData) {
+          if (Array.isArray(sourceData)) allData.push(...sourceData)
         }
+        rawData = allData.length > 0 ? allData : rawData
       }
-      rawData = allData.length > 0 ? allData : rawData
+
+      const result = toNumberArray(rawData, [])
+      if (result.length >= 2) return result
+      // Data source set but not enough data — return empty (EmptyState will show)
+      return []
     }
 
-    const result = toNumberArray(rawData, [])
-    // In editMode, fall back to sample data when real data is insufficient
-    if (result.length < 2 && (editMode || !hasDataSource)) {
-      return DEFAULT_SAMPLE_DATA
+    // No dataSource — use propData or sample data
+    if (propData && Array.isArray(propData) && propData.length >= 2) {
+      return propData
     }
 
-    return result
+    // Default sample data for preview mode
+    return DEFAULT_SAMPLE_DATA
   }, [data, propData, error, hasDataSource, editMode])
 
   const sizeConfig = dashboardComponentSize[size]
@@ -526,7 +529,9 @@ function SparklineComponent({
   }
 
   // Loading state - show skeleton while fetching initial data
-  if (showLoading && hasDataSource && chartData.length < 2) {
+  // Keep showing loading as long as we have a dataSource and no data yet,
+  // even if the initial fetch returned [] (retry/polling may still deliver data)
+  if (loading && hasDataSource && chartData.length < 2) {
     return (
       <div className={cn(dashboardCardBase, 'h-full flex flex-col', sizeConfig.padding, className)}>
         <div className="flex items-center justify-between mb-2">
@@ -538,8 +543,8 @@ function SparklineComponent({
     )
   }
 
-  // Empty state - use unified EmptyState (when dataSource is configured but no data available)
-  if (!editMode && hasDataSource && chartData.length < 2) {
+  // Empty state - only show when loading is fully complete (not retrying/polling)
+  if (!editMode && !loading && hasDataSource && chartData.length < 2) {
     return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 

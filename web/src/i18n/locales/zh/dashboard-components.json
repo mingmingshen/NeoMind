@@ -869,6 +869,9 @@
     "imageDisplayDesc": "从 URL 或数据源显示图片",
     "imageHistory": "图片历史",
     "imageHistoryDesc": "带时间导航的历史图片库",
+    "imageHistory.noImages": "无图片",
+    "imageHistory.configureSource": "配置图片数据源",
+    "imageHistory.failedToLoad": "加载失败",
     "webDisplay": "网页显示",
     "webDisplayDesc": "通过 iframe 嵌入网页内容",
     "markdownDisplay": "Markdown 显示",
@@ -1117,5 +1120,18 @@
     "create": "创建",
     "newDashboard": "新建仪表板",
     "dashboardCount": "{{count}} 个仪表板"
+  },
+  "componentWrapper": {
+    "config": "配置",
+    "copy": "复制",
+    "remove": "移除",
+    "removeConfirm": "确定要从仪表板移除此组件吗？"
+  },
+  "sharedDashboard": {
+    "componentUnavailable": "共享视图中不可用的组件",
+    "loading": "加载中...",
+    "poweredBy": "由 NeoMind 提供支持",
+    "interactive": "可交互",
+    "readOnly": "只读"
   }
 }

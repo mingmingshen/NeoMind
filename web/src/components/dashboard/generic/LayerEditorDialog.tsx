@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react'
+import { findDevice } from '@/lib/deviceUtils'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -155,18 +156,18 @@ export function LayerEditorDialog({
   // Convert bindings to layer items for preview
   const convertToLayerItems = useCallback((): LayerItem[] => {
     const getDeviceName = (deviceId: string) => {
-      const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+      const device = findDevice(devices, deviceId)
       return device?.name || device?.device_id || deviceId
     }
 
     const getDeviceStatus = (deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
-      const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+      const device = findDevice(devices, deviceId)
       if (!device) return undefined
       return device.online ? 'online' : 'offline'
     }
 
     const getDeviceMetricValue = (deviceId: string, metricId: string): string | number | undefined => {
-      const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+      const device = findDevice(devices, deviceId)
       if (!device?.current_values) return undefined
       const value = findMetricValue(device.current_values, metricId || '')
       if (value !== undefined && value !== null) {

@@ -155,6 +155,9 @@ pub struct CreateDashboardRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateDashboardComponent {
+    /// Optional client-provided ID; if absent, server generates one
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     #[serde(alias = "type", rename = "type")]
     pub component_type: String,
     pub position: ComponentPosition,
@@ -299,10 +302,11 @@ fn convert_layout(layout: &StoredLayout) -> DashboardLayout {
     }
 }
 
-/// Convert API component to stored component
+/// Convert API component to stored component.
+/// Preserves client-provided ID when available, otherwise caller must assign one.
 fn api_to_stored_component(component: &CreateDashboardComponent) -> StoredComponent {
     StoredComponent {
-        id: String::new(), // Will be set by caller
+        id: component.id.clone().unwrap_or_default(),
         component_type: component.component_type.clone(),
         position: neomind_storage::dashboards::ComponentPosition {
             x: component.position.x,
@@ -445,8 +449,8 @@ pub async fn create_dashboard_handler(
     State(state): State<ServerState>,
     Json(req): Json<CreateDashboardRequest>,
 ) -> HandlerResult<Dashboard> {
+    let id = format!("dashboard_{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().timestamp();
-    let id = format!("dashboard_{}", now);
 
     let stored_dashboard = StoredDashboard {
         id: id.clone(),
@@ -458,7 +462,9 @@ pub async fn create_dashboard_handler(
             .enumerate()
             .map(|(i, c)| {
                 let mut comp = api_to_stored_component(c);
-                comp.id = format!("component_{}", i);
+                if comp.id.is_empty() {
+                    comp.id = format!("component_{}", i);
+                }
                 comp
             })
             .collect(),
@@ -1018,19 +1024,49 @@ fn is_blocked_proxy_path(path: &str) -> bool {
     blocked_prefixes.iter().any(|p| path.starts_with(p))
 }
 
-/// In read-only mode, only allow GET and specific safe POST paths
+/// Check if a path matches a pattern where `:id` matches any single segment.
+/// e.g., `extensions/abc123/command` matches `extensions/:id/command`
+fn path_matches_pattern(path: &str, pattern: &str) -> bool {
+    let path_segs: Vec<&str> = path.split('/').collect();
+    let pat_segs: Vec<&str> = pattern.split('/').collect();
+    if path_segs.len() != pat_segs.len() {
+        return false;
+    }
+    path_segs
+        .iter()
+        .zip(pat_segs.iter())
+        .all(|(p, pat)| pat.starts_with(':') || *p == *pat)
+}
+
+/// In read-only mode, only allow GET and specific safe POST endpoints.
+/// Uses exact endpoint matching to prevent unauthorized access to side-effect
+/// operations that share a prefix with read-like endpoints.
+///
+/// Share mode permission matrix:
+/// ┌──────────────────────────────────────────┬────────┬─────────┐
+/// │ Path pattern                             │ Method │ Allowed │
+/// ├──────────────────────────────────────────┼────────┼─────────┤
+/// │ * (unless blocked)                       │ GET    │ YES     │
+/// │ extensions/:id/command                   │ POST   │ YES     │
+/// │ devices/current-batch                    │ POST   │ YES     │
+/// │ agents/:id/executions/details            │ POST   │ YES     │
+/// │ * (all other)                            │ POST   │ NO      │
+/// │ *                                        │ PUT    │ NO      │
+/// │ *                                        │ DELETE │ NO      │
+/// └──────────────────────────────────────────┴────────┴─────────┘
 fn is_allowed_readonly_method(path: &str, method: &Method) -> bool {
     if method == Method::GET {
         return true;
     }
-    // Allow POST for read-like operations (data fetching)
     if method == Method::POST {
-        let allowed_post_prefixes = [
-            "extensions/",            // Extension commands (data fetching)
-            "devices/current-batch",   // Batch device current values
-            "agents/",                 // Agent execution details (batch get)
+        let allowed_post_patterns = [
+            "extensions/:id/command",         // Extension read-only commands
+            "devices/current-batch",          // Batch device current values
+            "agents/:id/executions/details",  // Batch get execution details
         ];
-        return allowed_post_prefixes.iter().any(|p| path.starts_with(p));
+        return allowed_post_patterns
+            .iter()
+            .any(|p| path_matches_pattern(path, p));
     }
     false
 }

@@ -3,9 +3,11 @@
  *
  * Displays historical image data with manual slider navigation.
  * Supports base64 images, URLs, and data URLs.
+ * Uses shared image utilities from @/lib/imageUtils.
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo, memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
@@ -14,112 +16,14 @@ import { ImageOff, AlertTriangle, RefreshCw, Images } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
 import { LoadingState } from '../shared'
+import {
+  normalizeImageUrl,
+  extractTimestamp,
+} from '@/lib/imageUtils'
 
-type ImageFormatType = 'png' | 'jpeg' | 'jpg' | 'gif' | 'webp' | 'bmp' | 'svg' | 'tiff' | 'ico' | 'unknown'
-
-// Magic bytes for image type detection
-const IMAGE_MAGIC_BYTES: Record<string, { magic: number[]; type: ImageFormatType; mime: string }> = {
-  png: { magic: [0x89, 0x50, 0x4E, 0x47], type: 'png', mime: 'image/png' },
-  jpeg: { magic: [0xFF, 0xD8, 0xFF], type: 'jpeg', mime: 'image/jpeg' },
-  jpg: { magic: [0xFF, 0xD8, 0xFF], type: 'jpg', mime: 'image/jpeg' },
-  gif: { magic: [0x47, 0x49, 0x46], type: 'gif', mime: 'image/gif' },
-  webp: { magic: [0x52, 0x49, 0x46, 0x46], type: 'webp', mime: 'image/webp' },
-  bmp: { magic: [0x42, 0x4D], type: 'bmp', mime: 'image/bmp' },
-  tiff: { magic: [0x49, 0x49, 0x2A, 0x00], type: 'tiff', mime: 'image/tiff' },
-  ico: { magic: [0x00, 0x00, 0x01, 0x00], type: 'ico', mime: 'image/x-icon' },
-}
-
-function detectImageFormatFromMagicBytes(base64Data: string): { type: ImageFormatType; mime: string } | null {
-  try {
-    const pureBase64 = base64Data.replace(/^data:image\/[^;]+;base64,/, '').replace(/^data:,/, '')
-    const binaryString = atob(pureBase64.slice(0, 32))
-
-    for (const [name, info] of Object.entries(IMAGE_MAGIC_BYTES)) {
-      if (info.magic.every((byte, i) => binaryString.charCodeAt(i) === byte)) {
-        return { type: info.type as ImageFormatType, mime: info.mime }
-      }
-    }
-  } catch {
-    // Invalid base64
-  }
-  return null
-}
-
-function isPureBase64(str: string): boolean {
-  if (!str || str.length < 100) return false
-
-  // Strip whitespace/newlines first (backend may include them)
-  const cleaned = str.trim().replace(/[\s\r\n]+/g, '')
-
-  if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
-    return false
-  }
-  if (cleaned.startsWith('data:')) {
-    return false
-  }
-
-  const base64Regex = /^[A-Za-z0-9+/=_-]+$/
-  if (!base64Regex.test(cleaned)) {
-    return false
-  }
-
-  try {
-    atob(cleaned.slice(0, 100))
-    return true
-  } catch {
-    return false
-  }
-}
-
-function normalizeImageUrl(value: string): string | null {
-  if (!value) return null
-
-  const trimmed = value.trim()
-
-  if (trimmed === '-' || trimmed === 'undefined' || trimmed === 'null' || trimmed === '') {
-    return null
-  }
-
-  if (trimmed.startsWith('data:image/')) {
-    const commaIdx = trimmed.indexOf(',')
-    if (commaIdx === -1) return trimmed
-    const prefix = trimmed.slice(0, commaIdx + 1)
-    let b64 = trimmed.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '')
-    // Unwrap double-prefixed data URLs
-    if (b64.startsWith('data:image/') || b64.startsWith('data:')) {
-      return normalizeImageUrl(b64)
-    }
-    return `${prefix}${b64}`
-  }
-
-  if (trimmed.startsWith('data:base64,')) {
-    const base64Data = trimmed.slice(12).replace(/[\s\r\n]+/g, '')
-    const formatInfo = detectImageFormatFromMagicBytes(base64Data) || { type: 'png', mime: 'image/png' }
-    return `data:${formatInfo.mime};base64,${base64Data}`
-  }
-
-  if (trimmed.startsWith('data:')) {
-    // Strip unknown data: prefix and recurse
-    const afterComma = trimmed.slice(trimmed.indexOf(',') + 1)
-    if (afterComma && afterComma !== trimmed) return normalizeImageUrl(afterComma)
-    return null
-  }
-
-  if (isPureBase64(trimmed)) {
-    const clean = trimmed.replace(/[\s\r\n]+/g, '')
-    const formatInfo = detectImageFormatFromMagicBytes(clean) || { type: 'png', mime: 'image/png' }
-    return `data:${formatInfo.mime};base64,${clean}`
-  }
-
-  // Last resort: try sanitizing and using as raw base64
-  const sanitized = trimmed.replace(/[\s\r\n]+/g, '')
-  if (sanitized.length >= 100 && /^[A-Za-z0-9+/=_-]+$/.test(sanitized)) {
-    const formatInfo = detectImageFormatFromMagicBytes(sanitized) || { type: 'png', mime: 'image/png' }
-    return `data:${formatInfo.mime};base64,${sanitized}`
-  }
-
-  return null
-}
+// ============================================================================
+// Types
+// ============================================================================
 
 export interface ImageHistoryItem {
   src: string
@@ -148,256 +52,139 @@ export interface ImageHistoryProps {
 
 type ImageLoadState = 'loading' | 'loaded' | 'error'
 
-/**
- * Helper to extract timestamp from an object
- * Returns timestamp in milliseconds for consistency with JavaScript Date
- */
-function extractTimestamp(obj: Record<string, unknown>): number | undefined {
-  const ts = obj.timestamp ?? obj.time ?? obj.t
-  if (ts === undefined || ts === null) return undefined
-  if (typeof ts === 'number') {
-    // Assume milliseconds if > 10000000000 (year 2286+), otherwise seconds
-    return ts > 10000000000 ? ts : ts * 1000
-  }
-  if (typeof ts === 'string') {
-    const parsed = Date.parse(ts)
-    if (!isNaN(parsed)) return parsed  // Date.parse returns milliseconds
-  }
-  return undefined
-}
+// ============================================================================
+// Data normalization
+// ============================================================================
 
 /**
- * Transform telemetry points to ImageHistoryItem array
- * Sorts by timestamp descending (newest first)
+ * Unified data → ImageHistoryItem[] transformation.
+ * Replaces the old normalizeImageData + transformTelemetryToImages pair.
+ * Uses the cached normalizeImageUrl from shared utils.
  */
-function transformTelemetryToImages(data: unknown): ImageHistoryItem[] {
-  if (!Array.isArray(data)) {
-    return []
-  }
+function toImageHistoryItems(data: unknown): ImageHistoryItem[] {
+  if (data === null || data === undefined) return []
 
-  const result: ImageHistoryItem[] = []
-
-  for (let index = 0; index < data.length; index++) {
-    const point = data[index]
-
-    if (typeof point === 'string') {
-      const normalizedSrc = normalizeImageUrl(point)
-      if (normalizedSrc) {
-        result.push({ src: normalizedSrc, alt: `Image ${index + 1}` })
-      }
-    } else if (typeof point === 'object' && point !== null) {
-      const obj = point as Record<string, unknown>
-
-      // Try various value fields
-      const rawSrc = String(
-        obj.src ??
-        obj.url ??
-        obj.image ??
-        obj.value ??
-        obj.v ??
-        ''
-      )
-
-      const normalizedSrc = normalizeImageUrl(rawSrc)
-      if (!normalizedSrc) {
-        continue
-      }
-
-      // Extract timestamp
-      const timestamp = extractTimestamp(obj)
-
-      // Extract label
-      const label = typeof obj.label === 'string' ? obj.label :
-                    typeof obj.name === 'string' ? obj.name : undefined
-
-      result.push({
-        src: normalizedSrc,
-        timestamp,
-        label,
-        alt: `Image ${index + 1}`,
-      })
-    }
-  }
-
-  // Sort by timestamp descending (newest first), items without timestamp go to the end
-  // This ensures slider position 0 = newest image, sliding right goes back in time
-  // Stable sort: preserve original order for equal timestamps
-  const indexed = result.map((item, i) => ({ item, i }))
-  indexed.sort((a, b) => {
-    if (a.item.timestamp === undefined && b.item.timestamp === undefined) return a.i - b.i
-    if (a.item.timestamp === undefined) return 1
-    if (b.item.timestamp === undefined) return -1
-    const tsDiff = (b.item.timestamp as number) - (a.item.timestamp as number)
-    return tsDiff !== 0 ? tsDiff : a.i - b.i
-  })
-  indexed.forEach(({ item }, i) => { result[i] = item })
-
-  return result
-}
-
-function normalizeImageData(data: unknown): ImageHistoryItem[] {
-  if (data === null || data === undefined) {
-    return []
-  }
-
+  // Array: process each item
   if (Array.isArray(data)) {
     const result: ImageHistoryItem[] = []
-
-    for (let index = 0; index < data.length; index++) {
-      const item = data[index]
+    for (let i = 0; i < data.length; i++) {
+      const item = data[i]
 
       if (typeof item === 'string') {
-        const normalizedSrc = normalizeImageUrl(item)
-        if (normalizedSrc) {
-          result.push({
-            src: normalizedSrc,
-            alt: `Image ${index + 1}`,
-          })
-        }
-      } else if (typeof item === 'object' && item !== null) {
+        const norm = normalizeImageUrl(item)
+        if (norm) result.push({ src: norm.src, alt: `Image ${i + 1}` })
+      } else if (typeof item === 'number' || typeof item === 'boolean') {
+        // skip — can't be an image
+      } else if (item !== null && typeof item === 'object') {
         const obj = item as Record<string, unknown>
-        const timestamp = extractTimestamp(obj)
-        const label = obj.label ?? obj.name
-        const rawSrc = String(obj.src || obj.url || obj.image || obj.value || '')
-        const normalizedSrc = normalizeImageUrl(rawSrc)
-
-        if (normalizedSrc) {
+        const rawSrc = String(obj.src ?? obj.url ?? obj.image ?? obj.imageUrl ?? obj.value ?? obj.v ?? '')
+        const norm = normalizeImageUrl(rawSrc)
+        if (norm) {
           result.push({
-            src: normalizedSrc,
-            timestamp,
-            label: (typeof label === 'string') ? label : undefined,
-            alt: (typeof obj.alt === 'string') ? obj.alt : `Image ${index + 1}`,
-          })
-        }
-      } else {
-        const normalizedSrc = normalizeImageUrl(String(item))
-        if (normalizedSrc) {
-          result.push({
-            src: normalizedSrc,
-            alt: `Image ${index + 1}`,
+            src: norm.src,
+            timestamp: extractTimestamp(obj),
+            label: typeof obj.label === 'string' ? obj.label : typeof obj.name === 'string' ? obj.name as string : undefined,
+            alt: typeof obj.alt === 'string' ? obj.alt as string : `Image ${i + 1}`,
           })
         }
       }
     }
 
-    // Sort by timestamp descending (newest first), items without timestamp go to the end
-    // Stable sort: preserve original order for equal timestamps
+    // Stable sort by timestamp descending (newest first), undefined timestamps go to end
     const indexed = result.map((item, i) => ({ item, i }))
     indexed.sort((a, b) => {
       if (a.item.timestamp === undefined && b.item.timestamp === undefined) return a.i - b.i
       if (a.item.timestamp === undefined) return 1
       if (b.item.timestamp === undefined) return -1
-      const tsDiff = (b.item.timestamp as number) - (a.item.timestamp as number)
-      return tsDiff !== 0 ? tsDiff : a.i - b.i
+      const diff = (b.item.timestamp as number) - (a.item.timestamp as number)
+      return diff !== 0 ? diff : a.i - b.i
     })
     indexed.forEach(({ item }, i) => { result[i] = item })
-
     return result
   }
 
+  // Single string
   if (typeof data === 'string') {
-    const normalizedSrc = normalizeImageUrl(data)
-    if (normalizedSrc) {
-      return [{ src: normalizedSrc, alt: 'Image 1' }]
-    }
-    return []
+    const norm = normalizeImageUrl(data)
+    return norm ? [{ src: norm.src, alt: 'Image 1' }] : []
   }
 
-  if (typeof data === 'object' && data !== null) {
+  // Object: dig into common array properties, or extract single image
+  if (typeof data === 'object') {
     const obj = data as Record<string, unknown>
     const arrayProps = ['images', 'image', 'history', 'snapshots', 'frames', 'data', 'values', 'items', 'points']
-
     for (const prop of arrayProps) {
-      if (prop in obj) {
-        const value = obj[prop]
-        if (Array.isArray(value)) {
-          return normalizeImageData(value)
-        }
+      if (prop in obj && Array.isArray(obj[prop])) {
+        return toImageHistoryItems(obj[prop])
       }
     }
-
-    if ('src' in obj || 'url' in obj || 'image' in obj || 'value' in obj) {
-      const rawSrc = String(obj.src || obj.url || obj.image || obj.value || '')
-      const normalizedSrc = normalizeImageUrl(rawSrc)
-      if (normalizedSrc) {
-        return [{
-          src: normalizedSrc,
-          timestamp: extractTimestamp(obj as Record<string, unknown>),
-          label: (typeof obj.label === 'string') ? obj.label : undefined,
-          alt: (typeof obj.alt === 'string') ? obj.alt : 'Image 1',
-        }]
-      }
+    // Single image object
+    const rawSrc = String(obj.src ?? obj.url ?? obj.image ?? obj.value ?? '')
+    const norm = normalizeImageUrl(rawSrc)
+    if (norm) {
+      return [{
+        src: norm.src,
+        timestamp: extractTimestamp(obj),
+        label: typeof obj.label === 'string' ? obj.label as string : undefined,
+        alt: typeof obj.alt === 'string' ? obj.alt as string : 'Image 1',
+      }]
     }
   }
 
   return []
 }
 
+// ============================================================================
+// Helpers
+// ============================================================================
+
 function formatTimestamp(timestamp: string | number | undefined): string {
   if (!timestamp) return ''
-
-  // timestamp is already in milliseconds from extractTimestamp
-  const ts = typeof timestamp === 'number' ? timestamp : timestamp
-  const date = new Date(ts)
+  const date = new Date(timestamp)
   if (isNaN(date.getTime())) return String(timestamp)
-
   return date.toLocaleTimeString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
   })
 }
 
-/**
- * Convert device data source to telemetry for historical data
- * Uses a larger time range (48 hours) for image data since images are sent infrequently
- */
 function normalizeDataSourceForImages(
   ds: DataSource | undefined,
   limit: number = 200,
-  timeRange: number = 48
+  timeRange: number = 48,
 ): DataSource | undefined {
   if (!ds) return undefined
 
-  // If it's already telemetry, return as-is with raw transform and custom limits
-  // Priority: component props (timeRange/limit) > ds config
-  // This ensures user's component configuration takes precedence
   if (ds.type === 'telemetry') {
     return {
       ...ds,
-      limit: limit,           // Use component props limit
-      timeRange: timeRange,   // Use component props timeRange
-      params: {
-        ...ds.params,
-        includeRawPoints: true,
-      },
+      limit,
+      timeRange,
+      params: { ...ds.params, includeRawPoints: true, isImage: true },
       transform: 'raw',
     }
   }
 
-  // If it's a device type, convert to telemetry for historical data
-  if (ds.type === 'device') {
+  if (ds.type === 'device' || ds.type === 'metric') {
     const sourceId = getSourceId(ds)
     return {
       type: 'telemetry',
-      sourceId: sourceId,
+      sourceId,
       metricId: ds.metricId ?? ds.property ?? 'image',
-      timeRange: timeRange,
-      limit: limit,
+      timeRange,
+      limit,
       aggregate: 'raw',
-      params: {
-        includeRawPoints: true,
-      },
+      params: { includeRawPoints: true, isImage: true },
       transform: 'raw',
-      // Poll every 60s for new images
       refresh: ds.refresh ?? 60,
     }
   }
 
   return ds
 }
+
+// ============================================================================
+// Component
+// ============================================================================
 
 export const ImageHistory = memo(function ImageHistory({
   dataSource,
@@ -411,276 +198,193 @@ export const ImageHistory = memo(function ImageHistory({
   timeRange = 48,
   className,
 }: ImageHistoryProps) {
-  // Get size configuration
+  const { t } = useTranslation('dashboardComponents')
   const sizeConfig = dashboardComponentSize[size]
 
-  // Normalize data source for image history (convert device to telemetry)
-  const normalizedDataSource = useMemo(() => {
-    return normalizeDataSourceForImages(dataSource, limit, timeRange)
-  }, [dataSource, limit, timeRange])
+  // Normalized data source — memoized
+  const normalizedDataSource = useMemo(
+    () => normalizeDataSourceForImages(dataSource, limit, timeRange),
+    [dataSource, limit, timeRange],
+  )
 
-  const { data, loading, lastUpdate: dataSourceLastUpdate } = useDataSource<ImageHistoryItem[] | string[]>(normalizedDataSource, {
+  const { data, loading, lastUpdate: dataSourceLastUpdate } = useDataSource(normalizedDataSource, {
     fallback: propImages,
   })
 
-  // Memoize images to prevent unnecessary recalculation
-  // Use a more reliable change detection that works for base64 images
-  // Base64 images have the same prefix, so we use length + timestamp of last item
-  const dataKey = useMemo(() => {
-    if (!data) return 'no-data'
-    if (Array.isArray(data)) {
-      const lastItem = data.length > 0 ? data[data.length - 1] : null
-      // For base64 images, use length + timestamp instead of string content
-      // since all base64 images start with similar prefix (data:image/jpeg;base64,...)
-      let lastItemKey = ''
-      if (lastItem) {
-        if (typeof lastItem === 'object' && lastItem !== null) {
-          const obj = lastItem as unknown as Record<string, unknown>
-          const ts = obj.timestamp ?? obj.time ?? obj.t ?? 0
-          // Use value length (for base64) + timestamp for change detection
-          const valueStr = String(obj.src ?? obj.url ?? obj.value ?? '')
-          const valueLen = valueStr.length > 0 ? valueStr.length : 0
-          lastItemKey = `ts:${ts}-len:${valueLen}`
-        } else {
-          // For strings, use length + first 100 chars (more than 50 to be safer)
-          const str = String(lastItem)
-          lastItemKey = `len:${str.length}-${str.slice(0, 100)}`
-        }
-      }
-      return `array-${data.length}-${lastItemKey}`
-    }
-    return `object-${JSON.stringify(data).slice(0, 50)}`
-  }, [data])
+  // Transform data to images — uses shared cached normalizeImageUrl
+  const images = useMemo(
+    () => toImageHistoryItems(data ?? propImages ?? []),
+    [data, propImages],
+  )
 
-  // Transform data to images - handles telemetry raw points
-  // IMPORTANT: Depend on data directly (not dataKey) to ensure proper updates when content changes
-  // dataKey is based on the last item which may not change when new items are prepended
-  const images = useMemo(() => {
-    const normalized = normalizeImageData(data ?? propImages ?? [])
-    const result = normalized.length > 0 ? normalized : transformTelemetryToImages(data ?? propImages ?? [])
-    return result
-  }, [data, propImages])
-
-  // Track image SOURCES (not just indices) to detect real changes vs reordering
+  // Track sources to detect real changes (not just reordering)
   const imageSourcesRef = useRef<string[]>([])
-
   const [currentIndex, setCurrentIndex] = useState(0)
   const [imageLoadState, setImageLoadState] = useState<ImageLoadState>('loading')
-
-  // Cache loaded image states by SOURCE URL (not index) for better persistence
   const loadedImagesSrcRef = useRef<Set<string>>(new Set())
 
-  // Track data update count for cache-busting (forces image reload when data changes)
-  const [dataUpdateCount, setDataUpdateCount] = useState(0)
-  const dataUpdateCountRef = useRef(0)
-  dataUpdateCountRef.current = dataUpdateCount
-
-  // Update data update count when images array changes OR when data source updates
-  // This ensures cache-busting works even when image content changes but length stays same
-  useEffect(() => {
-    if (images.length > 0) {
-      setDataUpdateCount(c => c + 1)
-    }
-  }, [images.length, dataKey, dataSourceLastUpdate])  // Also trigger on data source lastUpdate
+  // Cache-bust timestamp — derived from dataSourceLastUpdate
+  const cacheBustTimestamp = dataSourceLastUpdate ?? 0
 
   const currentImage = images[currentIndex]
   const currentImageSrc = currentImage?.src
   const hasImages = images.length > 0
   const canNavigate = images.length > 1
 
-  // Add cache-busting for base64/data URLs to force reload when data changes
-  // Use dataSourceLastUpdate when available for more reliable cache-busting
+  // Display src — only add cache buster for data URLs
   const displayImageSrc = useMemo(() => {
     if (!currentImageSrc) return currentImageSrc
-    // Add cache buster for data URLs (base64 images)
-    if (currentImageSrc.startsWith('data:') || currentImageSrc.startsWith('blob:')) {
-      // Prefer dataSourceLastUpdate as it's more reliable for detecting data changes
-      const cacheBuster = dataSourceLastUpdate ?? dataUpdateCountRef.current
-      return `${currentImageSrc}#${cacheBuster}`
+    if ((currentImageSrc.startsWith('data:') || currentImageSrc.startsWith('blob:')) && cacheBustTimestamp) {
+      return `${currentImageSrc}#${cacheBustTimestamp}`
     }
     return currentImageSrc
-  }, [currentImageSrc, dataUpdateCount, dataSourceLastUpdate])
+  }, [currentImageSrc, cacheBustTimestamp])
 
-  // Reset index and loading state only when actual images change (not just reordering)
+  // Reset index when actual image sources change (not just order)
   useEffect(() => {
     const currentSources = images.map(img => img.src)
     const prevSources = imageSourcesRef.current
-
-    // Check if the actual images changed (not just order)
-    const imagesChanged =
-      currentSources.length !== prevSources.length ||
+    const changed = currentSources.length !== prevSources.length ||
       currentSources.some((src, i) => src !== prevSources[i])
 
-    if (imagesChanged) {
+    if (changed) {
       imageSourcesRef.current = currentSources
       setCurrentIndex(0)
-      // Only clear loaded cache if images actually changed
       loadedImagesSrcRef.current = new Set(currentSources.filter(src => prevSources.includes(src)))
-      // Set loading state for current image
-      if (currentSources.length > 0 && loadedImagesSrcRef.current.has(currentSources[0])) {
-        setImageLoadState('loaded')
-      } else {
-        setImageLoadState('loading')
-      }
+      setImageLoadState(
+        currentSources.length > 0 && loadedImagesSrcRef.current.has(currentSources[0])
+          ? 'loaded' : 'loading',
+      )
     }
   }, [images])
 
-  // Update image load state when image source changes
-  const prevImageSrcRef = useRef<string | undefined>(undefined)
-  const prevIndexRef = useRef<number>(-1)
+  // Update load state on src/index change
+  const prevImageSrcRef = useRef<string | undefined>()
+  const prevIndexRef = useRef(-1)
   useEffect(() => {
-    const imageChanged = currentImageSrc && currentImageSrc !== prevImageSrcRef.current
-    const indexChanged = currentIndex !== prevIndexRef.current
+    const srcChanged = currentImageSrc && currentImageSrc !== prevImageSrcRef.current
+    const idxChanged = currentIndex !== prevIndexRef.current
 
-    if (imageChanged) {
-      if (currentImageSrc && loadedImagesSrcRef.current.has(currentImageSrc)) {
-        setImageLoadState('loaded')
-      } else {
-        setImageLoadState('loading')
+    if (srcChanged || idxChanged) {
+      if (currentImageSrc) {
+        setImageLoadState(loadedImagesSrcRef.current.has(currentImageSrc) ? 'loaded' : 'loading')
       }
       prevImageSrcRef.current = currentImageSrc
-    } else if (indexChanged && currentImageSrc) {
-      setImageLoadState(loadedImagesSrcRef.current.has(currentImageSrc) ? 'loaded' : 'loading')
     }
-
     prevIndexRef.current = currentIndex
   }, [currentImageSrc, currentIndex])
 
+  // Callbacks
   const handleImageLoad = useCallback(() => {
     setImageLoadState('loaded')
-    if (currentImageSrc) {
-      loadedImagesSrcRef.current.add(currentImageSrc)
-    }
+    if (currentImageSrc) loadedImagesSrcRef.current.add(currentImageSrc)
   }, [currentImageSrc])
 
-  const handleImageError = useCallback(() => {
-    setImageLoadState('error')
-  }, [])
+  const handleImageError = useCallback(() => setImageLoadState('error'), [])
+  const handleSliderChange = useCallback((values: number[]) => setCurrentIndex(values[0] ?? 0), [])
 
-  const handleSliderChange = useCallback((values: number[]) => {
-    const index = values[0] ?? 0
-    setCurrentIndex(index)
-  }, [])
-
-  // Loading state - only replace the card before the first image list arrives.
-  // On refresh, keep the current image visible and use the lightweight overlay.
+  // --- Loading ---
   if (loading && !hasImages) {
     return <LoadingState size={size} className={className} />
   }
 
-  // No images state
-  if (!hasImages) {
+  // --- No images ---
+  if (!loading && !hasImages) {
     return (
-      <div className={cn(
-        dashboardCardBase,
-        'h-full flex flex-col items-center justify-center gap-3 bg-muted-30',
-        sizeConfig.padding,
-        className
-      )}>
-        <ImageOff className={cn(
-          'text-muted-foreground',
-          size === 'sm' ? 'h-8 w-8' : size === 'md' ? 'h-12 w-12' : 'h-16 w-16'
-        )} />
+      <div className={cn(dashboardCardBase, 'h-full flex flex-col items-center justify-center gap-3 bg-muted-30', sizeConfig.padding, className)}>
+        <ImageOff className={cn('text-muted-foreground', size === 'sm' ? 'h-8 w-8' : size === 'md' ? 'h-12 w-12' : 'h-16 w-16')} />
         <div className="text-center">
-          <p className="text-muted-foreground text-sm font-medium">No Images</p>
-          <p className="text-muted-foreground text-xs mt-1">Configure an image data source</p>
+          <p className="text-muted-foreground text-sm font-medium">{t('imageHistory.noImages')}</p>
+          <p className="text-muted-foreground text-xs mt-1">{t('imageHistory.configureSource')}</p>
         </div>
       </div>
     )
   }
 
+  // --- Main render ---
   return (
-    <div className={cn(
-      dashboardCardBase,
-      'relative flex flex-col overflow-hidden',
-      className
-    )}>
-      <div className={cn(
-        'w-full flex-1 relative',
-        size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]'
-      )}>
-      {/* Image fills entire container */}
-      <img
-        key={`img-${currentIndex}-${dataUpdateCount}`}
-        src={displayImageSrc}
-        alt={currentImage?.alt || `Image ${currentIndex + 1}`}
-        className={cn(
-          'w-full h-full',
-          fit === 'contain' && 'object-contain',
-          fit === 'cover' && 'object-cover',
-          fit === 'fill' && 'object-fill',
-          fit === 'none' && 'object-none',
-          fit === 'scale-down' && 'object-scale-down'
-        )}
-        loading="lazy"
-        onLoad={handleImageLoad}
-        onError={handleImageError}
-      />
+    <div className={cn(dashboardCardBase, 'relative flex flex-col overflow-hidden', className)}>
+      <div className={cn('w-full flex-1 relative', size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]')}>
+        <img
+          src={displayImageSrc}
+          alt={currentImage?.alt || `Image ${currentIndex + 1}`}
+          className={cn(
+            'w-full h-full',
+            fit === 'contain' && 'object-contain',
+            fit === 'cover' && 'object-cover',
+            fit === 'fill' && 'object-fill',
+            fit === 'none' && 'object-none',
+            fit === 'scale-down' && 'object-scale-down',
+          )}
+          loading="lazy"
+          onLoad={handleImageLoad}
+          onError={handleImageError}
+        />
 
-      {/* Top-left title + index overlay */}
-      <div className={cn(
-        "absolute left-2 flex items-center gap-2 bg-black/60 text-white text-xs px-2 py-1 rounded z-10",
-        title && showTitle || canNavigate ? "top-2" : "hidden"
-      )}>
-        {title && showTitle && (
-          <>
-            <Images className="h-4 w-4 text-white/90 shrink-0" />
-            <span className="font-medium text-xs truncate max-w-[120px] text-white drop-shadow-md">{title}</span>
-            {canNavigate && <span className="w-px h-3 bg-white/30" />}
-          </>
-        )}
-        {canNavigate && (
-          <span className="tabular-nums">{currentIndex + 1} / {images.length}</span>
-        )}
-      </div>
-
-      {/* Top-right timestamp overlay */}
-      {currentImage?.timestamp && (
-        <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded z-10">
-          {formatTimestamp(currentImage.timestamp)}
+        {/* Title + index overlay */}
+        <div className={cn(
+          "absolute left-2 flex items-center gap-2 bg-black/60 text-white text-xs px-2 py-1 rounded z-10",
+          (title && showTitle) || canNavigate ? "top-2" : "hidden",
+        )}>
+          {title && showTitle && (
+            <>
+              <Images className="h-4 w-4 text-white/90 shrink-0" />
+              <span className="font-medium text-xs truncate max-w-[120px] text-white drop-shadow-md">{title}</span>
+              {canNavigate && <span className="w-px h-3 bg-white/30" />}
+            </>
+          )}
+          {canNavigate && (
+            <span className="tabular-nums">{currentIndex + 1} / {images.length}</span>
+          )}
         </div>
-      )}
 
-      {/* Label overlay - positioned below title/index */}
-      {currentImage?.label && (
-        <div className="absolute top-9 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded max-w-[150px] truncate z-10">
-          {currentImage.label}
-        </div>
-      )}
-
-      {/* Loading indicator */}
-      {imageLoadState === 'loading' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-bg-50 z-20">
-          <RefreshCw className="h-6 w-6 text-muted-foreground animate-spin" />
-        </div>
-      )}
-
-      {/* Error indicator */}
-      {imageLoadState === 'error' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-bg-80 z-20">
-          <AlertTriangle className="h-8 w-8 text-destructive mb-2" />
-          <span className="text-sm text-muted-foreground">Failed to load</span>
-        </div>
-      )}
-
-      {/* Floating slider at bottom - always on top */}
-      {canNavigate && (
-        <div className="absolute bottom-0 left-0 right-0 px-3 py-3 bg-gradient-to-t from-black/70 via-black/40 to-transparent z-30">
-          <div className="flex items-center gap-3">
-            <Slider
-              value={[currentIndex]}
-              min={0}
-              max={images.length - 1}
-              step={1}
-              onValueChange={handleSliderChange}
-              className="flex-1"
-            />
-            <span className="text-xs text-white tabular-nums min-w-[50px] text-right shrink-0">
-              {currentIndex + 1} / {images.length}
-            </span>
+        {/* Timestamp overlay */}
+        {currentImage?.timestamp && (
+          <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded z-10">
+            {formatTimestamp(currentImage.timestamp)}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Label overlay */}
+        {currentImage?.label && (
+          <div className="absolute top-9 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded max-w-[150px] truncate z-10">
+            {currentImage.label}
+          </div>
+        )}
+
+        {/* Loading overlay */}
+        {imageLoadState === 'loading' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-bg-50 z-20">
+            <RefreshCw className="h-6 w-6 text-muted-foreground animate-spin" />
+          </div>
+        )}
+
+        {/* Error overlay */}
+        {imageLoadState === 'error' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-bg-80 z-20">
+            <AlertTriangle className="h-8 w-8 text-destructive mb-2" />
+            <span className="text-sm text-muted-foreground">{t('imageHistory.failedToLoad')}</span>
+          </div>
+        )}
+
+        {/* Slider */}
+        {canNavigate && (
+          <div className="absolute bottom-0 left-0 right-0 px-3 py-3 bg-gradient-to-t from-black/70 via-black/40 to-transparent z-30">
+            <div className="flex items-center gap-3">
+              <Slider
+                value={[currentIndex]}
+                min={0}
+                max={images.length - 1}
+                step={1}
+                onValueChange={handleSliderChange}
+                className="flex-1"
+              />
+              <span className="text-xs text-white tabular-nums min-w-[50px] text-right shrink-0">
+                {currentIndex + 1} / {images.length}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

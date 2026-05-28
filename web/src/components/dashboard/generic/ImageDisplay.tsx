@@ -6,7 +6,7 @@
  * Enhanced base64 support for various device formats.
  */
 
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,12 @@ import { Maximize2, Minimize2, Download, ImageOff, AlertTriangle, RefreshCw, Ima
 import type { DataSource } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
 import { LoadingState } from '../shared'
+import {
+  normalizeImageUrl,
+  extractImageValue,
+  getFileExtension,
+  type ImageFormatType,
+} from '@/lib/imageUtils'
 
 export interface ImageDisplayProps {
   dataSource?: DataSource
@@ -40,371 +46,71 @@ export interface ImageDisplayProps {
   className?: string
 }
 
-interface FullscreenImageProps {
-  src: string | undefined
-  alt: string
-  onClose: () => void
-}
+// ============================================================================
+// Fullscreen overlay (stable — own component avoids parent re-renders)
+// ============================================================================
 
-function FullscreenImage({ src, alt, onClose }: FullscreenImageProps) {
+const FullscreenImage = memo(function FullscreenImage({ src, alt, onClose }: {
+  src: string | undefined; alt: string; onClose: () => void
+}) {
   if (!src) return null
   return (
-    <div
-      className="fixed inset-0 z-50 bg-bg-95 backdrop-blur-sm flex items-center justify-center"
-      onClick={onClose}
-    >
-      <Button
-        variant="ghost"
-        size="icon"
-        className="absolute top-4 right-4"
-        onClick={onClose}
-      >
+    <div className="fixed inset-0 z-50 bg-bg-95 backdrop-blur-sm flex items-center justify-center" onClick={onClose}>
+      <Button variant="ghost" size="icon" className="absolute top-4 right-4" onClick={onClose}>
         <Minimize2 className="h-5 w-5" />
       </Button>
-      <img
-        src={src}
-        alt={alt}
-        className="max-w-[95vw] max-h-[95vh] object-contain"
-        onClick={(e) => e.stopPropagation()}
-      />
+      <img src={src} alt={alt} className="max-w-[95vw] max-h-[95vh] object-contain" onClick={(e) => e.stopPropagation()} />
     </div>
   )
-}
+})
 
-type ImageLoadState = 'loading' | 'loaded' | 'error' | 'no-source' | 'invalid-format'
+// ============================================================================
+// Helpers
+// ============================================================================
 
-type ImageFormatType = 'png' | 'jpeg' | 'jpg' | 'gif' | 'webp' | 'bmp' | 'svg' | 'tiff' | 'ico' | 'unknown'
+type ImageLoadState = 'loading' | 'loaded' | 'error' | 'no-source'
 
-// Magic bytes for image type detection
-const IMAGE_MAGIC_BYTES: Record<string, { magic: number[]; type: ImageFormatType; mime: string }> = {
-  png: { magic: [0x89, 0x50, 0x4E, 0x47], type: 'png', mime: 'image/png' },
-  jpeg: { magic: [0xFF, 0xD8, 0xFF], type: 'jpeg', mime: 'image/jpeg' },
-  jpg: { magic: [0xFF, 0xD8, 0xFF], type: 'jpg', mime: 'image/jpeg' },
-  gif: { magic: [0x47, 0x49, 0x46], type: 'gif', mime: 'image/gif' },
-  webp: { magic: [0x52, 0x49, 0x46, 0x46], type: 'webp', mime: 'image/webp' },
-  bmp: { magic: [0x42, 0x4D], type: 'bmp', mime: 'image/bmp' },
-  tiff: { magic: [0x49, 0x49, 0x2A, 0x00], type: 'tiff', mime: 'image/tiff' },
-  ico: { magic: [0x00, 0x00, 0x01, 0x00], type: 'ico', mime: 'image/x-icon' },
-}
-
-/**
- * Detect image format from magic bytes (first few bytes of data)
- */
-function detectImageFormatFromMagicBytes(base64Data: string): { type: ImageFormatType; mime: string } | null {
-  try {
-    // Remove any data URL prefix and get pure base64
-    const pureBase64 = base64Data.replace(/^data:image\/[^;]+;base64,/, '').replace(/^data:,/, '')
-    const binaryString = atob(pureBase64.slice(0, 32)) // Only check first 32 chars
-
-    for (const [name, info] of Object.entries(IMAGE_MAGIC_BYTES)) {
-      if (info.magic.every((byte, i) => binaryString.charCodeAt(i) === byte)) {
-        return { type: info.type as ImageFormatType, mime: info.mime }
-      }
-    }
-  } catch {
-    // Invalid base64, continue to next check
-  }
-  return null
-}
-
-/**
- * Detect image format from mime type string
- */
-function detectFormatFromMimeType(mime: string): { type: ImageFormatType; mime: string } | null {
-  const mimeToFormat: Record<string, ImageFormatType> = {
-    'image/png': 'png',
-    'image/jpeg': 'jpg',
-    'image/jpg': 'jpg',
-    'image/gif': 'gif',
-    'image/webp': 'webp',
-    'image/bmp': 'bmp',
-    'image/svg+xml': 'svg',
-    'image/tiff': 'tiff',
-    'image/x-icon': 'ico',
-    'image/vnd.microsoft.icon': 'ico',
-  }
-
-  const format = mimeToFormat[mime.toLowerCase()]
-  if (format) {
-    return { type: format, mime: mime.toLowerCase() }
-  }
-  return null
-}
-
-/**
- * Check if a string looks like pure base64 (no prefix)
- */
-function isPureBase64(str: string): boolean {
-  if (!str || str.length < 100) return false
-  // Strip whitespace/newlines first (backend may include them)
-  const cleaned = str.trim().replace(/[\s\r\n]+/g, '')
-
-  // Check if it starts with http(s) - then it's a URL, not base64
-  // NOTE: do NOT reject strings starting with '/' — JPEG base64 starts with '/9j/'
-  if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
-    return false
-  }
-
-  // Check if it starts with data: - then it's already a data URL
-  if (cleaned.startsWith('data:')) {
-    return false
-  }
-
-  // Check if it looks like base64 (only base64 characters and reasonable length)
-  const base64Regex = /^[A-Za-z0-9+/=_-]+$/
-  if (!base64Regex.test(cleaned)) {
-    return false
-  }
-
-  // Try to decode it - if successful, it's likely base64
-  try {
-    atob(cleaned.slice(0, 100))
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * Normalize various image formats to a standard data URL
- */
-function normalizeImageUrl(value: string | number | undefined | null): {
-  src: string
-  format: ImageFormatType
-  isBase64: boolean
-  isDataUrl: boolean
-  originalValue: string
-} | null {
-  if (!value) return null
-
-  // Convert to string first, then trim
-  const valueStr = String(value)
-  const trimmed = valueStr.trim()
-
-  // Treat external placeholder URLs as empty — show default empty state instead
-  if (trimmed.includes('via.placeholder.com') || trimmed.includes('placehold.co')) {
-    return null
-  }
-
-  // Handle empty/placeholder values
-  if (trimmed === '-' || trimmed === 'undefined' || trimmed === 'null' || trimmed === '') {
-    return null
-  }
-
-  // 1. Already a proper data URL
-  if (trimmed.startsWith('data:image/')) {
-    const commaIdx = trimmed.indexOf(',')
-    let b64 = commaIdx !== -1 ? trimmed.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '') : ''
-
-    // Unwrap double-prefixed data URLs (e.g., data:image/png;base64,data:image/jpeg;base64,...)
-    if (b64.startsWith('data:image/') || b64.startsWith('data:')) {
-      const unwrapped = normalizeImageUrl(b64)
-      if (unwrapped) return unwrapped
-    }
-
-    // Detect actual format from magic bytes — backend may declare wrong mime type
-    const detectedFormat = detectImageFormatFromMagicBytes(b64)
-    const mimeMatch = trimmed.match(/data:image\/([^;,]+)/i)
-    const declaredMime = mimeMatch ? `image/${mimeMatch[1].toLowerCase()}` : 'image/png'
-    const finalMime = detectedFormat?.mime || declaredMime
-    const formatInfo = detectedFormat || detectFormatFromMimeType(declaredMime) || { type: 'png', mime: 'image/png' }
-
-    return {
-      src: `data:${finalMime};base64,${b64}`,
-      format: formatInfo.type,
-      isBase64: true,
-      isDataUrl: true,
-      originalValue: valueStr,
-    }
-  }
-
-  // 2. Data URL without image/ prefix (malformed)
-  if (trimmed.startsWith('data:base64,')) {
-    const base64Data = trimmed.slice(12).replace(/[\s\r\n]+/g, '')
-    const formatInfo = detectImageFormatFromMagicBytes(base64Data) || { type: 'png', mime: 'image/png' }
-    return {
-      src: `data:${formatInfo.mime};base64,${base64Data}`,
-      format: formatInfo.type,
-      isBase64: true,
-      isDataUrl: true,
-      originalValue: valueStr,
-    }
-  }
-
-  // 3. Non-standard data URL (e.g., data:png;base64,... or data:image/jpeg;charset=utf-8;base64,...)
-  if (trimmed.startsWith('data:')) {
-    const commaIdx = trimmed.indexOf(',')
-    const b64 = commaIdx !== -1 ? trimmed.slice(commaIdx + 1).replace(/[\s\r\n]+/g, '') : ''
-    // Detect actual format from magic bytes — the declared prefix may be invalid
-    const formatInfo = detectImageFormatFromMagicBytes(b64) || { type: 'png', mime: 'image/png' }
-    return {
-      src: `data:${formatInfo.mime};base64,${b64}`,
-      format: formatInfo.type,
-      isBase64: true,
-      isDataUrl: true,
-      originalValue: valueStr,
-    }
-  }
-
-  // 4. Pure base64 string (no prefix)
-  if (isPureBase64(trimmed)) {
-    const cleanBase64 = trimmed.replace(/[\s\r\n]+/g, '')
-    const formatInfo = detectImageFormatFromMagicBytes(cleanBase64) || { type: 'png', mime: 'image/png' }
-    return {
-      src: `data:${formatInfo.mime};base64,${cleanBase64}`,
-      format: formatInfo.type,
-      isBase64: true,
-      isDataUrl: true,
-      originalValue: valueStr,
-    }
-  }
-
-  // 5. HTTP/HTTPS URL
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return {
-      src: trimmed,
-      format: 'unknown',
-      isBase64: false,
-      isDataUrl: false,
-      originalValue: valueStr,
-    }
-  }
-
-  // 6. Relative URL
-  if (trimmed.startsWith('/')) {
-    return {
-      src: trimmed,
-      format: 'unknown',
-      isBase64: false,
-      isDataUrl: false,
-      originalValue: valueStr,
-    }
-  }
-
-  // 7. Try to detect if it might be a URL without protocol
-  if (trimmed.includes('.') && !trimmed.includes(' ')) {
-    return {
-      src: trimmed.startsWith('//') ? `https:${trimmed}` : `https://${trimmed}`,
-      format: 'unknown',
-      isBase64: false,
-      isDataUrl: false,
-      originalValue: valueStr,
-    }
-  }
-
-  // 8. Last resort: try sanitizing and using as raw base64
-  const sanitized = trimmed.replace(/[\s\r\n]+/g, '')
-  if (sanitized.length >= 100 && /^[A-Za-z0-9+/=_-]+$/.test(sanitized)) {
-    const formatInfo = detectImageFormatFromMagicBytes(sanitized) || { type: 'png', mime: 'image/png' }
-    return {
-      src: `data:${formatInfo.mime};base64,${sanitized}`,
-      format: formatInfo.type,
-      isBase64: true,
-      isDataUrl: true,
-      originalValue: valueStr,
-    }
-  }
-
-  // If we can't determine the format, return null
-  return null
-}
-
-/**
- * Get file extension from format type
- */
-function getFileExtension(format: ImageFormatType): string {
-  const extensions: Record<ImageFormatType, string> = {
-    png: 'png',
-    jpeg: 'jpg',
-    jpg: 'jpg',
-    gif: 'gif',
-    webp: 'webp',
-    bmp: 'bmp',
-    svg: 'svg',
-    tiff: 'tiff',
-    ico: 'ico',
-    unknown: 'png',
-  }
-  return extensions[format] || 'png'
-}
-
-/**
- * Get format info for display
- */
 function getFormatInfo(normalized: ReturnType<typeof normalizeImageUrl>) {
   if (!normalized) return null
-
   if (normalized.isBase64) {
-    return {
-      type: 'base64',
-      format: normalized.format.toUpperCase(),
-      size: Math.round((normalized.originalValue.length * 3) / 4 / 1024), // Approx KB
-    }
+    return { type: 'base64', format: normalized.format.toUpperCase(), size: Math.round((normalized.originalValue.length * 3) / 4 / 1024) }
   }
-
-  if (normalized.isDataUrl) {
-    return {
-      type: 'data-url',
-      format: 'DATA',
-    }
-  }
-
-  return {
-    type: 'url',
-    format: 'URL',
-  }
+  if (normalized.isDataUrl) return { type: 'data-url', format: 'DATA' }
+  return { type: 'url', format: 'URL' }
 }
 
-/**
- * Normalize data source for image display
- * Ensures raw points are included for telemetry sources
- * Uses a larger time range (24 hours) to find the latest image even if sent infrequently
- */
-function normalizeDataSourceForImage(
-  ds: DataSource | undefined
-): DataSource | undefined {
+function normalizeDataSourceForImage(ds: DataSource | undefined): DataSource | undefined {
   if (!ds) return undefined
-
-  // If it's telemetry, ensure raw points are included and use larger time range
   if (ds.type === 'telemetry') {
     return {
       ...ds,
-      // Use 24 hours time range to find latest image (images may be sent infrequently)
-      // Only override if not already set to a larger value
       timeRange: ds.timeRange && ds.timeRange > 24 ? ds.timeRange : 24,
-      params: {
-        ...ds.params,
-        includeRawPoints: true,
-      },
+      limit: 2, // Only need latest image — avoid fetching hundreds of base64 blobs
+      params: { ...ds.params, includeRawPoints: true, isImage: true },
       transform: 'raw',
     }
   }
-
-  // For device/metric sources, convert to telemetry for reliable image data fetching
-  // (same approach as ImageHistory — device current_values may have nested structures)
   if (ds.type === 'device' || ds.type === 'metric') {
-    const sourceId = getSourceId(ds)
     return {
       type: 'telemetry',
-      sourceId,
+      sourceId: getSourceId(ds),
       metricId: ds.metricId ?? ds.property ?? 'image',
       timeRange: ds.timeRange && ds.timeRange > 24 ? ds.timeRange : 24,
-      limit: 200,
+      limit: 2, // Only need latest image
       aggregate: 'raw',
-      params: {
-        includeRawPoints: true,
-      },
+      params: { includeRawPoints: true, isImage: true },
       transform: 'raw',
-      // Poll every 30s — device/metric sources lose WebSocket real-time updates
-      // after converting to telemetry, so periodic refresh is needed
       refresh: ds.refresh ?? 30,
     }
   }
-
   return ds
 }
 
-export function ImageDisplay({
+// ============================================================================
+// Component
+// ============================================================================
+
+export const ImageDisplay = memo(function ImageDisplay({
   dataSource,
   src: propSrc,
   alt,
@@ -424,210 +130,103 @@ export function ImageDisplay({
   const { t } = useTranslation('dashboardComponents')
   const altText = alt || t('imageDisplay.altText')
 
-  // Normalize data source to ensure raw points are included
+  // Data source — memoized to avoid re-normalizing
   const normalizedDataSource = useMemo(() => normalizeDataSourceForImage(dataSource), [dataSource])
-
-  // Only use useDataSource when there's an actual data source
   const hasNormalizedDataSource = normalizedDataSource !== undefined
-  const { data, loading, error, lastUpdate: dataSourceLastUpdate } = useDataSource(hasNormalizedDataSource ? normalizedDataSource : undefined, {
-    fallback: propSrc,
-  })
 
-  // When there's no data source, use propSrc directly to ensure immediate updates
-  // useDataSource's fallback only updates on initial mount, not when fallback prop changes
+  const { data, loading, error, lastUpdate: dataSourceLastUpdate } = useDataSource(
+    hasNormalizedDataSource ? normalizedDataSource : undefined,
+    { fallback: propSrc },
+  )
+
+  // Derive effective data — when there's no DS, use propSrc directly
   const effectiveData = hasNormalizedDataSource ? data : propSrc
 
-  // Extract image value from various data formats
-  const extractImageValue = (value: unknown): string => {
-    if (value === null || value === undefined) return ''
-    if (typeof value === 'string') return value
-    if (typeof value === 'number') return String(value)
-    if (typeof value === 'boolean') return String(value)
+  // Extract raw image src from data — memoized
+  const rawSrc = useMemo(() => {
+    if (error) return propSrc ?? ''
+    return extractImageValue(effectiveData) || propSrc || ''
+  }, [error, effectiveData, propSrc])
 
-    // Handle arrays - take the value with the latest timestamp
-    if (Array.isArray(value)) {
-      if (value.length === 0) return ''
-
-      // Find the item with the latest timestamp
-      let latestItem = value[0]
-      let latestTime = -1
-
-      for (const item of value) {
-        if (typeof item === 'object' && item !== null) {
-          const obj = item as Record<string, unknown>
-          const time = (obj.time ?? obj.timestamp ?? obj.t ?? 0) as number
-          if (time > latestTime) {
-            latestTime = time
-            latestItem = item
-          }
-        }
-      }
-
-      return extractImageValue(latestItem)
-    }
-
-    // Handle objects - try to find image-related fields
-    if (typeof value === 'object') {
-      const obj = value as Record<string, unknown>
-
-      // Common image field names
-      for (const key of ['src', 'url', 'image', 'imageUrl', 'image_url', 'data', 'value', 'content']) {
-        if (obj[key] !== null && obj[key] !== undefined) {
-          const extracted = extractImageValue(obj[key])
-          if (extracted && extracted !== '' && extracted !== '-') {
-            return extracted
-          }
-        }
-      }
-    }
-
-    return ''
-  }
-
-  const rawSrc = error ? propSrc : (extractImageValue(effectiveData) ?? propSrc ?? '')
-
-  // Normalize the image source (for metadata extraction)
+  // Normalize image URL — memoized; normalizeImageUrl has internal cache
   const normalizedImage = useMemo(() => normalizeImageUrl(rawSrc), [rawSrc])
   const baseSrc = normalizedImage?.src || rawSrc
+  const hasValidSource = normalizedImage !== null
+  const formatInfo = useMemo(() => getFormatInfo(normalizedImage), [normalizedImage])
 
-  // Use dataSourceLastUpdate for cache-busting when available
-  // This ensures the image refreshes when new data arrives from WebSocket/polling
-  // Also use a local timestamp when propSrc changes (for components without data source)
-  const [propSrcUpdateTime, setPropSrcUpdateTime] = useState(Date.now())
-  useEffect(() => {
-    if (propSrc && !hasNormalizedDataSource) {
-      setPropSrcUpdateTime(Date.now())
-    }
-  }, [propSrc, hasNormalizedDataSource])
+  // Cache-bust timestamp — derived, not state
+  const cacheBustTimestamp = dataSourceLastUpdate ?? 0
 
-  // Use the most recent update timestamp: either from data source or prop change
-  const cacheBustTimestamp = hasNormalizedDataSource
-    ? (dataSourceLastUpdate ?? propSrcUpdateTime)
-    : propSrcUpdateTime
-
-  // For base64 images, add cache-busting parameter to force refresh
-  // This ensures that when new data arrives, the image actually reloads
+  // Display src — only add cache buster for data URLs
   const displaySrc = useMemo(() => {
     if (!baseSrc) return baseSrc
-
-    // Add cache-busting for base64 images and data URLs
-    if (baseSrc.startsWith('data:') || baseSrc.startsWith('blob:')) {
-      // Use the cache-bust timestamp from data source updates or prop changes
-      // Append a fragment identifier with timestamp
-      // The browser will treat it as a "different" URL
+    if ((baseSrc.startsWith('data:') || baseSrc.startsWith('blob:')) && cacheBustTimestamp) {
       return `${baseSrc}#${cacheBustTimestamp}`
     }
-
     return baseSrc
   }, [baseSrc, cacheBustTimestamp])
 
-  // Keep originalSrc without cache-buster for download/fullscreen
   const originalSrc = baseSrc
+  const sizeConfig = dashboardComponentSize[size]
+  const hasDataSource = dataSource !== undefined
+
+  // States
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [imageLoadState, setImageLoadState] = useState<ImageLoadState>('no-source')
   const imageRef = useRef<HTMLImageElement>(null)
+  const prevDisplaySrcRef = useRef<string | undefined>()
 
-  // Determine if we have a valid image source
-  const hasValidSource = normalizedImage !== null
+  // Update load state when src / loading changes
+  useEffect(() => {
+    const srcChanged = displaySrc !== prevDisplaySrcRef.current
+    if (displaySrc) prevDisplaySrcRef.current = displaySrc
 
-  const formatInfo = useMemo(() => getFormatInfo(normalizedImage), [normalizedImage])
+    if (!hasDataSource) {
+      setImageLoadState('no-source')
+    } else if (loading) {
+      setImageLoadState('loading')
+    } else if (!hasValidSource) {
+      setImageLoadState('no-source')
+    } else if (srcChanged) {
+      setImageLoadState('loading')
+    }
+  }, [displaySrc, loading, hasValidSource, hasDataSource])
 
+  // Callbacks
   const handleDownload = useCallback(() => {
-    if (!displaySrc || !originalSrc) return
-
-    // For base64 images, extract the correct extension
+    if (!originalSrc) return
     let filename = altText.replace(/[^a-z0-9]/gi, '_') || 'image'
-
     if (normalizedImage?.isBase64) {
       filename += `.${getFileExtension(normalizedImage.format)}`
     } else {
-      // Try to get extension from URL (use originalSrc without cache-buster)
       try {
-        const url = new URL(originalSrc)
-        const ext = url.pathname.split('.').pop()?.toLowerCase()
-        if (ext && ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) {
-          filename += `.${ext}`
-        } else {
-          filename += '.png'
-        }
-      } catch {
-        filename += '.png'
-      }
+        const ext = new URL(originalSrc).pathname.split('.').pop()?.toLowerCase()
+        filename += (ext && ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) ? `.${ext}` : '.png'
+      } catch { filename += '.png' }
     }
-
     const link = document.createElement('a')
-    link.href = originalSrc  // Use originalSrc for download (without cache-buster)
+    link.href = originalSrc
     link.download = filename
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-  }, [displaySrc, originalSrc, alt, normalizedImage])
+  }, [originalSrc, altText, normalizedImage])
 
-  const sizeConfig = dashboardComponentSize[size]
+  const handleImageLoad = useCallback(() => setImageLoadState('loaded'), [])
+  const handleImageError = useCallback(() => setImageLoadState('error'), [])
 
-  // Determine if we should show loading state
-  // Only show loading when there's actually a dataSource to load from
-  const hasDataSource = dataSource !== undefined
+  const shouldShowLoading = loading && hasDataSource && !displaySrc
 
-  // Track previous displaySrc to detect when image actually changes
-  const prevDisplaySrcRef = useRef<string | undefined>()
-  const displaySrcChanged = displaySrc !== prevDisplaySrcRef.current
-
-  // Update image load state when src changes or loading state changes
-  useEffect(() => {
-    // Update ref for next comparison
-    if (displaySrc !== prevDisplaySrcRef.current) {
-      prevDisplaySrcRef.current = displaySrc
-    }
-
-    if (!hasDataSource) {
-      // No data source configured - show no-source state
-      setImageLoadState('no-source')
-    } else if (loading && !displaySrc) {
-      // Data source is still loading and there is no previous image to keep.
-      setImageLoadState('loading')
-    } else if (!hasValidSource) {
-      // No valid image source - show no-source state
-      setImageLoadState('no-source')
-    } else if (displaySrcChanged) {
-      // Data loaded and src changed - trigger image load
-      setImageLoadState('loading')
-    }
-    // If displaySrc hasn't changed, keep current state
-  }, [displaySrc, loading, hasValidSource, hasDataSource, displaySrcChanged])
-
-  // Show a skeleton only before the first image arrives. During refreshes,
-  // keep the existing image visible so scrolling in Tauri does not flash.
-  const shouldShowLoading = loading && hasDataSource && !displaySrc && imageLoadState === 'loading'
-
-  const handleImageLoad = useCallback(() => {
-    setImageLoadState('loaded')
-  }, [])
-
-  const handleImageError = useCallback(() => {
-    setImageLoadState('error')
-  }, [])
-
-  // Loading state from data source
-  // Only show loading when there's actually a dataSource to load from
+  // --- Loading skeleton ---
   if (shouldShowLoading) {
     return <LoadingState size={size} className={className} />
   }
 
-  // No source configured or invalid format
-  if (!hasValidSource && imageLoadState !== 'error') {
-    const displaySrc = rawSrc || ''
+  // --- No source ---
+  if (!loading && !hasValidSource && imageLoadState !== 'error') {
     return (
-      <div className={cn(
-        dashboardCardBase,
-        'h-full flex flex-col items-center justify-center gap-3 bg-muted-30',
-        sizeConfig.padding,
-        className
-      )}>
-        <ImageOff className={cn(
-          'text-muted-foreground',
-          size === 'sm' ? 'h-8 w-8' : size === 'md' ? 'h-12 w-12' : 'h-16 w-16'
-        )} />
+      <div className={cn(dashboardCardBase, 'h-full flex flex-col items-center justify-center gap-3 bg-muted-30', sizeConfig.padding, className)}>
+        <ImageOff className={cn('text-muted-foreground', size === 'sm' ? 'h-8 w-8' : size === 'md' ? 'h-12 w-12' : 'h-16 w-16')} />
         <div className="text-center">
           <p className="text-muted-foreground text-sm font-medium">{t('imageDisplay.noImageSource')}</p>
           <p className="text-muted-foreground text-xs mt-1">{t('imageDisplay.configureSource')}</p>
@@ -636,60 +235,33 @@ export function ImageDisplay({
     )
   }
 
-  // Image load error
+  // --- Error ---
   if (imageLoadState === 'error') {
     return (
-      <div className={cn(
-        dashboardCardBase,
-        'flex flex-col items-center justify-center gap-3 bg-muted-30',
-        sizeConfig.padding,
-        className
-      )}>
+      <div className={cn(dashboardCardBase, 'flex flex-col items-center justify-center gap-3 bg-muted-30', sizeConfig.padding, className)}>
         <div className="relative">
-          <ImageOff className={cn(
-            'text-muted-foreground',
-            size === 'sm' ? 'h-10 w-10' : size === 'md' ? 'h-14 w-14' : 'h-18 w-18'
-          )} />
-          <AlertTriangle className={cn(
-            'absolute -bottom-1 -right-1 text-destructive bg-background rounded-full',
-            'h-5 w-5'
-          )} />
+          <ImageOff className={cn('text-muted-foreground', size === 'sm' ? 'h-10 w-10' : size === 'md' ? 'h-14 w-14' : 'h-18 w-18')} />
+          <AlertTriangle className="absolute -bottom-1 -right-1 text-destructive bg-background rounded-full h-5 w-5" />
         </div>
         <div className="text-center">
           <p className="text-muted-foreground text-sm font-medium">{t('imageDisplay.failedToLoad')}</p>
           <p className="text-muted-foreground text-xs mt-1">{t('imageDisplay.couldNotLoad')}</p>
         </div>
-        {formatInfo && (
-          <p className="text-xs text-muted-foreground">
-            {t('imageDisplay.format')}: {formatInfo.format} ({formatInfo.type})
-          </p>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            setImageLoadState('loading')
-            if (imageRef.current && displaySrc) {
-              imageRef.current.src = displaySrc
-            }
-          }}
-        >
-          <RefreshCw className="h-4 w-4" />
-          {t('imageDisplay.retry')}
+        {formatInfo && <p className="text-xs text-muted-foreground">{t('imageDisplay.format')}: {formatInfo.format} ({formatInfo.type})</p>}
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setImageLoadState('loading'); if (imageRef.current && displaySrc) imageRef.current.src = displaySrc }}>
+          <RefreshCw className="h-4 w-4" />{t('imageDisplay.retry')}
         </Button>
       </div>
     )
   }
 
+  // --- Main render ---
   return (
     <>
       <div className={cn(dashboardCardBase, 'relative overflow-hidden flex flex-col', className)}>
-        {/* Image container */}
         <div className="relative w-full h-full flex items-center justify-center bg-muted flex-1 min-h-0">
           <img
             ref={imageRef}
-            key={displaySrc}
             src={displaySrc}
             alt={altText}
             className={cn(
@@ -708,7 +280,6 @@ export function ImageDisplay({
             onError={handleImageError}
           />
 
-          {/* Floating title overlay - same style as ImageHistory */}
           {title && showTitle && (
             <div className="absolute top-2 left-2 flex items-center gap-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
               <ImageIcon className="h-4 w-4 text-white/90 shrink-0" />
@@ -716,31 +287,16 @@ export function ImageDisplay({
             </div>
           )}
 
-          {/* Action buttons overlay */}
           {(zoomable || downloadable || openInNewTab) && (
             <div className="absolute top-2 right-2 flex gap-1 opacity-0 hover:opacity-100 transition-opacity">
               {downloadable && (
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={handleDownload}
-                  title={normalizedImage?.isBase64
-                    ? t('imageDisplay.downloadAs', { format: normalizedImage.format.toUpperCase() })
-                    : t('imageDisplay.download')
-                  }
-                >
+                <Button variant="secondary" size="icon" className="h-6 w-6" onClick={handleDownload}
+                  title={normalizedImage?.isBase64 ? t('imageDisplay.downloadAs', { format: normalizedImage.format.toUpperCase() }) : t('imageDisplay.download')}>
                   <Download className="h-4 w-4" />
                 </Button>
               )}
               {zoomable && (
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => setIsFullscreen(true)}
-                  title={t('imageDisplay.viewFullscreen')}
-                >
+                <Button variant="secondary" size="icon" className="h-6 w-6" onClick={() => setIsFullscreen(true)} title={t('imageDisplay.viewFullscreen')}>
                   <Maximize2 className="h-4 w-4" />
                 </Button>
               )}
@@ -748,25 +304,14 @@ export function ImageDisplay({
           )}
         </div>
 
-        {/* Caption */}
         {caption && (
-          <div className={cn(
-            'absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3',
-            sizeConfig.padding
-          )}>
+          <div className={cn('absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3', sizeConfig.padding)}>
             <p className="text-white text-sm drop-shadow-md">{caption}</p>
           </div>
         )}
       </div>
 
-      {/* Fullscreen view */}
-      {isFullscreen && (
-        <FullscreenImage
-          src={originalSrc}
-          alt={altText}
-          onClose={() => setIsFullscreen(false)}
-        />
-      )}
+      {isFullscreen && <FullscreenImage src={originalSrc} alt={altText} onClose={() => setIsFullscreen(false)} />}
     </>
   )
-}
+})

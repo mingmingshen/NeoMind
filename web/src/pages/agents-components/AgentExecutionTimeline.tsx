@@ -21,6 +21,8 @@ import {
   ChevronUp,
   Wrench,
   Sparkles,
+  Image as ImageIcon,
+  Maximize2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { textNano, textMini } from "@/design-system/tokens/typography"
@@ -29,6 +31,123 @@ import { api } from "@/lib/api"
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import type { AgentExecution, AgentExecutionDetail, DataCollected, ReasoningStep, Decision } from "@/types"
+
+// --- Image / metric extraction helpers (shared with AgentMonitorWidget) ---
+
+const IMAGE_MAGIC_BYTES: Record<string, { magic: number[]; mime: string }> = {
+  png: { magic: [0x89, 0x50, 0x4e, 0x47], mime: 'image/png' },
+  jpeg: { magic: [0xff, 0xd8, 0xff], mime: 'image/jpeg' },
+  gif: { magic: [0x47, 0x49, 0x46], mime: 'image/gif' },
+  webp: { magic: [0x52, 0x49, 0x46, 0x46], mime: 'image/webp' },
+}
+
+function detectImageMime(base64Data: string): string | null {
+  try {
+    const clean = base64Data.replace(/^data:image\/[^;]+;base64,/, '').replace(/^data:,/, '')
+    const bin = atob(clean.slice(0, 32))
+    for (const [, info] of Object.entries(IMAGE_MAGIC_BYTES)) {
+      if (info.magic.every((b, i) => bin.charCodeAt(i) === b)) return info.mime
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+function isBase64Image(str: string): boolean {
+  if (!str || str.length < 100) return false
+  if (str.startsWith('data:image/')) return true
+  if (str.startsWith('http://') || str.startsWith('https://')) return false
+  return detectImageMime(str) !== null
+}
+
+function normalizeToDataUrl(str: string): string {
+  if (str.startsWith('data:image/')) {
+    const ci = str.indexOf(',')
+    if (ci === -1) return str
+    let b64 = str.slice(ci + 1).replace(/[\s\r\n]+/g, '')
+    if (b64.startsWith('data:image/') || b64.startsWith('data:')) return normalizeToDataUrl(b64)
+    const detected = detectImageMime(b64)
+    if (detected) return `data:${detected};base64,${b64}`
+    return str.slice(0, ci + 1) + b64
+  }
+  if (str.startsWith('data:')) {
+    const ci = str.indexOf(',')
+    const b64 = ci !== -1 ? str.slice(ci + 1).replace(/[\s\r\n]+/g, '') : ''
+    const detected = detectImageMime(b64)
+    if (detected) return `data:${detected};base64,${b64}`
+    return `data:image/png;base64,${b64}`
+  }
+  const clean = str.replace(/[\s\r\n]+/g, '')
+  const mime = detectImageMime(clean)
+  if (mime) return `data:${mime};base64,${clean}`
+  return `data:image/png;base64,${clean}`
+}
+
+function extractImagesFromData(data: DataCollected[]): Array<{ source: string; image: string }> {
+  const images: Array<{ source: string; image: string }> = []
+  for (const item of data) {
+    const vals = item.values
+    if (!vals) continue
+    const list = Array.isArray(vals) ? vals : [vals]
+    for (const v of list) {
+      if (!v) continue
+      if (typeof v === 'string' && isBase64Image(v)) {
+        images.push({ source: item.source, image: normalizeToDataUrl(v) })
+        continue
+      }
+      if (typeof v === 'object') {
+        const obj = v as Record<string, unknown>
+        for (const key of ['image_url', 'url', 'src']) {
+          const val = obj[key]
+          if (typeof val === 'string' && (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('/'))) {
+            images.push({ source: `${item.source}.${key}`, image: val })
+            break
+          }
+        }
+        if (images.length === 0) {
+          for (const key of ['image', 'image_base64', 'src', 'data', 'value', 'base64', 'image_data']) {
+            const val = obj[key]
+            if (typeof val === 'string' && isBase64Image(val)) {
+              let imgSrc = val
+              if (key === 'image_base64' && !val.startsWith('data:')) {
+                const mime = (obj.image_mime_type || obj.mime_type) as string | undefined
+                imgSrc = mime ? `data:${mime};base64,${val}` : `data:image/png;base64,${val}`
+              }
+              images.push({ source: `${item.source}.${key}`, image: normalizeToDataUrl(imgSrc) })
+              break
+            }
+          }
+        }
+      }
+    }
+  }
+  return images
+}
+
+function extractMetricTags(data: DataCollected[]): string[] {
+  const tags = new Set<string>()
+  for (const item of data) {
+    if (item.source) tags.add(item.source)
+    if (item.data_type && item.data_type !== 'unknown' && item.data_type !== 'object') tags.add(item.data_type)
+    const vals = item.values
+    if (!vals) continue
+    const list = Array.isArray(vals) ? vals : [vals]
+    for (const v of list) {
+      if (!v || typeof v !== 'object') continue
+      const obj = v as Record<string, unknown>
+      for (const key of ['name', 'metric', 'metric_name', 'display_name', 'key', 'field']) {
+        if (obj[key] && typeof obj[key] === 'string') tags.add(obj[key] as string)
+      }
+      const exclude = ['value', 'data', 'image', 'src', 'url', 'base64', 'timestamp', 'time', 'id', '_id']
+      for (const key of Object.keys(obj)) {
+        if (!exclude.includes(key.toLowerCase()) && !key.startsWith('_')) {
+          const val = obj[key]
+          if (typeof val === 'number' || (typeof val === 'string' && val.length < 30)) tags.add(key)
+        }
+      }
+    }
+  }
+  return Array.from(tags).slice(0, 8)
+}
 
 interface AgentExecutionTimelineProps {
   executions: AgentExecution[]
@@ -201,6 +320,37 @@ export function AgentExecutionTimeline({
                               </div>
                             ) : detail ? (
                               <>
+                                {/* ⓪ Input Data — images & metrics from data_collected */}
+                                {(() => {
+                                  const dc = detail.decision_process?.data_collected || []
+                                  const imgs = extractImagesFromData(dc)
+                                  const mTags = extractMetricTags(dc)
+                                  if (imgs.length === 0 && mTags.length === 0) return null
+                                  return (
+                                    <TimelineSection
+                                      icon={<Database className="h-4 w-4 text-info" />}
+                                      title={t('agents:memory.inputData', 'Input Data')}
+                                    >
+                                      {imgs.length > 0 && (
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-2">
+                                          {imgs.map((img, idx) => (
+                                            <InputDataImage key={idx} source={img.source} image={img.image} />
+                                          ))}
+                                        </div>
+                                      )}
+                                      {mTags.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {mTags.map((tag, idx) => (
+                                            <Badge key={idx} variant="secondary" className={cn("text-xs h-5 px-1.5")}>
+                                              {tag}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </TimelineSection>
+                                  )
+                                })()}
+
                                 {/* ① Situation Analysis */}
                                 {detail.decision_process?.situation_analysis && (
                                   <TimelineSection
@@ -815,5 +965,35 @@ function ToolCallStep({ step }: { step: ReasoningStep }) {
         </div>
       )}
     </div>
+  )
+}
+
+/// Clickable image thumbnail from data_collected
+function InputDataImage({ source, image }: { source: string; image: string }) {
+  const [fullscreen, setFullscreen] = useState(false)
+  return (
+    <>
+      <div
+        className="relative group rounded-lg overflow-hidden border border-border bg-muted-30 cursor-pointer aspect-video"
+        onClick={() => setFullscreen(true)}
+      >
+        <img src={image} alt={source} className="w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className="absolute bottom-0 left-0 right-0 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="text-xs text-white/90 truncate block">{source}</span>
+        </div>
+        <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded p-0.5">
+          <Maximize2 className="h-3.5 w-3.5 text-white" />
+        </div>
+      </div>
+      {fullscreen && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center"
+          onClick={() => setFullscreen(false)}
+        >
+          <img src={image} alt={source} className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" />
+        </div>
+      )}
+    </>
   )
 }

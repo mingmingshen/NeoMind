@@ -23,6 +23,11 @@ export interface ExtensionSourceState {
     fallback?: unknown
     preserveMultiple: boolean
   }>
+  sourceAdapters?: {
+    startLoading: () => void
+    finishLoading: () => void
+    failLoading: (error: string) => void
+  }
 }
 
 export function useExtensionSource(
@@ -76,10 +81,16 @@ export function useExtensionSource(
     if (prevExtKeyRef.current !== extensionKey) {
       extInitialDoneRef.current = false
       prevExtKeyRef.current = extensionKey
+      // Clear processed events to avoid stale dedup state
+      processedExtEventsRef.current.clear()
+      lastProcessedExtEventIdRef.current = null
     }
 
     const fetchExtensionData = async () => {
-      if (!extInitialDoneRef.current) state.setLoading(true)
+      if (!extInitialDoneRef.current) {
+        if (state.sourceAdapters) state.sourceAdapters.startLoading()
+        else state.setLoading(true)
+      }
       state.setError(null)
 
       try {
@@ -300,7 +311,8 @@ export function useExtensionSource(
         state.setError(err instanceof Error ? err.message : 'Failed to fetch extension data')
         extInitialDoneRef.current = true
       } finally {
-        state.setLoading(false)
+        if (state.sourceAdapters) state.sourceAdapters.finishLoading()
+        else state.setLoading(false)
       }
     }
 

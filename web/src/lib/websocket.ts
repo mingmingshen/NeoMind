@@ -119,9 +119,12 @@ export class ChatWebSocket {
       // Local instance: authenticate with JWT token
       // If token changed, reconnect with new token
       if (this.lastToken !== token && this.isConnected()) {
+        // Update lastToken BEFORE closing so the reconnect uses the new token
+        this.lastToken = token
         if (this.ws) {
           this.ws.close(4000, 'Token changed - reconnecting')
         }
+        // onclose handler will call scheduleReconnect() which calls connect() with the new token
         return
       }
       this.lastToken = token
@@ -255,8 +258,18 @@ export class ChatWebSocket {
       // P0: Prevent unbounded growth - evict oldest if limit reached
       if (this.pendingMessages.length >= this.MAX_PENDING_MESSAGES) {
         // Remove oldest message (FIFO)
-        this.pendingMessages.shift()
-        console.warn('[WebSocket] Pending messages limit reached, dropping oldest message')
+        const dropped = this.pendingMessages.shift()
+        if (dropped) {
+          const preview = typeof dropped.message === 'string'
+            ? dropped.message.slice(0, 50)
+            : '(non-text message)'
+          console.warn(`[WebSocket] Pending limit (${this.MAX_PENDING_MESSAGES}) reached, dropping oldest: "${preview}..."`)
+          // Notify UI that a message was dropped
+          this.setState({
+            ...this.currentState,
+            errorMessage: `A queued message was dropped due to connection issues: "${preview}"`,
+          })
+        }
       }
       this.pendingMessages.push(request)
       this.persistPendingMessages()  // Immediately persist to storage

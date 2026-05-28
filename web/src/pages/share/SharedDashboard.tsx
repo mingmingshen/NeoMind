@@ -10,10 +10,12 @@
 import { useEffect, useState, useMemo, useRef, useCallback, Component } from 'react'
 import type { ReactNode, ErrorInfo } from 'react'
 import { useParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import i18n from '@/i18n/config'
 import { fetchAPI } from '@/lib/api'
 import { Loader2, AlertTriangle, Eye, Zap, EyeOff } from 'lucide-react'
 import { DashboardGrid } from '@/components/dashboard/DashboardGrid'
-import { renderDashboardComponent } from '@/pages/dashboard-components/VisualDashboard'
+import { renderDashboardComponent } from '@/pages/dashboard-components/Renderers'
 import { fromDashboardDTO } from '@/store/persistence/types'
 import { communityRegistry } from '@/components/dashboard/registry/CommunityRegistry'
 import { dynamicRegistry } from '@/components/dashboard/registry/DynamicRegistry'
@@ -51,7 +53,7 @@ class ComponentErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundary
       return this.props.fallback || (
         <div className="flex flex-col items-center justify-center h-full min-h-[120px] p-4 text-center">
           <EyeOff className="h-5 w-5 text-muted-foreground mb-2" />
-          <p className="text-xs text-muted-foreground">Component not available in shared view</p>
+          <p className="text-xs text-muted-foreground">{i18n.t('dashboardComponents:sharedDashboard.componentUnavailable')}</p>
         </div>
       )
     }
@@ -124,6 +126,7 @@ function installShareProxy(token: string): () => void {
 
 export function SharedDashboard() {
   const { token } = useParams<{ token: string }>()
+  const { t } = useTranslation('dashboardComponents')
   const [data, setData] = useState<SharedDashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -183,7 +186,7 @@ export function SharedDashboard() {
       <div className="h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          <p className="text-sm text-muted-foreground">{t('sharedDashboard.loading')}</p>
         </div>
       </div>
     )
@@ -214,13 +217,13 @@ export function SharedDashboard() {
           <h1 className="text-sm font-semibold">{data.dashboard.name}</h1>
           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${textNano} font-medium bg-muted text-muted-foreground`}>
             {isInteractive ? (
-              <><Zap className="h-3 w-3" /> Interactive</>
+              <><Zap className="h-3 w-3" /> {t('sharedDashboard.interactive')}</>
             ) : (
-              <><Eye className="h-3 w-3" /> Read-only</>
+              <><Eye className="h-3 w-3" /> {t('sharedDashboard.readOnly')}</>
             )}
           </span>
         </div>
-        <span className="text-xs text-muted-foreground">Powered by NeoMind</span>
+        <span className="text-xs text-muted-foreground">{t('sharedDashboard.poweredBy')}</span>
       </header>
 
       {/* Dashboard Content - reuse same rendering pipeline */}

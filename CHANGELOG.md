@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.8.2] - 2026-05-28
+
+### Changed
+
+- **Dashboard configSchemas registry pattern** — Replaced 2982-line monolithic `configSchemas.tsx` switch statement with a modular registry pattern. Schema generators are now organized into `builtIn/` sub-modules (indicators, charts, controls, display, spatial, business) plus a `dynamic.tsx` handler for extension/community/custom components. No user-visible behavior changes
+- **Dashboard store: eliminated slice circular dependencies** — Removed module-level `_scheduleSync`/`_flushSync` variable exports from `dashboardCrudSlice`. `scheduleSync()` and `flushSync()` are now proper slice methods accessed via `get()`, eliminating fragile module-level getter pattern
+- **DataSource discriminated union types** — Added 12 type-specific interfaces (`DeviceDataSource`, `CommandDataSource`, `SystemDataSource`, etc.) with type guards (`isDeviceSource()`, `isRealtimeSource()`, `isPolledSource()`, etc.). Legacy flat `DataSource` interface preserved for backward compatibility. Updated `useDataSource` pipeline and `dashboardHelpers` to use type guards
+- **useDataSource simplified state management** — Replaced 12-action `useReducer` state machine with flat `useState` + loading ref counter. Removed `activeFetchSource` tracking, `FETCH_EMPTY_RETRY`, and `FORCE_CLEAR_LOADING` actions. Loading state is now a simple counter (loading = counter > 0) managed by `startLoading`/`finishLoading` callbacks
+
+---
+
 ## [v0.8.1] - 2026-05-27
 
 ### Added

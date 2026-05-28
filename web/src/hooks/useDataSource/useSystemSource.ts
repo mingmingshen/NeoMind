@@ -19,6 +19,11 @@ export interface SystemSourceState {
     fallback?: unknown
     preserveMultiple: boolean
   }>
+  sourceAdapters?: {
+    startLoading: () => void
+    finishLoading: () => void
+    failLoading: (error: string) => void
+  }
 }
 
 export function useSystemSource(
@@ -44,7 +49,10 @@ export function useSystemSource(
     }
 
     const fetchSystemData = async () => {
-      if (!systemInitialDoneRef.current) state.setLoading(true)
+      if (!systemInitialDoneRef.current) {
+        if (state.sourceAdapters) state.sourceAdapters.startLoading()
+        else state.setLoading(true)
+      }
       state.setError(null)
 
       try {
@@ -72,7 +80,8 @@ export function useSystemSource(
         state.setDataRaw(state.optionsRef.current.fallback ?? null)
         systemInitialDoneRef.current = true
       } finally {
-        state.setLoading(false)
+        if (state.sourceAdapters) state.sourceAdapters.finishLoading()
+        else state.setLoading(false)
       }
     }
 

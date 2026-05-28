@@ -9,6 +9,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from '@/store'
 import { ConfigSection } from './ConfigSection'
+import { findDevice } from '@/lib/deviceUtils'
 import {
   Select,
   SelectContent,
@@ -54,7 +55,7 @@ export function DeviceBindingConfig({
   }, [filteredDevices])
 
   const selectedDevice = useMemo(
-    () => devices.find((d) => d.id === deviceId),
+    () => findDevice(devices, deviceId),
     [devices, deviceId],
   )
 

@@ -336,7 +336,8 @@ export const BarChart = memo(function BarChart({
     )
   }
 
-  if (chartData.length === 0) {
+  // Only show empty state when loading is fully complete
+  if (!loading && chartData.length === 0) {
     return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 

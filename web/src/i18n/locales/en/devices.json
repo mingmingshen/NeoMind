@@ -615,6 +615,14 @@
   "no": "No",
   "image": "[Image]",
   "builtinMqtt": "MQTT",
+  "mqtt": {
+    "builtinMqtt": {
+      "name": "Built-in MQTT Broker"
+    }
+  },
+  "onboarding": {
+    "builtin": "Built-in"
+  },
   "connections": {
     "description": "Manage device connection methods, connect devices with various protocols",
     "builtinMqtt": {

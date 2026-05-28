@@ -616,6 +616,14 @@
   "no": "否",
   "image": "[图片]",
   "builtinMqtt": "MQTT",
+  "mqtt": {
+    "builtinMqtt": {
+      "name": "内置 MQTT Broker"
+    }
+  },
+  "onboarding": {
+    "builtin": "内置"
+  },
   "connections": {
     "description": "管理设备连接方式，接入各种协议的设备",
     "builtinMqtt": {

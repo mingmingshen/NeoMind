@@ -7,10 +7,6 @@
 // Registry (New - centralized component metadata and rendering)
 export * from './registry'
 
-// Wrapper
-export { DashboardComponentWrapper } from './DashboardComponentWrapper'
-export type { DashboardComponentWrapperProps } from './DashboardComponentWrapper'
-
 // Layout
 export { DashboardGrid } from './DashboardGrid'
 export { DashboardListSidebar } from './DashboardListSidebar'

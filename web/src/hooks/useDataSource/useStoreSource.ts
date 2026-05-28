@@ -10,12 +10,14 @@ import type { Device } from '@/types'
 import type { NeoMindStore } from '@/store'
 import { useStore } from '@/store'
 import { useEvents } from '@/hooks/useEvents'
+import { logError } from '@/lib/errors'
 import {
   extractValueFromData, safeExtractValue, eventMetricMatches,
-  getDataSourceLimit, dedupeTelemetryPoints,
+  getDataSourceLimit, findDevice, buildDeviceMap,
+  resolveDeviceInfoValue, insertAndMaintain, isImageDataSource,
 } from './helpers'
 import { fetchDeviceTelemetry, fetchedDevices, hasActiveFetch, telemetryCache } from './fetch'
-import { processTelemetryEvent, processNonTelemetryEvent, sortArrayByTs, getTs } from './eventProcessors'
+import { processTelemetryEvent, processNonTelemetryEvent, getTs } from './eventProcessors'
 
 // Performance probe
 const PERF_THRESHOLD = 100
@@ -51,12 +53,16 @@ export interface StoreSourceState<T> {
     fallback?: T
     preserveMultiple: boolean
   }>
+  /** Source-scoped loading adapters for useReducer state machine */
+  sourceAdapters?: {
+    startLoading: () => void
+    finishLoading: () => void
+  }
 }
 
 /**
  * Process a single telemetry point into currentData.
  * Returns updated data or undefined if no change was needed.
- * Inlined from processTelemetryEvent for batch processing.
  */
 function processSingleTelemetryPoint(
   currentData: unknown,
@@ -66,6 +72,8 @@ function processSingleTelemetryPoint(
   preserveMultiple: boolean,
   maxLimit: number
 ): unknown | undefined {
+  const isImg = isImageDataSource(ds.params, ds.transform, ds.metricId)
+
   let currentArray: unknown[] = []
   if (Array.isArray(currentData)) {
     if (preserveMultiple && dataSources.length > 1) {
@@ -78,9 +86,7 @@ function processSingleTelemetryPoint(
     }
   }
 
-  const sorted = sortArrayByTs([newPoint, ...currentArray], getTs)
-  sorted.reverse()
-  const updated = dedupeTelemetryPoints(sorted, getTs, maxLimit)
+  const updated = insertAndMaintain(currentArray, newPoint, getTs, maxLimit, isImg)
 
   if (preserveMultiple && dataSources.length > 1) {
     const dsIndex = dataSources.indexOf(ds)
@@ -105,7 +111,10 @@ export function useStoreSource<T = unknown>(
 ): { readDataFromStore: () => void; wsConnected: boolean } {
   const initialFetchDoneRef = useRef<Set<string>>(new Set())
   const lastValidDataRef = useRef<Record<string, unknown>>({})
-  const prevStoreStateRef = useRef<{ devices: NeoMindStore['devices'] } | null>(null)
+  const prevStoreStateRef = useRef<{
+    rawDevices: NeoMindStore['devices']
+    map: Map<string, Device>
+  } | null>(null)
 
   // Event processing refs
   const processedDeviceEventsRef = useRef<Set<string>>(new Set())
@@ -125,7 +134,8 @@ export function useStoreSource<T = unknown>(
 
     if (currentDataSources.length === 0) {
       if (fallbackVal !== undefined) state.setData(fallbackVal)
-      state.setLoading(false)
+      if (state.sourceAdapters) state.sourceAdapters.finishLoading()
+      else state.setLoading(false)
       return
     }
 
@@ -145,7 +155,7 @@ export function useStoreSource<T = unknown>(
           case 'device': {
             const deviceId = getSourceId(ds)!
             const property = ds.property as string | undefined
-            const device = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
+            const device = findDevice(currentDevices, deviceId)
 
             if (!property) { result = device ?? null; break }
 
@@ -202,7 +212,7 @@ export function useStoreSource<T = unknown>(
           case 'command': {
             const deviceId = getSourceId(ds)
             const property = ds.property || 'state'
-            const device = currentDevices.find((d: Device) => d.id === deviceId)
+            const device = findDevice(currentDevices, deviceId!)
             if (device?.current_values && typeof device.current_values === 'object') {
               result = extractValueFromData(device.current_values, property) ?? false
             } else { result = false }
@@ -212,20 +222,8 @@ export function useStoreSource<T = unknown>(
           case 'device-info': {
             const deviceId = getSourceId(ds)
             const infoProperty = ds.infoProperty || 'name'
-            const device = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
-            if (!device) { result = fallbackVal ?? '-' }
-            else {
-              switch (infoProperty) {
-                case 'name': result = device.name || '-'; break
-                case 'status': result = device.status || 'unknown'; break
-                case 'online': result = device.online ?? false; break
-                case 'last_seen': result = device.last_seen || '-'; break
-                case 'device_type': result = device.device_type || '-'; break
-                case 'plugin_name': result = device.plugin_name || device.adapter_id || '-'; break
-                case 'adapter_id': result = device.adapter_id || '-'; break
-                default: result = fallbackVal ?? '-'
-              }
-            }
+            const device = findDevice(currentDevices, deviceId)
+            result = resolveDeviceInfoValue(device, infoProperty, fallbackVal)
             result = safeExtractValue(result as unknown, (fallbackVal ?? '-') as any)
             break
           }
@@ -249,7 +247,8 @@ export function useStoreSource<T = unknown>(
       if (!devicesLoading) state.setError(err instanceof Error ? err.message : 'Unknown error')
       state.setData((fallback ?? 0) as T)
     } finally {
-      state.setLoading(false)
+      if (state.sourceAdapters) state.sourceAdapters.finishLoading()
+      else state.setLoading(false)
       perfEnd('readData')
     }
   }, [])
@@ -259,47 +258,52 @@ export function useStoreSource<T = unknown>(
   // ============================================================================
 
   useEffect(() => {
+    const finishStore = state.sourceAdapters
+      ? () => state.sourceAdapters!.finishLoading()
+      : () => state.setLoading(false)
+
     if (dataSources.length === 0) {
       const { fallback: fallbackVal } = state.optionsRef.current
       if (fallbackVal !== undefined) state.setData(fallbackVal)
-      state.setLoading(false)
+      finishStore()
       return
     }
-    if (!enabled) { state.setLoading(false); return }
+    if (!enabled) { finishStore(); return }
     if (relevantDeviceIds.size === 0) {
       readDataFromStore()
       // readDataFromStore returns early for telemetry-only/extension-only sources
-      // without touching loading state — those hooks manage their own lifecycle.
+      // without touching loading state — those hooks manage their own loading lifecycle.
       // Only set loading=false when no async source will handle it.
-      if (!hasTelemetrySource && !hasExtensionSource) state.setLoading(false)
+      if (!hasTelemetrySource && !hasExtensionSource) finishStore()
       return
     }
 
     readDataFromStore()
-    prevStoreStateRef.current = { devices: useStore.getState().devices }
+    prevStoreStateRef.current = { rawDevices: useStore.getState().devices, map: buildDeviceMap(useStore.getState().devices) }
 
     let unsubscribed = false
 
     const processStoreChange = (s: NeoMindStore) => {
       if (unsubscribed) return
+      try {
       perfMark('storeChange')
 
       const prev = prevStoreStateRef.current
       if (!prev) return
-      if (s.devices === prev.devices) return
+      if (s.devices === prev.rawDevices) return
 
-      const devicesChanged = s.devices !== prev.devices
-      const devicesLengthChanged = s.devices.length !== prev.devices.length
+      const devicesChanged = s.devices !== prev.rawDevices
+      const devicesLengthChanged = s.devices.length !== prev.rawDevices.length
       let currentValuesChanged = false
       const changedDeviceIds = new Set<string>()
 
       if (!devicesLengthChanged) {
-        const currDevices = s.devices
-        const prevDevices = prev.devices
+        const currMap = buildDeviceMap(s.devices)
+        const prevMap = prev.map
 
         for (const deviceId of relevantDeviceIds) {
-          const device = currDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
-          const prevDevice = prevDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
+          const device = currMap.get(deviceId)
+          const prevDevice = prevMap.get(deviceId)
 
           if (device && prevDevice) {
             if (device.current_values !== prevDevice.current_values) {
@@ -331,7 +335,7 @@ export function useStoreSource<T = unknown>(
           (devicesChanged && changedDeviceIds.size === 0)
         if (!hasRelevantChange && !currentValuesChanged) return
 
-        prevStoreStateRef.current = { devices: s.devices }
+        prevStoreStateRef.current = { rawDevices: s.devices, map: buildDeviceMap(s.devices) }
         readDataFromStore()
 
         // Telemetry merge from store changes — build synthetic events for all
@@ -347,7 +351,7 @@ export function useStoreSource<T = unknown>(
             let currentData = prevData as unknown
 
             for (const deviceId of changedDeviceIds) {
-              const device = s.devices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
+              const device = findDevice(s.devices, deviceId)
               if (!device?.current_values || typeof device.current_values !== 'object') continue
 
               for (const ds of currentDataSources) {
@@ -385,6 +389,9 @@ export function useStoreSource<T = unknown>(
         }
       }
       perfEnd('storeChange')
+      } catch (err) {
+        logError(err, { operation: 'Store subscription change' })
+      }
     }
 
     const unsubscribe = useStore.subscribe((s: NeoMindStore) => {

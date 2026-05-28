@@ -23,6 +23,7 @@ import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { api } from '@/lib/api'
 import type { Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor, UnifiedDataSourceInfo } from '@/types'
+import { findDevice } from '@/lib/deviceUtils'
 
 // ============================================================================
 // Types
@@ -439,24 +440,24 @@ function getSelectedItemLabel(item: SelectedItem, devices: any[], t: (key: strin
   switch (type) {
     case 'device': {
       // Format: device:deviceId - just show device name
-      const device = devices.find(d => d.id === parts[1])
+      const device = findDevice(devices, parts[1])
       return device?.name || parts[1]
     }
     case 'device-metric': {
       // Format: device-metric:deviceId:metricId
-      const device = devices.find(d => d.id === parts[1])
+      const device = findDevice(devices, parts[1])
       const deviceName = device?.name || parts[1]
       return `${deviceName} · ${parts.slice(2).join(':')}`
     }
     case 'device-command': {
       // Format: device-command:deviceId:command
-      const device = devices.find(d => d.id === parts[1])
+      const device = findDevice(devices, parts[1])
       const deviceName = device?.name || parts[1]
       return `${deviceName} · ${parts.slice(2).join(':')}`
     }
     case 'device-info': {
       // Format: device-info:deviceId:property
-      const device = devices.find(d => d.id === parts[1])
+      const device = findDevice(devices, parts[1])
       const deviceName = device?.name || parts[1]
       const prop = getDeviceInfoProperties(t).find((p: { id: string; name: string }) => p.id === parts.slice(2).join(':'))
       return `${deviceName} · ${prop?.name || parts.slice(2).join(':')}`
@@ -853,7 +854,7 @@ export function UnifiedDataSourceConfig({
   const usesExtensionSplitLayout = selectedCategory === 'extension' || selectedCategory === 'extension-command'
 
   // Get selected device/extension
-  const selectedDevice = devices.find(d => d.id === selectedDeviceId)
+  const selectedDevice = findDevice(devices, selectedDeviceId ?? undefined)
   const selectedExtension = extensions.find(e => e.id === selectedExtensionId)
 
   // Filter extensions by search query
@@ -1758,7 +1759,7 @@ export function UnifiedDataSourceConfig({
                 const ext = extensions.find(e => e.id === entityId)
                 entityName = ext?.name || entityId
               } else {
-                const device = devices.find(d => d.id === entityId)
+                const device = findDevice(devices, entityId)
                 entityName = device?.name || entityId
               }
 

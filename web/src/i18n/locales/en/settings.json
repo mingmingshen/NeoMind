@@ -108,7 +108,7 @@
   "update": "Update",
   "updateAvailableWithVersion": "Version {version} of NeoMind is available. Would you like to update now?",
   "alreadyUpToDate": "You are already running the latest version of NeoMind.",
-  "updateApplied": "Successfully updated to version {version}!",
+  "updateApplied": "NeoMind has been updated successfully!",
   "timeFormat12h": "12-hour (12:00 PM)",
   "timeFormat24h": "24-hour (14:00)",
   "dataManagement": "Data Management",

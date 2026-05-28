@@ -141,7 +141,11 @@ export function MarkdownDisplay({
         }
 
         // For array of objects, format as JSON code block
-        return '```json\n' + JSON.stringify(data, null, 2) + '\n```'
+        try {
+          return '```json\n' + JSON.stringify(data, null, 2) + '\n```'
+        } catch {
+          return String(data)
+        }
       }
 
       // Handle objects (including JSON data) - format as markdown code block
@@ -178,8 +182,8 @@ export function MarkdownDisplay({
     )
   }
 
-  // Empty state
-  if (!content) {
+  // Empty state — only when loading is done
+  if (!loading && !content) {
     return (
       <EmptyState
         size={size}

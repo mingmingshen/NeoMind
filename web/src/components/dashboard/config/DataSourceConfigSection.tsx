@@ -21,6 +21,7 @@ import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import { normalizeDataSource as normalizeDs, getSourceId } from '@/types/dashboard'
 import { useStore } from '@/store'
 import { toast } from '@/components/ui/use-toast'
+import { findDevice } from '@/lib/deviceUtils'
 
 export interface DataSourceConfigSectionProps {
   dataSource?: DataSourceOrList
@@ -71,14 +72,14 @@ export function DataSourceConfigSection({
 
   // Get available properties/metrics for a device
   const getDeviceProperties = (deviceId: string) => {
-    const device = devices.find(d => d.id === deviceId)
+    const device = findDevice(devices, deviceId)
     const deviceType = deviceTypes.find(dt => dt.device_type === device?.device_type)
     return deviceType?.metrics || []
   }
 
   // Get available commands for a device
   const getDeviceCommands = (deviceId: string) => {
-    const device = devices.find(d => d.id === deviceId)
+    const device = findDevice(devices, deviceId)
     const deviceType = deviceTypes.find(dt => dt.device_type === device?.device_type)
     return deviceType?.commands || []
   }

@@ -923,6 +923,9 @@
     "imageDisplayDesc": "Display images from URL or data source",
     "imageHistory": "Image History",
     "imageHistoryDesc": "Historical image gallery with time navigation",
+    "imageHistory.noImages": "No Images",
+    "imageHistory.configureSource": "Configure an image data source",
+    "imageHistory.failedToLoad": "Failed to load",
     "webDisplay": "Web Display",
     "webDisplayDesc": "Embed web content via iframe",
     "markdownDisplay": "Markdown Display",
@@ -1169,5 +1172,18 @@
     "create": "Create",
     "newDashboard": "New Dashboard",
     "dashboardCount": "{{count}} dashboards"
+  },
+  "componentWrapper": {
+    "config": "Config",
+    "copy": "Copy",
+    "remove": "Remove",
+    "removeConfirm": "Remove this widget from the dashboard?"
+  },
+  "sharedDashboard": {
+    "componentUnavailable": "Component not available in shared view",
+    "loading": "Loading...",
+    "poweredBy": "Powered by NeoMind",
+    "interactive": "Interactive",
+    "readOnly": "Read-only"
   }
 }

@@ -13,6 +13,20 @@ import { fetchHistoricalTelemetry, telemetryCache } from './fetch'
 import {
   isImageDataSource, getDataSourceLimit,
 } from './helpers'
+
+/**
+ * Check if a data source truly represents image data (not just any raw source).
+ * Uses metricId naming heuristic — more restrictive than isImageDataSource
+ * which also matches any includeRawPoints/raw transform.
+ */
+function isActualImageSource(metricId: string | undefined): boolean {
+  if (!metricId) return false
+  const lower = metricId.toLowerCase()
+  return lower.includes('image') || lower.includes('img') ||
+         lower.includes('frame') || lower.includes('snapshot') ||
+         lower.includes('photo') || lower.includes('capture') ||
+         metricId.includes('values.image')
+}
 import {
   getTs, getNewestTimestamp, extractPointsNewerThan, mergeLiveData,
   sortTelemetryResults,
@@ -31,6 +45,13 @@ export interface TelemetrySourceState {
     preserveMultiple: boolean
   }>
   readDataFromStore: () => void
+  /** Source-scoped loading adapters for useReducer state machine */
+  sourceAdapters?: {
+    startLoading: () => void
+    finishLoading: () => void
+    retryLoading: () => void
+    failLoading: (error: string) => void
+  }
 }
 
 export function useTelemetrySource(
@@ -44,6 +65,7 @@ export function useTelemetrySource(
 ): void {
   const initialTelemetryFetchDoneRef = useRef(false)
   const emptyRetryCountRef = useRef(0)
+  const retryInProgressRef = useRef(false)
   const deferredByDevicesLoadingRef = useRef(false)
   const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const prevTelemetryKeyRef = useRef('')
@@ -83,6 +105,8 @@ export function useTelemetrySource(
     const configChanged = prevTelemetryKeyRef.current !== telemetryKey
     if (configChanged && telemetryKey) {
       initialTelemetryFetchDoneRef.current = false
+      emptyRetryCountRef.current = 0
+      retryInProgressRef.current = false
       // Invalidate cache for changed sources to prevent stale data
       telemetrySources.forEach(ds => {
         const deviceId = getSourceId(ds)
@@ -98,7 +122,10 @@ export function useTelemetrySource(
 
     const fetchTelemetryData = async () => {
       const isInitialFetch = !initialTelemetryFetchDoneRef.current
-      if (isInitialFetch) state.setLoading(true)
+      if (isInitialFetch) {
+        if (state.sourceAdapters) state.sourceAdapters.startLoading()
+        else state.setLoading(true)
+      }
       state.setError(null)
 
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 10000))
@@ -120,7 +147,8 @@ export function useTelemetrySource(
 
               const response = await fetchHistoricalTelemetry(
                 getSourceId(ds)!, ds.metricId, actualTimeRange, actualLimit, actualAggregate, includeRawPoints, bypassCache,
-                ds.timeWindow
+                ds.timeWindow,
+                ds.params?.isImage === true || isActualImageSource(ds.metricId),
               )
               if (includeRawPoints && response.raw) return { data: response.data, raw: response.raw, success: response.success }
               return { data: response.success ? response.data : [], success: response.success }
@@ -178,24 +206,36 @@ export function useTelemetrySource(
         state.setLastUpdate(Date.now())
         initialTelemetryFetchDoneRef.current = true
 
-        // Empty result retry with exponential backoff
+        // Empty result — quick retry then accept empty state
         const isEmpty = Array.isArray(finalData) ? finalData.length === 0 : finalData == null
         if (isEmpty) {
           const { devicesLoading } = useStore.getState()
           if (devicesLoading) {
             deferredByDevicesLoadingRef.current = true
             initialTelemetryFetchDoneRef.current = false
-            state.setLoading(true)
+            if (state.sourceAdapters) state.sourceAdapters.startLoading()
+            else state.setLoading(true)
           } else {
             emptyRetryCountRef.current += 1
-            // Retry up to 5 times with exponential backoff: 2s, 4s, 8s, 16s, 32s
-            if (emptyRetryCountRef.current <= 5) {
-              const delay = Math.min(2000 * Math.pow(2, emptyRetryCountRef.current - 1), 32000)
-              setTimeout(() => fetchTelemetryData(), delay)
+            // Only 2 quick retries (1.5s, 3s) — accept empty quickly so components render.
+            // Periodic polling will pick up data when it arrives.
+            if (emptyRetryCountRef.current <= 2) {
+              const delay = 1500 * emptyRetryCountRef.current
+              retryInProgressRef.current = true
+              if (state.sourceAdapters) state.sourceAdapters.retryLoading()
+              else state.setLoading(true)
+              setTimeout(() => {
+                if (fetchGenerationRef.current !== currentGeneration) return
+                fetchTelemetryData()
+              }, delay)
+            } else {
+              // Retries exhausted — clear loading so widget shows empty state
+              retryInProgressRef.current = false
             }
           }
         } else {
           emptyRetryCountRef.current = 0
+          retryInProgressRef.current = false
         }
       } catch (err) {
         // Discard stale error if config changed while fetching
@@ -214,19 +254,24 @@ export function useTelemetrySource(
         }
         initialTelemetryFetchDoneRef.current = true
       } finally {
-        if (fetchGenerationRef.current === currentGeneration && !deferredByDevicesLoadingRef.current) state.setLoading(false)
+        // Only clear loading when not retrying for empty results and not deferred
+        if (fetchGenerationRef.current === currentGeneration && !deferredByDevicesLoadingRef.current && !retryInProgressRef.current) {
+          if (state.sourceAdapters) state.sourceAdapters.finishLoading()
+          else state.setLoading(false)
+        }
       }
     }
 
     if (telemetryIntervalRef.current) { clearInterval(telemetryIntervalRef.current); telemetryIntervalRef.current = null }
     fetchTelemetryData()
 
-    // Only start polling when WS is disconnected (fallback mode)
-    if (!wsConnected) {
-      const refreshIntervals = telemetrySources.map((ds) => ds.refresh).filter(Boolean) as number[]
-      const minRefresh = refreshIntervals.length > 0 ? Math.min(...refreshIntervals) : 30 // Default 30s fallback
-      telemetryIntervalRef.current = setInterval(fetchTelemetryData, minRefresh * 1000)
-    }
+    // Always start polling as a safety net. WS delivers real-time updates,
+    // but if a device hasn't sent data yet or data was missed, polling fills the gap.
+    // Use a longer interval when WS is connected (just a backup) vs disconnected (primary source).
+    const refreshIntervals = telemetrySources.map((ds) => ds.refresh).filter(Boolean) as number[]
+    const baseRefresh = refreshIntervals.length > 0 ? Math.min(...refreshIntervals) : 30
+    const pollingInterval = wsConnected ? baseRefresh * 2 : baseRefresh
+    telemetryIntervalRef.current = setInterval(fetchTelemetryData, pollingInterval * 1000)
 
     return () => { if (telemetryIntervalRef.current) { clearInterval(telemetryIntervalRef.current); telemetryIntervalRef.current = null } }
   }, [telemetryKey, enabled, wsConnected])

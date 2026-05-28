@@ -10,6 +10,7 @@ import { lazy, Suspense, memo, useMemo, useState, useEffect, useCallback, useRef
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { findDevice } from '@/lib/deviceUtils'
 import type { DashboardComponent, GenericComponentType } from '@/types/dashboard'
 import type { Device, DeviceType } from '@/types'
 import { useStore } from '@/store'
@@ -409,7 +410,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
 
   // Subscribe to bound device from store
   const boundDevice = useStore(useCallback((s: any) =>
-    hasDeviceBinding ? s.devices.find((d: Device) => d.id === boundDeviceId) : null
+    hasDeviceBinding ? findDevice(s.devices, boundDeviceId) : null
   , [hasDeviceBinding, boundDeviceId]))
 
   const boundDeviceType = useStore(useCallback((s: any) =>

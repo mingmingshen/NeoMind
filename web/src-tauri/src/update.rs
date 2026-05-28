@@ -116,12 +116,24 @@ pub async fn download_and_install(
         Some(update) => update,
         None => {
             // Fallback: fresh check if cache was empty (e.g. app restarted)
-            app.updater()
+            let check_response = app
+                .updater()
                 .map_err(|e| format!("Updater not initialized: {}", e))?
                 .check()
                 .await
-                .map_err(|e| format!("Failed to check for updates: {}", e))?
-                .ok_or("No update available")?
+                .map_err(|e| format!("Failed to check for updates: {}", e))?;
+            match check_response {
+                Some(update) => {
+                    // Defensive: skip if remote version matches current (already up-to-date)
+                    let current_version = app.config().version.clone().unwrap_or_default();
+                    let normalize = |v: &str| v.trim_start_matches('v').trim().to_string();
+                    if normalize(&update.version) == normalize(&current_version) {
+                        return Err("Already on the latest version".to_string());
+                    }
+                    update
+                }
+                None => return Err("No update available".to_string()),
+            }
         }
     };
 

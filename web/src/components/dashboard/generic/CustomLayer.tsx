@@ -8,6 +8,7 @@
  */
 
 import { getPortalRoot } from '@/lib/portal'
+import { findDevice } from '@/lib/deviceUtils'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
@@ -773,20 +774,20 @@ export function CustomLayer({
   // Helper functions for device data - use devices directly to get real-time updates
   const getDeviceName = useCallback((deviceId: string) => {
     if (!deviceId) return deviceId
-    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+    const device = findDevice(devices, deviceId)
     return device?.name || deviceId
   }, [devices])
 
   const getDeviceStatus = useCallback((deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
     if (!deviceId) return undefined
-    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+    const device = findDevice(devices, deviceId)
     if (!device) return undefined
     return device.online ? 'online' : 'offline'
   }, [devices])
 
   const getDeviceMetricValue = useCallback((deviceId: string, metricId: string): string | number | undefined => {
     if (!deviceId) return undefined
-    const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+    const device = findDevice(devices, deviceId)
     if (!device?.current_values) return undefined
     const value = findMetricValue(device.current_values, metricId)
     if (value !== undefined && value !== null) {
@@ -948,7 +949,7 @@ export function CustomLayer({
 
       if (binding.type === 'metric' && deviceId) {
         const metricId = ds.metricId || ds.property
-        const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+        const device = findDevice(devices, deviceId)
         const metricValue = device?.current_values ? findMetricValue(device.current_values, metricId || '') : undefined
 
         setInternalItems(prev =>
@@ -960,7 +961,7 @@ export function CustomLayer({
           })
         )
       } else if (binding.type === 'device' && deviceId) {
-        const device = devices.find(d => d.id === deviceId || d.device_id === deviceId)
+        const device = findDevice(devices, deviceId)
         const status = device?.online ? 'online' : 'offline'
 
         setInternalItems(prev =>

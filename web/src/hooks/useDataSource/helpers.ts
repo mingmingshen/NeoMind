@@ -3,6 +3,12 @@
  * Extracted from dedup.ts + extractors.ts — no external imports.
  */
 
+import type { Device } from '@/types'
+import { findDevice, buildDeviceMap } from '@/lib/deviceUtils'
+
+// Re-export for backward compatibility
+export { findDevice, buildDeviceMap }
+
 // ============================================================================
 // Value extraction (from extractors.ts)
 // ============================================================================
@@ -278,6 +284,73 @@ export function dedupeTelemetryPoints(
     if (deduped.length >= maxLimit) break
   }
   return deduped
+}
+
+/** Resolve a device-info property value from a device object. */
+export function resolveDeviceInfoValue(device: Device | undefined, infoProperty: string, fallback: unknown): unknown {
+  if (!device) return fallback ?? '-'
+  switch (infoProperty) {
+    case 'name': return device.name || '-'
+    case 'status': return device.status || 'unknown'
+    case 'online': return device.online ?? false
+    case 'last_seen': return device.last_seen || '-'
+    case 'device_type': return device.device_type || '-'
+    case 'plugin_name': return device.plugin_name || device.adapter_id || '-'
+    case 'adapter_id': return device.adapter_id || '-'
+    default: return fallback ?? '-'
+  }
+}
+
+/**
+ * Insert a new point into an ascending-sorted array (oldest-first).
+ * Uses binary search for O(log n) insertion. Returns the same array
+ * reference if no structural change occurred (prevents re-renders).
+ */
+export function insertAndMaintain(
+  current: unknown[],
+  newPoint: unknown,
+  getTs: (p: unknown) => number,
+  maxLimit: number,
+  isImage: boolean,
+): unknown[] {
+  if (current.length === 0) return [newPoint]
+
+  const newTs = getTs(newPoint)
+  const newVal = getPointValue(newPoint)
+
+  // For image data, check content duplication
+  if (isImage && isDuplicatePoint(current, newTs, newVal, getTs)) return current
+
+  // Binary search for insertion position in ascending array
+  let lo = 0, hi = current.length
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (getTs(current[mid]) < newTs) lo = mid + 1
+    else hi = mid
+  }
+
+  // Check if same timestamp bucket already exists (quantized to 1s)
+  const bucket = Math.round(newTs)
+  if (!isImage) {
+    // Check position lo and lo-1 for same bucket (binary search may land either side)
+    for (let i = Math.max(0, lo - 1); i <= Math.min(lo, current.length - 1); i++) {
+      if (Math.round(getTs(current[i])) === bucket) {
+        const updated = current.slice()
+        updated[i] = newPoint
+        return updated
+      }
+    }
+  }
+
+  // Insert at position `lo` (ascending order)
+  const result = current.slice(0, lo)
+  result.push(newPoint)
+  for (let i = lo; i < current.length; i++) result.push(current[i])
+
+  // Drop oldest points if exceeding limit
+  if (result.length > maxLimit) return result.slice(result.length - maxLimit)
+
+  return result
 }
 
 /** Sort points by timestamp descending, dedup, and cap. */
