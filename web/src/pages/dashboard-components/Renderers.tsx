@@ -8,7 +8,6 @@
 
 import { useState, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
-import i18n from '@/i18n/config'
 import { cn } from '@/lib/utils'
 import { createStableKey as createStableCacheKey } from '@/lib/stable-key'
 import { useTouchHover } from '@/hooks/useMobile'
@@ -16,13 +15,11 @@ import {
   Settings2,
   Copy,
   Trash2,
-  AlertTriangle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { DashboardComponent, DataSourceOrList, DataSource } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
 import ComponentRenderer from '@/components/dashboard/registry/ComponentRenderer'
-import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 
 // Direct imports for built-in components (bypass ComponentRenderer to avoid
 // its store subscriptions causing blank frames during scroll)
@@ -248,56 +245,26 @@ export function renderDashboardComponent(
       config: { ...config, editMode, height: config.height ?? getChartHeight(component) },
     } as DashboardComponent
     return (
-      <ErrorBoundary
-        resetKeys={[component.id, component.type]}
-        fallback={
-          <div className="flex flex-col items-center justify-center h-full min-h-[120px] p-4 text-center rounded-lg border border-error/30 bg-error/5">
-            <AlertTriangle className="h-6 w-6 text-error mb-2" />
-            <p className="text-sm font-medium text-error">
-              {component.type}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground max-w-[200px]">
-              {i18n.t('dashboardComponents:componentError.message')}
-            </p>
-          </div>
-        }
-      >
-        <ComponentRenderer
-          component={normalizedComponent}
-          className="w-full h-full"
-          onDataSourceChange={onDataSourceChange}
-          onConfigChange={onConfigChange}
-          openFullscreen={openFullscreen}
-          closeFullscreen={closeFullscreen}
-        />
-      </ErrorBoundary>
+      <ComponentRenderer
+        component={normalizedComponent}
+        className="w-full h-full"
+        onDataSourceChange={onDataSourceChange}
+        onConfigChange={onConfigChange}
+        openFullscreen={openFullscreen}
+        closeFullscreen={closeFullscreen}
+      />
     )
   }
 
   return (
-    <ErrorBoundary
-      resetKeys={[component.id, component.type]}
-      fallback={
-        <div className="flex flex-col items-center justify-center h-full min-h-[120px] p-4 text-center rounded-lg border border-error/30 bg-error/5">
-          <AlertTriangle className="h-6 w-6 text-error mb-2" />
-          <p className="text-sm font-medium text-error">
-            {component.type}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground max-w-[200px]">
-            {i18n.t('dashboardComponents:componentError.message')}
-          </p>
-        </div>
-      }
-    >
-      <BuiltInComponent
-        component={component}
-        config={config}
-        dataSource={dataSource}
-        display={display}
-        editMode={editMode}
-        className="w-full h-full"
-      />
-    </ErrorBoundary>
+    <BuiltInComponent
+      component={component}
+      config={config}
+      dataSource={dataSource}
+      display={display}
+      editMode={editMode}
+      className="w-full h-full"
+    />
   )
 }
 
@@ -363,26 +330,26 @@ const ComponentWrapper = memo(function ComponentWrapper({
           </Button>
         </div>
       )}
-      {isMobile && editMode && !isSelected && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-bg-30/20">
+      {isMobile && editMode && (
+        <div className={cn('absolute inset-0 z-10 flex items-center justify-center rounded-lg', isSelected ? 'bg-transparent' : 'bg-bg-30/20')}>
           {onSelect && (
-            <button className="absolute inset-0 cursor-pointer"
+            <button className={cn('absolute inset-0', isSelected ? 'pointer-events-none' : 'cursor-pointer')}
               onClick={handleEditButtonMouseEvent} onTouchEnd={handleEditButtonTouchEvent} aria-label="Select component" />
           )}
-        </div>
-      )}
-      {isMobile && editMode && isSelected && (
-        <div className="absolute bottom-2 right-2 z-20 flex gap-1">
-          <Button variant="secondary" size="sm" className="h-11 text-xs" onClick={handleConfigClick}>
-            <Settings2 className="h-3 w-3 mr-1" />{t('componentWrapper.config')}
-          </Button>
-          <Button variant="secondary" size="sm" className="h-11 text-xs" onClick={handleDuplicateClick}>
-            <Copy className="h-3 w-3 mr-1" />{t('componentWrapper.copy')}
-          </Button>
-          <Button variant="secondary" size="sm" className="h-11 text-xs hover:bg-destructive hover:text-destructive-foreground"
-            onClick={() => { const confirmed = window.confirm(t('componentWrapper.removeConfirm')); if (confirmed) onRemove(component.id) }}>
-            <Trash2 className="h-3 w-3 mr-1" />{t('componentWrapper.remove')}
-          </Button>
+          {isSelected && (
+            <div className="absolute bottom-2 right-2 z-20 flex gap-1">
+              <Button variant="secondary" size="sm" className="h-8 text-xs" onClick={handleConfigClick}>
+                <Settings2 className="h-3 w-3 mr-1" />{t('componentWrapper.config')}
+              </Button>
+              <Button variant="secondary" size="sm" className="h-8 text-xs" onClick={handleDuplicateClick}>
+                <Copy className="h-3 w-3 mr-1" />{t('componentWrapper.copy')}
+              </Button>
+              <Button variant="secondary" size="sm" className="h-8 text-xs hover:bg-destructive hover:text-destructive-foreground"
+                onClick={() => { const confirmed = window.confirm(t('componentWrapper.removeConfirm')); if (confirmed) onRemove(component.id) }}>
+                <Trash2 className="h-3 w-3 mr-1" />{t('componentWrapper.remove')}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>
