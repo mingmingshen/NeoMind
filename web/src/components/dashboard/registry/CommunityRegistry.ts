@@ -12,7 +12,6 @@ import * as lucideReact from 'lucide-react'
 import type { ComponentMeta } from './types'
 import type { FrontendComponentMeta } from '@/types/frontend-component'
 import { isTauriEnv, getServerOrigin } from '@/lib/api'
-import { builtInTypes } from '@/pages/dashboard-components/Renderers'
 
 /**
  * Community component registry state
@@ -90,12 +89,6 @@ export class CommunityComponentRegistry {
 
     // Add or update components
     for (const meta of metas) {
-      // Reject types that shadow built-in components
-      if (builtInTypes.has(meta.id)) {
-        console.warn(`[CommunityRegistry] Skipping sync of "${meta.id}": type conflicts with a built-in component`)
-        continue
-      }
-
       const exists = currentIds.has(meta.id)
 
       // If component already exists and key fields changed, clear caches for fresh reload
