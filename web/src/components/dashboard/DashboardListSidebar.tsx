@@ -285,12 +285,15 @@ export function DashboardListSidebar({
   }
 
   // Mobile mode: drawer with backdrop
+  // Position below the fixed TopNav using --topnav-height CSS variable,
+  // and z-[60] to render above TopNav (z-20) and its dropdowns.
   return (
     <>
       {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 transition-opacity lg:hidden"
+          className="fixed inset-0 bg-black/30 backdrop-blur-sm z-[55] transition-opacity lg:hidden"
+          style={{ top: 'var(--topnav-height, 56px)' }}
           onClick={() => onOpenChange?.(false)}
         />
       )}
@@ -298,12 +301,13 @@ export function DashboardListSidebar({
       {/* Sidebar Drawer */}
       <div
         className={cn(
-          'fixed top-0 left-0 h-full w-72 z-50 lg:hidden',
+          'fixed left-0 bottom-0 w-72 z-[60] lg:hidden',
           'bg-background shadow-xl flex flex-col',
           'transform transition-transform duration-300 ease-out',
           open ? 'translate-x-0' : '-translate-x-full',
           className
         )}
+        style={{ top: 'var(--topnav-height, 56px)' }}
       >
         <DashboardSidebarContent {...contentProps} />
       </div>
