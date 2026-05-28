@@ -171,16 +171,21 @@ function componentToDTO(c: DashboardComponent): ComponentDTO {
 }
 
 /** Convert API snake_case position to internal ComponentPosition.
- *  Returns a safe default if the position object is missing or malformed. */
+ *  Returns a safe default if the position object is missing or malformed.
+ *  Clamps x/y >= 0 and w/h >= 1 to prevent invalid grid positions. */
 function positionFromDTO(p: ComponentDTO['position'] | undefined | null): ComponentPosition {
   if (!p || typeof p !== 'object') {
     return { x: 0, y: 0, w: 4, h: 3 }
   }
+  const x = typeof p.x === 'number' ? Math.max(0, p.x) : 0
+  const y = typeof p.y === 'number' ? Math.max(0, p.y) : 0
+  const w = typeof p.w === 'number' ? Math.max(1, p.w) : 4
+  const h = typeof p.h === 'number' ? Math.max(1, p.h) : 3
   return {
-    x: typeof p.x === 'number' ? p.x : 0,
-    y: typeof p.y === 'number' ? p.y : 0,
-    w: typeof p.w === 'number' ? p.w : 4,
-    h: typeof p.h === 'number' ? p.h : 3,
+    x,
+    y,
+    w,
+    h,
     minW: p.min_w,
     minH: p.min_h,
     maxW: p.max_w,

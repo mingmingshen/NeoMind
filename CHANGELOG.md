@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deep clone on template apply** — `applyTemplate` now uses `JSON.parse(JSON.stringify())` for proper deep clone
 - **configComponentId reset on delete** — `deleteDashboard` now clears `configComponentId` and `configPanelOpen`
 
+### Fixed (Round 10)
+
+- **Error Boundary for dashboard components** — Extension/community component runtime errors no longer crash the entire dashboard page; graceful error card with localized message
+- **localStorage quota recovery** — `LocalStorageDashboardStorage.save()` now catches `QuotaExceededError`, clears stale data, and retries write
+- **Hybrid storage sync race condition** — Rapid edits to a local dashboard before first server sync now preserve latest changes instead of overwriting with stale server state
+- **Position validation** — `moveComponent` now clamps negative x/y to 0 and dimensions to minimum 1; `positionFromDTO` applies same validation to API responses
+- **Registry validation** — Dynamic and community component registries reject types that shadow built-in widget types (e.g. registering `"line-chart"` as extension)
+- **Missing type guards** — Added `isExtensionMetricSource()` and `isExtensionCommandSource()` type guards for discriminated union coverage
+
 ### Changed
 
 - **Dashboard configSchemas registry pattern** — Replaced 2982-line monolithic `configSchemas.tsx` switch statement with a modular registry pattern. Schema generators are now organized into `builtIn/` sub-modules (indicators, charts, controls, display, spatial, business) plus a `dynamic.tsx` handler for extension/community/custom components. No user-visible behavior changes

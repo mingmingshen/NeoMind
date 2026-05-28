@@ -52,8 +52,16 @@ export const createDashboardLayoutSlice: StateCreator<
       const { currentDashboard } = get()
       if (!currentDashboard) return
       if (!currentDashboard.components.some((c) => c.id === id)) return
+
+      // Validate position values: clamp negative coords and enforce minimum dimensions
+      const validated = { ...position }
+      if (validated.x !== undefined && validated.x < 0) validated.x = 0
+      if (validated.y !== undefined && validated.y < 0) validated.y = 0
+      if (validated.w !== undefined && validated.w < 1) validated.w = 1
+      if (validated.h !== undefined && validated.h < 1) validated.h = 1
+
       commitDashboard(currentDashboard.components.map((c) =>
-        c.id === id ? { ...c, position: { ...c.position, ...position } } : c,
+        c.id === id ? { ...c, position: { ...c.position, ...validated } } : c,
       ))
     },
 

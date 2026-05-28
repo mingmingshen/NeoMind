@@ -75,10 +75,25 @@ export class LocalStorageDashboardStorage implements DashboardStorage {
       localStorage.setItem(this.storageKey, JSON.stringify(dashboards))
       return { data: undefined, error: null }
     } catch (error) {
+      // Attempt quota recovery: clear old data and retry once
+      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+        console.warn('[LocalStorage] Quota exceeded, clearing old dashboard data and retrying...')
+        try {
+          localStorage.removeItem(this.storageKey)
+          localStorage.setItem(this.storageKey, JSON.stringify(dashboards))
+          return { data: undefined, error: null }
+        } catch (retryError) {
+          return {
+            data: null,
+            error: retryError instanceof Error
+              ? retryError
+              : new Error('Failed to save to localStorage even after clearing'),
+          }
+        }
+      }
       return {
         data: null,
         error: error instanceof Error ? error : new Error('Failed to save to localStorage'),
-
       }
     }
   }
@@ -439,8 +454,9 @@ export class HybridDashboardStorage implements DashboardStorage {
             // Map the local ID to the server ID for future syncs
             this.localToServerId.set(dashboard.id, result.data.id)
             this.persistIdMapping()
-            // Update the server dashboard with the latest component data
-            const updatedDashboard = { ...result.data, updatedAt: Date.now() }
+            // Use LATEST dashboard data (not stale result.data) to avoid
+            // losing rapid edits that arrived while the first sync was in flight
+            const updatedDashboard = { ...dashboard, id: result.data.id, updatedAt: Date.now() }
             return this.doServerSync(updatedDashboard)
           }
         } catch (err) {

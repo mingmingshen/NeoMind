@@ -1142,5 +1142,8 @@
     "shareLinkExpired": "此分享链接已过期。",
     "couldNotLoad": "无法加载分享的仪表板。",
     "noComponents": "此仪表板暂无组件。"
+  },
+  "componentError": {
+    "message": "此组件遇到错误，无法显示。"
   }
 }

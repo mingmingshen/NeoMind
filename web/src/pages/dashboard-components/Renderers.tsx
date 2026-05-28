@@ -8,6 +8,7 @@
 
 import { useState, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
+import i18n from '@/i18n/config'
 import { cn } from '@/lib/utils'
 import { createStableKey as createStableCacheKey } from '@/lib/stable-key'
 import { useTouchHover } from '@/hooks/useMobile'
@@ -15,11 +16,13 @@ import {
   Settings2,
   Copy,
   Trash2,
+  AlertTriangle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { DashboardComponent, DataSourceOrList, DataSource } from '@/types/dashboard'
 import { getSourceId } from '@/types/dashboard'
 import ComponentRenderer from '@/components/dashboard/registry/ComponentRenderer'
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 
 // Direct imports for built-in components (bypass ComponentRenderer to avoid
 // its store subscriptions causing blank frames during scroll)
@@ -245,26 +248,56 @@ export function renderDashboardComponent(
       config: { ...config, editMode, height: config.height ?? getChartHeight(component) },
     } as DashboardComponent
     return (
-      <ComponentRenderer
-        component={normalizedComponent}
-        className="w-full h-full"
-        onDataSourceChange={onDataSourceChange}
-        onConfigChange={onConfigChange}
-        openFullscreen={openFullscreen}
-        closeFullscreen={closeFullscreen}
-      />
+      <ErrorBoundary
+        resetKeys={[component.id, component.type]}
+        fallback={
+          <div className="flex flex-col items-center justify-center h-full min-h-[120px] p-4 text-center rounded-lg border border-error/30 bg-error/5">
+            <AlertTriangle className="h-6 w-6 text-error mb-2" />
+            <p className="text-sm font-medium text-error">
+              {component.type}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground max-w-[200px]">
+              {i18n.t('dashboardComponents:componentError.message')}
+            </p>
+          </div>
+        }
+      >
+        <ComponentRenderer
+          component={normalizedComponent}
+          className="w-full h-full"
+          onDataSourceChange={onDataSourceChange}
+          onConfigChange={onConfigChange}
+          openFullscreen={openFullscreen}
+          closeFullscreen={closeFullscreen}
+        />
+      </ErrorBoundary>
     )
   }
 
   return (
-    <BuiltInComponent
-      component={component}
-      config={config}
-      dataSource={dataSource}
-      display={display}
-      editMode={editMode}
-      className="w-full h-full"
-    />
+    <ErrorBoundary
+      resetKeys={[component.id, component.type]}
+      fallback={
+        <div className="flex flex-col items-center justify-center h-full min-h-[120px] p-4 text-center rounded-lg border border-error/30 bg-error/5">
+          <AlertTriangle className="h-6 w-6 text-error mb-2" />
+          <p className="text-sm font-medium text-error">
+            {component.type}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground max-w-[200px]">
+            {i18n.t('dashboardComponents:componentError.message')}
+          </p>
+        </div>
+      }
+    >
+      <BuiltInComponent
+        component={component}
+        config={config}
+        dataSource={dataSource}
+        display={display}
+        editMode={editMode}
+        className="w-full h-full"
+      />
+    </ErrorBoundary>
   )
 }
 

@@ -1194,5 +1194,8 @@
     "shareLinkExpired": "This share link has expired.",
     "couldNotLoad": "The shared dashboard could not be loaded.",
     "noComponents": "This dashboard has no components."
+  },
+  "componentError": {
+    "message": "This component encountered an error and could not be displayed."
   }
 }

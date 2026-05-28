@@ -12,6 +12,7 @@ import * as lucideReact from 'lucide-react'
 import { ComponentMeta } from './types'
 import type { DashboardComponentDto, DashboardComponentsResponse } from '@/types'
 import { isTauriEnv, getServerOrigin } from '@/lib/api'
+import { builtInTypes } from '@/pages/dashboard-components/Renderers'
 
 // Make React and ReactDOM available globally for extension components
 // Extension bundles are built with React as an external dependency
@@ -80,8 +81,13 @@ export class DynamicComponentRegistry {
 
   /**
    * Register a component definition
+   * Rejects types that shadow built-in component types.
    */
   register(extensionId: string, extensionName: string, def: DashboardComponentDto): void {
+    if (builtInTypes.has(def.type)) {
+      console.warn(`[DynamicRegistry] Rejecting registration of "${def.type}" from extension "${extensionId}": type conflicts with a built-in component`)
+      return
+    }
     this.state.components[def.type] = def
 
     // Update extension index
@@ -478,6 +484,12 @@ export class DynamicComponentRegistry {
 
     // Add or update components
     for (const comp of newComponents) {
+      // Skip types that shadow built-in components
+      if (builtInTypes.has(comp.type)) {
+        console.warn(`[DynamicRegistry] Skipping sync of "${comp.type}": type conflicts with a built-in component`)
+        continue
+      }
+
       const exists = currentTypes.has(comp.type)
 
       // If component already exists and key fields changed, clear caches for fresh reload

@@ -280,6 +280,14 @@ export function isExtensionSource(ds: DataSource): ds is ExtensionDataSource {
   return ds.type === 'extension'
 }
 
+export function isExtensionMetricSource(ds: DataSource): ds is ExtensionMetricDataSource {
+  return ds.type === 'extension-metric'
+}
+
+export function isExtensionCommandSource(ds: DataSource): ds is ExtensionCommandDataSource {
+  return ds.type === 'extension-command'
+}
+
 export function isTransformSource(ds: DataSource): ds is TransformDataSource {
   return ds.type === 'transform'
 }
