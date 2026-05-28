@@ -159,6 +159,10 @@ function normalizeDataSourceForImages(
       ...ds,
       limit,
       timeRange,
+      // Remove timeWindow — use timeRange (hours) instead to avoid the
+      // timeWindow overriding the component's configured time range.
+      // e.g. timeWindow "last_1hour" would override timeRange: 24.
+      timeWindow: undefined,
       params: { ...ds.params, includeRawPoints: true, isImage: true },
       transform: 'raw',
     }

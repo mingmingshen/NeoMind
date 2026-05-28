@@ -35,8 +35,6 @@ export type DashboardStore = {
   devices: import('@/types').Device[]
   // ExtensionSlice
   extensions: import('@/types').Extension[]
-  // FrontendComponentSlice
-  installed: unknown[]
 }
 
 /** Generate unique ID */
@@ -47,15 +45,25 @@ export function generateId(): string {
   return 'id_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 15)
 }
 
+let pendingCleanupCount = 0
+const MAX_CONCURRENT_CLEANUPS = 3
+
 /** Delete the associated AI Agent when an ai-analyst component is removed */
 export function cleanupAgentForComponent(component: DashboardComponent | undefined) {
   if (!component || component.type !== 'ai-analyst') return
   const agentId = (component as any).config?.agentId as string | undefined
   if (!agentId) return
+  if (pendingCleanupCount >= MAX_CONCURRENT_CLEANUPS) {
+    console.warn('[Dashboard] Skipping agent cleanup — too many concurrent cleanups')
+    return
+  }
+  pendingCleanupCount++
   import('@/lib/api').then(({ api }) => {
-    api.deleteAgent(agentId).catch((err) => {
-      console.warn('[Dashboard] Failed to delete agent', agentId, err)
-    })
+    return api.deleteAgent(agentId)
+  }).catch((err) => {
+    console.warn('[Dashboard] Failed to delete agent', agentId, err)
+  }).finally(() => {
+    pendingCleanupCount--
   })
 }
 

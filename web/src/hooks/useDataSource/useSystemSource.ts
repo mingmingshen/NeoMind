@@ -35,6 +35,7 @@ export function useSystemSource(
   const systemInitialDoneRef = useRef(false)
   const prevSystemKeyRef = useRef('')
   const systemIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const fetchGenerationRef = useRef(0)
 
   useEffect(() => {
     if (systemSources.length === 0 || !enabled) {
@@ -48,7 +49,12 @@ export function useSystemSource(
       prevSystemKeyRef.current = systemKey
     }
 
+    const currentGeneration = ++fetchGenerationRef.current
+
     const fetchSystemData = async () => {
+      // Discard stale invocations
+      if (fetchGenerationRef.current !== currentGeneration) return
+
       if (!systemInitialDoneRef.current) {
         if (state.sourceAdapters) state.sourceAdapters.startLoading()
         else state.setLoading(true)
@@ -65,6 +71,9 @@ export function useSystemSource(
           })
         )
 
+        // Discard stale results
+        if (fetchGenerationRef.current !== currentGeneration) return
+
         let finalData: unknown
         if (results.length > 1) finalData = results.map((r) => r.data)
         else finalData = results[0]?.data ?? null
@@ -75,13 +84,16 @@ export function useSystemSource(
         state.setLastUpdate(Date.now())
         systemInitialDoneRef.current = true
       } catch (err) {
+        if (fetchGenerationRef.current !== currentGeneration) return
         logError(err, { operation: 'Fetch system data' })
         state.setError(err instanceof Error ? err.message : 'Failed to fetch system data')
         state.setDataRaw(state.optionsRef.current.fallback ?? null)
         systemInitialDoneRef.current = true
       } finally {
-        if (state.sourceAdapters) state.sourceAdapters.finishLoading()
-        else state.setLoading(false)
+        if (fetchGenerationRef.current === currentGeneration) {
+          if (state.sourceAdapters) state.sourceAdapters.finishLoading()
+          else state.setLoading(false)
+        }
       }
     }
 

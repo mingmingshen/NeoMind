@@ -44,6 +44,8 @@ export interface WebDisplayProps {
 }
 
 // Get sandbox policy string (browser only)
+// IMPORTANT: allow-scripts + allow-same-origin together neutralize the sandbox
+// (the iframe can remove its own sandbox attribute). We enforce mutual exclusion.
 function getSandboxPolicy(props: {
   sandbox?: boolean
   allowScripts?: boolean
@@ -54,8 +56,14 @@ function getSandboxPolicy(props: {
   if (!props.sandbox) return ''
 
   const policies: string[] = []
-  if (props.allowScripts) policies.push('allow-scripts')
-  if (props.allowSameOrigin) policies.push('allow-same-origin')
+  // Mutual exclusion: if both are requested, prefer allow-scripts (safer default
+  // for dashboard widgets that need JS but shouldn't access parent origin).
+  if (props.allowScripts && props.allowSameOrigin) {
+    policies.push('allow-scripts')
+  } else {
+    if (props.allowScripts) policies.push('allow-scripts')
+    if (props.allowSameOrigin) policies.push('allow-same-origin')
+  }
   if (props.allowForms) policies.push('allow-forms')
   if (props.allowPopups) policies.push('allow-popups')
 
@@ -70,7 +78,7 @@ export function WebDisplay({
   sandbox = false,
   allowFullscreen = true,
   allowScripts = true,
-  allowSameOrigin = true,
+  allowSameOrigin = false,
   allowForms = true,
   allowPopups = false,
   showHeader = true,

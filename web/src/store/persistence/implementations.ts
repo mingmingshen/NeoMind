@@ -27,6 +27,7 @@ import {
 const LOCAL_STORAGE_KEY = 'neomind_dashboards'
 const LOCAL_STORAGE_CACHE_TIMESTAMP_KEY = 'neomind_dashboards_cache_ts'
 const CURRENT_DASHBOARD_KEY = 'neomind_current_dashboard_id'
+const LOCAL_TO_SERVER_ID_KEY = 'neomind_local_to_server_id'
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
 export class LocalStorageDashboardStorage implements DashboardStorage {
@@ -43,12 +44,22 @@ export class LocalStorageDashboardStorage implements DashboardStorage {
         return { data: [], error: null }
       }
 
-      const dashboards = JSON.parse(stored) as Dashboard[]
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(stored)
+      } catch {
+        return { data: [], error: null }
+      }
+      if (!Array.isArray(parsed)) return { data: [], error: null }
+      const dashboards = parsed as Dashboard[]
       // Ensure all dashboards have valid components arrays (defensive against corrupted data)
-      const normalized = dashboards.map(d => ({
-        ...d,
-        components: Array.isArray(d.components) ? d.components : [],
-      }))
+      const normalized = dashboards
+        .filter((d) => typeof d === 'object' && d !== null && 'id' in d)
+        .map((d) => ({
+          ...d,
+          components: Array.isArray(d.components) ? d.components : [],
+          layout: d.layout || { columns: 12, rows: 'auto' },
+        })) as Dashboard[]
       return { data: normalized, error: null }
     } catch (error) {
       return {
@@ -336,6 +347,29 @@ export class HybridDashboardStorage implements DashboardStorage {
     this.apiStorage = new ApiDashboardStorage()
     this.localStorage = new LocalStorageDashboardStorage()
     this.cacheEnabled = options.cacheEnabled ?? true
+    // Restore persisted ID mapping from localStorage
+    this.loadIdMapping()
+  }
+
+  /** Persist localToServerId mapping to localStorage */
+  private persistIdMapping(): void {
+    try {
+      const entries = Array.from(this.localToServerId.entries())
+      localStorage.setItem(LOCAL_TO_SERVER_ID_KEY, JSON.stringify(entries))
+    } catch { /* ignore storage errors */ }
+  }
+
+  /** Restore localToServerId mapping from localStorage */
+  private loadIdMapping(): void {
+    try {
+      const stored = localStorage.getItem(LOCAL_TO_SERVER_ID_KEY)
+      if (stored) {
+        const entries = JSON.parse(stored) as [string, string][]
+        for (const [local, server] of entries) {
+          this.localToServerId.set(local, server)
+        }
+      }
+    } catch { /* ignore corrupt data */ }
   }
 
   async load(): Promise<StorageResult<Dashboard[]>> {
@@ -404,12 +438,13 @@ export class HybridDashboardStorage implements DashboardStorage {
           if (result.data) {
             // Map the local ID to the server ID for future syncs
             this.localToServerId.set(dashboard.id, result.data.id)
+            this.persistIdMapping()
             // Update the server dashboard with the latest component data
-            const updatedDashboard = { ...dashboard, id: result.data.id, createdAt: result.data.createdAt, updatedAt: Date.now() }
+            const updatedDashboard = { ...result.data, updatedAt: Date.now() }
             return this.doServerSync(updatedDashboard)
           }
-        } catch {
-          // Pending sync failed, fall through to try ourselves
+        } catch (err) {
+          console.warn('[HybridStorage] Pending sync failed, retrying:', err)
         }
       }
 
@@ -430,6 +465,7 @@ export class HybridDashboardStorage implements DashboardStorage {
         if (apiResult.data && apiResult.data.id !== dashboard.id) {
           // Server assigned a new ID - map it
           this.localToServerId.set(dashboard.id, apiResult.data.id)
+          this.persistIdMapping()
           // Update localStorage with the server version
           await this.localStorage.sync(apiResult.data)
           return apiResult
@@ -489,9 +525,7 @@ export class HybridDashboardStorage implements DashboardStorage {
 
   // Helper to sync all dashboards to API
   private async syncToApi(dashboards: Dashboard[]): Promise<void> {
-    for (const dashboard of dashboards) {
-      await this.apiStorage.sync(dashboard)
-    }
+    await Promise.allSettled(dashboards.map(d => this.apiStorage.sync(d)))
   }
 
   // Expose current dashboard helpers from localStorage
@@ -505,7 +539,9 @@ export class HybridDashboardStorage implements DashboardStorage {
 
   clear(): void {
     this.localStorage.clear()
+    this.localToServerId.clear()
     try { localStorage.removeItem(LOCAL_STORAGE_CACHE_TIMESTAMP_KEY) } catch {}
+    try { localStorage.removeItem(LOCAL_TO_SERVER_ID_KEY) } catch {}
   }
 
   /** Get cache age in milliseconds, or null if no timestamp */

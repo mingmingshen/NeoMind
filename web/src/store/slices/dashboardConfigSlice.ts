@@ -44,10 +44,14 @@ export const createDashboardConfigSlice: StateCreator<
   },
 
   applyTemplate(template) {
+    if (!template || !Array.isArray(template.components)) {
+      console.warn('[DashboardConfigSlice] Invalid template:', template)
+      return
+    }
     const newDashboard: Dashboard = {
       id: generateId(),
-      name: template.name,
-      layout: template.layout,
+      name: template.name || 'Untitled',
+      layout: template.layout || { columns: 12, rows: 'auto' },
       components: template.components.map((c) => ({ ...c, id: generateId() })) as DashboardComponent[],
       createdAt: Date.now(),
       updatedAt: Date.now(),

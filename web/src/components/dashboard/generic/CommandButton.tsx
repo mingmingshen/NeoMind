@@ -170,7 +170,7 @@ export function CommandButton({
   }
 
   const handleConfirmSend = async () => {
-    if (!hasCommand) return
+    if (!hasCommand || loadingParams) return
 
     setSending(true)
 

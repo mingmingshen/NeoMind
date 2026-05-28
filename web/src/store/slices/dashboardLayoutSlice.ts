@@ -30,159 +30,120 @@ export interface DashboardLayoutSlice {
 
 export const createDashboardLayoutSlice: StateCreator<
   DashboardStore, [], [], DashboardLayoutSlice
-> = (set, get) => ({
-  addComponent(component) {
+> = (set, get) => {
+  function commitDashboard(components: DashboardComponent[], extra?: Record<string, unknown>): void {
     const { currentDashboard, dashboards } = get()
     if (!currentDashboard) return
-    const newComponent = { ...component, id: generateId() } as DashboardComponent
-    const updatedDashboard = {
-      ...currentDashboard,
-      components: [...currentDashboard.components, newComponent],
-      updatedAt: Date.now(),
-    }
-    const updatedDashboards = dashboards.map((d) =>
-      d.id === currentDashboard.id ? updatedDashboard : d,
-    )
-    set({ dashboards: updatedDashboards, currentDashboard: updatedDashboard })
+    const updatedDashboard = { ...currentDashboard, components, updatedAt: Date.now() }
+    const updatedDashboards = dashboards.map((d) => d.id === currentDashboard.id ? updatedDashboard : d)
+    set({ dashboards: updatedDashboards, currentDashboard: updatedDashboard, ...extra })
     get().scheduleSync(updatedDashboard)
-  },
+  }
 
-  moveComponent(id, position) {
-    const { currentDashboard, dashboards } = get()
-    if (!currentDashboard) return
-    if (!currentDashboard.components.some((c) => c.id === id)) return
-    const updatedDashboard = {
-      ...currentDashboard,
-      components: currentDashboard.components.map((c) =>
+  return {
+    addComponent(component) {
+      const { currentDashboard } = get()
+      if (!currentDashboard) return
+      const newComponent = { ...component, id: generateId() } as DashboardComponent
+      commitDashboard([...currentDashboard.components, newComponent])
+    },
+
+    moveComponent(id, position) {
+      const { currentDashboard } = get()
+      if (!currentDashboard) return
+      if (!currentDashboard.components.some((c) => c.id === id)) return
+      commitDashboard(currentDashboard.components.map((c) =>
         c.id === id ? { ...c, position: { ...c.position, ...position } } : c,
-      ),
-      updatedAt: Date.now(),
-    }
-    const updatedDashboards = dashboards.map((d) =>
-      d.id === currentDashboard.id ? updatedDashboard : d,
-    )
-    set({ dashboards: updatedDashboards, currentDashboard: updatedDashboard })
-    get().scheduleSync(updatedDashboard)
-  },
+      ))
+    },
 
-  batchUpdatePositions(positions) {
-    const { currentDashboard, dashboards } = get()
-    if (!currentDashboard || positions.length === 0) return
-    const posMap = new Map(positions.map((p) => [p.id, p.position]))
-    const updatedComponents = currentDashboard.components.map((c) => {
-      const newPos = posMap.get(c.id)
-      return newPos ? { ...c, position: newPos } : c
-    })
-    const updatedDashboard = { ...currentDashboard, components: updatedComponents, updatedAt: Date.now() }
-    const updatedDashboards = dashboards.map((d) =>
-      d.id === currentDashboard.id ? updatedDashboard : d,
-    )
-    set({ dashboards: updatedDashboards, currentDashboard: updatedDashboard })
-    get().scheduleSync(updatedDashboard)
-  },
+    batchUpdatePositions(positions) {
+      const { currentDashboard } = get()
+      if (!currentDashboard || positions.length === 0) return
+      const posMap = new Map(positions.map((p) => [p.id, p.position]))
+      let changed = false
+      const updatedComponents = currentDashboard.components.map((c) => {
+        const newPos = posMap.get(c.id)
+        if (newPos) { changed = true; return { ...c, position: newPos } }
+        return c
+      })
+      if (changed) commitDashboard(updatedComponents)
+    },
 
-  removeComponent(id) {
-    const { currentDashboard, dashboards, selectedComponent, configComponentId } = get()
-    if (!currentDashboard) return
-    const removed = currentDashboard.components.find((c) => c.id === id)
-    cleanupAgentForComponent(removed)
-    const updatedDashboard = {
-      ...currentDashboard,
-      components: currentDashboard.components.filter((c) => c.id !== id),
-      updatedAt: Date.now(),
-    }
-    const updatedDashboards = dashboards.map((d) =>
-      d.id === currentDashboard.id ? updatedDashboard : d,
-    )
-    set({
-      dashboards: updatedDashboards,
-      currentDashboard: updatedDashboard,
-      selectedComponent: selectedComponent === id ? null : selectedComponent,
-      configComponentId: configComponentId === id ? null : configComponentId,
-    })
-    get().scheduleSync(updatedDashboard)
-  },
-
-  removeComponentsByExtension(extensionId) {
-    const { currentDashboard, dashboards, selectedComponent, configComponentId } = get()
-    if (!currentDashboard) return
-    const toRemove = currentDashboard.components.filter((comp) => {
-      if (comp.type.startsWith(`${extensionId}:`) || comp.type.includes(`-${extensionId}-`)) return true
-      const ds = comp.dataSource
-      if (!ds) return false
-      const sources: DataSource[] = Array.isArray(ds) ? ds : [ds]
-      return sources.some((s) => s.extensionId === extensionId)
-    })
-    if (toRemove.length === 0) return
-    toRemove.forEach(cleanupAgentForComponent)
-    const idsToRemove = new Set(toRemove.map((c) => c.id))
-    const updatedDashboard = {
-      ...currentDashboard,
-      components: currentDashboard.components.filter((c) => !idsToRemove.has(c.id)),
-      updatedAt: Date.now(),
-    }
-    const updatedDashboards = dashboards.map((d) =>
-      d.id === currentDashboard.id ? updatedDashboard : d,
-    )
-    set({
-      dashboards: updatedDashboards,
-      currentDashboard: updatedDashboard,
-      selectedComponent: selectedComponent && idsToRemove.has(selectedComponent) ? null : selectedComponent,
-      configComponentId: configComponentId && idsToRemove.has(configComponentId) ? null : configComponentId,
-    })
-    get().scheduleSync(updatedDashboard)
-  },
-
-  removeComponentsByDevice(deviceId) {
-    const { currentDashboard, dashboards, selectedComponent, configComponentId } = get()
-    if (!currentDashboard) return
-    const toRemove = currentDashboard.components.filter((comp) => {
-      const ds = comp.dataSource
-      if (!ds) return false
-      const sources: DataSource[] = Array.isArray(ds) ? ds : [ds]
-      return sources.some(
-        (s) => s.sourceId === deviceId || (s.type === 'device' && s.property && s.sourceId === deviceId),
+    removeComponent(id) {
+      const { currentDashboard, selectedComponent, configComponentId } = get()
+      if (!currentDashboard) return
+      const removed = currentDashboard.components.find((c) => c.id === id)
+      cleanupAgentForComponent(removed)
+      commitDashboard(
+        currentDashboard.components.filter((c) => c.id !== id),
+        {
+          selectedComponent: selectedComponent === id ? null : selectedComponent,
+          configComponentId: configComponentId === id ? null : configComponentId,
+        },
       )
-    })
-    if (toRemove.length === 0) return
-    toRemove.forEach(cleanupAgentForComponent)
-    const idsToRemove = new Set(toRemove.map((c) => c.id))
-    const updatedDashboard = {
-      ...currentDashboard,
-      components: currentDashboard.components.filter((c) => !idsToRemove.has(c.id)),
-      updatedAt: Date.now(),
-    }
-    const updatedDashboards = dashboards.map((d) =>
-      d.id === currentDashboard.id ? updatedDashboard : d,
-    )
-    set({
-      dashboards: updatedDashboards,
-      currentDashboard: updatedDashboard,
-      selectedComponent: selectedComponent && idsToRemove.has(selectedComponent) ? null : selectedComponent,
-      configComponentId: configComponentId && idsToRemove.has(configComponentId) ? null : configComponentId,
-    })
-    get().scheduleSync(updatedDashboard)
-  },
+    },
 
-  duplicateComponent(id) {
-    const { currentDashboard, dashboards } = get()
-    if (!currentDashboard) return
-    const original = currentDashboard.components.find((c) => c.id === id)
-    if (!original) return
-    const newComponent = {
-      ...structuredClone(original),
-      id: generateId(),
-      position: { ...original.position, y: original.position.y + original.position.h },
-    } as DashboardComponent
-    const updatedDashboard = {
-      ...currentDashboard,
-      components: [...currentDashboard.components, newComponent],
-      updatedAt: Date.now(),
-    }
-    const updatedDashboards = dashboards.map((d) =>
-      d.id === currentDashboard.id ? updatedDashboard : d,
-    )
-    set({ dashboards: updatedDashboards, currentDashboard: updatedDashboard })
-    get().scheduleSync(updatedDashboard)
-  },
-})
+    removeComponentsByExtension(extensionId) {
+      const { currentDashboard, selectedComponent, configComponentId } = get()
+      if (!currentDashboard) return
+      const idsToRemove = new Set(
+        currentDashboard.components
+          .filter((comp) => {
+            if (comp.type.startsWith(`${extensionId}:`)) return true
+            const ds = comp.dataSource
+            if (!ds) return false
+            const sources: DataSource[] = Array.isArray(ds) ? ds : [ds]
+            return sources.some((s) => s.extensionId === extensionId)
+          })
+          .map((c) => c.id),
+      )
+      if (idsToRemove.size === 0) return
+      currentDashboard.components.filter((c) => idsToRemove.has(c.id)).forEach(cleanupAgentForComponent)
+      commitDashboard(
+        currentDashboard.components.filter((c) => !idsToRemove.has(c.id)),
+        {
+          selectedComponent: selectedComponent && idsToRemove.has(selectedComponent) ? null : selectedComponent,
+          configComponentId: configComponentId && idsToRemove.has(configComponentId) ? null : configComponentId,
+        },
+      )
+    },
+
+    removeComponentsByDevice(deviceId) {
+      const { currentDashboard, selectedComponent, configComponentId } = get()
+      if (!currentDashboard) return
+      const idsToRemove = new Set(
+        currentDashboard.components
+          .filter((comp) => {
+            const ds = comp.dataSource
+            if (!ds) return false
+            const sources: DataSource[] = Array.isArray(ds) ? ds : [ds]
+            return sources.some((s) => s.sourceId === deviceId || (s.type === 'device' && s.property && s.sourceId === deviceId))
+          })
+          .map((c) => c.id),
+      )
+      if (idsToRemove.size === 0) return
+      currentDashboard.components.filter((c) => idsToRemove.has(c.id)).forEach(cleanupAgentForComponent)
+      commitDashboard(
+        currentDashboard.components.filter((c) => !idsToRemove.has(c.id)),
+        {
+          selectedComponent: selectedComponent && idsToRemove.has(selectedComponent) ? null : selectedComponent,
+          configComponentId: configComponentId && idsToRemove.has(configComponentId) ? null : configComponentId,
+        },
+      )
+    },
+
+    duplicateComponent(id) {
+      const { currentDashboard } = get()
+      if (!currentDashboard) return
+      const original = currentDashboard.components.find((c) => c.id === id)
+      if (!original) return
+      const newComponent = {
+        ...JSON.parse(JSON.stringify(original)),
+        id: generateId(),
+        position: { ...original.position, y: original.position.y + original.position.h },
+      } as DashboardComponent
+      commitDashboard([...currentDashboard.components, newComponent])
+    },
+  }
+}

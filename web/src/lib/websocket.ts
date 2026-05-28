@@ -243,8 +243,8 @@ export class ChatWebSocket {
           }
         }
         this.notifyMessage(data)
-      } catch {
-        // Silent error handling - ignore malformed messages
+      } catch (err) {
+        console.warn('[WebSocket] Failed to parse message:', typeof event.data === 'string' ? event.data.slice(0, 100) : '(non-string)')
       }
     }
   }

@@ -86,6 +86,7 @@ function normalizeDataSourceForImage(ds: DataSource | undefined): DataSource | u
       ...ds,
       timeRange: ds.timeRange && ds.timeRange > 24 ? ds.timeRange : 24,
       limit: 2, // Only need latest image — avoid fetching hundreds of base64 blobs
+      timeWindow: undefined, // Use timeRange (hours) instead of timeWindow
       params: { ...ds.params, includeRawPoints: true, isImage: true },
       transform: 'raw',
     }

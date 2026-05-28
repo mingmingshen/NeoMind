@@ -123,7 +123,7 @@ export function useExtensionSource(
             const hasExplicitTimeWindow = !!effectiveTimeWindow
 
             // Cache key includes time bucket so stale data doesn't persist
-            const timeBucket = Math.floor(Date.now() / 30000)
+            const timeBucket = Math.floor(Date.now() / 60000)
             const extCacheKey = `${extensionId}|${metric}|${effectiveTimeWindow?.type ?? 'rel'}|${userLimit}|${timeBucket}`
             const extCached = extensionDataCache.get(extCacheKey)
             if (extCached !== undefined) return { data: extCached, success: true }
@@ -215,7 +215,7 @@ export function useExtensionSource(
         extensionSources.forEach((ds, i) => {
           if (ds.extensionId && ds.extensionMetric && results[i]?.success) {
             const tw = ds.timeWindow ?? (ds.timeRange != null ? getEffectiveTimeWindow(ds) : undefined)
-            const timeBucket = Math.floor(Date.now() / 30000)
+            const timeBucket = Math.floor(Date.now() / 60000)
             const key = `${ds.extensionId}|${ds.extensionMetric}|${tw?.type ?? 'rel'}|${ds.limit ?? 100}|${timeBucket}`
             extensionDataCache.set(key, results[i].data)
           }
@@ -296,7 +296,23 @@ export function useExtensionSource(
           const deduped = merged.filter(p => {
             const ts = getTs(p)
             const val = (p as Record<string, unknown>).value
-            const key = `${ts}:${typeof val === 'object' ? JSON.stringify(val) : val}`
+            // Lightweight fingerprint: avoid JSON.stringify on large base64 payloads
+            let valKey: string
+            if (typeof val === 'string' && val.length > 200) {
+              valKey = `${val.length}:${val.slice(0, 64)}:${val.slice(-64)}`
+            } else if (typeof val === 'object' && val !== null) {
+              // For objects, use a shallow key from first-level values
+              const keys = Object.keys(val as Record<string, unknown>).sort()
+              valKey = keys.map(k => {
+                const v = (val as Record<string, unknown>)[k]
+                return typeof v === 'string' && v.length > 200
+                  ? `${k}=${v.length}:${v.slice(0, 32)}:${v.slice(-32)}`
+                  : `${k}=${v}`
+              }).join(',')
+            } else {
+              valKey = String(val)
+            }
+            const key = `${ts}:${valKey}`
             if (seen.has(key)) return false
             seen.add(key)
             return true
@@ -371,7 +387,8 @@ export function useExtensionSource(
       const eventOutputName = eventData.output_name as string
 
       // Deterministic event ID using event content to properly deduplicate
-      const uniqueEventId = latestEvent.id || `${eventType}_${eventExtensionId || ''}_${eventOutputName || ''}_${eventData.timestamp || ''}_${typeof eventData.value === 'object' ? JSON.stringify(eventData.value) : eventData.value}`
+      const valueKey = typeof eventData.value === 'object' && eventData.value !== null ? `obj:${(eventData.value as any).type || ''}:${String(eventData.value).slice(0, 80)}` : String(eventData.value ?? '')
+      const uniqueEventId = latestEvent.id || `${eventType}_${eventExtensionId || ''}_${eventOutputName || ''}_${eventData.timestamp || ''}_${valueKey}`
       if (processedExtEventsRef.current.has(uniqueEventId)) continue
       processedExtEventsRef.current.add(uniqueEventId)
       lastProcessedExtIdInBatch = uniqueEventId
@@ -414,8 +431,9 @@ export function useExtensionSource(
               if (ds.extensionId === eventExtensionId && (metricName === normalizedOutput || metricName === eventOutputName)) {
                 // Append new point (chronological order: oldest→newest, left→right)
                 const maxLimit = ds.limit ?? 100
-                const appended = [...(Array.isArray(arr) ? arr : []), newPoint]
-                return appended.length > maxLimit ? appended.slice(-maxLimit) : appended
+                if (!Array.isArray(arr) || arr.length === 0) return [newPoint]
+                if (arr.length >= maxLimit) return [...arr.slice(arr.length - maxLimit + 1), newPoint]
+                return [...arr, newPoint]
               }
               return arr
             })
@@ -423,8 +441,8 @@ export function useExtensionSource(
           } else if (Array.isArray(currentData)) {
             const maxLimit = (matchingSources[0] as any)?.limit ?? 100
             // Append new point (chronological order: oldest→newest, left→right)
-            const appended = [...currentData, newPoint]
-            newData = appended.length > maxLimit ? appended.slice(-maxLimit) : appended
+            if (currentData.length >= maxLimit) newData = [...currentData.slice(currentData.length - maxLimit + 1), newPoint]
+            else newData = [...currentData, newPoint]
           } else {
             newData = [newPoint]
           }

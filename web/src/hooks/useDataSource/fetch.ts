@@ -100,7 +100,7 @@ export async function fetchHistoricalTelemetry(
 ): Promise<{ data: number[]; raw?: unknown[]; success: boolean }> {
   // Include a time bucket (minute-aligned) in the cache key so that stale data
   // from a previous time period is never served when fresh data is available.
-  const timeBucket = Math.floor(Date.now() / 30000) // changes every 30s
+  const timeBucket = Math.floor(Date.now() / 60000) // changes every 60s, aligned to cache TTL
   const cacheKey = `${deviceId}|${metricId}|${timeRange}|${limit}|${aggregate}|${timeWindow?.type ?? 'rel'}|${timeBucket}`
   const cached = telemetryCache.get(cacheKey)
 
@@ -125,12 +125,10 @@ export async function fetchHistoricalTelemetry(
         endSec = Math.floor(now / 1000)
       }
 
-      // Image/large-payload metrics: use server-side time-bucket downsampling.
-      // Backend divides the time range into `limit` equal buckets and returns
-      // one newest point per bucket — gives full temporal coverage without
-      // downloading hundreds of large base64 blobs.
-      // Numeric metrics: scale fetchLimit with timeRange for chart resolution.
-      // Detection: explicit isImageSource flag from caller OR metricId naming heuristic.
+      // Image/large-payload metrics: fetch exactly `limit` newest points.
+      // Do NOT use bucketed mode for images — bucketing collapses multiple
+      // images within the same time bucket into one, losing data.
+      // Detection: explicit isImageSource flag OR metricId naming heuristic.
       const isImgByMetric = !!(metricId && (
         metricId.toLowerCase().includes('image') ||
         metricId.toLowerCase().includes('img') ||
@@ -139,11 +137,11 @@ export async function fetchHistoricalTelemetry(
         metricId.toLowerCase().includes('values.image')
       ))
       const isImgMetric = isImageSource || isImgByMetric
-      const useBucketed = isImgMetric && !timeWindow
+      // Images: no bucketing — just fetch `limit` newest points
       const fetchLimit = timeWindow
         ? 3000
         : isImgMetric
-          ? limit                 // One per bucket → exactly what user configured
+          ? limit
           : Math.max(limit * 2, timeRange <= 1 ? 100 : Math.min(Math.ceil(timeRange * 17), 1000))
 
       // Use unified telemetry endpoint for transform/ai sources, device endpoint otherwise
@@ -151,10 +149,10 @@ export async function fetchHistoricalTelemetry(
       let metricData: unknown[] | undefined
 
       if (isUnifiedSource) {
-        const response = await api.queryTelemetry(deviceId, metricId, startSec, endSec, fetchLimit, useBucketed)
+        const response = await api.queryTelemetry(deviceId, metricId, startSec, endSec, fetchLimit, false)
         metricData = response?.data as unknown[] | undefined
       } else {
-        const response = await api.getDeviceTelemetry(deviceId, metricId, startSec, endSec, fetchLimit, undefined, useBucketed)
+        const response = await api.getDeviceTelemetry(deviceId, metricId, startSec, endSec, fetchLimit, undefined, false)
 
         // Find metric data — exact match, then case-insensitive
         if (response?.data && typeof response.data === 'object') {

@@ -107,9 +107,16 @@ const BuiltInComponent = memo(function BuiltInComponent({
 // Telemetry cache + helpers
 // ============================================================================
 
-const telemetryCache: Record<string, any> = {}
+const telemetryCache: Record<string, { data: any; ts: number }> = {}
 const MAX_CACHE_SIZE = 100
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 const cacheKeys: string[] = []
+
+/** Clear the Renderers telemetry cache — call on dashboard switch */
+export function clearRenderersTelemetryCache(): void {
+  for (const key of cacheKeys) delete telemetryCache[key]
+  cacheKeys.length = 0
+}
 
 export function scheduleDashboardIdleTask(task: () => void, timeout = 1500): () => void {
   if (typeof window === 'undefined') { task(); return () => {} }
@@ -127,11 +134,25 @@ export function scheduleDashboardIdleTask(task: () => void, timeout = 1500): () 
 
 function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataSourceOrList | undefined {
   if (!dataSource) return undefined
-  const cacheKey = createStableCacheKey(dataSource)
-  if (cacheKey in telemetryCache) {
+  // Sort array data sources by a stable key to avoid cache misses from different orderings
+  const sortedSource = Array.isArray(dataSource)
+    ? [...dataSource].sort((a, b) => {
+        const keyA = `${a.type}:${a.sourceId || a.extensionId || ''}:${a.metricId || a.property || ''}`
+        const keyB = `${b.type}:${b.sourceId || b.extensionId || ''}:${b.metricId || b.property || ''}`
+        return keyA.localeCompare(keyB)
+      })
+    : dataSource
+  const cacheKey = createStableCacheKey(sortedSource)
+  const cached = telemetryCache[cacheKey]
+  if (cached && Date.now() - cached.ts < CACHE_TTL) {
     const idx = cacheKeys.indexOf(cacheKey)
     if (idx > -1) { cacheKeys.splice(idx, 1); cacheKeys.push(cacheKey) }
-    return telemetryCache[cacheKey]
+    return cached.data
+  } else if (cached) {
+    // Expired — evict
+    delete telemetryCache[cacheKey]
+    const idx = cacheKeys.indexOf(cacheKey)
+    if (idx > -1) cacheKeys.splice(idx, 1)
   }
   const normalizeAndConvert = (ds: DataSource): DataSource => {
     if (ds.type === 'telemetry') return ds
@@ -149,12 +170,12 @@ function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataS
     return ds
   }
   let result: DataSourceOrList
-  if (Array.isArray(dataSource)) {
-    result = dataSource.map(normalizeAndConvert)
+  if (Array.isArray(sortedSource)) {
+    result = sortedSource.map(normalizeAndConvert)
   } else {
-    result = normalizeAndConvert(dataSource)
+    result = normalizeAndConvert(sortedSource)
   }
-  telemetryCache[cacheKey] = result
+  telemetryCache[cacheKey] = { data: result, ts: Date.now() }
   cacheKeys.push(cacheKey)
   if (cacheKeys.length > MAX_CACHE_SIZE) {
     const oldest = cacheKeys.shift()!

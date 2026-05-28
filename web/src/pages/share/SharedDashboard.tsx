@@ -101,13 +101,14 @@ function installShareProxy(token: string): () => void {
       return originalFetch.call(this, input, init)
     }
 
-    // Find /api/ in the URL (handles both relative /api/... and absolute http://host/api/...)
-    const apiIdx = url.indexOf('/api/')
-    if (apiIdx !== -1) {
-      const afterApi = url.slice(apiIdx + 5) // skip '/api/'
+    // Only rewrite relative URLs starting with /api/ — never rewrite absolute
+    // URLs (http://...) or URLs that merely contain /api/ in their path.
+    // This prevents accidental interception of third-party API calls.
+    if (url.startsWith('/api/')) {
+      const afterApi = url.slice(5) // skip '/api/'
       // Don't double-rewrite share proxy paths or the share data endpoint
       if (!afterApi.startsWith('share/')) {
-        const newUrl = url.slice(0, apiIdx) + proxyPrefix + afterApi
+        const newUrl = proxyPrefix + afterApi
         return originalFetch.call(this, newUrl, init)
       }
     }

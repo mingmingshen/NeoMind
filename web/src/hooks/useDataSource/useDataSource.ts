@@ -121,6 +121,7 @@ export function useDataSource<T = unknown>(
     loadingRef.current = 1
     setLoading(true)
     setErrorInternal(null)
+    setDataInternal(fallback ?? null)
   }
   // Skip initial loading clear on first render when no data source
   if (initialRef.current) {
@@ -250,17 +251,12 @@ export function useDataSource<T = unknown>(
   // ============================================================================
 
   // Sub-hooks expect { startLoading, finishLoading, retryLoading, failLoading }
-  const makeAdapters = useCallback((_source: string) => ({
+  const sourceAdapters = useMemo(() => ({
     startLoading,
     finishLoading,
-    retryLoading: startLoading, // retry = keep loading active
+    retryLoading: startLoading,
     failLoading: setErrorLoading,
   }), [startLoading, finishLoading, setErrorLoading])
-
-  const storeAdapters = useMemo(() => makeAdapters('store'), [makeAdapters])
-  const telemetryAdapters = useMemo(() => makeAdapters('telemetry'), [makeAdapters])
-  const systemAdapters = useMemo(() => makeAdapters('system'), [makeAdapters])
-  const extensionAdapters = useMemo(() => makeAdapters('extension'), [makeAdapters])
 
   // Legacy setLoading adapter for sub-hooks that use it
   const legacySetLoading = useCallback((_l: boolean) => {
@@ -277,7 +273,7 @@ export function useDataSource<T = unknown>(
     {
       data, setData, setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate,
       dataSourcesRef, optionsRef,
-      sourceAdapters: storeAdapters,
+      sourceAdapters,
     },
     hasExtensionSource
   )
@@ -290,7 +286,7 @@ export function useDataSource<T = unknown>(
     setData: (updater) => setData((prev) => typeof updater === 'function' ? (updater as (p: unknown) => unknown)(prev) as T : updater as T),
     setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate, optionsRef,
     readDataFromStore,
-    sourceAdapters: telemetryAdapters,
+    sourceAdapters,
   })
 
   // ============================================================================
@@ -299,7 +295,7 @@ export function useDataSource<T = unknown>(
 
   useSystemSource(systemSources, systemKey, enabled, {
     setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate, optionsRef,
-    sourceAdapters: systemAdapters,
+    sourceAdapters,
   })
 
   // ============================================================================
@@ -309,7 +305,7 @@ export function useDataSource<T = unknown>(
   useExtensionSource(extensionSources, extensionKey, enabled, currentKey, relevantExtensionIds, {
     setData: (updater) => setData((prev) => typeof updater === 'function' ? (updater as (p: unknown) => unknown)(prev) as T : updater as T),
     setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate, dataSourcesRef, optionsRef,
-    sourceAdapters: extensionAdapters,
+    sourceAdapters,
   })
 
   return {

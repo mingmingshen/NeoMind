@@ -304,7 +304,7 @@ export function getValueGradient(
 ): IndicatorGradientType {
   if (customColor) return 'primary'
 
-  const percentage = (value / max) * 100
+  const percentage = max > 0 ? (value / max) * 100 : 0
 
   if (percentage >= dangerThreshold) return 'error'
   if (percentage >= warningThreshold) return 'warning'
@@ -323,7 +323,7 @@ export function getValueStateColor(
 ): string {
   if (customColor) return customColor
 
-  const percentage = (value / max) * 100
+  const percentage = max > 0 ? (value / max) * 100 : 0
 
   if (percentage >= dangerThreshold) return indicatorColors.error.base
   if (percentage >= warningThreshold) return indicatorColors.warning.base
@@ -352,7 +352,7 @@ export function getValueTextColor(
   warningThreshold = 70,
   dangerThreshold = 90
 ): string {
-  const percentage = (value / max) * 100
+  const percentage = max > 0 ? (value / max) * 100 : 0
 
   if (percentage >= dangerThreshold) return indicatorColors.error.text
   if (percentage >= warningThreshold) return indicatorColors.warning.text

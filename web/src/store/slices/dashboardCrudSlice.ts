@@ -18,7 +18,6 @@ import { logError } from '@/lib/errors'
 import {
   generateId,
   cleanupAgentForComponent,
-  isDataSourceValid,
   updateDashboardInState,
 } from './dashboardHelpers'
 import type { DashboardStore } from './dashboardHelpers'
@@ -83,18 +82,10 @@ export interface DashboardCrudSlice {
 export const createDashboardCrudSlice: StateCreator<
   DashboardStore, [], [], DashboardCrudSlice
 > = (set, get) => {
-  // Clear stale localStorage
-  try {
-    localStorage.removeItem('neomind_dashboards')
-    localStorage.removeItem('neomind_current_dashboard_id')
-  } catch { /* ignore */ }
-
   const storage: DashboardStorage = createDashboardStorage({ type: 'hybrid', cacheEnabled: true })
 
   // Debounced sync — captured in closure
   let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null
-  let pendingSyncDashboard: Dashboard | null = null
-
   function handleIdChange(dash: Dashboard, result: { data: Dashboard | null }): void {
     if (result.data && result.data.id !== dash.id) {
       const { dashboards: currentDashboards } = get()
@@ -111,17 +102,19 @@ export const createDashboardCrudSlice: StateCreator<
     }
   }
 
+  let syncVersion = 0
+  let pendingSyncDashboard: Dashboard | null = null
   function scheduleSync(dashboard: Dashboard): void {
+    const version = ++syncVersion
     pendingSyncDashboard = dashboard
     if (syncDebounceTimer) clearTimeout(syncDebounceTimer)
     syncDebounceTimer = setTimeout(async () => {
       syncDebounceTimer = null
-      const dash = pendingSyncDashboard
-      pendingSyncDashboard = null
-      if (!dash) return
+      // Only sync if no newer schedule call has been made
+      if (version !== syncVersion) return
       try {
-        const result = await storage.sync(dash)
-        handleIdChange(dash, result)
+        const result = await storage.sync(dashboard)
+        handleIdChange(dashboard, result)
       } catch (err) {
         console.warn('[DashboardCrudSlice] sync failed:', err)
       }
@@ -132,14 +125,16 @@ export const createDashboardCrudSlice: StateCreator<
     if (syncDebounceTimer) {
       clearTimeout(syncDebounceTimer)
       syncDebounceTimer = null
-      const dash = pendingSyncDashboard
+      // Execute the pending sync immediately instead of discarding it
+      const dashboard = pendingSyncDashboard
       pendingSyncDashboard = null
-      if (dash) {
+      if (dashboard) {
+        syncVersion++
         try {
-          const result = await storage.sync(dash)
-          handleIdChange(dash, result)
+          const result = await storage.sync(dashboard)
+          handleIdChange(dashboard, result)
         } catch (err) {
-          console.warn('[DashboardCrudSlice] flushSync failed:', err)
+          console.warn('[DashboardCrudSlice] flush sync failed:', err)
         }
       }
     }
@@ -183,23 +178,11 @@ export const createDashboardCrudSlice: StateCreator<
             }),
           })) as Dashboard[]
 
-          // Validate data sources
-          try {
-            const storeState = get()
-            const validDeviceIds = new Set<string>(
-              (storeState.devices || []).map((d) => d.id || d.device_id).filter((id): id is string => typeof id === 'string'),
-            )
-            const validExtensionIds = new Set<string>(
-              (storeState.extensions || []).map((e) => e.id).filter((id): id is string => typeof id === 'string'),
-            )
-            if (validDeviceIds.size > 0 || validExtensionIds.size > 0) {
-              for (const d of migrated) {
-                d.components = d.components.filter(
-                  (c) => isDataSourceValid(c, validDeviceIds, validExtensionIds),
-                )
-              }
-            }
-          } catch { /* best-effort */ }
+          // Note: We intentionally do NOT filter out components with invalid data sources
+          // on load. Previous behavior silently deleted components whose device/extension
+          // was temporarily unavailable — this caused permanent data loss.
+          // Instead, invalid data sources are handled at the UI layer (component shows
+          // a "device unavailable" state) so user config is preserved.
 
           if (get()._fetchId !== fetchId) return
           set({ dashboards: migrated })
@@ -234,20 +217,7 @@ export const createDashboardCrudSlice: StateCreator<
         currentDashboardId: local.id,
         currentDashboard: local,
       }))
-      const isLocal = !local.id.startsWith('dashboard_')
-      if (isLocal) {
-        try {
-          const result = await storage.sync(local)
-          if (result.data && result.data.id !== local.id) {
-            const { dashboards } = get()
-            const updated = dashboards.map((d: Dashboard) => (d.id === local.id ? result.data! : d)).filter(Boolean) as Dashboard[]
-            set({ dashboards: updated, currentDashboard: result.data, currentDashboardId: result.data?.id })
-            return result.data.id
-          }
-        } catch (err) { console.warn('[DashboardCrudSlice] create sync failed:', err) }
-      } else {
-        scheduleSync(local)
-      }
+      scheduleSync(local)
       return local.id
     },
 
@@ -266,7 +236,12 @@ export const createDashboardCrudSlice: StateCreator<
       if (dashboard) (dashboard.components as DashboardComponent[]).forEach(cleanupAgentForComponent)
       const updated = dashboards.filter((d: Dashboard) => d.id !== id)
       const newCurrentId = currentDashboardId === id ? (updated[0]?.id || null) : currentDashboardId
-      set({ dashboards: updated, currentDashboardId: newCurrentId, currentDashboard: updated.find((d: Dashboard) => d.id === newCurrentId) || null })
+      set({
+        dashboards: updated,
+        currentDashboardId: newCurrentId,
+        currentDashboard: updated.find((d: Dashboard) => d.id === newCurrentId) || null,
+        ...(currentDashboardId === id ? { editMode: false, selectedComponent: null } : {}),
+      })
       await storage.delete(id)
     },
 
@@ -279,9 +254,10 @@ export const createDashboardCrudSlice: StateCreator<
     },
 
     setDefaultDashboard: async (id) => {
-      const { dashboards } = get()
+      const { dashboards, currentDashboardId } = get()
       const updated = dashboards.map((d: Dashboard) => ({ ...d, isDefault: d.id === id }))
-      set({ dashboards: updated })
+      const updatedCurrent = currentDashboardId ? updated.find((d: Dashboard) => d.id === currentDashboardId) || null : null
+      set({ dashboards: updated, ...(updatedCurrent ? { currentDashboard: updatedCurrent } : {}) })
       await storage.save(updated)
     },
 

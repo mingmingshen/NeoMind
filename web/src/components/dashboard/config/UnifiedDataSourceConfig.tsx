@@ -502,12 +502,11 @@ export function UnifiedDataSourceConfig({
   className,
 }: UnifiedDataSourceConfigProps) {
   const { t } = useTranslation('dashboardComponents')
-  const store = useStore()
-  const devices = store.devices ?? []
-  const deviceTypes = store.deviceTypes ?? []
-  const extensions = store.extensions ?? []
-  const extensionDataSources = store.extensionDataSources ?? []
-  const extensionsLoading = store.extensionsLoading
+  const devices = useStore((s) => s.devices) ?? []
+  const deviceTypes = useStore((s) => s.deviceTypes) ?? []
+  const extensions = useStore((s) => s.extensions) ?? []
+  const extensionDataSources = useStore((s) => s.extensionDataSources) ?? []
+  const extensionsLoading = useStore((s) => s.extensionsLoading)
   const isMobile = useIsMobile()
   const insets = useSafeAreaInsets()
 
@@ -524,9 +523,17 @@ export function UnifiedDataSourceConfig({
   const [unifiedSourcesLoading, setUnifiedSourcesLoading] = useState(false)
   const hasFetchedUnifiedSources = useRef(false)
 
-  // Stable ref to store fetch functions to avoid useEffect dependency issues
-  const storeRef = useRef(store)
-  storeRef.current = store
+  // Stable ref to store actions to avoid useEffect dependency issues
+  const storeActions = useStore((s) => ({
+    fetchDevices: s.fetchDevices,
+    fetchDeviceTypes: s.fetchDeviceTypes,
+    fetchExtensions: s.fetchExtensions,
+    extensions: s.extensions,
+    extensionDataSources: s.extensionDataSources,
+    setExtensionDataSources: s.setExtensionDataSources,
+  }))
+  const storeRef = useRef(storeActions)
+  storeRef.current = storeActions
 
   // Ensure devices and deviceTypes are loaded when config opens
   // (dashboard page may delay loading, causing empty metrics on first render)

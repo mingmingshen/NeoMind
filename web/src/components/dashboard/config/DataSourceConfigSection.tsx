@@ -5,7 +5,7 @@
  * All components with data binding use this consistent UI.
  */
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -138,35 +138,45 @@ export function DataSourceConfigSection({
   }
 
   // Filter devices by search query
-  const filteredDevices = devices.filter(device =>
-    device.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    device.id.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const filteredDevices = useMemo(() => {
+    const q = searchQuery.toLowerCase()
+    if (!q) return devices
+    return devices.filter(device =>
+      device.name.toLowerCase().includes(q) ||
+      device.id.toLowerCase().includes(q)
+    )
+  }, [devices, searchQuery])
 
   // Filter metrics by search query (collect all unique metrics from all devices)
-  const allMetrics = Array.from(
-    new Set(
-      deviceTypes.flatMap(dt =>
-        (dt.metrics || []).map(m => m.name)
+  const allMetrics = useMemo(() => {
+    const q = searchQuery.toLowerCase()
+    const all = Array.from(
+      new Set(
+        deviceTypes.flatMap(dt =>
+          (dt.metrics || []).map(m => m.name)
+        )
       )
     )
-  ).filter(name =>
-    name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+    if (!q) return all
+    return all.filter(name => name.toLowerCase().includes(q))
+  }, [deviceTypes, searchQuery])
 
   // Filter commands by search query
-  const commandOptions = filteredDevices.flatMap(device => {
-    const commands = getDeviceCommands(device.id)
-    return commands.map(cmd => ({
-      deviceId: device.id,
-      deviceName: device.name,
-      commandName: cmd.name,
-      displayName: cmd.display_name || cmd.name,
-    }))
-  }).filter(option =>
-    option.deviceName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    option.commandName.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const commandOptions = useMemo(() => {
+    const q = searchQuery.toLowerCase()
+    return filteredDevices.flatMap(device => {
+      const commands = getDeviceCommands(device.id)
+      return commands.map(cmd => ({
+        deviceId: device.id,
+        deviceName: device.name,
+        commandName: cmd.name,
+        displayName: cmd.display_name || cmd.name,
+      }))
+    }).filter(option =>
+      option.deviceName.toLowerCase().includes(q) ||
+      option.commandName.toLowerCase().includes(q)
+    )
+  }, [filteredDevices, searchQuery])
 
   return (
     <>

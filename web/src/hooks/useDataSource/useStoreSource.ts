@@ -90,9 +90,11 @@ function processSingleTelemetryPoint(
 
   if (preserveMultiple && dataSources.length > 1) {
     const dsIndex = dataSources.indexOf(ds)
-    const result = (currentData as unknown[]).map((item, i) =>
-      i === dsIndex ? updated : item
-    )
+    // Guard: currentData may be null/undefined on first invocation
+    const existing = Array.isArray(currentData) ? currentData as unknown[] : []
+    const result = existing.length > 0
+      ? existing.map((item, i) => i === dsIndex ? updated : item)
+      : dataSources.map((_, i) => i === dsIndex ? updated : [])
     return result
   }
   return updated
@@ -119,8 +121,6 @@ export function useStoreSource<T = unknown>(
   // Event processing refs
   const processedDeviceEventsRef = useRef<Set<string>>(new Set())
   const lastProcessedDeviceEventIdRef = useRef<string | null>(null)
-
-  const { fallback } = state.optionsRef.current
 
   // ============================================================================
   // readDataFromStore (device/metric/command/device-info)
@@ -245,7 +245,7 @@ export function useStoreSource<T = unknown>(
     } catch (err) {
       const { devicesLoading } = useStore.getState()
       if (!devicesLoading) state.setError(err instanceof Error ? err.message : 'Unknown error')
-      state.setData((fallback ?? 0) as T)
+      state.setData((state.optionsRef.current.fallback ?? 0) as T)
     } finally {
       if (state.sourceAdapters) state.sourceAdapters.finishLoading()
       else state.setLoading(false)
@@ -297,8 +297,10 @@ export function useStoreSource<T = unknown>(
       let currentValuesChanged = false
       const changedDeviceIds = new Set<string>()
 
+      // Only rebuild device map when reference changes
+      const currMap = devicesChanged ? buildDeviceMap(s.devices) : prev.map
+
       if (!devicesLengthChanged) {
-        const currMap = buildDeviceMap(s.devices)
         const prevMap = prev.map
 
         for (const deviceId of relevantDeviceIds) {
@@ -335,7 +337,7 @@ export function useStoreSource<T = unknown>(
           (devicesChanged && changedDeviceIds.size === 0)
         if (!hasRelevantChange && !currentValuesChanged) return
 
-        prevStoreStateRef.current = { rawDevices: s.devices, map: buildDeviceMap(s.devices) }
+        prevStoreStateRef.current = { rawDevices: s.devices, map: currMap }
         readDataFromStore()
 
         // Telemetry merge from store changes — build synthetic events for all
@@ -456,7 +458,8 @@ export function useStoreSource<T = unknown>(
 
       // Deterministic event ID: use event content hash to avoid duplicates
       // even when event.id is missing
-      const uniqueEventId = latestEvent.id || `${eventType}_${eventData.device_id || ''}_${eventData.metric || ''}_${eventData.timestamp || ''}_${hasDeviceId ? JSON.stringify(eventData.value) : ''}`
+      const valueKey = hasDeviceId ? (typeof eventData.value === 'object' && eventData.value !== null ? `obj:${(eventData.value as any).type || ''}:${String(eventData.value).slice(0, 80)}` : String(eventData.value ?? '')) : ''
+      const uniqueEventId = latestEvent.id || `${eventType}_${eventData.device_id || ''}_${eventData.metric || ''}_${eventData.timestamp || ''}_${valueKey}`
       if (processedDeviceEventsRef.current.has(uniqueEventId)) continue
       processedDeviceEventsRef.current.add(uniqueEventId)
       lastProcessedIdInBatch = uniqueEventId

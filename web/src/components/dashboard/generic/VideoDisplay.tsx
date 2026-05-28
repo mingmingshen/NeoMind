@@ -556,18 +556,32 @@ interface CameraAccessProps {
 
 function CameraAccess({ onStreamReady, onError }: CameraAccessProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     navigator.mediaDevices.getUserMedia({ video: true })
       .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach(t => t.stop())
+          return
+        }
+        streamRef.current = stream
         if (videoRef.current) {
           videoRef.current.srcObject = stream
           onStreamReady(stream)
         }
       })
       .catch(() => {
-        onError()
+        if (!cancelled) onError()
       })
+    return () => {
+      cancelled = true
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop())
+        streamRef.current = null
+      }
+    }
   }, [onStreamReady, onError])
 
   return (
@@ -805,7 +819,8 @@ export function VideoDisplay({
 
   return (
     <>
-      {content}
+      {/* Normal view (hidden when fullscreen to avoid dual rendering) */}
+      {!isFullscreen && content}
       {fullscreenOverlay}
     </>
   )

@@ -72,8 +72,8 @@ export function ImageSourceField({ value, onChange }: ImageSourceFieldProps) {
       return
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      console.error('Image file is too large (max 10MB)')
+    if (file.size > 2 * 1024 * 1024) {
+      console.error('Image file is too large (max 2MB)')
       return
     }
 

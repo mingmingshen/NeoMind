@@ -10,7 +10,7 @@
  * - Telemetry data support with DataMapper integration
  */
 
-import { useMemo, useId } from 'react'
+import { useMemo, useId, memo } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { DataMapper } from '@/lib/dataMapping'
@@ -56,7 +56,7 @@ function getProgressState(percentage: number, warningThreshold: number, dangerTh
   return 'success'
 }
 
-export function ProgressBar({
+export const ProgressBar = memo(function ProgressBar({
   dataSource,
   value: propValue,
   max = 100,
@@ -100,7 +100,7 @@ export function ProgressBar({
     return extractedValue
   }, [data, error, hasDataSource, propValue, dataMapping])
 
-  const percentage = Math.min(100, Math.max(0, (value / max) * 100))
+  const percentage = Math.min(100, Math.max(0, max > 0 ? (value / max) * 100 : 0))
 
   const sizeConfig = dashboardComponentSize[size]
   const barHeight = size === 'sm' ? 'h-1.5' : size === 'md' ? 'h-2' : 'h-2.5'
@@ -118,7 +118,7 @@ export function ProgressBar({
   const colorConfig = indicatorColors[state]
 
   // Get gradient for the progress fill
-  const progressGradient = getLinearGradient(state, 'to right', color)
+  const progressGradient = useMemo(() => getLinearGradient(state, 'to right', color), [state, color])
 
   // Unified error state for all variants (only when dataSource is configured)
   if (error && hasDataSource) {
@@ -378,4 +378,4 @@ export function ProgressBar({
   }
 
   return <div className={cn('w-full flex items-center justify-center', sizeConfig.padding, className)}>{content}</div>
-}
+})

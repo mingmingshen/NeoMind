@@ -464,17 +464,21 @@ export class DataMapper {
       return 0
     }
 
+    // Filter NaN to prevent poisoning aggregation results
+    const cleanValues = values.filter((v: number) => !isNaN(v))
+    if (cleanValues.length === 0) return 0
+
     switch (method) {
       case 'sum':
-        return values.reduce((a, b) => a + b, 0)
+        return cleanValues.reduce((a, b) => a + b, 0)
       case 'avg':
-        return values.reduce((a, b) => a + b, 0) / values.length
+        return cleanValues.reduce((a, b) => a + b, 0) / cleanValues.length
       case 'count':
-        return values.length
+        return cleanValues.length
       case 'min':
-        return Math.min(...values)
+        return cleanValues.reduce((a, b) => Math.min(a, b), cleanValues[0])
       case 'max':
-        return Math.max(...values)
+        return cleanValues.reduce((a, b) => Math.max(a, b), cleanValues[0])
       case 'latest':
         return values[values.length - 1]
       case 'first':

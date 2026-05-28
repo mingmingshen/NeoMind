@@ -5,7 +5,7 @@
  * Simplified design with unified state mapping rules.
  */
 
-import { useMemo } from 'react'
+import { useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { DataMapper } from '@/lib/dataMapping'
@@ -193,7 +193,27 @@ function findMatch(
   return { state: defaultState }
 }
 
-export function LEDIndicator({
+// Convert color (OKLCH or hex) to a background color with alpha.
+// OKLCH format: "oklch(L C H)" or "oklch(L C H / alpha)" — inject alpha.
+// Hex format: "#rrggbb" — convert to rgba.
+function colorWithAlpha(color: string, alpha: number): string {
+  if (color.startsWith('oklch(')) {
+    // Strip any existing alpha, then inject the desired one
+    const inner = color.slice(6, color.endsWith(')') ? -1 : undefined).split('/')[0].trim()
+    return `oklch(${inner} / ${alpha})`
+  }
+  if (color.startsWith('#')) {
+    const hex = color.replace('#', '')
+    const r = parseInt(hex.substring(0, 2), 16)
+    const g = parseInt(hex.substring(2, 4), 16)
+    const b = parseInt(hex.substring(4, 6), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  // Fallback for hsl/rgb/etc — try wrapping with alpha via color-mix
+  return `color-mix(in srgb, ${color} ${Math.round(alpha * 100)}%, transparent)`
+}
+
+export const LEDIndicator = memo(function LEDIndicator({
   dataSource,
   rules = [],
   defaultState = 'unknown',
@@ -206,7 +226,7 @@ export function LEDIndicator({
   className,
 }: LEDIndicatorProps) {
   const { t } = useTranslation('dashboardComponents')
-  const stateConfig = getStateConfig(t)
+  const stateConfig = useMemo(() => getStateConfig(t), [t])
   const { data, loading, error } = useDataSource<unknown>(dataSource)
 
   // Prevent loading flash: only show skeleton when loading AND no data exists yet
@@ -239,20 +259,14 @@ export function LEDIndicator({
   // Animation class
   const animationClassName = showAnimation && isActive ? 'animate-pulse' : ''
 
-  // Convert hex to rgba for background
-  const hexToRgba = (hex: string, alpha: number) => {
-    const cleanHex = hex.replace('#', '')
-    const r = parseInt(cleanHex.substring(0, 2), 16)
-    const g = parseInt(cleanHex.substring(2, 4), 16)
-    const b = parseInt(cleanHex.substring(4, 6), 16)
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`
-  }
+  const containerBgColor = useMemo(() =>
+    isActive ? colorWithAlpha(displayColor, 0.15) : undefined,
+    [isActive, displayColor]
+  )
 
-  const containerBgColor = isActive ? hexToRgba(displayColor, 0.15) : undefined
-
-  // Glow effect
+  // Glow effect — use colorWithAlpha for valid CSS regardless of OKLCH/hex
   const glowStyle = showGlow && isActive
-    ? `0 0 8px ${displayColor}60, 0 0 16px ${displayColor}40, 0 0 24px ${displayColor}20`
+    ? `0 0 8px ${colorWithAlpha(displayColor, 0.38)}, 0 0 16px ${colorWithAlpha(displayColor, 0.25)}, 0 0 24px ${colorWithAlpha(displayColor, 0.13)}`
     : 'none'
 
   // Error state
@@ -326,4 +340,4 @@ export function LEDIndicator({
   }
 
   return <div className={cn('flex items-center', dashboardComponentSize[size].contentGap, 'w-full', dashboardComponentSize[size].padding, className)}>{content}</div>
-}
+})

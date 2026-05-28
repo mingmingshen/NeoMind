@@ -303,8 +303,9 @@ export function resolveDeviceInfoValue(device: Device | undefined, infoProperty:
 
 /**
  * Insert a new point into an ascending-sorted array (oldest-first).
- * Uses binary search for O(log n) insertion. Returns the same array
- * reference if no structural change occurred (prevents re-renders).
+ * Fast paths for sequential (newest-last) and prepend cases;
+ * falls back to binary search for out-of-order insertion.
+ * Returns the same array reference if no structural change occurred.
  */
 export function insertAndMaintain(
   current: unknown[],
@@ -321,7 +322,29 @@ export function insertAndMaintain(
   // For image data, check content duplication
   if (isImage && isDuplicatePoint(current, newTs, newVal, getTs)) return current
 
-  // Binary search for insertion position in ascending array
+  // Fast path: most WS events arrive in chronological order (newest last)
+  const lastTs = getTs(current[current.length - 1])
+  if (newTs >= lastTs) {
+    // Check if same timestamp bucket already exists (quantized to 1s)
+    const bucket = Math.round(newTs)
+    if (!isImage && Math.round(lastTs) === bucket) {
+      const updated = current.slice()
+      updated[current.length - 1] = newPoint
+      return updated
+    }
+    // Append at end
+    const result = [...current, newPoint]
+    return result.length > maxLimit ? result.slice(result.length - maxLimit) : result
+  }
+
+  // Fast path: older than first point → prepend and trim from front
+  const firstTs = getTs(current[0])
+  if (newTs < firstTs) {
+    if (current.length >= maxLimit) return current // Already full, oldest point is less valuable
+    return [newPoint, ...current]
+  }
+
+  // Slow path: binary search for out-of-order insertion
   let lo = 0, hi = current.length
   while (lo < hi) {
     const mid = (lo + hi) >>> 1
@@ -332,7 +355,6 @@ export function insertAndMaintain(
   // Check if same timestamp bucket already exists (quantized to 1s)
   const bucket = Math.round(newTs)
   if (!isImage) {
-    // Check position lo and lo-1 for same bucket (binary search may land either side)
     for (let i = Math.max(0, lo - 1); i <= Math.min(lo, current.length - 1); i++) {
       if (Math.round(getTs(current[i])) === bucket) {
         const updated = current.slice()
@@ -342,12 +364,11 @@ export function insertAndMaintain(
     }
   }
 
-  // Insert at position `lo` (ascending order)
+  // Insert at position `lo`
   const result = current.slice(0, lo)
   result.push(newPoint)
   for (let i = lo; i < current.length; i++) result.push(current[i])
 
-  // Drop oldest points if exceeding limit
   if (result.length > maxLimit) return result.slice(result.length - maxLimit)
 
   return result

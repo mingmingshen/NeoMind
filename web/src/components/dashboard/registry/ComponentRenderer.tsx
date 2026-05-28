@@ -453,6 +453,12 @@ const ComponentRenderer = memo(function ComponentRenderer({
   // This ensures store.updateDeviceMetric is called even when no useDataSource hook
   // is active on the dashboard (community components don't use useDataSource)
   const processedEventsRef = useRef(new Set<string>())
+  // Clear processed events when bound device changes to avoid stale dedup
+  const prevBoundDeviceRef = useRef(boundDeviceId)
+  if (prevBoundDeviceRef.current !== boundDeviceId) {
+    prevBoundDeviceRef.current = boundDeviceId
+    processedEventsRef.current.clear()
+  }
   useEvents({
     enabled: hasDeviceBinding && !!boundDeviceId,
     category: 'device',

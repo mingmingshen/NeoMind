@@ -616,6 +616,8 @@ export class EventsWebSocket {
     // Performance optimization: batch events using requestAnimationFrame
     // This reduces UI jank by processing all events in a single frame
 
+    const MAX_PENDING = 500
+
     // Handle batched events from server (performance optimization)
     if ((event as any).batch === true && (event as any).events) {
       // Server sent a batch of events
@@ -624,6 +626,11 @@ export class EventsWebSocket {
     } else {
       // Single event
       this.pendingEvents.push(event)
+    }
+
+    // Cap pending events to prevent unbounded growth when tab is backgrounded (RAF stops)
+    if (this.pendingEvents.length > MAX_PENDING) {
+      this.pendingEvents.splice(0, this.pendingEvents.length - MAX_PENDING)
     }
 
     if (this.rafId === null) {

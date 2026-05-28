@@ -32,6 +32,7 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
   }, [])
 
   const { downloadAndInstall, relaunchApp } = useUpdateCheck({
+    autoCheck: false,
     onUpdateAvailable: handleUpdateAvailable,
   })
 
@@ -168,9 +169,6 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
     <>
       <Button variant="ghost" onClick={onClose} className="text-muted-foreground">
         {t('settings:remindLater')}
-      </Button>
-      <Button variant="outline" onClick={onClose}>
-        {t('settings:skipThisUpdate')}
       </Button>
       <Button onClick={handleUpdate} className="gap-2">
         <Download className="w-4 h-4" />

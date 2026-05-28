@@ -498,16 +498,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   // This key only changes when component data actually changes, not on every render
   const componentsStableKey = useMemo(() => {
     const components = currentDashboard?.components ?? []
-    // Use JSON.stringify for a reliable content-based comparison.
-    // This is cheaper than it looks — components array is typically <20 items.
-    return JSON.stringify(components.map((c) => ({
-      id: c.id,
-      type: c.type,
-      title: c.title,
-      position: c.position,
-      config: c.config,
-      dataSource: (c as any).dataSource,
-    })))
+    // Lightweight content hash — must include dataSource/config changes
+    // so the grid rebuilds when data binding or settings change.
+    let hash = components.length.toString(36)
+    for (const c of components) {
+      const gc = c as GenericComponent
+      // Hash dataSource identity (use _saveTs stamp if present for forced refresh)
+      const ds = gc.dataSource
+      const dsKey = ds ? (Array.isArray(ds) ? ds.map((d: any) => `${d.type}:${d.sourceId ?? d.extensionId ?? ''}:${d.metricId ?? ''}:${d._saveTs ?? ''}`).join(',') : `${(ds as any).type}:${(ds as any).sourceId ?? (ds as any).extensionId ?? ''}:${(ds as any).metricId ?? ''}:${(ds as any)._saveTs ?? ''}`) : ''
+      // Hash config by keys for lightweight change detection
+      const configKeys = gc.config ? Object.keys(gc.config).sort().join(',') : ''
+      hash += `|${c.id}:${c.type}:${c.title}:${c.position?.x ?? 0},${c.position?.y ?? 0},${c.position?.w ?? 0},${c.position?.h ?? 0}:${dsKey}:${configKeys}`
+    }
+    return hash
   }, [currentDashboard])
 
   // Initialize dashboards on mount
@@ -717,7 +720,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       loadAgents()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [configOpen, selectedComponent?.type])
+  }, [configOpen, selectedComponent])
 
   // NOTE: agents are accessed directly via the `agents` state variable in
   // generateConfigSchema closure — no need to inject them into componentConfig.
@@ -1237,17 +1240,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       // Update the store with both config and dataSource
       updateComponent(selectedComponent.id, updateData, false)
 
-
-
       // Update local config state
       setComponentConfig(prev => ({ ...prev, bindings: fixedBindings }))
-
-      // Verify after update
-      setTimeout(() => {
-        const verifyDashboard = useStore.getState().currentDashboard
-        const verifyComponent = verifyDashboard?.components.find(c => c.id === selectedComponent.id)
-        // Component updated successfully
-      }, 50)
     }
 
     // Persist to localStorage
