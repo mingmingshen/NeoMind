@@ -143,8 +143,8 @@ export function getPerfSummary(): void {
 
     summary.forEach((durations, name) => {
       const avg = durations.reduce((a, b) => a + b, 0) / durations.length
-      const max = Math.max(...durations)
-      const min = Math.min(...durations)
+      const max = durations.reduce((a, b) => Math.max(a, b), -Infinity)
+      const min = durations.reduce((a, b) => Math.min(a, b), Infinity)
       const count = durations.length
 
       const avgStr = avg > 1000 ? `${(avg / 1000).toFixed(2)}s` : `${avg.toFixed(0)}ms`

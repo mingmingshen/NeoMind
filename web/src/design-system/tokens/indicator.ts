@@ -389,6 +389,38 @@ export function getGradientId(type: IndicatorGradientType, suffix = ''): string 
 }
 
 /**
+ * Apply alpha/opacity to a color string, handling OKLCH, RGB, and hex formats.
+ */
+function colorWithAlpha(color: string, alpha: number): string {
+  // OKLCH: oklch(0.65 0.20 155) → oklch(0.65 0.20 155 / 0.5)
+  if (color.startsWith('oklch(')) {
+    return color.replace(')', ` / ${alpha})`)
+  }
+  // RGB: rgb(255, 0, 0) → rgba(255, 0, 0, 0.5)
+  if (color.startsWith('rgb(')) {
+    return color.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`)
+  }
+  // Hex: #ff0000 → rgba(255, 0, 0, 0.5)
+  if (color.startsWith('#')) {
+    const hex = color.slice(1)
+    if (hex.length === 3) {
+      const r = parseInt(hex[0] + hex[0], 16)
+      const g = parseInt(hex[1] + hex[1], 16)
+      const b = parseInt(hex[2] + hex[2], 16)
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`
+    }
+    if (hex.length === 6 || hex.length === 8) {
+      const r = parseInt(hex.slice(0, 2), 16)
+      const g = parseInt(hex.slice(2, 4), 16)
+      const b = parseInt(hex.slice(4, 6), 16)
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`
+    }
+  }
+  // Fallback: return as-is (e.g. CSS named colors)
+  return color
+}
+
+/**
  * Get CSS linear gradient string
  */
 export function getLinearGradient(
@@ -397,6 +429,6 @@ export function getLinearGradient(
   customColor?: string
 ): string {
   const stops = getGradientStops(type, customColor)
-  const stopStrings = stops.map(s => `${s.color.replace(')', ` / ${s.opacity})`)} ${s.offset}`)
+  const stopStrings = stops.map(s => `${colorWithAlpha(s.color, s.opacity)} ${s.offset}`)
   return `linear-gradient(${direction}, ${stopStrings.join(', ')})`
 }

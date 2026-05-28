@@ -41,7 +41,8 @@ import { VideoDisplay } from '@/components/dashboard/generic/VideoDisplay'
 import { CustomLayer } from '@/components/dashboard/generic/CustomLayer'
 
 const builtInTypes = new Set([
-  'value-card', 'led-indicator', 'sparkline', 'progress-bar',
+  'value-card', 'counter', 'metric-card',
+  'led-indicator', 'sparkline', 'progress-bar',
   'line-chart', 'area-chart', 'bar-chart', 'pie-chart',
   'toggle-switch', 'image-display', 'image-history',
   'web-display', 'markdown-display', 'map-display', 'video-display', 'custom-layer',
@@ -49,6 +50,8 @@ const builtInTypes = new Set([
 
 const builtInComponentMap: Record<string, React.ComponentType<any>> = {
   'value-card': ValueCard,
+  'counter': ValueCard,
+  'metric-card': ValueCard,
   'led-indicator': LEDIndicator,
   'sparkline': Sparkline,
   'progress-bar': ProgressBar,
@@ -107,15 +110,14 @@ const BuiltInComponent = memo(function BuiltInComponent({
 // Telemetry cache + helpers
 // ============================================================================
 
-const telemetryCache: Record<string, { data: any; ts: number }> = {}
+// Use Map for atomic operations (safe under React 18 concurrent rendering)
+const telemetryCache = new Map<string, { data: any; ts: number }>()
 const MAX_CACHE_SIZE = 100
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
-const cacheKeys: string[] = []
 
 /** Clear the Renderers telemetry cache — call on dashboard switch */
 export function clearRenderersTelemetryCache(): void {
-  for (const key of cacheKeys) delete telemetryCache[key]
-  cacheKeys.length = 0
+  telemetryCache.clear()
 }
 
 export function scheduleDashboardIdleTask(task: () => void, timeout = 1500): () => void {
@@ -143,16 +145,12 @@ function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataS
       })
     : dataSource
   const cacheKey = createStableCacheKey(sortedSource)
-  const cached = telemetryCache[cacheKey]
+  const cached = telemetryCache.get(cacheKey)
   if (cached && Date.now() - cached.ts < CACHE_TTL) {
-    const idx = cacheKeys.indexOf(cacheKey)
-    if (idx > -1) { cacheKeys.splice(idx, 1); cacheKeys.push(cacheKey) }
     return cached.data
   } else if (cached) {
     // Expired — evict
-    delete telemetryCache[cacheKey]
-    const idx = cacheKeys.indexOf(cacheKey)
-    if (idx > -1) cacheKeys.splice(idx, 1)
+    telemetryCache.delete(cacheKey)
   }
   const normalizeAndConvert = (ds: DataSource): DataSource => {
     if (ds.type === 'telemetry') return ds
@@ -175,11 +173,11 @@ function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataS
   } else {
     result = normalizeAndConvert(sortedSource)
   }
-  telemetryCache[cacheKey] = { data: result, ts: Date.now() }
-  cacheKeys.push(cacheKey)
-  if (cacheKeys.length > MAX_CACHE_SIZE) {
-    const oldest = cacheKeys.shift()!
-    delete telemetryCache[oldest]
+  telemetryCache.set(cacheKey, { data: result, ts: Date.now() })
+  if (telemetryCache.size > MAX_CACHE_SIZE) {
+    // Evict oldest entry (first key in insertion order)
+    const oldest = telemetryCache.keys().next().value
+    if (oldest) telemetryCache.delete(oldest)
   }
   return result
 }

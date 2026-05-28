@@ -70,10 +70,14 @@ const DEFAULT_FORMAT = { type: 'png' as ImageFormatType, mime: 'image/png' }
 /** Cache for normalizeImageUrl to avoid re-decoding base64 on every render. */
 const normalizeCache = new Map<string, NormalizedImage | null>()
 const CACHE_MAX_SIZE = 32
+// Skip caching for inputs larger than 10KB (likely base64 camera frames)
+// to avoid retaining multi-MB strings as Map keys.
+const CACHE_MAX_INPUT_LENGTH = 10_000
 
 /**
  * Normalize various image formats to a standard data URL.
  * Results are cached by originalValue string for O(1) repeat lookups.
+ * Large inputs (likely base64) are computed but NOT cached to avoid memory pressure.
  */
 export function normalizeImageUrl(value: string | number | undefined | null): NormalizedImage | null {
   if (value === null || value === undefined) return null
@@ -83,18 +87,25 @@ export function normalizeImageUrl(value: string | number | undefined | null): No
   if (!trimmed || trimmed === '-' || trimmed === 'undefined' || trimmed === 'null') return null
   if (trimmed.includes('via.placeholder.com') || trimmed.includes('placehold.co')) return null
 
+  // Skip cache for large inputs (base64 images) to avoid memory bloat
+  const shouldCache = trimmed.length <= CACHE_MAX_INPUT_LENGTH
+
   // Check cache first (before expensive atob)
-  const cached = normalizeCache.get(trimmed)
-  if (cached !== undefined) return cached
+  if (shouldCache) {
+    const cached = normalizeCache.get(trimmed)
+    if (cached !== undefined) return cached
+  }
 
   const result = computeNormalizedImage(trimmed, valueStr)
 
-  // Evict oldest entries when cache is full
-  if (normalizeCache.size >= CACHE_MAX_SIZE) {
-    const firstKey = normalizeCache.keys().next().value
-    if (firstKey !== undefined) normalizeCache.delete(firstKey)
+  if (shouldCache) {
+    // Evict oldest entries when cache is full
+    if (normalizeCache.size >= CACHE_MAX_SIZE) {
+      const firstKey = normalizeCache.keys().next().value
+      if (firstKey !== undefined) normalizeCache.delete(firstKey)
+    }
+    normalizeCache.set(trimmed, result)
   }
-  normalizeCache.set(trimmed, result)
   return result
 }
 

@@ -480,12 +480,12 @@ export class DataMapper {
       case 'max':
         return cleanValues.reduce((a, b) => Math.max(a, b), cleanValues[0])
       case 'latest':
-        return values[values.length - 1]
+        return cleanValues[cleanValues.length - 1]
       case 'first':
-        return values[0]
+        return cleanValues[0]
       case 'none':
       default:
-        return values[0]
+        return cleanValues[0]
     }
   }
 

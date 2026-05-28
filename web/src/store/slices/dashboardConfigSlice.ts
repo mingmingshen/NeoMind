@@ -52,7 +52,7 @@ export const createDashboardConfigSlice: StateCreator<
       id: generateId(),
       name: template.name || 'Untitled',
       layout: template.layout || { columns: 12, rows: 'auto' },
-      components: template.components.map((c) => ({ ...c, id: generateId() })) as DashboardComponent[],
+      components: template.components.map((c) => ({ ...JSON.parse(JSON.stringify(c)), id: generateId() })) as DashboardComponent[],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }

@@ -135,7 +135,7 @@ export function SharedDashboard() {
 
   useEffect(() => {
     if (!token) {
-      setError('No share token provided')
+      setError(t('sharedDashboard.noShareToken'))
       setLoading(false)
       return
     }
@@ -163,9 +163,9 @@ export function SharedDashboard() {
         if (mounted) {
           const msg = e.message || ''
           if (msg.includes('doctype') || msg.includes('Unexpected token')) {
-            setError('Server error: unable to load dashboard data. The server may need to be updated.')
+            setError(t('sharedDashboard.serverError'))
           } else {
-            setError(msg || 'Failed to load shared dashboard')
+            setError(msg || t('sharedDashboard.failedToLoad'))
           }
         }
       } finally {
@@ -199,9 +199,9 @@ export function SharedDashboard() {
       <div className="h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 text-center max-w-md px-4">
           <AlertTriangle className="h-10 w-10 text-warning" />
-          <h2 className="text-lg font-semibold">{error || 'Dashboard not found'}</h2>
+          <h2 className="text-lg font-semibold">{error || t('sharedDashboard.dashboardNotFound')}</h2>
           <p className="text-sm text-muted-foreground">
-            {error?.includes('expired') ? 'This share link has expired.' : 'The shared dashboard could not be loaded.'}
+            {error?.includes('expired') ? t('sharedDashboard.shareLinkExpired') : t('sharedDashboard.couldNotLoad')}
           </p>
         </div>
       </div>
@@ -233,7 +233,7 @@ export function SharedDashboard() {
           <SharedDashboardContent dashboard={data.dashboard} />
         ) : (
           <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-            This dashboard has no components.
+            {t('sharedDashboard.noComponents')}
           </div>
         )}
       </div>

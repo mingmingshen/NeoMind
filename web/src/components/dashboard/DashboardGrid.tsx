@@ -230,16 +230,6 @@ export function DashboardGrid({
             <div
               key={component.id}
               className="dashboard-item h-full"
-              data-grid={{
-                x: component.position.x ?? 0,
-                y: component.position.y ?? 0,
-                w: component.position.w ?? 4,
-                h: component.position.h ?? 3,
-                minW: component.position.minW,
-                maxW: component.position.maxW,
-                minH: component.position.minH,
-                maxH: component.position.maxH,
-              }}
             >
               {component.children ?? component.render?.()}
             </div>

@@ -240,7 +240,12 @@ export const createDashboardCrudSlice: StateCreator<
         dashboards: updated,
         currentDashboardId: newCurrentId,
         currentDashboard: updated.find((d: Dashboard) => d.id === newCurrentId) || null,
-        ...(currentDashboardId === id ? { editMode: false, selectedComponent: null } : {}),
+        ...(currentDashboardId === id ? {
+          editMode: false,
+          selectedComponent: null,
+          configComponentId: null,
+          configPanelOpen: false,
+        } : {}),
       })
       await storage.delete(id)
     },
@@ -265,7 +270,17 @@ export const createDashboardCrudSlice: StateCreator<
       const { dashboards } = get()
       dashboards.forEach((d: Dashboard) => (d.components as DashboardComponent[]).forEach(cleanupAgentForComponent))
       storage.clear()
-      set({ dashboards: [], currentDashboard: null, currentDashboardId: null })
+      set({
+        dashboards: [],
+        currentDashboard: null,
+        currentDashboardId: null,
+        editMode: false,
+        selectedComponent: null,
+        configComponentId: null,
+        configPanelOpen: false,
+        componentLibraryOpen: false,
+        templateDialogOpen: false,
+      })
     },
 
     persistDashboard: async (id) => {

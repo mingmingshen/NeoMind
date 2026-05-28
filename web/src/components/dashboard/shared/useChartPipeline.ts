@@ -134,6 +134,11 @@ export function useChartPipeline<T = unknown>(
   )
 
   // Get effective aggregate from dataSource or props
+  // KNOWN LIMITATION: Only reads aggregateExt from the first source (sources[0]).
+  // When multiple sources have different aggregate settings, only the first is used.
+  // Multi-source aggregation is not currently supported — all sources share the same
+  // aggregate method. To fix this, each source's data would need independent aggregation
+  // before being combined, which would require architectural changes to this pipeline.
   const effectiveAggregate = useMemo<TelemetryAggregate>(() => {
     if (sources.length > 0 && sources[0].aggregateExt) {
       return sources[0].aggregateExt

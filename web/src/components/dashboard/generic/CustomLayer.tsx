@@ -1389,7 +1389,8 @@ export function CustomLayer({
 
   return (
     <>
-      {content}
+      {/* Normal view (hidden when fullscreen to avoid dual rendering and ref conflicts) */}
+      {!isFullscreen && content}
       {fullscreenOverlay}
     </>
   )

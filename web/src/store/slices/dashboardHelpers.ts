@@ -7,9 +7,7 @@ import type {
   Dashboard,
   DashboardComponent,
   DashboardTemplate,
-  DataSource,
 } from '@/types/dashboard'
-import { isRealtimeSource, isDeviceInfoSource, isCommandSource, isExtensionSource } from '@/types/dashboard'
 
 /** Combined dashboard store type for StateCreator generics.
  *  Includes only the fields accessed by dashboard slices — enough for
@@ -65,35 +63,6 @@ export function cleanupAgentForComponent(component: DashboardComponent | undefin
   }).finally(() => {
     pendingCleanupCount--
   })
-}
-
-/** Check if a single data source references a valid entity */
-export function isSingleDataSourceValid(
-  ds: DataSource,
-  validDeviceIds: Set<string>,
-  validExtensionIds: Set<string>,
-): boolean {
-  if ((isRealtimeSource(ds) || isDeviceInfoSource(ds) || isCommandSource(ds)) && ds.sourceId) {
-    return validDeviceIds.has(ds.sourceId)
-  }
-  if (isExtensionSource(ds) && ds.extensionId) {
-    return validExtensionIds.has(ds.extensionId)
-  }
-  return true
-}
-
-/** Check if a component's data source references a valid entity */
-export function isDataSourceValid(
-  comp: DashboardComponent,
-  validDeviceIds: Set<string>,
-  validExtensionIds: Set<string>,
-): boolean {
-  const ds = 'dataSource' in comp ? comp.dataSource : undefined
-  if (!ds) return true
-  if (Array.isArray(ds)) {
-    return ds.every((d) => isSingleDataSourceValid(d, validDeviceIds, validExtensionIds))
-  }
-  return isSingleDataSourceValid(ds, validDeviceIds, validExtensionIds)
 }
 
 /** Update currentDashboard and dashboards array atomically */

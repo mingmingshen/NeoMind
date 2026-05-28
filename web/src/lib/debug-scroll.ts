@@ -105,7 +105,7 @@ export function initScrollDebugger() {
     // Frame time stats
     if (frameTimes.length > 0) {
       avgFrameTime = Math.round(frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length)
-      maxFrameTime = Math.round(Math.max(...frameTimes))
+      maxFrameTime = Math.round(frameTimes.reduce((a, b) => Math.max(a, b), -Infinity))
     }
 
     // DOM node count (fast — just .length, no style recalculation)

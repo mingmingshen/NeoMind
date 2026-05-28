@@ -355,6 +355,7 @@ export function resolveDataSource(ds: DataSource): DataSource {
 // Normalize to array (resolves legacy fields)
 export function normalizeDataSource(dataSource: DataSourceOrList | undefined): DataSource[] {
   if (!dataSource) return []
+  if (Array.isArray(dataSource) && dataSource.length === 0) return []
   const arr = isDataSourceList(dataSource) ? dataSource : [dataSource]
   return arr.map(resolveDataSource)
 }

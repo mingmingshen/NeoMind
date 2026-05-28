@@ -255,7 +255,7 @@ const LineChartInner = function LineChart({
       data: [10, 15, 12, 18, 14, 20, 16, 22, 19, 25],
       color: undefined,
     } as SeriesData]
-  }, [data, propSeries, dataSource, dataMapping])
+  }, [data, propSeries, dataSource, dataMapping, sources, getSeriesName])
 
   // Extract timestamp-aligned data for multi-source, or sorted labels for single-source
   const { chartLabels, alignedSeries } = useMemo(() => {
@@ -286,12 +286,12 @@ const LineChartInner = function LineChart({
       return { chartLabels: propLabels, alignedSeries: normalizedSeries }
     }
 
-    const maxDataLength = Math.max(...normalizedSeries.map(s => s.data?.length ?? 0), 0)
+    const maxDataLength = normalizedSeries.map(s => s.data?.length ?? 0).reduce((a, b) => Math.max(a, b), 0)
     return {
       chartLabels: Array.from({ length: maxDataLength }, (_, i) => `${i}`),
       alignedSeries: normalizedSeries,
     }
-  }, [data, sources, dataMapping, normalizedSeries, dataSource, propLabels])
+  }, [data, sources, dataMapping, normalizedSeries, dataSource, propLabels, getSeriesName])
 
   const series = alignedSeries.length > 0 ? alignedSeries : normalizedSeries
 
@@ -625,7 +625,7 @@ export const AreaChart = memo(function AreaChart({
 
     // Default fallback (no dataSource = preview mode)
     return DEFAULT_AREA_DATA
-  }, [data, propSeries, dataSource, dataMapping])
+  }, [data, propSeries, dataSource, dataMapping, sources, getSeriesName])
 
   // Extract timestamp-aligned data for multi-source, or sorted labels for single-source
   const { chartLabels, alignedSeries } = useMemo(() => {
@@ -656,12 +656,12 @@ export const AreaChart = memo(function AreaChart({
       return { chartLabels: labels, alignedSeries: normalizedSeries }
     }
 
-    const maxDataLength = Math.max(...normalizedSeries.map(s => s.data?.length ?? 0), 0)
+    const maxDataLength = normalizedSeries.map(s => s.data?.length ?? 0).reduce((a, b) => Math.max(a, b), 0)
     return {
       chartLabels: Array.from({ length: maxDataLength }, (_, i) => `${i}`),
       alignedSeries: normalizedSeries,
     }
-  }, [data, sources, dataMapping, normalizedSeries, dataSource, labels])
+  }, [data, sources, dataMapping, normalizedSeries, dataSource, labels, getSeriesName])
 
   const series = alignedSeries.length > 0 ? alignedSeries : normalizedSeries
 

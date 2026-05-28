@@ -316,7 +316,7 @@ export const BarChart = memo(function BarChart({
       { name: t('chart.may'), value: 19 },
       { name: t('chart.jun'), value: 25 },
     ]
-  }, [data, propData, dataSource, loading, dataMapping, effectiveAggregate, t])
+  }, [data, propData, dataSource, loading, dataMapping, effectiveAggregate, sources, getSeriesName, t])
 
   // Select between multi-source and single-source
   const chartData = multiSourceChartData ?? singleSourceChartData

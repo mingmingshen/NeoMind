@@ -8,6 +8,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react'
 import '@/lib/debug-scroll' // Auto-inits if DEBUG_SCROLL=true in localStorage
 import { createPortal } from 'react-dom'
+import { getPortalRoot } from '@/lib/portal'
 import { useTranslation } from 'react-i18next'
 import { useStore } from '@/store'
 import { shallow } from 'zustand/shallow'
@@ -399,6 +400,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   // Dashboard list handlers
   const handleDashboardSwitch = useCallback((id: string) => {
     setCurrentDashboard(id)
+    // Reset mobile editing state when switching dashboards
+    setMobileSelectedId(null)
+    setMobileEditBarOpen(false)
     // URL will be updated automatically by the Store → URL sync effect
   }, [setCurrentDashboard])
 
@@ -506,9 +510,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       // Hash dataSource identity (use _saveTs stamp if present for forced refresh)
       const ds = gc.dataSource
       const dsKey = ds ? (Array.isArray(ds) ? ds.map((d: any) => `${d.type}:${d.sourceId ?? d.extensionId ?? ''}:${d.metricId ?? ''}:${d._saveTs ?? ''}`).join(',') : `${(ds as any).type}:${(ds as any).sourceId ?? (ds as any).extensionId ?? ''}:${(ds as any).metricId ?? ''}:${(ds as any)._saveTs ?? ''}`) : ''
-      // Hash config by keys for lightweight change detection
-      const configKeys = gc.config ? Object.keys(gc.config).sort().join(',') : ''
-      hash += `|${c.id}:${c.type}:${c.title}:${c.position?.x ?? 0},${c.position?.y ?? 0},${c.position?.w ?? 0},${c.position?.h ?? 0}:${dsKey}:${configKeys}`
+      // Hash config — use value hash to detect actual changes (not just key changes)
+      const configHash = gc.config ? JSON.stringify(gc.config).length.toString(36) + ':' + Object.keys(gc.config).sort().join(',') : ''
+      hash += `|${c.id}:${c.type}:${c.title}:${c.position?.x ?? 0},${c.position?.y ?? 0},${c.position?.w ?? 0},${c.position?.h ?? 0}:${dsKey}:${configHash}`
     }
     return hash
   }, [currentDashboard])
@@ -1138,19 +1142,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       const latestDashboard = useStore.getState().currentDashboard
       const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent.id)
 
-      // Extract dataSource from multiple possible locations:
+      // Extract dataSource — only from authoritative locations:
       // 1. componentConfig.dataSource (newly selected/changed in config dialog)
-      // 2. componentConfig.config.dataSource (from handleOpenConfig merge)
-      // 3. mergedConfig.dataSource (already in merged config)
-      // 4. latestComponent.dataSource (existing on component, separate property)
-      // 5. latestComponent.config.dataSource (existing in component's config)
+      // 2. latestComponent.dataSource (existing on component as separate property)
+      // Do NOT read from nested config.dataSource — the migration moved it to top-level,
+      // and reading the nested one can restore a dataSource the user intentionally cleared.
       const configDataSource = componentConfig.dataSource
-      const nestedConfigDataSource = (componentConfig.config as any)?.dataSource
-      const latestConfigDataSource = (latestComponent as any)?.config?.dataSource
       const latestComponentDataSource = (latestComponent as any)?.dataSource
 
-      // Priority: componentConfig.dataSource > nested config.dataSource > latest component.dataSource > latest config.dataSource
-      const finalDataSource = configDataSource ?? nestedConfigDataSource ?? latestComponentDataSource ?? latestConfigDataSource
+      // Use explicit null check: if user cleared dataSource (set to null/undefined), respect that.
+      // Only fall back to the latest component dataSource if config didn't touch it at all.
+      const finalDataSource = configDataSource !== undefined
+        ? configDataSource
+        : latestComponentDataSource
 
       // Merge local config changes with the latest component config
       // Local changes take precedence
@@ -1417,7 +1421,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             />
           </div>
         </div>,
-        document.body
+        getPortalRoot()
       )}
       <div className={cn(
         "flex-1 flex flex-col overflow-hidden",

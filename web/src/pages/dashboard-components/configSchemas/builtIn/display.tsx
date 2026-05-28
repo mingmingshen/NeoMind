@@ -526,7 +526,7 @@ export function getVideoDisplaySchema(config: any, ctx: SchemaContext, u: Update
                   {config.type === 'hls' && (
                     <div className="p-2 bg-success-light border border-success-light rounded-md">
                       <p className="text-xs text-success dark:text-success">
-                        <strong>HLS URL格式：</strong> http://server/path/index.m3u8
+                        <strong>{t('videoDisplay.hlsUrlFormat')}:</strong> http://server/path/index.m3u8
                       </p>
                     </div>
                   )}
@@ -534,7 +534,7 @@ export function getVideoDisplaySchema(config: any, ctx: SchemaContext, u: Update
                   {config.type === 'device-camera' && (
                     <div className="p-2 bg-info-light border border-info rounded-md">
                       <p className="text-xs text-info">
-                        <strong>设备摄像头：</strong> 将请求访问本地摄像头设备
+                        <strong>{t('visualDashboard.deviceCamera')}:</strong> {t('videoDisplay.deviceCameraHint')}
                       </p>
                     </div>
                   )}

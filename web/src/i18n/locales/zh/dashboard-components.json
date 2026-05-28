@@ -455,6 +455,8 @@
     "configureVideo": "配置视频 URL 或摄像头",
     "loadError": "视频加载错误",
     "couldNotLoad": "无法加载视频源",
+    "hlsUrlFormat": "HLS URL格式",
+    "deviceCameraHint": "将请求访问本地摄像头设备",
     "protocol": {
       "rtsp": "RTSP",
       "rtmp": "RTMP",
@@ -1132,6 +1134,13 @@
     "loading": "加载中...",
     "poweredBy": "由 NeoMind 提供支持",
     "interactive": "可交互",
-    "readOnly": "只读"
+    "readOnly": "只读",
+    "noShareToken": "未提供分享令牌",
+    "serverError": "服务器错误：无法加载仪表板数据，服务器可能需要更新。",
+    "failedToLoad": "加载分享的仪表板失败",
+    "dashboardNotFound": "未找到仪表板",
+    "shareLinkExpired": "此分享链接已过期。",
+    "couldNotLoad": "无法加载分享的仪表板。",
+    "noComponents": "此仪表板暂无组件。"
   }
 }

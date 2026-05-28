@@ -7,9 +7,11 @@
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo, memo } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { getPortalRoot } from '@/lib/portal'
 import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { Maximize2, Minimize2, Download, ImageOff, AlertTriangle, RefreshCw, Image as ImageIcon } from 'lucide-react'
@@ -312,7 +314,10 @@ export const ImageDisplay = memo(function ImageDisplay({
         )}
       </div>
 
-      {isFullscreen && <FullscreenImage src={originalSrc} alt={altText} onClose={() => setIsFullscreen(false)} />}
+      {isFullscreen && createPortal(
+        <FullscreenImage src={originalSrc} alt={altText} onClose={() => setIsFullscreen(false)} />,
+        getPortalRoot(),
+      )}
     </>
   )
 })

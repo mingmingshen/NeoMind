@@ -68,6 +68,8 @@ export function useTelemetrySource(
   const retryInProgressRef = useRef(false)
   const deferredByDevicesLoadingRef = useRef(false)
   const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const prevTelemetryKeyRef = useRef('')
   const fetchGenerationRef = useRef(0)
 
@@ -128,7 +130,14 @@ export function useTelemetrySource(
       }
       state.setError(null)
 
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 10000))
+      // Track timeout so it can be cleaned up on unmount
+      if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current)
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        fetchTimeoutRef.current = setTimeout(() => {
+          fetchTimeoutRef.current = null
+          reject(new Error('Fetch timeout'))
+        }, 10000)
+      })
 
       try {
         const results = await Promise.race([
@@ -224,7 +233,9 @@ export function useTelemetrySource(
               retryInProgressRef.current = true
               if (state.sourceAdapters) state.sourceAdapters.retryLoading()
               else state.setLoading(true)
-              setTimeout(() => {
+              if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+              retryTimerRef.current = setTimeout(() => {
+                retryTimerRef.current = null
                 if (fetchGenerationRef.current !== currentGeneration) return
                 fetchTelemetryData()
               }, delay)
@@ -269,10 +280,14 @@ export function useTelemetrySource(
     // but if a device hasn't sent data yet or data was missed, polling fills the gap.
     // Use a longer interval when WS is connected (just a backup) vs disconnected (primary source).
     const refreshIntervals = telemetrySources.map((ds) => ds.refresh).filter(Boolean) as number[]
-    const baseRefresh = refreshIntervals.length > 0 ? Math.min(...refreshIntervals) : 30
+    const baseRefresh = refreshIntervals.length > 0 ? refreshIntervals.reduce((a, b) => Math.min(a, b), Infinity) : 30
     const pollingInterval = wsConnected ? baseRefresh * 2 : baseRefresh
     telemetryIntervalRef.current = setInterval(fetchTelemetryData, pollingInterval * 1000)
 
-    return () => { if (telemetryIntervalRef.current) { clearInterval(telemetryIntervalRef.current); telemetryIntervalRef.current = null } }
+    return () => {
+      if (telemetryIntervalRef.current) { clearInterval(telemetryIntervalRef.current); telemetryIntervalRef.current = null }
+      if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null }
+      if (fetchTimeoutRef.current) { clearTimeout(fetchTimeoutRef.current); fetchTimeoutRef.current = null }
+    }
   }, [telemetryKey, enabled, wsConnected])
 }

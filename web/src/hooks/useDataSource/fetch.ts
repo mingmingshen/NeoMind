@@ -218,11 +218,11 @@ export async function fetchHistoricalTelemetry(
           values = [aggVal]
           if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else if (aggregate === 'min') {
-          const aggVal = Math.min(...allValues)
+          const aggVal = allValues.reduce((a, b) => Math.min(a, b), Infinity)
           values = [aggVal]
           if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else if (aggregate === 'max') {
-          const aggVal = Math.max(...allValues)
+          const aggVal = allValues.reduce((a, b) => Math.max(a, b), -Infinity)
           values = [aggVal]
           if (includeRawPoints) { const latest = metricData[0]; rawPoints = [{ timestamp: extractTimestamp(latest), value: aggVal }] }
         } else if (aggregate === 'sum') {

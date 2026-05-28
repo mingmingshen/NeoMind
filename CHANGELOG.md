@@ -13,6 +13,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v0.8.2] - 2026-05-28
 
+### Fixed
+
+- **Dashboard component count mismatch** — Removed destructive `isDataSourceValid` filter in `fetchDashboards` that silently deleted components with incomplete data sources
+- **Camera hardware lock leak** — `VideoDisplay` CameraAccess now properly stops MediaStream tracks on unmount via `streamRef` + cleanup
+- **Dual/triple fullscreen rendering** — VideoDisplay, MapDisplay, CustomLayer no longer render content inline AND via portal simultaneously (`{!isFullscreen && content}` pattern)
+- **useTelemetrySource timer leaks** — Retry setTimeout and fetch timeout promise now tracked via refs and cleaned up on unmount
+- **LayerEditorDialog cancel data loss** — Cancel button now calls `onOpenChange(false)` instead of `onSave(undefined)` which wiped all layer bindings
+- **Config save dataSource priority** — Simplified `handleSaveConfig` to 2 authoritative locations instead of 5, preventing restoration of intentionally-cleared data sources
+- **Duplicate dashboard creation** — `HybridDashboardStorage.syncToApi` now only syncs dashboards with existing server ID mapping
+- **Stack overflow on large telemetry arrays** — Replaced `Math.min(...array)` / `Math.max(...array)` with `.reduce()` pattern across 10 files to handle arrays >100K elements
+- **createStableKey stack overflow** — Added depth limit (MAX_DEPTH=10) to prevent infinite recursion on deep/circular references
+- **Sparkline crash on sparse data** — Added guard for `< 2` data points before rendering
+- **getLinearGradient OKLCH handling** — Now uses proper `colorWithAlpha()` helper instead of raw string concatenation
+- **normalizeDataSource empty array** — `[]` input no longer wrapped as `[[]]`
+- **imageUtils cache memory bloat** — Inputs >10KB (base64 camera frames) skip caching to avoid multi-MB string retention
+- **SharedDashboard i18n** — Replaced 6 hardcoded English error messages with `t()` calls
+- **Video display config i18n** — Replaced hardcoded Chinese strings with `t()` calls
+- **Chart useMemo stale data** — LineChart, BarChart, PieChart now include `sources`, `getSeriesName`, `getDeviceName` in dependency arrays
+- **Renderers missing builtIn types** — Added `counter` and `metric-card` to builtInTypes Set and builtInComponentMap
+- **DashboardGrid redundant data-grid** — Removed `data-grid` attribute from child elements (layouts prop is authoritative)
+- **ImageDisplay fullscreen portal** — Fullscreen overlay now uses `getPortalRoot()` instead of inline rendering
+- **Dashboard switch state cleanup** — `mobileSelectedId` and `mobileEditBarOpen` reset on dashboard switch
+- **Deep clone on template apply** — `applyTemplate` now uses `JSON.parse(JSON.stringify())` for proper deep clone
+- **configComponentId reset on delete** — `deleteDashboard` now clears `configComponentId` and `configPanelOpen`
+
 ### Changed
 
 - **Dashboard configSchemas registry pattern** — Replaced 2982-line monolithic `configSchemas.tsx` switch statement with a modular registry pattern. Schema generators are now organized into `builtIn/` sub-modules (indicators, charts, controls, display, spatial, business) plus a `dynamic.tsx` handler for extension/community/custom components. No user-visible behavior changes

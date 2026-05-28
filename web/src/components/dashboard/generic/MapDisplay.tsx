@@ -1108,57 +1108,10 @@ export function MapDisplay({
           />
         </div>
       </div>
-
-      {/* Fullscreen overlay (in-app fullscreen) */}
-      {isFullscreen && (
-        <div className="fixed inset-0 z-[9999] flex flex-col bg-background">
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b bg-bg-95">
-            <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Map</span>
-              <span className="text-xs text-muted-foreground">
-                ({currentCenter.lat.toFixed(2)}, {currentCenter.lng.toFixed(2)})
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => setIsFullscreen(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Map container */}
-          <div className="flex-1 relative">
-            <SimpleSvgMap
-              center={currentCenter}
-              zoom={currentZoom}
-              width={containerSize.width}
-              height={containerSize.height}
-              markers={markers}
-              onMarkerClick={handleMarkerClick}
-              onZoomIn={handleZoomIn}
-              onZoomOut={handleZoomOut}
-              onCenterChange={setCurrentCenter}
-              interactive={interactive}
-              tileLayer={tileLayer}
-              onMapClick={onMapClick}
-              selectedMarkerId={selectedMarker?.id}
-              t={t}
-            />
-
-          </div>
-        </div>
-      )}
     </>
   )
 
-  // Fullscreen overlay (rendered via Portal to document.body)
+  // Fullscreen overlay (rendered via Portal — single instance only)
   const fullscreenOverlay = isFullscreen ? createPortal(
     <div className="fixed inset-0 z-[9999] flex flex-col bg-background">
       {/* Header */}
@@ -1206,7 +1159,8 @@ export function MapDisplay({
 
   return (
     <>
-      {mapContent}
+      {/* Normal view (hidden when fullscreen to avoid dual rendering) */}
+      {!isFullscreen && mapContent}
       {fullscreenOverlay}
     </>
   )

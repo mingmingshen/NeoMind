@@ -524,8 +524,19 @@ export class HybridDashboardStorage implements DashboardStorage {
   }
 
   // Helper to sync all dashboards to API
+  // Only syncs dashboards that already have a server ID mapping.
+  // Local-only dashboards are synced through the dedicated sync() method
+  // which handles ID mapping to prevent duplicate creation.
   private async syncToApi(dashboards: Dashboard[]): Promise<void> {
-    await Promise.allSettled(dashboards.map(d => this.apiStorage.sync(d)))
+    await Promise.allSettled(
+      dashboards
+        .filter(d => {
+          // Only sync if the dashboard has a server ID (not local-only)
+          const serverId = this.localToServerId.get(d.id)
+          return serverId || d.id.startsWith('dashboard_')
+        })
+        .map(d => this.apiStorage.sync(d))
+    )
   }
 
   // Expose current dashboard helpers from localStorage
@@ -540,6 +551,7 @@ export class HybridDashboardStorage implements DashboardStorage {
   clear(): void {
     this.localStorage.clear()
     this.localToServerId.clear()
+    this.pendingSync.clear()
     try { localStorage.removeItem(LOCAL_STORAGE_CACHE_TIMESTAMP_KEY) } catch {}
     try { localStorage.removeItem(LOCAL_TO_SERVER_ID_KEY) } catch {}
   }

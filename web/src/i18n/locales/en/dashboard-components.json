@@ -491,6 +491,8 @@
     "configureVideo": "Configure a video URL or camera",
     "loadError": "Video Load Error",
     "couldNotLoad": "Could not load video source",
+    "hlsUrlFormat": "HLS URL format",
+    "deviceCameraHint": "Will request access to the local camera device",
     "protocol": {
       "rtsp": "RTSP",
       "rtmp": "RTMP",
@@ -1184,6 +1186,13 @@
     "loading": "Loading...",
     "poweredBy": "Powered by NeoMind",
     "interactive": "Interactive",
-    "readOnly": "Read-only"
+    "readOnly": "Read-only",
+    "noShareToken": "No share token provided",
+    "serverError": "Server error: unable to load dashboard data. The server may need to be updated.",
+    "failedToLoad": "Failed to load shared dashboard",
+    "dashboardNotFound": "Dashboard not found",
+    "shareLinkExpired": "This share link has expired.",
+    "couldNotLoad": "The shared dashboard could not be loaded.",
+    "noComponents": "This dashboard has no components."
   }
 }

@@ -401,8 +401,8 @@ export function getArrayStats(arr: number[]) {
   }
 
   const sum = arr.reduce((a, b) => a + b, 0)
-  const min = Math.min(...arr)
-  const max = Math.max(...arr)
+  const min = arr.reduce((a, b) => Math.min(a, b), Infinity)
+  const max = arr.reduce((a, b) => Math.max(a, b), -Infinity)
   const avg = sum / arr.length
 
   return { min, max, avg, sum, count: arr.length }

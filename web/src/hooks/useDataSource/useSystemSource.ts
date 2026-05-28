@@ -101,7 +101,7 @@ export function useSystemSource(
     fetchSystemData()
 
     const refreshIntervals = systemSources.map((ds) => ds.refresh).filter(Boolean) as number[]
-    const minRefresh = refreshIntervals.length > 0 ? Math.min(...refreshIntervals) : null
+    const minRefresh = refreshIntervals.length > 0 ? refreshIntervals.reduce((a, b) => Math.min(a, b), Infinity) : null
     if (minRefresh) systemIntervalRef.current = setInterval(fetchSystemData, minRefresh * 1000)
 
     return () => { if (systemIntervalRef.current) { clearInterval(systemIntervalRef.current); systemIntervalRef.current = null } }

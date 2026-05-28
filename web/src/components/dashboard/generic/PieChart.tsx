@@ -324,7 +324,7 @@ export const PieChart = memo(function PieChart({
       { name: t('chart.categoryB'), value: 45 },
       { name: t('chart.categoryC'), value: 25 },
     ]
-  }, [data, propData, dataSource, sources, dataMapping, effectiveAggregate, loading, t, colors])
+  }, [data, propData, dataSource, sources, dataMapping, effectiveAggregate, loading, t, colors, getSeriesName, getDeviceName])
 
   if (showLoading) {
     return (

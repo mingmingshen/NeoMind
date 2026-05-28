@@ -572,7 +572,7 @@ export function LayerEditorDialog({
       preventCloseOnSubmit={false}
       footer={
         <>
-          <Button variant="outline" onClick={() => onSave(undefined as any)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
           </Button>
           <Button onClick={handleSave}>

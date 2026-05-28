@@ -115,6 +115,11 @@ const ResponsiveSparkline = memo(function ResponsiveSparkline({
   const containerRef = useRef<HTMLDivElement>(null)
   const gradientId = useRef(`sparkline-gradient-${Math.random().toString(36).substr(2, 9)}`).current
 
+  // Guard: need at least 2 points to draw a line
+  if (chartData.length < 2) {
+    return <div ref={containerRef} className={cn('w-full h-full relative', className)} />
+  }
+
   // Use fixed viewBox with normalized coordinates (0-100 scale)
   // This prevents flickering when container resizes
   const VIEWBOX_WIDTH = 100
@@ -122,8 +127,8 @@ const ResponsiveSparkline = memo(function ResponsiveSparkline({
 
   // Memoize calculations to prevent unnecessary recalculations
   const { min, max, isFlatLine, range, points } = useMemo(() => {
-    const min = Math.min(...chartData)
-    const max = Math.max(...chartData)
+    const min = chartData.reduce((a, b) => Math.min(a, b), Infinity)
+    const max = chartData.reduce((a, b) => Math.max(a, b), -Infinity)
     const isFlatLine = max === min
     const range = max - min || 1
 
@@ -498,7 +503,7 @@ function SparklineComponent({
   // Memoize stats to prevent recalculation on every render
   const stats = useMemo(() => {
     const latestValue = chartData.length > 0 ? chartData[chartData.length - 1] : 0
-    const dataMax = chartData.length > 0 ? Math.max(...chartData) : 0
+    const dataMax = chartData.length > 0 ? chartData.reduce((a, b) => Math.max(a, b), -Infinity) : 0
     const effectiveMax = maxValue ?? dataMax ?? 100
 
     return {

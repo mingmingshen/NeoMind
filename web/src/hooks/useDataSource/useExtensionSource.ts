@@ -338,7 +338,7 @@ export function useExtensionSource(
     // Only start polling when WS is disconnected (fallback mode)
     if (!extWsConnected) {
       const refreshIntervals = extensionSources.map((ds) => ds.refresh).filter(Boolean) as number[]
-      const minRefresh = refreshIntervals.length > 0 ? Math.min(...refreshIntervals) : 30 // Default 30s fallback
+      const minRefresh = refreshIntervals.length > 0 ? refreshIntervals.reduce((a, b) => Math.min(a, b), Infinity) : 30 // Default 30s fallback
       extensionIntervalRef.current = setInterval(fetchExtensionData, minRefresh * 1000)
     }
 

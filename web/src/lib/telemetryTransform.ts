@@ -141,10 +141,10 @@ export function aggregateData(
       return values.reduce((sum, v) => sum + v, 0) / values.length
 
     case 'min':
-      return Math.min(...values)
+      return values.reduce((a, b) => Math.min(a, b), Infinity)
 
     case 'max':
-      return Math.max(...values)
+      return values.reduce((a, b) => Math.max(a, b), -Infinity)
 
     case 'sum':
       return values.reduce((sum, v) => sum + v, 0)
