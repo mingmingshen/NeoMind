@@ -397,3 +397,32 @@ export function sortAndDedup(
   }
   return dedupeTelemetryPoints(sorted, getTs, maxLimit)
 }
+
+// ============================================================================
+// Source transforms for single-value components
+// ============================================================================
+
+import type { DataSource } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
+
+/**
+ * Convert telemetry sources to device type for instant store-based reads.
+ *
+ * Components that only need the latest single value (LED, ProgressBar, ValueCard,
+ * MarkdownDisplay) should use this as their `sourceTransform` option in useDataSource.
+ *
+ * Instead of fetching historical telemetry via API (slow HTTP round-trip), this
+ * converts the source to `type: 'device'` which reads directly from
+ * store.current_values (synchronous, instant). If the store has no data yet,
+ * useStoreSource automatically triggers fetchDeviceTelemetry to populate it.
+ */
+export function latestValueSourceTransform(ds: DataSource): DataSource | undefined {
+  if (ds.type === 'telemetry') {
+    return {
+      type: 'device',
+      sourceId: getSourceId(ds),
+      property: ds.metricId ?? ds.property ?? 'value',
+    }
+  }
+  return ds
+}

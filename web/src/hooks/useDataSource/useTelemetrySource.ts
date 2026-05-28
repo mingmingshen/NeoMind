@@ -226,10 +226,17 @@ export function useTelemetrySource(
             else state.setLoading(true)
           } else {
             emptyRetryCountRef.current += 1
-            // Only 2 quick retries (1.5s, 3s) — accept empty quickly so components render.
-            // Periodic polling will pick up data when it arrives.
-            if (emptyRetryCountRef.current <= 2) {
-              const delay = 1500 * emptyRetryCountRef.current
+            // Single-value components (LED, ValueCard) benefit from more aggressive
+            // retries — they only need 1 data point and it may arrive shortly after
+            // mount. Use up to 5 retries at 1s intervals (total ~5s coverage).
+            // Time-series components use the original 2-retry limit since they
+            // depend on polling for bulk data anyway.
+            const isSingleValueFetch = telemetrySources.every(
+              ds => (ds.aggregateExt === 'latest' || ds.aggregateExt === 'first') && (ds.limit ?? 50) <= 1
+            )
+            const maxRetries = isSingleValueFetch ? 5 : 2
+            if (emptyRetryCountRef.current <= maxRetries) {
+              const delay = isSingleValueFetch ? 1000 : 1500 * emptyRetryCountRef.current
               retryInProgressRef.current = true
               if (state.sourceAdapters) state.sourceAdapters.retryLoading()
               else state.setLoading(true)

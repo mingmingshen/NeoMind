@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { DataMapper } from '@/lib/dataMapping'
 import { useDataSource } from '@/hooks/useDataSource'
+import { latestValueSourceTransform } from '@/hooks/useDataSource/helpers'
 import { Skeleton } from '@/components/ui/skeleton'
 import { dashboardComponentSize, dashboardCardBase } from '@/design-system/tokens/size'
 import {
@@ -227,7 +228,12 @@ export const LEDIndicator = memo(function LEDIndicator({
 }: LEDIndicatorProps) {
   const { t } = useTranslation('dashboardComponents')
   const stateConfig = useMemo(() => getStateConfig(t), [t])
-  const { data, loading, error } = useDataSource<unknown>(dataSource)
+
+  // LED only needs the latest single value — convert telemetry to device type
+  // for instant store reads instead of slow API telemetry fetches.
+  const { data, loading, error } = useDataSource<unknown>(dataSource, {
+    sourceTransform: latestValueSourceTransform,
+  })
 
   // Prevent loading flash: only show skeleton when loading AND no data exists yet
   // Treat empty arrays as "no data" — the pipeline uses [] for empty fetches
