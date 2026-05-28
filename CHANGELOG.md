@@ -47,6 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Registry validation** — Dynamic and community component registries reject types that shadow built-in widget types (e.g. registering `"line-chart"` as extension)
 - **Missing type guards** — Added `isExtensionMetricSource()` and `isExtensionCommandSource()` type guards for discriminated union coverage
 
+### Fixed (Round 11)
+
+- **Mobile edit mode state leak** — Exiting edit mode on mobile now resets `mobileSelectedId` and `mobileEditBarOpen` instead of leaving stale mobile UI
+- **Mobile drag/resize disabled** — Grid drag and resize disabled on touch devices to prevent conflicts with scrolling and touch interactions
+- **Extension uninstall cleans all dashboards** — Unregistering an extension now removes its components from ALL dashboards, not just the current one
+- **ComponentRenderer unmounted state updates** — Added mountedRef guard to prevent React warnings from async state updates after component unmount
+- **Mobile touch targets** — Action buttons in mobile edit mode increased to 44px height (was 32px) for proper touch accessibility
+- **Mobile selection overlay** — Split overlay into separate selected/unselected states; component content is now interactive when selected
+
 ### Changed
 
 - **Dashboard configSchemas registry pattern** — Replaced 2982-line monolithic `configSchemas.tsx` switch statement with a modular registry pattern. Schema generators are now organized into `builtIn/` sub-modules (indicators, charts, controls, display, spatial, business) plus a `dynamic.tsx` handler for extension/community/custom components. No user-visible behavior changes

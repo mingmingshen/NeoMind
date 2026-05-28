@@ -221,8 +221,8 @@ export function DashboardGrid({
           margin={margin}
           containerPadding={containerPadding}
           maxRows={Infinity}
-          dragConfig={{ enabled: editMode, bounded: false }}
-          resizeConfig={{ enabled: editMode, handles: ['se'] as const }}
+          dragConfig={{ enabled: editMode && !isMobile, bounded: false }}
+          resizeConfig={{ enabled: editMode && !isMobile, handles: ['se'] as const }}
           onDragStop={handleDragStop}
           onResizeStop={handleResizeStop}
         >

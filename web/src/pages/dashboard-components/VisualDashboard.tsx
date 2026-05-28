@@ -1449,7 +1449,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               <Button
                 variant={editMode ? "default" : "outline"}
                 size="sm"
-                onClick={() => setEditMode(!editMode)}
+                onClick={() => {
+                  const nextMode = !editMode
+                  setEditMode(nextMode)
+                  if (!nextMode && isMobile) {
+                    setMobileSelectedId(null)
+                    setMobileEditBarOpen(false)
+                  }
+                }}
                 className={cn("h-7 text-xs rounded-md", editMode ? "shadow-sm" : "")}
               >
                 {editMode ? (

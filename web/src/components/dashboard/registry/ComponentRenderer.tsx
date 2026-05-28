@@ -244,6 +244,12 @@ const ComponentRenderer = memo(function ComponentRenderer({
   const [attemptCount, setAttemptCount] = useState(0)
   const [registrationPollCount, setRegistrationPollCount] = useState(0)
 
+  // Track mounted state to prevent setState after unmount
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    return () => { mountedRef.current = false }
+  }, [])
+
   // Heuristic: check if this looks like an extension component (not in any registry)
   const isUnknownType = !isBuiltIn
   const mightBeExtension = isUnknownType && !isDynamic && !isCommunity
@@ -257,11 +263,13 @@ const ComponentRenderer = memo(function ComponentRenderer({
   // Load dynamic component with auto-retry
   const loadDynamicComponent = useCallback(async (attempt: number): Promise<void> => {
     if (!isDynamic && !isCommunity) {
+      if (!mountedRef.current) return
       setDynamicComponent(null)
       setLoadError(null)
       return
     }
 
+    if (!mountedRef.current) return
     setLoading(true)
     setLoadError(null)
 
@@ -269,6 +277,8 @@ const ComponentRenderer = memo(function ComponentRenderer({
       const module = isCommunity
         ? await communityRegistry.loadComponent(componentType)
         : await dynamicRegistry.loadComponent(componentType)
+
+      if (!mountedRef.current) return
 
       if (module) {
         let Component: React.ComponentType<any> | null = null
@@ -300,12 +310,13 @@ const ComponentRenderer = memo(function ComponentRenderer({
         throw new Error(`Module not found`)
       }
     } catch (err) {
+      if (!mountedRef.current) return
       console.error(`[ComponentRenderer] Load attempt ${attempt} failed for ${componentType}:`, err)
 
       // Auto-retry if we haven't exceeded max attempts
       if (attempt < MAX_LOAD_RETRIES) {
-        const retryType = componentType // capture current type
         setTimeout(() => {
+          if (!mountedRef.current) return
           // Only retry if the component type hasn't changed during the delay
           setAttemptCount(prev => prev === attempt ? attempt + 1 : prev)
         }, LOAD_RETRY_DELAY)
@@ -313,6 +324,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
         setLoadError(err instanceof Error ? err : new Error(String(err)))
       }
     } finally {
+      if (!mountedRef.current) return
       setLoading(false)
     }
   }, [componentType, isDynamic, isCommunity])
@@ -343,6 +355,10 @@ const ComponentRenderer = memo(function ComponentRenderer({
 
     // Poll for component registration
     const pollInterval = setInterval(() => {
+      if (!mountedRef.current) {
+        clearInterval(pollInterval)
+        return
+      }
       setRegistrationPollCount(prev => {
         const next = prev + 1
         if (next >= MAX_REGISTRATION_POLLS) {
