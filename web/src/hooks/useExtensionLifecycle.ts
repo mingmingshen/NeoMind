@@ -92,44 +92,37 @@ export function useExtensionLifecycle(
     const extInfo = dynamicRegistry.getExtensions().find(ext => ext.extensionId === extensionId)
     const componentTypes = extInfo?.componentTypes || []
 
-    // 2. Remove components from ALL dashboards by matching component types
+    // 2. Remove components from Dashboard by matching component types
     if (componentTypes.length > 0) {
-      const { dashboards, currentDashboardId, persistDashboard } = useStore.getState()
-      const typeSet = new Set(componentTypes)
-
-      const affectedIds: string[] = []
-      const updatedDashboards = dashboards.map((dashboard: Dashboard) => {
-        const orphaned = dashboard.components.filter(
+      const { currentDashboard, dashboards, persistDashboard } = useStore.getState()
+      if (currentDashboard) {
+        const typeSet = new Set(componentTypes)
+        const componentsToRemove = currentDashboard.components.filter(
           (comp: DashboardComponent) => typeSet.has(comp.type)
         )
-        if (orphaned.length === 0) return dashboard
 
-        affectedIds.push(dashboard.id)
-        const idsToRemove = new Set(orphaned.map((c: DashboardComponent) => c.id))
-        return {
-          ...dashboard,
-          components: dashboard.components.filter(
-            (c: DashboardComponent) => !idsToRemove.has(c.id)
-          ),
-          updatedAt: Date.now(),
-        }
-      })
+        if (componentsToRemove.length > 0) {
+          const idsToRemove = new Set(componentsToRemove.map((c: DashboardComponent) => c.id))
+          const updatedDashboard: Dashboard = {
+            ...currentDashboard,
+            components: currentDashboard.components.filter((c: DashboardComponent) => !idsToRemove.has(c.id)),
+            updatedAt: Date.now(),
+          }
 
-      if (affectedIds.length > 0) {
-        const updatedCurrent = currentDashboardId
-          ? updatedDashboards.find((d: Dashboard) => d.id === currentDashboardId) ?? null
-          : null
+          const updatedDashboards = dashboards.map((d: Dashboard) =>
+            d.id === currentDashboard.id ? updatedDashboard : d
+          )
 
-        useStore.setState({
-          dashboards: updatedDashboards,
-          ...(updatedCurrent ? { currentDashboard: updatedCurrent } : {}),
-        })
-
-        // Persist each affected dashboard
-        for (const id of affectedIds) {
-          persistDashboard(id).catch((err: unknown) => {
-            console.warn(`[ExtensionLifecycle] Failed to persist dashboard ${id} after removing components:`, err)
+          useStore.setState({
+            dashboards: updatedDashboards,
+            currentDashboard: updatedDashboard,
           })
+
+          // Persist changes to storage
+          persistDashboard(updatedDashboard.id).catch((err: unknown) => {
+            console.warn('[ExtensionLifecycle] Failed to persist dashboard after removing components:', err)
+          })
+
         }
       }
     }
