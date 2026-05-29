@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Custom Layer background image UI redesign** — Merged awkward two-field layout (URL + separate file upload) into a single inline field with URL input + Upload button, matching ImageSourceField pattern
+- **LayerEditorDialog save button i18n** — Added missing `common.save` translation key so save button shows localized text instead of raw key
+- **Missing zh translations for spatial config** — Added `backgroundType`, `backgroundImageUrl`, `layerItemBinding`, `manageLayerItems` and related keys to Chinese locale
+
 ---
 
 ## [v0.8.2] - 2026-05-29

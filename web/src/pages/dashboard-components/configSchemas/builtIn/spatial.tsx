@@ -42,6 +42,7 @@ import {
   Monitor,
   Type,
   Sparkles,
+  Upload,
 } from 'lucide-react'
 
 export function getMapDisplaySchema(config: any, ctx: SchemaContext, u: Updaters): ComponentConfigSchema {
@@ -556,49 +557,57 @@ export function getCustomLayerSchema(config: any, ctx: SchemaContext, u: Updater
                     <>
                       <Field>
                         <Label>{t('visualDashboard.backgroundImageUrl')}</Label>
-                        <Input
-                          value={config.backgroundImage || ''}
-                          onChange={(e) => updateConfig('backgroundImage')(e.target.value)}
-                          placeholder={t('placeholders.urlExample')}
-                          className="h-9"
-                        />
-                      </Field>
-                      <Field>
-                        <Label>{t('visualDashboard.orUploadImage')}</Label>
-                        <div className="flex items-center gap-2">
+                        <div className="flex gap-2">
                           <Input
-                            type="file"
-                            accept="image/*"
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0]
-                              if (file) {
-                                try {
-                                  const compressed = await compressImageFile(file)
-                                  updateConfig('backgroundImage')(compressed)
-                                } catch { /* ignore */ }
-                              }
-                            }}
-                            className="h-9"
+                            value={config.backgroundImage || ''}
+                            onChange={(e) => updateConfig('backgroundImage')(e.target.value)}
+                            placeholder={t('placeholders.urlExample')}
+                            className="h-9 flex-1"
                           />
-                          {config.backgroundImage && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => updateConfig('backgroundImage')('')}
-                            >
-                              {t('visualDashboard.clear')}
-                            </Button>
-                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const input = document.createElement('input')
+                              input.type = 'file'
+                              input.accept = 'image/*'
+                              input.onchange = async (e) => {
+                                const file = (e.target as HTMLInputElement).files?.[0]
+                                if (file) {
+                                  try {
+                                    const compressed = await compressImageFile(file)
+                                    updateConfig('backgroundImage')(compressed)
+                                  } catch { /* ignore */ }
+                                }
+                              }
+                              input.click()
+                            }}
+                            className="h-9 px-3 shrink-0"
+                          >
+                            <Upload className="h-4 w-4 mr-1.5" />
+                            {t('visualDashboard.upload')}
+                          </Button>
                         </div>
                       </Field>
                       {config.backgroundImage && (
-                        <div className="mt-2">
-                          <Label className="text-xs text-muted-foreground">{t('visualDashboard.preview')}</Label>
-                          <div
-                            className="w-full h-24 bg-muted rounded-md bg-cover bg-center border"
-                            style={{ backgroundImage: `url(${config.backgroundImage})` }}
-                          />
+                        <div className="flex items-center gap-2">
+                          <div className="w-12 h-12 rounded border overflow-hidden bg-muted-30">
+                            <img
+                              src={config.backgroundImage}
+                              alt="Preview"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => updateConfig('backgroundImage')('')}
+                            className="h-8 text-destructive hover:text-destructive"
+                          >
+                            {t('visualDashboard.clear')}
+                          </Button>
                         </div>
                       )}
                     </>

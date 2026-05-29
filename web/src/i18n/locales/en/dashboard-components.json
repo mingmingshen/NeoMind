@@ -988,6 +988,7 @@
   },
   "common": {
     "cancel": "Cancel",
+    "save": "Save",
     "saveChanges": "Save Changes",
     "edit": "Edit",
     "delete": "Delete",
