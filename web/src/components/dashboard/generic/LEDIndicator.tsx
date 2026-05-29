@@ -159,12 +159,17 @@ function matchRule(rule: StateRule, data: unknown): boolean {
 
   // Regex pattern matching
   if (rule.pattern) {
+    let matches = false
     try {
       const valueStr = String(value)
-      return new RegExp(rule.pattern, 'i').test(valueStr)
+      // Guard against ReDoS: limit input length to prevent catastrophic backtracking
+      const safeStr = valueStr.length > 500 ? valueStr.slice(0, 500) : valueStr
+      const regex = new RegExp(rule.pattern, 'i')
+      matches = regex.test(safeStr)
     } catch {
-      return false
+      // Invalid regex pattern, skip this rule
     }
+    return matches
   }
 
   // Rule with no condition matches everything (fallback rule)
@@ -337,13 +342,15 @@ export const LEDIndicator = memo(function LEDIndicator({
     </>
   )
 
+  const ariaLabel = title ? `${title}: ${displayLabel}` : displayLabel
+
   if (showCard) {
     return (
-      <div className={cn(dashboardCardBase, 'flex-row items-center', dashboardComponentSize[size].contentGap, dashboardComponentSize[size].padding, className)}>
+      <div role="status" aria-label={ariaLabel} className={cn(dashboardCardBase, 'flex-row items-center', dashboardComponentSize[size].contentGap, dashboardComponentSize[size].padding, className)}>
         {content}
       </div>
     )
   }
 
-  return <div className={cn('flex items-center', dashboardComponentSize[size].contentGap, 'w-full', dashboardComponentSize[size].padding, className)}>{content}</div>
+  return <div role="status" aria-label={ariaLabel} className={cn('flex items-center', dashboardComponentSize[size].contentGap, 'w-full', dashboardComponentSize[size].padding, className)}>{content}</div>
 })

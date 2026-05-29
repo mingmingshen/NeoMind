@@ -11,10 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v0.8.2] - 2026-05-28
+## [v0.8.2] - 2026-05-29
 
 ### Fixed
 
+- **Instant telemetry initial rendering** — Telemetry-bound components (LED, ValueCard, ProgressBar, etc.) now read initial values from `store.current_values` instead of waiting for HTTP API. New `readTelemetryInitialValues` in `useStoreSource` creates synthetic data points from store, eliminating loading flash on dashboard open
+- **Enhanced telemetry retry** — `useTelemetrySource` now retries with exponential backoff on transient failures instead of showing permanent error state
 - **Dashboard component count mismatch** — Removed destructive `isDataSourceValid` filter in `fetchDashboards` that silently deleted components with incomplete data sources
 - **Camera hardware lock leak** — `VideoDisplay` CameraAccess now properly stops MediaStream tracks on unmount via `streamRef` + cleanup
 - **Dual/triple fullscreen rendering** — VideoDisplay, MapDisplay, CustomLayer no longer render content inline AND via portal simultaneously (`{!isFullscreen && content}` pattern)

@@ -112,6 +112,8 @@
     "upload": "上传",
     "uploadedHint": "图片已上传 (存储为 Base64)",
     "clear": "清除",
+    "invalidFileType": "所选文件不是图片",
+    "fileTooLarge": "图片文件过大（最大 2MB）",
     "fitMode": "适配模式",
     "fitContain": "包含",
     "fitCover": "覆盖",
@@ -185,6 +187,11 @@
     "commandFailed": "命令发送失败",
     "commandError": "命令错误",
     "metric": "指标",
+    "entityIcon": "实体图标",
+    "lucideIcon": "Lucide 图标",
+    "loadingDashboard": "正在加载仪表板...",
+    "noDashboardFound": "未找到仪表板",
+    "createFirstDashboard": "创建您的第一个仪表板以开始使用",
     "share": {
       "title": "分享",
       "description": "创建分享链接，任何拥有链接的人都可以无需登录查看此仪表板。",
@@ -468,7 +475,8 @@
       "camera": "摄像头",
       "video": "视频"
     },
-    "retry": "重试"
+    "retry": "重试",
+    "hlsLabel": "HLS (.m3u8)"
   },
   "mapDisplay": {
     "map": "地图",
@@ -509,6 +517,18 @@
     "title": "自定义图层",
     "items": "项",
     "editModeHint": "编辑模式（Alt+拖动移动画布）"
+  },
+  "layerDisplay": {
+    "device": "设备",
+    "deviceDesc": "显示设备状态",
+    "metric": "指标",
+    "metricDesc": "显示指标数值",
+    "command": "命令",
+    "commandDesc": "点击发送命令",
+    "text": "文本",
+    "textDesc": "显示静态文本",
+    "icon": "图标",
+    "iconDesc": "显示图标"
   },
   "layerEditor": {
     "title": "图层编辑器",

@@ -517,7 +517,7 @@ export function getVideoDisplaySchema(config: any, ctx: SchemaContext, u: Update
                     onChange={updateConfig('type')}
                     options={[
                       { value: 'file', label: t('visualDashboard.videoFile') },
-                      { value: 'hls', label: 'HLS (.m3u8)' },
+                      { value: 'hls', label: t('videoDisplay.hlsLabel') },
                       { value: 'device-camera', label: t('visualDashboard.deviceCamera') },
                     ]}
                   />

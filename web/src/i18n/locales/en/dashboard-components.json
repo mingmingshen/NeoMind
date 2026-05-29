@@ -112,6 +112,8 @@
     "upload": "Upload",
     "uploadedHint": "Image uploaded (stored as Base64)",
     "clear": "Clear",
+    "invalidFileType": "Selected file is not an image",
+    "fileTooLarge": "Image file is too large (max 2MB)",
     "fitMode": "Fit Mode",
     "fitContain": "Contain",
     "fitCover": "Cover",
@@ -221,6 +223,11 @@
     "commandFailed": "Command Failed",
     "commandError": "Command Error",
     "metric": "Metric",
+    "entityIcon": "Entity Icon",
+    "lucideIcon": "Lucide Icon",
+    "loadingDashboard": "Loading Dashboard...",
+    "noDashboardFound": "No Dashboard Found",
+    "createFirstDashboard": "Create your first dashboard to get started",
     "share": {
       "title": "Share",
       "description": "Create a shareable link to this dashboard. Anyone with the link can view it without logging in.",
@@ -504,7 +511,8 @@
       "camera": "Camera",
       "video": "Video"
     },
-    "retry": "Retry"
+    "retry": "Retry",
+    "hlsLabel": "HLS (.m3u8)"
   },
   "mapDisplay": {
     "map": "Map",

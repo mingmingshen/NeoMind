@@ -68,8 +68,8 @@ export function getValueCardSchema(config: any, ctx: SchemaContext, u: Updaters)
                     value={config.iconType || 'entity'}
                     onChange={updateConfig('iconType')}
                     options={[
-                      { value: 'entity', label: 'Entity Icon' },
-                      { value: 'class', label: 'Lucide Icon' },
+                      { value: 'entity', label: t('visualDashboard.entityIcon') },
+                      { value: 'class', label: t('visualDashboard.lucideIcon') },
                     ]}
                   />
 

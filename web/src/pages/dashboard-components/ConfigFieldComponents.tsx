@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Trash2, Upload } from 'lucide-react'
+import { notifyError } from '@/lib/notify'
 import { Field } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -68,12 +69,12 @@ export function ImageSourceField({ value, onChange }: ImageSourceFieldProps) {
     if (!file) return
 
     if (!file.type.startsWith('image/')) {
-      console.error('Selected file is not an image')
+      notifyError(t('visualDashboard.invalidFileType'))
       return
     }
 
     if (file.size > 2 * 1024 * 1024) {
-      console.error('Image file is too large (max 2MB)')
+      notifyError(t('visualDashboard.fileTooLarge'))
       return
     }
 

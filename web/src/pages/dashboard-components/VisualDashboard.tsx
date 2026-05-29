@@ -1352,7 +1352,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       return (
         <div className="flex items-center justify-center h-screen">
           <div className="text-center">
-            <h2 className="text-lg font-medium mb-2">Loading Dashboard...</h2>
+            <h2 className="text-lg font-medium mb-2">{t('visualDashboard.loadingDashboard')}</h2>
           </div>
         </div>
       )
@@ -1364,9 +1364,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         <div className="text-center space-y-4 px-4">
           <LayoutDashboard className="h-16 w-16 mx-auto text-muted-foreground" />
           <div>
-            <h2 className="text-lg font-medium mb-1">No Dashboard Found</h2>
+            <h2 className="text-lg font-medium mb-1">{t('visualDashboard.noDashboardFound')}</h2>
             <p className="text-sm text-muted-foreground mb-4">
-              Create your first dashboard to get started
+              {t('visualDashboard.createFirstDashboard')}
             </p>
             <Button
               onClick={() => {
@@ -1376,7 +1376,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               }}
             >
               <Plus className="h-4 w-4 mr-1" />
-              Create Dashboard
+              {t('visualDashboard.createDashboard')}
             </Button>
           </div>
         </div>
@@ -1462,8 +1462,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 {editMode ? (
                   <>
                     <Check className="h-4 w-4 mr-1" />
-                    <span className="hidden sm:inline">Done</span>
-                    <span className="sm:hidden">Done</span>
+                    <span className="hidden sm:inline">{t('common.done')}</span>
+                    <span className="sm:hidden">{t('common.done')}</span>
                   </>
                 ) : (
                   <>
