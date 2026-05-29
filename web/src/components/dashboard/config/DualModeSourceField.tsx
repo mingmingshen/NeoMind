@@ -27,6 +27,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { compressImageFile } from '@/lib/imageUtils'
 import { textNano } from '@/design-system/tokens/typography'
 import { UnifiedDataSourceConfig } from './UnifiedDataSourceConfig'
 import { getSourceSummary } from './DataSourceIndicator'
@@ -109,17 +110,16 @@ export function DualModeSourceField({
   const boundSummary = isBound ? getSourceSummary(normalizedSources[0]) : ''
 
   // Handle file upload for image type
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !file.type.startsWith('image/')) return
-    if (file.size > 10 * 1024 * 1024) return
 
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string
-      if (base64) onValueChange(base64)
+    try {
+      const compressed = await compressImageFile(file)
+      onValueChange(compressed)
+    } catch {
+      // compression failed — ignore silently
     }
-    reader.readAsDataURL(file)
     e.target.value = ''
   }, [onValueChange])
 

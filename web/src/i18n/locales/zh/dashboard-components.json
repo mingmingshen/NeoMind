@@ -114,6 +114,7 @@
     "clear": "清除",
     "invalidFileType": "所选文件不是图片",
     "fileTooLarge": "图片文件过大（最大 2MB）",
+    "imageCompressFailed": "图片处理失败，请尝试更小的文件或更换图片",
     "fitMode": "适配模式",
     "fitContain": "包含",
     "fitCover": "覆盖",

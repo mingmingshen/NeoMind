@@ -1,5 +1,6 @@
 import React from 'react'
 import { cn } from '@/lib/utils'
+import { compressImageFile } from '@/lib/imageUtils'
 import { chartColorsHex } from '@/design-system/tokens/color'
 import { Field } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
@@ -568,14 +569,13 @@ export function getCustomLayerSchema(config: any, ctx: SchemaContext, u: Updater
                           <Input
                             type="file"
                             accept="image/*"
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const file = e.target.files?.[0]
                               if (file) {
-                                const reader = new FileReader()
-                                reader.onload = (e) => {
-                                  updateConfig('backgroundImage')(e.target?.result as string)
-                                }
-                                reader.readAsDataURL(file)
+                                try {
+                                  const compressed = await compressImageFile(file)
+                                  updateConfig('backgroundImage')(compressed)
+                                } catch { /* ignore */ }
                               }
                             }}
                             className="h-9"

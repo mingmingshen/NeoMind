@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Trash2, Upload } from 'lucide-react'
 import { notifyError } from '@/lib/notify'
+import { compressImageFile } from '@/lib/imageUtils'
 import { Field } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -60,62 +61,6 @@ export interface ImageSourceFieldProps {
   onChange: (value: string) => void
 }
 
-/**
- * Compress an image file to a compact JPEG data URL.
- * Resizes to fit within MAX_DIMENSION and reduces quality to hit target size.
- * Returns original data URL for tiny images that don't need compression.
- */
-function compressImage(file: File): Promise<string> {
-  const MAX_DIMENSION = 1200
-  const TARGET_BYTES = 150 * 1024 // 150KB target
-
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file)
-    const img = new Image()
-    img.onload = () => {
-      URL.revokeObjectURL(url)
-
-      // Skip compression for tiny images
-      if (img.width <= MAX_DIMENSION && img.height <= MAX_DIMENSION && file.size <= TARGET_BYTES) {
-        const reader = new FileReader()
-        reader.onload = (e) => resolve(e.target?.result as string)
-        reader.onerror = () => reject(new Error('Failed to read file'))
-        reader.readAsDataURL(file)
-        return
-      }
-
-      // Calculate scaled dimensions
-      let { width, height } = img
-      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
-        const ratio = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height)
-        width = Math.round(width * ratio)
-        height = Math.round(height * ratio)
-      }
-
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d')!
-      ctx.drawImage(img, 0, 0, width, height)
-
-      // Try quality levels until under target
-      let quality = 0.8
-      let dataUrl = canvas.toDataURL('image/jpeg', quality)
-      while (dataUrl.length > TARGET_BYTES * 1.37 && quality > 0.2) { // base64 ~37% overhead
-        quality -= 0.15
-        dataUrl = canvas.toDataURL('image/jpeg', quality)
-      }
-
-      resolve(dataUrl)
-    }
-    img.onerror = () => {
-      URL.revokeObjectURL(url)
-      reject(new Error('Failed to load image'))
-    }
-    img.src = url
-  })
-}
-
 export function ImageSourceField({ value, onChange }: ImageSourceFieldProps) {
   const { t } = useTranslation()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -130,10 +75,10 @@ export function ImageSourceField({ value, onChange }: ImageSourceFieldProps) {
     }
 
     try {
-      const compressed = await compressImage(file)
+      const compressed = await compressImageFile(file)
       onChange(compressed)
     } catch {
-      notifyError(t('visualDashboard.fileTooLarge'))
+      notifyError(t('visualDashboard.imageCompressFailed'))
     }
     // Reset input to allow re-uploading the same file
     e.target.value = ''

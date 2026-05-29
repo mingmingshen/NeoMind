@@ -237,3 +237,68 @@ export function getFileExtension(format: ImageFormatType): string {
   }
   return ext[format] || 'png'
 }
+
+// ============================================================================
+// Image compression for uploads
+// ============================================================================
+
+const COMPRESS_MAX_DIMENSION = 1200
+const COMPRESS_TARGET_BYTES = 150 * 1024 // 150KB target
+
+/**
+ * Compress an image file to a compact data URL suitable for storing in
+ * dashboard config. Resizes to fit within 1200px and reduces JPEG quality
+ * to target ~150KB output. Small images are returned as-is.
+ */
+export function compressImageFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('not_an_image'))
+      return
+    }
+
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+
+      // Skip compression for tiny images
+      if (img.width <= COMPRESS_MAX_DIMENSION && img.height <= COMPRESS_MAX_DIMENSION && file.size <= COMPRESS_TARGET_BYTES) {
+        const reader = new FileReader()
+        reader.onload = (e) => resolve(e.target?.result as string)
+        reader.onerror = () => reject(new Error('read_failed'))
+        reader.readAsDataURL(file)
+        return
+      }
+
+      let { width, height } = img
+      if (width > COMPRESS_MAX_DIMENSION || height > COMPRESS_MAX_DIMENSION) {
+        const ratio = Math.min(COMPRESS_MAX_DIMENSION / width, COMPRESS_MAX_DIMENSION / height)
+        width = Math.round(width * ratio)
+        height = Math.round(height * ratio)
+      }
+
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { reject(new Error('canvas_failed')); return }
+      ctx.drawImage(img, 0, 0, width, height)
+
+      // Try quality levels until under target
+      let quality = 0.8
+      let dataUrl = canvas.toDataURL('image/jpeg', quality)
+      while (dataUrl.length > COMPRESS_TARGET_BYTES * 1.37 && quality > 0.2) {
+        quality -= 0.15
+        dataUrl = canvas.toDataURL('image/jpeg', quality)
+      }
+
+      resolve(dataUrl)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('load_failed'))
+    }
+    img.src = url
+  })
+}

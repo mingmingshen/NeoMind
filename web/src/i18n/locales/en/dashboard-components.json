@@ -114,6 +114,7 @@
     "clear": "Clear",
     "invalidFileType": "Selected file is not an image",
     "fileTooLarge": "Image file is too large (max 2MB)",
+    "imageCompressFailed": "Failed to process image. Please try a smaller or different file.",
     "fitMode": "Fit Mode",
     "fitContain": "Contain",
     "fitCover": "Cover",
