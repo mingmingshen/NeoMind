@@ -838,7 +838,7 @@ export function MapDisplay({
 
       const ds = binding.dataSource
       // Resolve device ID from dataSource: try sourceId, then deviceId field, then metricId prefix
-      const deviceId = ds.sourceId || (ds as any).deviceId || (ds.metricId ? ds.metricId.split(':')[0] : undefined)
+      const deviceId = ds.id || ds.sourceId || (ds as any).deviceId || (ds.metricId ? ds.metricId.split(':')[0] : undefined)
 
       const marker: MapMarker = {
         id: binding.id,

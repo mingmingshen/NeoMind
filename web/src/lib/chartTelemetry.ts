@@ -9,7 +9,7 @@
  */
 
 import type { DataSource } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
+import { getUnifiedId, getUnifiedField } from '@/types/dashboard'
 import {
   getEffectiveTimeWindow,
   timeWindowToHours,
@@ -46,12 +46,13 @@ export function toTelemetrySource(
     }
   }
 
-  const sourceId = getSourceId(dataSource)
-  if ((dataSource.type === 'device' || dataSource.type === 'metric') && sourceId) {
+  const sourceId = getUnifiedId(dataSource)
+  if ((dataSource.type === 'device' || dataSource.type === 'metric' || dataSource.mode === 'latest' || dataSource.mode === 'timeseries') && sourceId) {
+    const field = getUnifiedField(dataSource) ?? 'value'
     return {
       type: 'telemetry' as const,
       sourceId,
-      metricId: dataSource.metricId ?? dataSource.property ?? 'value',
+      metricId: field,
       timeRange: dataSource.timeRange ?? timeWindowToHours(effectiveTimeWindow.type),
       limit: dataSource.limit ?? limit,
       aggregate: 'raw' as const,
@@ -59,6 +60,11 @@ export function toTelemetrySource(
       timeWindow: effectiveTimeWindow,
       params: { includeRawPoints: true },
       transform: 'raw' as const,
+      // Preserve unified fields for consistent routing
+      source: 'device' as const,
+      mode: 'timeseries' as const,
+      id: sourceId,
+      field,
     }
   }
 

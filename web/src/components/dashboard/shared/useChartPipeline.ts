@@ -119,7 +119,9 @@ export function useChartPipeline<T = unknown>(
   const { t } = useTranslation('dashboardComponents')
 
   // Convert to telemetry sources — applied as sourceTransform inside useDataSource
+  // When all sources already have mode='timeseries', skip transform (Phase 4)
   const telemetrySourceTransform = useCallback((ds: DataSource): DataSource | undefined => {
+    if (ds.mode === 'timeseries') return ds  // Already unified, no transform needed
     return toTelemetrySource(ds, ds.limit ?? limit, ds.timeRange ?? timeRange)
   }, [limit, timeRange])
 

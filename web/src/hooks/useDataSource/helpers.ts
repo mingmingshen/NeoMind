@@ -199,20 +199,19 @@ function isImageMetric(metricId: string | undefined): boolean {
   return lower.includes('image') || lower.includes('img') || metricId.includes('values.image')
 }
 
-/** Detect image data source from params/transform/metricId. */
+/** Detect image data source from params/transform/field. */
 export function isImageDataSource(
-  params: { includeRawPoints?: boolean } | undefined,
-  transform: string | undefined,
-  metricId: string | undefined
+  ds: { params?: { includeRawPoints?: boolean }; transform?: string; field?: string; metricId?: string }
 ): boolean {
-  return (params?.includeRawPoints === true || transform === 'raw') || isImageMetric(metricId)
+  const field = ds.field ?? ds.metricId
+  return (ds.params?.includeRawPoints === true || ds.transform === 'raw') || isImageMetric(field)
 }
 
 /** Get data point limit — image sources get 200, others 50. */
 export function getDataSourceLimit(
-  ds: { params?: { includeRawPoints?: boolean }; transform?: string; metricId?: string; limit?: number }
+  ds: { params?: { includeRawPoints?: boolean }; transform?: string; field?: string; metricId?: string; limit?: number }
 ): number {
-  const isImage = isImageDataSource(ds.params, ds.transform, ds.metricId)
+  const isImage = isImageDataSource(ds)
   return ds.limit ?? (isImage ? 200 : 50)
 }
 
@@ -403,7 +402,6 @@ export function sortAndDedup(
 // ============================================================================
 
 import type { DataSource } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
 
 /**
  * Convert telemetry sources to device type for instant store-based reads.
@@ -417,11 +415,17 @@ import { getSourceId } from '@/types/dashboard'
  * useStoreSource automatically triggers fetchDeviceTelemetry to populate it.
  */
 export function latestValueSourceTransform(ds: DataSource): DataSource | undefined {
-  if (ds.type === 'telemetry') {
+  if (ds.mode === 'timeseries' && ds.source === 'device') {
+    const property = ds.field ?? ds.metricId ?? 'value'
     return {
+      ...ds,
       type: 'device',
-      sourceId: getSourceId(ds),
-      property: ds.metricId ?? ds.property ?? 'value',
+      sourceId: ds.id ?? ds.sourceId,
+      property,
+      source: 'device',
+      mode: 'latest',
+      id: ds.id,
+      field: property,
     }
   }
   return ds

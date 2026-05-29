@@ -4,7 +4,7 @@
  */
 
 import type { DataSource } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
+import { getUnifiedId, getUnifiedField, getUnifiedMode, getUnifiedSource } from '@/types/dashboard'
 import { useStore } from '@/store'
 import {
   extractValueFromData, safeExtractValue, eventMetricMatches,
@@ -78,7 +78,7 @@ export function mergeLiveData(
     return sources.map((ds, i) => {
       const fetched = (fetchedData as unknown[][])[i] ?? []
       const live = livePoints[i] ?? []
-      const isImg = isImageDataSource(ds.params, ds.transform, ds.metricId)
+      const isImg = isImageDataSource(ds)
       const maxLimit = getDataSourceLimit(ds)
       let result: unknown[] = []
       for (const p of fetched) result = insertAndMaintain(result, p, tsFn, maxLimit, isImg)
@@ -90,7 +90,7 @@ export function mergeLiveData(
   const live = livePoints[0] ?? []
   const ds = sources[0]
   const maxLimit = ds ? getDataSourceLimit(ds) : 50
-  const isImg = ds ? isImageDataSource(ds.params, ds.transform, ds.metricId) : false
+  const isImg = ds ? isImageDataSource(ds) : false
   let result: unknown[] = []
   for (const p of fetched) result = insertAndMaintain(result, p, tsFn, maxLimit, isImg)
   for (const p of live) result = insertAndMaintain(result, p, tsFn, maxLimit, isImg)
@@ -110,7 +110,7 @@ export function sortTelemetryResults(finalData: unknown, sources: DataSource[], 
   const isPM = preserveMultiple && sources.length > 1
   const process = (points: unknown[], ds: DataSource): unknown[] => {
     if (!Array.isArray(points) || points.length === 0) return points
-    const isImg = isImageDataSource(ds.params, ds.transform, ds.metricId)
+    const isImg = isImageDataSource(ds)
     const maxLimit = getDataSourceLimit(ds)
     // Sort descending (newest-first), dedup, then reverse to ascending (oldest-first)
     const sorted = sortAndDedup(points, getTs, maxLimit, isImg)
@@ -140,7 +140,9 @@ export function processTelemetryEvent(
 
   // Pre-compute event values outside the updater to avoid recomputation
   const matchedResults = dataSources.map((ds) => {
-    if (ds.type !== 'telemetry' || getSourceId(ds) !== eventDeviceId) return undefined
+    const isTimeseries = ds.mode === 'timeseries'
+    const dsId = getUnifiedId(ds)
+    if (!isTimeseries || dsId !== eventDeviceId) return undefined
     // Use timeWindow for accurate range; fall back to timeRange (hours) for legacy sources
     const dsTimeRangeHours = ds.timeWindow
       ? timeWindowToHours(ds.timeWindow.type)
@@ -148,7 +150,7 @@ export function processTelemetryEvent(
     const rangeStartSec = now - Math.floor(dsTimeRangeHours * 3600)
     if (eventTimestamp < rangeStartSec) return undefined
 
-    const metricId = ds.metricId || ds.property || 'value'
+    const metricId = getUnifiedField(ds) || 'value'
     let eventValue: unknown
     const metricMatches = eventMetric === metricId || eventMetricMatches(eventMetric, metricId)
 
@@ -157,7 +159,7 @@ export function processTelemetryEvent(
     else return undefined
     if (eventValue === undefined) return undefined
 
-    const isImg = isImageDataSource(ds.params, ds.transform, metricId)
+    const isImg = isImageDataSource(ds)
     return { eventValue, isImg, metricId }
   })
 
@@ -213,72 +215,77 @@ export function processNonTelemetryEvent(
     const results = dataSources.map((ds, index) => {
       let result: unknown
 
-      switch (ds.type) {
-        case 'device': {
-          const deviceId = getSourceId(ds)!
-          const property = ds.property as string | undefined
-          if (!property) {
-            result = findDevice(currentDevices, deviceId) ?? null; break
+      // Mode-based routing (Phase 2 — before legacy type switch)
+      const mode = getUnifiedMode(ds)
+      const source = getUnifiedSource(ds)
+
+      if (mode === 'latest' && source === 'device') {
+        const deviceId = getUnifiedId(ds)
+        if (!deviceId) return fallback
+        const property = getUnifiedField(ds) as string | undefined
+        if (!property) {
+          result = findDevice(currentDevices, deviceId) ?? null
+        } else if (isDeviceMetricEvent && eventData.device_id === deviceId) {
+          const metricMatches = eventMetric === property || eventMetricMatches(eventMetric, property)
+          if ('metric' in eventData && 'value' in eventData && metricMatches) { result = eventData.value }
+          else if (!eventMetric) { const extracted = extractValueFromData(eventData, property); if (extracted !== undefined) result = extracted }
+          if (result === undefined) {
+            const device = findDevice(currentDevices, deviceId)
+            result = device?.current_values ? (extractValueFromData(device.current_values, property) ?? '-') : '-'
           }
-          if (isDeviceMetricEvent && eventData.device_id === deviceId) {
-            const metricMatches = eventMetric === property || eventMetricMatches(eventMetric, property)
-            if ('metric' in eventData && 'value' in eventData && metricMatches) { result = eventData.value; break }
-            if (!eventMetric) { const extracted = extractValueFromData(eventData, property); if (extracted !== undefined) { result = extracted; break } }
-          }
+        } else {
           const device = findDevice(currentDevices, deviceId)
-          if (device?.current_values && typeof device.current_values === 'object') {
-            result = extractValueFromData(device.current_values, property) ?? '-'
-          } else { result = '-' }
-          result = safeExtractValue(result, '-')
-          break
+          result = device?.current_values ? (extractValueFromData(device.current_values, property) ?? '-') : '-'
         }
-        case 'metric': {
-          const metricId = ds.metricId ?? 'value'
-          if (isDeviceMetricEvent) {
-            const metricMatches = eventMetric === metricId || eventMetricMatches(eventMetric, metricId)
-            if ('metric' in eventData && 'value' in eventData && metricMatches) { result = eventData.value; break }
-            if (!eventMetric) { const extracted = extractValueFromData(eventData, metricId); if (extracted !== undefined) { result = extracted; break } }
-          }
-          for (const device of currentDevices) {
-            if (device.current_values && typeof device.current_values === 'object') {
-              const value = extractValueFromData(device.current_values, metricId)
-              if (value !== undefined) { result = value; break }
-            }
-          }
-          if (result === undefined) result = fallback ?? '-'
-          result = safeExtractValue(result, '-')
-          break
+        result = safeExtractValue(result, '-')
+        return result
+      }
+
+      if (mode === 'command' && source === 'device') {
+        const deviceId = getUnifiedId(ds)
+        if (!deviceId) return fallback ?? false
+        const property = getUnifiedField(ds) || 'state'
+        if (isDeviceMetricEvent && eventData.device_id === deviceId) {
+          const metricMatches = eventMetric === property || eventMetricMatches(eventMetric, property)
+          if ('metric' in eventData && 'value' in eventData && metricMatches) { result = eventData.value }
+          else if (!eventMetric) { const extracted = extractValueFromData(eventData, property); if (extracted !== undefined) result = extracted }
         }
-        case 'command': {
-          const deviceId = getSourceId(ds)
-          const property = ds.property || 'state'
-          if (isDeviceMetricEvent && eventData.device_id === deviceId) {
-            const metricMatches = eventMetric === property || eventMetricMatches(eventMetric, property)
-            if ('metric' in eventData && 'value' in eventData && metricMatches) { result = eventData.value; break }
-            if (!eventMetric) { const extracted = extractValueFromData(eventData, property); if (extracted !== undefined) { result = extracted; break } }
-          }
+        if (result === undefined) {
           const device = findDevice(currentDevices, deviceId)
           result = device?.current_values ? (extractValueFromData(device.current_values, property) ?? false) : false
-          result = safeExtractValue(result, false)
-          break
         }
-        case 'device-info': {
-          const deviceId = getSourceId(ds)
-          const infoProperty = ds.infoProperty || 'name'
-          const device = findDevice(currentDevices, deviceId)
-          result = resolveDeviceInfoValue(device, infoProperty, fallback)
-          result = safeExtractValue(result as unknown, (fallback ?? '-') as any)
-          break
-        }
-        case 'telemetry': {
-          if (Array.isArray(prevData) && (prevData as unknown[])[index] !== undefined) {
-            result = dataSources.length > 1 ? (prevData as unknown[])[index] : prevData
-          } else { result = fallback ?? [] }
-          break
-        }
-        default: return undefined
+        result = safeExtractValue(result, false)
+        return result
       }
-      return result
+
+      if (mode === 'info' && source === 'device') {
+        const deviceId = getUnifiedId(ds)
+        if (!deviceId) return fallback ?? '-'
+        const infoProperty = getUnifiedField(ds) || 'name'
+        const device = findDevice(currentDevices, deviceId)
+        result = resolveDeviceInfoValue(device, infoProperty, fallback)
+        result = safeExtractValue(result as unknown, (fallback ?? '-') as any)
+        return result
+      }
+
+      if (mode === 'latest' && source === 'system') {
+        result = fallback ?? null
+        return result
+      }
+
+      if (mode === 'timeseries') {
+        if (Array.isArray(prevData) && (prevData as unknown[])[index] !== undefined) {
+          result = dataSources.length > 1 ? (prevData as unknown[])[index] : prevData
+        } else { result = fallback ?? [] }
+        return result
+      }
+
+      // Unhandled source/mode combination — preserve existing data instead of
+      // returning undefined (which would corrupt multi-source arrays)
+      if (Array.isArray(prevData) && (prevData as unknown[])[index] !== undefined) {
+        return dataSources.length > 1 ? (prevData as unknown[])[index] : prevData
+      }
+      return fallback
     })
 
     let finalData: unknown = dataSources.length > 1 ? results : results[0]

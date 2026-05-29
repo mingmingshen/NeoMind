@@ -807,7 +807,7 @@ export function CustomLayer({
         : binding.position
 
       const ds = binding.dataSource
-      const deviceId = ds.sourceId || (ds as any).deviceId || (ds.metricId ? ds.metricId.split(':')[0] : undefined)
+      const deviceId = ds.id || ds.sourceId || (ds as any).deviceId || (ds.metricId ? ds.metricId.split(':')[0] : undefined)
 
       const item: LayerItem = {
         id: binding.id,
@@ -827,9 +827,9 @@ export function CustomLayer({
 
       if (binding.type === 'metric') {
         item.deviceId = deviceId
-        item.metricId = ds.metricId || ds.property
+        item.metricId = ds.field || ds.metricId || ds.property
         item.deviceName = getDeviceName(deviceId || '')
-        item.metricName = ds.metricId || ds.property
+        item.metricName = ds.field || ds.metricId || ds.property
         const metricValue = getDeviceMetricValue(deviceId || '', item.metricId || '')
         item.value = metricValue !== undefined ? metricValue : '-'
       } else if (binding.type === 'command') {
@@ -945,7 +945,7 @@ export function CustomLayer({
     // Update items with fresh data from store
     const updateItemFromDevice = (binding: LayerBinding) => {
       const ds = binding.dataSource
-      const deviceId = ds.sourceId || (ds as any).deviceId || (ds.metricId ? ds.metricId.split(':')[0] : undefined)
+      const deviceId = ds.id || ds.sourceId || (ds as any).deviceId || (ds.metricId ? ds.metricId.split(':')[0] : undefined)
 
       if (binding.type === 'metric' && deviceId) {
         const metricId = ds.metricId || ds.property

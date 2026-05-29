@@ -4,13 +4,13 @@
  * Thin router that delegates to focused sub-hooks:
  * - useStoreSource: device/metric/command/device-info + device WS
  * - useTelemetrySource: telemetry fetch + periodic refresh
- * - useSystemSource: system stats fetch
+ * - usePollingSource: system stats, rule lists, message lists, etc.
  * - useExtensionSource: extension fetch + extension WS
  */
 
 import { useState, useCallback, useRef, useMemo } from 'react'
 import type { DataSourceOrList, DataSource } from '@/types/dashboard'
-import { normalizeDataSource, getSourceId, isRealtimeSource, isCommandSource, isTelemetrySource, isDeviceInfoSource, isTransformSource, isAIMetricSource, isSystemSource, isExtensionSource } from '@/types/dashboard'
+import { normalizeDataSource, getUnifiedId, getUnifiedField, getUnifiedMode, getUnifiedSource } from '@/types/dashboard'
 import { toNumberArray } from '@/design-system/utils/format'
 import { createStableKey } from '@/lib/stable-key'
 import { isImageDataSource } from './helpers'
@@ -18,7 +18,7 @@ import {
   fetchHistoricalTelemetry,
   clearGlobalCacheIntervals,
 } from './fetch'
-import { useSystemSource } from './useSystemSource'
+import { usePollingSource } from './usePollingSource'
 import { useExtensionSource } from './useExtensionSource'
 import { useTelemetrySource } from './useTelemetrySource'
 import { useStoreSource } from './useStoreSource'
@@ -144,17 +144,24 @@ export function useDataSource<T = unknown>(
   const relevantDeviceIds = useMemo(() => {
     return new Set(
       dataSources
-        .map((ds) =>
-          isRealtimeSource(ds) || isDeviceInfoSource(ds) || isCommandSource(ds)
-            ? getSourceId(ds) : null
-        )
+        .map((ds) => {
+          const mode = getUnifiedMode(ds)
+          const source = getUnifiedSource(ds)
+          if (source === 'device' && (mode === 'latest' || mode === 'command' || mode === 'info')) {
+            return getUnifiedId(ds)
+          }
+          return null
+        })
         .filter(Boolean) as string[]
     )
   }, [dataSources])
 
   const deviceInfoIds = useMemo(() => {
     return new Set(
-      dataSources.filter(isDeviceInfoSource).map((ds) => getSourceId(ds)).filter(Boolean) as string[]
+      dataSources
+        .filter((ds) => getUnifiedMode(ds) === 'info' && getUnifiedSource(ds) === 'device')
+        .map((ds) => getUnifiedId(ds))
+        .filter(Boolean) as string[]
     )
   }, [dataSources])
 
@@ -163,51 +170,63 @@ export function useDataSource<T = unknown>(
   const dataSourcesRef = useRef(dataSources)
   dataSourcesRef.current = dataSources
 
-  const hasCommandSource = dataSources.some(isCommandSource)
-  const commandSource = dataSources.find(isCommandSource)
+  const commandSource = useMemo(() => dataSources.find(ds => ds.mode === 'command'), [dataSources])
+  const hasCommandSource = commandSource !== undefined
 
   const telemetrySources = useMemo(() =>
-    dataSources.filter((ds) => isTelemetrySource(ds) || isTransformSource(ds) || isAIMetricSource(ds)),
+    dataSources.filter((ds) => ds.mode === 'timeseries' && ds.source !== 'system' && ds.source !== 'extension'),
     [dataSources]
   )
 
-  const systemSources = useMemo(() => dataSources.filter(isSystemSource), [dataSources])
-  const extensionSources = useMemo(() => dataSources.filter(isExtensionSource), [dataSources])
+  const pollingSources = useMemo(() => dataSources.filter(ds => {
+    if (ds.source === 'extension') return false          // handled by useExtensionSource
+    if (ds.mode === 'timeseries' && ds.source !== 'system') return false  // handled by useTelemetrySource
+    if (ds.source === 'system') return true               // ALL system modes including timeseries
+    if (ds.mode === 'list') return true                   // list mode → polling
+    return false
+  }), [dataSources])
+  const extensionSources = useMemo(() => dataSources.filter(ds => ds.source === 'extension'), [dataSources])
 
   const hasTelemetrySource = telemetrySources.length > 0
   const hasExtensionSource = extensionSources.length > 0
-  const needsWebSocket = dataSources.some(isRealtimeSource)
+  const needsWebSocket = dataSources.some(ds => {
+    const mode = getUnifiedMode(ds)
+    return mode === 'latest' || mode === 'command' || mode === 'info' || mode === 'timeseries'
+  })
 
   const telemetryKey = useMemo(() => {
     return telemetrySources
       .map((ds) => {
-        const isImg = isImageDataSource(ds.params, ds.transform, ds.metricId)
+        const isImg = isImageDataSource(ds)
         const actualTimeRange = ds.timeRange ?? (isImg ? 48 : 1)
         const actualLimit = ds.limit ?? (isImg ? 200 : 50)
         const actualAggregate = ds.aggregateExt ?? 'raw'
         const tw = ds.timeWindow
           ? `${ds.timeWindow.type}:${ds.timeWindow.startTime ?? ''}:${ds.timeWindow.endTime ?? ''}`
           : ''
-        return `${getSourceId(ds)}|${ds.metricId}|${actualTimeRange}|${actualLimit}|${actualAggregate}|${tw}`
+        return `${getUnifiedId(ds)}|${getUnifiedField(ds)}|${actualTimeRange}|${actualLimit}|${actualAggregate}|${tw}`
       })
       .join('|')
   }, [telemetrySources])
 
-  const systemKey = useMemo(() => {
-    return systemSources.map((ds) => createStableKey({ systemMetric: ds.systemMetric })).join('|')
-  }, [systemSources])
+  const pollingKey = useMemo(() => {
+    return pollingSources
+      .map((ds) => `${ds.source}|${getUnifiedId(ds) ?? ''}|${getUnifiedField(ds) ?? ''}|${ds.refresh ?? ''}`)
+      .sort()
+      .join('|')
+  }, [pollingSources])
 
   const extensionKey = useMemo(() => {
     return extensionSources
       .map((ds) => {
         const tw = ds.timeWindow ? `${ds.timeWindow.type}:${ds.timeWindow.startTime ?? ''}:${ds.timeWindow.endTime ?? ''}` : ''
-        return createStableKey({ extensionId: ds.extensionId, extensionMetric: ds.extensionMetric, timeRange: ds.timeRange, limit: ds.limit, timeWindow: tw })
+        return createStableKey({ extensionId: getUnifiedId(ds), extensionMetric: getUnifiedField(ds), timeRange: ds.timeRange, limit: ds.limit, timeWindow: tw })
       })
       .join('|')
   }, [extensionSources])
 
   const relevantExtensionIds = useMemo(() => {
-    return new Set(extensionSources.map((ds) => ds.extensionId).filter(Boolean) as string[])
+    return new Set(extensionSources.map((ds) => getUnifiedId(ds)).filter(Boolean) as string[])
   }, [extensionSources])
 
   // ============================================================================
@@ -219,8 +238,12 @@ export function useDataSource<T = unknown>(
     setSending(true)
 
     try {
-      const deviceId = getSourceId(commandSource)
-      const command = commandSource.command || 'setValue'
+      const deviceId = getUnifiedId(commandSource)
+      const command = commandSource.field ?? (commandSource.command || 'setValue')
+      if (!deviceId) {
+        setErrorInternal('Command source has no device ID')
+        return false
+      }
       let params: Record<string, unknown> = { value }
 
       if (commandSource.valueMapping && value !== undefined) {
@@ -236,7 +259,7 @@ export function useDataSource<T = unknown>(
       if (commandSource.commandParams) params = { ...params, ...commandSource.commandParams }
 
       const { api } = await import('@/lib/api')
-      await api.sendCommand(deviceId!, command, params)
+      await api.sendCommand(deviceId, command, params)
       return true
     } catch (err) {
       setErrorInternal(err instanceof Error ? err.message : 'Command failed')
@@ -290,10 +313,11 @@ export function useDataSource<T = unknown>(
   })
 
   // ============================================================================
-  // H. System source
+  // H. Polling source (system, rule, message, http, etc.)
   // ============================================================================
 
-  useSystemSource(systemSources, systemKey, enabled, {
+  usePollingSource(pollingSources, pollingKey, enabled, {
+    setData: (updater) => setData((prev) => typeof updater === 'function' ? (updater as (p: unknown) => unknown)(prev) as T : updater as T),
     setDataRaw, setLoading: legacySetLoading, setError, setLastUpdate, optionsRef,
     sourceAdapters,
   })

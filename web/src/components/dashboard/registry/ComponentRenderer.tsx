@@ -11,6 +11,9 @@ import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { findDevice } from '@/lib/deviceUtils'
+import type { DataSource } from '@/types/dashboard'
+import { normalizeDataSource } from '@/types/dashboard'
+import { resolveComponentData } from '@/lib/componentDataApi'
 import type { DashboardComponent, GenericComponentType } from '@/types/dashboard'
 import type { Device, DeviceType } from '@/types'
 import { useStore } from '@/store'
@@ -537,6 +540,14 @@ const ComponentRenderer = memo(function ComponentRenderer({
     }
     if (sendDeviceCommand) {
       builtProps.sendDeviceCommand = sendDeviceCommand
+    }
+
+    // Community/extension components get fetchData for unified data access
+    if (isDynamic || isCommunity) {
+      builtProps.fetchData = async (options?: { timeRange?: number; limit?: number }) => {
+        if (!componentDataSource) return null
+        return resolveComponentData(componentDataSource as DataSource | DataSource[], options)
+      }
     }
 
     return builtProps

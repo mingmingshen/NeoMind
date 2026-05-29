@@ -5,7 +5,7 @@
 
 import { useEffect, useRef } from 'react'
 import type { DataSource } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
+import { getUnifiedId, getUnifiedField, getUnifiedSource } from '@/types/dashboard'
 import type { NeoMindStore } from '@/store'
 import { useStore } from '@/store'
 import { logError } from '@/lib/errors'
@@ -111,9 +111,10 @@ export function useTelemetrySource(
       retryInProgressRef.current = false
       // Invalidate cache for changed sources to prevent stale data
       telemetrySources.forEach(ds => {
-        const deviceId = getSourceId(ds)
-        if (deviceId && ds.metricId) {
-          telemetryCache.deleteWhere((_, key) => key.startsWith(`${deviceId}|${ds.metricId}|`))
+        const deviceId = getUnifiedId(ds)
+        const metricId = getUnifiedField(ds)
+        if (deviceId && metricId) {
+          telemetryCache.deleteWhere((_, key) => key.startsWith(`${deviceId}|${metricId}|`))
         }
       })
     }
@@ -143,10 +144,20 @@ export function useTelemetrySource(
         const results = await Promise.race([
           Promise.all(
             telemetrySources.map(async (ds) => {
-              if (!getSourceId(ds) || !ds.metricId) return { data: [], raw: undefined }
+              let dsSourceId = getUnifiedId(ds)
+              const dsMetricId = getUnifiedField(ds)
+              if (!dsSourceId || !dsMetricId) return { data: [], raw: undefined }
+              // Restore prefix for transform/ai sources — fetchHistoricalTelemetry
+              // uses the prefix to route to the correct API endpoint
+              const dsSource = getUnifiedSource(ds)
+              if (dsSource === 'transform' && !dsSourceId.startsWith('transform:')) {
+                dsSourceId = `transform:${dsSourceId}`
+              } else if (dsSource === 'ai' && !dsSourceId.startsWith('ai:')) {
+                dsSourceId = `ai:${dsSourceId}`
+              }
               const includeRawPoints = ds.params?.includeRawPoints === true || ds.transform === 'raw'
               const bypassCache = !initialTelemetryFetchDoneRef.current || includeRawPoints
-              const isImg = isImageDataSource(ds.params, ds.transform, ds.metricId)
+              const isImg = isImageDataSource(ds)
               const actualTimeRange = ds.timeRange ?? (isImg ? 48 : 1)
               const actualLimit = ds.limit ?? (isImg ? 200 : 50)
               // Charts (includeRawPoints=true) must always fetch raw data to preserve
@@ -155,9 +166,9 @@ export function useTelemetrySource(
               const actualAggregate = includeRawPoints ? 'raw' : (ds.aggregateExt ?? 'raw')
 
               const response = await fetchHistoricalTelemetry(
-                getSourceId(ds)!, ds.metricId, actualTimeRange, actualLimit, actualAggregate, includeRawPoints, bypassCache,
+                dsSourceId, dsMetricId, actualTimeRange, actualLimit, actualAggregate, includeRawPoints, bypassCache,
                 ds.timeWindow,
-                ds.params?.isImage === true || isActualImageSource(ds.metricId),
+                ds.params?.isImage === true || isActualImageSource(dsMetricId),
               )
               if (includeRawPoints && response.raw) return { data: response.data, raw: response.raw, success: response.success }
               return { data: response.success ? response.data : [], success: response.success }
@@ -166,6 +177,8 @@ export function useTelemetrySource(
           timeoutPromise
         ]) as Array<{ data: unknown[]; raw?: unknown[]; success: boolean }>
 
+        // Clear timeout — fetch succeeded before the deadline
+        if (fetchTimeoutRef.current) { clearTimeout(fetchTimeoutRef.current); fetchTimeoutRef.current = null }
         // Discard stale results if config changed while fetching
         if (fetchGenerationRef.current !== currentGeneration) return
 

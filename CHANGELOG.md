@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v0.8.2] - 2026-05-29
 
+### Changed
+
+- **DataSource unified Source+Mode architecture** — Replaced 12 legacy `type`-based routing with 4 unified fields (`source`/`id`/`field`/`mode`). New `DataSourceSource` (device/extension/system/transform/ai) and `DataSourceMode` (latest/timeseries/command/info/list) types provide clean orthogonal dimensions. `migrateToUnified()` bidirectionally populates both old and new fields for zero-migration backward compatibility. Removed 14 type guard functions, legacy switch statements across 6 sub-hooks. All routing now uses mode-based logic with fallback to legacy fields
+- **usePollingSource replaces useSystemSource** — New generic HTTP polling hook supporting latest, list, and timeseries accumulation modes. System metrics now support client-side historical accumulation (pruned by `timeRange`/`limit`). Deleted `useSystemSource.ts` entirely. `pollDataSource()` dispatch in fetch.ts provides extensible source routing for future data sources (rule lists, message lists, external APIs)
+- **Config UI outputs unified fields** — `selectedItemsToDataSource` now outputs `source`/`id`/`field`/`mode` alongside legacy `type`. `suggestedMode` prop enables per-component mode hints (LED→latest, Chart→timeseries, Toggle→command, Map→info). Eliminates sourceTransform round-trips for new configurations
+- **isImageDataSource refactored** — Changed from 3-arg `(params, transform, metricId)` to single-arg `(ds)` pattern. Updated 8 call sites across 4 files
+- **Community/extension component fetchData API** — New `resolveDataSourceData()` utility and `fetchData` prop injection in ComponentRenderer for community/extension components. Provides mode-aware data fetching without React hook dependency
+
 ### Fixed
 
 - **Instant telemetry initial rendering** — Telemetry-bound components (LED, ValueCard, ProgressBar, etc.) now read initial values from `store.current_values` instead of waiting for HTTP API. New `readTelemetryInitialValues` in `useStoreSource` creates synthetic data points from store, eliminating loading flash on dashboard open

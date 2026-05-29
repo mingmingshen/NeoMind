@@ -5,7 +5,7 @@
 
 import { useEffect, useCallback, useRef, useMemo } from 'react'
 import type { DataSource } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
+import { getUnifiedId, getUnifiedField, getUnifiedMode, getUnifiedSource } from '@/types/dashboard'
 import type { Device } from '@/types'
 import type { NeoMindStore } from '@/store'
 import { useStore } from '@/store'
@@ -72,7 +72,7 @@ function processSingleTelemetryPoint(
   preserveMultiple: boolean,
   maxLimit: number
 ): unknown | undefined {
-  const isImg = isImageDataSource(ds.params, ds.transform, ds.metricId)
+  const isImg = isImageDataSource(ds)
 
   let currentArray: unknown[] = []
   if (Array.isArray(currentData)) {
@@ -113,6 +113,15 @@ export function useStoreSource<T = unknown>(
 ): { readDataFromStore: () => void; wsConnected: boolean } {
   const initialFetchDoneRef = useRef<Set<string>>(new Set())
   const lastValidDataRef = useRef<Record<string, unknown>>({})
+
+  // Clean up refs when dataSourceKey changes to prevent stale data and memory growth
+  const prevSourceKeyRef = useRef(dataSourceKey)
+  if (prevSourceKeyRef.current !== dataSourceKey) {
+    prevSourceKeyRef.current = dataSourceKey
+    initialFetchDoneRef.current.clear()
+    lastValidDataRef.current = {}
+  }
+
   const prevStoreStateRef = useRef<{
     rawDevices: NeoMindStore['devices']
     map: Map<string, Device>
@@ -140,7 +149,13 @@ export function useStoreSource<T = unknown>(
     }
 
     const nonTelemetrySources = currentDataSources.filter(
-      (ds) => ds.type !== 'telemetry' && ds.type !== 'system' && ds.type !== 'extension' && ds.type !== 'transform' && ds.type !== 'ai-metric'
+      (ds) => {
+        if (ds.mode === 'timeseries') return false
+        if (ds.mode === 'latest' && ds.source === 'device') return true
+        if (ds.mode === 'info' && ds.source === 'device') return true
+        if (ds.mode === 'command' && ds.source === 'device') return true
+        return false
+      }
     )
 
     // When all sources are telemetry/system/extension, readDataFromStore has nothing to do.
@@ -151,14 +166,19 @@ export function useStoreSource<T = unknown>(
       const results = nonTelemetrySources.map((ds) => {
         let result: unknown
 
-        switch (ds.type) {
-          case 'device': {
-            const deviceId = getSourceId(ds)!
-            const property = ds.property as string | undefined
-            const device = findDevice(currentDevices, deviceId)
+        // Mode-based routing (all DataSources have unified fields via migrateToUnified)
+        const mode = ds.mode
+        const source = ds.source
 
-            if (!property) { result = device ?? null; break }
+        if (mode === 'latest' && source === 'device') {
+          const deviceId = getUnifiedId(ds)
+          if (!deviceId) { result = fallbackVal ?? null; return result }
+          const property = getUnifiedField(ds) as string | undefined
+          const device = findDevice(currentDevices, deviceId)
 
+          if (!property) {
+            result = device ?? null
+          } else {
             const cacheKey = `${deviceId}:${property}`
             if (device?.current_values && typeof device.current_values === 'object' && Object.keys(device.current_values).length > 0) {
               const extracted = extractValueFromData(device.current_values, property)
@@ -195,39 +215,25 @@ export function useStoreSource<T = unknown>(
               }
             }
             result = safeExtractValue(result, '-')
-            break
           }
-          case 'metric': {
-            const metricId = ds.metricId ?? 'value'
-            for (const device of currentDevices) {
-              if (device.current_values && typeof device.current_values === 'object') {
-                const value = extractValueFromData(device.current_values, metricId)
-                if (value !== undefined) { result = value; break }
-              }
-            }
-            if (result === undefined) result = fallbackVal ?? '-'
-            result = safeExtractValue(result, '-')
-            break
-          }
-          case 'command': {
-            const deviceId = getSourceId(ds)
-            const property = ds.property || 'state'
-            const device = findDevice(currentDevices, deviceId!)
-            if (device?.current_values && typeof device.current_values === 'object') {
-              result = extractValueFromData(device.current_values, property) ?? false
-            } else { result = false }
-            result = safeExtractValue(result, false)
-            break
-          }
-          case 'device-info': {
-            const deviceId = getSourceId(ds)
-            const infoProperty = ds.infoProperty || 'name'
-            const device = findDevice(currentDevices, deviceId)
-            result = resolveDeviceInfoValue(device, infoProperty, fallbackVal)
-            result = safeExtractValue(result as unknown, (fallbackVal ?? '-') as any)
-            break
-          }
-          default: result = fallbackVal ?? null
+        } else if (mode === 'command' && source === 'device') {
+          const deviceId = getUnifiedId(ds)
+          if (!deviceId) { result = fallbackVal ?? false; return result }
+          const property = getUnifiedField(ds) || 'state'
+          const device = findDevice(currentDevices, deviceId)
+          if (device?.current_values && typeof device.current_values === 'object') {
+            result = extractValueFromData(device.current_values, property) ?? false
+          } else { result = false }
+          result = safeExtractValue(result, false)
+        } else if (mode === 'info' && source === 'device') {
+          const deviceId = getUnifiedId(ds)
+          if (!deviceId) { result = fallbackVal ?? '-'; return result }
+          const infoProperty = getUnifiedField(ds) || 'name'
+          const device = findDevice(currentDevices, deviceId)
+          result = resolveDeviceInfoValue(device, infoProperty, fallbackVal)
+          result = safeExtractValue(result as unknown, (fallbackVal ?? '-') as any)
+        } else {
+          result = fallbackVal ?? null
         }
         return result
       })
@@ -343,7 +349,8 @@ export function useStoreSource<T = unknown>(
         // Telemetry merge from store changes — build synthetic events for all
         // changed devices/metrics, then process in a single setData call
         const currentDataSources = state.dataSourcesRef.current
-        const telSources = currentDataSources.filter((ds) => ds.type === 'telemetry')
+        // Only merge telemetry points for timeseries sources, NOT mode='latest'
+        const telSources = currentDataSources.filter((ds) => ds.mode === 'timeseries')
         if (telSources.length > 0 && currentValuesChanged && changedDeviceIds.size > 0) {
           const { preserveMultiple: pm, transform: tf } = state.optionsRef.current
           const now = Math.floor(Date.now() / 1000)
@@ -356,9 +363,12 @@ export function useStoreSource<T = unknown>(
               const device = findDevice(s.devices, deviceId)
               if (!device?.current_values || typeof device.current_values !== 'object') continue
 
-              for (const ds of currentDataSources) {
-                if (ds.type !== 'telemetry' || getSourceId(ds) !== deviceId) continue
-                const metricId = ds.metricId || ds.property || 'value'
+              for (const ds of telSources) {
+                // Only device-sourced telemetry can match changedDeviceIds
+                if (ds.source !== 'device') continue
+                const dsId = getUnifiedId(ds)
+                if (dsId !== deviceId) continue
+                const metricId = getUnifiedField(ds) || 'value'
                 const latestValue = extractValueFromData(device.current_values, metricId)
                 if (latestValue === undefined) continue
 
@@ -372,7 +382,7 @@ export function useStoreSource<T = unknown>(
                 )
                 if (updated !== undefined) {
                   currentData = updated
-                  cacheKeysToInvalidate.push(`${getSourceId(ds)}|${ds.metricId}|${ds.aggregateExt ?? 'raw'}|`)
+                  cacheKeysToInvalidate.push(`${getUnifiedId(ds)}|${getUnifiedField(ds)}|${ds.aggregateExt ?? 'raw'}|`)
                 }
               }
             }
@@ -404,7 +414,7 @@ export function useStoreSource<T = unknown>(
       unsubscribed = true
       unsubscribe()
     }
-  }, [dataSources.length, enabled, relevantDeviceIds, deviceInfoIds])
+  }, [dataSources.length, enabled, relevantDeviceIds, deviceInfoIds, hasTelemetrySource, hasExtensionSource])
 
   // ============================================================================
   // Device WebSocket event processing
@@ -494,23 +504,30 @@ export function useStoreSource<T = unknown>(
       // Check if event matches data sources
       const currentDataSources = state.dataSourcesRef.current
       for (const ds of currentDataSources) {
-        if (ds.type === 'device' && hasDeviceId && eventData.device_id === getSourceId(ds) && isDeviceMetricEvent) { shouldUpdate = true; break }
-        else if (ds.type === 'metric' && (isDeviceMetricEvent || eventType === 'metric.update')) { shouldUpdate = true; break }
-        else if (ds.type === 'command' && hasDeviceId && eventData.device_id === getSourceId(ds) && (isDeviceMetricEvent || eventType === 'device.command_result')) { shouldUpdate = true; break }
-        else if (ds.type === 'telemetry' && hasDeviceId && eventData.device_id === getSourceId(ds) && isDeviceMetricEvent && (!eventMetric || eventMetricMatches(eventMetric, ds.metricId || ds.property || 'value'))) { shouldUpdate = true; break }
-        else if (ds.type === 'device-info' && hasDeviceId && eventData.device_id === getSourceId(ds) && (isDeviceMetricEvent || eventType === 'DeviceOnline' || eventType === 'DeviceOffline')) { shouldUpdate = true; break }
+        const dsId = getUnifiedId(ds)
+        const dsField = getUnifiedField(ds) ?? 'value'
+        const dsMode = getUnifiedMode(ds)
+        const dsSource = getUnifiedSource(ds)
+
+        // Mode-based matching
+        if (dsMode === 'latest' && dsSource === 'device' && hasDeviceId && eventData.device_id === dsId && isDeviceMetricEvent) { shouldUpdate = true; break }
+        else if (dsMode === 'command' && dsSource === 'device' && hasDeviceId && eventData.device_id === dsId && (isDeviceMetricEvent || eventType === 'device.command_result')) { shouldUpdate = true; break }
+        else if (dsMode === 'timeseries' && hasDeviceId && eventData.device_id === dsId && isDeviceMetricEvent && (!eventMetric || eventMetricMatches(eventMetric, dsField))) { shouldUpdate = true; break }
+        else if (dsMode === 'info' && dsSource === 'device' && hasDeviceId && eventData.device_id === dsId && (isDeviceMetricEvent || eventType === 'DeviceOnline' || eventType === 'DeviceOffline')) { shouldUpdate = true; break }
       }
 
-      // Telemetry merge (optimized path)
-      const hasTelemetrySrc = currentDataSources.some((ds) => ds.type === 'telemetry')
+      // Telemetry merge (optimized path) — only for timeseries mode
+      const hasTelemetrySrc = currentDataSources.some((ds) => ds.mode === 'timeseries')
       let telemetryAlreadyProcessed = false
 
       if (hasTelemetrySrc && isDeviceMetricEvent && hasDeviceId) {
         const eventDeviceId = eventData.device_id as string
         const matchingSources = currentDataSources.filter((ds) => {
-          if (ds.type !== 'telemetry' || getSourceId(ds) !== eventDeviceId) return false
+          if (ds.mode !== 'timeseries') return false
+          const dsId = getUnifiedId(ds)
+          if (dsId !== eventDeviceId) return false
           if (!eventMetric) return true
-          const metricId = ds.metricId || ds.property || 'value'
+          const metricId = getUnifiedField(ds) || 'value'
           return eventMetric === metricId || eventMetricMatches(eventMetric, metricId)
         })
 
@@ -522,7 +539,7 @@ export function useStoreSource<T = unknown>(
           // Mark cache entries as stale — include aggregate in prefix to avoid
           // deleting entries for other components with different aggregation
           matchingSources.forEach((ds) => {
-            const keyPrefix = `${getSourceId(ds)}|${ds.metricId}|${ds.aggregateExt ?? 'raw'}|`
+            const keyPrefix = `${getUnifiedId(ds)}|${getUnifiedField(ds)}|`
             telemetryCache.deleteWhere((_, key) => key.startsWith(keyPrefix))
           })
         }

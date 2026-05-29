@@ -15,8 +15,8 @@ import { cn } from '@/lib/utils'
 import { dialogHeader } from '@/design-system/tokens/size'
 import { textMicro, textNano } from '@/design-system/tokens/typography'
 import { useStore } from '@/store'
-import type { DataSource, DataSourceOrList } from '@/types/dashboard'
-import { normalizeDataSource, getSourceId } from '@/types/dashboard'
+import type { DataSource, DataSourceOrList, DataSourceMode } from '@/types/dashboard'
+import { normalizeDataSource, getSourceId, getUnifiedId, getUnifiedField } from '@/types/dashboard'
 import type { MetricDefinition, CommandDefinition } from '@/types'
 import { useDataAvailability } from '@/hooks/useDataAvailability'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
@@ -37,6 +37,8 @@ export interface UnifiedDataSourceConfigProps {
   maxSources?: number
   className?: string
   disabled?: boolean
+  /** Suggested mode for the data source (e.g. 'latest' for LED, 'timeseries' for charts) */
+  suggestedMode?: DataSourceMode
 }
 
 type CategoryType = 'device-metric' | 'device-command' | 'device' | 'system' | 'extension' | 'extension-command' | 'transform' | 'ai-metric'
@@ -168,7 +170,8 @@ function normalizeAllowedTypes(
  */
 function selectedItemsToDataSource(
   selectedItems: Set<SelectedItem>,
-  multiple: boolean
+  multiple: boolean,
+  suggestedMode?: DataSourceMode
 ): DataSourceOrList | DataSource | undefined {
   if (selectedItems.size === 0) return undefined
   if (!multiple && selectedItems.size === 1) {
@@ -182,84 +185,136 @@ function selectedItemsToDataSource(
         return {
           type: 'device',
           sourceId: parts[1],
+          source: 'device' as const,
+          id: parts[1],
+          field: 'location',
+          mode: 'info' as const,
         }
-      case 'device-metric':
+      case 'device-metric': {
+        const metricField = parts.slice(2).join(':')
+        const mode = suggestedMode ?? 'timeseries'
         return {
           type: 'telemetry',
           sourceId: parts[1],
-          metricId: parts.slice(2).join(':'),
+          metricId: metricField,
           timeRange: 1,  // 1 hour for real-time dashboards (was 24, too large)
           limit: 50,     // Reduced from 100 for better performance
           aggregate: 'raw',
           params: { includeRawPoints: true },
           transform: 'raw',
+          // Unified fields
+          source: 'device' as const,
+          id: parts[1],
+          field: metricField,
+          mode,
         }
+      }
       case 'device-command':
         return {
           type: 'command',
           sourceId: parts[1],
           command: parts.slice(2).join(':'),
+          // Unified fields
+          source: 'device' as const,
+          id: parts[1],
+          field: parts.slice(2).join(':'),
+          mode: 'command' as const,
         }
-      case 'device-info':
+      case 'device-info': {
+        const infoField = parts.slice(2).join(':')
         return {
           type: 'device-info',
           sourceId: parts[1],
-          infoProperty: parts.slice(2).join(':') as any,
+          infoProperty: infoField as any,
+          // Unified fields
+          source: 'device' as const,
+          id: parts[1],
+          field: infoField,
+          mode: 'info' as const,
         }
-      case 'system':
-        // Format: system:metricId (not system:deviceId:metricId)
+      }
+      case 'system': {
+        const sysField = parts.slice(1).join(':')
         return {
           type: 'system',
-          systemMetric: parts.slice(1).join(':') as any,
+          systemMetric: sysField as any,
           refresh: 10,
+          // Unified fields
+          source: 'system' as const,
+          id: 'neomind',
+          field: sysField,
+          mode: 'latest' as const,
         }
-      case 'extension':
-        // Format: extension:extensionId:metric
-        // For provider extension metrics, use "produce:metric" format
+      }
+      case 'extension': {
+        const extMetric = `produce:${parts[2]}`
         return {
           type: 'extension',
           extensionId: parts[1],
-          extensionMetric: `produce:${parts[2]}`,
-          refresh: 10,  // Auto-refresh every 10 seconds
+          extensionMetric: extMetric,
+          refresh: 10,
           timeRange: 1,
           limit: 50,
           aggregate: 'raw',
           params: { includeRawPoints: true },
           transform: 'raw',
+          // Unified fields
+          source: 'extension' as const,
+          id: parts[1],
+          field: extMetric,
+          mode: (suggestedMode ?? 'timeseries') as DataSourceMode,
         } as any
+      }
       case 'extension-command':
-        // Format: extension-command:extensionId:commandName
         return {
           type: 'extension-command',
           extensionId: parts[1],
           command: parts.slice(2).join(':'),
+          extensionCommand: parts.slice(2).join(':'),
+          // Unified fields
+          source: 'extension' as const,
+          id: parts[1],
+          field: parts.slice(2).join(':'),
+          mode: 'command' as const,
         } as any
-      case 'transform':
-        // Format: transform:transformId:field
+      case 'transform': {
+        const transformField = parts.slice(2).join(':')
         return {
           type: 'transform',
           sourceId: `transform:${parts[1]}`,
-          metricId: parts.slice(2).join(':'),
+          metricId: transformField,
           transformId: parts[1],
           timeRange: 1,
           limit: 50,
           aggregate: 'raw',
           params: { includeRawPoints: true },
           transform: 'raw',
+          // Unified fields
+          source: 'transform' as const,
+          id: parts[1],
+          field: transformField,
+          mode: 'timeseries' as const,
         }
-      case 'ai-metric':
-        // Format: ai-metric:group:field
+      }
+      case 'ai-metric': {
+        const aiField = parts.slice(2).join(':')
         return {
           type: 'ai-metric',
           sourceId: `ai:${parts[1]}`,
-          metricId: parts.slice(2).join(':'),
+          metricId: aiField,
           aiGroup: parts[1],
           timeRange: 1,
           limit: 50,
           aggregate: 'raw',
           params: { includeRawPoints: true },
           transform: 'raw',
+          // Unified fields
+          source: 'ai' as const,
+          id: parts[1],
+          field: aiField,
+          mode: 'timeseries' as const,
         }
+      }
       default:
         return undefined
     }
@@ -276,88 +331,87 @@ function selectedItemsToDataSource(
         result.push({
           type: 'device',
           sourceId: parts[1],
+          source: 'device' as const, id: parts[1], field: 'location', mode: 'info' as const,
         })
         break
-      case 'device-metric':
+      case 'device-metric': {
+        const mField = parts.slice(2).join(':')
+        const mMode = suggestedMode ?? 'timeseries'
         result.push({
           type: 'telemetry',
           sourceId: parts[1],
-          metricId: parts.slice(2).join(':'),
-          timeRange: 1,  // 1 hour for real-time dashboards (was 24, too large)
-          limit: 50,     // Reduced from 100 for better performance
-          aggregate: 'raw',
-          params: { includeRawPoints: true },
-          transform: 'raw',
+          metricId: mField,
+          timeRange: 1, limit: 50, aggregate: 'raw',
+          params: { includeRawPoints: true }, transform: 'raw',
+          source: 'device' as const, id: parts[1], field: mField, mode: mMode,
         })
         break
-      case 'device-command':
+      }
+      case 'device-command': {
+        const cmdField = parts.slice(2).join(':')
         result.push({
           type: 'command',
-          sourceId: parts[1],
-          command: parts.slice(2).join(':'),
+          sourceId: parts[1], command: cmdField,
+          source: 'device' as const, id: parts[1], field: cmdField, mode: 'command' as const,
         })
         break
-      case 'device-info':
+      }
+      case 'device-info': {
+        const infoField = parts.slice(2).join(':')
         result.push({
           type: 'device-info',
-          sourceId: parts[1],
-          infoProperty: parts.slice(2).join(':') as any,
+          sourceId: parts[1], infoProperty: infoField as any,
+          source: 'device' as const, id: parts[1], field: infoField, mode: 'info' as const,
         })
         break
-      case 'system':
-        // Format: system:metricId (not system:deviceId:metricId)
+      }
+      case 'system': {
+        const sysField = parts.slice(1).join(':')
         result.push({
-          type: 'system',
-          systemMetric: parts.slice(1).join(':') as any,
-          refresh: 10,
+          type: 'system', systemMetric: sysField as any, refresh: 10,
+          source: 'system' as const, id: 'neomind', field: sysField, mode: 'latest' as const,
         })
         break
-      case 'extension':
+      }
+      case 'extension': {
+        const extMetric = `produce:${parts[2]}`
         result.push({
-          type: 'extension',
-          extensionId: parts[1],
-          extensionMetric: `produce:${parts[2]}`,
-          refresh: 10,  // Auto-refresh every 10 seconds
-          timeRange: 1,
-          limit: 50,
-          aggregate: 'raw',
-          params: { includeRawPoints: true },
-          transform: 'raw',
+          type: 'extension', extensionId: parts[1], extensionMetric: extMetric,
+          refresh: 10, timeRange: 1, limit: 50, aggregate: 'raw',
+          params: { includeRawPoints: true }, transform: 'raw',
+          source: 'extension' as const, id: parts[1], field: extMetric,
+          mode: (suggestedMode ?? 'timeseries') as DataSourceMode,
         } as any)
         break
-      case 'extension-command':
+      }
+      case 'extension-command': {
+        const ecmdField = parts.slice(2).join(':')
         result.push({
-          type: 'extension-command',
-          extensionId: parts[1],
-          command: parts.slice(2).join(':'),
+          type: 'extension-command', extensionId: parts[1], command: ecmdField, extensionCommand: ecmdField,
+          source: 'extension' as const, id: parts[1], field: ecmdField, mode: 'command' as const,
         } as any)
         break
-      case 'transform':
+      }
+      case 'transform': {
+        const tfField = parts.slice(2).join(':')
         result.push({
-          type: 'transform',
-          sourceId: `transform:${parts[1]}`,
-          metricId: parts.slice(2).join(':'),
-          transformId: parts[1],
-          timeRange: 1,
-          limit: 50,
-          aggregate: 'raw',
-          params: { includeRawPoints: true },
-          transform: 'raw',
+          type: 'transform', sourceId: `transform:${parts[1]}`, metricId: tfField, transformId: parts[1],
+          timeRange: 1, limit: 50, aggregate: 'raw',
+          params: { includeRawPoints: true }, transform: 'raw',
+          source: 'transform' as const, id: parts[1], field: tfField, mode: 'timeseries' as const,
         })
         break
-      case 'ai-metric':
+      }
+      case 'ai-metric': {
+        const aiField = parts.slice(2).join(':')
         result.push({
-          type: 'ai-metric',
-          sourceId: `ai:${parts[1]}`,
-          metricId: parts.slice(2).join(':'),
-          aiGroup: parts[1],
-          timeRange: 1,
-          limit: 50,
-          aggregate: 'raw',
-          params: { includeRawPoints: true },
-          transform: 'raw',
+          type: 'ai-metric', sourceId: `ai:${parts[1]}`, metricId: aiField, aiGroup: parts[1],
+          timeRange: 1, limit: 50, aggregate: 'raw',
+          params: { includeRawPoints: true }, transform: 'raw',
+          source: 'ai' as const, id: parts[1], field: aiField, mode: 'timeseries' as const,
         })
         break
+      }
     }
   }
 
@@ -374,54 +428,63 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
   const dataSources = normalizeDataSource(ds)
 
   for (const dataSource of dataSources) {
+    const dsId = getUnifiedId(dataSource) ?? getSourceId(dataSource)
+    const dsField = getUnifiedField(dataSource)
+
     switch (dataSource.type) {
       case 'device':
         // Plain device reference (for map markers) - no property/metric
-        items.add(`device:${getSourceId(dataSource)}` as SelectedItem)
+        items.add(`device:${dsId}` as SelectedItem)
         break
       case 'telemetry':
-        items.add(`device-metric:${getSourceId(dataSource)}:${dataSource.metricId}` as SelectedItem)
+        items.add(`device-metric:${dsId}:${dsField ?? dataSource.metricId}` as SelectedItem)
         break
       case 'command':
-        items.add(`device-command:${getSourceId(dataSource)}:${dataSource.command}` as SelectedItem)
+        items.add(`device-command:${dsId}:${dsField ?? dataSource.command}` as SelectedItem)
         break
       case 'device-info':
-        items.add(`device-info:${getSourceId(dataSource)}:${dataSource.infoProperty}` as SelectedItem)
+        items.add(`device-info:${dsId}:${dsField ?? dataSource.infoProperty}` as SelectedItem)
         break
       case 'system':
-        items.add(`system:${dataSource.systemMetric}` as SelectedItem)
+        items.add(`system:${dsField ?? dataSource.systemMetric}` as SelectedItem)
         break
       case 'extension':
         // For extension type, check if it has extensionId and extensionMetric
-        if ((dataSource as any).extensionId && (dataSource as any).extensionMetric) {
-          // Strip "produce:" prefix if present to get just the metric name
-          const metric = (dataSource as any).extensionMetric
+        if (dataSource.extensionId && dataSource.extensionMetric) {
+          const metric = dataSource.extensionMetric
           const metricName = metric.startsWith('produce:') ? metric.slice(8) : metric
-          items.add(`extension:${(dataSource as any).extensionId}:${metricName}` as SelectedItem)
+          items.add(`extension:${dataSource.extensionId}:${metricName}` as SelectedItem)
+        } else if (dsId && dsField) {
+          // Unified fields fallback
+          const metricName = dsField.startsWith('produce:') ? dsField.slice(8) : dsField
+          items.add(`extension:${dsId}:${metricName}` as SelectedItem)
         }
         break
       case 'extension-command':
-        // For extension-command type, check if it has extensionId and command
-        if ((dataSource as any).extensionId && (dataSource as any).command) {
-          items.add(`extension-command:${(dataSource as any).extensionId}:${(dataSource as any).command}` as SelectedItem)
+        if (dataSource.extensionId && dataSource.command) {
+          items.add(`extension-command:${dataSource.extensionId}:${dataSource.command}` as SelectedItem)
+        } else if (dsId && dsField) {
+          items.add(`extension-command:${dsId}:${dsField}` as SelectedItem)
         }
         break
       case 'transform':
-        // For transform type, parse from transformId or deviceId prefix
         if (dataSource.transformId) {
-          items.add(`transform:${dataSource.transformId}:${dataSource.metricId || 'value'}` as SelectedItem)
-        } else if (getSourceId(dataSource)?.startsWith('transform:')) {
-          const id = getSourceId(dataSource)!.slice(10) // Remove "transform:" prefix
-          items.add(`transform:${id}:${dataSource.metricId || 'value'}` as SelectedItem)
+          items.add(`transform:${dataSource.transformId}:${dsField ?? dataSource.metricId ?? 'value'}` as SelectedItem)
+        } else if (dsId?.toString().startsWith('transform:')) {
+          const id = dsId.toString().slice(10)
+          items.add(`transform:${id}:${dsField ?? dataSource.metricId ?? 'value'}` as SelectedItem)
+        } else if (dsId && dsField) {
+          items.add(`transform:${dsId}:${dsField}` as SelectedItem)
         }
         break
       case 'ai-metric':
-        // For ai-metric type, parse from aiGroup or deviceId prefix
-        if ((dataSource as any).aiGroup) {
-          items.add(`ai-metric:${(dataSource as any).aiGroup}:${dataSource.metricId || 'value'}` as SelectedItem)
-        } else if (getSourceId(dataSource)?.startsWith('ai:')) {
-          const group = getSourceId(dataSource)!.slice(3) // Remove "ai:" prefix
-          items.add(`ai-metric:${group}:${dataSource.metricId || 'value'}` as SelectedItem)
+        if (dataSource.aiGroup) {
+          items.add(`ai-metric:${dataSource.aiGroup}:${dsField ?? dataSource.metricId ?? 'value'}` as SelectedItem)
+        } else if (dsId?.toString().startsWith('ai:')) {
+          const group = dsId.toString().slice(3)
+          items.add(`ai-metric:${group}:${dsField ?? dataSource.metricId ?? 'value'}` as SelectedItem)
+        } else if (dsId && dsField) {
+          items.add(`ai-metric:${dsId}:${dsField}` as SelectedItem)
         }
         break
     }
@@ -500,6 +563,7 @@ export function UnifiedDataSourceConfig({
   multiple = false,
   maxSources = 10,
   className,
+  suggestedMode,
 }: UnifiedDataSourceConfigProps) {
   const { t } = useTranslation('dashboardComponents')
   const devices = useStore((s) => s.devices) ?? []
@@ -835,9 +899,9 @@ export function UnifiedDataSourceConfig({
 
   // Notify parent of data source changes via effect (avoids setState-during-render warning)
   useEffect(() => {
-    const dataSource = selectedItemsToDataSource(selectedItems, multiple)
+    const dataSource = selectedItemsToDataSource(selectedItems, multiple, suggestedMode)
     onChange(dataSource as any)
-  }, [selectedItems, multiple])
+  }, [selectedItems, multiple, suggestedMode])
 
   // Get current category config
   const categoryConfig = getCategories(t).find(c => c.id === selectedCategory)

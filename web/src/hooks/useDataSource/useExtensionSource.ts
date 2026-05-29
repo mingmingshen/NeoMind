@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useMemo } from 'react'
 import type { DataSource } from '@/types/dashboard'
+import { getUnifiedId, getUnifiedField } from '@/types/dashboard'
 import { logError } from '@/lib/errors'
 import { useEvents } from '@/hooks/useEvents'
 import { getTimeRange, getEffectiveTimeWindow } from '@/lib/telemetryTransform'
@@ -58,8 +59,10 @@ export function useExtensionSource(
       lastProcessedExtEventIdRef.current = null
       // Invalidate caches so next fetch cycle gets fresh data
       extensionSources.forEach((ds) => {
-        if (ds.extensionId && ds.extensionMetric) {
-          const cacheKey = `${ds.extensionId}|${ds.extensionMetric}|`
+        const extId = getUnifiedId(ds)
+        const metric = getUnifiedField(ds) ?? ''
+        if (extId && metric) {
+          const cacheKey = `${extId}|${metric}|`
           extensionDataCache.deleteWhere((_, key) => key.startsWith(cacheKey))
         }
       })
@@ -98,8 +101,8 @@ export function useExtensionSource(
         const api = (await import('@/lib/api')).api
         const results = await Promise.all(
           extensionSources.map(async (ds) => {
-            const extensionId = ds.extensionId
-            const metric = ds.extensionMetric
+            const extensionId = getUnifiedId(ds)
+            const metric = getUnifiedField(ds) ?? ''
             if (!extensionId || !metric) return { data: null }
 
             // Compute time range from dataSource's timeWindow, falling back to timeRange
@@ -211,12 +214,14 @@ export function useExtensionSource(
           })
         )
 
-        // Cache successful results (rebuild cache key to match the fetch key)
+        // Cache successful results (use same key structure as fetch for consistency)
         extensionSources.forEach((ds, i) => {
-          if (ds.extensionId && ds.extensionMetric && results[i]?.success) {
+          const extId = getUnifiedId(ds)
+          const metric = getUnifiedField(ds) ?? ''
+          if (extId && metric && results[i]?.success) {
             const tw = ds.timeWindow ?? (ds.timeRange != null ? getEffectiveTimeWindow(ds) : undefined)
             const timeBucket = Math.floor(Date.now() / 60000)
-            const key = `${ds.extensionId}|${ds.extensionMetric}|${tw?.type ?? 'rel'}|${ds.limit ?? 100}|${timeBucket}`
+            const key = `${extId}|${metric}|${tw?.type ?? 'rel'}|${ds.limit ?? 100}|${timeBucket}`
             extensionDataCache.set(key, results[i].data)
           }
         })
@@ -370,9 +375,9 @@ export function useExtensionSource(
     const newEvents = extensionEvents.slice(extStartIndex)
     if (newEvents.length === 0) return
 
-    const extDataSources = state.dataSourcesRef.current.filter((ds) => ds.type === 'extension') as Array<{
-      extensionId: string; extensionMetric: string
-    }>
+    const extDataSources = state.dataSourcesRef.current.filter((ds) =>
+      ds.source === 'extension'
+    )
     if (extDataSources.length === 0) return
 
     let lastProcessedExtIdInBatch: string | null = null
@@ -387,7 +392,9 @@ export function useExtensionSource(
       const eventOutputName = eventData.output_name as string
 
       // Deterministic event ID using event content to properly deduplicate
-      const valueKey = typeof eventData.value === 'object' && eventData.value !== null ? `obj:${(eventData.value as any).type || ''}:${String(eventData.value).slice(0, 80)}` : String(eventData.value ?? '')
+      const valueKey = typeof eventData.value === 'object' && eventData.value !== null
+        ? `obj:${(eventData.value as any).type || ''}:${JSON.stringify(eventData.value).slice(0, 80)}`
+        : String(eventData.value ?? '')
       const uniqueEventId = latestEvent.id || `${eventType}_${eventExtensionId || ''}_${eventOutputName || ''}_${eventData.timestamp || ''}_${valueKey}`
       if (processedExtEventsRef.current.has(uniqueEventId)) continue
       processedExtEventsRef.current.add(uniqueEventId)
@@ -403,9 +410,11 @@ export function useExtensionSource(
       const normalizedOutput = normalizeOutputName(eventOutputName)
 
       const matchingSources = extDataSources.filter((ds) => {
-        if (ds.extensionId !== eventExtensionId) return false
-        if (!ds.extensionMetric) return false
-        const parts = ds.extensionMetric.split(':')
+        const dsId = getUnifiedId(ds)
+        if (dsId !== eventExtensionId) return false
+        const dsField = getUnifiedField(ds) ?? ''
+        if (!dsField) return false
+        const parts = dsField.split(':')
         const metricName = parts.length > 1 ? parts[1] : parts[0]
         return metricName === normalizedOutput || metricName === eventOutputName
       })
@@ -415,7 +424,9 @@ export function useExtensionSource(
         const eventValue = eventData.value
         const now = Math.floor(Date.now() / 1000)
         const newPoint = { timestamp: now, time: now, value: eventValue }
-        const allExtSources = state.dataSourcesRef.current.filter((ds) => ds.type === 'extension')
+        const allExtSources = state.dataSourcesRef.current.filter((ds) =>
+          ds.source === 'extension'
+        )
 
         // Use setData(prev => ...) to avoid stale dataRef race condition
         state.setData((prevData: unknown) => {
@@ -426,9 +437,9 @@ export function useExtensionSource(
             const nested = (currentData as unknown[][]).map((arr, i) => {
               const ds = allExtSources[i]
               if (!ds) return arr
-              const parts = (ds.extensionMetric ?? '').split(':')
+              const parts = (getUnifiedField(ds) ?? '').split(':')
               const metricName = parts.length > 1 ? parts[1] : parts[0]
-              if (ds.extensionId === eventExtensionId && (metricName === normalizedOutput || metricName === eventOutputName)) {
+              if (getUnifiedId(ds) === eventExtensionId && (metricName === normalizedOutput || metricName === eventOutputName)) {
                 // Append new point (chronological order: oldest→newest, left→right)
                 const maxLimit = ds.limit ?? 100
                 if (!Array.isArray(arr) || arr.length === 0) return [newPoint]
@@ -452,8 +463,10 @@ export function useExtensionSource(
 
         // Update cache with the merged live data so next poll doesn't overwrite with stale data
         matchingSources.forEach((ds) => {
-          if (ds.extensionId && ds.extensionMetric) {
-            const cacheKey = `${ds.extensionId}|${ds.extensionMetric}|`
+          const extId = getUnifiedId(ds)
+          const metric = getUnifiedField(ds) ?? ''
+          if (extId && metric) {
+            const cacheKey = `${extId}|${metric}|`
             extensionDataCache.deleteWhere((_, key) => key.startsWith(cacheKey))
           }
         })
@@ -463,5 +476,5 @@ export function useExtensionSource(
     }
 
     if (lastProcessedExtIdInBatch) lastProcessedExtEventIdRef.current = lastProcessedExtIdInBatch
-  }, [enabled, dataSourceKey, extensionEventsKey, relevantExtensionIds.size])
+  }, [enabled, dataSourceKey, extensionEventsKey])
 }

@@ -3,7 +3,8 @@
  * Consolidates telemetryFetch.ts, systemFetch.ts, cache.ts, and batchFetch.ts.
  */
 
-import type { TelemetryAggregate, TimeWindowConfig } from '@/types/dashboard'
+import type { TelemetryAggregate, TimeWindowConfig, DataSource } from '@/types/dashboard'
+import { getUnifiedField } from '@/types/dashboard'
 import { useStore } from '@/store'
 import { logError, isNetworkError } from '@/lib/errors'
 import { getTimeRange } from '@/lib/telemetryTransform'
@@ -342,6 +343,34 @@ export async function fetchSystemStats(metric: string): Promise<{ data: unknown;
 }
 
 // ============================================================================
+// Polling dispatch — generic fetch for non-WS sources
+// ============================================================================
+
+/**
+ * Dispatch a polling fetch for a DataSource based on its source type.
+ * Used by usePollingSource for all non-WS sources (system, rule, message, http, etc.)
+ * Add new source types here — usePollingSource itself is generic.
+ */
+export async function pollDataSource(ds: DataSource): Promise<unknown> {
+  const source = ds.source
+  const field = getUnifiedField(ds)
+
+  switch (source) {
+    case 'system': {
+      if (!field) return null
+      const response = await fetchSystemStats(field)
+      return response.data
+    }
+    // Future sources — add cases here:
+    // case 'rule': { ... }
+    // case 'message': { ... }
+    // case 'http': { ... }
+    default:
+      throw new Error(`Unsupported polling source: ${source}`)
+  }
+}
+
+// ============================================================================
 // Batch device fetch (from batchFetch.ts)
 // ============================================================================
 
@@ -359,12 +388,12 @@ function applyBatchResults(
 ) {
   const store = useStore.getState()
   for (const id of deviceIds) {
-    const entry = results[id] as { metrics?: Record<string, { value?: unknown }> } | undefined
+    const entry = results[id] as { current_values?: Record<string, unknown> } | undefined
     let metricsCount = 0
-    if (entry?.metrics) {
-      Object.entries(entry.metrics).forEach(([metricName, metricData]) => {
-        if (metricData.value !== null && metricData.value !== undefined) {
-          store.updateDeviceMetric(id, metricName, metricData.value)
+    if (entry?.current_values && typeof entry.current_values === 'object') {
+      Object.entries(entry.current_values).forEach(([metricName, value]) => {
+        if (value !== null && value !== undefined) {
+          store.updateDeviceMetric(id, metricName, value)
           metricsCount++
         }
       })

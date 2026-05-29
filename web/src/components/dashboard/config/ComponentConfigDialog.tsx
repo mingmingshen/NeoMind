@@ -39,7 +39,7 @@ import { UnifiedDataSourceConfig } from './UnifiedDataSourceConfig'
 import { DataTransformConfig } from './DataTransformConfig'
 import { getComponentMeta } from '@/components/dashboard/registry/registry'
 import type { ComponentConfigSchema } from './ComponentConfigBuilder'
-import type { DataSource, DataSourceOrList, ComponentPosition, ImplementedComponentType, DashboardComponent } from '@/types/dashboard'
+import type { DataSource, DataSourceOrList, DataSourceMode, ComponentPosition, ImplementedComponentType, DashboardComponent } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import { cn } from '@/lib/utils'
 import { dialogHeader, responsiveCols } from '@/design-system/tokens/size'
@@ -92,6 +92,19 @@ export function ComponentConfigDialog({
 
   // Desktop preview: build mock component for direct rendering
   const meta = getComponentMeta(componentType as ImplementedComponentType)
+
+  // Compute suggestedMode for DataSource config based on component type
+  const suggestedMode = useMemo((): DataSourceMode | undefined => {
+    const latestTypes = ['led-indicator', 'value-card', 'progress-bar', 'markdown-display', 'image-display', 'video-display', 'web-display']
+    const timeseriesTypes = ['line-chart', 'area-chart', 'bar-chart', 'pie-chart', 'sparkline', 'image-history', 'ai-analyst']
+    const commandTypes = ['toggle-switch']
+    const infoTypes = ['map-display', 'custom-layer']
+    if (latestTypes.includes(componentType)) return 'latest'
+    if (timeseriesTypes.includes(componentType)) return 'timeseries'
+    if (commandTypes.includes(componentType)) return 'command'
+    if (infoTypes.includes(componentType)) return 'info'
+    return undefined
+  }, [componentType])
   const previewGridW = position?.w ?? meta?.sizeConstraints.defaultW ?? 4
   const previewGridH = position?.h ?? meta?.sizeConstraints.defaultH ?? 3
 
@@ -319,6 +332,7 @@ export function ComponentConfigDialog({
                                 allowedTypes={dataSourceProps?.allowedTypes}
                                 multiple={multiple}
                                 maxSources={maxSources}
+                                suggestedMode={suggestedMode}
                               />
                             )}
 
@@ -337,6 +351,7 @@ export function ComponentConfigDialog({
                             allowedTypes={dataSourceProps?.allowedTypes}
                             multiple={multiple}
                             maxSources={maxSources}
+                            suggestedMode={suggestedMode}
                           />
                         )
                       ) : (
@@ -496,6 +511,7 @@ export function ComponentConfigDialog({
                           allowedTypes={dataSourceProps?.allowedTypes}
                           multiple={multiple}
                           maxSources={maxSources}
+                          suggestedMode={suggestedMode}
                         />
                         {dataSourceSections.length > 1 && (
                           <div className="px-5 py-3 border-t">

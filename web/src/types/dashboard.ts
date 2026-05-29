@@ -10,7 +10,16 @@
 // Data Source Types
 // ============================================================================
 
+/**
+ * Legacy DataSource type — mixes source and mode into a single discriminator.
+ * @deprecated Use `DataSourceSource` + `DataSourceMode` instead.
+ */
 export type DataSourceType = 'device' | 'metric' | 'command' | 'telemetry' | 'device-info' | 'system' | 'extension' | 'extension-metric' | 'extension-command' | 'transform' | 'ai-metric' | 'agent'
+
+/** Unified source type — identifies where data comes from */
+export type DataSourceSource = 'device' | 'extension' | 'system' | 'transform' | 'ai'
+/** Unified mode — identifies how data is consumed */
+export type DataSourceMode = 'latest' | 'timeseries' | 'command' | 'info' | 'list'
 
 export interface ValueMapping {
   on?: unknown
@@ -193,7 +202,10 @@ export interface AgentDataSource extends DataSourceBase {
 // Data Source — union + legacy interface
 // ============================================================================
 
-/** Discriminated union of all data source types */
+/**
+ * Discriminated union of all data source types.
+ * @deprecated Use DataSource with source/mode/id/field fields instead.
+ */
 export type StrictDataSource =
   | DeviceDataSource
   | MetricDataSource
@@ -246,68 +258,11 @@ export interface DataSource {
   transformId?: string
   aiGroup?: string
   agentId?: string
-}
-
-// ============================================================================
-// Type guards
-// ============================================================================
-
-export function isDeviceSource(ds: DataSource): ds is DeviceDataSource {
-  return ds.type === 'device'
-}
-
-export function isMetricSource(ds: DataSource): ds is MetricDataSource {
-  return ds.type === 'metric'
-}
-
-export function isCommandSource(ds: DataSource): ds is CommandDataSource {
-  return ds.type === 'command'
-}
-
-export function isTelemetrySource(ds: DataSource): ds is TelemetryDataSource {
-  return ds.type === 'telemetry'
-}
-
-export function isDeviceInfoSource(ds: DataSource): ds is DeviceInfoDataSource {
-  return ds.type === 'device-info'
-}
-
-export function isSystemSource(ds: DataSource): ds is SystemDataSource {
-  return ds.type === 'system'
-}
-
-export function isExtensionSource(ds: DataSource): ds is ExtensionDataSource {
-  return ds.type === 'extension'
-}
-
-export function isExtensionMetricSource(ds: DataSource): ds is ExtensionMetricDataSource {
-  return ds.type === 'extension-metric'
-}
-
-export function isExtensionCommandSource(ds: DataSource): ds is ExtensionCommandDataSource {
-  return ds.type === 'extension-command'
-}
-
-export function isTransformSource(ds: DataSource): ds is TransformDataSource {
-  return ds.type === 'transform'
-}
-
-export function isAIMetricSource(ds: DataSource): ds is AIMetricDataSource {
-  return ds.type === 'ai-metric'
-}
-
-export function isAgentSource(ds: DataSource): ds is AgentDataSource {
-  return ds.type === 'agent'
-}
-
-/** Check if a data source uses WebSocket events (device/metric/command/telemetry) */
-export function isRealtimeSource(ds: DataSource): boolean {
-  return ds.type === 'device' || ds.type === 'metric' || ds.type === 'command' || ds.type === 'telemetry'
-}
-
-/** Check if a data source uses polled fetching (telemetry/transform/system/extension) */
-export function isPolledSource(ds: DataSource): boolean {
-  return ds.type === 'telemetry' || ds.type === 'transform' || ds.type === 'ai-metric' || ds.type === 'system'
+  // Unified fields (Phase 1)
+  source?: DataSourceSource
+  id?: string
+  field?: string
+  mode?: DataSourceMode
 }
 
 // Union type for single or multiple data sources
@@ -353,11 +308,11 @@ export function resolveDataSource(ds: DataSource): DataSource {
   // Resolve timeWindow: prefer explicit, fallback from legacy timeRange
   const timeWindow = ds.timeWindow ?? (ds.timeRange != null ? hoursToTimeWindow(ds.timeRange) : undefined)
 
-  return {
+  return migrateToUnified({
     ...ds,
     ...(aggregateExt !== undefined && { aggregateExt }),
     ...(timeWindow !== undefined && { timeWindow }),
-  }
+  })
 }
 
 // Normalize to array (resolves legacy fields)
@@ -365,12 +320,84 @@ export function normalizeDataSource(dataSource: DataSourceOrList | undefined): D
   if (!dataSource) return []
   if (Array.isArray(dataSource) && dataSource.length === 0) return []
   const arr = isDataSourceList(dataSource) ? dataSource : [dataSource]
-  return arr.map(resolveDataSource)
+  return arr.filter(Boolean).map(resolveDataSource)
 }
 
 /** Get the source identifier from a DataSource */
 export function getSourceId(ds: DataSource): string | undefined {
   return ds.sourceId
+}
+
+// ============================================================================
+// Unified field migration + helpers (Phase 1)
+// ============================================================================
+
+/**
+ * Migrate a legacy DataSource to carry unified source/mode/id/field fields.
+ * Idempotent — already-migrated sources pass through unchanged.
+ */
+export function migrateToUnified(ds: DataSource): DataSource {
+  if (ds.source && ds.mode && ds.id !== undefined && ds.field !== undefined) return ds
+  const m = { ...ds }
+  switch (ds.type) {
+    case 'device':
+      m.source = 'device'; m.id = ds.sourceId; m.field = ds.property || 'value'; m.mode = 'latest'; break
+    case 'metric':
+      m.source = 'device'; m.id = ds.sourceId; m.field = ds.metricId || 'value'; m.mode = 'latest'; break
+    case 'command':
+      m.source = 'device'; m.id = ds.sourceId; m.field = ds.command; m.mode = 'command'; break
+    case 'device-info':
+      m.source = 'device'; m.id = ds.sourceId; m.field = ds.infoProperty; m.mode = 'info'; break
+    case 'telemetry':
+      m.source = 'device'; m.id = ds.sourceId; m.field = ds.metricId || 'value'; m.mode = 'timeseries'; break
+    case 'extension':
+      m.source = 'extension'; m.id = ds.extensionId || ds.sourceId; m.field = ds.extensionMetric
+      m.mode = (ds.timeRange || ds.timeWindow) ? 'timeseries' : 'latest'; break
+    case 'extension-metric':
+      m.source = 'extension'; m.id = ds.extensionId || ds.sourceId; m.field = ds.extensionMetric; m.mode = 'timeseries'; break
+    case 'extension-command':
+      m.source = 'extension'; m.id = ds.extensionId || ds.sourceId; m.field = ds.extensionCommand; m.mode = 'command'; break
+    case 'system':
+      m.source = 'system'; m.id = 'neomind'; m.field = ds.systemMetric; m.mode = 'latest'; break
+    case 'transform':
+      m.source = 'transform'; m.id = ds.transformId || ds.sourceId?.replace('transform:', ''); m.field = ds.metricId; m.mode = 'timeseries'; break
+    case 'ai-metric':
+      m.source = 'ai'; m.id = ds.aiGroup || ds.sourceId?.replace('ai:', ''); m.field = ds.metricId; m.mode = 'timeseries'; break
+    case 'agent':
+      m.source = 'ai'; m.id = ds.agentId || ds.sourceId; m.field = 'status'; m.mode = 'latest'; break
+  }
+  // Reverse-populate legacy fields from unified fields so that code
+  // reading only legacy fields (ds.sourceId, ds.metricId, etc.) works
+  // correctly for DataSources created with unified-only fields.
+  if (m.id && !m.sourceId) m.sourceId = m.id
+  if (m.field) {
+    if (!m.metricId && !m.property && !m.systemMetric && !m.command && !m.extensionMetric && !m.extensionCommand && !m.infoProperty) {
+      // Infer which legacy field to set based on source/mode
+      if (m.source === 'device') {
+        if (m.mode === 'command') m.command = m.field
+        else if (m.mode === 'info') (m as Record<string, unknown>).infoProperty = m.field
+        else if (m.mode === 'latest' && m.type !== 'telemetry') m.property = m.field
+        else m.metricId = m.field
+      } else if (m.source === 'extension') {
+        if (m.mode === 'command') m.extensionCommand = m.field
+        else m.extensionMetric = m.field
+      } else if (m.source === 'system') {
+        m.systemMetric = m.field as any
+      } else {
+        m.metricId = m.field
+      }
+    }
+    if (m.source === 'extension' && !m.extensionId) m.extensionId = m.id
+  }
+  return m
+}
+
+/** Unified field accessors — prefer these over legacy fields for new code. */
+export function getUnifiedSource(ds: DataSource): DataSourceSource | undefined { return ds.source }
+export function getUnifiedMode(ds: DataSource): DataSourceMode | undefined { return ds.mode }
+export function getUnifiedId(ds: DataSource): string | undefined { return ds.id ?? ds.sourceId }
+export function getUnifiedField(ds: DataSource): string | undefined {
+  return ds.field ?? ds.metricId ?? ds.property ?? ds.systemMetric ?? ds.command ?? ds.extensionMetric ?? ds.extensionCommand ?? ds.infoProperty
 }
 
 // ============================================================================
