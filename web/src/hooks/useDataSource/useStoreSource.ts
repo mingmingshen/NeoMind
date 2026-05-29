@@ -200,11 +200,7 @@ export function useStoreSource<T = unknown>(
                 result = lastValidDataRef.current[cacheKey] ?? '-'
               } else {
                 initialFetchDoneRef.current.add(deviceId)
-                // After fetch completes, read directly from updated store
-                // instead of waiting for store subscription → RAF → re-render chain
-                fetchDeviceTelemetry(deviceId).then(() => {
-                  readDataFromStore()
-                }).catch(() => {})
+                fetchDeviceTelemetry(deviceId).catch(() => {})
                 result = lastValidDataRef.current[cacheKey] ?? '-'
               }
             } else {
@@ -213,9 +209,7 @@ export function useStoreSource<T = unknown>(
               } else {
                 initialFetchDoneRef.current.add(deviceId)
                 import('@/lib/api').then(({ api }) => {
-                  api.getDevices().then(() => fetchDeviceTelemetry(deviceId)).then(() => {
-                    readDataFromStore()
-                  }).catch(() => {})
+                  api.getDevices().then(() => fetchDeviceTelemetry(deviceId)).catch(() => {})
                 })
                 result = lastValidDataRef.current[cacheKey] ?? '-'
               }

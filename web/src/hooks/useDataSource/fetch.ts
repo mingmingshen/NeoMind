@@ -386,17 +386,15 @@ function applyBatchResults(
   deviceIds: string[],
   resolvers: Map<string, Array<(result: { success: boolean; metricsCount: number }) => void>>
 ) {
+  // Use direct set() instead of updateDeviceMetric (which goes through BatchUpdater RAF)
+  // to avoid an extra ~16ms delay before store subscribers are notified.
   const store = useStore.getState()
+  store._applyCurrentValuesBatch(results, deviceIds)
   for (const id of deviceIds) {
     const entry = results[id] as { current_values?: Record<string, unknown> } | undefined
     let metricsCount = 0
     if (entry?.current_values && typeof entry.current_values === 'object') {
-      Object.entries(entry.current_values).forEach(([metricName, value]) => {
-        if (value !== null && value !== undefined) {
-          store.updateDeviceMetric(id, metricName, value)
-          metricsCount++
-        }
-      })
+      metricsCount = Object.values(entry.current_values).filter(v => v !== null && v !== undefined).length
     }
     if (metricsCount > 0) {
       fetchedDevices.add(id)

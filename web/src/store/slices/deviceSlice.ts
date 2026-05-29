@@ -48,10 +48,12 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
   fetchDevicesCurrentBatch: (deviceIds: string[], signal?: AbortSignal) => Promise<void>  // Batch fetch for dashboard
   fetchCommandHistory: (deviceId: string, limit?: number) => Promise<void>
 
-  // Device status update from events
+  // Update device metric from real-time events
   updateDeviceStatus: (deviceId: string, status: 'online' | 'offline') => void
   // Update device metric from real-time events
   updateDeviceMetric: (deviceId: string, property: string, value: unknown) => void
+  // Apply current_values batch directly (bypasses BatchUpdater RAF for instant store notification)
+  _applyCurrentValuesBatch: (results: Record<string, unknown>, deviceIds: string[]) => void
 }
 
 // Module-level helper for setting nested properties immutably
@@ -586,5 +588,54 @@ export const createDeviceSlice: StateCreator<
       })
     }
     metricBatchUpdater.push(`${deviceId}:${property}`, { deviceId, property, value })
+  },
+
+  // Apply current_values batch from fetchDeviceTelemetry directly via set(),
+  // bypassing BatchUpdater RAF so store subscribers are notified immediately.
+  _applyCurrentValuesBatch: (results, deviceIds) => {
+    set((state) => {
+      let changed = false
+
+      const buildNestedValues = (metrics: Record<string, unknown>) => {
+        const res: Record<string, unknown> = {}
+        for (const [key, value] of Object.entries(metrics)) {
+          const parts = key.split('.')
+          let current = res
+          for (let i = 0; i < parts.length - 1; i++) {
+            if (!(parts[i] in current)) current[parts[i]] = {}
+            current = current[parts[i]] as Record<string, unknown>
+          }
+          current[parts[parts.length - 1]] = value
+        }
+        return res
+      }
+
+      const existingIds = new Set<string>()
+      const updatedDevices = state.devices.map((device) => {
+        const id = device.id || device.device_id
+        existingIds.add(id)
+        const entry = results[id] as { current_values?: Record<string, unknown> } | undefined
+        if (!entry?.current_values) return device
+        const newValues = buildNestedValues(entry.current_values)
+        if (!newValues || Object.keys(newValues).length === 0) return device
+        changed = true
+        return { ...device, current_values: newValues }
+      })
+
+      // Add placeholder entries for devices not yet in store
+      const newDevices: Device[] = []
+      for (const [id, entry] of Object.entries(results)) {
+        if (existingIds.has(id)) continue
+        const cv = (entry as any)?.current_values
+        if (!cv) continue
+        const newValues = buildNestedValues(cv)
+        if (Object.keys(newValues).length === 0) continue
+        changed = true
+        newDevices.push({ id, device_id: id, name: id, status: 'unknown', online: false, current_values: newValues } as Device)
+      }
+
+      if (!changed) return state as any
+      return { devices: newDevices.length > 0 ? [...updatedDevices, ...newDevices] : updatedDevices }
+    })
   },
 })
