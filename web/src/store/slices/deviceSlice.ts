@@ -89,6 +89,27 @@ const getNestedValue = (obj: Record<string, unknown>, path: string): unknown => 
   return current
 }
 
+// Module-level helper to build nested object from flat dot-separated key paths.
+// Skips entries with null/undefined values.
+const buildNestedValues = (metrics: Record<string, unknown>): Record<string, unknown> => {
+  const result: Record<string, unknown> = {}
+  for (const [key, raw] of Object.entries(metrics)) {
+    // For { value, timestamp } envelope objects, extract the actual value
+    const value = raw !== null && typeof raw === 'object' && 'value' in (raw as Record<string, unknown>)
+      ? (raw as { value: unknown }).value
+      : raw
+    if (value === null || value === undefined) continue
+    const parts = key.split('.')
+    let current = result
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!(parts[i] in current)) current[parts[i]] = {}
+      current = current[parts[i]] as Record<string, unknown>
+    }
+    current[parts[parts.length - 1]] = value
+  }
+  return result
+}
+
 // Module-level batch updater for device metric updates
 let metricBatchUpdater: BatchUpdater<{ deviceId: string; property: string; value: unknown }> | null = null
 
@@ -346,29 +367,6 @@ export const createDeviceSlice: StateCreator<
       const data = await api.getDeviceCurrent(deviceId)
       set({ deviceCurrentState: data })
 
-      // Helper function to build nested object from flat key paths
-      // Only includes metrics with non-null values
-      const buildNestedValues = (metrics: Record<string, any>) => {
-        const result: Record<string, unknown> = {}
-        for (const [key, metricData] of Object.entries(metrics)) {
-          // Skip null values - only store actual data
-          if (metricData.value === null || metricData.value === undefined) {
-            continue
-          }
-          const parts = key.split('.')
-          let current = result
-          for (let i = 0; i < parts.length - 1; i++) {
-            const part = parts[i]
-            if (!(part in current)) {
-              current[part] = {}
-            }
-            current = current[part] as Record<string, unknown>
-          }
-          current[parts[parts.length - 1]] = metricData.value
-        }
-        return result
-      }
-
       // Also update device in the devices list with current values
       // This keeps the devices list in sync with the latest data
       set((state) => ({
@@ -415,24 +413,6 @@ export const createDeviceSlice: StateCreator<
 
       // Check if request was aborted before updating state
       if (signal?.aborted) return
-
-      // Helper function to build nested object from flat key paths
-      const buildNestedValues = (metrics: Record<string, unknown>) => {
-        const result: Record<string, unknown> = {}
-        for (const [key, value] of Object.entries(metrics)) {
-          const parts = key.split('.')
-          let current = result
-          for (let i = 0; i < parts.length - 1; i++) {
-            const part = parts[i]
-            if (!(part in current)) {
-              current[part] = {}
-            }
-            current = current[part] as Record<string, unknown>
-          }
-          current[parts[parts.length - 1]] = value
-        }
-        return result
-      }
 
       // Update devices array with fetched current_values
       const deviceDataMap = data.devices || {}
@@ -595,20 +575,6 @@ export const createDeviceSlice: StateCreator<
   _applyCurrentValuesBatch: (results, deviceIds) => {
     set((state) => {
       let changed = false
-
-      const buildNestedValues = (metrics: Record<string, unknown>) => {
-        const res: Record<string, unknown> = {}
-        for (const [key, value] of Object.entries(metrics)) {
-          const parts = key.split('.')
-          let current = res
-          for (let i = 0; i < parts.length - 1; i++) {
-            if (!(parts[i] in current)) current[parts[i]] = {}
-            current = current[parts[i]] as Record<string, unknown>
-          }
-          current[parts[parts.length - 1]] = value
-        }
-        return res
-      }
 
       const existingIds = new Set<string>()
       const updatedDevices = state.devices.map((device) => {

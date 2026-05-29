@@ -37,14 +37,6 @@ function getStateOptions(t: (key: string) => string) {
 // Condition type
 type ConditionType = 'threshold' | 'values' | 'pattern' | 'always'
 
-// Generate a stable key from rule content
-function getRuleKey(rule: StateRule): string {
-  if (rule.threshold) return `t:${rule.threshold.operator}:${rule.threshold.value}:${rule.state}`
-  if (rule.values) return `v:${rule.values}:${rule.state}`
-  if (rule.pattern) return `p:${rule.pattern}:${rule.state}`
-  return `a:${rule.state}`
-}
-
 function getConditionType(rule: StateRule): ConditionType {
   if (rule.threshold) return 'threshold'
   if (rule.pattern) return 'pattern'
@@ -166,7 +158,6 @@ export function LEDStateRulesConfig({
           rules.map((rule, index) => {
             const conditionType = getConditionType(rule)
             const info = stateInfo.get(rule.state)
-            const ruleKey = getRuleKey(rule)
             // Use index-based key so editing rule.values/pattern doesn't change
             // the React key (which would remount the DOM and lose input focus)
             const stableKey = `rule-${index}`
@@ -183,7 +174,7 @@ export function LEDStateRulesConfig({
                     "flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors",
                     !isCollapsed && "bg-muted-30"
                   )}
-                  onClick={() => toggleCollapse(ruleKey)}
+                  onClick={() => toggleCollapse(stableKey)}
                 >
                   {/* Drag handle */}
                   <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />

@@ -591,18 +591,12 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   // NO 2-second fast retry polling — it blocks the main thread during scroll
   // in WKWebView (Tauri), causing white screen frames.
   const batchFetchControllerRef = useRef<{ deviceIds: string[]; interval: ReturnType<typeof setInterval> | null }>({ deviceIds: [], interval: null })
-  const batchAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (!dashboardDeviceIdsKey) return
 
     const deviceIds = dashboardDeviceIdsKey.split(',').filter(Boolean)
     if (deviceIds.length === 0) return
-
-    // Abort any in-flight requests from previous effect run
-    batchAbortRef.current?.abort()
-    const abortController = new AbortController()
-    batchAbortRef.current = abortController
 
     // Clear previous polling if device set changed
     const ctrl = batchFetchControllerRef.current
@@ -612,35 +606,37 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     }
     ctrl.deviceIds = deviceIds
 
-    // Initial fetch (like v0.7.0)
-    fetchDevicesCurrentBatch(deviceIds, abortController.signal)
+    // Initial fetch — do NOT pass an AbortSignal.
+    // React 18 StrictMode unmounts→remounts components synchronously,
+    // which aborts the signal before the fetch completes. Without a signal,
+    // the initial fetch always succeeds regardless of effect re-runs.
+    fetchDevicesCurrentBatch(deviceIds)
 
-    // Slow background refresh only (120s) — no fast retry polling
+    // Periodic refresh uses a separate abortable controller
+    const refreshController = new AbortController()
     const SLOW_REFRESH_MS = 120_000
     ctrl.interval = setInterval(() => {
-      if (!abortController.signal.aborted) {
-        fetchDevicesCurrentBatch(deviceIds, abortController.signal)
+      if (!refreshController.signal.aborted) {
+        fetchDevicesCurrentBatch(deviceIds, refreshController.signal)
       }
     }, SLOW_REFRESH_MS)
 
     return () => {
-      abortController.abort()
+      refreshController.abort()
       if (ctrl.interval) {
         clearInterval(ctrl.interval)
         ctrl.interval = null
       }
     }
-  }, [devicesLength, dashboardDeviceIdsKey, fetchDevicesCurrentBatch])
+  }, [dashboardDeviceIdsKey, fetchDevicesCurrentBatch])
 
   // Fix 3: Update devicesRef only when devices actually change (not on every render)
   useEffect(() => {
     devicesRef.current = useStore.getState().devices
   }, [devicesLength])
 
-  // Fix 2: On dashboard switch, abort in-flight batch requests and clear polling
+  // On dashboard switch, clear polling interval
   useEffect(() => {
-    // Abort any stale batch requests
-    batchAbortRef.current?.abort()
     const ctrl = batchFetchControllerRef.current
     if (ctrl.interval) {
       clearInterval(ctrl.interval)

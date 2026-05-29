@@ -436,24 +436,31 @@ async function flushBatch() {
       const api = (await import('@/lib/api')).api
       const CHUNK_SIZE = 5
       const individualResults: Array<PromiseSettledResult<{ id: string; success: boolean; metricsCount: number }>> = []
+      // Collect all fetched device data for batch store write
+      const fallbackResults: Record<string, unknown> = {}
+      const fallbackIds: string[] = []
       for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE)
         const chunkResults = await Promise.allSettled(chunk.map(async (id) => {
           try {
             const details = await api.getDeviceCurrent(id)
-            const store = useStore.getState()
             let metricsCount = 0
             if (details?.metrics) {
-              Object.entries(details.metrics).forEach(([metricName, metricData]: [string, unknown]) => {
-                const value = (metricData as { value?: unknown }).value
-                if (value !== null && value !== undefined) { store.updateDeviceMetric(id, metricName, value); metricsCount++ }
-              })
+              // Collect for batch apply instead of individual store.updateDeviceMetric
+              fallbackResults[id] = { current_values: details.metrics }
+              fallbackIds.push(id)
+              metricsCount = Object.values(details.metrics).filter((v: any) => v?.value !== null && v?.value !== undefined).length
             }
             if (metricsCount > 0) fetchedDevices.add(id)
             return { id, success: metricsCount > 0, metricsCount }
           } catch { return { id, success: false, metricsCount: 0 } }
         }))
         individualResults.push(...chunkResults)
+      }
+      // Apply all collected results at once via direct set()
+      if (fallbackIds.length > 0) {
+        const store = useStore.getState()
+        store._applyCurrentValuesBatch(fallbackResults, fallbackIds)
       }
       for (let i = 0; i < ids.length; i++) {
         const id = ids[i]

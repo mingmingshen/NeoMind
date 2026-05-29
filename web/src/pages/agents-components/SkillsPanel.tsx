@@ -141,10 +141,16 @@ export const SkillsPanel = forwardRef<SkillsPanelHandle, SkillsPanelProps>(funct
     loadSkills()
   }, [loadSkills])
 
+  // Page change handler: immediately set loading so skeleton shows without waiting for useEffect
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page)
+    setLoading(true)
+  }, [])
+
   // Notify parent of pagination state changes
   useEffect(() => {
-    onPaginationChange?.({ total, pageSize, currentPage, onPageChange: setCurrentPage, loading })
-  }, [total, pageSize, currentPage, loading, onPaginationChange])
+    onPaginationChange?.({ total, pageSize, currentPage, onPageChange: handlePageChange, loading })
+  }, [total, pageSize, currentPage, loading, onPaginationChange, handlePageChange])
 
   // Helper: reconstruct full .md file content from detail
   const reconstructContent = (detail: SkillDetail): string => {
