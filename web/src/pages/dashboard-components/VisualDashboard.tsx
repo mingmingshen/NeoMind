@@ -570,6 +570,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           if (sid) deviceIds.add(sid)
         }
       }
+      // Device-bound community/extension components (e.g. NE101 camera)
+      const deviceBindingId = (genericComponent.config as any)?.deviceBinding?.deviceId as string | undefined
+      if (deviceBindingId) deviceIds.add(deviceBindingId)
       if (genericComponent.type === 'map-display') {
         const bindings = (genericComponent.config as any)?.bindings as MapBinding[] || []
         for (const binding of bindings) {
