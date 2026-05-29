@@ -1,5 +1,4 @@
 import React from 'react'
-import { cn } from '@/lib/utils'
 import { chartColorsHex } from '@/design-system/tokens/color'
 import { Field } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
@@ -519,36 +518,6 @@ export function getLEDIndicatorSchema(config: any, ctx: SchemaContext, u: Update
                       {t('visualDashboard.defaultStateHint')}
                     </p>
                   </Field>
-
-                  {/* State Labels - custom labels for each LED state */}
-                  <div className="pt-2 border-t">
-                    <div className="text-sm font-medium mb-3">{t('visualDashboard.stateLabels')}</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(['on', 'off', 'error', 'warning', 'unknown'] as const).map((state) => (
-                        <div key={state} className="flex items-center gap-2">
-                          <span className={cn(
-                            "text-xs font-medium px-2 py-1 rounded shrink-0",
-                            state === 'on' && "bg-success-light text-success",
-                            state === 'off' && "bg-muted text-muted-foreground",
-                            state === 'error' && "bg-error-light text-error",
-                            state === 'warning' && "bg-warning-light text-warning",
-                            state === 'unknown' && "bg-muted text-muted-foreground"
-                          )}>
-                            {t(`visualDashboard.${state}`)}
-                          </span>
-                          <Input
-                            value={(config.stateLabels as Record<string, string>)?.[state] || ''}
-                            onChange={(e) => {
-                              const current = (config.stateLabels as Record<string, string>) || {}
-                              updateConfig('stateLabels')({ ...current, [state]: e.target.value || undefined })
-                            }}
-                            placeholder={t(`visualDashboard.${state}`)}
-                            className="h-8 text-sm flex-1"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
 
                   {/* State Mapping Rules */}
                   <div className="pt-2 border-t">

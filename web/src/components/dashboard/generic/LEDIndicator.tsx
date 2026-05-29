@@ -49,9 +49,6 @@ export interface LEDIndicatorProps {
   // Fallback when no rules match
   defaultState?: LEDState
 
-  // Optional global label overrides (applied when rule doesn't specify label)
-  stateLabels?: Record<string, string>
-
   // Display options
   title?: string       // Primary label (static, e.g., "Living Room Light")
   size?: 'sm' | 'md' | 'lg'
@@ -223,7 +220,6 @@ export const LEDIndicator = memo(function LEDIndicator({
   dataSource,
   rules = [],
   defaultState = 'unknown',
-  stateLabels,
   title,
   size = 'md',
   showCard = true,
@@ -236,33 +232,40 @@ export const LEDIndicator = memo(function LEDIndicator({
 
   // LED only needs the latest single value — convert telemetry to device type
   // for instant store reads instead of slow API telemetry fetches.
+  // Always use this transform: it preserves unified fields via spread,
+  // and the proven case='device' path reads synchronously from store.
   const { data, loading, error } = useDataSource<unknown>(dataSource, {
     sourceTransform: latestValueSourceTransform,
   })
 
   // Prevent loading flash: only show skeleton when loading AND no data exists yet
-  // Treat empty arrays as "no data" — the pipeline uses [] for empty fetches
-  const hasData = data !== null && data !== undefined && !(Array.isArray(data) && data.length === 0)
+  // Treat empty arrays and '-' fallback sentinel as "no data"
+  const hasData = data !== null && data !== undefined && data !== '-' && !(Array.isArray(data) && data.length === 0)
   const showLoading = loading && !hasData
 
   // Determine state, label, and color from matching rule
   const hasDataSource = dataSource !== undefined
   const { state: ledState, label: ruleLabel, color: ruleColor } = useMemo(() => {
     if (error) return { state: 'error' as LEDState }
-    if (loading) return { state: 'unknown' as LEDState }
     // When data is empty but we have a dataSource, stay in unknown state
     // (the pipeline may still be retrying/polling)
     if (hasDataSource && !hasData) return { state: 'unknown' as LEDState }
 
-    // Find first matching rule
-    return findMatch(rules, data, defaultState)
-  }, [data, rules, defaultState, error, loading, hasDataSource, hasData])
+    // When we have real data + data source, use rules to determine state.
+    // defaultState is ONLY for static display (no data source configured).
+    if (hasDataSource && hasData) {
+      return findMatch(rules, data, 'unknown')
+    }
+
+    // No data source — purely decorative, use defaultState
+    return { state: defaultState }
+  }, [data, rules, defaultState, error, hasDataSource, hasData])
 
   const stateCfg = stateConfig[ledState] || stateConfig.unknown
   const isActive = ledState === 'on' || ledState === 'error' || ledState === 'warning'
 
-  // Label priority: rule.label > stateLabels[ledState] > default state label
-  const displayLabel = ruleLabel || (stateLabels?.[ledState]) || stateCfg.label
+  // Label priority: rule.label > default state label
+  const displayLabel = ruleLabel || stateCfg.label
 
   // Color priority: rule.color > default state color
   const displayColor = ruleColor || stateCfg.color.base

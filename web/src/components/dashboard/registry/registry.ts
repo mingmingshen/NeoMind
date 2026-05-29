@@ -112,8 +112,8 @@ export const componentRegistry: ComponentRegistry = {
     hasActions: false,
     acceptsProp: (prop) => [
       'title', 'color', 'size', 'variant', 'className',
-      'valueMap', 'defaultState', 'showGlow', 'showAnimation', 'state',
-      'dataMapping', 'showCard',
+      'valueMap', 'defaultState', 'showGlow', 'showAnimation',
+      'dataMapping', 'showCard', 'rules',
     ].includes(prop),
     defaultProps: {
       size: 'md',

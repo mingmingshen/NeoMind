@@ -525,14 +525,11 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     // Fetch dashboards first so the shell and saved layout can paint quickly.
     fetchDashboards()
 
-    // Device metadata is needed for bindings, but it should not compete with
-    // the first dashboard paint in Tauri/WKWebView.
-    const cancelIdleFetch = scheduleDashboardIdleTask(() => {
-      fetchDevices()
-      fetchDeviceTypes()
-    }, 500)
-
-    return cancelIdleFetch
+    // Fetch devices and types immediately (not delayed) so that dashboard
+    // components with data bindings can read current_values synchronously
+    // on first mount instead of waiting for async fetch chains.
+    fetchDevices()
+    fetchDeviceTypes()
   }, [fetchDashboards, fetchDevices, fetchDeviceTypes])
 
   // Retry device fetching when devices are empty (backend DB may still be loading)
@@ -594,7 +591,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const batchAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
-    if (devicesLength === 0 || !dashboardDeviceIdsKey) return
+    if (!dashboardDeviceIdsKey) return
 
     const deviceIds = dashboardDeviceIdsKey.split(',').filter(Boolean)
     if (deviceIds.length === 0) return

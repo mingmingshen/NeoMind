@@ -450,8 +450,14 @@ export const createDeviceSlice: StateCreator<
       const _t0 = performance.now()
       set((state) => {
         let changed = false
+
+        // Track which device IDs from the batch already exist in store
+        const existingIds = new Set<string>()
+
         const updatedDevices = state.devices.map((device) => {
-          const deviceData = deviceDataMap[device.id || device.device_id]
+          const id = device.id || device.device_id
+          existingIds.add(id)
+          const deviceData = deviceDataMap[id]
           if (!deviceData) {
             return device
           }
@@ -470,10 +476,28 @@ export const createDeviceSlice: StateCreator<
           }
         })
 
-        // Only create new state if something actually changed
+        // For devices not yet in store, add placeholder entries with current_values
+        // so that readDataFromStore can find them synchronously on first mount
+        const newDevices: Device[] = []
+        for (const [id, deviceData] of Object.entries(deviceDataMap)) {
+          if (existingIds.has(id)) continue
+          if (!deviceData?.current_values) continue
+          const newValues = buildNestedValues(deviceData.current_values)
+          if (Object.keys(newValues).length === 0) continue
+          changed = true
+          newDevices.push({
+            id,
+            device_id: id,
+            name: id,
+            status: 'unknown',
+            online: false,
+            current_values: newValues,
+          } as Device)
+        }
+
         if (!changed) return state as any
 
-        return { devices: updatedDevices }
+        return { devices: newDevices.length > 0 ? [...updatedDevices, ...newDevices] : updatedDevices }
       })
       const _dt = performance.now() - _t0
       if (_dt > 100) console.warn(`[perf] fetchDevicesCurrentBatch set(): ${Math.round(_dt)}ms`)

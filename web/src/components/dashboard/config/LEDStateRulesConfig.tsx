@@ -167,11 +167,14 @@ export function LEDStateRulesConfig({
             const conditionType = getConditionType(rule)
             const info = stateInfo.get(rule.state)
             const ruleKey = getRuleKey(rule)
-            const isCollapsed = collapsedIds.has(ruleKey)
+            // Use index-based key so editing rule.values/pattern doesn't change
+            // the React key (which would remount the DOM and lose input focus)
+            const stableKey = `rule-${index}`
+            const isCollapsed = collapsedIds.has(stableKey)
 
             return (
               <div
-                key={ruleKey}
+                key={stableKey}
                 className="rounded-md border bg-background overflow-hidden"
               >
                 {/* Header */}
