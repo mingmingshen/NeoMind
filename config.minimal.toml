@@ -6,50 +6,28 @@
 #
 # Setup steps:
 #   1. Install Ollama: curl -fsSL https://ollama.com/install.sh | sh
-#   2. Pull model: ollama pull ministral-3:3b
+#   2. Pull model: ollama pull qwen3.5:4b
 #   3. Copy this file: cp config.minimal.toml config.toml
-#   4. Start server: cargo run -p neomind-api
+#   4. Start server: cargo run -p neomind-cli -- serve
 #   5. Open: http://localhost:9375
 #
-# For full configuration options, see CLAUDE.md
-#
+# For full configuration options, see config.toml or CLAUDE.md
 
 [llm]
 backend = "ollama"
-model = "ministral-3:3b"
+model = "qwen3.5:4b"
 
 [mqtt]
-mode = "embedded"
+listen = "0.0.0.0"
 port = 1883
 
-# ============================================================
-# Memory System Configuration (Optional)
-# ============================================================
-# Configure storage and retrieval of conversation history
-
 [memory]
-# Short-term memory: current conversation context
-max_short_term_messages = 100      # Max message count
-max_short_term_tokens = 4000        # Max token count
-
-# Mid-term memory: recent conversation history with semantic search
-max_mid_term_entries = 1000         # Max conversation entries
-
-# Long-term memory: knowledge base and troubleshooting cases
-max_long_term_knowledge = 10000     # Max knowledge entries
-
-# Embedding model configuration (for semantic search)
-# Options: "simple" (default/fake embedding), "ollama" (local), "openai" (cloud)
+max_short_term_messages = 100
+max_short_term_tokens = 4000
+max_mid_term_entries = 1000
+max_long_term_knowledge = 10000
 embedding_provider = "simple"
-# embedding_provider = "ollama"     # Use Ollama embedding model
-# embedding_endpoint = "http://localhost:11434"
-# embedding_model = "nomic-embed-text"
-# embedding_api_key = "sk-xxx"     # OpenAI API key
-
-# Hybrid search configuration (combines semantic search + BM25 full-text search)
-use_hybrid_search = true            # Enable hybrid search
-semantic_weight = 0.7               # Semantic search weight (0.0 - 1.0)
-bm25_weight = 0.3                   # BM25 full-text search weight (0.0 - 1.0)
-
-# Embedding dimension (only used by simple embedding)
 embedding_dim = 64
+use_hybrid_search = true
+semantic_weight = 0.7
+bm25_weight = 0.3
