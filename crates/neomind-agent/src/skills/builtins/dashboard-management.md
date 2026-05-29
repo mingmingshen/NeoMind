@@ -92,6 +92,10 @@ neomind dashboard add-components <DASHBOARD_ID> --components '[
     "position": {"x": 0, "y": 0, "w": 4, "h": 2},
     "data_source": {
       "type": "device",
+      "source": "device",
+      "id": "sensor-001",
+      "field": "temperature",
+      "mode": "latest",
       "sourceId": "sensor-001",
       "property": "temperature"
     },
@@ -114,15 +118,15 @@ neomind dashboard create --name 'Battery Monitor'
 # Step 3: Add ALL components using add-components (append mode)
 neomind dashboard add-components <DASHBOARD_ID> --components '[
   {"id":"b1","type":"value-card","title":"Sensor 1 Battery","position":{"x":0,"y":0,"w":4,"h":2},
-   "data_source":{"type":"device","sourceId":"sensor-001","property":"battery"},
+   "data_source":{"type":"device","source":"device","id":"sensor-001","field":"battery","mode":"latest","sourceId":"sensor-001","property":"battery"},
    "display":{"unit":"%","format":".0f"}},
   {"id":"b2","type":"value-card","title":"Sensor 2 Battery","position":{"x":4,"y":0,"w":4,"h":2},
-   "data_source":{"type":"device","sourceId":"sensor-002","property":"battery"},
+   "data_source":{"type":"device","source":"device","id":"sensor-002","field":"battery","mode":"latest","sourceId":"sensor-002","property":"battery"},
    "display":{"unit":"%","format":".0f"}},
   {"id":"chart","type":"line-chart","title":"Battery Trends","position":{"x":0,"y":2,"w":12,"h":4},
    "data_source":[
-     {"type":"device","sourceId":"sensor-001","property":"battery","timeWindow":{"type":"last_24hours"}},
-     {"type":"device","sourceId":"sensor-002","property":"battery","timeWindow":{"type":"last_24hours"}}
+     {"type":"device","source":"device","id":"sensor-001","field":"battery","mode":"timeseries","sourceId":"sensor-001","property":"battery","timeWindow":{"type":"last_24hours"}},
+     {"type":"device","source":"device","id":"sensor-002","field":"battery","mode":"timeseries","sourceId":"sensor-002","property":"battery","timeWindow":{"type":"last_24hours"}}
    ],
    "display":{"unit":"%","showLegend":true}}
 ]'
@@ -146,10 +150,32 @@ neomind dashboard delete <DASHBOARD_ID>
 
 ## DataSource Binding Reference
 
+All data sources use **unified fields** (`source`/`mode`/`id`/`field`) plus legacy fields for backward compatibility.
+
+### Unified Field System (v0.8.2+)
+
+| source | mode | id | field | Component types |
+|--------|------|----|-------|----------------|
+| `device` | `latest` | device ID | metric name | value-card, led-indicator, gauge, progress-bar |
+| `device` | `timeseries` | device ID | metric name | line-chart, area-chart, bar-chart, sparkline |
+| `device` | `command` | device ID | command name | toggle-switch |
+| `device` | `info` | device ID | property name | map-display |
+| `extension` | `timeseries` | extension ID | `COMMAND:FIELD` | charts with extension data |
+| `extension` | `command` | extension ID | command name | extension control buttons |
+| `system` | `latest` | `neomind` | system metric | system stats display |
+
 ### Device Metrics
 
 ```json
-{"type":"device","sourceId":"<device-id>","property":"<metric-name>"}
+{
+  "type": "device",
+  "source": "device",
+  "id": "<device-id>",
+  "field": "<metric-name>",
+  "mode": "latest",
+  "sourceId": "<device-id>",
+  "property": "<metric-name>"
+}
 ```
 
 **IMPORTANT**: Must use real metric names from `device latest <ID>`. Common names: `temperature`, `humidity`, `battery`, `cpu`, `memory`, `status`.
@@ -157,24 +183,37 @@ neomind dashboard delete <DASHBOARD_ID>
 ### Extension Metrics
 
 ```json
-{"type":"extension-metric","extensionId":"<ext-id>","extensionMetric":"<command>:<field>"}
+{
+  "type": "extension-metric",
+  "source": "extension",
+  "id": "<ext-id>",
+  "field": "<COMMAND>:<FIELD>",
+  "mode": "timeseries",
+  "extensionId": "<ext-id>",
+  "extensionMetric": "<COMMAND>:<FIELD>"
+}
 ```
 
-**CRITICAL DIFFERENCES from device data source:**
-- Extension uses `extensionId` (NOT `sourceId`)
-- Extension uses `extensionMetric` (NOT `property`)
-- `extensionMetric` MUST use `COMMAND:FIELD` format — e.g. `get_weather:temperature_c`, NOT bare `temperature_c`
-- Discover command IDs and output field names via `extension get <ID>` → `commands[].id` + `commands[].output_fields[].name`
-- Example: If `extension get weather-forecast-v2` shows command `get_weather` with output field `temperature_c`, the extensionMetric is `get_weather:temperature_c`
+**CRITICAL**:
+- `id`/`field` = unified fields (always use these)
+- `extensionId`/`extensionMetric` = legacy fields (include for backward compatibility)
+- `field` MUST use `COMMAND:FIELD` format — e.g. `get_weather:temperature_c`, NOT bare `temperature_c`
+- Discover via `extension get <ID>` → `commands[].id` + `commands[].output_fields[].name`
 
 ### Time Series (for charts)
 
-Add to any data_source:
+Add `mode: "timeseries"` and time range to any data_source:
 ```json
 {
-  "type":"device","sourceId":"sensor-01","property":"temperature",
-  "timeWindow":{"type":"last_24hours"},
-  "aggregateExt":"avg"
+  "type": "device",
+  "source": "device",
+  "id": "sensor-01",
+  "field": "temperature",
+  "mode": "timeseries",
+  "sourceId": "sensor-01",
+  "property": "temperature",
+  "timeWindow": {"type": "last_24hours"},
+  "aggregateExt": "avg"
 }
 ```
 
@@ -184,14 +223,14 @@ Charts accept `data_source` as **array** for multiple series.
 
 ### Common DataSource Errors
 
-| Error | Wrong Field | Correct Field |
-|-------|-------------|---------------|
-| Extension data not binding | `"property":"temp"` | `"extensionMetric":"get_weather:temp"` |
-| Extension data not binding | `"sourceId":"weather"` | `"extensionId":"weather-forecast-v2"` |
-| Extension data not binding | `"extensionMetric":"temperature_c"` | `"extensionMetric":"get_weather:temperature_c"` |
-| Device data not binding | `"extensionMetric":"temp"` | `"property":"temp"` |
+| Error | Wrong | Correct |
+|-------|-------|---------|
+| Extension data not binding | Missing `source:"extension"` | Add `"source":"extension"` and `"id"` |
+| Extension field not binding | `"field":"temperature_c"` | `"field":"get_weather:temperature_c"` |
+| Device data not binding | Missing `source:"device"` | Add `"source":"device"` and `"id"` |
+| Chart shows no history | `"mode":"latest"` | Charts need `"mode":"timeseries"` |
 | No data shows | Guessed metric name | Run `device latest <ID>` first |
-| "Device not found" | Wrong sourceId | Run `device list` for valid IDs |
+| "Device not found" | Wrong id | Run `device list` for valid IDs |
 
 ## Widget Types Reference
 
@@ -275,7 +314,7 @@ neomind dashboard get <ID>
 neomind dashboard add-components <ID> --components '[
   {"id":"new_chart","type":"line-chart","title":"New Chart",
    "position":{"x":0,"y":4,"w":12,"h":4},
-   "data_source":{"type":"device","sourceId":"sensor-001","property":"temperature","timeWindow":{"type":"last_24hours"}}}
+   "data_source":{"type":"device","source":"device","id":"sensor-001","field":"temperature","mode":"timeseries","sourceId":"sensor-001","property":"temperature","timeWindow":{"type":"last_24hours"}}}
 ]'
 ```
 
@@ -291,17 +330,17 @@ neomind dashboard create --name 'Weather Comparison'
 neomind dashboard add-components <ID> --components '[
   {"id":"indoor","type":"value-card","title":"Indoor Temp",
    "position":{"x":0,"y":0,"w":4,"h":2},
-   "data_source":{"type":"device","sourceId":"sensor-001","property":"temperature"},
+   "data_source":{"type":"device","source":"device","id":"sensor-001","field":"temperature","mode":"latest","sourceId":"sensor-001","property":"temperature"},
    "display":{"unit":"°C"}},
   {"id":"outdoor","type":"value-card","title":"Outdoor Temp",
    "position":{"x":4,"y":0,"w":4,"h":2},
-   "data_source":{"type":"extension-metric","extensionId":"weather-forecast-v2","extensionMetric":"get_weather:temperature_c"},
+   "data_source":{"type":"extension-metric","source":"extension","id":"weather-forecast-v2","field":"get_weather:temperature_c","mode":"timeseries","extensionId":"weather-forecast-v2","extensionMetric":"get_weather:temperature_c"},
    "display":{"unit":"°C"}},
   {"id":"compare","type":"line-chart","title":"Temperature Comparison",
    "position":{"x":0,"y":2,"w":12,"h":4},
    "data_source":[
-     {"type":"device","sourceId":"sensor-001","property":"temperature","timeWindow":{"type":"last_24hours"}},
-     {"type":"extension-metric","extensionId":"weather-forecast-v2","extensionMetric":"get_weather:temperature_c","timeWindow":{"type":"last_24hours"}}
+     {"type":"device","source":"device","id":"sensor-001","field":"temperature","mode":"timeseries","sourceId":"sensor-001","property":"temperature","timeWindow":{"type":"last_24hours"}},
+     {"type":"extension-metric","source":"extension","id":"weather-forecast-v2","field":"get_weather:temperature_c","mode":"timeseries","extensionId":"weather-forecast-v2","extensionMetric":"get_weather:temperature_c","timeWindow":{"type":"last_24hours"}}
    ],
    "display":{"showLegend":true}}
 ]'
@@ -331,9 +370,10 @@ neomind dashboard share <ID> --expires 3600
 |-------|-------|----------|
 | "Invalid widget type" | Type doesn't exist | Run `neomind widget list` to see valid types |
 | Components disappear after update | Used `update --components` which replaces all | Use `add-components` instead |
-| "Device not found" | Wrong sourceId | Run `neomind device list` for valid IDs |
-| No data shows | Wrong property name | Run `neomind device latest <ID>` for exact metric names |
-| Extension data not binding | Using `property` instead of `extensionMetric` | Extension sources MUST use `extensionMetric` (format: `COMMAND:FIELD`) and `extensionId` key |
+| "Device not found" | Wrong id | Run `neomind device list` for valid IDs |
+| No data shows | Wrong field name | Run `neomind device latest <ID>` for exact metric names |
+| Extension data not binding | Missing unified fields | Add `source:"extension"`, `id`, `field` (format: `COMMAND:FIELD`) |
+| Chart shows no history | mode is "latest" | Charts need `mode:"timeseries"` with `timeWindow` |
 | Position overlap | Same x,y coords | Each component needs unique position; grid is 12 columns |
 | "Dashboard not found" | Wrong dashboard ID | Run `neomind dashboard list` for valid IDs |
 | JSON parse error | Malformed JSON in --components | Validate JSON structure carefully |

@@ -36,7 +36,7 @@ neomind dashboard add-components <DASHBOARD_ID> --components '[{
   "type": "custom",
   "title": "My Widget",
   "position": {"x": 0, "y": 0, "w": 6, "h": 4},
-  "data_source": {"type": "device", "sourceId": "DEVICE_ID", "property": "temperature"}
+  "data_source": {"type": "device", "source": "device", "id": "DEVICE_ID", "field": "temperature", "mode": "latest", "sourceId": "DEVICE_ID", "property": "temperature"}
 }]'
 ```
 

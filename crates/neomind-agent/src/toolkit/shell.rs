@@ -522,32 +522,41 @@ Grid is 12 columns. `--components` **replaces ALL** — always use `add-componen
 **Quick copy-paste templates** (replace values in CAPS):
 ```bash
 # 1. Value card (single metric): 4x2
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c1","type":"value-card","title":"LABEL","position":{"x":0,"y":0,"w":4,"h":2},"data_source":{"type":"device","sourceId":"DEVICE_ID","property":"METRIC_NAME"}}]'
+neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c1","type":"value-card","title":"LABEL","position":{"x":0,"y":0,"w":4,"h":2},"data_source":{"type":"device","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"latest","sourceId":"DEVICE_ID","property":"METRIC_NAME"}}]'
 
 # 2. Line chart (trend): 12x4
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c2","type":"line-chart","title":"LABEL","position":{"x":0,"y":2,"w":12,"h":4},"data_source":{"type":"device","sourceId":"DEVICE_ID","property":"METRIC_NAME"},"timeWindow":"1h"}]'
+neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c2","type":"line-chart","title":"LABEL","position":{"x":0,"y":2,"w":12,"h":4},"data_source":{"type":"device","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"timeseries","sourceId":"DEVICE_ID","property":"METRIC_NAME","timeWindow":{"type":"last_24hours"}}}]'
 
 # 3. Gauge: 3x3
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c3","type":"gauge","title":"LABEL","position":{"x":4,"y":0,"w":3,"h":3},"data_source":{"type":"device","sourceId":"DEVICE_ID","property":"METRIC_NAME"},"display":{"min":0,"max":100,"unit":"%"}}]'
+neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c3","type":"gauge","title":"LABEL","position":{"x":4,"y":0,"w":3,"h":3},"data_source":{"type":"device","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"latest","sourceId":"DEVICE_ID","property":"METRIC_NAME"},"display":{"min":0,"max":100,"unit":"%"}}]'
 
-# 4. Extension metric: use extensionId + extensionMetric as COMMAND:FIELD (NOT property)
+# 4. Extension metric: use id + field as COMMAND:FIELD
 #    Discover via: neomind extension info <ID> -> commands[].id + commands[].output_fields[].name
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c4","type":"value-card","title":"LABEL","position":{"x":0,"y":0,"w":4,"h":2},"data_source":{"type":"extension-metric","extensionId":"EXT_ID","extensionMetric":"COMMAND:FIELD"}}]'
+neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c4","type":"value-card","title":"LABEL","position":{"x":0,"y":0,"w":4,"h":2},"data_source":{"type":"extension-metric","source":"extension","id":"EXT_ID","field":"COMMAND:FIELD","mode":"timeseries","extensionId":"EXT_ID","extensionMetric":"COMMAND:FIELD"}}]'
 
 # 5. Multi-series line chart: data_source as array
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c5","type":"line-chart","title":"LABEL","position":{"x":0,"y":2,"w":12,"h":4},"data_source":[{"type":"device","sourceId":"DEV1","property":"metric1"},{"type":"device","sourceId":"DEV2","property":"metric2"}],"timeWindow":"1h"}]'
+neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c5","type":"line-chart","title":"LABEL","position":{"x":0,"y":2,"w":12,"h":4},"data_source":[{"type":"device","source":"device","id":"DEV1","field":"metric1","mode":"timeseries","sourceId":"DEV1","property":"metric1"},{"type":"device","source":"device","id":"DEV2","field":"metric2","mode":"timeseries","sourceId":"DEV2","property":"metric2"}],"timeWindow":"1h"}]'
 ```
 
-DataSource field reference:
-| type | Required fields | How to discover |
-|------|----------------|-----------------|
-| `device` | `sourceId` (device ID), `property` (metric name) | `neomind device list` → `neomind device latest <ID>` |
-| `extension-metric` | `extensionId`, `extensionMetric` (format: `COMMAND:FIELD`) | `neomind extension info <ID>` → commands[].id + output_fields[].name |
+DataSource unified fields (v0.8.2+):
+| source | mode | id | field | When to use |
+|--------|------|----|-------|-------------|
+| `device` | `latest` | device ID | metric name | Value cards, LEDs, gauges — single latest value |
+| `device` | `timeseries` | device ID | metric name | Line/area/bar charts — historical trend |
+| `device` | `command` | device ID | command name | Toggle switches, command buttons |
+| `device` | `info` | device ID | property (`name`/`status`/etc) | Map display, device metadata |
+| `extension` | `timeseries` | extension ID | `COMMAND:FIELD` | Extension metrics in charts |
+| `extension` | `command` | extension ID | command name | Extension command buttons |
+| `system` | `latest` | `neomind` | system metric | System stats (cpu, memory, etc) |
+| `system` | `timeseries` | `neomind` | system metric | System stats over time |
+
+**IMPORTANT**: Always include BOTH unified fields (`source`/`mode`/`id`/`field`) AND legacy fields (`type`/`sourceId`/`property`/`extensionId`/`extensionMetric`) for backward compatibility.
 
 **Critical rules:**
 - **NEVER guess metric names** — always discover via `device latest <ID>` or `extension info <ID>` first
-- device data source uses `property`, extension uses `extensionMetric` — mixing them up silently fails
-- **extensionMetric MUST be `COMMAND:FIELD` format** (e.g. `get_weather:temperature_c`). Discover via `extension info <ID>` → each command has `id` and `output_fields[].name`. NEVER use bare field names like `temperature_c` — they silently fail to load data.
+- `id` = entity identifier (device ID, extension ID), `field` = metric/command name — same field for all source types
+- **extension field MUST be `COMMAND:FIELD` format** (e.g. `get_weather:temperature_c`). Discover via `extension info <ID>` → each command has `id` and `output_fields[].name`. NEVER use bare field names like `temperature_c` — they silently fail to load data.
+- Charts always use `mode: "timeseries"`; indicators use `mode: "latest"`
 - Position: x increments by width (4-col layout: x=0,4,8), y increments when row is full
 - **For full workflow, load `dashboard-management` skill.**
 
