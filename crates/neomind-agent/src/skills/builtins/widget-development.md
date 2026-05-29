@@ -86,6 +86,8 @@ manifest.json: `"global_name": "MyWidget"` — the IIFE assigns to `var MyWidget
 - Use Tailwind utility classes (preferred) or CSS variables for styling
 - Bundle must be under 50KB
 - Container must fill space: `className: 'h-full w-full'` or `style: {width:'100%',height:'100%'}`
+- Every element in `jsxs` children arrays must have a unique `key` prop
+- `props.fetchData()` available for on-demand data access (no React hook needed)
 
 ## React Hooks Available
 
@@ -112,6 +114,7 @@ var ref = React.useRef(null);
 | Prop | Type | Description |
 |------|------|-------------|
 | `props.dataSource` | object | Live data: `.value`, `.timeSeries`, `.isLoading`, `.unit`, `.min`, `.max` |
+| `props.fetchData` | function | Async data fetch: `fetchData(options?)` → `{ value }` or `{ series }` |
 | `props.config` | object | User config from config_schema (always default with `|| {}`) |
 | `props.title` | string | Widget title |
 | `props.id` | string | Instance ID |
@@ -149,6 +152,54 @@ var commands = (deviceType && deviceType.commands) || []; // available commands
 // Send command (async)
 sendCmd('command_name').then(function() { /* success */ }).catch(function() { /* error */ });
 ```
+
+### props.fetchData (unified data fetch)
+
+All community widgets receive `fetchData` for on-demand data access without React hooks:
+
+```javascript
+// Fetch configured DataSource data
+var result = await props.fetchData();
+// result → { value: <any> } for latest/info modes
+// result → { series: [{ timestamp, value }] } for timeseries mode
+// result → null if no dataSource configured
+
+// With time range options
+var result = await props.fetchData({ timeRange: 24, limit: 200 });
+```
+
+**Return format by mode:**
+
+| Mode | Returns | Use Case |
+|------|---------|----------|
+| `latest` | `{ value: <any> }` | Single metric value |
+| `timeseries` | `{ series: [{ timestamp, value }] }` | Historical chart data |
+| `info` | `{ value: <string> }` | Device metadata |
+| `command` | `{ value: undefined }` | Command sources |
+
+## React Key Rules
+
+When using `jsxs` with array children, **every element must have a `key` prop**:
+
+```javascript
+// CORRECT — use jsxs + keys for arrays
+jsxs('div', { children: [
+  jsx('span', { key: 'label', children: 'Status' }),
+  jsx('span', { key: 'value', children: 'Online' })
+]})
+
+// WRONG — missing keys causes React warning
+jsxs('div', { children: [
+  jsx('span', { children: 'Status' }),
+  jsx('span', { children: 'Online' })
+]})
+```
+
+**Rules:**
+- Use `jsxs` (not `jsx`) when children is an array of 2+ elements
+- Every element in a `jsxs` children array needs a unique `key`
+- For `.map()` results, use a unique property: `key: item.id` or `key: item.name`
+- Single-child renders can use `jsx` without keys
 
 ## Styling: Tailwind Classes & CSS Variables
 
@@ -385,11 +436,11 @@ var DevicePanelWidget = (function() {
       className: 'flex flex-col h-full w-full p-3 border border-border rounded-lg overflow-auto',
       children: [
         // Header: name + status
-        jsxs('div', { className: 'flex items-center justify-between mb-2', children: [
-          jsx('span', { className: 'text-sm font-semibold text-foreground truncate', children: device.name || device.id }),
-          jsxs('span', { className: 'flex items-center gap-1', children: [
-            jsx('div', { className: 'h-1.5 w-1.5 rounded-full ' + (online ? 'bg-success' : 'bg-muted-foreground') }),
-            jsx('span', { className: 'text-[10px] ' + (online ? 'text-success' : 'text-muted-foreground'), children: online ? 'Online' : 'Offline' })
+        jsxs('div', { key: 'header', className: 'flex items-center justify-between mb-2', children: [
+          jsx('span', { key: 'name', className: 'text-sm font-semibold text-foreground truncate', children: device.name || device.id }),
+          jsxs('span', { key: 'status', className: 'flex items-center gap-1', children: [
+            jsx('div', { key: 'dot', className: 'h-1.5 w-1.5 rounded-full ' + (online ? 'bg-success' : 'bg-muted-foreground') }),
+            jsx('span', { key: 'label', className: 'text-[10px] ' + (online ? 'text-success' : 'text-muted-foreground'), children: online ? 'Online' : 'Offline' })
           ]})
         ]}),
         // Metrics
@@ -455,6 +506,7 @@ var DevicePanelWidget = (function() {
 | "React is not defined" | Wrong global access | Use `window.React` not `React` |
 | "jsxRuntime is not defined" | Wrong runtime access | Use `window.jsxRuntime.jsx` and `window.jsxRuntime.jsxs` |
 | Data not showing | Wrong dataSource access | Use `props.dataSource.value` for single, `.timeSeries` for chart |
+| "unique key prop" warning | Array children missing keys | Use `jsxs` + add `key` prop to every child in arrays |
 | Style not working | Hardcoded colors | Use Tailwind classes or CSS variables, never `#color` |
 | Widget too large | Bundle > 50KB | No external libraries, keep code minimal |
 | Device panel empty | No device bound | Handle `!device` case with placeholder |
