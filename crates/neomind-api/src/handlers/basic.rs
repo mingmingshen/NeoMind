@@ -98,7 +98,7 @@ pub async fn readiness_handler(State(state): State<ServerState>) -> Json<Readine
 /// `GET /api/system/network-info`
 pub async fn network_info_handler() -> HandlerResult<serde_json::Value> {
     let ssid = get_wifi_ssid();
-    let ip = get_server_ip();
+    let ip = super::common::get_server_host();
 
     ok(json!({
         "ssid": ssid,
@@ -164,42 +164,3 @@ fn get_wifi_ssid() -> Option<String> {
     None
 }
 
-/// Get the local LAN IP address.
-fn get_server_ip() -> String {
-    use std::net::IpAddr;
-
-    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
-        if socket.connect("8.8.8.8:80").is_ok() {
-            if let Ok(local_addr) = socket.local_addr() {
-                let ip = local_addr.ip();
-                if let IpAddr::V4(ipv4) = ip {
-                    let o = ipv4.octets();
-                    if (o[0] == 192 && o[1] == 168)
-                        || o[0] == 10
-                        || (o[0] == 172 && o[1] >= 16 && o[1] <= 31)
-                    {
-                        return ip.to_string();
-                    }
-                }
-            }
-        }
-    }
-
-    if let Ok(interfaces) = get_if_addrs::get_if_addrs() {
-        for iface in interfaces {
-            if !iface.is_loopback() {
-                if let get_if_addrs::IfAddr::V4(iface_addr) = iface.addr {
-                    let o = iface_addr.ip.octets();
-                    if (o[0] == 192 && o[1] == 168)
-                        || o[0] == 10
-                        || (o[0] == 172 && o[1] >= 16 && o[1] <= 31)
-                    {
-                        return iface_addr.ip.to_string();
-                    }
-                }
-            }
-        }
-    }
-
-    std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string())
-}

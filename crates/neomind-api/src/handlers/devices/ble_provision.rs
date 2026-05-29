@@ -51,51 +51,8 @@ pub struct MqttConfigResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: determine the server's LAN IP address
+// Helper: resolve broker configuration
 // ---------------------------------------------------------------------------
-
-/// Get the actual local IP address of the server (reused logic from mqtt/status).
-fn get_server_ip() -> String {
-    use std::net::IpAddr;
-
-    // Try to get local IP by creating a UDP socket
-    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
-        if socket.connect("8.8.8.8:80").is_ok() {
-            if let Ok(local_addr) = socket.local_addr() {
-                let ip = local_addr.ip();
-                if let IpAddr::V4(ipv4) = ip {
-                    let o = ipv4.octets();
-                    if (o[0] == 192 && o[1] == 168)
-                        || o[0] == 10
-                        || (o[0] == 172 && o[1] >= 16 && o[1] <= 31)
-                    {
-                        return ip.to_string();
-                    }
-                }
-            }
-        }
-    }
-
-    // Fallback: try network interfaces
-    if let Ok(interfaces) = get_if_addrs::get_if_addrs() {
-        for iface in interfaces {
-            if !iface.is_loopback() {
-                if let get_if_addrs::IfAddr::V4(iface_addr) = iface.addr {
-                    let o = iface_addr.ip.octets();
-                    if (o[0] == 192 && o[1] == 168)
-                        || o[0] == 10
-                        || (o[0] == 172 && o[1] >= 16 && o[1] <= 31)
-                    {
-                        return iface_addr.ip.to_string();
-                    }
-                }
-            }
-        }
-    }
-
-    // Last fallback
-    std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string())
-}
 
 /// Resolve broker configuration from broker_id.
 fn resolve_broker_config(broker_id: &str) -> Result<(String, u16, String, String), ErrorResponse> {
@@ -103,7 +60,7 @@ fn resolve_broker_config(broker_id: &str) -> Result<(String, u16, String, String
         let store = config::open_settings_store()
             .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
         let settings = store.get_mqtt_settings();
-        let host = get_server_ip();
+        let host = crate::handlers::common::get_server_host();
         Ok((host, settings.port, String::new(), String::new()))
     } else {
         let store = config::open_settings_store()

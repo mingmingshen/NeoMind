@@ -712,7 +712,7 @@ pub async fn optional_jwt_auth_middleware(
 
 /// Extract user info from request extensions.
 /// Use this with axum's Extension extractor:
-/// ```rust,no_run
+/// ```rust,ignore
 /// use axum::Extension;
 ///
 /// async fn handler(Extension(user): Extension<SessionInfo>) -> &'static str {

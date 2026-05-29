@@ -6,54 +6,10 @@ use serde_json::json;
 use super::models::ExternalBrokerConnectionDto;
 use super::models::MqttStatusDto;
 use crate::handlers::{
-    common::{ok, HandlerResult},
+    common::{get_server_host, ok, HandlerResult},
     ServerState,
 };
 use crate::models::ErrorResponse;
-
-/// Get the actual local IP address of the server.
-fn get_server_ip() -> String {
-    use std::net::IpAddr;
-
-    // Try to get local IP by creating a socket
-    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
-        if socket.connect("8.8.8.8:80").is_ok() {
-            if let Ok(local_addr) = socket.local_addr() {
-                let ip = local_addr.ip();
-                if let IpAddr::V4(ipv4) = ip {
-                    let octets = ipv4.octets();
-                    if (octets[0] == 192 && octets[1] == 168)
-                        || (octets[0] == 10)
-                        || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
-                    {
-                        return ip.to_string();
-                    }
-                }
-            }
-        }
-    }
-
-    // Fallback: try to get from network interfaces
-    if let Ok(interfaces) = get_if_addrs::get_if_addrs() {
-        for iface in interfaces {
-            if !iface.is_loopback() {
-                if let get_if_addrs::IfAddr::V4(iface_addr) = iface.addr {
-                    let ip = iface_addr.ip;
-                    let octets = ip.octets();
-                    if (octets[0] == 192 && octets[1] == 168)
-                        || (octets[0] == 10)
-                        || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
-                    {
-                        return ip.to_string();
-                    }
-                }
-            }
-        }
-    }
-
-    // Last fallback: return hostname or localhost
-    std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string())
-}
 
 /// Get MQTT connection status.
 ///
@@ -87,7 +43,7 @@ pub async fn get_mqtt_status_handler(
     let listen_port = broker_config.port;
 
     // Get the actual server IP for embedded broker
-    let server_ip = get_server_ip();
+    let server_ip = get_server_host();
 
     // Count devices using DeviceService
     let configs = state.devices.service.list_devices();

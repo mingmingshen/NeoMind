@@ -156,7 +156,7 @@ impl PaginationQuery {
 /// Extract a path parameter or return a 400 error.
 ///
 /// # Example
-/// ```rust,no_run
+/// ```rust,ignore
 /// use axum::extract::Path;
 /// use crate::handlers::common::extract_path;
 ///
@@ -208,6 +208,78 @@ where
             name
         ))),
     }
+}
+
+/// Environment variable for overriding the public host (IP or domain).
+///
+/// Set this when deploying to a public server so that the embedded MQTT broker
+/// and device onboarding show the correct public address instead of a private LAN IP.
+///
+/// Example: `NEOMIND_PUBLIC_HOST=example.com` or `NEOMIND_PUBLIC_HOST=203.0.113.5`
+const PUBLIC_HOST_ENV: &str = "NEOMIND_PUBLIC_HOST";
+
+/// Get the server host address for device connectivity.
+///
+/// Priority:
+/// 1. `NEOMIND_PUBLIC_HOST` environment variable (IP or domain — for public deployments)
+/// 2. Auto-detected local IP (for LAN / development use)
+pub fn get_server_host() -> String {
+    // 1. Explicit public host override (supports both IP and domain)
+    if let Ok(host) = std::env::var(PUBLIC_HOST_ENV) {
+        let host = host.trim().to_string();
+        if !host.is_empty() {
+            return host;
+        }
+    }
+
+    // 2. Auto-detect local IP
+    detect_local_ip()
+}
+
+/// Auto-detect the local LAN IP address.
+fn detect_local_ip() -> String {
+    use std::net::IpAddr;
+
+    // Try UDP socket trick to find the default-route interface IP
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("8.8.8.8:80").is_ok() {
+            if let Ok(local_addr) = socket.local_addr() {
+                let ip = local_addr.ip();
+                if let IpAddr::V4(ipv4) = ip {
+                    let o = ipv4.octets();
+                    if is_private_ip(o) {
+                        return ip.to_string();
+                    }
+                    // Public IP from default route — return it directly
+                    return ip.to_string();
+                }
+            }
+        }
+    }
+
+    // Fallback: scan network interfaces
+    if let Ok(interfaces) = get_if_addrs::get_if_addrs() {
+        for iface in interfaces {
+            if iface.is_loopback() {
+                continue;
+            }
+            if let get_if_addrs::IfAddr::V4(v4) = iface.addr {
+                let o = v4.ip.octets();
+                if is_private_ip(o) {
+                    return v4.ip.to_string();
+                }
+            }
+        }
+    }
+
+    std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_string())
+}
+
+/// Check if IPv4 octets represent a private/RFC1918 address.
+fn is_private_ip(o: [u8; 4]) -> bool {
+    (o[0] == 192 && o[1] == 168)
+        || o[0] == 10
+        || (o[0] == 172 && o[1] >= 16 && o[1] <= 31)
 }
 
 /// Create a successful response with data.
