@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import i18n from '@/i18n/config'
 import { fetchAPI } from '@/lib/api'
 import { Loader2, AlertTriangle, Eye, Zap, EyeOff } from 'lucide-react'
+import { ThemeToggle } from '@/components/layout/ThemeToggle'
 import { DashboardGrid } from '@/components/dashboard/DashboardGrid'
 import { renderDashboardComponent } from '@/pages/dashboard-components/Renderers'
 import { fromDashboardDTO } from '@/store/persistence/types'
@@ -224,7 +225,10 @@ export function SharedDashboard() {
             )}
           </span>
         </div>
-        <span className="text-xs text-muted-foreground">{t('sharedDashboard.poweredBy')}</span>
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <span className="text-xs text-muted-foreground">{t('sharedDashboard.poweredBy')}</span>
+        </div>
       </header>
 
       {/* Dashboard Content - reuse same rendering pipeline */}
