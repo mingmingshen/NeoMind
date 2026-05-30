@@ -34,6 +34,10 @@ pub enum Error {
     /// Invalid input.
     #[error("Invalid input: {0}")]
     InvalidInput(String),
+
+    /// Validation error.
+    #[error("Validation error: {0}")]
+    Validation(String),
 }
 
 // Convert to NeoMindError
@@ -46,6 +50,7 @@ impl From<Error> for NeoMindError {
             Error::InvalidDimension { .. } => NeoMindError::Validation(e.to_string()),
             Error::NotFound(s) => NeoMindError::NotFound(s),
             Error::InvalidInput(s) => NeoMindError::Validation(s),
+            Error::Validation(s) => NeoMindError::Validation(s),
         }
     }
 }

@@ -668,7 +668,10 @@ impl MarkdownMemoryStore {
             return Ok(None);
         }
         let content = fs::read_to_string(&path)?;
-        Ok(content.trim().parse::<i64>().ok())
+        match content.trim().parse::<i64>() {
+            Ok(ts) => Ok(Some(ts)),
+            Err(_) => Ok(None),
+        }
     }
 
     /// Write the last resource summary timestamp
