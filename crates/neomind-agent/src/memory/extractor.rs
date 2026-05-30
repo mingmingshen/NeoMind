@@ -23,7 +23,6 @@ pub enum MemoryAction {
     Merge { targets: Vec<String> },
 }
 
-
 /// A candidate memory entry extracted by LLM
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryCandidate {
@@ -44,77 +43,6 @@ pub struct MemoryCandidate {
 pub struct ExtractResult {
     /// Extracted memory candidates
     pub memories: Vec<MemoryCandidate>,
-}
-
-/// Chat conversation extractor
-pub struct ChatExtractor;
-
-impl ChatExtractor {
-    /// Build LLM prompt for extracting from chat
-    pub fn build_prompt(messages: &str, existing_memories: &str) -> String {
-        let existing_section = if existing_memories.trim().is_empty() {
-            "(none)".to_string()
-        } else {
-            existing_memories.to_string()
-        };
-
-        format!(
-            r#"Extract LONG-TERM memories from the conversation. Each memory must be ONE atomic fact (max 120 chars).
-
-## Conversation
-{}
-
-## Existing Memories
-{}
-
-## Output Format (JSON only, no extra text)
-{{"memories":[{{"content":"<one fact, max 120 chars>","category":"<category>","importance":<0-100>,"action":"<append|merge>"}}]}}
-
-## Categories
-- user_profile: User preferences, habits, personal settings
-- domain_knowledge: Device info, protocols, environment facts
-- task_patterns: Successful approaches, common workflows
-
-## Rules
-1. **ONE fact per entry**, max 120 characters. Never dump paragraphs.
-2. **Check existing first** — if similar info exists, use merge with targets:
-   "action": {{"merge": {{"targets": ["<keyword from existing>"]}}}}
-3. **Append only truly new info** — skip anything already covered
-4. **Skip**: greetings, small talk, temporary states, questions without answers
-5. **Importance**: 80-100 = critical/preference, 50-79 = useful, below 50 = minor context
-6. **Language**: match the user's detected language
-
-## Good Examples
-Input: "I always want the lights dimmed after 9pm"
-→ {{"content":"Lights should be dimmed after 9pm","category":"user_profile","importance":85,"action":"append"}}
-
-Input: "My living room sensor reads 25°C" (existing: "Living room sensor reads 24°C")
-→ {{"content":"Living room sensor typically reads 24-25°C","category":"domain_knowledge","importance":60,"action":{{"merge":{{"targets":["Living room sensor"]}}}}}}
-
-## Bad Examples (DO NOT do this)
-- "The user has several IoT devices including temperature sensors, motion detectors, and smart lights in the living room and bedroom" (TOO LONG, should be split)
-- "User says hi" (no long-term value)
-"#,
-            messages, existing_section
-        )
-    }
-
-    /// Parse LLM response into ExtractResult
-    pub fn parse_response(response: &str) -> Result<ExtractResult, String> {
-        // Strip markdown code fences (e.g., ```json ... ```)
-        let cleaned = response
-            .trim()
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim();
-
-        // Find JSON object
-        let start = cleaned.find('{').ok_or("No JSON object found")?;
-        let end = cleaned.rfind('}').ok_or("No closing brace found")?;
-        let json = &cleaned[start..=end];
-        serde_json::from_str(json).map_err(|e| format!("JSON parse error: {}", e))
-    }
 }
 
 /// Agent execution extractor
@@ -195,7 +123,19 @@ impl AgentExtractor {
 
     /// Parse LLM response into ExtractResult
     pub fn parse_response(response: &str) -> Result<ExtractResult, String> {
-        ChatExtractor::parse_response(response)
+        // Strip markdown code fences (e.g., ```json ... ```)
+        let cleaned = response
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
+        // Find JSON object
+        let start = cleaned.find('{').ok_or("No JSON object found")?;
+        let end = cleaned.rfind('}').ok_or("No closing brace found")?;
+        let json = &cleaned[start..=end];
+        serde_json::from_str(json).map_err(|e| format!("JSON parse error: {}", e))
     }
 }
 
@@ -221,23 +161,6 @@ pub fn parse_category(s: &str) -> MemoryCategory {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_chat_extractor_prompt() {
-        let messages = "User: Hello\nAssistant: Hi! How can I help you?";
-        let prompt = ChatExtractor::build_prompt(messages, "");
-        assert!(prompt.contains("Conversation"));
-        assert!(prompt.contains(messages));
-    }
-
-    #[test]
-    fn test_chat_extractor_with_existing() {
-        let messages = "User: I have 3 devices";
-        let existing = "- User has 2 IoT devices";
-        let prompt = ChatExtractor::build_prompt(messages, existing);
-        assert!(prompt.contains("Existing Memories"));
-        assert!(prompt.contains("User has 2 IoT devices"));
-    }
 
     #[test]
     fn test_agent_extractor_prompt() {
@@ -269,7 +192,7 @@ mod tests {
     #[test]
     fn test_parse_response_valid() {
         let json = r#"{"memories":[{"content":"User prefers Chinese","category":"user_profile","importance":80,"action":"append"}]}"#;
-        let result = ChatExtractor::parse_response(json).unwrap();
+        let result = AgentExtractor::parse_response(json).unwrap();
         assert_eq!(result.memories.len(), 1);
         assert_eq!(result.memories[0].content, "User prefers Chinese");
         assert_eq!(result.memories[0].importance, 80);
@@ -279,7 +202,7 @@ mod tests {
     #[test]
     fn test_parse_response_with_merge() {
         let json = r#"{"memories":[{"content":"User has 3 IoT devices","category":"domain_knowledge","importance":70,"action":{"merge":{"targets":["2 IoT devices"]}}}]}"#;
-        let result = ChatExtractor::parse_response(json).unwrap();
+        let result = AgentExtractor::parse_response(json).unwrap();
         assert_eq!(result.memories.len(), 1);
         assert_eq!(
             result.memories[0].action,
@@ -296,21 +219,21 @@ Here is the analysis:
 {"memories":[{"content":"Device temperature 25C","category":"domain_knowledge","importance":60}]}
 That's all.
 "#;
-        let result = ChatExtractor::parse_response(response).unwrap();
+        let result = AgentExtractor::parse_response(response).unwrap();
         assert_eq!(result.memories.len(), 1);
     }
 
     #[test]
     fn test_parse_response_empty() {
         let json = r#"{"memories":[]}"#;
-        let result = ChatExtractor::parse_response(json).unwrap();
+        let result = AgentExtractor::parse_response(json).unwrap();
         assert!(result.memories.is_empty());
     }
 
     #[test]
     fn test_parse_response_invalid() {
         let invalid = "not json";
-        assert!(ChatExtractor::parse_response(invalid).is_err());
+        assert!(AgentExtractor::parse_response(invalid).is_err());
     }
 
     #[test]

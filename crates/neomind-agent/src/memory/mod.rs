@@ -87,7 +87,7 @@ pub use manager::MemoryManager;
 pub use compressor::{evict_to_limit, EvictionResult};
 pub use dedup::{DedupProcessor, DedupResult};
 pub use extractor::{
-    parse_category, AgentExtractor, ChatExtractor, ExtractResult, MemoryCandidate,
+    parse_category, AgentExtractor, ExtractResult, MemoryCandidate,
 };
 
 // Memory scheduler export

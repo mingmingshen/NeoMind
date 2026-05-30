@@ -7,74 +7,23 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use neomind_core::llm::backend::{GenerationParams, LlmInput, LlmRuntime};
-use neomind_storage::{MarkdownMemoryStore, MemoryCategory, SessionMessage};
+use neomind_storage::{MarkdownMemoryStore, SessionMessage};
 
 use crate::error::Result;
-use crate::memory::dedup::DedupProcessor;
 use crate::memory::extractor::{
-    parse_category, AgentExtractor, ChatExtractor, ExtractResult, MemoryAction,
+    AgentExtractor, ExtractResult, MemoryAction,
 };
-
-/// Memory extraction configuration
-#[derive(Debug, Clone)]
-pub struct ExtractionConfig {
-    /// Minimum messages required to trigger extraction
-    pub min_messages: usize,
-    /// Maximum messages to include in extraction prompt
-    pub max_messages: usize,
-    /// Minimum importance threshold for extracted memories
-    pub min_importance: u8,
-    /// Whether to deduplicate extracted memories
-    pub dedup_enabled: bool,
-    /// Similarity threshold for dedup (0.0-1.0)
-    pub similarity_threshold: f32,
-}
-
-impl Default for ExtractionConfig {
-    fn default() -> Self {
-        Self {
-            min_messages: 3,
-            max_messages: 50,
-            min_importance: 30,
-            dedup_enabled: true,
-            similarity_threshold: 0.85,
-        }
-    }
-}
 
 /// Memory extractor that uses LLM to extract and persist memories
 pub struct MemoryExtractor {
     store: Arc<RwLock<MarkdownMemoryStore>>,
     llm: Arc<dyn LlmRuntime>,
-    config: ExtractionConfig,
-    dedup: DedupProcessor,
 }
 
 impl MemoryExtractor {
     /// Create a new memory extractor
     pub fn new(store: Arc<RwLock<MarkdownMemoryStore>>, llm: Arc<dyn LlmRuntime>) -> Self {
-        let dedup_threshold = 0.85;
-        Self {
-            store,
-            llm,
-            config: ExtractionConfig::default(),
-            dedup: DedupProcessor::new(dedup_threshold),
-        }
-    }
-
-    /// Create with custom configuration
-    pub fn with_config(
-        store: Arc<RwLock<MarkdownMemoryStore>>,
-        llm: Arc<dyn LlmRuntime>,
-        config: ExtractionConfig,
-    ) -> Self {
-        let dedup = DedupProcessor::new(config.similarity_threshold);
-        Self {
-            store,
-            llm,
-            config,
-            dedup,
-        }
+        Self { store, llm }
     }
 
     /// Clone the LLM runtime reference
@@ -101,29 +50,23 @@ impl MemoryExtractor {
     /// # Returns
     /// * Number of memories extracted
     pub async fn extract_from_chat(&self, messages: &[SessionMessage]) -> Result<usize> {
-        if messages.len() < self.config.min_messages {
-            tracing::debug!(
-                message_count = messages.len(),
-                min_required = self.config.min_messages,
-                "Skipping extraction: not enough messages"
-            );
-            return Ok(0);
-        }
-
-        // Format messages for extraction
-        let formatted = self.format_chat_messages(messages);
-
         // Read existing memories for context (to enable deduplication)
         let existing_memories = self.gather_existing_memories().await;
 
         // Build prompt with existing memories for deduplication
-        let prompt = ChatExtractor::build_prompt(&formatted, &existing_memories);
+        let prompt = AgentExtractor::build_prompt(
+            "chat",
+            None,
+            &self.format_chat_messages(messages),
+            "",
+            &existing_memories,
+        );
 
         // Call LLM
         let response = self.call_llm(&prompt).await?;
 
         // Parse response
-        let extract_result = ChatExtractor::parse_response(&response)
+        let extract_result = AgentExtractor::parse_response(&response)
             .map_err(|e| crate::error::NeoMindError::Memory(format!("Parse error: {}", e)))?;
 
         // Filter and write memories (handles merge/append actions)
@@ -193,20 +136,6 @@ impl MemoryExtractor {
         Ok(count)
     }
 
-    /// Extract memories from chat (simplified - compression handled separately)
-    ///
-    /// This performs extraction. Compression will be handled by the scheduler based on char limits.
-    pub async fn extract_and_compress_chat(
-        &self,
-        messages: &[SessionMessage],
-    ) -> Result<usize> {
-        // Extract
-        let extracted = self.extract_from_chat(messages).await?;
-
-        // Note: Compression is now handled by MemoryScheduler based on char limits
-        Ok(extracted)
-    }
-
     // === Private helper methods ===
 
     /// Filter out categories that shouldn't come from chat extraction.
@@ -239,31 +168,22 @@ impl MemoryExtractor {
         let store = self.store.read().await;
         let mut all_memories = String::new();
 
-        for category in MemoryCategory::all() {
-            if let Ok(content) = store.read_category(category) {
-                if !content.trim().is_empty() {
-                    all_memories.push_str(&format!("\n### {}\n", category.display_name()));
-                    // Limit to last 20 entries per category to avoid context overflow
-                    let lines: Vec<&str> = content.lines().rev().take(20).collect();
-                    for line in lines.into_iter().rev() {
-                        all_memories.push_str(line);
-                        all_memories.push('\n');
-                    }
-                }
+        if let Ok(content) = store.read_file("user").await {
+            if !content.trim().is_empty() {
+                all_memories.push_str(&format!("\n### User\n{}\n", content));
             }
         }
-
+        if let Ok(content) = store.read_file("knowledge").await {
+            if !content.trim().is_empty() {
+                all_memories.push_str(&format!("\n### Knowledge\n{}\n", content));
+            }
+        }
         all_memories
     }
 
     /// Format chat messages for extraction prompt
     fn format_chat_messages(&self, messages: &[SessionMessage]) -> String {
-        let limited: Vec<_> = messages
-            .iter()
-            .rev()
-            .take(self.config.max_messages)
-            .rev()
-            .collect();
+        let limited: Vec<_> = messages.iter().rev().take(50).rev().collect();
 
         limited
             .iter()
@@ -355,11 +275,10 @@ impl MemoryExtractor {
             }
 
             // Filter by minimum importance
-            if candidate.importance < self.config.min_importance {
+            if candidate.importance < 30 {
                 tracing::debug!(
                     content = %candidate.content,
                     importance = candidate.importance,
-                    min_required = self.config.min_importance,
                     "Skipping memory: below importance threshold"
                 );
                 continue;
@@ -374,23 +293,26 @@ impl MemoryExtractor {
                 // Intentionally don't mutate — truncate when formatting
             }
 
-            // Parse category
-            let category = parse_category(&candidate.category);
+            // Map category to target file
+            let target = match candidate.category.as_str() {
+                "user_profile" => "user",
+                _ => "knowledge",
+            };
 
             // Read existing content
             let mut content = store
-                .read_category(&category)
+                .read_file(target)
+                .await
                 .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
 
             // Handle action
             let should_add = match &candidate.action {
                 MemoryAction::Append => {
                     // For append, check duplicates if enabled
-                    if self.config.dedup_enabled && self.is_duplicate(&content, &candidate.content)
-                    {
+                    if self.is_duplicate(&content, &candidate.content) {
                         tracing::debug!(
                             content = %candidate.content,
-                            category = ?category,
+                            target = %target,
                             "Skipping duplicate memory (append)"
                         );
                         false
@@ -409,13 +331,14 @@ impl MemoryExtractor {
                     if merged {
                         // Write back the modified content
                         store
-                            .write_category(&category, &content)
+                            .write_file(target, &content)
+                            .await
                             .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
 
                         count += 1;
                         tracing::debug!(
                             content = %candidate.content,
-                            category = ?category,
+                            target = %target,
                             targets = ?targets,
                             "Merged memory entry"
                         );
@@ -436,13 +359,14 @@ impl MemoryExtractor {
 
                 // Write back
                 store
-                    .write_category(&category, &content)
+                    .write_file(target, &content)
+                    .await
                     .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
 
                 count += 1;
                 tracing::debug!(
                     content = %candidate.content,
-                    category = ?category,
+                    target = %target,
                     importance = candidate.importance,
                     "Appended memory entry"
                 );
@@ -480,26 +404,7 @@ impl MemoryExtractor {
                 continue;
             }
 
-            // Strategy 1: N-gram similarity (primary)
-            if let Some(entry_content) = Self::extract_entry_content(line_trimmed) {
-                let sim = DedupProcessor::jaccard_similarity(&entry_content, new_content);
-                if sim >= 0.6 {
-                    new_lines.push(format!(
-                        "- [{}] {} [importance: {}]",
-                        timestamp, new_content, importance
-                    ));
-                    merged = true;
-                    tracing::debug!(
-                        old_line = %line,
-                        new_content = %new_content,
-                        similarity = sim,
-                        "Merged memory via n-gram similarity"
-                    );
-                    continue;
-                }
-            }
-
-            // Strategy 2: Keyword target matching (fallback)
+            // Strategy 1: Keyword target matching (primary)
             let line_lower = line_trimmed.to_lowercase();
             let matches_target = targets
                 .iter()
@@ -533,12 +438,8 @@ impl MemoryExtractor {
         merged
     }
 
-    /// Check if content already exists using n-gram Jaccard similarity
+    /// Check if content already exists using simple string matching
     fn is_duplicate(&self, existing_content: &str, new_content: &str) -> bool {
-        if !self.config.dedup_enabled {
-            return false;
-        }
-
         // Extract content parts from existing entries (strip markdown formatting)
         let existing_entries: Vec<String> = existing_content
             .lines()
@@ -553,9 +454,10 @@ impl MemoryExtractor {
             })
             .collect();
 
-        self.dedup
-            .find_similar(new_content, &existing_entries)
-            .is_some()
+        // Simple check for exact or near-exact duplicates
+        existing_entries.iter().any(|entry| {
+            entry.to_lowercase().trim() == new_content.to_lowercase().trim()
+        })
     }
 
     /// Extract the text content from a markdown memory entry line
@@ -596,38 +498,6 @@ impl MemoryExtractor {
             timestamp, truncated, importance
         )
     }
-}
-
-/// Convenience functions for manual memory operations
-/// Manually add a memory entry to a category
-pub async fn add_memory(
-    store: &Arc<RwLock<MarkdownMemoryStore>>,
-    category: &MemoryCategory,
-    content: &str,
-    importance: u8,
-) -> Result<()> {
-    let store_guard = store.read().await;
-
-    let mut existing = store_guard
-        .read_category(category)
-        .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
-
-    let timestamp = chrono::Utc::now().format("%Y-%m-%d");
-    let entry = format!(
-        "- [{}] {} [importance: {}]\n",
-        timestamp, content, importance
-    );
-
-    if !existing.ends_with('\n') {
-        existing.push('\n');
-    }
-    existing.push_str(&entry);
-
-    store_guard
-        .write_category(category, &existing)
-        .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -720,16 +590,19 @@ mod tests {
         store.init().unwrap();
         let store = Arc::new(RwLock::new(store));
 
-        add_memory(&store, &MemoryCategory::UserProfile, "User likes pizza", 60)
-            .await
-            .unwrap();
+        // Write user file directly
+        let timestamp = chrono::Utc::now().format("%Y-%m-%d");
+        let entry = format!(
+            "- [{}] User likes pizza [importance: 60]\n",
+            timestamp
+        );
+        let mut content = String::from("# User Profile\n\n");
+        content.push_str(&entry);
 
-        let content = store
-            .read()
-            .await
-            .read_category(&MemoryCategory::UserProfile)
-            .unwrap();
-        assert!(content.contains("User likes pizza"));
-        assert!(content.contains("[importance: 60]"));
+        store.write().await.write_file("user", &content).await.unwrap();
+
+        let read_content = store.read().await.read_file("user").await.unwrap();
+        assert!(read_content.contains("User likes pizza"));
+        assert!(read_content.contains("[importance: 60]"));
     }
 }

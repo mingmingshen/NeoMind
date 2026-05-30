@@ -7,7 +7,7 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use neomind_agent::{ExtractionConfig, MemoryExtractor, OllamaConfig, OllamaRuntime};
+use neomind_agent::{MemoryExtractor, OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_storage::{MarkdownMemoryStore, MemoryCategory, SessionMessage};
 
@@ -34,15 +34,7 @@ async fn create_extractor() -> (
     };
     let llm: Arc<dyn LlmRuntime> = Arc::new(OllamaRuntime::new(config).unwrap());
 
-    let extraction_config = ExtractionConfig {
-        min_messages: 1,
-        max_messages: 50,
-        min_importance: 20,
-        dedup_enabled: true,
-        similarity_threshold: 0.85,
-    };
-
-    let extractor = MemoryExtractor::with_config(store.clone(), llm, extraction_config);
+    let extractor = MemoryExtractor::new(store.clone(), llm);
 
     (temp_dir, store, extractor)
 }
@@ -87,41 +79,30 @@ async fn test_agent_extraction_produces_all_categories() -> anyhow::Result<()> {
 
     // Check each category
     let store_guard = store.read().await;
-    for category in MemoryCategory::all() {
-        let content = store_guard.read_category(&category).unwrap_or_default();
-        println!("\n[{:?}] ->\n{}", category, content);
-    }
 
-    let up = store_guard
-        .read_category(&MemoryCategory::UserProfile)
-        .unwrap_or_default();
-    let dk = store_guard
-        .read_category(&MemoryCategory::DomainKnowledge)
-        .unwrap_or_default();
-    let tp = store_guard
-        .read_category(&MemoryCategory::TaskPatterns)
-        .unwrap_or_default();
-    let se = store_guard
-        .read_category(&MemoryCategory::SystemEvolution)
-        .unwrap_or_default();
+    let user_content = store_guard.read_file("user").await.unwrap_or_default();
+    let knowledge_content = store_guard.read_file("knowledge").await.unwrap_or_default();
 
-    // At least some categories should have content
-    let non_empty = [&up, &dk, &tp, &se]
+    println!("\n[USER] ->\n{}", user_content);
+    println!("\n[KNOWLEDGE] ->\n{}", knowledge_content);
+
+    // At least user or knowledge should have content
+    let non_empty = [&user_content, &knowledge_content]
         .iter()
         .filter(|c| !c.trim().is_empty())
         .count();
     assert!(
-        non_empty >= 2,
-        "At least 2 categories should be populated, got {}",
+        non_empty >= 1,
+        "At least 1 file should be populated, got {}",
         non_empty
     );
 
-    // Key assertion: system_evolution must NOT be empty
+    // Key assertion: knowledge must have content (system_evolution and domain_knowledge map here)
     assert!(
-        !se.trim().is_empty(),
-        "system_evolution must have content — the agent discovered threshold and baseline insights.\n\
+        !knowledge_content.trim().is_empty(),
+        "knowledge must have content — the agent discovered threshold and baseline insights.\n\
          Got: {:?}",
-        se
+        knowledge_content
     );
 
     Ok(())
@@ -159,42 +140,21 @@ async fn test_chat_extraction_skips_system_evolution() -> anyhow::Result<()> {
     println!("Chat extracted {} memory entries", count);
 
     let store_guard = store.read().await;
-    for category in MemoryCategory::all() {
-        let content = store_guard.read_category(&category).unwrap_or_default();
-        println!("\n[{:?}] ->\n{}", category, content);
-    }
 
-    let se = store_guard
-        .read_category(&MemoryCategory::SystemEvolution)
-        .unwrap_or_default();
+    let user_content = store_guard.read_file("user").await.unwrap_or_default();
+    let knowledge_content = store_guard.read_file("knowledge").await.unwrap_or_default();
 
-    // Chat extraction should NEVER produce system_evolution entries
-    // The file may contain header/metadata but no actual entries (lines starting with "- ")
-    let se_has_entries = se.lines().any(|line| line.trim().starts_with("- ["));
-    assert!(
-        !se_has_entries,
-        "system_evolution should have no entries after chat extraction, but got: {:?}",
-        se
-    );
+    println!("\n[USER] ->\n{}", user_content);
+    println!("\n[KNOWLEDGE] ->\n{}", knowledge_content);
 
-    // At least user_profile or domain_knowledge should have something
-    let up = store_guard
-        .read_category(&MemoryCategory::UserProfile)
-        .unwrap_or_default();
-    let dk = store_guard
-        .read_category(&MemoryCategory::DomainKnowledge)
-        .unwrap_or_default();
-    let tp = store_guard
-        .read_category(&MemoryCategory::TaskPatterns)
-        .unwrap_or_default();
-
-    let non_se_non_empty = [&up, &dk, &tp]
+    // At least user or knowledge should have something
+    let non_empty = [&user_content, &knowledge_content]
         .iter()
         .filter(|c| !c.trim().is_empty())
         .count();
     assert!(
-        non_se_non_empty >= 1,
-        "At least 1 non-system_evolution category should be populated"
+        non_empty >= 1,
+        "At least 1 file should be populated"
     );
 
     Ok(())

@@ -83,7 +83,7 @@ pub use llm_backends::{
 };
 
 // Re-export memory extraction types
-pub use memory_extraction::{add_memory, ExtractionConfig, MemoryExtractor};
+pub use memory_extraction::MemoryExtractor;
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

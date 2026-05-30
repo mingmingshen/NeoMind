@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use neomind_agent::{ExtractionConfig, MemoryExtractor, OllamaConfig, OllamaRuntime};
+use neomind_agent::{MemoryExtractor, OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_storage::{MarkdownMemoryStore, MemoryCategory};
 
@@ -254,15 +254,7 @@ async fn create_extractor() -> (
     };
     let llm: Arc<dyn LlmRuntime> = Arc::new(OllamaRuntime::new(config).unwrap());
 
-    let extraction_config = ExtractionConfig {
-        min_messages: 1,
-        max_messages: 50,
-        min_importance: 20,
-        dedup_enabled: true,
-        similarity_threshold: 0.85,
-    };
-
-    let extractor = MemoryExtractor::with_config(store.clone(), llm, extraction_config);
+    let extractor = MemoryExtractor::new(store.clone(), llm);
     (temp_dir, store, extractor)
 }
 
