@@ -211,9 +211,7 @@ pub use system_memory::{
 };
 
 // Memory configuration exports
-pub use memory_config::{
-    CompressionConfig, ExtractionConfig, MemoryConfig, MemoryLlmConfig, ScheduleConfig,
-};
+pub use memory_config::MemoryConfig;
 
 // Re-exports from core (backward compatibility)
 pub use neomind_core::storage::{StorageBackend, StorageError, StorageFactory};
