@@ -744,6 +744,11 @@ pub fn create_router_with_state(state: ServerState) -> Router {
                 .put(memory::update_memory_content)
                 .delete(memory::delete_memory_file),
         )
+        // New file-based memory API (2-file layout)
+        .route(
+            "/api/memory/file/:target",
+            get(memory::get_memory_file).put(memory::update_memory_file),
+        )
         // MQTT Management API
         .route("/api/mqtt/status", get(mqtt::get_mqtt_status_handler))
         .route(

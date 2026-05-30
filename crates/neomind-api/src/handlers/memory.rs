@@ -257,7 +257,7 @@ pub async fn trigger_extract(
     State(state): State<ServerState>,
     Json(req): Json<ExtractionRequest>,
 ) -> Response {
-    use neomind_agent::memory_extraction::{ExtractionConfig, MemoryExtractor};
+    use neomind_agent::memory_extraction::MemoryExtractor;
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -362,18 +362,8 @@ pub async fn trigger_extract(
         Arc::new(RwLock::new(store))
     };
 
-    // Create extractor using saved config
-    let config = if req.force {
-        tracing::debug!("Using force extraction config (min_messages=1)");
-        ExtractionConfig {
-            min_messages: 1,
-            ..ExtractionConfig::default()
-        }
-    } else {
-        ExtractionConfig::default()
-    };
-
-    let extractor = MemoryExtractor::with_config(memory_store, llm_runtime, config);
+    // Create extractor (simplified — no more ExtractionConfig)
+    let extractor = MemoryExtractor::new(memory_store, llm_runtime);
 
     // Spawn background task to avoid HTTP timeout
     tokio::spawn(async move {
@@ -662,4 +652,77 @@ pub async fn delete_memory_file(
 pub async fn export_memory(State(state): State<ServerState>) -> Response {
     // Use the new export_all internally
     export_all(State(state)).await
+}
+
+/// GET /api/memory/file/:target - Get memory file content (user or knowledge)
+pub async fn get_memory_file(
+    State(state): State<ServerState>,
+    Path(target): Path<String>,
+) -> Response {
+    if target != "user" && target != "knowledge" {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            format!("Invalid target: {}. Must be 'user' or 'knowledge'", target),
+        );
+    }
+
+    let store = get_memory_store(&state);
+    if let Err(e) = store.init() {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to initialize store: {}", e),
+        );
+    }
+
+    match store.read_file(&target).await {
+        Ok(content) => Json(serde_json::json!({
+            "success": true,
+            "target": target,
+            "content": content,
+            "chars": content.chars().count(),
+        }))
+        .into_response(),
+        Err(e) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to read {}: {}", target, e),
+        ),
+    }
+}
+
+/// PUT /api/memory/file/:target - Update memory file content (user or knowledge)
+pub async fn update_memory_file(
+    State(state): State<ServerState>,
+    Path(target): Path<String>,
+    Json(req): Json<UpdateMemoryRequest>,
+) -> Response {
+    if target != "user" && target != "knowledge" {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            format!("Invalid target: {}. Must be 'user' or 'knowledge'", target),
+        );
+    }
+
+    let store = get_memory_store(&state);
+    if let Err(e) = store.init() {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to initialize store: {}", e),
+        );
+    }
+
+    match store.write_file(&target, &req.content).await {
+        Ok(()) => {
+            tracing::info!(target = %target, chars = req.content.len(), "Memory file updated via API");
+            Json(serde_json::json!({
+                "success": true,
+                "message": format!("{} updated", target),
+                "chars": req.content.chars().count(),
+            }))
+            .into_response()
+        }
+        Err(e) => error_response(
+            StatusCode::BAD_REQUEST,
+            format!("Failed to write {}: {}", target, e),
+        ),
+    }
 }
