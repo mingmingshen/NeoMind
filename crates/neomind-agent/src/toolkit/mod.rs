@@ -4,16 +4,18 @@
 
 use std::sync::Arc;
 
-pub mod ai_metric;
 pub mod error;
 pub mod extension_tools;
+pub mod file_edit;
+pub mod file_write;
+pub mod memory_tool;
 pub mod registry;
 pub mod resolver;
-pub mod session_search;
 pub mod shell;
 pub mod skill_tool;
 pub mod time_utils;
 pub mod tool;
+pub mod web_fetch;
 
 // Re-exports commonly used types
 pub use error::{NeoMindError, Result, ToolError};
@@ -36,13 +38,15 @@ pub use extension_tools::{
     ExtensionFilter, ExtensionTool, ExtensionToolExecutor, ExtensionToolGenerator,
 };
 
-pub use session_search::SessionSearchTool;
-
-pub use ai_metric::{AiMetricMeta, AiMetricTool, AiMetricsRegistry};
-
 pub use shell::{ShellConfig, ShellTool};
 
 pub use skill_tool::SkillTool;
+
+pub use memory_tool::MemoryTool;
+
+pub use file_edit::FileEditTool;
+pub use file_write::FileWriteTool;
+pub use web_fetch::WebFetchTool;
 
 pub use time_utils::{parse_time_range, TransformStore};
 
