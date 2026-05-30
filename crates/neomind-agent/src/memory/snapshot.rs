@@ -13,6 +13,7 @@
 
 use neomind_storage::MarkdownMemoryStore;
 use std::fs;
+use std::path::Path;
 
 /// Hard character budget for memory context in prompts.
 const CHAR_BUDGET: usize = 7500;
@@ -39,25 +40,20 @@ impl MemorySnapshot {
     /// 2. First truncate Agent Experiences
     /// 3. Then truncate Knowledge if needed
     pub fn load(store: &MarkdownMemoryStore) -> Self {
+        let handle = tokio::runtime::Handle::try_current()
+            .or_else(|_| {
+                tokio::runtime::Runtime::new()
+                    .map(|rt| rt.handle().clone())
+            })
+            .unwrap();
+
         // Read persistent files using new API
         let user = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::try_current()
-                .or_else(|_| {
-                    tokio::runtime::Runtime::new()
-                        .map(|rt| rt.handle().clone())
-                })
-                .unwrap()
-                .block_on(store.read_file("user"))
+            handle.block_on(store.read_file("user"))
         }).unwrap_or_default();
 
         let knowledge = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::try_current()
-                .or_else(|_| {
-                    tokio::runtime::Runtime::new()
-                        .map(|rt| rt.handle().clone())
-                })
-                .unwrap()
-                .block_on(store.read_file("knowledge"))
+            handle.block_on(store.read_file("knowledge"))
         }).unwrap_or_default();
 
         // Read agent summaries from agents/ directory
@@ -192,7 +188,8 @@ fn truncate_with_priority(content: &str, max_chars: usize) -> String {
     // Parse into individual sections
     let user_len = sections.get("User").map_or(0, |s| s.chars().count());
     let knowledge_len = sections.get("Knowledge").map_or(0, |s| s.chars().count());
-    let _agents_len = sections.get("Agent Experiences").map_or(0, |s| s.chars().count());
+    let agents_len = sections.get("Agent Experiences").map_or(0, |s| s.chars().count());
+    let _ = agents_len; // used for priority decision
 
     // Priority 1: Keep User, truncate Agents, then Knowledge
     let mut result = String::new();
