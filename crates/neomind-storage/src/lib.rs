@@ -59,6 +59,7 @@
 // Storage backends module
 pub mod backends;
 
+pub mod agent_summary;
 pub mod agents;
 pub mod backend;
 pub mod backup;
