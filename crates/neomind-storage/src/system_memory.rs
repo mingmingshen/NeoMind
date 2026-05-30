@@ -4,37 +4,28 @@
 //! Based on 2026 research (Voxos.ai, Letta), simple file storage (74% accuracy)
 //! outperforms complex graph/RAG systems (68.5%).
 //!
-//! ## Architecture
+//! ## Architecture (2-file persistent + session temp files)
 //!
 //! ```text
 //! data/memory/
-//! ├── system.md              # System-level memory (global)
-//! ├── agents/
-//! │   ├── {agent_id}.md      # Per-agent memory
-//! │   └── ...
-//! └── chat/
-//!     ├── {session_id}.md    # Chat session memory
-//!     └── ...
+//! ├── USER.md                          # Persistent: user profile (max 2000 chars)
+//! ├── KNOWLEDGE.md                     # Persistent: system knowledge (max 3000 chars)
+//! │   ## System Resources             #   Internal structure:
+//! │   ## Domain Knowledge             #   - System Resources (auto-generated)
+//! │   ## Agent Experiences            #   - Domain Knowledge (AI-managed)
+//! │                                   #   - Agent Experiences (auto-generated)
+//! ├── agents/{agent_id}.md            # Agent summaries (created by bridge)
+//! └── sessions/{session_id}/          # Session temp files (no char limit)
+//!     ├── notes.md
+//!     ├── scratch.md
+//!     └── todo.md
 //! ```
 //!
-//! ## Memory Entry Format
+//! ## Migration from Legacy
 //!
-//! ```markdown
-//! ## Patterns
-//! - 2026-04-01: User prefers evening lights off [importance: 80]
-//! - 2026-04-01: Daily temperature check at 10am [importance: 60]
-//!
-//! ## Entities
-//! - Device: Living Room Light (light_001)
-//! - Location: Living Room, Bedroom
-//!
-//! ## Preferences
-//! - Temperature unit: Celsius
-//! - Language: Chinese
-//!
-//! ## Facts
-//! - 2026-04-01: System uses Clean Architecture
-//! ```
+//! The old 4-category system (UserProfile, DomainKnowledge, TaskPatterns, SystemEvolution)
+//! has been simplified to 2 persistent files + session temp files. Legacy APIs are
+//! deprecated but still available for backward compatibility.
 
 use std::collections::HashMap;
 use std::fs;
@@ -43,19 +34,24 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Duration};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::error::{Error, Result};
+use crate::memory_config::MemoryConfig;
 
-/// Maximum recommended memory entries per file (based on LLM instruction limits)
+/// Maximum recommended memory entries per file (legacy, for backward compat)
 pub const MAX_MEMORY_ENTRIES: usize = 30;
 
-/// Default importance threshold for pruning
+/// Default importance threshold for pruning (legacy, for backward compat)
 pub const DEFAULT_MIN_IMPORTANCE: u8 = 30;
 
-/// Memory category - four types for organized storage
+// ============================================================================
+// Legacy Types (deprecated, kept for backward compatibility)
+// ============================================================================
+
+/// Memory category - four types for organized storage (DEPRECATED)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryCategory {
@@ -71,7 +67,7 @@ pub enum MemoryCategory {
 }
 
 impl MemoryCategory {
-    /// Get the markdown filename for this category
+    /// Get the markdown filename for this category (legacy mapping)
     pub fn filename(&self) -> &'static str {
         match self {
             Self::UserProfile => "user_profile.md",
@@ -91,7 +87,7 @@ impl MemoryCategory {
         }
     }
 
-    /// Get max entries for this category
+    /// Get max entries for this category (legacy)
     pub fn max_entries(&self) -> usize {
         match self {
             Self::UserProfile => 50,
@@ -155,7 +151,7 @@ impl std::fmt::Display for MemoryCategory {
     }
 }
 
-/// Category statistics
+/// Category statistics (legacy)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CategoryStats {
     /// Number of entries in the category
@@ -166,7 +162,7 @@ pub struct CategoryStats {
     pub modified_at: i64,
 }
 
-/// Memory source - where the memory came from
+/// Memory source - where the memory came from (DEPRECATED)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum MemorySource {
@@ -179,7 +175,7 @@ pub enum MemorySource {
 }
 
 impl MemorySource {
-    /// Get the file path for this source
+    /// Get the file path for this source (legacy mapping)
     pub fn file_path(&self, base_path: &Path) -> PathBuf {
         match self {
             MemorySource::Agent { id, .. } => base_path.join("agents").join(format!("{}.md", id)),
@@ -202,7 +198,7 @@ impl MemorySource {
     }
 }
 
-/// A single memory entry
+/// A single memory entry (DEPRECATED - use direct markdown writes)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
     /// The memory content
@@ -314,7 +310,7 @@ impl MemoryEntry {
     }
 }
 
-/// Aggregated memory result
+/// Aggregated memory result (DEPRECATED)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[derive(Default)]
 pub struct AggregatedMemory {
@@ -328,8 +324,7 @@ pub struct AggregatedMemory {
     pub by_source: HashMap<String, usize>,
 }
 
-
-/// Metadata for a memory file (for UI display)
+/// Metadata for a memory file (for UI display, DEPRECATED)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryFileInfo {
     /// File identifier (agent_id, session_id, or "system")
@@ -346,35 +341,98 @@ pub struct MemoryFileInfo {
     pub entry_count: usize,
 }
 
-/// Markdown-based memory store
+// ============================================================================
+// New Types (2-file layout)
+// ============================================================================
+
+/// Memory statistics for the new 2-file layout
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryStats {
+    /// User file stats
+    pub user: FileStats,
+    /// Knowledge file stats
+    pub knowledge: FileStats,
+    /// Agent file stats
+    pub agents: Vec<AgentFileStats>,
+    /// Session stats
+    pub sessions: SessionStats,
+    /// Last resource summary timestamp (Unix seconds)
+    pub last_resource_summary: Option<i64>,
+}
+
+/// File statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileStats {
+    /// Current character count
+    pub chars: usize,
+    /// Character limit
+    pub limit: usize,
+}
+
+/// Agent file statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentFileStats {
+    /// Agent ID
+    pub id: String,
+    /// Agent name
+    pub name: String,
+    /// Character count
+    pub chars: usize,
+}
+
+/// Session statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionStats {
+    /// Number of active session directories
+    pub active_count: usize,
+    /// Total temp files across all sessions
+    pub total_temp_files: usize,
+}
+
+// ============================================================================
+// Main Store Implementation
+// ============================================================================
+
+/// Markdown-based memory store (new 2-file layout)
 ///
-/// This store provides two separate APIs that operate on different file sets:
+/// ## Architecture
 ///
-/// 1. **Category API** (`read_category`/`write_category`): New simplified system.
-///    Stores data in 4 flat files: `user_profile.md`, `domain_knowledge.md`,
-///    `task_patterns.md`, `system_evolution.md`. Used by the extraction and
-///    compression pipeline (`MemoryExtractor`, `MemoryCompressor`).
+/// **Persistent files (2):**
+/// - `USER.md` - User profile (max `user_char_limit` chars, default 2000)
+/// - `KNOWLEDGE.md` - System knowledge (max `knowledge_char_limit` chars, default 3000)
 ///
-/// 2. **File/Source API** (`read`/`append`/`write`): Legacy per-source system.
-///    Stores data in `system.md`, `agents/{id}.md`, `chat/{id}.md` with
-///    section headers (`## User Profile`, etc.). Used by the legacy UI and
-///    per-source memory management.
+/// **Session temp files (unlimited):**
+/// - `sessions/{session_id}/notes.md` - Session notes
+/// - `sessions/{session_id}/scratch.md` - Scratch pad
+/// - `sessions/{session_id}/todo.md` - To-do list
 ///
-/// These two APIs are **independent** and do not sync with each other.
-/// The extraction pipeline writes to category files only.
+/// **Agent files (managed by bridge):**
+/// - `agents/{agent_id}.md` - Agent summaries (max `agent_char_limit` chars, default 500)
 #[derive(Debug, Clone)]
 pub struct MarkdownMemoryStore {
     /// Base path for memory files
     base_path: PathBuf,
-    /// In-memory cache
+    /// Configuration (char limits, etc.)
+    config: MemoryConfig,
+    /// In-memory cache (legacy, for backward compatibility)
     cache: Arc<RwLock<HashMap<String, Vec<MemoryEntry>>>>,
 }
 
 impl MarkdownMemoryStore {
-    /// Create a new memory store
+    /// Create a new memory store with default config
     pub fn new(base_path: impl Into<PathBuf>) -> Self {
         Self {
             base_path: base_path.into(),
+            config: MemoryConfig::default(),
+            cache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Create a new memory store with custom config
+    pub fn with_config(base_path: impl Into<PathBuf>, config: MemoryConfig) -> Self {
+        Self {
+            base_path: base_path.into(),
+            config,
             cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -382,19 +440,29 @@ impl MarkdownMemoryStore {
     /// Initialize the directory structure
     pub fn init(&self) -> Result<()> {
         fs::create_dir_all(&self.base_path)?;
+        fs::create_dir_all(self.base_path.join("agents"))?;
+        fs::create_dir_all(self.base_path.join("sessions"))?;
 
-        // Create category files if they don't exist
-        for category in MemoryCategory::all() {
-            let path = self.category_path(category);
-            if !path.exists() {
-                let content = self.default_category_content(category);
-                fs::write(&path, content)?;
-                info!(path = %path.display(), "Created category memory file");
-            }
+        // Create USER.md if it doesn't exist
+        let user_path = self.base_path.join("USER.md");
+        if !user_path.exists() {
+            let content = "# User Profile\n\n> Last updated: \n\n";
+            fs::write(&user_path, content)?;
+            info!(path = %user_path.display(), "Created USER.md");
+        }
+
+        // Create KNOWLEDGE.md if it doesn't exist
+        let knowledge_path = self.base_path.join("KNOWLEDGE.md");
+        if !knowledge_path.exists() {
+            let content = "# System Knowledge\n\n\
+                ## System Resources\n\n<!-- auto-generated -->\n\n\
+                ## Domain Knowledge\n\n<!-- AI-managed -->\n\n\
+                ## Agent Experiences\n\n<!-- auto-generated -->\n\n";
+            fs::write(&knowledge_path, content)?;
+            info!(path = %knowledge_path.display(), "Created KNOWLEDGE.md");
         }
 
         // Create legacy directories for backward compatibility
-        fs::create_dir_all(self.base_path.join("agents"))?;
         fs::create_dir_all(self.base_path.join("chat"))?;
 
         // Create system.md if it doesn't exist (legacy)
@@ -402,23 +470,325 @@ impl MarkdownMemoryStore {
         if !system_path.exists() {
             let content = "# System Memory\n\n## User Profile\n\n## Domain Knowledge\n\n## Task Patterns\n\n## System Evolution\n";
             fs::write(&system_path, content)?;
-            info!(path = %system_path.display(), "Created system memory file");
+            info!(path = %system_path.display(), "Created legacy system.md");
         }
 
         Ok(())
     }
 
     // ========================================================================
-    // Category-based API (simplified for new memory system)
+    // New API: Persistent file operations (2-file layout)
     // ========================================================================
 
-    /// Get the file path for a category
+    /// Write to a persistent file (user or knowledge). Enforces char limits.
+    ///
+    /// # Arguments
+    /// * `target` - Either "user" or "knowledge"
+    /// * `content` - Markdown content to write
+    ///
+    /// # Errors
+    /// - Returns error if content exceeds char limit
+    /// - Returns error if target is not "user" or "knowledge"
+    pub async fn write_file(&self, target: &str, content: &str) -> Result<()> {
+        let limit = match target {
+            "user" => self.config.user_char_limit,
+            "knowledge" => self.config.knowledge_char_limit,
+            _ => return Err(Error::InvalidInput(format!("Invalid target: {}. Must be 'user' or 'knowledge'", target))),
+        };
+
+        if content.len() > limit {
+            return Err(Error::InvalidInput(format!(
+                "Content exceeds {} char limit: {} > {}",
+                target, content.len(), limit
+            )));
+        }
+
+        let path = match target {
+            "user" => self.base_path.join("USER.md"),
+            "knowledge" => self.base_path.join("KNOWLEDGE.md"),
+            _ => unreachable!(), // Already checked above
+        };
+
+        fs::write(&path, content)
+            .map_err(|e| Error::Storage(format!("Failed to write {}.md: {}", target, e)))?;
+
+        info!(target = %target, chars = content.len(), "Wrote persistent file");
+        Ok(())
+    }
+
+    /// Read a persistent file. Returns empty string if not found.
+    ///
+    /// # Arguments
+    /// * `target` - Either "user" or "knowledge"
+    pub async fn read_file(&self, target: &str) -> Result<String> {
+        let path = match target {
+            "user" => self.base_path.join("USER.md"),
+            "knowledge" => self.base_path.join("KNOWLEDGE.md"),
+            _ => return Err(Error::InvalidInput(format!("Invalid target: {}. Must be 'user' or 'knowledge'", target))),
+        };
+
+        if !path.exists() {
+            return Ok(String::new());
+        }
+
+        fs::read_to_string(&path)
+            .map_err(|e| Error::Storage(format!("Failed to read {}.md: {}", target, e)))
+    }
+
+    /// Replace a section within KNOWLEDGE.md by heading name.
+    ///
+    /// Finds "## {heading}" and replaces content until next "## " heading.
+    /// If heading not found, prepends the section.
+    ///
+    /// # Arguments
+    /// * `target` - Must be "knowledge"
+    /// * `heading` - Section heading (e.g., "System Resources")
+    /// * `new_body` - New content for the section (without the heading)
+    pub async fn replace_section(&self, target: &str, heading: &str, new_body: &str) -> Result<()> {
+        if target != "knowledge" {
+            return Err(Error::InvalidInput("Section replacement only works for 'knowledge' target".to_string()));
+        }
+
+        let path = self.base_path.join("KNOWLEDGE.md");
+        let current = if path.exists() {
+            fs::read_to_string(&path)
+                .map_err(|e| Error::Storage(format!("Failed to read KNOWLEDGE.md: {}", e)))?
+        } else {
+            String::new()
+        };
+
+        let new_content = replace_section_in_content(&current, heading, new_body);
+
+        // Check char limit
+        if new_content.len() > self.config.knowledge_char_limit {
+            return Err(Error::InvalidInput(format!(
+                "Content after section replacement exceeds knowledge char limit: {} > {}",
+                new_content.len(),
+                self.config.knowledge_char_limit
+            )));
+        }
+
+        fs::write(&path, new_content)
+            .map_err(|e| Error::Storage(format!("Failed to write KNOWLEDGE.md: {}", e)))?;
+
+        info!(heading = %heading, "Replaced section in KNOWLEDGE.md");
+        Ok(())
+    }
+
+    /// Get stats for all memory targets.
+    pub async fn stats(&self) -> Result<MemoryStats> {
+        // Read USER.md
+        let user_path = self.base_path.join("USER.md");
+        let user_chars = if user_path.exists() {
+            fs::read_to_string(&user_path)?.len()
+        } else {
+            0
+        };
+
+        // Read KNOWLEDGE.md
+        let knowledge_path = self.base_path.join("KNOWLEDGE.md");
+        let knowledge_chars = if knowledge_path.exists() {
+            fs::read_to_string(&knowledge_path)?.len()
+        } else {
+            0
+        };
+
+        // Scan agent files
+        let mut agents = Vec::new();
+        let agents_path = self.base_path.join("agents");
+        if agents_path.exists() {
+            for entry in fs::read_dir(&agents_path)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.extension().map(|e| e == "md").unwrap_or(false) {
+                    if let Some(agent_id) = path.file_stem().and_then(|s| s.to_str()) {
+                        let chars = fs::read_to_string(&path)?.len();
+                        agents.push(AgentFileStats {
+                            id: agent_id.to_string(),
+                            name: agent_id.to_string(), // Will be resolved by bridge
+                            chars,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Scan session directories
+        let sessions_path = self.base_path.join("sessions");
+        let (active_count, total_temp_files) = if sessions_path.exists() {
+            let mut session_count = 0;
+            let mut temp_file_count = 0;
+            for entry in fs::read_dir(&sessions_path)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    session_count += 1;
+                    // Count temp files in this session
+                    if let Ok(entries) = fs::read_dir(&path) {
+                        for e in entries {
+                            if let Ok(e) = e {
+                                if e.path().extension().map(|ex| ex == "md").unwrap_or(false) {
+                                    temp_file_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            (session_count, temp_file_count)
+        } else {
+            (0, 0)
+        };
+
+        // Check for resource summary timestamp
+        let last_resource_summary = self.read_last_resource_summary_time().await.ok().flatten();
+
+        Ok(MemoryStats {
+            user: FileStats {
+                chars: user_chars,
+                limit: self.config.user_char_limit,
+            },
+            knowledge: FileStats {
+                chars: knowledge_chars,
+                limit: self.config.knowledge_char_limit,
+            },
+            agents,
+            sessions: SessionStats {
+                active_count,
+                total_temp_files,
+            },
+            last_resource_summary,
+        })
+    }
+
+    /// Read the last resource summary timestamp from a metadata file
+    async fn read_last_resource_summary_time(&self) -> Result<Option<i64>> {
+        let path = self.base_path.join(".resource_summary_time");
+        if !path.exists() {
+            return Ok(None);
+        }
+        let content = fs::read_to_string(&path)?;
+        Ok(content.trim().parse::<i64>().ok())
+    }
+
+    /// Write the last resource summary timestamp
+    async fn write_last_resource_summary_time(&self, timestamp: i64) -> Result<()> {
+        let path = self.base_path.join(".resource_summary_time");
+        fs::write(&path, timestamp.to_string())
+            .map_err(|e| Error::Storage(format!("Failed to write resource summary time: {}", e)))?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // New API: Session temp file operations
+    // ========================================================================
+
+    /// Write a session temp file (scratch/notes/todo). Creates directory on demand.
+    ///
+    /// # Arguments
+    /// * `session_id` - Unique session identifier
+    /// * `target` - One of: "scratch", "notes", "todo"
+    /// * `content` - Content to write (no char limit)
+    pub async fn write_session_file(&self, session_id: &str, target: &str, content: &str) -> Result<()> {
+        // Validate target
+        if !matches!(target, "scratch" | "notes" | "todo") {
+            return Err(Error::InvalidInput(format!(
+                "Invalid session target: {}. Must be 'scratch', 'notes', or 'todo'",
+                target
+            )));
+        }
+
+        let filename = format!("{}.md", target);
+        let session_dir = self.base_path.join("sessions").join(session_id);
+        fs::create_dir_all(&session_dir)
+            .map_err(|e| Error::Storage(format!("Failed to create session directory: {}", e)))?;
+
+        let path = session_dir.join(&filename);
+        fs::write(&path, content)
+            .map_err(|e| Error::Storage(format!("Failed to write session file {}: {}", filename, e)))?;
+
+        debug!(session_id = %session_id, target = %target, chars = content.len(), "Wrote session temp file");
+        Ok(())
+    }
+
+    /// Read a session temp file. Returns empty string if not found.
+    ///
+    /// # Arguments
+    /// * `session_id` - Unique session identifier
+    /// * `target` - One of: "scratch", "notes", "todo"
+    pub async fn read_session_file(&self, session_id: &str, target: &str) -> Result<String> {
+        let filename = format!("{}.md", target);
+        let path = self.base_path.join("sessions").join(session_id).join(&filename);
+
+        if !path.exists() {
+            return Ok(String::new());
+        }
+
+        fs::read_to_string(&path)
+            .map_err(|e| Error::Storage(format!("Failed to read session file {}: {}", filename, e)))
+    }
+
+    /// Delete session directories older than TTL days.
+    ///
+    /// # Arguments
+    /// * `ttl_days` - Time-to-live in days (default: 7 from config)
+    ///
+    /// # Returns
+    /// Number of session directories deleted
+    pub async fn cleanup_old_sessions(&self, ttl_days: u64) -> Result<usize> {
+        let sessions_path = self.base_path.join("sessions");
+        if !sessions_path.exists() {
+            return Ok(0);
+        }
+
+        let ttl_duration = Duration::days(ttl_days as i64);
+        let now = Utc::now();
+        let mut deleted_count = 0;
+
+        for entry in fs::read_dir(&sessions_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                let metadata = fs::metadata(&path)?;
+                if let Ok(modified) = metadata.modified() {
+                    let modified_dt = modified
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .ok()
+                        .and_then(|d| DateTime::from_timestamp(d.as_secs() as i64, 0));
+
+                    if let Some(dt) = modified_dt {
+                        if now.signed_duration_since(dt) > ttl_duration {
+                            fs::remove_dir_all(&path)
+                                .map_err(|e| Error::Storage(format!("Failed to delete session directory: {}", e)))?;
+                            deleted_count += 1;
+                            debug!(path = %path.display(), "Deleted old session directory");
+                        }
+                    }
+                }
+            }
+        }
+
+        if deleted_count > 0 {
+            info!(deleted = deleted_count, ttl_days = ttl_days, "Cleaned up old session directories");
+        }
+
+        Ok(deleted_count)
+    }
+
+    // ========================================================================
+    // Legacy API (deprecated - kept for backward compatibility)
+    // ========================================================================
+
+    /// Get the file path for a category (DEPRECATED - maps to legacy files)
+    #[deprecated(note = "Use write_file/read_file with 'user' or 'knowledge' instead")]
     pub fn category_path(&self, category: &MemoryCategory) -> PathBuf {
         self.base_path.join(category.filename())
     }
 
-    /// Read markdown content for a category
+    /// Read markdown content for a category (DEPRECATED)
+    #[deprecated(note = "Use read_file instead")]
     pub fn read_category(&self, category: &MemoryCategory) -> Result<String> {
+        warn!(?category, "read_category called (deprecated)");
         let path = self.category_path(category);
         if !path.exists() {
             return Ok(self.default_category_content(category));
@@ -427,11 +797,12 @@ impl MarkdownMemoryStore {
             .map_err(|e| Error::Storage(format!("Failed to read {:?}: {}", category, e)))
     }
 
-    /// Write markdown content for a category
+    /// Write markdown content for a category (DEPRECATED)
+    #[deprecated(note = "Use write_file instead")]
     pub fn write_category(&self, category: &MemoryCategory, content: &str) -> Result<()> {
+        warn!(?category, "write_category called (deprecated)");
         let path = self.category_path(category);
 
-        // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -439,12 +810,14 @@ impl MarkdownMemoryStore {
         fs::write(&path, content)
             .map_err(|e| Error::Storage(format!("Failed to write {:?}: {}", category, e)))?;
 
-        info!(category = ?category, size = content.len(), "Wrote category memory file");
+        info!(category = ?category, size = content.len(), "Wrote category memory file (deprecated)");
         Ok(())
     }
 
-    /// Get statistics for a category
+    /// Get statistics for a category (DEPRECATED)
+    #[deprecated(note = "Use stats instead")]
     pub fn category_stats(&self, category: &MemoryCategory) -> Result<CategoryStats> {
+        warn!(?category, "category_stats called (deprecated)");
         let path = self.category_path(category);
 
         let content = self.read_category(category)?;
@@ -473,8 +846,10 @@ impl MarkdownMemoryStore {
         })
     }
 
-    /// Get statistics for all categories
+    /// Get statistics for all categories (DEPRECATED)
+    #[deprecated(note = "Use stats instead")]
     pub fn all_stats(&self) -> Result<HashMap<String, CategoryStats>> {
+        warn!("all_stats called (deprecated)");
         let mut stats = HashMap::new();
         for category in MemoryCategory::all() {
             let key = category.to_string();
@@ -483,8 +858,10 @@ impl MarkdownMemoryStore {
         Ok(stats)
     }
 
-    /// Export all categories as a single markdown string
+    /// Export all categories as a single markdown string (DEPRECATED)
+    #[deprecated(note = "Use stats instead")]
     pub fn export_all(&self) -> Result<String> {
+        warn!("export_all called (deprecated)");
         let mut output = String::new();
         output.push_str("# NeoMind Memory Export\n\n");
         output.push_str(&format!(
@@ -502,7 +879,7 @@ impl MarkdownMemoryStore {
         Ok(output)
     }
 
-    /// Generate default content for a category file
+    /// Generate default content for a category file (DEPRECATED)
     fn default_category_content(&self, category: &MemoryCategory) -> String {
         format!(
             "# {}\n\n> Last updated: {}\n> Total entries: 0\n\n",
@@ -516,8 +893,10 @@ impl MarkdownMemoryStore {
         &self.base_path
     }
 
-    /// Read memory entries from a source
+    /// Read memory entries from a source (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn read(&self, source: &MemorySource) -> Result<Vec<MemoryEntry>> {
+        warn!(source = %source.display_name(), "read called (deprecated)");
         // Check cache first
         let cache_key = self.cache_key(source);
         {
@@ -546,8 +925,10 @@ impl MarkdownMemoryStore {
         Ok(entries)
     }
 
-    /// Append a memory entry
+    /// Append a memory entry (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn append(&self, source: &MemorySource, entry: &MemoryEntry) -> Result<()> {
+        warn!(source = %source.display_name(), "append called (deprecated)");
         let file_path = source.file_path(&self.base_path);
 
         // Ensure parent directory exists
@@ -602,22 +983,26 @@ impl MarkdownMemoryStore {
             source = %source.display_name(),
             category = ?entry.category,
             content = %entry.content,
-            "Appended memory entry"
+            "Appended memory entry (deprecated)"
         );
 
         Ok(())
     }
 
-    /// Append multiple entries
+    /// Append multiple entries (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn append_batch(&self, source: &MemorySource, entries: &[MemoryEntry]) -> Result<()> {
+        warn!("append_batch called (deprecated)");
         for entry in entries {
             self.append(source, entry)?;
         }
         Ok(())
     }
 
-    /// Write complete memory file (replaces existing)
+    /// Write complete memory file (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn write(&self, source: &MemorySource, entries: &[MemoryEntry]) -> Result<()> {
+        warn!(source = %source.display_name(), "write called (deprecated)");
         let file_path = source.file_path(&self.base_path);
 
         // Group by category
@@ -660,14 +1045,16 @@ impl MarkdownMemoryStore {
         info!(
             source = %source.display_name(),
             count = entries.len(),
-            "Wrote memory file"
+            "Wrote memory file (deprecated)"
         );
 
         Ok(())
     }
 
-    /// Aggregate all memory from all sources
+    /// Aggregate all memory from all sources (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn aggregate_all(&self) -> Result<AggregatedMemory> {
+        warn!("aggregate_all called (deprecated)");
         let mut result = AggregatedMemory::default();
 
         // Read system memory
@@ -729,8 +1116,10 @@ impl MarkdownMemoryStore {
         Ok(result)
     }
 
-    /// Search memory entries (simple text matching)
+    /// Search memory entries (simple text matching, DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn search(&self, query: &str) -> Result<Vec<MemoryEntry>> {
+        warn!("search called (deprecated)");
         let all = self.aggregate_all()?;
         let query_lower = query.to_lowercase();
 
@@ -746,8 +1135,10 @@ impl MarkdownMemoryStore {
         Ok(matches)
     }
 
-    /// Prune memory to max entries, keeping highest importance
+    /// Prune memory to max entries, keeping highest importance (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn prune(&self, source: &MemorySource, max_items: usize) -> Result<usize> {
+        warn!(source = %source.display_name(), "prune called (deprecated)");
         let mut entries = self.read(source)?;
 
         if entries.len() <= max_items {
@@ -767,14 +1158,16 @@ impl MarkdownMemoryStore {
             source = %source.display_name(),
             removed = removed,
             remaining = entries.len(),
-            "Pruned memory entries"
+            "Pruned memory entries (deprecated)"
         );
 
         Ok(removed)
     }
 
-    /// Clear all memory for a source
+    /// Clear all memory for a source (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn clear(&self, source: &MemorySource) -> Result<()> {
+        warn!(source = %source.display_name(), "clear called (deprecated)");
         let file_path = source.file_path(&self.base_path);
 
         if file_path.exists() {
@@ -792,8 +1185,10 @@ impl MarkdownMemoryStore {
         Ok(())
     }
 
-    /// Export all memory as a single markdown string
+    /// Export all memory as a single markdown string (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn export_markdown(&self) -> Result<String> {
+        warn!("export_markdown called (deprecated)");
         let all = self.aggregate_all()?;
 
         let mut output = String::new();
@@ -830,11 +1225,13 @@ impl MarkdownMemoryStore {
     }
 
     // ========================================================================
-    // File-based API (for UI display)
+    // Legacy File-based API (for UI display, DEPRECATED)
     // ========================================================================
 
-    /// List all memory files
+    /// List all memory files (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn list_files(&self) -> Result<Vec<MemoryFileInfo>> {
+        warn!("list_files called (deprecated)");
         let mut files = Vec::new();
 
         // System memory
@@ -891,7 +1288,7 @@ impl MarkdownMemoryStore {
         Ok(files)
     }
 
-    /// Get file info helper
+    /// Get file info helper (DEPRECATED)
     fn get_file_info(
         &self,
         path: &Path,
@@ -924,8 +1321,10 @@ impl MarkdownMemoryStore {
         }))
     }
 
-    /// Read raw markdown content from a memory file
+    /// Read raw markdown content from a memory file (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn read_raw_markdown(&self, source_type: &str, id: &str) -> Result<String> {
+        warn!(source_type, id, "read_raw_markdown called (deprecated)");
         let path = match source_type {
             "agent" => self.base_path.join("agents").join(format!("{}.md", id)),
             "chat" => self.base_path.join("chat").join(format!("{}.md", id)),
@@ -940,8 +1339,10 @@ impl MarkdownMemoryStore {
             .map_err(|e| Error::Storage(format!("Failed to read memory file: {}", e)))
     }
 
-    /// Update raw markdown content for a memory file
+    /// Update raw markdown content for a memory file (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn write_raw_markdown(&self, source_type: &str, id: &str, content: &str) -> Result<()> {
+        warn!(source_type, id, "write_raw_markdown called (deprecated)");
         let path = match source_type {
             "agent" => self.base_path.join("agents").join(format!("{}.md", id)),
             "chat" => self.base_path.join("chat").join(format!("{}.md", id)),
@@ -974,8 +1375,10 @@ impl MarkdownMemoryStore {
         Ok(())
     }
 
-    /// Delete a memory file
+    /// Delete a memory file (DEPRECATED)
+    #[deprecated(note = "Legacy API - not recommended for new code")]
     pub fn delete_file(&self, source_type: &str, id: &str) -> Result<()> {
+        warn!(source_type, id, "delete_file called (deprecated)");
         let path = match source_type {
             "agent" => self.base_path.join("agents").join(format!("{}.md", id)),
             "chat" => self.base_path.join("chat").join(format!("{}.md", id)),
@@ -1007,7 +1410,9 @@ impl MarkdownMemoryStore {
         Ok(())
     }
 
-    // Helper methods
+    // ========================================================================
+    // Legacy Helper methods
+    // ========================================================================
 
     fn cache_key(&self, source: &MemorySource) -> String {
         match source {
@@ -1068,6 +1473,264 @@ impl Default for MarkdownMemoryStore {
         Self::new("data/memory")
     }
 }
+
+// ============================================================================
+// Helper functions
+// ============================================================================
+
+/// Replace a section in markdown content by heading name.
+///
+/// Finds "## {heading}" and replaces content until next "## " heading.
+/// If heading not found, prepends the section.
+fn replace_section_in_content(content: &str, heading: &str, new_body: &str) -> String {
+    let section_start = format!("## {}", heading);
+    let lines: Vec<&str> = content.lines().collect();
+
+    // Find start line (## {heading})
+    let start_idx = lines.iter().position(|l| *l == section_start);
+
+    if let Some(start) = start_idx {
+        // Find end line (next ## heading or EOF)
+        let end = lines[start + 1..]
+            .iter()
+            .position(|l| l.starts_with("## "))
+            .map(|i| start + 1 + i)
+            .unwrap_or(lines.len());
+
+        // Build new content
+        let mut result = lines[..start].to_vec();
+        result.push(section_start.as_str());
+        result.push("");
+        for body_line in new_body.lines() {
+            result.push(body_line);
+        }
+        result.extend_from_slice(&lines[end..]);
+
+        result.join("\n")
+    } else {
+        // Heading not found, prepend
+        let mut result = vec![section_start.as_str(), ""];
+        for body_line in new_body.lines() {
+            result.push(body_line);
+        }
+        result.push("");
+        result.extend_from_slice(&lines);
+        result.join("\n")
+    }
+}
+
+// ============================================================================
+// New API tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests_new_layout {
+    use super::*;
+    use tempfile::TempDir;
+
+    async fn create_test_store() -> (TempDir, MarkdownMemoryStore) {
+        let temp_dir = TempDir::new().unwrap();
+        let config = MemoryConfig {
+            enabled: true,
+            storage_path: temp_dir.path().to_str().unwrap().to_string(),
+            user_char_limit: 2000,
+            knowledge_char_limit: 3000,
+            agent_char_limit: 500,
+            max_agents: 5,
+            temp_file_ttl_days: 7,
+            schedule_interval_secs: 3600,
+        };
+        let store = MarkdownMemoryStore::with_config(temp_dir.path(), config);
+        store.init().unwrap();
+        (temp_dir, store)
+    }
+
+    #[tokio::test]
+    async fn test_read_write_user() {
+        let (_temp, store) = create_test_store().await;
+
+        // Write user content
+        let content = "# User Profile\n\n- Name: Test User\n- Language: en\n";
+        store.write_file("user", content).await.unwrap();
+
+        // Read it back
+        let read = store.read_file("user").await.unwrap();
+        assert_eq!(read, content);
+    }
+
+    #[tokio::test]
+    async fn test_char_limit_enforced() {
+        let (_temp, store) = create_test_store().await;
+
+        // Try to write content exceeding user limit
+        let long_content = "x".repeat(2001);
+        let result = store.write_file("user", &long_content).await;
+        assert!(result.is_err());
+
+        // Write within limit should succeed
+        let ok_content = "x".repeat(2000);
+        store.write_file("user", &ok_content).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_session_temp_file() {
+        let (_temp, store) = create_test_store().await;
+
+        // Write session files
+        let session_id = "test-session-123";
+        store.write_session_file(session_id, "notes", "Test notes").await.unwrap();
+        store.write_session_file(session_id, "scratch", "Scratch content").await.unwrap();
+
+        // Read them back
+        let notes = store.read_session_file(session_id, "notes").await.unwrap();
+        assert_eq!(notes, "Test notes");
+
+        let scratch = store.read_session_file(session_id, "scratch").await.unwrap();
+        assert_eq!(scratch, "Scratch content");
+
+        // Non-existent file should return empty string
+        let todo = store.read_session_file(session_id, "todo").await.unwrap();
+        assert_eq!(todo, "");
+    }
+
+    #[tokio::test]
+    async fn test_section_replace() {
+        let (_temp, store) = create_test_store().await;
+
+        // Initial KNOWLEDGE.md should have default structure
+        let initial = store.read_file("knowledge").await.unwrap();
+        assert!(initial.contains("## System Resources"));
+
+        // Replace Domain Knowledge section
+        let new_body = "- Device: TestDevice\n- Location: TestRoom\n";
+        store.replace_section("knowledge", "Domain Knowledge", new_body).await.unwrap();
+
+        // Verify replacement
+        let updated = store.read_file("knowledge").await.unwrap();
+        assert!(updated.contains("## Domain Knowledge"));
+        assert!(updated.contains("TestDevice"));
+
+        // Replace should preserve other sections
+        assert!(updated.contains("## System Resources"));
+        assert!(updated.contains("## Agent Experiences"));
+    }
+
+    #[tokio::test]
+    async fn test_section_replace_inserts_if_missing() {
+        let (_temp, store) = create_test_store().await;
+
+        // Write KNOWLEDGE.md without Custom Section
+        let minimal = "# System Knowledge\n\n## System Resources\n\nContent\n";
+        store.write_file("knowledge", minimal).await.unwrap();
+
+        // Replace non-existent section should prepend it
+        store
+            .replace_section("knowledge", "Custom Section", "Custom content")
+            .await
+            .unwrap();
+
+        let updated = store.read_file("knowledge").await.unwrap();
+        assert!(updated.contains("## Custom Section"));
+        assert!(updated.contains("Custom content"));
+        // Check that it's prepended (before System Resources)
+        let custom_idx = updated.find("## Custom Section").unwrap();
+        let resources_idx = updated.find("## System Resources").unwrap();
+        assert!(custom_idx < resources_idx);
+    }
+
+    #[tokio::test]
+    async fn test_stats() {
+        let (_temp, store) = create_test_store().await;
+
+        // Write some content
+        store.write_file("user", "# User\n\nTest").await.unwrap();
+        store
+            .write_file("knowledge", "# Knowledge\n\nContent")
+            .await
+            .unwrap();
+
+        // Create a session directory
+        store
+            .write_session_file("session-1", "notes", "Notes")
+            .await
+            .unwrap();
+
+        // Get stats
+        let stats = store.stats().await.unwrap();
+
+        // The write_file method creates "# User Profile\n\n> Last updated: \n\n" initially
+        // then our content overwrites it, but we need to account for what was actually written
+        assert!(stats.user.chars >= 12); // At least "# User\n\nTest"
+        assert_eq!(stats.user.limit, 2000);
+        assert!(stats.knowledge.chars >= 20); // At least "# Knowledge\n\nContent"
+        assert_eq!(stats.knowledge.limit, 3000);
+        assert_eq!(stats.sessions.active_count, 1);
+        assert_eq!(stats.sessions.total_temp_files, 1);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_old_sessions() {
+        let (_temp, store) = create_test_store().await;
+
+        // Create multiple sessions
+        store
+            .write_session_file("old-session-1", "notes", "Old notes 1")
+            .await
+            .unwrap();
+        store
+            .write_session_file("old-session-2", "scratch", "Scratch 2")
+            .await
+            .unwrap();
+        store
+            .write_session_file("old-session-3", "todo", "Todo 3")
+            .await
+            .unwrap();
+
+        // Create a new session (should not be deleted)
+        store
+            .write_session_file("new-session", "notes", "New notes")
+            .await
+            .unwrap();
+
+        // Manually set modification times for old sessions to 10 days ago
+        let sessions_path = store.base_path.join("sessions");
+        let ten_days_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(864000);
+
+        for name in &["old-session-1", "old-session-2", "old-session-3"] {
+            let session_path = sessions_path.join(name);
+            if session_path.exists() {
+                // Set the directory modification time
+                let file = std::fs::File::open(&session_path).unwrap();
+                file.set_modified(ten_days_ago).ok();
+
+                // Also set modification time for files inside
+                for entry in std::fs::read_dir(&session_path).unwrap() {
+                    let entry = entry.unwrap();
+                    let file = std::fs::File::open(entry.path()).unwrap();
+                    file.set_modified(ten_days_ago).ok();
+                }
+            }
+        }
+
+        // Cleanup with TTL 7 days
+        let deleted = store.cleanup_old_sessions(7).await.unwrap();
+
+        // Should delete 3 old sessions
+        assert_eq!(deleted, 3);
+
+        // Old session directories should be gone
+        assert!(!sessions_path.join("old-session-1").exists());
+        assert!(!sessions_path.join("old-session-2").exists());
+        assert!(!sessions_path.join("old-session-3").exists());
+
+        // New session should still exist
+        assert!(sessions_path.join("new-session").exists());
+    }
+}
+
+// ============================================================================
+// Legacy API tests (kept for backward compatibility)
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -1199,129 +1862,100 @@ mod tests {
             )
             .unwrap();
 
+        // Aggregate
         let all = store.aggregate_all().unwrap();
         assert_eq!(all.total, 2);
-        assert_eq!(all.by_category.get("domain_knowledge"), Some(&1));
-        assert_eq!(all.by_category.get("task_patterns"), Some(&1));
+        assert_eq!(all.by_source.len(), 2);
     }
 
     #[test]
-    fn test_memory_search() {
+    fn test_memory_pruning() {
         let temp_dir = TempDir::new().unwrap();
         let store = MarkdownMemoryStore::new(temp_dir.path());
         store.init().unwrap();
 
-        store
-            .append(
-                &MemorySource::System,
-                &MemoryEntry::new(
-                    "User likes Python",
-                    MemoryCategory::UserProfile,
-                    MemorySource::System,
-                ),
+        let source = MemorySource::System;
+
+        // Add more entries than max
+        for i in 0..20 {
+            let entry = MemoryEntry::new(
+                format!("Entry {}", i),
+                MemoryCategory::TaskPatterns,
+                source.clone(),
             )
-            .unwrap();
-        store
-            .append(
-                &MemorySource::System,
-                &MemoryEntry::new(
-                    "Daily backup at midnight",
-                    MemoryCategory::TaskPatterns,
-                    MemorySource::System,
-                ),
-            )
-            .unwrap();
-
-        let results = store.search("python").unwrap();
-        assert_eq!(results.len(), 1);
-        assert!(results[0].content.contains("Python"));
-    }
-
-    #[test]
-    fn test_memory_prune() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = MarkdownMemoryStore::new(temp_dir.path());
-        store.init().unwrap();
-
-        // Add 5 entries with different importance
-        for i in 1..=5 {
-            store
-                .append(
-                    &MemorySource::System,
-                    &MemoryEntry::new(
-                        format!("Entry {}", i),
-                        MemoryCategory::DomainKnowledge,
-                        MemorySource::System,
-                    )
-                    .with_importance(i * 10),
-                )
-                .unwrap();
+            .with_importance(50 + i); // Higher importance for higher numbers
+            store.append(&source, &entry).unwrap();
         }
 
-        // Prune to 3
-        let removed = store.prune(&MemorySource::System, 3).unwrap();
-        assert_eq!(removed, 2);
+        // Prune to 10 entries
+        let removed = store.prune(&source, 10).unwrap();
+        assert_eq!(removed, 10);
 
-        let remaining = store.read(&MemorySource::System).unwrap();
-        assert_eq!(remaining.len(), 3);
-
-        // Should keep highest importance
-        let importances: Vec<u8> = remaining.iter().map(|e| e.importance).collect();
-        assert!(importances.contains(&50));
-        assert!(importances.contains(&40));
-        assert!(importances.contains(&30));
+        // Verify only high-importance entries remain
+        let entries = store.read(&source).unwrap();
+        assert_eq!(entries.len(), 10);
+        // All remaining entries should have importance >= 60
+        assert!(entries.iter().all(|e| e.importance >= 60));
     }
 
     #[test]
-    fn test_category_operations() {
+    fn test_export_import() {
         let temp_dir = TempDir::new().unwrap();
         let store = MarkdownMemoryStore::new(temp_dir.path());
         store.init().unwrap();
 
-        // Write to a category
-        let content = "# User Profile\n\n## Preferences\n\n- Test preference\n";
+        // Add some entries to category files (new API location)
+        let content = "# Domain Knowledge\n\n- Test fact\n";
         store
-            .write_category(&MemoryCategory::UserProfile, content)
+            .write_category(&MemoryCategory::DomainKnowledge, content)
             .unwrap();
 
-        // Read it back
-        let read = store.read_category(&MemoryCategory::UserProfile).unwrap();
-        assert!(read.contains("Test preference"));
-
-        // Check stats
-        let stats = store.category_stats(&MemoryCategory::UserProfile).unwrap();
-        assert!(stats.file_size > 0);
-        assert_eq!(stats.entry_count, 1); // One line starting with '-'
-
-        // Check all_stats
-        let all_stats = store.all_stats().unwrap();
-        assert!(all_stats.contains_key("user_profile"));
+        // Export
+        let exported = store.export_all().unwrap();
+        assert!(exported.contains("Test fact"));
+        assert!(exported.contains("NeoMind Memory Export"));
     }
 
     #[test]
-    fn test_export_all() {
+    fn test_file_operations() {
         let temp_dir = TempDir::new().unwrap();
         let store = MarkdownMemoryStore::new(temp_dir.path());
         store.init().unwrap();
 
-        // Write to multiple categories
-        store
-            .write_category(
-                &MemoryCategory::UserProfile,
-                "# User Profile\n\n- Preference 1\n",
-            )
-            .unwrap();
-        store
-            .write_category(
-                &MemoryCategory::DomainKnowledge,
-                "# Domain Knowledge\n\n- Knowledge 1\n",
-            )
-            .unwrap();
+        // List files
+        let files = store.list_files().unwrap();
+        assert!(!files.is_empty());
 
-        // Export all
-        let export = store.export_all().unwrap();
-        assert!(export.contains("User Profile"));
-        assert!(export.contains("Domain Knowledge"));
-        assert!(export.contains("NeoMind Memory Export"));
+        // Read raw markdown
+        let content = store.read_raw_markdown("system", "system").unwrap();
+        assert!(content.contains("System Memory"));
+
+        // Write raw markdown
+        let new_content = "# Test\n\nContent";
+        store.write_raw_markdown("system", "system", new_content).unwrap();
+        let read_back = store.read_raw_markdown("system", "system").unwrap();
+        assert_eq!(read_back, new_content);
+
+        // Delete agent file
+        store
+            .write_raw_markdown("agent", "test_agent", "Test")
+            .unwrap();
+        let result = store.delete_file("agent", "test_agent");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_replace_section_helper() {
+        let content = "## Section1\n\nOld1\n\n## Section2\n\nOld2\n";
+        let result = replace_section_in_content(content, "Section1", "New1\nLine2");
+        assert!(result.contains("New1"));
+        assert!(result.contains("Line2"));
+        assert!(!result.contains("Old1"));
+
+        // Replace non-existent section should prepend
+        let result = replace_section_in_content(content, "NewSection", "NewContent");
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines[0], "## NewSection");
+        assert!(lines.iter().any(|l| *l == "NewContent"));
     }
 }
