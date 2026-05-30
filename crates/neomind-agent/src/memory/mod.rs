@@ -84,7 +84,7 @@ pub use tiered::{MemoryQueryResult, MemoryStats, SearchMethod, TieredMemory, Tie
 pub use manager::MemoryManager;
 
 // Memory extractor/compressor/dedup exports
-pub use compressor::{CompressionResult, MemoryCompressor};
+pub use compressor::{evict_to_limit, EvictionResult};
 pub use dedup::{DedupProcessor, DedupResult};
 pub use extractor::{
     parse_category, AgentExtractor, ChatExtractor, ExtractResult, MemoryCandidate,

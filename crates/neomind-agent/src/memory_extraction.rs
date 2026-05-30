@@ -10,7 +10,6 @@ use neomind_core::llm::backend::{GenerationParams, LlmInput, LlmRuntime};
 use neomind_storage::{MarkdownMemoryStore, MemoryCategory, SessionMessage};
 
 use crate::error::Result;
-use crate::memory::compressor::MemoryCompressor;
 use crate::memory::dedup::DedupProcessor;
 use crate::memory::extractor::{
     parse_category, AgentExtractor, ChatExtractor, ExtractResult, MemoryAction,
@@ -194,45 +193,18 @@ impl MemoryExtractor {
         Ok(count)
     }
 
-    /// Extract and compress memories from chat (full pipeline)
+    /// Extract memories from chat (simplified - compression handled separately)
     ///
-    /// This performs extraction followed by compression if needed
+    /// This performs extraction. Compression will be handled by the scheduler based on char limits.
     pub async fn extract_and_compress_chat(
         &self,
         messages: &[SessionMessage],
-        compressor: &MemoryCompressor,
-    ) -> Result<(usize, bool)> {
+    ) -> Result<usize> {
         // Extract
         let extracted = self.extract_from_chat(messages).await?;
 
-        if extracted == 0 {
-            return Ok((0, false));
-        }
-
-        // Check if compression is needed for each category
-        let mut compressed = false;
-        let store = self.store.read().await;
-
-        for category in MemoryCategory::all() {
-            let stats = store
-                .category_stats(category)
-                .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
-
-            let max_entries = compressor.max_entries(category);
-
-            if stats.entry_count > max_entries {
-                tracing::info!(
-                    category = ?category,
-                    current = stats.entry_count,
-                    max = max_entries,
-                    "Category exceeds max entries, compression needed"
-                );
-                // Note: Actual compression would be done by MemoryScheduler
-                compressed = true;
-            }
-        }
-
-        Ok((extracted, compressed))
+        // Note: Compression is now handled by MemoryScheduler based on char limits
+        Ok(extracted)
     }
 
     // === Private helper methods ===
@@ -697,7 +669,9 @@ mod tests {
             std::pin::Pin<Box<dyn Stream<Item = StreamChunk> + Send>>,
             neomind_core::llm::backend::LlmError,
         > {
-            Err(neomind_core::llm::backend::LlmError::InvalidInput("streaming not supported by mock".into()))
+            Err(neomind_core::llm::backend::LlmError::InvalidInput(
+                "streaming not supported by mock".into(),
+            ))
         }
 
         fn max_context_length(&self) -> usize {
