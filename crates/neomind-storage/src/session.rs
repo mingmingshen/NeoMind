@@ -29,13 +29,18 @@ const HISTORY_TABLE: TableDefinition<(&str, u64), Vec<u8>> = TableDefinition::ne
 const PENDING_STREAM_TABLE: TableDefinition<&str, Vec<u8>> =
     TableDefinition::new("pending_streams");
 
+/// Default value for memory_enabled: true.
+const fn default_memory_enabled() -> bool {
+    true
+}
+
 /// Session metadata (title, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SessionMetadata {
     /// User-defined title for the session
     pub title: Option<String>,
-    /// Whether memory injection is enabled for this session
-    #[serde(default)]
+    /// Whether memory injection is enabled for this session (defaults to true)
+    #[serde(default = "default_memory_enabled")]
     pub memory_enabled: bool,
     /// Conversation summary for context compression (injected when context exceeds threshold)
     #[serde(default)]
@@ -1258,9 +1263,9 @@ mod tests {
         // Save session
         store.save_session_id("test-session").unwrap();
 
-        // Initially memory_enabled should be false (default)
+        // Initially memory_enabled should be true (default)
         let meta = store.get_session_metadata("test-session").unwrap();
-        assert!(!meta.memory_enabled);
+        assert!(meta.memory_enabled);
 
         // Enable memory
         store.toggle_memory("test-session", true).unwrap();
@@ -1297,7 +1302,7 @@ mod tests {
         // Metadata should be default
         let meta = store.get_session_metadata("test-session").unwrap();
         assert!(meta.title.is_none());
-        assert!(!meta.memory_enabled);
+        assert!(meta.memory_enabled); // defaults to true now
     }
 
     #[test]
@@ -1769,7 +1774,7 @@ mod tests {
 
         // Should have default values
         assert!(meta.title.is_none());
-        assert!(!meta.memory_enabled);
+        assert!(meta.memory_enabled); // defaults to true
         assert!(meta.conversation_summary.is_none());
         assert!(meta.summary_up_to_index.is_none());
     }

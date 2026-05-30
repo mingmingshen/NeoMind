@@ -1310,7 +1310,7 @@ export function ChatPage() {
                     : "text-muted-foreground hover:text-foreground"
                 )}
                 onClick={() => {
-                  const current = sessions.find(s => s.sessionId === sessionId)?.memoryEnabled ?? false
+                  const current = sessions.find(s => s.sessionId === sessionId)?.memoryEnabled ?? true
                   if (sessionId) toggleMemory(sessionId, !current)
                 }}
                 title={sessions.find(s => s.sessionId === sessionId)?.memoryEnabled

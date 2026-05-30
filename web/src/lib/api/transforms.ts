@@ -59,7 +59,7 @@ export function normalizeSession(raw: unknown): ChatSession | null {
     messageCount: s.messageCount || s.message_count || 0,
     title: s.title ?? undefined,
     preview: s.preview ?? undefined,
-    memoryEnabled: s.memoryEnabled ?? s.memory_enabled ?? false,
+    memoryEnabled: s.memoryEnabled ?? s.memory_enabled ?? true,
   }
 }
 
