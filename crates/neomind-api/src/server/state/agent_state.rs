@@ -12,7 +12,6 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use neomind_agent::memory::{MemoryScheduler, TieredMemory};
-use neomind_agent::toolkit::ai_metric::AiMetricsRegistry;
 use neomind_agent::SessionManager;
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_storage::{AgentStore, MarkdownMemoryStore, MemoryConfig};
@@ -42,9 +41,6 @@ pub struct AgentState {
 
     /// Memory scheduler for background extraction/compression (lazy-initialized).
     pub memory_scheduler: Arc<RwLock<Option<MemoryScheduler>>>,
-
-    /// AI metrics registry for the AI metric tool and data handler.
-    pub ai_metrics_registry: Arc<AiMetricsRegistry>,
 }
 
 impl AgentState {
@@ -55,7 +51,6 @@ impl AgentState {
         agent_store: Arc<AgentStore>,
         agent_manager: Arc<RwLock<Option<AgentManager>>>,
         system_memory_store: Arc<MarkdownMemoryStore>,
-        ai_metrics_registry: Arc<AiMetricsRegistry>,
     ) -> Self {
         Self {
             session_manager,
@@ -64,13 +59,12 @@ impl AgentState {
             agent_manager,
             system_memory_store,
             memory_scheduler: Arc::new(RwLock::new(None)),
-            ai_metrics_registry,
         }
     }
 
     /// Start the memory scheduler with LLM runtime.
     /// Idempotent: if a scheduler is already running, returns Ok without creating a duplicate.
-    pub async fn start_memory_scheduler(&self, llm: Arc<dyn LlmRuntime>) -> Result<(), String> {
+    pub async fn start_memory_scheduler(&self, _llm: Arc<dyn LlmRuntime>) -> Result<(), String> {
         // Idempotency check — avoid spawning duplicate background tasks
         {
             let guard = self.memory_scheduler.read().await;
@@ -92,11 +86,10 @@ impl AgentState {
             config.clone(),
         )));
 
-        // Get session store from session manager for extraction
-        let session_store = self.session_manager.session_store();
+        // Session store available for future use (e.g., memory tool integration)
+        let _session_store = self.session_manager.session_store();
 
-        let mut scheduler = MemoryScheduler::with_config(manager, store, config, llm)
-            .with_session_store(session_store);
+        let mut scheduler = MemoryScheduler::new(manager, store, config);
 
         scheduler.start();
 
@@ -128,7 +121,6 @@ impl AgentState {
                 std::env::temp_dir().join("test-memory"),
             )),
             memory_scheduler: Arc::new(RwLock::new(None)),
-            ai_metrics_registry: AiMetricsRegistry::new(&std::env::temp_dir()),
         }
     }
 }

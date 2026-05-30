@@ -363,24 +363,14 @@ pub async fn trigger_extract(
     };
 
     // Create extractor using saved config
-    let saved_config = neomind_storage::MemoryConfig::load();
     let config = if req.force {
         tracing::debug!("Using force extraction config (min_messages=1)");
         ExtractionConfig {
             min_messages: 1,
-            max_messages: saved_config.extraction.max_messages,
-            min_importance: saved_config.extraction.min_importance,
-            dedup_enabled: saved_config.extraction.dedup_enabled,
-            similarity_threshold: saved_config.extraction.similarity_threshold,
+            ..ExtractionConfig::default()
         }
     } else {
-        ExtractionConfig {
-            min_messages: saved_config.extraction.min_messages,
-            max_messages: saved_config.extraction.max_messages,
-            min_importance: saved_config.extraction.min_importance,
-            dedup_enabled: saved_config.extraction.dedup_enabled,
-            similarity_threshold: saved_config.extraction.similarity_threshold,
-        }
+        ExtractionConfig::default()
     };
 
     let extractor = MemoryExtractor::with_config(memory_store, llm_runtime, config);
@@ -505,115 +495,53 @@ pub async fn add_memory_entry(
     }
 }
 
-/// POST /api/memory/compress - Trigger manual compression
+/// POST /api/memory/compress - Trigger manual eviction
 pub async fn trigger_compress(State(state): State<ServerState>) -> Response {
-    use neomind_agent::memory::compressor::MemoryCompressor;
-    use std::sync::Arc;
-    use tokio::sync::RwLock;
+    use neomind_agent::memory::compressor::evict_to_limit;
 
-    tracing::info!("Starting memory compression request");
+    tracing::info!("Starting memory eviction request");
 
-    // Get the LLM backend
-    let llm_manager = match neomind_agent::get_instance_manager() {
-        Ok(manager) => {
-            tracing::debug!("Got LLM instance manager");
-            manager
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to get LLM instance manager");
-            return error_response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                format!("LLM backend not available: {}", e),
-            );
-        }
-    };
+    let config = neomind_storage::MemoryConfig::load();
+    let store = (*state.agents.system_memory_store).clone();
 
-    let llm_runtime = match llm_manager.get_active_runtime().await {
-        Ok(runtime) => {
-            tracing::info!(
-                model = %runtime.model_name(),
-                backend = ?runtime.backend_id(),
-                "Got active LLM runtime for compression"
-            );
-            runtime
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "No active LLM runtime configured");
-            return error_response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                format!("No active LLM backend configured: {}", e),
-            );
-        }
-    };
-
-    // Get the memory store (wrapped in Arc<RwLock<>>)
-    let memory_store = {
-        let store = (*state.agents.system_memory_store).clone();
-        if let Err(e) = store.init() {
-            tracing::warn!(error = %e, "Failed to init memory store for compression");
-        }
-        Arc::new(RwLock::new(store))
-    };
-
-    // Create compressor
-    let compressor = MemoryCompressor::new(llm_runtime);
-
-    // Compress all categories
-    let mut total_result = CompressionResultSummary::default();
-
-    for category in MemoryCategory::all() {
-        match compressor.compress(&memory_store, *category).await {
-            Ok(result) => {
-                tracing::info!(
-                    category = ?category,
-                    total_before = result.total_before,
-                    kept = result.kept,
-                    compressed = result.compressed,
-                    deleted = result.deleted,
-                    "Compression completed for category"
-                );
-                total_result.total_before += result.total_before;
-                total_result.kept += result.kept;
-                total_result.compressed += result.compressed;
-                total_result.deleted += result.deleted;
-            }
-            Err(e) => {
-                tracing::warn!(
-                    category = ?category,
-                    error = %e,
-                    "Compression failed for category"
-                );
-            }
+    // Evict user file to limit
+    let user_content = store.read_file("user").await.unwrap_or_default();
+    let user_result = evict_to_limit(&user_content, config.user_char_limit);
+    let mut total_evicted = 0;
+    if user_result.evicted {
+        if let Err(e) = store.write_file("user", &user_result.content).await {
+            tracing::warn!(error = %e, "Failed to write evicted user content");
+        } else {
+            total_evicted += user_result.lines_removed;
         }
     }
 
-    let message = if total_result.total_before == 0 {
-        "No memory entries to compress. Extract memories first.".to_string()
+    // Evict knowledge file to limit
+    let knowledge_content = store.read_file("knowledge").await.unwrap_or_default();
+    let knowledge_result = evict_to_limit(&knowledge_content, config.knowledge_char_limit);
+    if knowledge_result.evicted {
+        if let Err(e) = store.write_file("knowledge", &knowledge_result.content).await {
+            tracing::warn!(error = %e, "Failed to write evicted knowledge content");
+        } else {
+            total_evicted += knowledge_result.lines_removed;
+        }
+    }
+
+    let message = if total_evicted == 0 {
+        "No eviction needed — all files within char limits.".to_string()
     } else {
         format!(
-            "Compression completed: {} entries processed, {} compressed, {} deleted",
-            total_result.total_before, total_result.compressed, total_result.deleted
+            "Eviction completed: {} lines removed from files exceeding limits",
+            total_evicted
         )
     };
 
     Json(serde_json::json!({
         "success": true,
-        "total_before": total_result.total_before,
-        "kept": total_result.kept,
-        "compressed": total_result.compressed,
-        "deleted": total_result.deleted,
+        "lines_evicted": total_evicted,
         "message": message
     }))
     .into_response()
-}
-
-/// Summary of compression results across all categories
-#[derive(Debug, Default)]
-struct CompressionResultSummary {
-    total_before: usize,
-    kept: usize,
-    compressed: usize,
-    deleted: usize,
 }
 
 /// GET /api/memory/export - Export all categories as Markdown
