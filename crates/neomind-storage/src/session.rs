@@ -35,9 +35,10 @@ const fn default_memory_enabled() -> bool {
 }
 
 /// Session metadata (title, etc.).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMetadata {
     /// User-defined title for the session
+    #[serde(default)]
     pub title: Option<String>,
     /// Whether memory injection is enabled for this session (defaults to true)
     #[serde(default = "default_memory_enabled")]
@@ -51,6 +52,18 @@ pub struct SessionMetadata {
     /// Preview text derived from the first user message (truncated)
     #[serde(default)]
     pub preview: Option<String>,
+}
+
+impl Default for SessionMetadata {
+    fn default() -> Self {
+        Self {
+            title: None,
+            memory_enabled: true,
+            conversation_summary: None,
+            summary_up_to_index: None,
+            preview: None,
+        }
+    }
 }
 
 /// A message in a session.

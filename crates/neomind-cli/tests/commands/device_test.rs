@@ -17,10 +17,11 @@ fn test_device_help() {
         .stdout(predicate::str::contains("create"))
         .stdout(predicate::str::contains("update"))
         .stdout(predicate::str::contains("delete"))
-        .stdout(predicate::str::contains("latest"))
         .stdout(predicate::str::contains("history"))
         .stdout(predicate::str::contains("control"))
-        .stdout(predicate::str::contains("types"));
+        .stdout(predicate::str::contains("types"))
+        .stdout(predicate::str::contains("webhook-url"))
+        .stdout(predicate::str::contains("drafts"));
 }
 
 /// Test device list help.
@@ -76,17 +77,6 @@ fn test_device_delete_help() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Delete device"));
-}
-
-/// Test device latest help.
-#[test]
-fn test_device_latest_help() {
-    let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("device").arg("latest").arg("--help");
-
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Get latest metrics"));
 }
 
 /// Test device history help.

@@ -19,19 +19,14 @@ fn test_message_help() {
 }
 
 /// Test message list help.
-/// NOTE: This test currently expects failure due to a known bug in the CLI definition:
-/// conflicting short option '-s' used by both 'severity' and 'status' arguments.
-/// When the bug is fixed, this test should be updated to expect .success().
 #[test]
 fn test_message_list_help() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
     cmd.arg("message").arg("list").arg("--help");
 
-    // Currently panics due to conflicting short options
     cmd.assert()
-        .failure()
-        .code(101)
-        .stderr(predicate::str::contains("Short option names must be unique"));
+        .success()
+        .stdout(predicate::str::contains("List messages"));
 }
 
 /// Test message get help.
@@ -46,19 +41,14 @@ fn test_message_get_help() {
 }
 
 /// Test message send help.
-/// NOTE: This test currently expects failure due to a known bug in the CLI definition:
-/// conflicting short option '-m' used by both 'message' and global 'model' arguments.
-/// When the bug is fixed, this test should be updated to expect .success().
 #[test]
 fn test_message_send_help() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
     cmd.arg("message").arg("send").arg("--help");
 
-    // Currently panics due to conflicting short options
     cmd.assert()
-        .failure()
-        .code(101)
-        .stderr(predicate::str::contains("Short option names must be unique"));
+        .success()
+        .stdout(predicate::str::contains("Send a new message"));
 }
 
 /// Test message read help.
