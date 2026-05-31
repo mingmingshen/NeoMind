@@ -1,14 +1,9 @@
-//! Multi-stage agent for reduced thinking.
+//! Intent classification for user queries.
 //!
-//! Instead of sending all tools at once, this module implements a staged approach:
-//! - Stage 1: Intent classification (no tools, minimal thinking)
-//! - Stage 2: Tool selection (only relevant tools by namespace)
-//! - Stage 3: Tool execution
-//! - Stage 4: Response generation (optional)
+//! Provides keyword-based intent classification used by the streaming agent
+//! and planner modules to route user messages to appropriate handlers.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashSet;
 
 /// Intent category for user queries.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -33,20 +28,6 @@ pub enum IntentCategory {
 }
 
 impl IntentCategory {
-    /// Get the namespace for this intent.
-    pub fn namespace(&self) -> &'static str {
-        match self {
-            IntentCategory::Device => "device",
-            IntentCategory::Rule => "rule",
-            IntentCategory::Workflow => "workflow",
-            IntentCategory::Data => "data",
-            IntentCategory::Alert => "alert",
-            IntentCategory::System => "system",
-            IntentCategory::Help => "help",
-            IntentCategory::General => "general",
-        }
-    }
-
     /// Get display name for this intent.
     pub fn display_name(&self) -> &'static str {
         match self {
@@ -239,6 +220,20 @@ impl IntentCategory {
             ],
         }
     }
+
+    /// Get all intent category variants.
+    pub fn all_variants() -> Vec<IntentCategory> {
+        vec![
+            IntentCategory::Device,
+            IntentCategory::Rule,
+            IntentCategory::Workflow,
+            IntentCategory::Data,
+            IntentCategory::Alert,
+            IntentCategory::System,
+            IntentCategory::Help,
+            IntentCategory::General,
+        ]
+    }
 }
 
 /// Intent classification result.
@@ -339,165 +334,11 @@ impl IntentClassifier {
             }
         }
     }
-
-    /// Classify and return only the category.
-    pub fn classify_category(&self, message: &str) -> IntentCategory {
-        self.classify(message).category
-    }
-}
-
-impl IntentCategory {
-    /// Get all intent category variants.
-    pub fn all_variants() -> Vec<IntentCategory> {
-        vec![
-            IntentCategory::Device,
-            IntentCategory::Rule,
-            IntentCategory::Workflow,
-            IntentCategory::Data,
-            IntentCategory::Alert,
-            IntentCategory::System,
-            IntentCategory::Help,
-            IntentCategory::General,
-        ]
-    }
-}
-
-/// Tool filter for reducing tools sent to LLM.
-#[derive(Clone)]
-pub struct ToolFilter {
-    /// Always-included tools (system tools, etc.)
-    always_include: HashSet<String>,
-}
-
-impl Default for ToolFilter {
-    fn default() -> Self {
-        Self {
-            always_include: {
-                let mut set = HashSet::new();
-                // File and web tools should always be available for agent workflows
-                set.insert("web_fetch".to_string());
-                set.insert("file_write".to_string());
-                set.insert("file_edit".to_string());
-                set
-            },
-        }
-    }
-}
-
-impl ToolFilter {
-    /// Create a new tool filter with custom always-include list.
-    pub fn new(always_include: Vec<String>) -> Self {
-        Self {
-            always_include: always_include.into_iter().collect(),
-        }
-    }
-
-    /// Filter tools by intent category.
-    /// Returns only relevant tools (3-5 max) to reduce thinking.
-    pub fn filter_by_intent(&self, all_tools: &[Value], intent: &IntentResult) -> Vec<Value> {
-        let target_namespace = intent.category.namespace();
-
-        // Helper to derive namespace from tool name
-        let derive_namespace = |name: &str| -> &str {
-            if name == "shell"
-                || name.starts_with("list_")
-                || name.starts_with("get_")
-                || name.contains("device")
-            {
-                "device"
-            } else if name.contains("rule") || name.contains("automation") {
-                "rule"
-            } else if name.contains("workflow")
-                || name.contains("scenario")
-                || name.contains("trigger")
-            {
-                "workflow"
-            } else if name.contains("data") || name.contains("query") || name.contains("metrics") {
-                "data"
-            } else {
-                "general"
-            }
-        };
-
-        // Always include system tools
-        let mut filtered: Vec<Value> = all_tools
-            .iter()
-            .filter(|tool| {
-                let name = tool["name"].as_str().unwrap_or("");
-                self.always_include.contains(name)
-            })
-            .cloned()
-            .collect();
-
-        // Add namespace-specific tools
-        let namespace_tools: Vec<Value> = all_tools
-            .iter()
-            .filter(|tool| {
-                let name = tool["name"].as_str().unwrap_or("");
-                let ns = derive_namespace(name);
-                ns == target_namespace
-            })
-            .cloned()
-            .collect();
-
-        filtered.extend(namespace_tools);
-
-        // If General intent or no namespace tools, add commonly used tools
-        if intent.category == IntentCategory::General || filtered.is_empty() {
-            let common_tools: Vec<Value> = all_tools
-                .iter()
-                .filter(|tool| {
-                    let name = tool["name"].as_str().unwrap_or("");
-                    // Include list_* and shell tools for general queries
-                    name.starts_with("list_") || name == "shell"
-                })
-                .cloned()
-                .collect();
-
-            // Add up to 3 common tools
-            filtered.extend(common_tools.into_iter().take(3));
-        }
-
-        // Limit to 5 tools max to reduce thinking
-        filtered.truncate(5);
-        filtered
-    }
-
-    /// Get simple prompt for intent-based tool selection.
-    pub fn intent_prompt(&self, intent: &IntentResult) -> String {
-        match intent.category {
-            IntentCategory::Device => {
-                "用户想查询或控制设备。可用工具: shell。直接调用合适的工具。".to_string()
-            }
-            IntentCategory::Rule => {
-                "用户想管理自动化规则。可用工具: shell。直接调用合适的工具。".to_string()
-            }
-            IntentCategory::Workflow => {
-                "用户想执行工作流。可用工具: shell。直接调用合适的工具。".to_string()
-            }
-            IntentCategory::Data => {
-                "用户想查询数据。可用工具: shell。直接调用合适的工具。".to_string()
-            }
-            IntentCategory::Alert => {
-                "用户想查询告警信息。可用工具: list_alerts, acknowledge_alert, get_alert_status。直接调用合适的工具。".to_string()
-            }
-            IntentCategory::System => {
-                "用户想了解系统状态。可用工具: get_system_status, get_health_status, get_version。直接调用合适的工具。".to_string()
-            }
-            IntentCategory::Help => {
-                "用户需要帮助说明。提供清晰的使用说明和示例，不调用工具。".to_string()
-            }
-            IntentCategory::General => {
-                "用户可能在闲聊或需要帮助。先尝试理解意图，必要时使用list_*工具查询信息。".to_string()
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn test_intent_classification_device() {
@@ -544,33 +385,6 @@ mod tests {
         // Test general query that doesn't match any specific category
         let result = classifier.classify("今天天气怎么样");
         assert_eq!(result.category, IntentCategory::General);
-    }
-
-    #[test]
-    fn test_tool_filter() {
-        let filter = ToolFilter::default();
-
-        let all_tools = vec![
-            json!({"name": "tool_search", "namespace": "system"}),
-            json!({"name": "list_devices", "namespace": "device"}),
-            json!({"name": "shell", "namespace": "device"}),
-            json!({"name": "list_rules", "namespace": "rule"}),
-            json!({"name": "create_rule", "namespace": "rule"}),
-            json!({"name": "list_workflows", "namespace": "workflow"}),
-            json!({"name": "trigger_workflow", "namespace": "workflow"}),
-        ];
-
-        let device_intent = IntentResult {
-            category: IntentCategory::Device,
-            confidence: 0.9,
-            keywords: vec!["设备".to_string()],
-        };
-
-        let filtered = filter.filter_by_intent(&all_tools, &device_intent);
-        assert!(filtered.len() <= 5);
-        // Should have system tools + device tools
-        assert!(filtered.iter().any(|t| t["name"] == "list_devices"));
-        assert!(filtered.iter().any(|t| t["name"] == "shell"));
     }
 
     #[test]

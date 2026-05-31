@@ -20,7 +20,7 @@ use neomind_core::{
 use crate::agent::tokenizer::estimate_tokens;
 
 // Import intent classifier for staged processing
-use crate::agent::staged::{IntentCategory, IntentClassifier, IntentResult, ToolFilter};
+use crate::agent::staged::IntentClassifier;
 // Import the unified error type
 use crate::error::NeoMindError;
 // Import the Result type alias
@@ -259,8 +259,6 @@ pub struct LlmInterface {
     last_prompt_tokens: Arc<tokio::sync::Mutex<Option<u32>>>,
     /// Intent classifier for staged processing.
     intent_classifier: IntentClassifier,
-    /// Tool filter for reducing tools sent to LLM.
-    tool_filter: ToolFilter,
     /// Business context manager for dynamic context injection.
     context_manager: Option<crate::context::ContextManager>,
     /// Global timezone for time-aware prompts (IANA format, e.g., "Asia/Shanghai").
@@ -297,7 +295,6 @@ impl LlmInterface {
             thinking_enabled: Arc::new(RwLock::new(None)), // Use backend default (from storage)
             last_prompt_tokens: Arc::new(tokio::sync::Mutex::new(None)),
             intent_classifier: IntentClassifier::default(),
-            tool_filter: ToolFilter::default(),
             context_manager: None,
             global_timezone: Arc::new(RwLock::new(None)), // Will be loaded from settings
             skill_registry: Arc::new(RwLock::new(None)),
@@ -329,7 +326,6 @@ impl LlmInterface {
             thinking_enabled: Arc::new(RwLock::new(None)), // Will use instance manager setting
             last_prompt_tokens: Arc::new(tokio::sync::Mutex::new(None)),
             intent_classifier: IntentClassifier::default(),
-            tool_filter: ToolFilter::default(),
             context_manager: None,
             global_timezone: Arc::new(RwLock::new(None)), // Will be loaded from settings
             skill_registry: Arc::new(RwLock::new(None)),
@@ -757,16 +753,6 @@ impl LlmInterface {
         self.tool_definitions.read().await.clone()
     }
 
-    /// Classify user intent from message.
-    pub fn classify_intent(&self, message: &str) -> IntentResult {
-        self.intent_classifier.classify(message)
-    }
-
-    /// Get intent-specific system prompt.
-    pub fn get_intent_prompt(&self, intent: &IntentResult) -> String {
-        self.tool_filter.intent_prompt(intent)
-    }
-
     /// Set the business context manager.
     pub fn set_context_manager(&mut self, manager: crate::context::ContextManager) {
         self.context_manager = Some(manager);
@@ -822,69 +808,6 @@ impl LlmInterface {
         } else {
             String::new()
         }
-    }
-
-    /// Filter tools by user message (intent-based).
-    /// Returns only relevant tools (3-5 max) to reduce thinking.
-    pub async fn filter_tools_by_intent(
-        &self,
-        user_message: &str,
-    ) -> Vec<neomind_core::llm::backend::ToolDefinition> {
-        let all_tools = self.tool_definitions.read().await;
-        if all_tools.is_empty() {
-            return Vec::new();
-        }
-
-        // Classify intent from user message
-        let intent = self.intent_classifier.classify(user_message);
-        let target_namespace = intent.category.namespace();
-
-        // Helper to derive namespace from tool name
-        let derive_namespace = |name: &str| -> &str {
-            if name == "shell"
-                || name.starts_with("list_")
-                || name.starts_with("get_")
-                || name.contains("device")
-            {
-                "device"
-            } else if name.contains("rule") || name.contains("automation") {
-                "rule"
-            } else if name.contains("workflow")
-                || name.contains("scenario")
-                || name.contains("trigger")
-            {
-                "workflow"
-            } else if name.contains("data") || name.contains("query") || name.contains("metrics") {
-                "data"
-            } else {
-                "general"
-            }
-        };
-
-        // Filter tools by namespace (always include system tools)
-        let mut filtered: Vec<neomind_core::llm::backend::ToolDefinition> = all_tools
-            .iter()
-            .filter(|t| {
-                let ns = derive_namespace(&t.name);
-                ns == "system" || ns == target_namespace
-            })
-            .cloned()
-            .collect();
-
-        // If no tools found or general intent, include list_* tools
-        if filtered.is_empty() || intent.category == IntentCategory::General {
-            let list_tools: Vec<neomind_core::llm::backend::ToolDefinition> = all_tools
-                .iter()
-                .filter(|t| t.name.starts_with("list_") || t.name.starts_with("query_"))
-                .take(3)
-                .cloned()
-                .collect();
-            filtered.extend(list_tools);
-        }
-
-        // Limit to 5 tools max
-        filtered.truncate(5);
-        filtered
     }
 
     /// Invalidate the system prompt cache.
@@ -2295,7 +2218,6 @@ pub struct ChatResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::staged::{IntentCategory, IntentResult};
 
     #[test]
     fn test_chat_config_default() {
@@ -2412,77 +2334,6 @@ mod tests {
 
         // Without LLM set and not using instance manager, should not be ready
         assert!(!interface.is_ready().await);
-    }
-
-    #[test]
-    fn test_classify_intent() {
-        let config = ChatConfig::default();
-        let interface = LlmInterface::new(config);
-
-        // Test device control intent
-        let result = interface.classify_intent("turn on the lights");
-        assert_eq!(result.category, IntentCategory::Device);
-
-        // Test data query
-        let result = interface.classify_intent("what's the temperature?");
-        assert_eq!(result.category, IntentCategory::Data);
-
-        // Test rule intent
-        let result = interface.classify_intent("create a new rule");
-        assert_eq!(result.category, IntentCategory::Rule);
-    }
-
-    #[test]
-    fn test_get_intent_prompt() {
-        let config = ChatConfig::default();
-        let interface = LlmInterface::new(config);
-
-        let result = IntentResult {
-            category: IntentCategory::Device,
-            confidence: 0.9,
-            keywords: vec!["device".to_string()],
-        };
-
-        let prompt = interface.get_intent_prompt(&result);
-        assert!(prompt.contains("设备"));
-    }
-
-    #[tokio::test]
-    async fn test_filter_tools_by_intent() {
-        let config = ChatConfig::default();
-        let interface = LlmInterface::new(config);
-
-        // Set up sample tool definitions
-        let tools = vec![
-            neomind_core::llm::backend::ToolDefinition {
-                name: "list_devices".to_string(),
-                description: "List all devices".to_string(),
-                parameters: serde_json::json!({}),
-            },
-            neomind_core::llm::backend::ToolDefinition {
-                name: "shell".to_string(),
-                description: "Execute CLI commands for device control and data queries".to_string(),
-                parameters: serde_json::json!({}),
-            },
-            neomind_core::llm::backend::ToolDefinition {
-                name: "list_rules".to_string(),
-                description: "List all rules".to_string(),
-                parameters: serde_json::json!({}),
-            },
-        ];
-        interface.set_tool_definitions(tools).await;
-
-        // Test filtering with device-related query
-        let filtered = interface.filter_tools_by_intent("turn on the lights").await;
-        // Device-related tools should be included
-        assert!(!filtered.is_empty());
-
-        // Test filtering with data query
-        let filtered = interface
-            .filter_tools_by_intent("what's the temperature?")
-            .await;
-        // Data-related tools should be included
-        assert!(!filtered.is_empty());
     }
 
     #[test]

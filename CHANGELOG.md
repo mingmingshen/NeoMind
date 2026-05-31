@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - **`think` tool** — Removed the explicit thinking tool (338 lines). Thinking models now handle reasoning internally via streaming. The `think` namespace removed from LLM tool routing and staged agent filter
+- **`ToolFilter` dead code** — Removed unused `ToolFilter` struct, `filter_by_intent()`, `intent_prompt()` from `staged.rs` (~130 lines). Removed dead `classify_intent()`, `get_intent_prompt()`, `filter_tools_by_intent()` methods and `tool_filter` field from `LlmInterface` in `llm.rs` (~140 lines including tests). Removed unused `IntentCategory::namespace()` and `IntentClassifier::classify_category()`
 
 ### Fixed
 
