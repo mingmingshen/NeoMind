@@ -1704,6 +1704,18 @@ impl ServerState {
         registry.register(Arc::new(neomind_agent::toolkit::FileWriteTool::new(self.data_dir.clone())));
         registry.register(Arc::new(neomind_agent::toolkit::FileEditTool::new(self.data_dir.clone())));
 
+        // Re-register memory tool with shared session handle
+        {
+            let memory_store = tokio::sync::RwLock::new(
+                (*self.agents.system_memory_store).clone(),
+            );
+            let memory_tool = neomind_agent::toolkit::MemoryTool::with_session_handle(
+                std::sync::Arc::new(memory_store),
+                self.agents.memory_session_handle.clone(),
+            );
+            registry.register(Arc::new(memory_tool));
+        }
+
         let tool_registry = Arc::new(registry);
         let tool_count = tool_registry.len();
         self.agents

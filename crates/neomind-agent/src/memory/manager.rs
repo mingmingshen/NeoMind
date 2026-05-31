@@ -45,12 +45,14 @@ impl MemoryManager {
     }
 
     /// Read memory content for a category
+    #[allow(deprecated)]
     pub async fn read(&self, category: &MemoryCategory) -> neomind_storage::error::Result<String> {
         let store = self.store.read().await;
         store.read_category(category)
     }
 
     /// Write memory content for a category
+    #[allow(deprecated)]
     pub async fn write(
         &self,
         category: &MemoryCategory,
@@ -61,6 +63,7 @@ impl MemoryManager {
     }
 
     /// Get statistics for a category
+    #[allow(deprecated)]
     pub async fn stats(
         &self,
         category: &MemoryCategory,
@@ -70,6 +73,7 @@ impl MemoryManager {
     }
 
     /// Get statistics for all categories
+    #[allow(deprecated)]
     pub async fn all_stats(
         &self,
     ) -> neomind_storage::error::Result<HashMap<String, CategoryStats>> {
@@ -78,6 +82,7 @@ impl MemoryManager {
     }
 
     /// Export all memory as a single markdown string
+    #[allow(deprecated)]
     pub async fn export(&self) -> neomind_storage::error::Result<String> {
         let store = self.store.read().await;
         store.export_all()

@@ -125,6 +125,7 @@ fn error_response(status: StatusCode, message: impl Into<String>) -> Response {
 // ============================================================================
 
 /// GET /api/memory/category/:category - Get category content
+#[allow(deprecated)]
 pub async fn get_category(
     State(state): State<ServerState>,
     Path(category): Path<String>,
@@ -165,6 +166,7 @@ pub async fn get_category(
 }
 
 /// PUT /api/memory/category/:category - Update category content
+#[allow(deprecated)]
 pub async fn update_category(
     State(state): State<ServerState>,
     Path(category): Path<String>,
@@ -201,7 +203,7 @@ pub async fn update_category(
     }
 }
 
-/// GET /api/memory/stats - Get all category statistics
+/// GET /api/memory/stats - Get all file statistics (unified response)
 pub async fn get_stats(State(state): State<ServerState>) -> Response {
     let store = get_memory_store(&state);
     if let Err(e) = store.init() {
@@ -211,12 +213,33 @@ pub async fn get_stats(State(state): State<ServerState>) -> Response {
         );
     }
 
-    match store.all_stats() {
-        Ok(categories) => Json(StatsResponse {
-            categories,
-            config: None,
-        })
-        .into_response(),
+    match store.stats().await {
+        Ok(mem_stats) => {
+            use std::collections::HashMap as Map;
+            let mut files: Map<String, serde_json::Value> = Map::new();
+            files.insert("user".to_string(), serde_json::json!({
+                "chars": mem_stats.user.chars,
+                "modified_at": 0,
+            }));
+            files.insert("knowledge".to_string(), serde_json::json!({
+                "chars": mem_stats.knowledge.chars,
+                "modified_at": 0,
+            }));
+
+            let custom_files: Vec<serde_json::Value> = mem_stats.custom_files
+                .into_iter()
+                .map(|cf| serde_json::json!({
+                    "name": cf.name,
+                    "chars": cf.chars,
+                }))
+                .collect();
+
+            Json(serde_json::json!({
+                "files": files,
+                "custom_files": custom_files,
+            }))
+            .into_response()
+        }
         Err(e) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to get stats: {}", e),
@@ -367,6 +390,15 @@ pub async fn trigger_extract(
 
     // Spawn background task to avoid HTTP timeout
     tokio::spawn(async move {
+        // Drop guard ensures lock is released even on panic
+        struct ExtractionGuard;
+        impl Drop for ExtractionGuard {
+            fn drop(&mut self) {
+                EXTRACTION_RUNNING.store(false, Ordering::SeqCst);
+            }
+        }
+        let _guard = ExtractionGuard;
+
         let mut total_extracted = 0;
         let mut processed_sessions = 0;
 
@@ -409,9 +441,6 @@ pub async fn trigger_extract(
             processed_sessions = processed_sessions,
             "Background memory extraction complete"
         );
-
-        // Release the lock
-        EXTRACTION_RUNNING.store(false, Ordering::SeqCst);
     });
 
     // Return immediately - extraction runs in background
@@ -427,6 +456,7 @@ pub async fn trigger_extract(
 }
 
 /// POST /api/memory/add - Manually add a memory entry
+#[allow(deprecated)]
 pub async fn add_memory_entry(
     State(state): State<ServerState>,
     Json(req): Json<AddMemoryRequest>,
@@ -535,6 +565,7 @@ pub async fn trigger_compress(State(state): State<ServerState>) -> Response {
 }
 
 /// GET /api/memory/export - Export all categories as Markdown
+#[allow(deprecated)]
 pub async fn export_all(State(state): State<ServerState>) -> Response {
     let store = get_memory_store(&state);
     if let Err(e) = store.init() {
@@ -563,6 +594,7 @@ pub async fn export_all(State(state): State<ServerState>) -> Response {
 // ============================================================================
 
 /// GET /api/memory - List all memory files
+#[allow(deprecated)]
 pub async fn get_all_memory(State(state): State<ServerState>) -> Response {
     let store = get_memory_store(&state);
 
@@ -587,6 +619,7 @@ pub async fn get_all_memory(State(state): State<ServerState>) -> Response {
 }
 
 /// GET /api/memory/:source_type/:id - Get raw markdown content
+#[allow(deprecated)]
 pub async fn get_memory_content(
     State(state): State<ServerState>,
     Path((source_type, id)): Path<(String, String)>,
@@ -608,6 +641,7 @@ pub async fn get_memory_content(
 }
 
 /// PUT /api/memory/:source_type/:id - Update markdown content
+#[allow(deprecated)]
 pub async fn update_memory_content(
     State(state): State<ServerState>,
     Path((source_type, id)): Path<(String, String)>,
@@ -629,6 +663,7 @@ pub async fn update_memory_content(
 }
 
 /// DELETE /api/memory/:source_type/:id - Delete a memory file
+#[allow(deprecated)]
 pub async fn delete_memory_file(
     State(state): State<ServerState>,
     Path((source_type, id)): Path<(String, String)>,

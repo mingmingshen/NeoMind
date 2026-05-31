@@ -48,6 +48,11 @@ impl MemoryExtractor {
     /// # Returns
     /// * Number of memories extracted
     pub async fn extract_from_chat(&self, messages: &[SessionMessage]) -> Result<usize> {
+        if messages.is_empty() {
+            tracing::debug!("Skipping extraction: no messages to extract from");
+            return Ok(0);
+        }
+
         // Read existing memories for context (to enable deduplication)
         let existing_memories = self.gather_existing_memories().await;
 

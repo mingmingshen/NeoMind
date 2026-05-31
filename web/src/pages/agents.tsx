@@ -20,7 +20,7 @@ import { useEvents } from "@/hooks/useEvents"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { showErrorToast } from "@/lib/error-messages"
 import { useIsMobile } from "@/hooks/useMobile"
-import { Loader2, Bot, Plus, Brain, Cpu, Settings, Sparkles, Zap, BookOpen, Edit, Play } from "lucide-react"
+import { Loader2, Bot, Plus, Brain, Cpu, Settings, Sparkles, Zap, BookOpen, Edit, Play, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
 import type { AiAgent, AiAgentDetail, Extension, UnifiedDataSourceInfo } from "@/types"
@@ -31,7 +31,7 @@ import { AgentCard } from "./agents-components/AgentCard"
 import { AgentEditorFullScreen } from "./agents-components/AgentEditorFullScreen"
 import { ExecutionDetailDialog } from "./agents-components/ExecutionDetailDialog"
 import { AgentDetailPanel } from "./agents-components/AgentDetailPanel"
-import { MemoryPanel } from "./agents-components/MemoryPanel"
+import { MemoryPanel, MemoryPanelRef } from "./agents-components/MemoryPanel"
 import { SkillsPanel, type SkillsPanelHandle } from "./agents-components/SkillsPanel"
 import {
   FullScreenDialog,
@@ -89,11 +89,7 @@ export function AgentsPage() {
   const [loading, setLoading] = useState(false)
   const [memoryRefreshKey, setMemoryRefreshKey] = useState(0)
   const [isExtracting, setIsExtracting] = useState(false)
-  const memoryPanelRef = useRef<{
-    openConfig: () => void
-    triggerExtract: () => void
-    isExtracting: boolean
-  }>(null)
+  const memoryPanelRef = useRef<MemoryPanelRef>(null)
   const skillsPanelRef = useRef<SkillsPanelHandle>(null)
 
   // Skills pagination state (lifted from SkillsPanel for PageLayout footer)
@@ -505,6 +501,7 @@ export function AgentsPage() {
     ? [{ label: tAgent('createAgent'), icon: <Plus className="h-4 w-4" />, onClick: handleCreate }]
     : activeTab === 'memory'
     ? [
+        { label: tAgent('systemMemory.custom.create', 'Add File'), icon: <FileText className="h-4 w-4" />, onClick: () => memoryPanelRef.current?.openCreateFile() },
         { label: tAgent('systemMemory.config.title', 'Config'), icon: <Settings className="h-4 w-4" />, onClick: () => memoryPanelRef.current?.openConfig() },
         { label: tAgent('systemMemory.extract', 'Extract'), icon: isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />, onClick: handleTriggerExtract, loading: isExtracting, disabled: isExtracting },
       ]

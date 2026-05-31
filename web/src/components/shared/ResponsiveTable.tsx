@@ -220,7 +220,9 @@ export function ResponsiveTable({
                           column.className
                         )}
                       >
-                        {renderCell(column.key, rowData)}
+                        <div className="flex items-center min-h-[36px]">
+                          {renderCell(column.key, rowData)}
+                        </div>
                       </td>
                     ))}
                     {visibleActions && visibleActions.length > 0 && (

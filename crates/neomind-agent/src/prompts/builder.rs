@@ -549,35 +549,43 @@ For device control, rule delete/update, and agent control actions:
 
     const MEMORY_USAGE: &str = r#"## Memory Tool Usage
 
-You have a `memory` tool for persisting information across conversations. Use it proactively.
+You have a `memory` tool for reading and writing persistent memory across conversations.
 
-### When to Write Memory
-- **user target**: User shares preferences, habits, name, or personal settings → `memory(action="add", target="user", content="...")`
-- **knowledge target**: You learn facts about the system, environment, or domain → `memory(action="add", target="knowledge", content="...")`
-- **custom:{name} target**: You discover domain-specific knowledge worth its own file (e.g., device map, network layout, recurring troubleshooting steps) → `memory(action="create", target="custom:mqtt-setup", content="...")`
-- **session target**: Multi-step task tracking within current session → `memory(action="add", target="session", content="Step 3 done: configured sensor X")`
+### Read First — Always `list` at conversation start
+Use `memory(action="list")` to discover what's stored. This shows all targets including:
+- **user / knowledge**: Already loaded in your context above (you can still read full content if needed)
+- **custom files**: Domain-specific knowledge files — read when relevant to the topic
+- **session**: Current session notes — read before continuing a multi-step task
 
-### When to Read Memory
-- Start of conversation: `memory(action="list")` to check what's stored
-- Before answering complex questions: check if relevant knowledge exists in custom files
-- User refers to previous conversations: read the relevant target
+Then use `memory(action="read", target="custom:device-map")` to load specific files on demand.
+
+### Write Carefully — Memory is shared and persistent
+Do NOT write to memory frequently. Only write when you have **genuinely important, stable information** that will be useful in future conversations.
+
+**Good reasons to write:**
+- User explicitly asks you to remember something ("remember that my sensor is at 192.168.1.50")
+- You discovered a critical system fact that keeps coming up (device map, network layout)
+- User shared their name, language preference, or workflow habits
+
+**Do NOT write:**
+- Transient observations ("user asked about weather")
+- Information that might change soon
+- Redundant content already in memory (read first!)
+- Every detail from every conversation
 
 ### Targets
-| Target | Storage | Char limit | Purpose |
-|--------|---------|-----------|---------|
-| user | USER.md | 2000 | User profile, preferences |
-| knowledge | KNOWLEDGE.md | 3000 | System knowledge, domain facts |
-| session | sessions/{id}/notes.md | none | Session task tracking (7-day TTL) |
-| custom:{name} | custom/{name}.md | 1000/file | Domain-specific files |
+| Target | Char limit | Purpose |
+|--------|-----------|---------|
+| user | 2000 | User profile, preferences, name |
+| knowledge | 3000 | Stable system/domain facts |
+| session | none | Multi-step task notes (auto-deleted after 7 days) |
+| custom:{name} | 1000/file | Domain-specific files (e.g., custom:device-map) |
 
-### Creating Custom Files
-Use action="create" with target="custom:{name}" (name: lowercase, 1-32 chars, alphanumeric/hyphen/underscore).
-Examples: custom:device-map, custom:network-layout, custom:troubleshooting-guide
-
-### Important
-- Do NOT duplicate information already in memory (read first, then update)
+### Writing Guidelines
+- Read first (`action="read"`), then update — never blindly append duplicates
 - Keep entries concise — char limits are enforced
-- Custom files are auto-included in the memory snapshot for future sessions"#;
+- For custom files: `action="create", target="custom:{name}"` (name: lowercase a-z0-9_-, 1-32 chars)
+- Session notes are for tracking multi-step tasks within current conversation only"#;
 
     const RESPONSE_FORMAT: &str = r#"## Response Format
 

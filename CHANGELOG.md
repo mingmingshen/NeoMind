@@ -24,18 +24,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Tool prompt architecture** — `builder.rs` now includes structured tool descriptions (Type 1: shell, Type 2: skill, Type 3: file/web) with parameter docs, security notes, and usage examples in the system prompt. `TOOL_STRATEGY` section guides LLM on when to use each tool type
 - **Memory tool actions expanded** — Added `read_file`, `write_file`, `list_files` actions for direct file manipulation alongside existing category-based actions
+- **Memory panel unified** — Custom memory files merged into the same table as user/knowledge files. Single unified dialog for view/edit. "Add File" button in tab actions bar. Eliminated ~200 lines of duplicate state and dialogs
+- **Memory stats API unified** — `GET /api/memory/stats` now returns `{ files, custom_files }` using the new `store.stats()` API instead of deprecated `all_stats()`. Fixed stats display (was always showing 0 chars due to key mismatch)
 - **Code formatting cleanup** — `cargo fmt` applied across agent, storage, API crates for consistent formatting
+- **Table vertical alignment** — ResponsiveTable cells now use flex centering for consistent vertical alignment across rows with varying content heights
 
 ### Removed
 
 - **`think` tool** — Removed the explicit thinking tool (338 lines). Thinking models now handle reasoning internally via streaming. The `think` namespace removed from LLM tool routing and staged agent filter
 - **`ToolFilter` dead code** — Removed unused `ToolFilter` struct, `filter_by_intent()`, `intent_prompt()` from `staged.rs` (~130 lines). Removed dead `classify_intent()`, `get_intent_prompt()`, `filter_tools_by_intent()` methods and `tool_filter` field from `LlmInterface` in `llm.rs` (~140 lines including tests). Removed unused `IntentCategory::namespace()` and `IntentClassifier::classify_category()`
+- **Chat memory toggle** — Memory is now always enabled (configurable via settings). The per-session toggle was redundant since the memory tool provides on-demand access regardless of snapshot preload
+- **Chat skill selector** — LLM already auto-selects skills via the `skill` tool based on user intent. Manual preloading was redundant and added UI clutter
+- **Unused `write_last_resource_summary_time`** — Removed dead method from `MarkdownMemoryStore`
 
 ### Fixed
 
 - **Custom Layer background image UI redesign** — Merged awkward two-field layout (URL + separate file upload) into a single inline field with URL input + Upload button, matching ImageSourceField pattern
 - **LayerEditorDialog save button i18n** — Added missing `common.save` translation key so save button shows localized text instead of raw key
 - **Missing zh translations for spatial config** — Added `backgroundType`, `backgroundImageUrl`, `layerItemBinding`, `manageLayerItems` and related keys to Chinese locale
+- **Memory tool write lock** — Write operations (add/replace/remove/create) now use `store.write().await` instead of `store.read().await` to prevent read-modify-write race conditions
+- **Memory tool first-match-only** — `replace`/`remove` actions now use `.replacen(..., 1)` instead of `.replace()` to prevent multi-replace data corruption
+- **Memory tool chars vs bytes** — All "X chars" messages now use `.chars().count()` instead of `.len()` for correct UTF-8/Chinese text reporting
+- **Memory tool list action** — `target` parameter is now optional for `list` action (was incorrectly required)
+- **Memory snapshot budget** — Added hard truncation fallback when user content alone exceeds 5000 char budget
+- **Refresh extension tools** — Memory tool is now re-registered during `refresh_extension_tools()` to prevent it from disappearing after extension refresh
+- **All compiler warnings resolved** — Zero warnings across neomind-storage, neomind-agent, neomind-api crates
+- **Session file path traversal** — Added `validate_session_id()` to block `../` and `/` in session IDs, preventing arbitrary file access
+- **Char counting consistency** — Fixed `write_file()`, `stats()`, and agent stats to use `.chars().count()` instead of `.len()` for correct UTF-8/Chinese text handling
+- **Extraction lock resilience** — Extraction guard now uses `Drop` pattern to ensure lock is released even on panic, preventing permanent lock-out
+- **Missing i18n keys** — Added `systemMemory.extract` and `systemMemory.custom.description` to en/zh locales
 
 ---
 

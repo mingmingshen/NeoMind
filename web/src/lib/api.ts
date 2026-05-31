@@ -1058,11 +1058,6 @@ export const api = {
     fetchAPI<{ deleted: boolean; sessionId: string }>(`/sessions/${id}`, {
       method: 'DELETE',
     }),
-  toggleMemory: (id: string, enabled: boolean) =>
-    fetchAPI<{ sessionId: string; memoryEnabled: boolean }>(`/sessions/${id}/memory-toggle`, {
-      method: 'PUT',
-      body: JSON.stringify({ enabled }),
-    }),
 
   // Pending stream recovery (for WebSocket reconnection)
   getPendingStream: (id: string) =>
@@ -2127,6 +2122,7 @@ export const api = {
         string,
         { chars: number; modified_at: number }
       >
+      custom_files?: Array<{ name: string; chars: number }>
     }>('/memory/stats'),
 
   /**

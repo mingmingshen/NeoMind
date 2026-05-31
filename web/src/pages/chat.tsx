@@ -5,8 +5,7 @@ import { useStore } from "@/store"
 import { shallow } from "zustand/shallow"
 import { useParams, useNavigate } from "react-router-dom"
 import { generateId } from "@/lib/id"
-import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw, BookOpen } from "lucide-react"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -26,7 +25,6 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ws, type ConnectionState } from "@/lib/websocket"
 import { api } from "@/lib/api"
 import type { Message, ServerMessage, ChatImage } from "@/types"
-import type { SkillSummary, SkillListResponse } from "@/types/skill"
 import { cn } from "@/lib/utils"
 import { textNano, textMini } from "@/design-system/tokens/typography"
 import { getPortalRoot } from "@/lib/portal"
@@ -180,14 +178,12 @@ export function ChatPage() {
     messages,
     clearMessages,
     loadSessions,
-    toggleMemory,
     isLoadingSession
   } = useStore((s) => ({
     sessionId: s.sessionId,
     messages: s.messages,
     clearMessages: s.clearMessages,
     loadSessions: s.loadSessions,
-    toggleMemory: s.toggleMemory,
     isLoadingSession: s.isLoadingSession,
   }), shallow)
 
@@ -224,11 +220,6 @@ export function ChatPage() {
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Skill selector state
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([])
-  const [availableSkills, setAvailableSkills] = useState<SkillSummary[]>([])
-  const [skillPopoverOpen, setSkillPopoverOpen] = useState(false)
-
   // Responsive
   const isDesktop = useIsDesktop()
 
@@ -256,18 +247,6 @@ export function ChatPage() {
       loadSessions().then(() => setSessionsLoaded(true))
     }
   }, [loadBackends, loadSessions])
-
-  // Fetch available skills once
-  useEffect(() => {
-    api.get<SkillListResponse>('/skills', { skipErrorToast: true })
-      .then(data => setAvailableSkills(data.skills || []))
-      .catch(() => {})
-  }, [])
-
-  // Clear selected skills on session switch
-  useEffect(() => {
-    setSelectedSkills([])
-  }, [sessionId])
 
   // Refresh backends when window gains focus (e.g., returning from settings page)
   useEffect(() => {
@@ -639,7 +618,7 @@ export function ChatPage() {
     roundThinkingAccumulatorRef.current = {}
     setRoundContents({})
 
-    ws.sendMessage(trimmedInput, attachedImages.length > 0 ? attachedImages : undefined, selectedSkills.length > 0 ? selectedSkills : undefined)
+    ws.sendMessage(trimmedInput, attachedImages.length > 0 ? attachedImages : undefined)
 
     requestAnimationFrame(() => {
       inputRef.current?.focus()
@@ -647,14 +626,6 @@ export function ChatPage() {
   }
 
   // Toggle skill selection
-  const toggleSkill = useCallback((skillId: string) => {
-    setSelectedSkills(prev =>
-      prev.includes(skillId)
-        ? prev.filter(id => id !== skillId)
-        : [...prev, skillId]
-    )
-  }, [])
-
   // Handle image file selection
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -1293,83 +1264,6 @@ export function ChatPage() {
                         {backend.id === activeBackendId && (
                           <span className={cn(textNano, "text-muted-foreground")}>✓</span>
                         )}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-
-              {/* Memory toggle */}
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  "h-7 px-1.5 sm:px-2 rounded-lg text-xs gap-1",
-                  sessions.find(s => s.sessionId === sessionId)?.memoryEnabled
-                    ? "text-warning hover:text-warning"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                onClick={() => {
-                  const current = sessions.find(s => s.sessionId === sessionId)?.memoryEnabled ?? true
-                  if (sessionId) toggleMemory(sessionId, !current)
-                }}
-                title={sessions.find(s => s.sessionId === sessionId)?.memoryEnabled
-                  ? t('chat:memory.enabled', 'Memory on')
-                  : t('chat:memory.disabled', 'Memory off')}
-              >
-                <BookOpen className="h-4 w-4 shrink-0" />
-                <span className="hidden sm:inline">{t('chat:memory.label', 'Memory')}</span>
-              </Button>
-
-              {/* Skill selector */}
-              {availableSkills.length > 0 && (
-                <DropdownMenu open={skillPopoverOpen} onOpenChange={setSkillPopoverOpen}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        "h-7 px-1.5 sm:px-2 rounded-lg text-xs gap-1",
-                        selectedSkills.length > 0
-                          ? "text-foreground bg-muted"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      <Sparkles className="h-4 w-4 shrink-0" />
-                      <span className="hidden sm:inline">
-                        {selectedSkills.length > 0
-                          ? t('chat:input.activeSkills')
-                          : t('chat:input.skills')}
-                      </span>
-                      {selectedSkills.length > 0 && (
-                        <span className={cn("bg-primary text-primary-foreground", textNano, "rounded-full h-4 min-w-4 px-1 flex items-center justify-center")}>
-                          {selectedSkills.length}
-                        </span>
-                      )}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-64 max-h-[50vh] overflow-y-auto">
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      {t('chat:input.selectSkills')}
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {availableSkills.map((skill) => (
-                      <DropdownMenuItem
-                        key={skill.id}
-                        onSelect={(e) => { e.preventDefault(); toggleSkill(skill.id) }}
-                        className="flex items-center gap-2 py-2"
-                      >
-                        <Checkbox
-                          checked={selectedSkills.includes(skill.id)}
-                          onCheckedChange={() => toggleSkill(skill.id)}
-                          className="pointer-events-none"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm truncate">{skill.name}</p>
-                          <p className={cn(textNano, "text-muted-foreground truncate")}>
-                            {skill.category}
-                          </p>
-                        </div>
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>

@@ -355,6 +355,8 @@ pub struct MemoryStats {
     pub agents: Vec<AgentFileStats>,
     /// Session stats
     pub sessions: SessionStats,
+    /// Custom files stats
+    pub custom_files: Vec<CustomFileStats>,
     /// Last resource summary timestamp (Unix seconds)
     pub last_resource_summary: Option<i64>,
 }
@@ -386,6 +388,15 @@ pub struct SessionStats {
     pub active_count: usize,
     /// Total temp files across all sessions
     pub total_temp_files: usize,
+}
+
+/// Custom file statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomFileStats {
+    /// File name (without extension)
+    pub name: String,
+    /// Character count
+    pub chars: usize,
 }
 
 // ============================================================================
@@ -497,10 +508,10 @@ impl MarkdownMemoryStore {
             _ => return Err(Error::InvalidInput(format!("Invalid target: {}. Must be 'user' or 'knowledge'", target))),
         };
 
-        if content.len() > limit {
+        if content.chars().count() > limit {
             return Err(Error::InvalidInput(format!(
                 "Content exceeds {} char limit: {} > {}",
-                target, content.len(), limit
+                target, content.chars().count(), limit
             )));
         }
 
@@ -513,7 +524,7 @@ impl MarkdownMemoryStore {
         fs::write(&path, content)
             .map_err(|e| Error::Storage(format!("Failed to write {}.md: {}", target, e)))?;
 
-        info!(target = %target, chars = content.len(), "Wrote persistent file");
+        info!(target = %target, chars = content.chars().count(), "Wrote persistent file");
         Ok(())
     }
 
@@ -561,10 +572,10 @@ impl MarkdownMemoryStore {
         let new_content = replace_section_in_content(&current, heading, new_body);
 
         // Check char limit
-        if new_content.len() > self.config.knowledge_char_limit {
+        if new_content.chars().count() > self.config.knowledge_char_limit {
             return Err(Error::InvalidInput(format!(
                 "Content after section replacement exceeds knowledge char limit: {} > {}",
-                new_content.len(),
+                new_content.chars().count(),
                 self.config.knowledge_char_limit
             )));
         }
@@ -581,7 +592,7 @@ impl MarkdownMemoryStore {
         // Read USER.md
         let user_path = self.base_path.join("USER.md");
         let user_chars = if user_path.exists() {
-            fs::read_to_string(&user_path)?.len()
+            fs::read_to_string(&user_path)?.chars().count()
         } else {
             0
         };
@@ -589,7 +600,7 @@ impl MarkdownMemoryStore {
         // Read KNOWLEDGE.md
         let knowledge_path = self.base_path.join("KNOWLEDGE.md");
         let knowledge_chars = if knowledge_path.exists() {
-            fs::read_to_string(&knowledge_path)?.len()
+            fs::read_to_string(&knowledge_path)?.chars().count()
         } else {
             0
         };
@@ -603,7 +614,7 @@ impl MarkdownMemoryStore {
                 let path = entry.path();
                 if path.extension().map(|e| e == "md").unwrap_or(false) {
                     if let Some(agent_id) = path.file_stem().and_then(|s| s.to_str()) {
-                        let chars = fs::read_to_string(&path)?.len();
+                        let chars = fs::read_to_string(&path)?.chars().count();
                         agents.push(AgentFileStats {
                             id: agent_id.to_string(),
                             name: agent_id.to_string(), // Will be resolved by bridge
@@ -641,6 +652,12 @@ impl MarkdownMemoryStore {
             (0, 0)
         };
 
+        // Scan custom files
+        let custom_files = self.list_custom_files().unwrap_or_default()
+            .into_iter()
+            .map(|(name, chars)| CustomFileStats { name, chars })
+            .collect();
+
         // Check for resource summary timestamp
         let last_resource_summary = self.read_last_resource_summary_time().await.ok().flatten();
 
@@ -658,6 +675,7 @@ impl MarkdownMemoryStore {
                 active_count,
                 total_temp_files,
             },
+            custom_files,
             last_resource_summary,
         })
     }
@@ -675,14 +693,6 @@ impl MarkdownMemoryStore {
         }
     }
 
-    /// Write the last resource summary timestamp
-    async fn write_last_resource_summary_time(&self, timestamp: i64) -> Result<()> {
-        let path = self.base_path.join(".resource_summary_time");
-        fs::write(&path, timestamp.to_string())
-            .map_err(|e| Error::Storage(format!("Failed to write resource summary time: {}", e)))?;
-        Ok(())
-    }
-
     // ========================================================================
     // New API: Session temp file operations
     // ========================================================================
@@ -694,6 +704,7 @@ impl MarkdownMemoryStore {
     /// * `target` - One of: "scratch", "notes", "todo"
     /// * `content` - Content to write (no char limit)
     pub async fn write_session_file(&self, session_id: &str, target: &str, content: &str) -> Result<()> {
+        Self::validate_session_id(session_id)?;
         // Validate target
         if !matches!(target, "scratch" | "notes" | "todo") {
             return Err(Error::InvalidInput(format!(
@@ -711,7 +722,7 @@ impl MarkdownMemoryStore {
         fs::write(&path, content)
             .map_err(|e| Error::Storage(format!("Failed to write session file {}: {}", filename, e)))?;
 
-        debug!(session_id = %session_id, target = %target, chars = content.len(), "Wrote session temp file");
+        debug!(session_id = %session_id, target = %target, chars = content.chars().count(), "Wrote session temp file");
         Ok(())
     }
 
@@ -721,6 +732,7 @@ impl MarkdownMemoryStore {
     /// * `session_id` - Unique session identifier
     /// * `target` - One of: "scratch", "notes", "todo"
     pub async fn read_session_file(&self, session_id: &str, target: &str) -> Result<String> {
+        Self::validate_session_id(session_id)?;
         let filename = format!("{}.md", target);
         let path = self.base_path.join("sessions").join(session_id).join(&filename);
 
@@ -782,6 +794,21 @@ impl MarkdownMemoryStore {
     // ========================================================================
     // Custom files API (domain-specific memory files)
     // ========================================================================
+
+    /// Validate a session ID (prevent path traversal).
+    fn validate_session_id(session_id: &str) -> Result<()> {
+        if session_id.is_empty() || session_id.len() > 128 {
+            return Err(Error::InvalidInput(
+                "session_id must be 1-128 characters".to_string(),
+            ));
+        }
+        if session_id.contains('\0') || session_id.contains("..") || session_id.contains('/') || session_id.contains('\\') {
+            return Err(Error::InvalidInput(
+                "session_id contains invalid path characters".to_string(),
+            ));
+        }
+        Ok(())
+    }
 
     /// Validate a custom file name.
     /// Must be 1-32 chars, only lowercase alphanumeric, hyphens, underscores.
@@ -885,6 +912,7 @@ impl MarkdownMemoryStore {
 
     /// Read markdown content for a category (DEPRECATED)
     #[deprecated(note = "Use read_file instead")]
+    #[allow(deprecated)]
     pub fn read_category(&self, category: &MemoryCategory) -> Result<String> {
         warn!(?category, "read_category called (deprecated)");
         let path = self.category_path(category);
@@ -897,6 +925,7 @@ impl MarkdownMemoryStore {
 
     /// Write markdown content for a category (DEPRECATED)
     #[deprecated(note = "Use write_file instead")]
+    #[allow(deprecated)]
     pub fn write_category(&self, category: &MemoryCategory, content: &str) -> Result<()> {
         warn!(?category, "write_category called (deprecated)");
         let path = self.category_path(category);
@@ -914,6 +943,7 @@ impl MarkdownMemoryStore {
 
     /// Get statistics for a category (DEPRECATED)
     #[deprecated(note = "Use stats instead")]
+    #[allow(deprecated)]
     pub fn category_stats(&self, category: &MemoryCategory) -> Result<CategoryStats> {
         warn!(?category, "category_stats called (deprecated)");
         let path = self.category_path(category);
@@ -946,6 +976,7 @@ impl MarkdownMemoryStore {
 
     /// Get statistics for all categories (DEPRECATED)
     #[deprecated(note = "Use stats instead")]
+    #[allow(deprecated)]
     pub fn all_stats(&self) -> Result<HashMap<String, CategoryStats>> {
         warn!("all_stats called (deprecated)");
         let mut stats = HashMap::new();
@@ -958,6 +989,7 @@ impl MarkdownMemoryStore {
 
     /// Export all categories as a single markdown string (DEPRECATED)
     #[deprecated(note = "Use stats instead")]
+    #[allow(deprecated)]
     pub fn export_all(&self) -> Result<String> {
         warn!("export_all called (deprecated)");
         let mut output = String::new();
@@ -1089,6 +1121,7 @@ impl MarkdownMemoryStore {
 
     /// Append multiple entries (DEPRECATED)
     #[deprecated(note = "Legacy API - not recommended for new code")]
+    #[allow(deprecated)]
     pub fn append_batch(&self, source: &MemorySource, entries: &[MemoryEntry]) -> Result<()> {
         warn!("append_batch called (deprecated)");
         for entry in entries {
@@ -1151,6 +1184,7 @@ impl MarkdownMemoryStore {
 
     /// Aggregate all memory from all sources (DEPRECATED)
     #[deprecated(note = "Legacy API - not recommended for new code")]
+    #[allow(deprecated)]
     pub fn aggregate_all(&self) -> Result<AggregatedMemory> {
         warn!("aggregate_all called (deprecated)");
         let mut result = AggregatedMemory::default();
@@ -1216,6 +1250,7 @@ impl MarkdownMemoryStore {
 
     /// Search memory entries (simple text matching, DEPRECATED)
     #[deprecated(note = "Legacy API - not recommended for new code")]
+    #[allow(deprecated)]
     pub fn search(&self, query: &str) -> Result<Vec<MemoryEntry>> {
         warn!("search called (deprecated)");
         let all = self.aggregate_all()?;
@@ -1235,6 +1270,7 @@ impl MarkdownMemoryStore {
 
     /// Prune memory to max entries, keeping highest importance (DEPRECATED)
     #[deprecated(note = "Legacy API - not recommended for new code")]
+    #[allow(deprecated)]
     pub fn prune(&self, source: &MemorySource, max_items: usize) -> Result<usize> {
         warn!(source = %source.display_name(), "prune called (deprecated)");
         let mut entries = self.read(source)?;
@@ -1285,6 +1321,7 @@ impl MarkdownMemoryStore {
 
     /// Export all memory as a single markdown string (DEPRECATED)
     #[deprecated(note = "Legacy API - not recommended for new code")]
+    #[allow(deprecated)]
     pub fn export_markdown(&self) -> Result<String> {
         warn!("export_markdown called (deprecated)");
         let all = self.aggregate_all()?;

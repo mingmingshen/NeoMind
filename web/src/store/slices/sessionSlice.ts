@@ -29,7 +29,6 @@ export interface SessionSlice extends SessionState {
   deleteSession: (sessionId: string) => Promise<void>
   clearAllSessions: () => Promise<void>
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>
-  toggleMemory: (sessionId: string, enabled: boolean) => Promise<void>
   loadSessions: () => Promise<void>
   loadMoreSessions: () => Promise<void>
   fetchSessionHistory: (sessionId: string) => Promise<void>
@@ -351,19 +350,6 @@ export const createSessionSlice: StateCreator<
     } catch (error) {
       logError(error, { operation: 'Update session title' })
       throw error
-    }
-  },
-
-  toggleMemory: async (sessionId: string, enabled: boolean) => {
-    try {
-      await api.toggleMemory(sessionId, enabled)
-      set((state) => ({
-        sessions: state.sessions.map(s =>
-          s.sessionId === sessionId ? { ...s, memoryEnabled: enabled } : s
-        ),
-      }))
-    } catch (error) {
-      logError(error, { operation: 'Toggle memory' })
     }
   },
 

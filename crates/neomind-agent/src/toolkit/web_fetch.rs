@@ -87,6 +87,7 @@ impl WebFetchTool {
             .ok_or_else(|| ToolError::InvalidArguments("URL has no host".into()))?;
 
         if Self::is_private_host(host) {
+            tracing::warn!(url = %url, host = %host, "SSRF: blocked access to private address");
             return Err(ToolError::PermissionDenied(format!(
                 "Access to '{}' is not allowed (private/local network address)",
                 host

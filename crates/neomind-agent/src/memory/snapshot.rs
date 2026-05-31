@@ -3,19 +3,20 @@
 //! Uses a "frozen snapshot" pattern: load once at session start, cache for the
 //! entire session. This keeps the prompt prefix stable for caching.
 //!
-//! ## Memory Layout (2-file persistent + agent summaries)
-//!
-//! - `USER.md` (max 2000 chars) — user profile, highest priority
+//! ## Hard-loaded (always in system prompt)
+//! - `USER.md` (max 2000 chars) — user profile
 //! - `KNOWLEDGE.md` (max 3000 chars) — system knowledge
-//! - `agents/{agent_id}.md` — agent experiences (summarized by bridge)
 //!
-//! Total budget: 7500 chars (2000 user + 3000 knowledge + 2500 agents)
+//! ## On-demand (AI reads via memory tool when needed)
+//! - `agents/{agent_id}.md` — agent experiences
+//! - `custom/{name}.md` — domain-specific files
+//!
+//! Total budget: 5000 chars (user + knowledge)
 
 use neomind_storage::MarkdownMemoryStore;
-use std::fs;
 
-/// Hard character budget for memory context in prompts.
-const CHAR_BUDGET: usize = 7500;
+/// Hard character budget for memory context in prompts (user + knowledge only).
+const CHAR_BUDGET: usize = 5000;
 
 /// Frozen memory snapshot loaded once per session.
 #[derive(Debug, Clone)]
@@ -29,21 +30,14 @@ pub struct MemorySnapshot {
 impl MemorySnapshot {
     /// Load a snapshot from the markdown memory store.
     ///
-    /// Reads from the new 2-file layout:
-    /// - `USER.md` (user profile, highest priority)
-    /// - `KNOWLEDGE.md` (system knowledge)
-    /// - `agents/{agent_id}.md` files (agent experiences, newest first)
-    ///
-    /// Combines them into a single snapshot with priority truncation:
-    /// 1. Never truncate User section
-    /// 2. First truncate Agent Experiences
-    /// 3. Then truncate Knowledge if needed
+    /// Only hard-loads USER.md and KNOWLEDGE.md.
+    /// Agent summaries and custom files are available on-demand via the memory tool.
     pub fn load(store: &MarkdownMemoryStore) -> Self {
         let handle = tokio::runtime::Handle::try_current()
             .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
             .unwrap();
 
-        // Read persistent files using new API
+        // Read persistent files only
         let user = tokio::task::block_in_place(|| handle.block_on(store.read_file("user")))
             .unwrap_or_default();
 
@@ -51,26 +45,20 @@ impl MemorySnapshot {
             tokio::task::block_in_place(|| handle.block_on(store.read_file("knowledge")))
                 .unwrap_or_default();
 
-        // Read agent summaries from agents/ directory
-        let agent_summaries = read_agent_summaries(store);
-
-        // Read custom files
-        let custom_section = read_custom_files(store);
-
-        let combined = if custom_section.is_empty() {
-            format!(
-                "## User\n{user}\n\n## Knowledge\n{knowledge}\n\n## Agent Experiences\n{agent_summaries}"
-            )
-        } else {
-            format!(
-                "## User\n{user}\n\n## Knowledge\n{knowledge}\n\n## Agent Experiences\n{agent_summaries}\n\n{custom_section}"
-            )
-        };
+        let combined = format!("## User\n{user}\n\n## Knowledge\n{knowledge}");
 
         let content = if combined.chars().count() <= CHAR_BUDGET {
             combined
         } else {
-            truncate_with_priority(&combined, CHAR_BUDGET)
+            // Truncate knowledge to fit, but if even user alone exceeds budget,
+            // truncate user as a last resort
+            let truncated = truncate_with_priority(&combined, CHAR_BUDGET);
+            if truncated.chars().count() > CHAR_BUDGET {
+                // User section alone exceeds budget — hard truncate
+                truncate_chars(&truncated, CHAR_BUDGET)
+            } else {
+                truncated
+            }
         };
 
         let loaded_at = chrono::Utc::now().timestamp();
@@ -119,118 +107,17 @@ impl MemorySnapshot {
     }
 }
 
-/// Read agent summaries from the agents/ directory.
-///
-/// Reads all .md files from `data/memory/agents/`, sorts by modification time
-/// (newest first), and takes up to 5 most recent agent summaries.
-fn read_agent_summaries(store: &MarkdownMemoryStore) -> String {
-    let agents_dir = store.base_path().join("agents");
-
-    if !agents_dir.exists() {
-        return String::new();
-    }
-
-    let mut agent_files: Vec<(String, String, i64)> = Vec::new();
-
-    let entries = match fs::read_dir(&agents_dir) {
-        Ok(entries) => entries,
-        Err(e) => {
-            tracing::warn!(path = %agents_dir.display(), error = %e, "Failed to read agents directory");
-            return String::new();
-        }
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().map(|e| e == "md").unwrap_or(false) {
-            let agent_id = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown");
-
-            let content = match fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::warn!(path = %path.display(), error = %e, "Failed to read agent file");
-                    continue;
-                }
-            };
-
-            let modified = entry
-                .metadata()
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
-
-            agent_files.push((agent_id.to_string(), content, modified));
-        }
-    }
-
-    // Sort by modification time (newest first)
-    agent_files.sort_by(|a, b| b.2.cmp(&a.2));
-
-    // Take up to 5 most recent
-    let mut summaries = Vec::new();
-    for (agent_id, content, _) in agent_files.into_iter().take(5) {
-        if !content.trim().is_empty() {
-            summaries.push(format!("### {agent_id}\n{content}"));
-        }
-    }
-
-    summaries.join("\n\n")
-}
-
-/// Read custom files from the custom/ directory.
-///
-/// Reads all .md files from `data/memory/custom/` and formats them
-/// as sections for inclusion in the memory snapshot.
-fn read_custom_files(store: &MarkdownMemoryStore) -> String {
-    let custom_files = match store.list_custom_files() {
-        Ok(files) => files,
-        Err(e) => {
-            tracing::warn!(error = %e, "Failed to list custom files");
-            return String::new();
-        }
-    };
-
-    let mut sections = Vec::new();
-    for (name, _) in &custom_files {
-        let content = match store.read_custom_file(name) {
-            Ok(c) if !c.trim().is_empty() => c,
-            _ => continue,
-        };
-        sections.push(format!("## Custom: {name}\n{content}"));
-    }
-
-    sections.join("\n\n")
-}
-
 /// Truncate content with priority preservation.
 ///
 /// Priority order:
 /// 1. User section (never truncated)
-/// 2. Knowledge section (truncated third)
-/// 3. Agent Experiences section (truncated second)
-/// 4. Custom sections (truncated first — lowest priority)
-///
-/// This ensures user profile is always preserved, even at the cost
-/// of dropping custom files, agent experiences, and most knowledge.
+/// 2. Knowledge section (truncated only if User exceeds budget)
 fn truncate_with_priority(content: &str, max_chars: usize) -> String {
     let sections = parse_sections(content);
 
-    // Calculate total length
-    let total_len: usize = sections.values().map(|s| s.chars().count()).sum();
-    if total_len <= max_chars {
-        return content.to_string();
-    }
-
-    // Parse into individual sections
     let user_len = sections.get("User").map_or(0, |s| s.chars().count());
     let knowledge_len = sections.get("Knowledge").map_or(0, |s| s.chars().count());
 
-    // Priority 1: Keep User, truncate Custom first, then Agents, then Knowledge
     let mut result = String::new();
     let mut remaining = max_chars;
 
@@ -247,30 +134,13 @@ fn truncate_with_priority(content: &str, max_chars: usize) -> String {
             if knowledge_len <= remaining {
                 result.push_str("\n\n## Knowledge\n");
                 result.push_str(knowledge);
-                remaining =
-                    remaining.saturating_sub("\n\n## Knowledge\n".chars().count() + knowledge_len);
             } else {
-                // Truncate knowledge to fit remaining space
-                let truncated = truncate_chars(knowledge, remaining.saturating_sub(20)); // Reserve space for header
+                let truncated = truncate_chars(knowledge, remaining.saturating_sub(20));
                 result.push_str("\n\n## Knowledge\n");
                 result.push_str(&truncated);
-                remaining = 0;
             }
         }
     }
-
-    // Add Agent Experiences section (only if space remains)
-    if remaining > 10 {
-        if let Some(agents) = sections.get("Agent Experiences") {
-            let truncated = truncate_chars(agents, remaining.saturating_sub(25)); // Reserve space for header
-            if !truncated.is_empty() {
-                result.push_str("\n\n## Agent Experiences\n");
-                result.push_str(&truncated);
-            }
-        }
-    }
-
-    // Custom sections are already lowest priority — they are dropped when over budget
 
     result
 }
@@ -283,12 +153,9 @@ fn parse_sections(content: &str) -> std::collections::HashMap<String, String> {
 
     for line in content.lines() {
         if line.starts_with("## ") {
-            // Save previous section
             if !current_name.is_empty() {
                 sections.insert(current_name.clone(), current_section.trim().to_string());
             }
-
-            // Start new section
             current_name = line[3..].to_string();
             current_section = String::new();
         } else {
@@ -297,7 +164,6 @@ fn parse_sections(content: &str) -> std::collections::HashMap<String, String> {
         }
     }
 
-    // Save last section
     if !current_name.is_empty() {
         sections.insert(current_name, current_section.trim().to_string());
     }
@@ -312,7 +178,6 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
         return s.to_string();
     }
 
-    // Try to find a sentence boundary near the limit
     let limit = max_chars;
     for i in (limit.saturating_sub(100)..limit).rev() {
         if i < chars.len() {
@@ -323,22 +188,7 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
         }
     }
 
-    // Fall back to hard truncate
     chars[..limit].iter().collect()
-}
-
-/// Extract importance value from a memory line like `- [2024-01-01] content [importance: 7]`
-#[allow(dead_code)]
-fn extract_importance(line: &str) -> u8 {
-    if let Some(start) = line.rfind("[importance: ") {
-        let rest = &line[start + 13..];
-        if let Some(end) = rest.find(']') {
-            if let Ok(val) = rest[..end].parse::<u8>() {
-                return val;
-            }
-        }
-    }
-    5 // Default importance
 }
 
 #[cfg(test)]
@@ -354,17 +204,15 @@ mod tests {
     }
 
     #[test]
-    fn test_char_budget_is_7500() {
-        assert_eq!(CHAR_BUDGET, 7500);
+    fn test_char_budget_is_5000() {
+        assert_eq!(CHAR_BUDGET, 5000);
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_empty_snapshot() {
-        // Create store without init so no default content
         let dir = TempDir::new().unwrap();
-        fs::create_dir_all(dir.path()).unwrap();
+        std::fs::create_dir_all(dir.path()).unwrap();
         let store = MarkdownMemoryStore::new(dir.path().to_path_buf());
-        // No files written — load_opt returns None
         assert!(MemorySnapshot::load_opt(&store).is_none());
     }
 
@@ -372,7 +220,6 @@ mod tests {
     async fn test_snapshot_with_content() {
         let (store, _dir) = create_test_store();
 
-        // Write user and knowledge files
         store
             .write_file("user", "User prefers dark mode\nUser speaks Chinese\n")
             .await
@@ -393,31 +240,32 @@ mod tests {
         assert!(section.contains("<memory-context>"));
         assert!(section.contains("</memory-context>"));
         assert!(section.contains("User prefers dark mode"));
+        // Agents and custom files should NOT be in snapshot
+        assert!(!section.contains("Agent Experiences"));
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_priority_truncation_truncates_agents_first() {
+    async fn test_snapshot_only_user_and_knowledge() {
         let (store, _dir) = create_test_store();
 
-        let user = "u".repeat(2000);
-        let knowledge = "k".repeat(3000);
-        let agents = "a".repeat(3000);
+        store.write_file("user", "test user").await.unwrap();
+        store.write_file("knowledge", "test knowledge").await.unwrap();
 
-        store.write_file("user", &user).await.unwrap();
-        store.write_file("knowledge", &knowledge).await.unwrap();
-
-        // Create agent files
+        // Create agent files — should NOT appear in snapshot
         let agents_dir = store.base_path().join("agents");
-        fs::create_dir_all(&agents_dir).unwrap();
-        fs::write(agents_dir.join("agent1.md"), &agents).unwrap();
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("agent1.md"), "Agent summary").unwrap();
+
+        // Create custom files — should NOT appear in snapshot
+        store.write_custom_file("test-file", "Custom content").unwrap();
 
         let snapshot = MemorySnapshot::load(&store);
+        let content = &snapshot.content;
 
-        // Should be within budget
-        assert!(snapshot.content.chars().count() <= CHAR_BUDGET);
-
-        // User should be preserved (sample check)
-        assert!(snapshot.content.contains(&"u".repeat(100)));
+        assert!(content.contains("test user"));
+        assert!(content.contains("test knowledge"));
+        assert!(!content.contains("Agent summary"));
+        assert!(!content.contains("Custom content"));
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -430,18 +278,13 @@ mod tests {
         store.write_file("user", &user).await.unwrap();
         store.write_file("knowledge", &knowledge).await.unwrap();
 
-        // Also add agents to exceed budget
-        let agents_dir = store.base_path().join("agents");
-        fs::create_dir_all(&agents_dir).unwrap();
-        fs::write(agents_dir.join("agent1.md"), "a".repeat(3000)).unwrap();
-
         let snapshot = MemorySnapshot::load(&store);
 
         // Should be within budget
         assert!(snapshot.content.chars().count() <= CHAR_BUDGET);
 
-        // User should be fully preserved
-        assert!(snapshot.content.contains(&user));
+        // User should be preserved (first 2000+ chars)
+        assert!(snapshot.content.contains(&"u".repeat(100)));
     }
 
     #[test]
@@ -455,76 +298,26 @@ mod tests {
     fn test_truncate_chars_at_sentence() {
         let text = "First sentence. Second sentence. Third sentence.";
         let truncated = truncate_chars(text, 30);
-        // Should cut at first sentence boundary
         assert!(truncated.contains("First sentence."));
         assert!(!truncated.contains("Second sentence."));
     }
 
     #[test]
     fn test_parse_sections() {
-        let content = "## User\nuser content\n\n## Knowledge\nknowledge content\n\n## Agent Experiences\nagent content";
+        let content = "## User\nuser content\n\n## Knowledge\nknowledge content";
         let sections = parse_sections(content);
 
         assert_eq!(sections.get("User").unwrap(), "user content");
         assert_eq!(sections.get("Knowledge").unwrap(), "knowledge content");
-        assert_eq!(sections.get("Agent Experiences").unwrap(), "agent content");
-    }
-
-    #[tokio::test]
-    async fn test_read_agent_summaries() {
-        let (store, _dir) = create_test_store();
-
-        // Create agent files
-        let agents_dir = store.base_path().join("agents");
-        fs::create_dir_all(&agents_dir).unwrap();
-        fs::write(agents_dir.join("agent1.md"), "Agent 1 summary").unwrap();
-        fs::write(agents_dir.join("agent2.md"), "Agent 2 summary").unwrap();
-
-        let summaries = read_agent_summaries(&store);
-        assert!(summaries.contains("### agent1"));
-        assert!(summaries.contains("Agent 1 summary"));
-        assert!(summaries.contains("### agent2"));
-        assert!(summaries.contains("Agent 2 summary"));
-    }
-
-    #[tokio::test]
-    async fn test_read_agent_summaries_empty_dir() {
-        let (store, _dir) = create_test_store();
-        let summaries = read_agent_summaries(&store);
-        assert!(summaries.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_read_agent_summaries_limits_to_5() {
-        let (store, _dir) = create_test_store();
-
-        // Create 7 agent files
-        let agents_dir = store.base_path().join("agents");
-        fs::create_dir_all(&agents_dir).unwrap();
-        for i in 1..=7 {
-            fs::write(
-                agents_dir.join(format!("agent{}.md", i)),
-                format!("Agent {}", i),
-            )
-            .unwrap();
-        }
-
-        let summaries = read_agent_summaries(&store);
-
-        // Should only include at most 5 agents
-        let count = summaries.matches("### agent").count();
-        assert!(count <= 5);
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_snapshot_load_opt() {
-        // Without init, no files exist — only section headers, load_opt returns None
         let dir = TempDir::new().unwrap();
-        fs::create_dir_all(dir.path()).unwrap();
+        std::fs::create_dir_all(dir.path()).unwrap();
         let store = MarkdownMemoryStore::new(dir.path().to_path_buf());
         assert!(MemorySnapshot::load_opt(&store).is_none());
 
-        // With init, default content exists
         let (store, _dir) = create_test_store();
         assert!(MemorySnapshot::load_opt(&store).is_some());
     }
@@ -533,7 +326,6 @@ mod tests {
     async fn test_char_budget_truncation() {
         let (store, _dir) = create_test_store();
 
-        // Create massive content that exceeds budget
         let user = "u".repeat(2000);
         let knowledge = "k".repeat(3000);
 

@@ -63,7 +63,7 @@ impl MemoryTool {
         }
     }
 
-    /// Find and replace text in content.
+    /// Find and replace text in content (first occurrence only).
     fn replace_in_content(content: &str, old_text: &str, new_text: &str) -> Result<String> {
         if !content.contains(old_text) {
             return Err(ToolError::InvalidArguments(format!(
@@ -71,10 +71,10 @@ impl MemoryTool {
                 old_text
             )));
         }
-        Ok(content.replace(old_text, new_text))
+        Ok(content.replacen(old_text, new_text, 1))
     }
 
-    /// Find and remove text from content.
+    /// Find and remove text from content (first occurrence only).
     fn remove_from_content(content: &str, old_text: &str) -> Result<String> {
         if !content.contains(old_text) {
             return Err(ToolError::InvalidArguments(format!(
@@ -82,7 +82,7 @@ impl MemoryTool {
                 old_text
             )));
         }
-        Ok(content.replace(old_text, ""))
+        Ok(content.replacen(old_text, "", 1))
     }
 
     /// Validate that session_id is set for session-scoped operations.
@@ -157,7 +157,7 @@ Examples:
                     "description": "Text to find (for replace/remove)"
                 }
             },
-            "required": ["action", "target"]
+            "required": ["action"]
         })
     }
 
@@ -170,9 +170,20 @@ Examples:
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("action is required".into()))?;
 
-        let target = args["target"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("target is required".into()))?;
+        let target = args["target"].as_str().unwrap_or("");
+
+        match action {
+            "list" => {
+                // target is optional for list
+            }
+            _ => {
+                if target.is_empty() {
+                    return Err(ToolError::InvalidArguments(
+                        "target is required for this action".into(),
+                    ));
+                }
+            }
+        }
 
         match action {
             "create" => {
@@ -187,13 +198,13 @@ Examples:
                     ))
                 })?;
 
-                let store = self.store.read().await;
+                let store = self.store.write().await;
                 store
                     .write_custom_file(custom_name, content)
                     .map_err(|e| ToolError::Execution(e.to_string()))?;
 
                 Ok(ToolOutput::success(serde_json::json!({
-                    "message": format!("Created custom file '{}' ({} chars)", custom_name, content.len())
+                    "message": format!("Created custom file '{}' ({} chars)", custom_name, content.chars().count())
                 })))
             }
             "add" => {
@@ -201,7 +212,7 @@ Examples:
                     ToolError::InvalidArguments("content is required for add".into())
                 })?;
 
-                let store = self.store.read().await;
+                let store = self.store.write().await;
 
                 let result = if let Some(custom_name) = Self::parse_custom_target(target) {
                     let existing = store
@@ -214,7 +225,7 @@ Examples:
                     format!(
                         "Added to custom:{} ({} chars)",
                         custom_name,
-                        new_content.len()
+                        new_content.chars().count()
                     )
                 } else {
                     match target {
@@ -222,7 +233,7 @@ Examples:
                             let existing = store.read_file(target).await?;
                             let new_content = Self::append_content(&existing, content);
                             store.write_file(target, &new_content).await?;
-                            format!("Added to {} ({} chars)", target, new_content.len())
+                            format!("Added to {} ({} chars)", target, new_content.chars().count())
                         }
                         "session" => {
                             let session_id = self.require_session_id().await?;
@@ -233,7 +244,7 @@ Examples:
                                 .await?;
                             format!(
                                 "Added to session notes ({} chars)",
-                                new_content.len()
+                                new_content.chars().count()
                             )
                         }
                         _ => {
@@ -257,7 +268,7 @@ Examples:
                     ToolError::InvalidArguments("old_text is required for replace".into())
                 })?;
 
-                let store = self.store.read().await;
+                let store = self.store.write().await;
 
                 let result = if let Some(custom_name) = Self::parse_custom_target(target) {
                     let existing = store
@@ -270,7 +281,7 @@ Examples:
                     format!(
                         "Replaced in custom:{} ({} chars)",
                         custom_name,
-                        new_content.len()
+                        new_content.chars().count()
                     )
                 } else {
                     match target {
@@ -278,7 +289,7 @@ Examples:
                             let existing = store.read_file(target).await?;
                             let new_content = Self::replace_in_content(&existing, old_text, content)?;
                             store.write_file(target, &new_content).await?;
-                            format!("Replaced in {} ({} chars)", target, new_content.len())
+                            format!("Replaced in {} ({} chars)", target, new_content.chars().count())
                         }
                         "session" => {
                             let session_id = self.require_session_id().await?;
@@ -289,7 +300,7 @@ Examples:
                                 .await?;
                             format!(
                                 "Replaced in session notes ({} chars)",
-                                new_content.len()
+                                new_content.chars().count()
                             )
                         }
                         _ => {
@@ -310,7 +321,7 @@ Examples:
                     ToolError::InvalidArguments("old_text is required for remove".into())
                 })?;
 
-                let store = self.store.read().await;
+                let store = self.store.write().await;
 
                 let result = if let Some(custom_name) = Self::parse_custom_target(target) {
                     let existing = store
@@ -323,7 +334,7 @@ Examples:
                     format!(
                         "Removed from custom:{} ({} chars)",
                         custom_name,
-                        new_content.len()
+                        new_content.chars().count()
                     )
                 } else {
                     match target {
@@ -331,7 +342,7 @@ Examples:
                             let existing = store.read_file(target).await?;
                             let new_content = Self::remove_from_content(&existing, old_text)?;
                             store.write_file(target, &new_content).await?;
-                            format!("Removed from {} ({} chars)", target, new_content.len())
+                            format!("Removed from {} ({} chars)", target, new_content.chars().count())
                         }
                         "session" => {
                             let session_id = self.require_session_id().await?;
@@ -342,7 +353,7 @@ Examples:
                                 .await?;
                             format!(
                                 "Removed from session notes ({} chars)",
-                                new_content.len()
+                                new_content.chars().count()
                             )
                         }
                         _ => {
@@ -368,7 +379,7 @@ Examples:
                     serde_json::json!({
                         "target": target,
                         "content": content,
-                        "chars": content.len()
+                        "chars": content.chars().count()
                     })
                 } else {
                     match target {
@@ -377,7 +388,7 @@ Examples:
                             serde_json::json!({
                                 "target": target,
                                 "content": content,
-                                "chars": content.len()
+                                "chars": content.chars().count()
                             })
                         }
                         "session" => {
@@ -386,7 +397,7 @@ Examples:
                             serde_json::json!({
                                 "target": "session",
                                 "content": content,
-                                "chars": content.len()
+                                "chars": content.chars().count()
                             })
                         }
                         _ => {
@@ -409,11 +420,11 @@ Examples:
 
                 let mut result = serde_json::json!({
                     "user": {
-                        "chars": user_content.len(),
+                        "chars": user_content.chars().count(),
                         "preview": Self::get_preview(&user_content)
                     },
                     "knowledge": {
-                        "chars": knowledge_content.len(),
+                        "chars": knowledge_content.chars().count(),
                         "preview": Self::get_preview(&knowledge_content)
                     }
                 });
@@ -422,7 +433,7 @@ Examples:
                 if let Some(session_id) = self.session_id.read().await.clone() {
                     let notes_content = store.read_session_file(&session_id, "notes").await?;
                     result["session"] = serde_json::json!({
-                        "chars": notes_content.len(),
+                        "chars": notes_content.chars().count(),
                         "preview": Self::get_preview(&notes_content)
                     });
                 }

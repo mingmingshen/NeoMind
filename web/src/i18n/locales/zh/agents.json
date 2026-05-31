@@ -605,6 +605,7 @@
     },
     "viewEdit": "查看/编辑",
     "export": "导出",
+    "extract": "提取",
     "extractStarted": "提取已开始",
     "extractStartedDesc": "正在从对话中提取记忆...",
     "saving": "保存中...",
@@ -626,7 +627,8 @@
       "deleted": "自定义文件已删除",
       "created": "自定义文件已创建",
       "delete": "删除",
-      "deleteConfirm": "确定删除此自定义文件？此操作无法撤销。"
+      "deleteConfirm": "确定删除此自定义文件？此操作无法撤销。",
+      "description": "自定义知识文件"
     }
   }
 }

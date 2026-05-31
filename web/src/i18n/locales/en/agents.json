@@ -605,6 +605,7 @@
     },
     "viewEdit": "View/Edit",
     "export": "Export",
+    "extract": "Extract",
     "extractStarted": "Extraction Started",
     "extractStartedDesc": "Extracting memories from conversations...",
     "saving": "Saving...",
@@ -626,7 +627,8 @@
       "deleted": "Custom file deleted",
       "created": "Custom file created",
       "delete": "Delete",
-      "deleteConfirm": "Delete this custom file? This cannot be undone."
+      "deleteConfirm": "Delete this custom file? This cannot be undone.",
+      "description": "Custom knowledge file"
     }
   }
 }

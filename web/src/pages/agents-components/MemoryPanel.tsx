@@ -1,7 +1,7 @@
 /**
  * Memory Panel
  *
- * Displays Markdown-based memory files (USER.md + KNOWLEDGE.md).
+ * Displays Markdown-based memory files (USER.md + KNOWLEDGE.md + custom files).
  * Uses table layout similar to device list for consistency.
  * Includes simplified configuration UI.
  */
@@ -62,6 +62,12 @@ const defaultConfig: MemorySystemConfig = {
   schedule_interval_secs: 3600,
 }
 
+// Custom file type from stats API
+interface CustomFileStat {
+  name: string
+  chars: number
+}
+
 // Memory files configuration
 const fileConfig = [
   {
@@ -84,10 +90,10 @@ const fileConfig = [
   },
 ]
 
-// Custom file type
-interface CustomFile {
-  name: string
-  chars: number
+// Custom file display config
+const customFileConfig = {
+  icon: FileText,
+  color: "bg-warning-light text-warning border-warning-light",
 }
 
 // File stats from API
@@ -99,6 +105,7 @@ interface FileStats {
 // Memory stats response from API
 interface MemoryStatsResponse {
   files: Record<string, FileStats>
+  custom_files?: CustomFileStat[]
 }
 
 // Table row data type
@@ -111,6 +118,8 @@ interface MemoryFileRow {
   chars: number
   charLimit: number
   modified_at: number
+  isCustom: boolean
+  onDelete?: () => void
 }
 
 interface MemoryPanelProps {
@@ -121,6 +130,7 @@ export interface MemoryPanelRef {
   openConfig: () => void
   triggerExtract: () => void
   isExtracting: boolean
+  openCreateFile: () => void
 }
 
 export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function MemoryPanel({ refreshKey }, ref) {
@@ -131,9 +141,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
 
   // State
   const [stats, setStats] = useState<Record<string, FileStats>>({})
+  const [customFiles, setCustomFiles] = useState<CustomFileStat[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [selectedFileIsCustom, setSelectedFileIsCustom] = useState(false)
   const [content, setContent] = useState("")
   const [contentLoading, setContentLoading] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -141,16 +153,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState<string | null>(null)
 
-  // Custom files state
-  const [customFiles, setCustomFiles] = useState<CustomFile[]>([])
-  const [customLoading, setCustomLoading] = useState(false)
-  const [customDialogOpen, setCustomDialogOpen] = useState(false)
-  const [selectedCustom, setSelectedCustom] = useState<string | null>(null)
-  const [customContent, setCustomContent] = useState("")
-  const [customContentLoading, setCustomContentLoading] = useState(false)
-  const [customEditing, setCustomEditing] = useState(false)
-  const [customEditContent, setCustomEditContent] = useState("")
-  const [customSaving, setCustomSaving] = useState(false)
+  // Create dialog state
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [newFileName, setNewFileName] = useState("")
   const [newFileContent, setNewFileContent] = useState("")
@@ -168,7 +171,6 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     setConfigLoading(true)
     try {
       const response = await api.getMemoryConfig()
-      // Merge with defaults to ensure all fields exist
       setConfig({ ...defaultConfig, ...response })
     } catch (error) {
       handleError(error, { operation: "Load memory config", showToast: false })
@@ -177,7 +179,6 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     }
   }, [handleError])
 
-  // Load config on mount
   useEffect(() => {
     loadConfig()
   }, [loadConfig])
@@ -233,12 +234,13 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     }
   }
 
-  // Load stats
+  // Load stats (includes custom files from backend)
   const loadStats = useCallback(async () => {
     setLoading(true)
     try {
       const response: MemoryStatsResponse = await api.getMemoryStats()
       setStats(response.files || {})
+      setCustomFiles(response.custom_files || [])
     } catch (error) {
       handleError(error, { operation: "Load stats", showToast: false })
     } finally {
@@ -250,68 +252,62 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     loadStats()
   }, [loadStats, refreshKey])
 
-  // Load custom files
-  const loadCustomFiles = useCallback(async () => {
-    setCustomLoading(true)
+  // Load content for a file (built-in or custom)
+  const loadContent = async (fileId: string, isCustom: boolean) => {
+    setContentLoading(true)
     try {
-      const response = await api.listCustomMemoryFiles()
-      setCustomFiles(response.files || [])
+      if (isCustom) {
+        const response = await api.getCustomMemoryFile(fileId)
+        setContent(response.content || "")
+        setEditContent(response.content || "")
+      } else {
+        const response = await api.getMemoryFile(fileId)
+        setContent(response.content || "")
+        setEditContent(response.content || "")
+      }
     } catch (error) {
-      handleError(error, { operation: "Load custom files", showToast: false })
+      handleError(error, { operation: "Load memory content" })
+      setContent("")
+      setEditContent("")
     } finally {
-      setCustomLoading(false)
-    }
-  }, [handleError])
-
-  useEffect(() => {
-    loadCustomFiles()
-  }, [loadCustomFiles, refreshKey])
-
-  // Load custom file content
-  const loadCustomContent = async (name: string) => {
-    setCustomContentLoading(true)
-    try {
-      const response = await api.getCustomMemoryFile(name)
-      setCustomContent(response.content || "")
-      setCustomEditContent(response.content || "")
-    } catch (error) {
-      handleError(error, { operation: "Load custom file content" })
-      setCustomContent("")
-      setCustomEditContent("")
-    } finally {
-      setCustomContentLoading(false)
+      setContentLoading(false)
     }
   }
 
-  // Handle custom file view/edit
-  const handleCustomViewEdit = (name: string) => {
-    setSelectedCustom(name)
-    setCustomEditing(false)
-    setCustomDialogOpen(true)
-    loadCustomContent(name)
+  // Handle view/edit action
+  const handleViewEdit = (fileId: string, isCustom: boolean) => {
+    setSelectedFile(fileId)
+    setSelectedFileIsCustom(isCustom)
+    setEditing(false)
+    setDialogOpen(true)
+    loadContent(fileId, isCustom)
   }
 
-  // Handle custom file save
-  const handleCustomSave = async () => {
-    if (!selectedCustom) return
-    setCustomSaving(true)
+  // Handle save (built-in or custom)
+  const handleSave = async () => {
+    if (!selectedFile) return
+    setSaving(true)
     try {
-      await api.updateCustomMemoryFile(selectedCustom, customEditContent)
-      setCustomContent(customEditContent)
-      setCustomEditing(false)
-      loadCustomFiles()
+      if (selectedFileIsCustom) {
+        await api.updateCustomMemoryFile(selectedFile, editContent)
+      } else {
+        await api.updateMemoryFile(selectedFile, editContent)
+      }
+      setContent(editContent)
+      setEditing(false)
+      loadStats()
     } catch (error) {
-      handleError(error, { operation: "Save custom file" })
+      handleError(error, { operation: "Save memory" })
     } finally {
-      setCustomSaving(false)
+      setSaving(false)
     }
   }
 
-  // Handle custom file delete
-  const handleCustomDelete = async (name: string) => {
+  // Handle delete (custom files only)
+  const handleDelete = async (name: string) => {
     const confirmed = await confirm({
       title: t("systemMemory.custom.delete", "Delete"),
-      description: t("systemMemory.custom.deleteConfirm", `Delete custom file "${name}"? This cannot be undone.`, { name }),
+      description: t("systemMemory.custom.deleteConfirm", `Delete file "${name}"? This cannot be undone.`, { name }),
       confirmText: t("common:delete", "Delete"),
       variant: "destructive",
     })
@@ -319,13 +315,13 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
 
     try {
       await api.deleteCustomMemoryFile(name)
-      loadCustomFiles()
+      loadStats()
       toast({
-        title: t("systemMemory.custom.deleted", "Custom file deleted"),
+        title: t("systemMemory.custom.deleted", "File deleted"),
         description: name,
       })
     } catch (error) {
-      handleError(error, { operation: "Delete custom file" })
+      handleError(error, { operation: "Delete file" })
     }
   }
 
@@ -338,55 +334,15 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
       setCreateDialogOpen(false)
       setNewFileName("")
       setNewFileContent("")
-      loadCustomFiles()
+      loadStats()
       toast({
-        title: t("systemMemory.custom.created", "Custom file created"),
+        title: t("systemMemory.custom.created", "File created"),
         description: newFileName,
       })
     } catch (error) {
-      handleError(error, { operation: "Create custom file" })
+      handleError(error, { operation: "Create file" })
     } finally {
       setCreating(false)
-    }
-  }
-
-  // Load content for a file
-  const loadContent = async (fileId: string) => {
-    setContentLoading(true)
-    try {
-      const response = await api.getMemoryFile(fileId)
-      setContent(response.content || "")
-      setEditContent(response.content || "")
-    } catch (error) {
-      handleError(error, { operation: "Load memory content" })
-      setContent("")
-      setEditContent("")
-    } finally {
-      setContentLoading(false)
-    }
-  }
-
-  // Handle view/edit action
-  const handleViewEdit = (fileId: string) => {
-    setSelectedFile(fileId)
-    setEditing(false)
-    setDialogOpen(true)
-    loadContent(fileId)
-  }
-
-  // Handle save
-  const handleSave = async () => {
-    if (!selectedFile) return
-    setSaving(true)
-    try {
-      await api.updateMemoryFile(selectedFile, editContent)
-      setContent(editContent)
-      setEditing(false)
-      loadStats()
-    } catch (error) {
-      handleError(error, { operation: "Save memory" })
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -425,32 +381,26 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     },
     triggerExtract: handleExtract,
     isExtracting: extracting,
+    openCreateFile: () => {
+      setNewFileName("")
+      setNewFileContent("")
+      setCreateDialogOpen(true)
+    },
   }), [handleExtract, loadConfig, extracting])
 
   // Get char limit for a file from config
-  const getCharLimit = (fileId: string): number => {
+  const getCharLimit = (fileId: string, isCustom: boolean): number => {
+    if (isCustom) return config.agent_char_limit || 1000
     const fc = fileConfig.find(f => f.id === fileId)
-    if (!fc) return config.agent_char_limit || 1000 // custom files use agent_char_limit
-    // Map charLimitKey to the config field
+    if (!fc) return 0
     if (fc.charLimitKey === "user_char_limit") return config.user_char_limit || 0
     if (fc.charLimitKey === "knowledge_char_limit") return config.knowledge_char_limit || 0
     return 0
   }
 
-  // Prepare table data
-  const tableData: MemoryFileRow[] = fileConfig.map((file) => ({
-    id: file.id,
-    name: t(file.labelKey, file.defaultLabel),
-    description: file.description,
-    icon: file.icon,
-    color: file.color,
-    chars: stats[file.id]?.chars ?? 0,
-    charLimit: getCharLimit(file.id),
-    modified_at: stats[file.id]?.modified_at ?? 0,
-  }))
-
   // Get file config by id
   const getSelectedFileConfig = () => {
+    if (selectedFileIsCustom) return null
     return fileConfig.find((f) => f.id === selectedFile)
   }
 
@@ -466,6 +416,50 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     return `${chars} / ${limit}`
   }
 
+  // Prepare table data: built-in files + custom files
+  const tableData: MemoryFileRow[] = [
+    ...fileConfig.map((file) => ({
+      id: file.id,
+      name: t(file.labelKey, file.defaultLabel),
+      description: file.description,
+      icon: file.icon,
+      color: file.color,
+      chars: stats[file.id]?.chars ?? 0,
+      charLimit: getCharLimit(file.id, false),
+      modified_at: stats[file.id]?.modified_at ?? 0,
+      isCustom: false,
+    })),
+    ...customFiles.map((file) => ({
+      id: `custom:${file.name}`,
+      name: file.name,
+      description: t("systemMemory.custom.description", "Custom knowledge file"),
+      icon: customFileConfig.icon,
+      color: customFileConfig.color,
+      chars: file.chars,
+      charLimit: getCharLimit(file.name, true),
+      modified_at: 0,
+      isCustom: true,
+    })),
+  ]
+
+  // Dialog title
+  const dialogTitle = selectedFileIsCustom
+    ? (selectedFile || "")
+    : (getSelectedFileConfig() ? t(getSelectedFileConfig()!.labelKey, getSelectedFileConfig()!.defaultLabel) : "")
+
+  const dialogIcon = selectedFileIsCustom
+    ? <FileText className="h-5 w-5" />
+    : (() => {
+        const fc = getSelectedFileConfig()
+        if (!fc) return <FileText className="h-5 w-5" />
+        const Icon = fc.icon
+        return <Icon className="h-5 w-5" />
+      })()
+
+  const dialogIconBg = selectedFileIsCustom
+    ? customFileConfig.color
+    : (getSelectedFileConfig()?.color || "bg-muted")
+
   return (
     <div className="space-y-4">
       {/* File table */}
@@ -477,10 +471,9 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
               <Card
                 key={row.id}
                 className="overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all"
-                onClick={() => handleViewEdit(row.id)}
+                onClick={() => handleViewEdit(row.isCustom ? row.name : row.id, row.isCustom)}
               >
                 <div className="px-3 py-2.5">
-                  {/* Row 1: icon + name + actions */}
                   <div className="flex items-center gap-2.5">
                     <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center border shrink-0", row.color)}>
                       <Icon className="h-4 w-4" />
@@ -490,12 +483,12 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <button className="p-1 rounded-md hover:bg-muted">
+                        <button className="p-1 rounded-md hover:bg-muted" aria-label={t("systemMemory.actions", "Actions")}>
                           <MoreVertical className="h-4 w-4 text-muted-foreground" />
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewEdit(row.id) }}>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleViewEdit(row.isCustom ? row.name : row.id, row.isCustom) }}>
                           <Eye className="h-4 w-4 mr-2" />
                           {t("systemMemory.viewEdit", "View/Edit")}
                         </DropdownMenuItem>
@@ -503,17 +496,24 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                           <Download className="h-4 w-4 mr-2" />
                           {t("systemMemory.export", "Export")}
                         </DropdownMenuItem>
+                        {row.isCustom && (
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleDelete(row.name) }} className="text-error focus:text-error">
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            {t("systemMemory.custom.delete", "Delete")}
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  {/* Row 2: chars + modified */}
                   <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
                     <Badge variant="secondary" className={cn(textMini, "font-mono h-5 px-1.5")}>
                       {formatCharsUsage(row.chars, row.charLimit)} {t("systemMemory.headers.chars", "chars")}
                     </Badge>
-                    <span className={cn(textMini, "text-muted-foreground ml-auto")}>
-                      {row.modified_at > 0 ? formatTimestamp(row.modified_at, false) : "-"}
-                    </span>
+                    {!row.isCustom && (
+                      <span className={cn(textMini, "text-muted-foreground ml-auto")}>
+                        {row.modified_at > 0 ? formatTimestamp(row.modified_at, false) : "-"}
+                      </span>
+                    )}
                   </div>
                 </div>
               </Card>
@@ -534,8 +534,8 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 {t("systemMemory.headers.chars", "Chars")}
               </div>
             ),
-            align: "center",
-            width: "w-28",
+            align: "right",
+            width: "w-36",
           },
           {
             key: "modified_at",
@@ -579,9 +579,9 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
 
             case "chars":
               return (
-                <Badge variant="secondary" className="font-mono">
+                <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">
                   {formatCharsUsage(row.chars, row.charLimit)}
-                </Badge>
+                </span>
               )
 
             case "modified_at":
@@ -603,7 +603,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
             icon: <Eye className="h-4 w-4" />,
             onClick: (rowData) => {
               const row = rowData as unknown as MemoryFileRow
-              handleViewEdit(row.id)
+              handleViewEdit(row.isCustom ? row.name : row.id, row.isCustom)
             },
           },
           {
@@ -614,125 +614,29 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
               handleExport(row.id)
             },
           },
+          {
+            label: t("systemMemory.custom.delete", "Delete"),
+            icon: <Trash2 className="h-4 w-4" />,
+            variant: "destructive" as const,
+            onClick: (rowData) => {
+              const row = rowData as unknown as MemoryFileRow
+              if (row.isCustom) handleDelete(row.name)
+            },
+            show: (rowData) => {
+              const row = rowData as unknown as MemoryFileRow
+              return row.isCustom
+            },
+          },
         ]}
       />
       )}
 
-      {/* Custom Files Section */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            {t("systemMemory.custom.title", "Custom Files")}
-          </h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2"
-            onClick={() => {
-              setNewFileName("")
-              setNewFileContent("")
-              setCreateDialogOpen(true)
-            }}
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            {t("systemMemory.custom.create", "Create")}
-          </Button>
-        </div>
-
-        {customLoading ? (
-          <div className="flex items-center justify-center py-4">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : customFiles.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-2">
-            {t("systemMemory.custom.empty", "No custom files. Create one to store domain-specific knowledge.")}
-          </p>
-        ) : (
-          <div className={isMobile ? "space-y-2" : ""}>
-            {customFiles.map((file) => (
-              isMobile ? (
-                <Card
-                  key={file.name}
-                  className="overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all"
-                  onClick={() => handleCustomViewEdit(file.name)}
-                >
-                  <div className="px-3 py-2.5">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center border bg-warning-light text-warning shrink-0">
-                        <FileText className="h-4 w-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm truncate">{file.name}</div>
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <button className="p-1 rounded-md hover:bg-muted">
-                            <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleCustomViewEdit(file.name) }}>
-                            <Eye className="h-4 w-4 mr-2" />
-                            {t("systemMemory.viewEdit", "View/Edit")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleCustomDelete(file.name) }} className="text-error focus:text-error">
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            {t("systemMemory.custom.delete", "Delete")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
-                      <Badge variant="secondary" className={cn(textMini, "font-mono h-5 px-1.5")}>
-                        {file.chars} / {config.agent_char_limit || 1000} {t("systemMemory.headers.chars", "chars")}
-                      </Badge>
-                    </div>
-                  </div>
-                </Card>
-              ) : (
-                <div
-                  key={file.name}
-                  className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted cursor-pointer transition-colors"
-                  onClick={() => handleCustomViewEdit(file.name)}
-                >
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center border bg-warning-light text-warning shrink-0">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate">{file.name}</div>
-                  </div>
-                  <Badge variant="secondary" className="font-mono text-xs">
-                    {file.chars} / {config.agent_char_limit || 1000}
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-error"
-                    onClick={(e) => { e.stopPropagation(); handleCustomDelete(file.name) }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              )
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Full Screen Dialog for View/Edit */}
+      {/* Unified View/Edit Dialog */}
       <FullScreenDialog open={dialogOpen} onOpenChange={handleDialogClose}>
         <FullScreenDialogHeader
-          icon={
-            (() => {
-              const fc = getSelectedFileConfig()
-              if (!fc) return null
-              const Icon = fc.icon
-              return <Icon className="h-5 w-5" />
-            })()
-          }
-          iconBg={getSelectedFileConfig()?.color || "bg-muted"}
-          title={getSelectedFileConfig() ? t(getSelectedFileConfig()!.labelKey, getSelectedFileConfig()!.defaultLabel) : ""}
+          icon={dialogIcon}
+          iconBg={dialogIconBg}
+          title={dialogTitle}
           onClose={() => handleDialogClose(false)}
         />
 
@@ -775,7 +679,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
               {content.split("\n").filter(l => l.trim()).length} {t("systemMemory.lines", "lines")}
               {selectedFile && (
                 <span className="ml-2">
-                  ({content.length} / {getCharLimit(selectedFile)} {t("systemMemory.headers.chars", "chars")})
+                  ({content.length} / {getCharLimit(selectedFile, selectedFileIsCustom)} {t("systemMemory.headers.chars", "chars")})
                 </span>
               )}
             </div>
@@ -804,87 +708,6 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 </>
               ) : (
                 <Button onClick={() => setEditing(true)}>
-                  <Pencil className="h-4 w-4 mr-1" />
-                  {t("systemMemory.edit", "Edit")}
-                </Button>
-              )}
-            </div>
-          </div>
-        </FullScreenDialogFooter>
-      </FullScreenDialog>
-
-      {/* Custom File View/Edit Dialog */}
-      <FullScreenDialog open={customDialogOpen} onOpenChange={setCustomDialogOpen}>
-        <FullScreenDialogHeader
-          icon={<FileText className="h-5 w-5" />}
-          iconBg="bg-warning-light text-warning"
-          title={selectedCustom || ""}
-          onClose={() => setCustomDialogOpen(false)}
-        />
-
-        <FullScreenDialogContent className="flex-col">
-          {customContentLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : customEditing ? (
-            <div className="w-full h-full overflow-hidden">
-              <CodeMirror
-                value={customEditContent}
-                height="100%"
-                onChange={(value) => setCustomEditContent(value)}
-                theme={isDark ? "dark" : "light"}
-                style={{
-                  fontSize: "14px",
-                  fontFamily: fontMonoStack,
-                  height: "100%",
-                  width: "100%",
-                }}
-              />
-            </div>
-          ) : (
-            <div className="prose prose-sm dark:prose-invert max-w-none p-6 overflow-auto h-full w-full">
-              {customContent ? (
-                <ReactMarkdown>{customContent}</ReactMarkdown>
-              ) : (
-                <p className="text-muted-foreground italic">
-                  {t("systemMemory.empty", "No content yet")}
-                </p>
-              )}
-            </div>
-          )}
-        </FullScreenDialogContent>
-
-        <FullScreenDialogFooter>
-          <div className="flex items-center justify-between w-full">
-            <div className="text-xs text-muted-foreground">
-              {customContent.length} / {config.agent_char_limit || 1000} {t("systemMemory.headers.chars", "chars")}
-            </div>
-            <div className="flex items-center gap-2">
-              {customEditing ? (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setCustomEditContent(customContent)
-                      setCustomEditing(false)
-                    }}
-                    disabled={customSaving}
-                  >
-                    <X className="h-4 w-4 mr-1" />
-                    {t("systemMemory.cancel", "Cancel")}
-                  </Button>
-                  <Button onClick={handleCustomSave} disabled={customSaving}>
-                    {customSaving ? (
-                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4 mr-1" />
-                    )}
-                    {customSaving ? t("systemMemory.saving", "Saving...") : t("systemMemory.save", "Save")}
-                  </Button>
-                </>
-              ) : (
-                <Button onClick={() => setCustomEditing(true)}>
                   <Pencil className="h-4 w-4 mr-1" />
                   {t("systemMemory.edit", "Edit")}
                 </Button>
