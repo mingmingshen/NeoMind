@@ -2092,26 +2092,27 @@ export const api = {
     fetchAPI<{ timezones: Array<{ id: string; name: string }> }>('/settings/timezones'),
 
   // ==========================================================================
-  // System Memory API - Category-based (New)
+  // System Memory API - File-based (New)
   // ==========================================================================
 
   /**
-   * Get memory content by category
-   * GET /api/memory/category/:category
+   * Get memory file content (user or knowledge)
+   * GET /api/memory/file/:target
    */
-  getMemoryCategory: (category: string) =>
+  getMemoryFile: (target: string) =>
     fetchAPI<{
-      category: string
+      success: boolean
+      target: string
       content: string
-      stats: { entry_count: number; file_size: number; modified_at: number }
-    }>(`/memory/category/${category}`),
+      chars: number
+    }>(`/memory/file/${target}`),
 
   /**
-   * Update memory content by category
-   * PUT /api/memory/category/:category
+   * Update memory file content (user or knowledge)
+   * PUT /api/memory/file/:target
    */
-  updateMemoryCategory: (category: string, content: string) =>
-    fetchAPI<{ success: boolean; message: string }>(`/memory/category/${category}`, {
+  updateMemoryFile: (target: string, content: string) =>
+    fetchAPI<{ success: boolean; message: string; chars: number }>(`/memory/file/${target}`, {
       method: 'PUT',
       body: JSON.stringify({ content }),
     }),
@@ -2122,9 +2123,9 @@ export const api = {
    */
   getMemoryStats: () =>
     fetchAPI<{
-      categories: Record<
+      files: Record<
         string,
-        { entry_count: number; file_size: number; modified_at: number }
+        { chars: number; modified_at: number }
       >
     }>('/memory/stats'),
 

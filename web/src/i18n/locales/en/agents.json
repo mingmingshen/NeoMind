@@ -273,7 +273,6 @@
       "triggerWhen": "Trigger when",
       "metricUpdates": "Metric updates",
       "extensionOutput": "Extension output",
-      "aiMetric": "AI Metric",
       "manualTrigger": "Manual trigger",
       "fromDevice": "From device",
       "fromExtension": "From extension",
@@ -390,8 +389,7 @@
         },
         "allDevices": "All Devices",
         "allExtensions": "All Extensions",
-        "extensionHint": "Agent will trigger when this extension publishes output data.",
-        "aiGroupPlaceholder": "e.g. anomaly, prediction"
+        "extensionHint": "Agent will trigger when this extension publishes output data."
       },
       "once": {
         "preview": "Execute once immediately"
@@ -572,74 +570,50 @@
   },
   "systemMemory": {
     "title": "System Memory",
-    "search": "Search memory...",
-    "source": {
-      "all": "All",
-      "agent": "Agent",
-      "chat": "Chat",
-      "system": "System"
+    "files": {
+      "user": "User Profile",
+      "knowledge": "System Knowledge"
     },
-    "category": {
-      "all": "All",
-      "pattern": "Pattern",
-      "entity": "Entity",
-      "preference": "Preference",
-      "fact": "Fact"
-    },
-    "importance": "Importance",
-    "prune": "Prune Memory",
-    "export": "Export Markdown",
-    "empty": "No memory entries",
-    "emptyDesc": "Memory entries will appear here as agents and chats learn.",
-    "showMore": "Show more",
-    "showLess": "Show less",
-    "extract": "Extract",
-    "compress": "Compress",
-    "viewEdit": "View/Edit",
-    "config": {
-      "title": "Memory Configuration",
-      "description": "Configure memory extraction, compression, and LLM settings",
-      "extraction": "Extraction Settings",
-      "minMessages": "Min Messages",
-      "minMessagesHint": "Minimum messages to trigger extraction",
-      "minImportance": "Min Importance",
-      "minImportanceHint": "Minimum importance threshold (0-100)",
-      "similarityThreshold": "Similarity Threshold",
-      "similarityThresholdHint": "Dedup similarity (0-1)",
-      "dedupEnabled": "Deduplication",
-      "compression": "Compression Settings",
-      "decayPeriodDays": "Decay Period (Days)",
-      "compressionMinImportance": "Min Importance",
-      "compressionMinImportanceHint": "Entries below this will be deleted",
-      "llmBackends": "LLM Backends",
-      "extractionBackend": "Extraction Model",
-      "extractionBackendHint": "Lightweight model for extraction",
-      "compressionBackend": "Compression Model",
-      "compressionBackendHint": "Powerful model for summarization",
-      "defaultBackend": "Use default",
-      "schedule": "Schedule",
-      "autoExtraction": "Auto Extraction",
-      "extractionInterval": "Extraction Interval",
-      "autoCompression": "Auto Compression",
-      "compressionInterval": "Compression Interval"
-    },
-    "categories": {
-      "userProfile": "User Profile",
-      "domainKnowledge": "Domain Knowledge",
-      "taskPatterns": "Task Patterns",
-      "systemEvolution": "System Evolution"
+    "fileDescriptions": {
+      "user": "User preferences, habits and personal settings",
+      "knowledge": "System resources, domain knowledge, and agent experiences"
     },
     "headers": {
-      "category": "Category",
-      "entries": "Entries",
-      "size": "Size",
+      "file": "Memory File",
+      "chars": "chars",
       "modified": "Modified"
     },
-    "lines": "lines",
-    "cancel": "Cancel",
-    "save": "Save",
+    "config": {
+      "title": "Memory Configuration",
+      "description": "Configure memory storage and scheduling",
+      "general": "General Settings",
+      "enabled": "Enabled",
+      "maxAgents": "Max Agents",
+      "maxAgentsHint": "Maximum number of agents with memory",
+      "charLimits": "Character Limits",
+      "userCharLimit": "User File Limit",
+      "userCharLimitHint": "Max characters for user memory file",
+      "knowledgeCharLimit": "Knowledge File Limit",
+      "knowledgeCharLimitHint": "Max characters for knowledge memory file",
+      "agentCharLimit": "Agent Memory Limit",
+      "agentCharLimitHint": "Max characters per agent memory",
+      "tempFileTtl": "Temp File TTL (Days)",
+      "tempFileTtlHint": "Days before temp files are cleaned up",
+      "schedule": "Schedule",
+      "scheduleInterval": "Extraction Interval",
+      "scheduleIntervalHint": "Seconds between memory extractions ({{minutes}} min)"
+    },
+    "viewEdit": "View/Edit",
+    "export": "Export",
+    "extractStarted": "Extraction Started",
+    "extractStartedDesc": "Extracting memories from conversations...",
     "saving": "Saving...",
+    "save": "Save",
+    "cancel": "Cancel",
     "edit": "Edit",
-    "empty": "No content yet"
+    "lines": "lines",
+    "empty": "No content yet",
+    "charsUsed": "{{used}} / {{limit}} chars",
+    "noContent": "No content yet"
   }
 }

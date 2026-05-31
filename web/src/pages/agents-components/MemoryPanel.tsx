@@ -1,9 +1,9 @@
 /**
  * Memory Panel
  *
- * Displays Markdown-based memory files organized by category.
+ * Displays Markdown-based memory files (USER.md + KNOWLEDGE.md).
  * Uses table layout similar to device list for consistency.
- * Includes configuration UI for extraction, compression, and LLM settings.
+ * Includes simplified configuration UI.
  */
 
 import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from "react"
@@ -17,19 +17,10 @@ import {
   Loader2,
   User,
   BookOpen,
-  Repeat2,
-  Cpu,
   Clock,
-  Hash,
   Save,
   X,
   Settings,
-  Sparkles,
-  Archive,
-  Zap,
-  Play,
-  Brain,
-  Wrench,
   MoreVertical,
 } from "lucide-react"
 import { Card } from "@/components/ui/card"
@@ -37,18 +28,8 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { ResponsiveTable } from "@/components/shared"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Switch } from "@/components/ui/switch"
-import { Slider } from "@/components/ui/slider"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   FullScreenDialog,
   FullScreenDialogHeader,
@@ -63,114 +44,63 @@ import { cn } from "@/lib/utils"
 import { fontMonoStack, textMini } from "@/design-system/tokens/typography"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useIsMobile } from "@/hooks/useMobile"
-import type { LlmBackendInstance, MemorySystemConfig } from "@/types"
+import type { MemorySystemConfig } from "@/types"
 
 // Default config for initialization
 const defaultConfig: MemorySystemConfig = {
   enabled: true,
   storage_path: "data/memory",
-  extraction: {
-    similarity_threshold: 0.85,
-    min_messages: 3,
-    max_messages: 50,
-    min_importance: 30,
-    dedup_enabled: true,
-  },
-  compression: {
-    decay_period_days: 30,
-    min_importance: 20,
-    max_entries: {
-      user_profile: 50,
-      domain_knowledge: 100,
-      task_patterns: 80,
-      system_evolution: 30,
-    },
-  },
-  llm: {
-    extraction_backend_id: undefined,
-    compression_backend_id: undefined,
-  },
-  schedule: {
-    extraction_enabled: true,
-    extraction_interval_secs: 3600,
-    compression_enabled: true,
-    compression_interval_secs: 86400,
-  },
+  user_char_limit: 2000,
+  knowledge_char_limit: 3000,
+  agent_char_limit: 500,
+  max_agents: 5,
+  temp_file_ttl_days: 7,
+  schedule_interval_secs: 3600,
 }
 
-// Memory categories configuration
-const categoryConfig = [
+// Memory files configuration
+const fileConfig = [
   {
-    id: "user_profile",
-    labelKey: "systemMemory.categories.userProfile",
+    id: "user",
+    labelKey: "systemMemory.files.user",
     defaultLabel: "User Profile",
     icon: User,
-    description: "User preferences, habits and settings",
+    description: "User preferences, habits and personal settings",
     color: "bg-info-light text-info border-info",
+    charLimitKey: "user_char_limit" as const,
   },
   {
-    id: "domain_knowledge",
-    labelKey: "systemMemory.categories.domainKnowledge",
-    defaultLabel: "Domain Knowledge",
+    id: "knowledge",
+    labelKey: "systemMemory.files.knowledge",
+    defaultLabel: "System Knowledge",
     icon: BookOpen,
-    description: "Devices, protocols and system knowledge",
+    description: "System resources, domain knowledge, and agent experiences",
     color: "bg-success-light text-success border-success-light",
-  },
-  {
-    id: "task_patterns",
-    labelKey: "memory.categories.taskPatterns",
-    defaultLabel: "Task Patterns",
-    icon: Repeat2,
-    description: "Common tasks and operation patterns",
-    color: "bg-accent-purple-light text-accent-purple border-accent-purple-light",
-  },
-  {
-    id: "system_evolution",
-    labelKey: "memory.categories.systemEvolution",
-    defaultLabel: "System Evolution",
-    icon: Cpu,
-    description: "System changes and optimization records",
-    color: "bg-accent-orange-light text-accent-orange border-accent-orange-light",
+    charLimitKey: "knowledge_char_limit" as const,
   },
 ]
 
-// Category stats from API
-interface CategoryStats {
-  entry_count: number
-  file_size: number
+// File stats from API
+interface FileStats {
+  chars: number
   modified_at: number
-}
-
-// Memory content response from API
-interface MemoryContentResponse {
-  category: string
-  content: string
-  stats: CategoryStats
 }
 
 // Memory stats response from API
 interface MemoryStatsResponse {
-  categories: Record<string, CategoryStats>
+  files: Record<string, FileStats>
 }
 
 // Table row data type
-interface MemoryCategoryRow {
+interface MemoryFileRow {
   id: string
   name: string
   description: string
   icon: React.ElementType
   color: string
-  entry_count: number
-  file_size: number
+  chars: number
+  charLimit: number
   modified_at: number
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B"
-  const k = 1024
-  const sizes = ["B", "KB", "MB", "GB"]
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }
 
 interface MemoryPanelProps {
@@ -190,10 +120,10 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   const isMobile = useIsMobile()
 
   // State
-  const [stats, setStats] = useState<Record<string, CategoryStats>>({})
+  const [stats, setStats] = useState<Record<string, FileStats>>({})
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [content, setContent] = useState("")
   const [contentLoading, setContentLoading] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -206,7 +136,6 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   const [config, setConfig] = useState<MemorySystemConfig>(defaultConfig)
   const [configLoading, setConfigLoading] = useState(false)
   const [configSaving, setConfigSaving] = useState(false)
-  const [llmBackends, setLlmBackends] = useState<LlmBackendInstance[]>([])
   const [extracting, setExtracting] = useState(false)
 
   // Load configuration
@@ -223,22 +152,10 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     }
   }, [handleError])
 
-  // Load LLM backends for dropdown
-  const loadLlmBackends = useCallback(async () => {
-    try {
-      // Load all backends (not just active) so user can select any configured model
-      const response = await api.listLlmBackends({})
-      setLlmBackends(response.backends || [])
-    } catch (error) {
-      handleError(error, { operation: "Load LLM backends", showToast: false })
-    }
-  }, [handleError])
-
   // Load config on mount
   useEffect(() => {
     loadConfig()
-    loadLlmBackends()
-  }, [loadConfig, loadLlmBackends])
+  }, [loadConfig])
 
   // Save configuration
   const handleSaveConfig = async () => {
@@ -253,7 +170,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     }
   }
 
-  // Trigger manual extraction
+  // Trigger manual extraction (resource summary)
   const handleExtract = async () => {
     setExtracting(true)
     toast({
@@ -266,12 +183,9 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
         title: t("systemMemory.extractStarted", "Extraction Started"),
         description: result.message || t("systemMemory.extractStartedDesc", "Extraction is running in the background. Check stats after a moment."),
       })
-      loadStats() // Refresh stats immediately
-      // Schedule a delayed refresh for when background extraction finishes
+      loadStats()
       setTimeout(() => loadStats(), 30000)
     } catch (error) {
-      console.error('[MemoryPanel] Extraction error:', error)
-      // Check for specific error types
       if (error instanceof Error) {
         if (error.name === 'AbortError' || error.message.includes('abort')) {
           handleError(error, {
@@ -299,7 +213,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     setLoading(true)
     try {
       const response: MemoryStatsResponse = await api.getMemoryStats()
-      setStats(response.categories || {})
+      setStats(response.files || {})
     } catch (error) {
       handleError(error, { operation: "Load stats", showToast: false })
     } finally {
@@ -311,11 +225,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     loadStats()
   }, [loadStats, refreshKey])
 
-  // Load content for a category
-  const loadContent = async (categoryId: string) => {
+  // Load content for a file
+  const loadContent = async (fileId: string) => {
     setContentLoading(true)
     try {
-      const response: MemoryContentResponse = await api.getMemoryCategory(categoryId)
+      const response = await api.getMemoryFile(fileId)
       setContent(response.content || "")
       setEditContent(response.content || "")
     } catch (error) {
@@ -328,19 +242,19 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   }
 
   // Handle view/edit action
-  const handleViewEdit = (categoryId: string) => {
-    setSelectedCategory(categoryId)
+  const handleViewEdit = (fileId: string) => {
+    setSelectedFile(fileId)
     setEditing(false)
     setDialogOpen(true)
-    loadContent(categoryId)
+    loadContent(fileId)
   }
 
   // Handle save
   const handleSave = async () => {
-    if (!selectedCategory) return
+    if (!selectedFile) return
     setSaving(true)
     try {
-      await api.updateMemoryCategory(selectedCategory, editContent)
+      await api.updateMemoryFile(selectedFile, editContent)
       setContent(editContent)
       setEditing(false)
       loadStats()
@@ -352,15 +266,15 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   }
 
   // Handle export
-  const handleExport = async (categoryId: string) => {
-    setExporting(categoryId)
+  const handleExport = async (fileId: string) => {
+    setExporting(fileId)
     try {
       const markdown = await api.exportAllMemory()
       const blob = new Blob([markdown], { type: "text/markdown" })
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `memory_${categoryId}_${new Date().toISOString().split("T")[0]}.md`
+      a.download = `memory_${fileId}_${new Date().toISOString().split("T")[0]}.md`
       a.click()
       URL.revokeObjectURL(url)
     } catch (error) {
@@ -382,28 +296,37 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   useImperativeHandle(ref, () => ({
     openConfig: () => {
       setConfigOpen(true)
-      loadConfig() // Refresh config when opening
-      loadLlmBackends() // Refresh backends when opening config
+      loadConfig()
     },
     triggerExtract: handleExtract,
     isExtracting: extracting,
-  }), [handleExtract, loadConfig, loadLlmBackends, extracting])
+  }), [handleExtract, loadConfig, extracting])
+
+  // Get char limit for a file from config
+  const getCharLimit = (fileId: string): number => {
+    const fc = fileConfig.find(f => f.id === fileId)
+    if (!fc) return 0
+    // Map charLimitKey to the config field
+    if (fc.charLimitKey === "user_char_limit") return config.user_char_limit || 0
+    if (fc.charLimitKey === "knowledge_char_limit") return config.knowledge_char_limit || 0
+    return 0
+  }
 
   // Prepare table data
-  const tableData: MemoryCategoryRow[] = categoryConfig.map((cat) => ({
-    id: cat.id,
-    name: t(cat.labelKey, cat.defaultLabel),
-    description: cat.description,
-    icon: cat.icon,
-    color: cat.color,
-    entry_count: stats[cat.id]?.entry_count ?? 0,
-    file_size: stats[cat.id]?.file_size ?? 0,
-    modified_at: stats[cat.id]?.modified_at ?? 0,
+  const tableData: MemoryFileRow[] = fileConfig.map((file) => ({
+    id: file.id,
+    name: t(file.labelKey, file.defaultLabel),
+    description: file.description,
+    icon: file.icon,
+    color: file.color,
+    chars: stats[file.id]?.chars ?? 0,
+    charLimit: getCharLimit(file.id),
+    modified_at: stats[file.id]?.modified_at ?? 0,
   }))
 
-  // Get category config by id
-  const getSelectedCategoryConfig = () => {
-    return categoryConfig.find((c) => c.id === selectedCategory)
+  // Get file config by id
+  const getSelectedFileConfig = () => {
+    return fileConfig.find((f) => f.id === selectedFile)
   }
 
   // Check for dark mode
@@ -412,9 +335,15 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     (document.documentElement.getAttribute("data-theme") === "dark" ||
       document.documentElement.classList.contains("dark"))
 
+  // Format chars usage display
+  const formatCharsUsage = (chars: number, limit: number) => {
+    if (limit <= 0) return `${chars}`
+    return `${chars} / ${limit}`
+  }
+
   return (
     <div className="space-y-4">
-      {/* Category table */}
+      {/* File table */}
       {isMobile ? (
         <div className="space-y-2">
           {tableData.map((row) => {
@@ -452,12 +381,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  {/* Row 2: entries + size + modified */}
+                  {/* Row 2: chars + modified */}
                   <div className="flex items-center gap-1.5 mt-1.5 ml-[42px]">
                     <Badge variant="secondary" className={cn(textMini, "font-mono h-5 px-1.5")}>
-                      {row.entry_count} entries
+                      {formatCharsUsage(row.chars, row.charLimit)} {t("systemMemory.headers.chars", "chars")}
                     </Badge>
-                    <span className={cn(textMini, "text-muted-foreground")}>{formatBytes(row.file_size)}</span>
                     <span className={cn(textMini, "text-muted-foreground ml-auto")}>
                       {row.modified_at > 0 ? formatTimestamp(row.modified_at, false) : "-"}
                     </span>
@@ -472,24 +400,17 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
         columns={[
           {
             key: "name",
-            label: t("systemMemory.headers.category", "Category"),
+            label: t("systemMemory.headers.file", "File"),
           },
           {
-            key: "entry_count",
+            key: "chars",
             label: (
               <div className="flex items-center gap-1">
-                <Hash className="h-4 w-4" />
-                {t("systemMemory.headers.entries", "Entries")}
+                {t("systemMemory.headers.chars", "Chars")}
               </div>
             ),
             align: "center",
-            width: "w-24",
-          },
-          {
-            key: "file_size",
-            label: t("systemMemory.headers.size", "Size"),
-            align: "right",
-            width: "w-20",
+            width: "w-28",
           },
           {
             key: "modified_at",
@@ -504,10 +425,10 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
           },
         ]}
         data={tableData as unknown as Record<string, unknown>[]}
-        rowKey={(row) => (row as unknown as MemoryCategoryRow).id}
+        rowKey={(row) => (row as unknown as MemoryFileRow).id}
         loading={loading}
         renderCell={(columnKey, rowData) => {
-          const row = rowData as unknown as MemoryCategoryRow
+          const row = rowData as unknown as MemoryFileRow
           const Icon = row.icon
 
           switch (columnKey) {
@@ -531,18 +452,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 </div>
               )
 
-            case "entry_count":
+            case "chars":
               return (
                 <Badge variant="secondary" className="font-mono">
-                  {row.entry_count}
+                  {formatCharsUsage(row.chars, row.charLimit)}
                 </Badge>
-              )
-
-            case "file_size":
-              return (
-                <span className="text-xs text-muted-foreground font-mono">
-                  {formatBytes(row.file_size)}
-                </span>
               )
 
             case "modified_at":
@@ -563,7 +477,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
             label: t("systemMemory.viewEdit", "View/Edit"),
             icon: <Eye className="h-4 w-4" />,
             onClick: (rowData) => {
-              const row = rowData as unknown as MemoryCategoryRow
+              const row = rowData as unknown as MemoryFileRow
               handleViewEdit(row.id)
             },
           },
@@ -571,7 +485,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
             label: t("systemMemory.export", "Export"),
             icon: exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />,
             onClick: (rowData) => {
-              const row = rowData as unknown as MemoryCategoryRow
+              const row = rowData as unknown as MemoryFileRow
               handleExport(row.id)
             },
           },
@@ -584,14 +498,14 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
         <FullScreenDialogHeader
           icon={
             (() => {
-              const config = getSelectedCategoryConfig()
-              if (!config) return null
-              const Icon = config.icon
+              const fc = getSelectedFileConfig()
+              if (!fc) return null
+              const Icon = fc.icon
               return <Icon className="h-5 w-5" />
             })()
           }
-          iconBg={getSelectedCategoryConfig()?.color || "bg-muted"}
-          title={getSelectedCategoryConfig() ? t(getSelectedCategoryConfig()!.labelKey, getSelectedCategoryConfig()!.defaultLabel) : ""}
+          iconBg={getSelectedFileConfig()?.color || "bg-muted"}
+          title={getSelectedFileConfig() ? t(getSelectedFileConfig()!.labelKey, getSelectedFileConfig()!.defaultLabel) : ""}
           onClose={() => handleDialogClose(false)}
         />
 
@@ -632,6 +546,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
           <div className="flex items-center justify-between w-full">
             <div className="text-xs text-muted-foreground">
               {content.split("\n").filter(l => l.trim()).length} {t("systemMemory.lines", "lines")}
+              {selectedFile && (
+                <span className="ml-2">
+                  ({content.length} / {getCharLimit(selectedFile)} {t("systemMemory.headers.chars", "chars")})
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {editing ? (
@@ -674,7 +593,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
           iconBg="bg-accent-purple-light"
           iconColor="text-accent-purple"
           title={t("systemMemory.config.title", "Memory Configuration")}
-          subtitle={t("systemMemory.config.description", "Configure memory extraction, compression, and LLM settings")}
+          subtitle={t("systemMemory.config.description", "Configure memory storage and scheduling")}
           onClose={() => setConfigOpen(false)}
         />
 
@@ -686,259 +605,144 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
           ) : (
             <FullScreenDialogMain className="p-6">
               <div className="space-y-8 max-w-4xl mx-auto">
-                {/* Extraction Settings */}
+                {/* General Settings */}
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-accent-purple" />
-                    {t("systemMemory.config.extraction", "Extraction Settings")}
+                    <Settings className="h-4 w-4 text-accent-purple" />
+                    {t("systemMemory.config.general", "General Settings")}
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>{t("systemMemory.config.minMessages", "Min Messages")}</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={config.extraction?.min_messages ?? 3}
-                        onChange={(e) =>
-                          setConfig({
-                            ...config,
-                            extraction: {
-                              ...config.extraction,
-                              min_messages: parseInt(e.target.value) || 3,
-                            },
-                          })
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t("systemMemory.config.minMessagesHint", "Minimum messages to trigger extraction")}
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t("systemMemory.config.minImportance", "Min Importance")}</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={config.extraction?.min_importance ?? 30}
-                        onChange={(e) =>
-                          setConfig({
-                            ...config,
-                            extraction: {
-                              ...config.extraction,
-                              min_importance: parseInt(e.target.value) || 30,
-                            },
-                          })
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t("systemMemory.config.minImportanceHint", "Minimum importance threshold (0-100)")}
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t("systemMemory.config.similarityThreshold", "Similarity Threshold")}</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={config.extraction?.similarity_threshold ?? 0.85}
-                        onChange={(e) =>
-                          setConfig({
-                            ...config,
-                            extraction: {
-                              ...config.extraction,
-                              similarity_threshold: parseFloat(e.target.value) || 0.85,
-                            },
-                          })
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t("systemMemory.config.similarityThresholdHint", "Dedup similarity (0-1)")}
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t("systemMemory.config.dedupEnabled", "Deduplication")}</Label>
-                      <div className="flex items-center">
-                        <Switch
-                          checked={config.extraction?.dedup_enabled ?? true}
-                          onCheckedChange={(checked) =>
-                            setConfig({
-                              ...config,
-                              extraction: {
-                                ...config.extraction,
-                                dedup_enabled: checked,
-                              },
-                            })
+                      <Label>{t("systemMemory.config.enabled", "Enabled")}</Label>
+                      <div className="flex items-center h-10">
+                        <div
+                          role="switch"
+                          aria-checked={config.enabled}
+                          tabIndex={0}
+                          className={cn(
+                            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                            config.enabled ? "bg-primary" : "bg-muted"
+                          )}
+                          onClick={() =>
+                            setConfig({ ...config, enabled: !config.enabled })
                           }
-                        />
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault()
+                              setConfig({ ...config, enabled: !config.enabled })
+                            }
+                          }}
+                        >
+                          <span
+                            className={cn(
+                              "pointer-events-none block h-5 w-5 rounded-full bg-primary-foreground shadow-lg ring-0 transition-transform",
+                              config.enabled ? "translate-x-5" : "translate-x-0"
+                            )}
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-
-                {/* Compression Settings */}
-                <div className="space-y-4">
-                  <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <Archive className="h-4 w-4 text-info" />
-                    {t("systemMemory.config.compression", "Compression Settings")}
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>{t("systemMemory.config.decayPeriodDays", "Decay Period (Days)")}</Label>
+                      <Label>{t("systemMemory.config.maxAgents", "Max Agents")}</Label>
                       <Input
                         type="number"
                         min={1}
-                        max={365}
-                        value={config.compression?.decay_period_days ?? 30}
+                        max={50}
+                        value={config.max_agents}
                         onChange={(e) =>
                           setConfig({
                             ...config,
-                            compression: {
-                              ...config.compression,
-                              decay_period_days: parseInt(e.target.value) || 30,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t("systemMemory.config.compressionMinImportance", "Min Importance")}</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={config.compression?.min_importance ?? 20}
-                        onChange={(e) =>
-                          setConfig({
-                            ...config,
-                            compression: {
-                              ...config.compression,
-                              min_importance: parseInt(e.target.value) || 20,
-                            },
+                            max_agents: parseInt(e.target.value) || 5,
                           })
                         }
                       />
                       <p className="text-xs text-muted-foreground">
-                        {t("systemMemory.config.compressionMinImportanceHint", "Entries below this will be deleted")}
+                        {t("systemMemory.config.maxAgentsHint", "Maximum number of agents with memory")}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* LLM Backend Settings */}
+                {/* Char Limits */}
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <Cpu className="h-4 w-4 text-success" />
-                    {t("systemMemory.config.llmBackends", "LLM Backends")}
+                    <BookOpen className="h-4 w-4 text-info" />
+                    {t("systemMemory.config.charLimits", "Character Limits")}
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>{t("systemMemory.config.extractionBackend", "Extraction Model")}</Label>
-                      <Select
-                        value={config.llm?.extraction_backend_id || "__default__"}
-                        onValueChange={(value) =>
+                      <Label>{t("systemMemory.config.userCharLimit", "User File Limit")}</Label>
+                      <Input
+                        type="number"
+                        min={500}
+                        max={10000}
+                        step={100}
+                        value={config.user_char_limit}
+                        onChange={(e) =>
                           setConfig({
                             ...config,
-                            llm: {
-                              ...config.llm,
-                              extraction_backend_id: value === "__default__" ? undefined : value,
-                            },
+                            user_char_limit: parseInt(e.target.value) || 2000,
                           })
                         }
-                      >
-                        <SelectTrigger className="h-10">
-                          <SelectValue placeholder={t("systemMemory.config.defaultBackend", "Use default")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__default__">
-                            <div className="flex items-center gap-2">
-                              <span>{t("systemMemory.config.defaultBackend", "Use default")}</span>
-                            </div>
-                          </SelectItem>
-                          {llmBackends.map((backend) => (
-                            <SelectItem key={backend.id} value={backend.id}>
-                              <div className="flex items-center gap-2">
-                                <span>{backend.name}</span>
-                                <div className="flex items-center gap-0.5 text-muted-foreground">
-                                  {backend.capabilities?.supports_multimodal && (
-                                    <span title={t("systemMemory.config.supportsVision", "Supports vision")}>
-                                      <Eye className="h-4 w-4" />
-                                    </span>
-                                  )}
-                                  {backend.capabilities?.supports_tools && (
-                                    <span title={t("systemMemory.config.supportsTools", "Supports tools")}>
-                                      <Wrench className="h-4 w-4" />
-                                    </span>
-                                  )}
-                                  {backend.capabilities?.supports_thinking && (
-                                    <span title={t("systemMemory.config.supportsThinking", "Supports thinking")}>
-                                      <Brain className="h-4 w-4" />
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-xs text-muted-foreground ml-auto">{backend.model}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      />
                       <p className="text-xs text-muted-foreground">
-                        {t("systemMemory.config.extractionBackendHint", "Lightweight model for extraction")}
+                        {t("systemMemory.config.userCharLimitHint", "Max characters for user memory file")}
                       </p>
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("systemMemory.config.compressionBackend", "Compression Model")}</Label>
-                      <Select
-                        value={config.llm?.compression_backend_id || "__default__"}
-                        onValueChange={(value) =>
+                      <Label>{t("systemMemory.config.knowledgeCharLimit", "Knowledge File Limit")}</Label>
+                      <Input
+                        type="number"
+                        min={500}
+                        max={20000}
+                        step={100}
+                        value={config.knowledge_char_limit}
+                        onChange={(e) =>
                           setConfig({
                             ...config,
-                            llm: {
-                              ...config.llm,
-                              compression_backend_id: value === "__default__" ? undefined : value,
-                            },
+                            knowledge_char_limit: parseInt(e.target.value) || 3000,
                           })
                         }
-                      >
-                        <SelectTrigger className="h-10">
-                          <SelectValue placeholder={t("systemMemory.config.defaultBackend", "Use default")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__default__">
-                            <div className="flex items-center gap-2">
-                              <span>{t("systemMemory.config.defaultBackend", "Use default")}</span>
-                            </div>
-                          </SelectItem>
-                          {llmBackends.map((backend) => (
-                            <SelectItem key={backend.id} value={backend.id}>
-                              <div className="flex items-center gap-2">
-                                <span>{backend.name}</span>
-                                <div className="flex items-center gap-0.5 text-muted-foreground">
-                                  {backend.capabilities?.supports_multimodal && (
-                                    <span title={t("systemMemory.config.supportsVision", "Supports vision")}>
-                                      <Eye className="h-4 w-4" />
-                                    </span>
-                                  )}
-                                  {backend.capabilities?.supports_tools && (
-                                    <span title={t("systemMemory.config.supportsTools", "Supports tools")}>
-                                      <Wrench className="h-4 w-4" />
-                                    </span>
-                                  )}
-                                  {backend.capabilities?.supports_thinking && (
-                                    <span title={t("systemMemory.config.supportsThinking", "Supports thinking")}>
-                                      <Brain className="h-4 w-4" />
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-xs text-muted-foreground ml-auto">{backend.model}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      />
                       <p className="text-xs text-muted-foreground">
-                        {t("systemMemory.config.compressionBackendHint", "Powerful model for summarization")}
+                        {t("systemMemory.config.knowledgeCharLimitHint", "Max characters for knowledge memory file")}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("systemMemory.config.agentCharLimit", "Agent Memory Limit")}</Label>
+                      <Input
+                        type="number"
+                        min={100}
+                        max={5000}
+                        step={50}
+                        value={config.agent_char_limit}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            agent_char_limit: parseInt(e.target.value) || 500,
+                          })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("systemMemory.config.agentCharLimitHint", "Max characters per agent memory")}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("systemMemory.config.tempFileTtl", "Temp File TTL (Days)")}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={config.temp_file_ttl_days}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            temp_file_ttl_days: parseInt(e.target.value) || 7,
+                          })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("systemMemory.config.tempFileTtlHint", "Days before temp files are cleaned up")}
                       </p>
                     </div>
                   </div>
@@ -952,89 +756,25 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>{t("systemMemory.config.autoExtraction", "Auto Extraction")}</Label>
-                      <div className="flex items-center">
-                        <Switch
-                          checked={config.schedule?.extraction_enabled ?? true}
-                          onCheckedChange={(checked) =>
-                            setConfig({
-                              ...config,
-                              schedule: {
-                                ...config.schedule,
-                                extraction_enabled: checked,
-                              },
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t("systemMemory.config.extractionInterval", "Extraction Interval")}</Label>
-                      <Select
-                        value={String(config.schedule?.extraction_interval_secs ?? 3600)}
-                        onValueChange={(value) =>
+                      <Label>{t("systemMemory.config.scheduleInterval", "Extraction Interval")}</Label>
+                      <Input
+                        type="number"
+                        min={60}
+                        max={86400}
+                        step={60}
+                        value={config.schedule_interval_secs}
+                        onChange={(e) =>
                           setConfig({
                             ...config,
-                            schedule: {
-                              ...config.schedule,
-                              extraction_interval_secs: parseInt(value),
-                            },
+                            schedule_interval_secs: parseInt(e.target.value) || 3600,
                           })
                         }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1800">30 {t("common.minutes", "minutes")}</SelectItem>
-                          <SelectItem value="3600">1 {t("common.hour", "hour")}</SelectItem>
-                          <SelectItem value="7200">2 {t("common.hours", "hours")}</SelectItem>
-                          <SelectItem value="14400">4 {t("common.hours", "hours")}</SelectItem>
-                          <SelectItem value="28800">8 {t("common.hours", "hours")}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t("systemMemory.config.autoCompression", "Auto Compression")}</Label>
-                      <div className="flex items-center">
-                        <Switch
-                          checked={config.schedule?.compression_enabled ?? true}
-                          onCheckedChange={(checked) =>
-                            setConfig({
-                              ...config,
-                              schedule: {
-                                ...config.schedule,
-                                compression_enabled: checked,
-                              },
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t("systemMemory.config.compressionInterval", "Compression Interval")}</Label>
-                      <Select
-                        value={String(config.schedule?.compression_interval_secs ?? 86400)}
-                        onValueChange={(value) =>
-                          setConfig({
-                            ...config,
-                            schedule: {
-                              ...config.schedule,
-                              compression_interval_secs: parseInt(value),
-                            },
-                          })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="43200">12 {t("common.hours", "hours")}</SelectItem>
-                          <SelectItem value="86400">1 {t("common.day", "day")}</SelectItem>
-                          <SelectItem value="172800">2 {t("common.days", "days")}</SelectItem>
-                          <SelectItem value="604800">1 {t("common.week", "week")}</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("systemMemory.config.scheduleIntervalHint", "Seconds between memory extractions ({{minutes}} min)", {
+                          minutes: Math.round((config.schedule_interval_secs || 3600) / 60),
+                        })}
+                      </p>
                     </div>
                   </div>
                 </div>

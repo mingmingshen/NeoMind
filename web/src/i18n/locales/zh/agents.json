@@ -273,7 +273,6 @@
       "triggerWhen": "触发条件",
       "metricUpdates": "指标更新",
       "extensionOutput": "扩展输出",
-      "aiMetric": "AI 指标",
       "manualTrigger": "手动触发",
       "fromDevice": "来自设备",
       "fromExtension": "来自扩展",
@@ -390,8 +389,7 @@
         },
         "allDevices": "全部设备",
         "allExtensions": "全部扩展",
-        "extensionHint": "当此扩展发布输出数据时触发智能体。",
-        "aiGroupPlaceholder": "例如 anomaly、prediction"
+        "extensionHint": "当此扩展发布输出数据时触发智能体。"
       },
       "once": {
         "preview": "立即执行一次"
@@ -572,74 +570,50 @@
   },
   "systemMemory": {
     "title": "系统记忆",
-    "search": "搜索记忆...",
-    "source": {
-      "all": "全部",
-      "agent": "智能体",
-      "chat": "对话",
-      "system": "系统"
+    "files": {
+      "user": "用户画像",
+      "knowledge": "系统知识"
     },
-    "category": {
-      "all": "全部",
-      "pattern": "模式",
-      "entity": "实体",
-      "preference": "偏好",
-      "fact": "事实"
-    },
-    "importance": "重要度",
-    "prune": "修剪记忆",
-    "export": "导出 Markdown",
-    "empty": "暂无记忆数据",
-    "emptyDesc": "智能体和对话学习到的内容会保存在这里。",
-    "showMore": "展开更多",
-    "showLess": "收起",
-    "extract": "提取",
-    "compress": "压缩",
-    "viewEdit": "查看/编辑",
-    "config": {
-      "title": "记忆配置",
-      "description": "配置记忆提取、压缩和LLM设置",
-      "extraction": "提取设置",
-      "minMessages": "最小消息数",
-      "minMessagesHint": "触发提取的最小消息数",
-      "minImportance": "最小重要度",
-      "minImportanceHint": "最小重要度阈值 (0-100)",
-      "similarityThreshold": "相似度阈值",
-      "similarityThresholdHint": "去重相似度 (0-1)",
-      "dedupEnabled": "启用去重",
-      "compression": "压缩设置",
-      "decayPeriodDays": "衰减周期（天）",
-      "compressionMinImportance": "最小重要度",
-      "compressionMinImportanceHint": "低于此值的条目将被删除",
-      "llmBackends": "LLM后端",
-      "extractionBackend": "提取模型",
-      "extractionBackendHint": "轻量级模型用于提取",
-      "compressionBackend": "压缩模型",
-      "compressionBackendHint": "强大模型用于摘要",
-      "defaultBackend": "使用默认",
-      "schedule": "调度",
-      "autoExtraction": "自动提取",
-      "extractionInterval": "提取间隔",
-      "autoCompression": "自动压缩",
-      "compressionInterval": "压缩间隔"
-    },
-    "categories": {
-      "userProfile": "用户画像",
-      "domainKnowledge": "领域知识",
-      "taskPatterns": "任务模式",
-      "systemEvolution": "系统进化"
+    "fileDescriptions": {
+      "user": "用户偏好、习惯和个人设置",
+      "knowledge": "系统资源、领域知识和智能体经验"
     },
     "headers": {
-      "category": "分类",
-      "entries": "条目",
-      "size": "大小",
+      "file": "记忆文件",
+      "chars": "字符",
       "modified": "修改时间"
     },
-    "lines": "行",
-    "cancel": "取消",
-    "save": "保存",
+    "config": {
+      "title": "记忆配置",
+      "description": "配置记忆存储和调度",
+      "general": "通用设置",
+      "enabled": "启用",
+      "maxAgents": "最大智能体数",
+      "maxAgentsHint": "拥有记忆的最大智能体数量",
+      "charLimits": "字符限制",
+      "userCharLimit": "用户文件限制",
+      "userCharLimitHint": "用户记忆文件的最大字符数",
+      "knowledgeCharLimit": "知识文件限制",
+      "knowledgeCharLimitHint": "知识记忆文件的最大字符数",
+      "agentCharLimit": "智能体记忆限制",
+      "agentCharLimitHint": "每个智能体记忆的最大字符数",
+      "tempFileTtl": "临时文件保留天数",
+      "tempFileTtlHint": "临时文件清理前的保留天数",
+      "schedule": "调度",
+      "scheduleInterval": "提取间隔",
+      "scheduleIntervalHint": "记忆提取间隔秒数（{{minutes}} 分钟）"
+    },
+    "viewEdit": "查看/编辑",
+    "export": "导出",
+    "extractStarted": "提取已开始",
+    "extractStartedDesc": "正在从对话中提取记忆...",
     "saving": "保存中...",
+    "save": "保存",
+    "cancel": "取消",
     "edit": "编辑",
-    "empty": "暂无内容"
+    "lines": "行",
+    "empty": "暂无内容",
+    "charsUsed": "已使用 {{used}} / {{limit}} 字符",
+    "noContent": "暂无内容"
   }
 }
