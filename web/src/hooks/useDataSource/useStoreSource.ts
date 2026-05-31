@@ -279,8 +279,10 @@ export function useStoreSource<T = unknown>(
       readDataFromStore()
       // readDataFromStore returns early for telemetry-only/extension-only sources
       // without touching loading state — those hooks manage their own loading lifecycle.
-      // Only set loading=false when no async source will handle it.
-      if (!hasTelemetrySource && !hasExtensionSource) finishStore()
+      // When telemetry/extension sources will handle loading, they need to own the
+      // entire loading counter lifecycle. Finish the initial counter here so their
+      // own startLoading/finishLoading pairs stay balanced.
+      finishStore()
       return
     }
 

@@ -106,6 +106,12 @@ export function useDataSource<T = unknown>(
     setLastUpdateInternal(Date.now())
   }, [])
 
+  const forceFinishLoading = useCallback(() => {
+    loadingRef.current = 0
+    setLoading(false)
+    setLastUpdateInternal(Date.now())
+  }, [])
+
   const setErrorLoading = useCallback((err: string) => {
     loadingRef.current = Math.max(0, loadingRef.current - 1)
     if (loadingRef.current === 0) setLoading(false)
@@ -279,7 +285,8 @@ export function useDataSource<T = unknown>(
     finishLoading,
     retryLoading: startLoading,
     failLoading: setErrorLoading,
-  }), [startLoading, finishLoading, setErrorLoading])
+    forceFinishLoading,
+  }), [startLoading, finishLoading, setErrorLoading, forceFinishLoading])
 
   // Legacy setLoading adapter for sub-hooks that use it
   const legacySetLoading = useCallback((_l: boolean) => {

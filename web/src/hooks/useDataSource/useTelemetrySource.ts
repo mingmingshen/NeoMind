@@ -51,8 +51,14 @@ export interface TelemetrySourceState {
     finishLoading: () => void
     retryLoading: () => void
     failLoading: (error: string) => void
+    forceFinishLoading: () => void
   }
 }
+
+// Maximum time (ms) the loading state is allowed to persist before being
+// force-cleared.  Prevents skeleton screens from appearing stuck when the
+// backend returns empty data or the retry loop runs too long.
+const MAX_LOADING_DURATION = 3000
 
 export function useTelemetrySource(
   telemetrySources: DataSource[],
@@ -70,6 +76,7 @@ export function useTelemetrySource(
   const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const maxLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const prevTelemetryKeyRef = useRef('')
   const fetchGenerationRef = useRef(0)
 
@@ -88,6 +95,12 @@ export function useTelemetrySource(
       if (!s.devicesLoading && deferredByDevicesLoadingRef.current) {
         deferredByDevicesLoadingRef.current = false
         state.readDataFromStore()
+        // readDataFromStore may return early for telemetry-only sources
+        // without calling finishLoading — do it here to unblock loading.
+        if (!retryInProgressRef.current) {
+          if (state.sourceAdapters) state.sourceAdapters.finishLoading()
+          else state.setLoading(false)
+        }
       }
     })
 
@@ -137,7 +150,7 @@ export function useTelemetrySource(
         fetchTimeoutRef.current = setTimeout(() => {
           fetchTimeoutRef.current = null
           reject(new Error('Fetch timeout'))
-        }, 10000)
+        }, 5000)
       })
 
       try {
@@ -228,31 +241,28 @@ export function useTelemetrySource(
         state.setLastUpdate(Date.now())
         initialTelemetryFetchDoneRef.current = true
 
-        // Empty result — quick retry then accept empty state
+        // Empty result — quick retry then accept empty state.
+        // Only retry during the initial fetch cycle; subsequent polling refreshes
+        // silently accept empty results to avoid perpetual skeleton state.
         const isEmpty = Array.isArray(finalData) ? finalData.length === 0 : finalData == null
-        if (isEmpty) {
+        if (isEmpty && isInitialFetch) {
           const { devicesLoading } = useStore.getState()
           if (devicesLoading) {
+            // Defer — keep loading, wait for devices to finish loading
             deferredByDevicesLoadingRef.current = true
             initialTelemetryFetchDoneRef.current = false
-            if (state.sourceAdapters) state.sourceAdapters.startLoading()
-            else state.setLoading(true)
           } else {
             emptyRetryCountRef.current += 1
-            // Single-value components (LED, ValueCard) benefit from more aggressive
-            // retries — they only need 1 data point and it may arrive shortly after
-            // mount. Use up to 5 retries at 1s intervals (total ~5s coverage).
-            // Time-series components use the original 2-retry limit since they
-            // depend on polling for bulk data anyway.
-            const isSingleValueFetch = telemetrySources.every(
-              ds => (ds.aggregateExt === 'latest' || ds.aggregateExt === 'first') && (ds.limit ?? 50) <= 1
-            )
-            const maxRetries = isSingleValueFetch ? 5 : 2
+            // One quick retry (500ms) then give up — polling will pick up
+            // data when it eventually arrives. Extended retry loops cause
+            // long skeleton screens that feel broken to the user.
+            const maxRetries = 1
             if (emptyRetryCountRef.current <= maxRetries) {
-              const delay = isSingleValueFetch ? 1000 : 1500 * emptyRetryCountRef.current
+              const delay = 500
               retryInProgressRef.current = true
-              if (state.sourceAdapters) state.sourceAdapters.retryLoading()
-              else state.setLoading(true)
+              // NOTE: Do NOT call startLoading/retryLoading here — the counter is already
+              // incremented from the initial startLoading() above. We keep loading=true
+              // by simply not calling finishLoading() in the finally block.
               if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
               retryTimerRef.current = setTimeout(() => {
                 retryTimerRef.current = null
@@ -260,7 +270,7 @@ export function useTelemetrySource(
                 fetchTelemetryData()
               }, delay)
             } else {
-              // Retries exhausted — clear loading so widget shows empty state
+              // Retries exhausted — stop retrying, finally block will finishLoading
               retryInProgressRef.current = false
             }
           }
@@ -304,10 +314,25 @@ export function useTelemetrySource(
     const pollingInterval = wsConnected ? baseRefresh * 2 : baseRefresh
     telemetryIntervalRef.current = setInterval(fetchTelemetryData, pollingInterval * 1000)
 
+    // Hard deadline: force-clear loading after MAX_LOADING_DURATION regardless
+    // of retry state, deferred state, or slow API responses.  This guarantees
+    // the user never sees a stuck skeleton screen for more than a few seconds.
+    if (maxLoadingTimerRef.current) clearTimeout(maxLoadingTimerRef.current)
+    maxLoadingTimerRef.current = setTimeout(() => {
+      maxLoadingTimerRef.current = null
+      if (fetchGenerationRef.current === currentGeneration) {
+        retryInProgressRef.current = false
+        deferredByDevicesLoadingRef.current = false
+        if (state.sourceAdapters) state.sourceAdapters.forceFinishLoading()
+        else state.setLoading(false)
+      }
+    }, MAX_LOADING_DURATION)
+
     return () => {
       if (telemetryIntervalRef.current) { clearInterval(telemetryIntervalRef.current); telemetryIntervalRef.current = null }
       if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null }
       if (fetchTimeoutRef.current) { clearTimeout(fetchTimeoutRef.current); fetchTimeoutRef.current = null }
+      if (maxLoadingTimerRef.current) { clearTimeout(maxLoadingTimerRef.current); maxLoadingTimerRef.current = null }
     }
   }, [telemetryKey, enabled, wsConnected])
 }
