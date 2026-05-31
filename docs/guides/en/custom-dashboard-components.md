@@ -398,6 +398,6 @@ neomind dashboard update <DASHBOARD_ID> --components '[{
 | Widget not in library | IIFE didn't assign to global | Verify `global['{global_name}'] = Component` matches manifest |
 | Renders blank | Root not filling container | Add `width: '100%', height: '100%'` to outer div |
 | "Reserved ID" error | ID matches built-in | Check `neomind widget list`, choose different ID |
-| Data not showing | Wrong data source field | Verify with `neomind device latest <ID>` |
+| Data not showing | Wrong data source field | Verify with `neomind device get <ID>` |
 | Colors wrong | Hardcoded CSS | Use `var(--color-*)` variables |
 | Install fails | Invalid ZIP structure | ZIP must have `manifest.json` + `bundle.js` at root |

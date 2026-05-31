@@ -26,7 +26,7 @@ Creating dashboards with data-bound components is the most complex CLI operation
 
 ## CRITICAL Rules
 
-1. **NEVER guess metric names** — always discover them via `device latest <ID>` or `extension get <ID>`
+1. **NEVER guess metric names** — always discover them via `device list` (metric_fields per type) or `device get <ID>`
 2. **Use `add-components` to add widgets** — this appends without replacing existing components
 3. **`update --components` replaces ALL components** — avoid this unless intentionally replacing everything
 4. **Grid is 12 columns wide** — plan layout accordingly
@@ -53,8 +53,8 @@ Creating dashboards with data-bound components is the most complex CLI operation
 neomind device list
 
 # Get real metric names for each device you want to display
-neomind device latest sensor-001
-neomind device latest sensor-002
+neomind device get sensor-001
+neomind device get sensor-002
 
 # If using extension data, discover extension metrics
 neomind extension get weather-forecast-v2
@@ -109,8 +109,8 @@ neomind dashboard add-components <DASHBOARD_ID> --components '[
 ```bash
 # Step 1: Discover metrics
 neomind device list
-neomind device latest sensor-001
-neomind device latest sensor-002
+neomind device get sensor-001
+neomind device get sensor-002
 
 # Step 2: Create dashboard
 neomind dashboard create --name 'Battery Monitor'
@@ -178,7 +178,7 @@ All data sources use **unified fields** (`source`/`mode`/`id`/`field`) plus lega
 }
 ```
 
-**IMPORTANT**: Must use real metric names from `device latest <ID>`. Common names: `temperature`, `humidity`, `battery`, `cpu`, `memory`, `status`.
+**IMPORTANT**: Must use real metric names from `device list` (metric_fields) or `device get <ID>`. Common names: `temperature`, `humidity`, `battery`, `cpu`, `memory`, `status`.
 
 ### Extension Metrics
 
@@ -229,7 +229,7 @@ Charts accept `data_source` as **array** for multiple series.
 | Extension field not binding | `"field":"temperature_c"` | `"field":"get_weather:temperature_c"` |
 | Device data not binding | Missing `source:"device"` | Add `"source":"device"` and `"id"` |
 | Chart shows no history | `"mode":"latest"` | Charts need `"mode":"timeseries"` |
-| No data shows | Guessed metric name | Run `device latest <ID>` first |
+| No data shows | Guessed metric name | Run `device list` or `device get <ID>` first |
 | "Device not found" | Wrong id | Run `device list` for valid IDs |
 
 ## Widget Types Reference
@@ -322,7 +322,7 @@ neomind dashboard add-components <ID> --components '[
 
 ```bash
 # Discover both device and extension metrics
-neomind device latest sensor-001
+neomind device get sensor-001
 neomind extension get weather-forecast-v2
 
 # Create dashboard with mixed sources
@@ -371,7 +371,7 @@ neomind dashboard share <ID> --expires 3600
 | "Invalid widget type" | Type doesn't exist | Run `neomind widget list` to see valid types |
 | Components disappear after update | Used `update --components` which replaces all | Use `add-components` instead |
 | "Device not found" | Wrong id | Run `neomind device list` for valid IDs |
-| No data shows | Wrong field name | Run `neomind device latest <ID>` for exact metric names |
+| No data shows | Wrong field name | Run `neomind device list` (metric_fields) or `neomind device get <ID>` for exact metric names |
 | Extension data not binding | Missing unified fields | Add `source:"extension"`, `id`, `field` (format: `COMMAND:FIELD`) |
 | Chart shows no history | mode is "latest" | Charts need `mode:"timeseries"` with `timeWindow` |
 | Position overlap | Same x,y coords | Each component needs unique position; grid is 12 columns |

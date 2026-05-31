@@ -113,7 +113,7 @@ export function getLineChartSchema(config: any, ctx: SchemaContext, u: Updaters)
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform'],
                 multiple: true,
                 maxSources: 5,
               },
@@ -202,7 +202,7 @@ export function getAreaChartSchema(config: any, ctx: SchemaContext, u: Updaters)
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform'],
                 multiple: true,
                 maxSources: 5,
               },
@@ -311,7 +311,7 @@ export function getBarChartSchema(config: any, ctx: SchemaContext, u: Updaters):
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform'],
                 multiple: true,
                 maxSources: 3,
               },
@@ -417,7 +417,7 @@ export function getPieChartSchema(config: any, ctx: SchemaContext, u: Updaters):
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform'],
               },
             },
           ],

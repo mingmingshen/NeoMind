@@ -613,7 +613,9 @@ impl AgentExecutor {
                     // Clean base64: strip whitespace/newlines, remove non-base64 characters
                     let cleaned_base64: String = base64
                         .chars()
-                        .filter(|c| c.is_ascii_alphanumeric() || *c == '+' || *c == '/' || *c == '=')
+                        .filter(|c| {
+                            c.is_ascii_alphanumeric() || *c == '+' || *c == '/' || *c == '='
+                        })
                         .collect();
                     // Fix padding
                     let padded_len = (cleaned_base64.len() + 3) & !3;
@@ -631,9 +633,8 @@ impl AgentExecutor {
                         .decode(&padded_base64)
                         .or_else(|_| {
                             // Try URL-safe base64 (uses - and _ instead of + and /)
-                            let url_safe_fixed: String = padded_base64
-                                .replace('-', "+")
-                                .replace('_', "/");
+                            let url_safe_fixed: String =
+                                padded_base64.replace('-', "+").replace('_', "/");
                             base64::engine::general_purpose::STANDARD.decode(&url_safe_fixed)
                         });
                     match decoded {

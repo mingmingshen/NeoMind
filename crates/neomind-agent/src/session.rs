@@ -597,7 +597,10 @@ impl SessionManager {
         session_id: &str,
         sender: tokio::sync::watch::Sender<bool>,
     ) {
-        self.cancel_senders.write().await.insert(session_id.to_string(), sender);
+        self.cancel_senders
+            .write()
+            .await
+            .insert(session_id.to_string(), sender);
     }
 
     /// Remove a cancel sender (called when streaming ends naturally).
@@ -1143,8 +1146,7 @@ impl SessionManager {
         let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         self.register_cancel_sender(session_id, cancel_tx).await;
 
-        let safeguards = super::agent::StreamSafeguards::default()
-            .with_interrupt_signal(cancel_rx);
+        let safeguards = super::agent::StreamSafeguards::default().with_interrupt_signal(cancel_rx);
 
         let session_id_owned = session_id.to_string();
         let cancel_senders = self.cancel_senders.clone();
@@ -1334,8 +1336,7 @@ impl SessionManager {
         let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         self.register_cancel_sender(session_id, cancel_tx).await;
 
-        let safeguards = super::agent::StreamSafeguards::default()
-            .with_interrupt_signal(cancel_rx);
+        let safeguards = super::agent::StreamSafeguards::default().with_interrupt_signal(cancel_rx);
 
         let session_id_owned = session_id.to_string();
         let cancel_senders = self.cancel_senders.clone();
@@ -1429,7 +1430,9 @@ impl SessionManager {
 
         // Update preview from first user message if not already set
         if let Ok(mut metadata) = self.store.get_session_metadata(session_id) {
-            if metadata.preview.is_none() || metadata.preview.as_ref().map_or(true, |p| p.is_empty()) {
+            if metadata.preview.is_none()
+                || metadata.preview.as_ref().map_or(true, |p| p.is_empty())
+            {
                 if let Some(first_user_msg) = messages.iter().find(|m| m.role == "user") {
                     let content = first_user_msg.content.trim();
                     let preview = if content.chars().count() > 50 {
@@ -1873,7 +1876,10 @@ mod tests {
 
         // 1. No active stream → cancel returns false
         let cancelled = manager.cancel_session("nonexistent").await;
-        assert!(!cancelled, "Canceling nonexistent session should return false");
+        assert!(
+            !cancelled,
+            "Canceling nonexistent session should return false"
+        );
 
         // 2. Register a cancel sender, then cancel it
         let (tx, rx) = tokio::sync::watch::channel(false);
@@ -1891,7 +1897,10 @@ mod tests {
 
         // 3. Second cancel should return false (sender was removed)
         let cancelled = manager.cancel_session("test-session").await;
-        assert!(!cancelled, "Second cancel should return false (sender removed)");
+        assert!(
+            !cancelled,
+            "Second cancel should return false (sender removed)"
+        );
     }
 
     #[tokio::test]

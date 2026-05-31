@@ -104,7 +104,9 @@ impl MemoryScheduler {
 
     /// Job 1: System Resource Summary
     /// Generates a data-driven summary of system resources and updates KNOWLEDGE.md
-    async fn run_system_summary_job(store: &Arc<RwLock<MarkdownMemoryStore>>) -> Result<(), String> {
+    async fn run_system_summary_job(
+        store: &Arc<RwLock<MarkdownMemoryStore>>,
+    ) -> Result<(), String> {
         // TODO: Wire up real system state queries when integrating with API layer
         // For now, use placeholder values
         let (devices, rules, extensions, dashboards) = Self::get_system_counts().await;
@@ -357,7 +359,12 @@ impl Drop for MemoryScheduler {
 }
 
 /// Generate a system resource summary from live state.
-fn generate_system_summary(devices: usize, rules: usize, extensions: usize, dashboards: usize) -> String {
+fn generate_system_summary(
+    devices: usize,
+    rules: usize,
+    extensions: usize,
+    dashboards: usize,
+) -> String {
     format!(
         "## System Resources\n\n- Devices: {} online\n- Rules: {} active\n- Extensions: {} installed\n- Dashboards: {} configured",
         devices, rules, extensions, dashboards
@@ -426,7 +433,10 @@ fn format_agent_summary(agent: &AiAgent) -> String {
     if !memory.short_term.summaries.is_empty() {
         lines.push("## Short-term Memory".to_string());
         for summary in &memory.short_term.summaries {
-            lines.push(format!("- **Execution {}**: {}", summary.execution_id, summary.conclusion));
+            lines.push(format!(
+                "- **Execution {}**: {}",
+                summary.execution_id, summary.conclusion
+            ));
         }
         lines.push(String::new());
     }
@@ -446,10 +456,22 @@ fn format_agent_summary(agent: &AiAgent) -> String {
 
     // Execution stats
     lines.push("## Execution Statistics".to_string());
-    lines.push(format!("- Total executions: {}", agent.stats.total_executions));
-    lines.push(format!("- Successful executions: {}", agent.stats.successful_executions));
-    lines.push(format!("- Failed executions: {}", agent.stats.failed_executions));
-    lines.push(format!("- Average duration: {}ms", agent.stats.avg_duration_ms));
+    lines.push(format!(
+        "- Total executions: {}",
+        agent.stats.total_executions
+    ));
+    lines.push(format!(
+        "- Successful executions: {}",
+        agent.stats.successful_executions
+    ));
+    lines.push(format!(
+        "- Failed executions: {}",
+        agent.stats.failed_executions
+    ));
+    lines.push(format!(
+        "- Average duration: {}ms",
+        agent.stats.avg_duration_ms
+    ));
     lines.push(String::new());
 
     lines.join("\n")

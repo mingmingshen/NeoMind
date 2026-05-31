@@ -75,7 +75,6 @@ fn infer_resource_type_from_id(resource_id: &str) -> ResourceType {
                 ResourceType::ExtensionMetric
             }
             neomind_core::datasource::DataSourceType::Transform => ResourceType::DataStream,
-            neomind_core::datasource::DataSourceType::Ai => ResourceType::DataStream,
         }
     } else if let Some(_ds_id) = DataSourceId::parse_extension_command(resource_id) {
         // Four-part format: extension:id:command:field
@@ -1608,11 +1607,14 @@ pub async fn get_agent_executions(
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
-    // Get executions
-    let executions = store
-        .get_agent_executions(&id, 50)
-        .await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to get executions: {}", e)))?;
+    // Get executions — return empty list on storage error instead of 500
+    let executions = match store.get_agent_executions(&id, 50).await {
+        Ok(execs) => execs,
+        Err(e) => {
+            tracing::warn!("Failed to query executions for agent {}: {}", id, e);
+            Vec::new()
+        }
+    };
 
     let dtos: Vec<AgentExecutionDto> = executions
         .into_iter()

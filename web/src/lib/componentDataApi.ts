@@ -111,7 +111,7 @@ function inferSourceFromType(type: string): DataSourceSource {
       return 'system'
     case 'transform':
       return 'transform'
-    case 'ai-metric': case 'agent':
+    case 'agent':
       return 'ai'
     default:
       return 'device'
@@ -123,7 +123,7 @@ function inferModeFromType(type: string, ds: DataSource): DataSourceMode {
     case 'device': case 'metric': return 'latest'
     case 'command': case 'extension-command': return 'command'
     case 'device-info': return 'info'
-    case 'telemetry': case 'transform': case 'ai-metric': case 'extension-metric': return 'timeseries'
+    case 'telemetry': case 'transform': case 'extension-metric': return 'timeseries'
     case 'extension':
       return (ds.timeRange || ds.timeWindow) ? 'timeseries' : 'latest'
     case 'system': case 'agent': return 'latest'

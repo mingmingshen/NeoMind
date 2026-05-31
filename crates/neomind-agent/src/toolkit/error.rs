@@ -65,6 +65,12 @@ impl From<serde_json::Error> for ToolError {
     }
 }
 
+impl From<neomind_storage::Error> for ToolError {
+    fn from(err: neomind_storage::Error) -> Self {
+        ToolError::Execution(err.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

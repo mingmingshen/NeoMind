@@ -109,7 +109,9 @@ impl ToolRegistry {
         let defs = self.definitions();
         let json_defs: Vec<Value> = defs
             .into_iter()
-            .map(|d| serde_json::to_value(d).expect("ToolDefinition serialization should never fail"))
+            .map(|d| {
+                serde_json::to_value(d).expect("ToolDefinition serialization should never fail")
+            })
             .collect();
         let json = serde_json::json!({ "tools": json_defs });
         *self.cached_definitions_json.write() = Some(json.clone());

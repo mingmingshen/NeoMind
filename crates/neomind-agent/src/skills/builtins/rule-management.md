@@ -9,7 +9,7 @@ triggers:
   keywords: [rule, 规则, 创建规则, create rule, alert, 告警, 报警, trigger, 触发, automation, 自动化, condition, 条件, action, 动作, WHEN, DO, DSL, threshold, 阈值, notification, 通知, 规则管理, rule create, rule update, rule enable, rule disable]
   tool_target:
     - tool: rule
-      actions: [list, get, create, update, delete, enable, disable, test]
+      actions: [list, get, create, update, delete, enable, disable, test, history]
 anti_triggers:
   keywords: [dashboard, 仪表盘, agent, 代理, extension develop, 扩展开发, device connect, 设备连接]
 ---
@@ -40,10 +40,10 @@ END
 neomind device list
 
 # Step 2: Find metric names for a specific device
-neomind device latest <DEVICE_ID>
+neomind device get <DEVICE_ID>
 ```
 
-**NEVER guess metric names.** Always use `device latest` to discover the actual field names.
+**NEVER guess metric names.** Always use `device list` (shows metric_fields per type) or `device get <ID>` to discover the actual field names.
 
 ## DSL Syntax
 
@@ -149,7 +149,7 @@ neomind rule history <ID>
 ```bash
 # Discover device ID and metrics first
 neomind device list
-neomind device latest sensor-001
+neomind device get sensor-001
 
 # Create rule with discovered device_id and metric
 neomind rule create --name 'High Temperature Alert' --dsl 'RULE "High Temperature Alert"
@@ -228,7 +228,7 @@ neomind rule create --name 'Heat Index Alert' --dsl 'RULE "Heat Index Alert"
 |-------|-------|----------|
 | Rule has no name | DSL uses unquoted name `RULE foo` | Use quoted name: `RULE "My Rule"` |
 | "Device not found in condition" | Wrong device ID | Run `neomind device list` for valid IDs |
-| "Unknown metric" | Wrong metric name | Run `neomind device latest <ID>` for valid metrics |
+| "Unknown metric" | Wrong metric name | Run `neomind device list` (metric_fields) or `neomind device get <ID>` for valid metrics |
 | Condition matches wrong device | Used `device.` prefix | Remove `device.` — use actual device ID directly: `sensor-001.temp` not `device.sensor-001.temp` |
 | "Invalid DSL syntax" | Malformed DSL | Check RULE/WHEN/DO/END structure, ensure name is quoted |
 | Rule not triggering | Rule is disabled | Run `neomind rule enable <ID>` |

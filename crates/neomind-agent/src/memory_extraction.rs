@@ -10,9 +10,7 @@ use neomind_core::llm::backend::{GenerationParams, LlmInput, LlmRuntime};
 use neomind_storage::{MarkdownMemoryStore, SessionMessage};
 
 use crate::error::Result;
-use crate::memory::extractor::{
-    AgentExtractor, ExtractResult, MemoryAction,
-};
+use crate::memory::extractor::{AgentExtractor, ExtractResult, MemoryAction};
 
 /// Memory extractor that uses LLM to extract and persist memories
 pub struct MemoryExtractor {
@@ -455,9 +453,9 @@ impl MemoryExtractor {
             .collect();
 
         // Simple check for exact or near-exact duplicates
-        existing_entries.iter().any(|entry| {
-            entry.to_lowercase().trim() == new_content.to_lowercase().trim()
-        })
+        existing_entries
+            .iter()
+            .any(|entry| entry.to_lowercase().trim() == new_content.to_lowercase().trim())
     }
 
     /// Extract the text content from a markdown memory entry line
@@ -592,14 +590,16 @@ mod tests {
 
         // Write user file directly
         let timestamp = chrono::Utc::now().format("%Y-%m-%d");
-        let entry = format!(
-            "- [{}] User likes pizza [importance: 60]\n",
-            timestamp
-        );
+        let entry = format!("- [{}] User likes pizza [importance: 60]\n", timestamp);
         let mut content = String::from("# User Profile\n\n");
         content.push_str(&entry);
 
-        store.write().await.write_file("user", &content).await.unwrap();
+        store
+            .write()
+            .await
+            .write_file("user", &content)
+            .await
+            .unwrap();
 
         let read_content = store.read().await.read_file("user").await.unwrap();
         assert!(read_content.contains("User likes pizza"));

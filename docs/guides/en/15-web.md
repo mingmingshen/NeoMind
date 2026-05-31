@@ -283,9 +283,9 @@ Each component specifies which data source types it accepts via `allowedTypes`:
 | Component | Allowed Types | Description |
 |-----------|---------------|-------------|
 | `video-display` | `device`, `device-info`, `device-metric` | Video streams — bind to device metrics that provide video URLs (e.g., RTSP/HLS addresses) |
-| `image-display` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | Images — bind to metrics or extensions providing image data |
-| `gauge-chart` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | Gauge values — bind to numeric metrics |
-| `stat-card` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | Stat values — bind to any numeric metric |
+| `image-display` | `device-metric`, `system`, `extension`, `transform` | Images — bind to metrics or extensions providing image data |
+| `gauge-chart` | `device-metric`, `system`, `extension`, `transform` | Gauge values — bind to numeric metrics |
+| `stat-card` | `device-metric`, `system`, `extension`, `transform` | Stat values — bind to any numeric metric |
 
 ### DataSourceId Format
 

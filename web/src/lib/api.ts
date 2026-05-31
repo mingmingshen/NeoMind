@@ -2207,6 +2207,51 @@ export const api = {
     }),
 
   // ==========================================================================
+  // Custom Memory Files API
+  // ==========================================================================
+
+  /**
+   * List all custom memory files
+   * GET /api/memory/custom
+   */
+  listCustomMemoryFiles: () =>
+    fetchAPI<{
+      success: boolean
+      files: Array<{ name: string; chars: number }>
+    }>('/memory/custom'),
+
+  /**
+   * Get a custom memory file
+   * GET /api/memory/custom/:name
+   */
+  getCustomMemoryFile: (name: string) =>
+    fetchAPI<{
+      success: boolean
+      name: string
+      content: string
+      chars: number
+    }>(`/memory/custom/${name}`),
+
+  /**
+   * Create or update a custom memory file
+   * PUT /api/memory/custom/:name
+   */
+  updateCustomMemoryFile: (name: string, content: string) =>
+    fetchAPI<{ success: boolean; message: string; chars: number }>(`/memory/custom/${name}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
+
+  /**
+   * Delete a custom memory file
+   * DELETE /api/memory/custom/:name
+   */
+  deleteCustomMemoryFile: (name: string) =>
+    fetchAPI<{ success: boolean; message: string }>(`/memory/custom/${name}`, {
+      method: 'DELETE',
+    }),
+
+  // ==========================================================================
   // System Memory API - File-based (Legacy)
   // ==========================================================================
 

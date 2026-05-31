@@ -230,6 +230,102 @@ enum LlmCommand {
         #[arg(long, default_value = "http://localhost:11434")]
         endpoint: String,
     },
+    /// Create a new LLM backend.
+    ///
+    /// Registers a new LLM backend instance for use by agents.
+    /// Backend types: ollama, openai, custom.
+    ///
+    /// Workflow:
+    ///   1. `llm list` — see existing backends
+    ///   2. `llm models` — find available model names (Ollama)
+    ///   3. `llm create --name local --type ollama --endpoint http://localhost:11434 --model qwen3:4b`
+    ///   4. `llm test <ID>` — verify connection
+    ///   5. `llm activate <ID>` — set as default
+    ///
+    /// Example: `neomind llm create --name my-llm --type ollama --endpoint http://localhost:11434 --model qwen3:4b`
+    Create {
+        /// Backend display name.
+        #[arg(short, long)]
+        name: String,
+        /// Backend type: ollama | openai | custom.
+        #[arg(short, long)]
+        r#type: String,
+        /// API endpoint URL.
+        ///   Ollama: http://localhost:11434
+        ///   OpenAI: https://api.openai.com/v1
+        ///   Custom: your API URL
+        #[arg(short, long)]
+        endpoint: String,
+        /// Model name.
+        ///   Ollama: qwen3:4b, llama3:8b, etc.
+        ///   OpenAI: gpt-4o, gpt-4o-mini, etc.
+        #[arg(short, long)]
+        model: String,
+        /// API key (required for openai/custom, optional for ollama).
+        #[arg(short, long)]
+        api_key: Option<String>,
+        /// Temperature (0.0 - 2.0). Default: 0.7.
+        #[arg(long)]
+        temperature: Option<f64>,
+    },
+    /// Update LLM backend configuration.
+    ///
+    /// Modify endpoint, model, or other settings. Changes apply immediately.
+    ///
+    /// Example: `neomind llm update my-llm --model qwen3:8b`
+    Update {
+        /// Backend ID.
+        #[arg(required = true)]
+        id: String,
+        /// New display name.
+        #[arg(short, long)]
+        name: Option<String>,
+        /// New model name.
+        #[arg(short, long)]
+        model: Option<String>,
+        /// New endpoint URL.
+        #[arg(short, long)]
+        endpoint: Option<String>,
+        /// New API key.
+        #[arg(short, long)]
+        api_key: Option<String>,
+        /// New temperature.
+        #[arg(long)]
+        temperature: Option<f64>,
+    },
+    /// Delete an LLM backend.
+    ///
+    /// Removes the backend. Agents using this backend will fail on next execution.
+    /// Check agent usage first: `agent list` and look for llm_backend_id.
+    ///
+    /// Example: `neomind llm delete my-llm`
+    Delete {
+        /// Backend ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Activate an LLM backend (set as default).
+    ///
+    /// Sets the backend as the system default. New agents will use this backend
+    /// unless overridden with --llm-backend.
+    ///
+    /// Example: `neomind llm activate my-llm`
+    Activate {
+        /// Backend ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Test LLM backend connection.
+    ///
+    /// Sends a test request to verify the backend is reachable and the model is available.
+    /// Run after create or update to verify settings.
+    ///
+    /// Example: `neomind llm test my-llm`
+    Test {
+        /// Backend ID.
+        #[arg(required = true)]
+        id: String,
+    },
 }
 
 /// Extension subcommands.
@@ -385,14 +481,16 @@ enum ExtensionCommand {
 /// Device subcommands.
 #[derive(Subcommand, Debug)]
 enum DeviceCommand {
-    /// List all devices.
+    /// List all devices, grouped by type.
     ///
-    /// Shows device ID, name, type, status, and last seen time.
+    /// Returns devices grouped by device type with metric field names and
+    /// an example device's current values per type. No need to call
+    /// `device get <ID>` for deep inspection.
     /// Use --device-type or --status to filter results.
-    /// Use --json for structured output suitable for scripting.
     ///
-    /// Workflow: Use this to find device IDs needed by other commands
-    /// (get, update, delete, latest, history, control, write-metric).
+    /// Workflow: Use this for discovery — find device IDs, metric names,
+    /// and current values in one command. Then use `device get <ID>` for
+    /// deep inspection of a specific device.
     ///
     /// Example: `neomind device list --device-type temp_sensor --status online`
     List {
@@ -406,12 +504,13 @@ enum DeviceCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Get device details.
+    /// Get device details (metadata + metrics + commands).
     ///
-    /// Shows full device info including type, connection config, metrics, and commands.
-    /// Use this to check which commands a device supports before using `device control`.
+    /// Returns full device info: metadata, connection config, all current
+    /// metric values, and available commands. This is the single command for
+    /// deep inspection of a specific device.
     ///
-    /// Workflow: Find ID with `device list`, then inspect with `device get <ID>`.
+    /// Workflow: Use `device list` for overview, then `device get <ID>` for detail.
     ///
     /// Example: `neomind device get device-001`
     Get {
@@ -431,7 +530,7 @@ enum DeviceCommand {
     ///   1. `neomind device types list` — pick a device type
     ///   2. `neomind device create --name "My Sensor" --device-type temp_sensor --adapter-type mqtt`
     ///   3. Send data via MQTT to the configured topic, or use `device write-metric`
-    ///   4. Verify with `device latest <ID>`
+    ///   4. Verify with `device get <ID>`
     Create {
         /// Device name.
         #[arg(short, long)]
@@ -487,13 +586,11 @@ enum DeviceCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Get latest metrics.
+    /// (Alias for device get) Get device details and current metrics.
     ///
-    /// Returns the most recent metric values reported by the device.
-    /// Useful for quick health checks or dashboards.
-    /// For historical data, use `device history` instead.
-    ///
-    /// Example: `neomind device latest device-001`
+    /// Identical to `device get <ID>`. Use `device get` instead.
+    /// Kept for backward compatibility.
+    #[command(hide = true)]
     Latest {
         /// Device ID.
         #[arg(required = true)]
@@ -570,7 +667,7 @@ enum DeviceCommand {
     /// Workflow:
     ///   1. `device types get <type>` — check valid metric names
     ///   2. `device write-metric <ID> --metric temp --value 23.5`
-    ///   3. `device latest <ID>` — verify the value was recorded
+    ///   3. `device get <ID>` — verify the value was recorded
     ///
     /// Example: `neomind device write-metric <ID> --metric temperature --value 25.5`
     WriteMetric {
@@ -2857,82 +2954,100 @@ fn matches_level(line: &str, level: &Option<String>) -> bool {
 
 /// Run extension management commands.
 async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
-    match cmd {
-        ExtensionCommand::Validate { path, verbose } => validate_nep_package(&path, verbose).await,
+    use neomind_cli_ops::output::format_output;
+    use neomind_cli_ops::types::OutputFormat;
 
-        ExtensionCommand::List { verbose } => list_extensions(verbose).await,
-
-        ExtensionCommand::Info { id_or_path } => show_extension_info(&id_or_path).await,
-
-        ExtensionCommand::Install { package } => install_extension(&package).await,
-
-        ExtensionCommand::Uninstall { id } => uninstall_extension(&id).await,
-
-        ExtensionCommand::Create {
-            name,
-            extension_type,
-            output,
-        } => {
-            create_extension_scaffold(&name, &extension_type, output)?;
-            Ok(())
+    // Local-only commands — no API call, no format_output
+    match &cmd {
+        ExtensionCommand::Validate { .. } => {
+            if let ExtensionCommand::Validate { path, verbose } = cmd {
+                return validate_nep_package(&path, verbose).await;
+            }
+            unreachable!()
         }
+        ExtensionCommand::Install { .. } => {
+            if let ExtensionCommand::Install { package } = cmd {
+                return install_extension(&package).await;
+            }
+            unreachable!()
+        }
+        ExtensionCommand::Uninstall { .. } => {
+            if let ExtensionCommand::Uninstall { id } = cmd {
+                return uninstall_extension(&id).await;
+            }
+            unreachable!()
+        }
+        ExtensionCommand::Create { .. } => {
+            if let ExtensionCommand::Create { name, extension_type, output } = cmd {
+                create_extension_scaffold(&name, &extension_type, output)?;
+                return Ok(());
+            }
+            unreachable!()
+        }
+        ExtensionCommand::Build { .. } => {
+            if let ExtensionCommand::Build { path } = cmd {
+                build_extension(&path)?;
+                return Ok(());
+            }
+            unreachable!()
+        }
+        ExtensionCommand::Info { .. } => {
+            // Info has local fallback logic, handled separately
+            if let ExtensionCommand::Info { id_or_path } = cmd {
+                return show_extension_info(&id_or_path).await;
+            }
+            unreachable!()
+        }
+        _ => {} // API commands handled below
+    }
 
+    // API commands — unified format_output path
+    let api_base = std::env::var("NEOMIND_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
+    let client = neomind_cli_ops::ApiClient::with_base_url(&api_base);
+    let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+
+    let response = match cmd {
+        ExtensionCommand::List { verbose: _ } => {
+            neomind_cli_ops::extension::list_extensions(&client).await?
+        }
         ExtensionCommand::Status { id } => {
-            let client = neomind_cli_ops::ApiClient::new();
-            let response = neomind_cli_ops::extension::get_extension_status(&client, &id).await?;
-            println!("{}", serde_json::to_string_pretty(&response)?);
-            Ok(())
+            neomind_cli_ops::extension::get_extension_status(&client, &id).await?
         }
-
         ExtensionCommand::Logs { id, lines } => {
-            let client = neomind_cli_ops::ApiClient::new();
-            let response = neomind_cli_ops::extension::get_extension_logs(&client, &id, lines).await?;
-            println!("{}", serde_json::to_string_pretty(&response)?);
-            Ok(())
+            neomind_cli_ops::extension::get_extension_logs(&client, &id, lines).await?
         }
-
-        ExtensionCommand::Build { path } => {
-            build_extension(&path)?;
-            Ok(())
-        }
-
         ExtensionCommand::MarketInstall { extension_id, version } => {
-            let client = neomind_cli_ops::ApiClient::new();
-            let response = neomind_cli_ops::extension::install_extension_market(
-                &client,
-                &extension_id,
-                version.as_deref(),
-            ).await?;
-            println!("{}", serde_json::to_string_pretty(&response)?);
-            Ok(())
+            neomind_cli_ops::extension::install_extension_market(
+                &client, &extension_id, version.as_deref(),
+            ).await?
         }
-
         ExtensionCommand::MarketList => {
-            let client = neomind_cli_ops::ApiClient::new();
-            let response = neomind_cli_ops::extension::list_marketplace(&client).await?;
-            println!("{}", serde_json::to_string_pretty(&response)?);
-            Ok(())
+            neomind_cli_ops::extension::list_marketplace(&client).await?
         }
         ExtensionCommand::Reload { id } => {
-            let client = neomind_cli_ops::ApiClient::new();
-            let response = neomind_cli_ops::extension::reload_extension(&client, &id).await?;
-            println!("{}", serde_json::to_string_pretty(&response)?);
-            Ok(())
+            neomind_cli_ops::extension::reload_extension(&client, &id).await?
         }
         ExtensionCommand::Config { id, set } => {
-            let client = neomind_cli_ops::ApiClient::new();
-            let response = match set {
+            match set {
                 Some(json_str) => {
                     let config = serde_json::from_str(&json_str)
                         .unwrap_or(serde_json::json!(json_str));
                     neomind_cli_ops::extension::update_extension_config(&client, &id, config).await?
                 }
                 None => neomind_cli_ops::extension::get_extension_config(&client, &id).await?,
-            };
-            println!("{}", serde_json::to_string_pretty(&response)?);
-            Ok(())
+            }
         }
-    }
+        // Already handled above — unreachable here but required by match exhaustiveness
+        _ => unreachable!(),
+    };
+
+    format_output(&response, output_format);
+    Ok(())
 }
 
 /// Validate a .nep extension package.
@@ -3055,15 +3170,11 @@ async fn validate_nep_package(path: &std::path::PathBuf, verbose: bool) -> Resul
 }
 
 /// List installed extensions.
-async fn list_extensions(_verbose: bool) -> Result<()> {
-    let client = neomind_cli_ops::ApiClient::new();
-    let response = neomind_cli_ops::extension::list_extensions(&client).await?;
-    println!("{}", serde_json::to_string_pretty(&response)?);
-    Ok(())
-}
-
 /// Show extension information.
 async fn show_extension_info(id_or_path: &str) -> Result<()> {
+    use neomind_cli_ops::output::format_output;
+    use neomind_cli_ops::types::OutputFormat;
+
     let path = std::path::PathBuf::from(id_or_path);
 
     if path.exists() {
@@ -3075,7 +3186,12 @@ async fn show_extension_info(id_or_path: &str) -> Result<()> {
     // Try API first (shows runtime info: status, commands, metrics)
     let client = neomind_cli_ops::ApiClient::new();
     if let Ok(response) = neomind_cli_ops::extension::get_extension(&client, id_or_path).await {
-        println!("{}", serde_json::to_string_pretty(&response)?);
+        let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
+            OutputFormat::Json
+        } else {
+            OutputFormat::Human
+        };
+        format_output(&response, output_format);
         return Ok(());
     }
 
@@ -3447,7 +3563,11 @@ async fn run_llm_cmd(cmd: LlmCommand) -> Result<()> {
     let api_base = std::env::var("NEOMIND_API_BASE")
         .unwrap_or_else(|_| "http://localhost:9375/api".to_string());
     let client = neomind_cli_ops::ApiClient::with_base_url(&api_base);
-    let output_format = OutputFormat::Human;
+    let output_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
 
     let response = match cmd {
         LlmCommand::List { json: _ } => {
@@ -3458,6 +3578,21 @@ async fn run_llm_cmd(cmd: LlmCommand) -> Result<()> {
         }
         LlmCommand::Models { endpoint: _ } => {
             list_ollama_models(&client).await?
+        }
+        LlmCommand::Create { name, r#type, endpoint, model, api_key, temperature } => {
+            create_backend(&client, &name, &r#type, &endpoint, &model, api_key.as_deref(), temperature).await?
+        }
+        LlmCommand::Update { id, name, model, endpoint, api_key, temperature } => {
+            update_backend(&client, &id, name.as_deref(), model.as_deref(), endpoint.as_deref(), api_key.as_deref(), temperature).await?
+        }
+        LlmCommand::Delete { id } => {
+            delete_backend(&client, &id).await?
+        }
+        LlmCommand::Activate { id } => {
+            activate_backend(&client, &id).await?
+        }
+        LlmCommand::Test { id } => {
+            test_backend(&client, &id).await?
         }
     };
 
@@ -3538,17 +3673,24 @@ async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
     // Create API client
     let client = ApiClient::with_base_url(&api_base);
 
+    // Resolve output format: --json flag > NEOMIND_JSON env > Human
+    let base_format = if std::env::var("NEOMIND_JSON").is_ok() {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Human
+    };
+
     let (response, output_format) = match cmd {
         DeviceCommand::List { device_type, status, json } => {
-            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let output_format = if json { OutputFormat::Json } else { base_format };
             (list_devices(&client, device_type.as_deref(), status.as_deref()).await?, output_format)
         }
         DeviceCommand::Get { id, json } => {
-            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let output_format = if json { OutputFormat::Json } else { base_format };
             (get_device(&client, &id).await?, output_format)
         }
         DeviceCommand::Create { name, device_type, adapter_type, config, json } => {
-            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let output_format = if json { OutputFormat::Json } else { base_format };
             let connection_config = if let Some(config_str) = config {
                 Some(serde_json::from_str(&config_str)?)
             } else {
@@ -3557,7 +3699,7 @@ async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
             (create_device(&client, &name, &device_type, &adapter_type, connection_config).await?, output_format)
         }
         DeviceCommand::Update { id, name, config, json } => {
-            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let output_format = if json { OutputFormat::Json } else { base_format };
             let connection_config = if let Some(config_str) = config {
                 Some(serde_json::from_str(&config_str)?)
             } else {
@@ -3566,19 +3708,19 @@ async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
             (update_device(&client, &id, name.as_deref(), connection_config).await?, output_format)
         }
         DeviceCommand::Delete { id, json } => {
-            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let output_format = if json { OutputFormat::Json } else { base_format };
             (delete_device(&client, &id).await?, output_format)
         }
         DeviceCommand::Latest { id, json } => {
-            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
-            (get_latest_metrics(&client, &id).await?, output_format)
+            let output_format = if json { OutputFormat::Json } else { base_format };
+            (get_device(&client, &id).await?, output_format)
         }
         DeviceCommand::History { id, metric, time_range, compress, json } => {
-            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let output_format = if json { OutputFormat::Json } else { base_format };
             (get_telemetry_history(&client, &id, metric.as_deref(), time_range.as_deref(), compress).await?, output_format)
         }
         DeviceCommand::Control { id, command, params, json } => {
-            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let output_format = if json { OutputFormat::Json } else { base_format };
             let params_json = if let Some(params_str) = params {
                 serde_json::from_str(&params_str)?
             } else {
@@ -3587,13 +3729,10 @@ async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
             (control_device(&client, &id, &command, params_json).await?, output_format)
         }
         DeviceCommand::Types { type_cmd } => {
-            // For Types subcommands, keep using the old behavior for now
-            // (they don't have --json flag in this change)
-            let output_format = OutputFormat::Human;
-            return run_device_type_cmd(client, type_cmd, output_format).await;
+            return run_device_type_cmd(client, type_cmd, base_format).await;
         }
         DeviceCommand::WriteMetric { id, metric, value, timestamp, json } => {
-            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let output_format = if json { OutputFormat::Json } else { base_format };
             // Try parsing value as number, bool, then fallback to string
             let value_json = if let Ok(n) = value.parse::<f64>() {
                 serde_json::json!(n)
@@ -3605,7 +3744,7 @@ async fn run_device_cmd(cmd: DeviceCommand) -> Result<()> {
             (write_metric(&client, &id, &metric, value_json, timestamp).await?, output_format)
         }
         DeviceCommand::WebhookUrl { id } => {
-            (get_webhook_url(&client, &id).await?, OutputFormat::Human)
+            (get_webhook_url(&client, &id).await?, base_format)
         }
         DeviceCommand::Drafts { draft_cmd } => {
             return run_draft_cmd(draft_cmd).await;
@@ -3624,25 +3763,26 @@ async fn run_draft_cmd(cmd: DraftCommand) -> Result<()> {
     use neomind_cli_ops::types::OutputFormat;
 
     let client = neomind_cli_ops::ApiClient::new();
+    let base_format = if std::env::var("NEOMIND_JSON").is_ok() { OutputFormat::Json } else { OutputFormat::Human };
     let response = match cmd {
         DraftCommand::List { json } => {
-            let output_format = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let output_format = if json { OutputFormat::Json } else { base_format };
             (list_drafts(&client).await?, output_format)
         }
         DraftCommand::Get { id } => {
-            (get_draft(&client, &id).await?, OutputFormat::Human)
+            (get_draft(&client, &id).await?, base_format)
         }
         DraftCommand::Approve { id, name, r#type } => {
-            (approve_draft(&client, &id, name.as_deref(), r#type.as_deref()).await?, OutputFormat::Human)
+            (approve_draft(&client, &id, name.as_deref(), r#type.as_deref()).await?, base_format)
         }
         DraftCommand::Reject { id } => {
-            (reject_draft(&client, &id).await?, OutputFormat::Human)
+            (reject_draft(&client, &id).await?, base_format)
         }
         DraftCommand::Config { enabled, auto_approve, max_samples } => {
             if enabled.is_some() || auto_approve.is_some() || max_samples.is_some() {
-                (update_onboard_config(&client, enabled, max_samples, auto_approve).await?, OutputFormat::Human)
+                (update_onboard_config(&client, enabled, max_samples, auto_approve).await?, base_format)
             } else {
-                (get_onboard_config(&client).await?, OutputFormat::Human)
+                (get_onboard_config(&client).await?, base_format)
             }
         }
     };
@@ -4170,10 +4310,11 @@ async fn run_system_cmd(cmd: SystemCommand) -> Result<()> {
     use neomind_cli_ops::output::format_output;
     use neomind_cli_ops::types::OutputFormat;
     let client = neomind_cli_ops::ApiClient::new();
+    let base_format = if std::env::var("NEOMIND_JSON").is_ok() { OutputFormat::Json } else { OutputFormat::Human };
 
     match cmd {
         SystemCommand::Info { json } => {
-            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let fmt = if json { OutputFormat::Json } else { base_format };
             let resp = neomind_cli_ops::system::system_info(&client).await?;
             format_output(&resp, fmt);
         }
@@ -4185,20 +4326,21 @@ async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<()> {
     use neomind_cli_ops::output::format_output;
     use neomind_cli_ops::types::OutputFormat;
     let client = neomind_cli_ops::ApiClient::new();
+    let base_format = if std::env::var("NEOMIND_JSON").is_ok() { OutputFormat::Json } else { OutputFormat::Human };
 
     match cmd {
         ConnectorCommand::List { json } => {
-            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let fmt = if json { OutputFormat::Json } else { base_format };
             let resp = neomind_cli_ops::connector::list_connectors(&client).await?;
             format_output(&resp, fmt);
         }
         ConnectorCommand::Get { id, json } => {
-            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let fmt = if json { OutputFormat::Json } else { base_format };
             let resp = neomind_cli_ops::connector::get_connector(&client, &id).await?;
             format_output(&resp, fmt);
         }
         ConnectorCommand::Create { connector_type, name, host, port, tls, username, password, topics, json } => {
-            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let fmt = if json { OutputFormat::Json } else { base_format };
             let resp = neomind_cli_ops::connector::create_connector(
                 &client, &name, Some(&connector_type), &host, port, tls,
                 username.as_deref(), password.as_deref(), topics.as_deref(),
@@ -4206,7 +4348,7 @@ async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<()> {
             format_output(&resp, fmt);
         }
         ConnectorCommand::Update { id, name, host, port, tls, username, password, topics, disable, json } => {
-            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let fmt = if json { OutputFormat::Json } else { base_format };
             let enabled = if disable { Some(false) } else { None };
             let tls_val = if tls { Some(true) } else { None };
             let resp = neomind_cli_ops::connector::update_connector(
@@ -4217,24 +4359,24 @@ async fn run_connector_cmd(cmd: ConnectorCommand) -> Result<()> {
         }
         ConnectorCommand::Delete { id } => {
             let resp = neomind_cli_ops::connector::delete_connector(&client, &id).await?;
-            format_output(&resp, OutputFormat::Human);
+            format_output(&resp, base_format);
         }
         ConnectorCommand::Test { id } => {
             let resp = neomind_cli_ops::connector::test_connector(&client, &id).await?;
-            format_output(&resp, OutputFormat::Human);
+            format_output(&resp, base_format);
         }
         ConnectorCommand::Subscriptions { json } => {
-            let fmt = if json { OutputFormat::Json } else { OutputFormat::Human };
+            let fmt = if json { OutputFormat::Json } else { base_format };
             let resp = neomind_cli_ops::connector::list_subscriptions(&client).await?;
             format_output(&resp, fmt);
         }
         ConnectorCommand::Subscribe { topic, qos } => {
             let resp = neomind_cli_ops::connector::subscribe_topic(&client, &topic, Some(qos)).await?;
-            format_output(&resp, OutputFormat::Human);
+            format_output(&resp, base_format);
         }
         ConnectorCommand::Unsubscribe { topic } => {
             let resp = neomind_cli_ops::connector::unsubscribe_topic(&client, &topic).await?;
-            format_output(&resp, OutputFormat::Human);
+            format_output(&resp, base_format);
         }
     }
     Ok(())

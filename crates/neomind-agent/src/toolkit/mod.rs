@@ -9,6 +9,7 @@ pub mod extension_tools;
 pub mod file_edit;
 pub mod file_write;
 pub mod memory_tool;
+pub mod path_validator;
 pub mod registry;
 pub mod resolver;
 pub mod shell;

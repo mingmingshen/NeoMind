@@ -13,7 +13,6 @@
 
 use neomind_storage::MarkdownMemoryStore;
 use std::fs;
-use std::path::Path;
 
 /// Hard character budget for memory context in prompts.
 const CHAR_BUDGET: usize = 7500;
@@ -41,27 +40,32 @@ impl MemorySnapshot {
     /// 3. Then truncate Knowledge if needed
     pub fn load(store: &MarkdownMemoryStore) -> Self {
         let handle = tokio::runtime::Handle::try_current()
-            .or_else(|_| {
-                tokio::runtime::Runtime::new()
-                    .map(|rt| rt.handle().clone())
-            })
+            .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
             .unwrap();
 
         // Read persistent files using new API
-        let user = tokio::task::block_in_place(|| {
-            handle.block_on(store.read_file("user"))
-        }).unwrap_or_default();
+        let user = tokio::task::block_in_place(|| handle.block_on(store.read_file("user")))
+            .unwrap_or_default();
 
-        let knowledge = tokio::task::block_in_place(|| {
-            handle.block_on(store.read_file("knowledge"))
-        }).unwrap_or_default();
+        let knowledge =
+            tokio::task::block_in_place(|| handle.block_on(store.read_file("knowledge")))
+                .unwrap_or_default();
 
         // Read agent summaries from agents/ directory
         let agent_summaries = read_agent_summaries(store);
 
-        let combined = format!(
-            "## User\n{user}\n\n## Knowledge\n{knowledge}\n\n## Agent Experiences\n{agent_summaries}"
-        );
+        // Read custom files
+        let custom_section = read_custom_files(store);
+
+        let combined = if custom_section.is_empty() {
+            format!(
+                "## User\n{user}\n\n## Knowledge\n{knowledge}\n\n## Agent Experiences\n{agent_summaries}"
+            )
+        } else {
+            format!(
+                "## User\n{user}\n\n## Knowledge\n{knowledge}\n\n## Agent Experiences\n{agent_summaries}\n\n{custom_section}"
+            )
+        };
 
         let content = if combined.chars().count() <= CHAR_BUDGET {
             combined
@@ -84,9 +88,7 @@ impl MemorySnapshot {
         // Check if there's actual content beyond section headers
         let has_content = snapshot.content.lines().any(|line| {
             let trimmed = line.trim();
-            !trimmed.is_empty()
-                && !trimmed.starts_with("## ")
-                && !trimmed.starts_with("### ")
+            !trimmed.is_empty() && !trimmed.starts_with("## ") && !trimmed.starts_with("### ")
         });
         if has_content {
             Some(snapshot)
@@ -141,7 +143,8 @@ fn read_agent_summaries(store: &MarkdownMemoryStore) -> String {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().map(|e| e == "md").unwrap_or(false) {
-            let agent_id = path.file_stem()
+            let agent_id = path
+                .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown");
 
@@ -153,7 +156,8 @@ fn read_agent_summaries(store: &MarkdownMemoryStore) -> String {
                 }
             };
 
-            let modified = entry.metadata()
+            let modified = entry
+                .metadata()
                 .ok()
                 .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
@@ -178,15 +182,41 @@ fn read_agent_summaries(store: &MarkdownMemoryStore) -> String {
     summaries.join("\n\n")
 }
 
+/// Read custom files from the custom/ directory.
+///
+/// Reads all .md files from `data/memory/custom/` and formats them
+/// as sections for inclusion in the memory snapshot.
+fn read_custom_files(store: &MarkdownMemoryStore) -> String {
+    let custom_files = match store.list_custom_files() {
+        Ok(files) => files,
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to list custom files");
+            return String::new();
+        }
+    };
+
+    let mut sections = Vec::new();
+    for (name, _) in &custom_files {
+        let content = match store.read_custom_file(name) {
+            Ok(c) if !c.trim().is_empty() => c,
+            _ => continue,
+        };
+        sections.push(format!("## Custom: {name}\n{content}"));
+    }
+
+    sections.join("\n\n")
+}
+
 /// Truncate content with priority preservation.
 ///
 /// Priority order:
 /// 1. User section (never truncated)
-/// 2. Knowledge section (truncated second)
-/// 3. Agent Experiences section (truncated first)
+/// 2. Knowledge section (truncated third)
+/// 3. Agent Experiences section (truncated second)
+/// 4. Custom sections (truncated first — lowest priority)
 ///
 /// This ensures user profile is always preserved, even at the cost
-/// of dropping all agent experiences and most knowledge.
+/// of dropping custom files, agent experiences, and most knowledge.
 fn truncate_with_priority(content: &str, max_chars: usize) -> String {
     let sections = parse_sections(content);
 
@@ -199,10 +229,8 @@ fn truncate_with_priority(content: &str, max_chars: usize) -> String {
     // Parse into individual sections
     let user_len = sections.get("User").map_or(0, |s| s.chars().count());
     let knowledge_len = sections.get("Knowledge").map_or(0, |s| s.chars().count());
-    let agents_len = sections.get("Agent Experiences").map_or(0, |s| s.chars().count());
-    let _ = agents_len; // used for priority decision
 
-    // Priority 1: Keep User, truncate Agents, then Knowledge
+    // Priority 1: Keep User, truncate Custom first, then Agents, then Knowledge
     let mut result = String::new();
     let mut remaining = max_chars;
 
@@ -219,7 +247,8 @@ fn truncate_with_priority(content: &str, max_chars: usize) -> String {
             if knowledge_len <= remaining {
                 result.push_str("\n\n## Knowledge\n");
                 result.push_str(knowledge);
-                remaining = remaining.saturating_sub("\n\n## Knowledge\n".chars().count() + knowledge_len);
+                remaining =
+                    remaining.saturating_sub("\n\n## Knowledge\n".chars().count() + knowledge_len);
             } else {
                 // Truncate knowledge to fit remaining space
                 let truncated = truncate_chars(knowledge, remaining.saturating_sub(20)); // Reserve space for header
@@ -240,6 +269,8 @@ fn truncate_with_priority(content: &str, max_chars: usize) -> String {
             }
         }
     }
+
+    // Custom sections are already lowest priority — they are dropped when over budget
 
     result
 }
@@ -343,10 +374,7 @@ mod tests {
 
         // Write user and knowledge files
         store
-            .write_file(
-                "user",
-                "User prefers dark mode\nUser speaks Chinese\n",
-            )
+            .write_file("user", "User prefers dark mode\nUser speaks Chinese\n")
             .await
             .unwrap();
 
@@ -474,8 +502,11 @@ mod tests {
         let agents_dir = store.base_path().join("agents");
         fs::create_dir_all(&agents_dir).unwrap();
         for i in 1..=7 {
-            fs::write(agents_dir.join(format!("agent{}.md", i)), format!("Agent {}", i))
-                .unwrap();
+            fs::write(
+                agents_dir.join(format!("agent{}.md", i)),
+                format!("Agent {}", i),
+            )
+            .unwrap();
         }
 
         let summaries = read_agent_summaries(&store);

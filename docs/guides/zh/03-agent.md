@@ -49,7 +49,6 @@ crates/neomind-agent/src/
 │   ├── shell.rs                #   Shell命令执行 (v0.6.10)
 │   ├── skill_tool.rs           #   技能管理工具 (v0.6.10)
 │   ├── extension_tools.rs      #   扩展工具生成器和执行器
-│   ├── ai_metric.rs            #   AI指标查询工具
 │   ├── session_search.rs       #   会话搜索工具
 │   ├── time_utils.rs           #   时间范围解析工具
 │   └── error.rs                #   工具错误类型
@@ -547,7 +546,6 @@ pub enum ToolCallStatus {
 - ShellTool                // 通过 neomind CLI 执行系统命令 (v0.6.10)
 - SkillTool                // 用户自定义技能管理 (v0.6.10)
 - ExtensionTool            // 扩展工具生成器和执行器
-- AiMetricTool             // AI指标查询工具
 - SessionSearchTool        // 会话历史搜索
 
 /// 基础设施
@@ -763,7 +761,7 @@ neomind device list --type temperature
 neomind rule create --dsl "RULE temp_alert WHEN device.temp > 30 DO notify"
 
 # 查询最新读数
-neomind device latest <device_id>
+neomind device get <device_id>
 ```
 
 ## 常见错误

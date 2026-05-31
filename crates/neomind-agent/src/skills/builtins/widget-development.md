@@ -9,7 +9,7 @@ triggers:
   keywords: [widget, custom widget, 自定义组件, widget create, 组件开发, component, IIFE, bundle.js, manifest, 仪表盘组件, dashboard widget, 自定义图表, custom chart, jsxRuntime, device binding]
   tool_target:
     - tool: widget
-      actions: [create, install, bundle, get, list]
+      actions: [create, install, bundle, get, list, uninstall, market-list, market-install]
 anti_triggers:
   keywords: [extension develop, 扩展开发, rule, 规则, device connect, 设备连接, agent, 代理]
 ---
@@ -25,9 +25,23 @@ Custom widgets are React components for NeoMind dashboards. No build tools — j
 neomind widget create "My Widget" --widget-type chart
 # Creates: data/frontend-components/<widget-id>/manifest.json + bundle.js
 
-# Step 2: Edit both files (see templates below)
+# Step 2: Edit both files — use file_write or file_edit tools (preferred over shell commands)
+```
 
-# Step 3: Install
+**Editing files (use file_write / file_edit instead of shell):**
+```
+# Write complete manifest.json:
+file_write(path="frontend-components/<widget-id>/manifest.json", content='{"id":"my-widget",...}')
+
+# Write complete bundle.js:
+file_write(path="frontend-components/<widget-id>/bundle.js", content='var MyWidget = (function() {...})();')
+
+# Edit specific part of bundle.js:
+file_edit(path="frontend-components/<widget-id>/bundle.js", old_string="Hello", new_string="World")
+```
+
+```bash
+# Step 3: Install (re-run after each edit to apply changes)
 neomind widget install data/frontend-components/<widget-id>
 
 # Step 4: Use in dashboard

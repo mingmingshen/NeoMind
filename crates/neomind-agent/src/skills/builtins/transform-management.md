@@ -77,7 +77,7 @@ Extension calls are **pre-executed asynchronously** before your code runs — no
 neomind device list
 
 # Step 2: Check latest data to see actual metric names and structure
-neomind device latest <DEVICE_ID>
+neomind device get <DEVICE_ID>
 # Output example: {"temperature": 23.5, "humidity": 60, "pressure": 1013}
 # → input fields: temperature, humidity, pressure
 

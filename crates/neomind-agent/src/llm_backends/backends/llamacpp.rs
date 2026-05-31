@@ -648,123 +648,118 @@ impl LlmRuntime for LlamaCppRuntime {
                                 while let Some(nl_pos) =
                                     buffer[search_start..].iter().position(|&b| b == b'\n')
                                 {
-                                        let line_end = search_start + nl_pos;
-                                        let line_bytes = &buffer[..line_end];
-                                        let line =
-                                            String::from_utf8_lossy(line_bytes).trim().to_string();
+                                    let line_end = search_start + nl_pos;
+                                    let line_bytes = &buffer[..line_end];
+                                    let line =
+                                        String::from_utf8_lossy(line_bytes).trim().to_string();
 
-                                        buffer = buffer[line_end + 1..].to_vec();
-                                        search_start = 0;
+                                    buffer = buffer[line_end + 1..].to_vec();
+                                    search_start = 0;
 
-                                        if line.is_empty() {
-                                            continue;
-                                        }
-                                        if line == "data: [DONE]" {
-                                            // Flush any accumulated tool calls
-                                            if !accumulated_tool_calls.is_empty() {
-                                                let tool_calls_json: Vec<serde_json::Value> =
-                                                    accumulated_tool_calls
-                                                        .values()
-                                                        .map(|tc| {
-                                                            let args: serde_json::Value =
-                                                                serde_json::from_str(&tc.arguments)
-                                                                    .unwrap_or_else(|_| {
-                                                                        serde_json::json!({})
-                                                                    });
-                                                            serde_json::json!({
-                                                                "id": tc.id,
-                                                                "name": tc.name,
-                                                                "arguments": args
-                                                            })
+                                    if line.is_empty() {
+                                        continue;
+                                    }
+                                    if line == "data: [DONE]" {
+                                        // Flush any accumulated tool calls
+                                        if !accumulated_tool_calls.is_empty() {
+                                            let tool_calls_json: Vec<serde_json::Value> =
+                                                accumulated_tool_calls
+                                                    .values()
+                                                    .map(|tc| {
+                                                        let args: serde_json::Value =
+                                                            serde_json::from_str(&tc.arguments)
+                                                                .unwrap_or_else(|_| {
+                                                                    serde_json::json!({})
+                                                                });
+                                                        serde_json::json!({
+                                                            "id": tc.id,
+                                                            "name": tc.name,
+                                                            "arguments": args
                                                         })
-                                                        .collect();
-                                                let json_str =
-                                                    serde_json::to_string(&tool_calls_json)
-                                                        .unwrap_or_default();
-                                                let _ = tx.send(Ok((json_str, false))).await;
-                                            }
-                                            let _ = tx.send(Ok((String::new(), false))).await;
-                                            continue;
+                                                    })
+                                                    .collect();
+                                            let json_str = serde_json::to_string(&tool_calls_json)
+                                                .unwrap_or_default();
+                                            let _ = tx.send(Ok((json_str, false))).await;
                                         }
-                                        if let Some(json) = line.strip_prefix("data: ") {
-                                            if let Ok(evt) =
-                                                serde_json::from_str::<StreamChunkEvent>(json)
-                                            {
-                                                // Check for usage data in final chunk (stream_options.include_usage=true)
-                                                if let Some(ref usage) = evt.usage {
-                                                    if usage.prompt_tokens > 0 {
+                                        let _ = tx.send(Ok((String::new(), false))).await;
+                                        continue;
+                                    }
+                                    if let Some(json) = line.strip_prefix("data: ") {
+                                        if let Ok(evt) =
+                                            serde_json::from_str::<StreamChunkEvent>(json)
+                                        {
+                                            // Check for usage data in final chunk (stream_options.include_usage=true)
+                                            if let Some(ref usage) = evt.usage {
+                                                if usage.prompt_tokens > 0 {
+                                                    let _ = tx
+                                                        .send(Ok((
+                                                            format!(
+                                                                "\n__NEOMIND_TOKEN_PROMPT:{}__",
+                                                                usage.prompt_tokens
+                                                            ),
+                                                            false,
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+
+                                            if let Some(choice) = evt.choices.first() {
+                                                // Handle content
+                                                if let Some(ref content) = choice.delta.content {
+                                                    if !content.is_empty() {
                                                         let _ = tx
-                                                            .send(Ok((
-                                                                format!(
-                                                                    "\n__NEOMIND_TOKEN_PROMPT:{}__",
-                                                                    usage.prompt_tokens
-                                                                ),
-                                                                false,
-                                                            )))
+                                                            .send(Ok((content.clone(), false)))
                                                             .await;
                                                     }
                                                 }
 
-                                                if let Some(choice) = evt.choices.first() {
-                                                    // Handle content
-                                                    if let Some(ref content) = choice.delta.content
-                                                    {
-                                                        if !content.is_empty() {
-                                                            let _ = tx
-                                                                .send(Ok((content.clone(), false)))
-                                                                .await;
-                                                        }
+                                                // Handle reasoning_content (thinking)
+                                                if let Some(ref reasoning) =
+                                                    choice.delta.reasoning_content
+                                                {
+                                                    if !reasoning.is_empty() {
+                                                        let _ = tx
+                                                            .send(Ok((reasoning.clone(), true)))
+                                                            .await;
                                                     }
+                                                }
 
-                                                    // Handle reasoning_content (thinking)
-                                                    if let Some(ref reasoning) =
-                                                        choice.delta.reasoning_content
-                                                    {
-                                                        if !reasoning.is_empty() {
-                                                            let _ = tx
-                                                                .send(Ok((reasoning.clone(), true)))
-                                                                .await;
+                                                // Handle tool calls (incremental)
+                                                if let Some(ref tool_calls) =
+                                                    choice.delta.tool_calls
+                                                {
+                                                    for tc in tool_calls {
+                                                        let entry = accumulated_tool_calls
+                                                            .entry(tc.index)
+                                                            .or_insert(AccumulatedToolCall {
+                                                                id: None,
+                                                                name: None,
+                                                                arguments: String::new(),
+                                                            });
+
+                                                        if let Some(ref id) = tc.id {
+                                                            entry.id = Some(id.clone());
                                                         }
-                                                    }
 
-                                                    // Handle tool calls (incremental)
-                                                    if let Some(ref tool_calls) =
-                                                        choice.delta.tool_calls
-                                                    {
-                                                        for tc in tool_calls {
-                                                            let entry = accumulated_tool_calls
-                                                                .entry(tc.index)
-                                                                .or_insert(AccumulatedToolCall {
-                                                                    id: None,
-                                                                    name: None,
-                                                                    arguments: String::new(),
-                                                                });
-
-                                                            if let Some(ref id) = tc.id {
-                                                                entry.id = Some(id.clone());
+                                                        if let Some(ref func) = tc.function {
+                                                            if let Some(ref name) = func.name {
+                                                                entry.name = Some(name.clone());
                                                             }
-
-                                                            if let Some(ref func) = tc.function {
-                                                                if let Some(ref name) = func.name {
-                                                                    entry.name = Some(name.clone());
-                                                                }
-                                                                if let Some(ref args) =
-                                                                    func.arguments
-                                                                {
-                                                                    entry.arguments.push_str(args);
-                                                                }
+                                                            if let Some(ref args) = func.arguments {
+                                                                entry.arguments.push_str(args);
                                                             }
                                                         }
                                                     }
+                                                }
 
-                                                    // Check for finish reason - flush tool calls
-                                                    if choice.finish_reason.as_deref()
-                                                        == Some("tool_calls")
-                                                        && !accumulated_tool_calls.is_empty()
-                                                    {
-                                                        let tool_calls_json: Vec<
-                                                            serde_json::Value,
-                                                        > = accumulated_tool_calls
+                                                // Check for finish reason - flush tool calls
+                                                if choice.finish_reason.as_deref()
+                                                    == Some("tool_calls")
+                                                    && !accumulated_tool_calls.is_empty()
+                                                {
+                                                    let tool_calls_json: Vec<serde_json::Value> =
+                                                        accumulated_tool_calls
                                                             .values()
                                                             .map(|tc| {
                                                                 let args: serde_json::Value =
@@ -781,17 +776,16 @@ impl LlmRuntime for LlamaCppRuntime {
                                                                 })
                                                             })
                                                             .collect();
-                                                        let json_str =
-                                                            serde_json::to_string(&tool_calls_json)
-                                                                .unwrap_or_default();
-                                                        let _ =
-                                                            tx.send(Ok((json_str, false))).await;
-                                                        accumulated_tool_calls.clear();
-                                                    }
+                                                    let json_str =
+                                                        serde_json::to_string(&tool_calls_json)
+                                                            .unwrap_or_default();
+                                                    let _ = tx.send(Ok((json_str, false))).await;
+                                                    accumulated_tool_calls.clear();
                                                 }
                                             }
                                         }
                                     }
+                                }
                             }
                             Err(e) => {
                                 let _ = tx.send(Err(LlmError::Network(e.to_string()))).await;

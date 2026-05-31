@@ -642,7 +642,9 @@ struct OpenAIEmbedData {
 impl EmbeddingModel for OpenAIEmbedding {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, Error> {
         let results: Vec<Vec<f32>> = self.embed_batch(&[text.to_string()]).await?;
-        results.into_iter().next()
+        results
+            .into_iter()
+            .next()
             .ok_or_else(|| Error::Embedding("OpenAI API returned empty results".to_string()))
     }
 
@@ -783,8 +785,15 @@ impl EmbeddingModel for CachedEmbeddingModel {
             }
         }
 
-        Ok(results.into_iter()
-            .map(|r| r.ok_or_else(|| Error::Embedding("Missing embedding result — cache or batch mismatch".to_string())))
+        Ok(results
+            .into_iter()
+            .map(|r| {
+                r.ok_or_else(|| {
+                    Error::Embedding(
+                        "Missing embedding result — cache or batch mismatch".to_string(),
+                    )
+                })
+            })
             .collect::<Result<Vec<_>, _>>()?)
     }
 

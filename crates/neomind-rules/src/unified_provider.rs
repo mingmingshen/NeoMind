@@ -148,7 +148,6 @@ impl UnifiedValueProvider {
             DataSourceType::Device => "device",
             DataSourceType::Extension => "extension",
             DataSourceType::Transform => "transform",
-            DataSourceType::Ai => "ai",
         };
         self.update_value(
             source_type,

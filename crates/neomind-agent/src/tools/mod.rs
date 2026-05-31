@@ -7,7 +7,6 @@
 pub mod event_integration;
 pub mod interaction;
 pub mod mapper;
-pub mod think;
 pub mod tool_search;
 
 pub use event_integration::{
@@ -18,7 +17,5 @@ pub use event_integration::{
 pub use interaction::{AskUserTool, ClarifyIntentTool, ConfirmActionTool};
 
 pub use tool_search::{ToolSearchResult, ToolSearchTool};
-
-pub use think::{ThinkStorage, ThinkTool, ThoughtRecord};
 
 pub use mapper::{get_mapper, map_tool_parameters, resolve_tool_name, ToolNameMapper};

@@ -100,6 +100,9 @@ impl PromptBuilder {
         prompt.push_str(Self::TOOL_STRATEGY);
         prompt.push_str("\n\n");
 
+        prompt.push_str(Self::MEMORY_USAGE);
+        prompt.push_str("\n\n");
+
         prompt.push_str(Self::RESPONSE_FORMAT);
         prompt.push('\n');
 
@@ -153,10 +156,14 @@ impl PromptBuilder {
         prompt.push_str("  ❌ \"Let me check the devices for you.\" (no tool call → WRONG)\n");
         prompt.push_str("  ❌ \"I'll create a monitoring agent now.\" (no tool call → WRONG)\n\n");
         prompt.push_str("**CORRECT** — Output tool call JSON directly:\n");
-        prompt.push_str("  ✓ [{\"name\":\"shell\",\"arguments\":{\"command\":\"neomind device list\"}}]\n");
+        prompt.push_str(
+            "  ✓ [{\"name\":\"shell\",\"arguments\":{\"command\":\"neomind device list\"}}]\n",
+        );
         prompt.push_str("  ✓ [{\"name\":\"shell\",\"arguments\":{\"command\":\"neomind rule create --name 'Low Battery Alert' --dsl 'RULE \\\"Low Battery\\\" WHEN device.battery < 20 DO NOTIFY \\\"Battery below 20%\\\" END'\"}}]\n\n");
         prompt.push_str("Rules:\n");
-        prompt.push_str("1. If user asks for an operation → output tool call JSON, NOT descriptive text\n");
+        prompt.push_str(
+            "1. If user asks for an operation → output tool call JSON, NOT descriptive text\n",
+        );
         prompt.push_str("2. NEVER claim \"✓ Done\" without a tool call returning success\n");
         prompt.push_str("3. Only respond in plain text when NO tools are needed (greetings, general questions)\n\n");
         prompt.push_str("## Tool Call Format\n");
@@ -175,6 +182,28 @@ impl PromptBuilder {
         prompt.push_str("  - `query` (optional) - Search query to find relevant skills\n");
         prompt.push_str("  - `id` (optional) - Skill ID to load (e.g. 'device-management', 'rule-management')\n");
         prompt.push_str("  - `content` (optional) - Full skill content for create/update\n\n");
+
+        prompt.push_str("### web_fetch (Fetch URL content)\n");
+        prompt.push_str("Fetches and extracts text content from a URL. Returns cleaned text (HTML stripped) or raw content.\n");
+        prompt.push_str("**Parameters**:\n");
+        prompt.push_str("  - `url` (required) - URL to fetch (http/https only)\n");
+        prompt.push_str("  - `format` (optional) - \"text\" (default, strips HTML) | \"raw\" (original content)\n");
+        prompt.push_str("  - `max_length` (optional) - Max characters to return (default 5000, max 50000)\n\n");
+
+        prompt.push_str("### file_write (Create or overwrite file)\n");
+        prompt.push_str("Creates or overwrites a file within the data directory (and any NEOMIND_ALLOWED_WRITE_DIRS). Supports all text file types.\n");
+        prompt.push_str("**Parameters**:\n");
+        prompt.push_str("  - `path` (required) - File path (relative to data dir, or absolute path within allowed dirs)\n");
+        prompt.push_str("  - `content` (required) - File content to write\n");
+        prompt.push_str("  - `create_dirs` (optional) - Auto-create parent directories (default true)\n\n");
+
+        prompt.push_str("### file_edit (Precise string replacement in file)\n");
+        prompt.push_str("Replaces exact text in an existing file within allowed directories. Use for targeted edits to config, code, or docs.\n");
+        prompt.push_str("**Parameters**:\n");
+        prompt.push_str("  - `path` (required) - File path (relative to data dir, or absolute path within allowed dirs)\n");
+        prompt.push_str("  - `old_string` (required) - Exact text to find (must be unique unless replace_all=true)\n");
+        prompt.push_str("  - `new_string` (required) - Replacement text\n");
+        prompt.push_str("  - `replace_all` (optional) - Replace all occurrences (default false)\n\n");
 
         prompt
     }
@@ -220,8 +249,9 @@ When users upload images:
 
 ### Data Query Important Principles
 ⚠️ **Avoid redundant calls, reuse available data**
-- `shell(command="neomind device latest --id <id>")` returns ALL current metric values for a device (including battery, temperature, etc.) in one call. Do NOT call it again for the same device within the same conversation round.
-- If you already called `neomind device latest` and got all data for a device, use those results directly when analyzing specific metrics (e.g., battery) — no need to call again.
+- `shell(command="neomind device list")` returns devices grouped by type with metric field names and example values. One command is enough for discovery — no need to call `device get` separately.
+- `shell(command="neomind device get <id>")` returns full device details (metadata + all metrics + commands). Use when you need detail of a specific device. Do NOT call it again for the same device within the same conversation round.
+- If you already called `neomind device get` and got all data for a device, use those results directly when analyzing specific metrics (e.g., battery) — no need to call again.
 - Only re-call when: ① A new conversation turn (user asked a new question) ② Different device or time range ③ Historical trend data is needed (use `history`, not `latest`)
 - Different parameters are different requests (different device, metric, time range), and can be called in parallel batches
 
@@ -231,7 +261,7 @@ When user mentions time periods (past week, last 24h, yesterday, 近一周, 昨�
 - "近三天/last 3 days" → `--time-range 3d`
 - "过去24小时/last 24h" → `--time-range 24h`
 - "一个月/a month" → `--time-range 1m`
-Do NOT use `neomind device list` or `neomind device latest` for time-based analysis — these return only current snapshots, not historical trends.
+Do NOT use `neomind device list` or `neomind device get` for time-based analysis — these return only current snapshots, not historical trends.
 
 ⚠️ **History data format — adaptive compression**
 The `neomind device history` response uses one of two formats, automatically picked for smallest size:
@@ -338,10 +368,7 @@ Use `shell(command="neomind <domain> <action> [args]")` for ALL operations.
 | **message** | `list, get, send --title --message, read/ack` + `channel-list/get/create/update/delete/test/types/type-schema` | Send requires `--title` + `--message`. Use `channel-types` to discover types, `channel-type-schema <TYPE>` for config schema. |
 | **system** | `info` | Returns MQTT broker address, webhook URL, network info. Use for onboarding questions. |
 | **connector** | `list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe` | External MQTT/data connectors. `test` checks real connectivity. |
-| **llm** | `list, get, models, create, update, delete, activate, test` | LLM backend management. `models` lists available Ollama models. |
-| **settings** | `timezone, timezones, retention, cleanup` | System settings: timezone, data retention config, manual cleanup trigger. |
-| **config** | `export, import, validate` | Full system configuration backup/restore. |
-| **automation** | `list, get, export, import, enable, disable, executions` | Unified management for rules, transforms, agents. |
+| **llm** | `list, get, models, create, update, delete, activate, test` | LLM backend management. `create` needs `--name` + `--type` (ollama/openai/custom) + `--endpoint` + `--model`. `activate` sets as default. `test` verifies connection. |
 | **push** | `list, get, create --name --type --config, update, delete, start, stop, test, logs, stats` | Data push targets. `--type`: webhook/mqtt. `--schedule`: event/interval. `--sources` for filtering. |
 
 ### Critical Decision Rules
@@ -401,8 +428,8 @@ When user asks to create/update/delete/control/enable/disable → you MUST execu
 
 **MANDATORY: Query Before Act Pattern**
 Before creating/updating ANY resource, you MUST query existing data first:
-1. **Dashboard**: `device list` → get IDs → `device latest <ID>` → get metrics → `dashboard create` → `dashboard add-components <ID> --components '[...]'`
-2. **Rule**: `device list` → get IDs → `device latest <ID>` → get real metric names → `rule create --dsl 'RULE ... WHEN device.metric(<REAL_METRIC>) ... END'`
+1. **Dashboard**: `device list` → get IDs + metric names + example values (grouped by type) → `dashboard create` → `dashboard add-components <ID> --components '[...]'`
+2. **Rule**: `device list` → get IDs + metric_fields per type → `rule create --dsl 'RULE ... WHEN device.metric(<REAL_METRIC>) ... END'`
 3. **Agent**: `agent list` → check existing → `agent create` → **MUST run** `agent control <ID> --status active`
 4. **NEVER** fabricate IDs or metric names. Always query first and use real values from results.
 5. **NEVER** stop after exploration. Always complete the final create/update/control action.
@@ -419,7 +446,30 @@ Before creating/updating ANY resource, you MUST query existing data first:
 - A command fails and you need domain-specific error troubleshooting
 - You need a complex multi-step workflow guide not covered in TOOL_STRATEGY
 
-**Type 3 — Extension tools (dynamic, per-extension)**
+**Type 3 — File and Web tools (web_fetch, file_write, file_edit)**
+> For file operations within the data directory and URL content fetching. PREFER these over shell commands like `cat > file` or `curl`.
+
+**When to use each:**
+- `web_fetch`: Fetch web page content, API responses, documentation. Returns cleaned text.
+  - Example: `web_fetch(url="https://example.com/api/docs")`
+  - Security: Only http/https, blocks private IPs (localhost, 10.x, 192.168.x, etc.)
+- `file_write`: Create new files or completely overwrite existing ones in data directory (or NEOMIND_ALLOWED_WRITE_DIRS).
+  - Example: `file_write(path="frontend-components/my-widget/manifest.json", content='{"id":"my-widget",...}')`
+  - Use for: widget manifest.json + bundle.js, skill docs, extension source code (.rs, .toml, .py), config files
+  - Security: Only allowed directories (data_dir + NEOMIND_ALLOWED_WRITE_DIRS), blocks binaries and .env
+- `file_edit`: Make precise edits to existing files (find & replace exact text).
+  - Example: `file_edit(path="frontend-components/my-widget/bundle.js", old_string="Hello", new_string="World")`
+  - Use for: updating widget code, modifying config values, fixing typos in existing files
+  - Set `replace_all=true` to replace all occurrences (default: fails if multiple matches)
+  - Security: Same restrictions as file_write
+
+**Common workflows:**
+- Create widget: `file_write(manifest.json)` + `file_write(bundle.js)` → `shell(neomind widget install ...)`
+- Edit widget: `file_edit(bundle.js, old="...", new="...")` → `shell(neomind widget install ...)` (re-install to apply)
+- Create skill: `file_write(path="skills/my-guide.md", content="...")` → `skill(action="load", id="my-guide")` to verify
+- Fetch web content: `web_fetch(url="...")` → analyze/summarize for user
+
+**Type 4 — Extension tools (dynamic, per-extension)**
 Extension commands are available as individual tools after discovery:
 1. `shell(command="neomind extension list")` → Discover installed extensions
 2. `shell(command="neomind extension status <ID>")` → View extension status
@@ -497,6 +547,38 @@ For device control, rule delete/update, and agent control actions:
 - Operation failed: Explain specific error and possible solutions
 - Missing parameters: Prompt user for required values"#;
 
+    const MEMORY_USAGE: &str = r#"## Memory Tool Usage
+
+You have a `memory` tool for persisting information across conversations. Use it proactively.
+
+### When to Write Memory
+- **user target**: User shares preferences, habits, name, or personal settings → `memory(action="add", target="user", content="...")`
+- **knowledge target**: You learn facts about the system, environment, or domain → `memory(action="add", target="knowledge", content="...")`
+- **custom:{name} target**: You discover domain-specific knowledge worth its own file (e.g., device map, network layout, recurring troubleshooting steps) → `memory(action="create", target="custom:mqtt-setup", content="...")`
+- **session target**: Multi-step task tracking within current session → `memory(action="add", target="session", content="Step 3 done: configured sensor X")`
+
+### When to Read Memory
+- Start of conversation: `memory(action="list")` to check what's stored
+- Before answering complex questions: check if relevant knowledge exists in custom files
+- User refers to previous conversations: read the relevant target
+
+### Targets
+| Target | Storage | Char limit | Purpose |
+|--------|---------|-----------|---------|
+| user | USER.md | 2000 | User profile, preferences |
+| knowledge | KNOWLEDGE.md | 3000 | System knowledge, domain facts |
+| session | sessions/{id}/notes.md | none | Session task tracking (7-day TTL) |
+| custom:{name} | custom/{name}.md | 1000/file | Domain-specific files |
+
+### Creating Custom Files
+Use action="create" with target="custom:{name}" (name: lowercase, 1-32 chars, alphanumeric/hyphen/underscore).
+Examples: custom:device-map, custom:network-layout, custom:troubleshooting-guide
+
+### Important
+- Do NOT duplicate information already in memory (read first, then update)
+- Keep entries concise — char limits are enforced
+- Custom files are auto-included in the memory snapshot for future sessions"#;
+
     const RESPONSE_FORMAT: &str = r#"## Response Format
 
 **No Hallucination**: Never claim operation success without calling tools. Always call tools first, then respond based on actual results.
@@ -530,7 +612,8 @@ When thinking mode is enabled, structure your thought process:
 - Use `skill` for guide management (search, list, get, create, update, delete)
 
 **Common Flows**:
-- User asks "How is device X doing?" → shell(command="neomind device latest <id>")
+- User asks "How is device X doing?" → shell(command="neomind device get <id>")
+- User asks "What devices are there?" → shell(command="neomind device list") → shows all devices grouped by type with metrics
 - User asks "What's the temp history?" → shell(command="neomind device list") → shell(command="neomind device history <id> --metric <metric> --time-range 24h")
 - User asks "battery trend this week" for ALL devices → shell(command="neomind device list") → batch shell(command="neomind device history ...") for ALL devices → **summarize each device in your response text** → final comparison
 - User asks "compare environmental conditions across rooms" → shell(device list) → Round2: batch temp for all spaces → **summarize** → Round3: batch humidity/occupancy/light → **summarize** → Round4: cross-space analysis from summaries
@@ -550,7 +633,7 @@ When thinking mode is enabled, structure your thought process:
 → `[{"name":"shell","arguments":{"command":"neomind device list"}}]`
 
 **User**: "How is the office temperature sensor doing?"
-→ `[{"name":"shell","arguments":{"command":"neomind device latest id_from_list"}}]`
+→ `[{"name":"shell","arguments":{"command":"neomind device get id_from_list"}}]`
 
 **User**: "Show me all alerts"
 → `[{"name":"shell","arguments":{"command":"neomind message list"}}]`

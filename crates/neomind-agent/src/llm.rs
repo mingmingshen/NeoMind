@@ -645,7 +645,10 @@ impl LlmInterface {
         let overhead = prompt_tokens + tools_tokens;
         tracing::debug!(
             "Prompt overhead: system_prompt={} tokens, tools={} tokens ({} tools), total={} tokens",
-            prompt_tokens, tools_tokens, tools.len(), overhead
+            prompt_tokens,
+            tools_tokens,
+            tools.len(),
+            overhead
         );
         overhead
     }
@@ -853,7 +856,7 @@ impl LlmInterface {
                 "workflow"
             } else if name.contains("data") || name.contains("query") || name.contains("metrics") {
                 "data"
-            } else if name == "think" || name == "tool_search" {
+            } else if name == "tool_search" {
                 "system"
             } else {
                 "general"
@@ -1226,7 +1229,8 @@ impl LlmInterface {
         );
 
         // Get effective parameters from backend instance or local config
-        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) = self.get_effective_params().await;
+        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) =
+            self.get_effective_params().await;
 
         // Don't set max_tokens — let the LLM backend use its own default.
         // Backends (Ollama, OpenAI-compatible) have their own num_predict limits.
@@ -1420,7 +1424,8 @@ impl LlmInterface {
         };
 
         // Get effective parameters from backend instance or local config
-        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) = self.get_effective_params().await;
+        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) =
+            self.get_effective_params().await;
 
         // Don't set max_tokens — let the LLM backend use its own default.
         // Backends (Ollama, OpenAI-compatible) have their own num_predict limits.
@@ -1561,7 +1566,8 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
-        self.chat_stream_internal(user_message, None, true, None).await
+        self.chat_stream_internal(user_message, None, true, None)
+            .await
     }
 
     /// Send a chat message with streaming response, with conversation history.
@@ -1631,7 +1637,8 @@ impl LlmInterface {
             self.build_system_prompt_with_tools(None).await
         } else {
             // Simple system prompt for non-tool calls
-            "You are NeoMind, a helpful IoT assistant. Answer questions concisely and accurately.".to_string()
+            "You are NeoMind, a helpful IoT assistant. Answer questions concisely and accurately."
+                .to_string()
         };
 
         // Build input outside the lock
@@ -1680,7 +1687,8 @@ impl LlmInterface {
         );
 
         // Get effective parameters from backend instance or local config
-        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) = self.get_effective_params().await;
+        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) =
+            self.get_effective_params().await;
 
         // Don't set max_tokens — let the LLM backend use its own default.
         // Backends (Ollama, OpenAI-compatible) have their own num_predict limits.
@@ -1871,7 +1879,8 @@ impl LlmInterface {
             }
         } else {
             // Simple system prompt for non-tool calls
-            "You are NeoMind, a helpful IoT assistant. Answer questions concisely and accurately.".to_string()
+            "You are NeoMind, a helpful IoT assistant. Answer questions concisely and accurately."
+                .to_string()
         };
 
         // Build input outside the lock
@@ -1926,12 +1935,18 @@ impl LlmInterface {
         // consume all num_predict tokens on thinking alone, producing no content.
         // Observed: qwen3.5:2b with prompt_eval=32259, eval=32768, content=0.
         let thinking_enabled = if thinking_enabled == Some(true) {
-            let hist_chars: usize = history.map(|h| {
-                h.iter().map(|m| match &m.content {
-                    neomind_core::Content::Text(s) => s.len(),
-                    neomind_core::Content::Parts(parts) => parts.iter().map(|p| format!("{:?}", p).len()).sum(),
-                }).sum()
-            }).unwrap_or(0);
+            let hist_chars: usize = history
+                .map(|h| {
+                    h.iter()
+                        .map(|m| match &m.content {
+                            neomind_core::Content::Text(s) => s.len(),
+                            neomind_core::Content::Parts(parts) => {
+                                parts.iter().map(|p| format!("{:?}", p).len()).sum()
+                            }
+                        })
+                        .sum()
+                })
+                .unwrap_or(0);
             let total_chars = hist_chars + system_prompt.len() + user_message.len();
             // Rough estimate: mixed Chinese/English ≈ 0.8 tokens/char
             let estimated_tokens = (total_chars as f64 * 0.8) as usize;
@@ -1951,7 +1966,8 @@ impl LlmInterface {
         };
 
         // Get effective parameters from backend instance or local config
-        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) = self.get_effective_params().await;
+        let (eff_temp, eff_top_p, eff_top_k, _static_max_tokens) =
+            self.get_effective_params().await;
 
         // Don't set max_tokens — let the LLM backend use its own default.
         // Setting a generation budget caused LLM to stop mid-tool-call JSON,

@@ -283,9 +283,9 @@ web/src/
 | 组件 | 允许的类型 | 说明 |
 |------|-----------|------|
 | `video-display` | `device`, `device-info`, `device-metric` | 视频流 — 可绑定到提供视频 URL（如 RTSP/HLS 地址）的设备指标 |
-| `image-display` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | 图片 — 绑定到提供图片数据的指标或扩展 |
-| `gauge-chart` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | 仪表盘值 — 绑定到数值型指标 |
-| `stat-card` | `device-metric`, `system`, `extension`, `transform`, `ai-metric` | 统计值 — 绑定到任意数值型指标 |
+| `image-display` | `device-metric`, `system`, `extension`, `transform` | 图片 — 绑定到提供图片数据的指标或扩展 |
+| `gauge-chart` | `device-metric`, `system`, `extension`, `transform` | 仪表盘值 — 绑定到数值型指标 |
+| `stat-card` | `device-metric`, `system`, `extension`, `transform` | 统计值 — 绑定到任意数值型指标 |
 
 ### DataSourceId 格式
 

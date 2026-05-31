@@ -291,10 +291,19 @@ async fn test_context_window_messages() -> anyhow::Result<()> {
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
 
     // Verify conversation history was populated
-    assert!(!agent.conversation_history.is_empty(), "Conversation history should have turns");
-    assert!(agent.conversation_history.len() <= 5, "History should be bounded");
+    assert!(
+        !agent.conversation_history.is_empty(),
+        "Conversation history should have turns"
+    );
+    assert!(
+        agent.conversation_history.len() <= 5,
+        "History should be bounded"
+    );
 
-    println!("\nConversation history turns: {}", agent.conversation_history.len());
+    println!(
+        "\nConversation history turns: {}",
+        agent.conversation_history.len()
+    );
     for (i, turn) in agent.conversation_history.iter().enumerate() {
         println!(
             "  #{}: trigger={}, success={}, conclusion_len={}",
@@ -307,7 +316,10 @@ async fn test_context_window_messages() -> anyhow::Result<()> {
 
     // Verify conversation history was populated (short-term may be skipped by write gating
     // when all executions are routine successes without meaningful data)
-    assert!(!agent.conversation_history.is_empty(), "Conversation history should have entries");
+    assert!(
+        !agent.conversation_history.is_empty(),
+        "Conversation history should have entries"
+    );
 
     println!("\n✅ Context window test passed!");
     Ok(())
@@ -483,7 +495,8 @@ async fn test_agent_role_prompts() -> anyhow::Result<()> {
         let _ = &agent.memory.short_term.summaries;
         let _ = &agent.conversation_history;
 
-        println!("Memory summaries: {}, History turns: {}",
+        println!(
+            "Memory summaries: {}, History turns: {}",
             agent.memory.short_term.summaries.len(),
             agent.conversation_history.len()
         );

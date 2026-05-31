@@ -762,7 +762,7 @@ pub async fn test_rule_handler(
             format!("Cannot test rule: Device '{}' has no data for metric '{}'.", device_id, metric)
         ).with_hint(
             "The device must have transmitted data at least once before testing rules.\n\
-             1. Check device status: neomind device latest <ID>\n\
+             1. Check device status: neomind device get <ID>\n\
              2. Send test data: neomind device write-metric <ID> --metric <METRIC> --value <VALUE>\n\
              3. Then retry: neomind rule test <RULE_ID>"
         ));

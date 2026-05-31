@@ -8,7 +8,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Search, Check, Server, Zap, Info, X, ChevronRight, ChevronLeft, Circle, Loader2, Database, MapPin, Activity, Puzzle, Workflow, Brain } from 'lucide-react'
+import { Search, Check, Server, Zap, Info, X, ChevronRight, ChevronLeft, Circle, Loader2, Database, MapPin, Activity, Puzzle, Workflow } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -32,7 +32,7 @@ import { findDevice } from '@/lib/deviceUtils'
 export interface UnifiedDataSourceConfigProps {
   value?: DataSourceOrList
   onChange: (dataSource: DataSourceOrList | undefined) => void
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command' | 'transform' | 'ai-metric'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command' | 'transform'>
   multiple?: boolean
   maxSources?: number
   className?: string
@@ -41,8 +41,8 @@ export interface UnifiedDataSourceConfigProps {
   suggestedMode?: DataSourceMode
 }
 
-type CategoryType = 'device-metric' | 'device-command' | 'device' | 'system' | 'extension' | 'extension-command' | 'transform' | 'ai-metric'
-type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" or "device:deviceId" or "system:metric" or "extension:extensionId:metric" or "extension-command:extensionId:command" or "transform:transformId:field" or "ai-metric:group:field"
+type CategoryType = 'device-metric' | 'device-command' | 'device' | 'system' | 'extension' | 'extension-command' | 'transform'
+type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" or "device:deviceId" or "system:metric" or "extension:extensionId:metric" or "extension-command:extensionId:command" or "transform:transformId:field"
 
 // ============================================================================
 // Shared sub-components (module-level to prevent remounting)
@@ -124,7 +124,6 @@ function getCategories(t: (key: string) => string) {
     { id: 'extension' as const, name: t('extensions:dataSource.extensionSource') || 'Extension Metrics', icon: Puzzle, description: t('extensions:dataSource.selectExtension') || 'Select extension metrics' },
     { id: 'extension-command' as const, name: t('extensions:dataSource.extensionCommand') || 'Extension Commands', icon: Zap, description: t('extensions:dataSource.selectExtensionCommand') || 'Select extension commands' },
     { id: 'transform' as const, name: t('dataSource.transform'), icon: Workflow, description: t('dataSource.transformDesc') },
-    { id: 'ai-metric' as const, name: t('dataSource.aiMetric'), icon: Brain, description: t('dataSource.aiMetricDesc') },
   ]
 }
 
@@ -134,9 +133,9 @@ function getCategories(t: (key: string) => string) {
 
 // Convert old allowedTypes format to new format
 function normalizeAllowedTypes(
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command' | 'transform' | 'ai-metric'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command' | 'transform'>
 ): CategoryType[] {
-  if (!allowedTypes) return ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command', 'transform', 'ai-metric']
+  if (!allowedTypes) return ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command', 'transform']
 
   const result: CategoryType[] = []
 
@@ -150,7 +149,6 @@ function normalizeAllowedTypes(
   if (allowedTypes.includes('extension')) result.push('extension')
   if (allowedTypes.includes('extension-command')) result.push('extension-command')
   if (allowedTypes.includes('transform')) result.push('transform')
-  if (allowedTypes.includes('ai-metric')) result.push('ai-metric')
 
   // Old format types - map to new format (but not 'device' since it's distinct now)
   if (allowedTypes.includes('metric')) {
@@ -162,7 +160,7 @@ function normalizeAllowedTypes(
     if (!result.includes('extension-command')) result.push('extension-command')
   }
 
-  return result.length > 0 ? result : ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command', 'transform', 'ai-metric']
+  return result.length > 0 ? result : ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command', 'transform']
 }
 
 /**
@@ -296,25 +294,6 @@ function selectedItemsToDataSource(
           mode: 'timeseries' as const,
         }
       }
-      case 'ai-metric': {
-        const aiField = parts.slice(2).join(':')
-        return {
-          type: 'ai-metric',
-          sourceId: `ai:${parts[1]}`,
-          metricId: aiField,
-          aiGroup: parts[1],
-          timeRange: 1,
-          limit: 50,
-          aggregate: 'raw',
-          params: { includeRawPoints: true },
-          transform: 'raw',
-          // Unified fields
-          source: 'ai' as const,
-          id: parts[1],
-          field: aiField,
-          mode: 'timeseries' as const,
-        }
-      }
       default:
         return undefined
     }
@@ -402,16 +381,6 @@ function selectedItemsToDataSource(
         })
         break
       }
-      case 'ai-metric': {
-        const aiField = parts.slice(2).join(':')
-        result.push({
-          type: 'ai-metric', sourceId: `ai:${parts[1]}`, metricId: aiField, aiGroup: parts[1],
-          timeRange: 1, limit: 50, aggregate: 'raw',
-          params: { includeRawPoints: true }, transform: 'raw',
-          source: 'ai' as const, id: parts[1], field: aiField, mode: 'timeseries' as const,
-        })
-        break
-      }
     }
   }
 
@@ -477,16 +446,6 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
           items.add(`transform:${dsId}:${dsField}` as SelectedItem)
         }
         break
-      case 'ai-metric':
-        if (dataSource.aiGroup) {
-          items.add(`ai-metric:${dataSource.aiGroup}:${dsField ?? dataSource.metricId ?? 'value'}` as SelectedItem)
-        } else if (dsId?.toString().startsWith('ai:')) {
-          const group = dsId.toString().slice(3)
-          items.add(`ai-metric:${group}:${dsField ?? dataSource.metricId ?? 'value'}` as SelectedItem)
-        } else if (dsId && dsField) {
-          items.add(`ai-metric:${dsId}:${dsField}` as SelectedItem)
-        }
-        break
     }
   }
 
@@ -543,10 +502,6 @@ function getSelectedItemLabel(item: SelectedItem, devices: any[], t: (key: strin
       // Format: transform:transformId:field
       return `${t('dataSource.transform')} · ${parts.slice(2).join(':')}`
     }
-    case 'ai-metric': {
-      // Format: ai-metric:group:field
-      return `${t('dataSource.aiMetric')} · ${parts[1]} · ${parts.slice(2).join(':')}`
-    }
     default:
       return item
   }
@@ -582,7 +537,7 @@ export function UnifiedDataSourceConfig({
   // Mobile: full-screen selector state
   const [showMobileSelector, setShowMobileSelector] = useState(false)
 
-  // Unified data sources state (for transform/ai-metric tabs — not available in store)
+  // Unified data sources state (for transform tab — not available in store)
   const [unifiedDataSources, setUnifiedDataSources] = useState<UnifiedDataSourceInfo[]>([])
   const [unifiedSourcesLoading, setUnifiedSourcesLoading] = useState(false)
   const hasFetchedUnifiedSources = useRef(false)
@@ -699,7 +654,7 @@ export function UnifiedDataSourceConfig({
   // Fetch extension + unified data sources when needed
   useEffect(() => {
     const needsExt = availableCategories.some(c => c.id === 'extension' || c.id === 'extension-command')
-    const needsUnified = availableCategories.some(c => c.id === 'transform' || c.id === 'ai-metric')
+    const needsUnified = availableCategories.some(c => c.id === 'transform')
     if (!needsExt && !needsUnified) {
       hasFetchedUnifiedSources.current = false
       return
@@ -763,13 +718,9 @@ export function UnifiedDataSourceConfig({
     return () => { cancelled = true }
   }, [availableCategories])
 
-  // Computed lists for transform and AI metric sources
+  // Computed lists for transform sources
   const transformSources = useMemo(() =>
     unifiedDataSources.filter(s => s.source_type === 'transform'),
-    [unifiedDataSources]
-  )
-  const aiMetricSources = useMemo(() =>
-    unifiedDataSources.filter(s => s.source_type === 'ai'),
     [unifiedDataSources]
   )
 
@@ -1730,79 +1681,6 @@ export function UnifiedDataSourceConfig({
           </div>
         )
 
-      case 'ai-metric':
-        // AI metric sources - flat list layout
-        return (
-          <div className="space-y-1">
-            {unifiedSourcesLoading ? (
-              <div className="p-4 text-center text-muted-foreground text-sm flex items-center justify-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading...
-              </div>
-            ) : aiMetricSources.length === 0 ? (
-              <div className="p-4 text-center text-muted-foreground text-sm">{t('dataSource.noAiMetrics')}</div>
-            ) : (
-              aiMetricSources.map(source => {
-                const itemKey = `ai-metric:${source.source_name}:${source.field}` as SelectedItem
-                const isSelected = selectedItems.has(itemKey)
-                return (
-                  <button
-                    key={source.id}
-                    type="button"
-                    onClick={() => handleSelectItem(itemKey)}
-                    className={cn(
-                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all duration-150',
-                      isSelected
-                        ? 'bg-muted border-border'
-                        : 'bg-card border-border hover:bg-accent hover:border-border'
-                    )}
-                  >
-                    <div className={cn(
-                      'shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-colors',
-                      isSelected
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted text-muted-foreground'
-                    )}>
-                      <Check className={cn(
-                        'h-4 w-4',
-                        isSelected ? 'opacity-100' : 'opacity-0'
-                      )} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className={cn(
-                        'text-sm truncate',
-                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground'
-                      )}>
-                        {source.source_display_name} · {source.field_display_name}
-                      </div>
-                      <div className={cn(textNano, "text-muted-foreground truncate flex items-center gap-1.5")}>
-                        <code className={cn("px-1 py-0.5 bg-muted rounded", textMicro, "font-mono")}>
-                          {source.source_name}:{source.field}
-                        </code>
-                        {source.unit && source.unit !== '-' && (
-                          <>
-                            <span className="text-muted-foreground">·</span>
-                            <span className="text-muted-foreground">{source.unit}</span>
-                          </>
-                        )}
-                        {source.current_value !== undefined && source.current_value !== null && (
-                          <>
-                            <span className="text-muted-foreground">·</span>
-                            <span className="text-foreground">{String(source.current_value)}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    <span className={cn("shrink-0", textNano, "px-1.5 py-0.5 rounded bg-accent-emerald-light text-accent-emerald border border-accent-emerald-light")}>
-                      AI
-                    </span>
-                  </button>
-                )
-              })
-            )}
-          </div>
-        )
-
       default:
         return null
     }
@@ -1860,9 +1738,6 @@ export function UnifiedDataSourceConfig({
               } else if (type === 'transform') {
                 TypeIcon = Workflow
                 iconColor = 'text-accent-indigo'
-              } else if (type === 'ai-metric') {
-                TypeIcon = Brain
-                iconColor = 'text-accent-emerald'
               }
 
               return (

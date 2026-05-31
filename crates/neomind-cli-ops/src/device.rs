@@ -1,9 +1,22 @@
 use anyhow::Result;
 use serde_json::json;
+use std::collections::BTreeMap;
 use crate::types::{BuildMeta, CliResponse};
 use crate::ApiClient;
 
-/// List devices with optional filters
+/// Maximum devices before skipping metric enrichment (token budget protection).
+const MAX_DEVICES_FOR_ENRICHMENT: usize = 50;
+/// Maximum devices shown per type group before truncation.
+const MAX_DEVICES_PER_TYPE: usize = 20;
+
+/// List devices grouped by type with metric schema and example values.
+///
+/// Internal flow:
+/// 1. GET /devices → device list
+/// 2. Group by `device_type` field
+/// 3. For each group, pick 1 online device as example
+/// 4. GET /devices/{id}/current for each example (parallel)
+/// 5. Build grouped response
 pub async fn list_devices(
     client: &ApiClient,
     device_type: Option<&str>,
@@ -17,13 +30,308 @@ pub async fn list_devices(
         path.push_str(&format!("&status={}", s));
     }
     let data = client.get(&path).await?;
-    Ok(CliResponse::success(data, "Devices listed"))
+
+    // Extract device array from API response
+    let devices = extract_device_array(&data);
+    let total = devices.len();
+
+    if total == 0 {
+        return Ok(CliResponse::success(
+            json!({"summary": {"total": 0, "online": 0, "offline": 0, "type_count": 0}, "types": [], "ungrouped": []}),
+            "No devices found",
+        ));
+    }
+
+    // Count online/offline
+    let online_count = devices.iter().filter(|d| {
+        d.get("status").and_then(|v| v.as_str()) == Some("online")
+            || d.get("online").and_then(|v| v.as_bool()) == Some(true)
+    }).count();
+    let offline_count = total - online_count;
+
+    // Group by device_type
+    let mut typed_groups: BTreeMap<String, Vec<serde_json::Value>> = BTreeMap::new();
+    let mut ungrouped_devices: Vec<serde_json::Value> = Vec::new();
+
+    for device in &devices {
+        match device.get("device_type").or_else(|| device.get("type")).and_then(|v| v.as_str()) {
+            Some(dt) if !dt.is_empty() => {
+                typed_groups.entry(dt.to_string()).or_default().push(device.clone());
+            }
+            _ => {
+                ungrouped_devices.push(device.clone());
+            }
+        }
+    }
+
+    // Enrich with example metrics if within budget
+    let enrich = total <= MAX_DEVICES_FOR_ENRICHMENT;
+
+    // Build type groups
+    let mut types_response = Vec::new();
+    if enrich {
+        // Collect example device IDs for parallel fetch
+        let example_ids: Vec<(String, String)> = typed_groups.iter()
+            .filter_map(|(type_name, devs)| {
+                // Pick first online device as example
+                let example = devs.iter().find(|d| {
+                    d.get("status").and_then(|v| v.as_str()) == Some("online")
+                }).or_else(|| devs.first())?;
+                let id = extract_device_id(example)?;
+                Some((type_name.clone(), id))
+            })
+            .collect();
+
+        // Fetch example metrics (sequential, types are few)
+        let example_results = fetch_examples(client, &example_ids).await;
+
+        for (type_name, devs) in &typed_groups {
+            let group_online = devs.iter().filter(|d| {
+                d.get("status").and_then(|v| v.as_str()) == Some("online")
+            }).count();
+
+            let mut type_entry = json!({
+                "type": type_name,
+                "metric_fields": [],
+                "online": group_online,
+                "offline": devs.len() - group_online,
+            });
+
+            // Add example data if available
+            if let Some(example_id) = example_ids.iter().find(|(t, _)| t == type_name).map(|(_, id)| id.as_str()) {
+                if let Some(metrics) = example_results.get(example_id) {
+                    let (field_names, command_names, example_obj) = build_example(example_id, metrics, devs);
+                    type_entry["metric_fields"] = field_names;
+                    type_entry["command_fields"] = command_names;
+                    type_entry["example"] = example_obj;
+                }
+            }
+
+            // Device list for this type
+            type_entry["devices"] = build_device_list(devs);
+            types_response.push(type_entry);
+        }
+    } else {
+        // Too many devices — skip enrichment, just return groups
+        for (type_name, devs) in &typed_groups {
+            let group_online = devs.iter().filter(|d| {
+                d.get("status").and_then(|v| v.as_str()) == Some("online")
+            }).count();
+            types_response.push(json!({
+                "type": type_name,
+                "metric_fields": [],
+                "online": group_online,
+                "offline": devs.len() - group_online,
+                "example": null,
+                "devices": build_device_list(devs),
+            }));
+        }
+    }
+
+    // Build ungrouped entries
+    let ungrouped_response: Vec<serde_json::Value> = if enrich && !ungrouped_devices.is_empty() {
+        let ungrouped_ids: Vec<(String, String)> = ungrouped_devices.iter()
+            .filter_map(|d| extract_device_id(d).map(|id| ("_ungrouped".to_string(), id)))
+            .collect();
+        let ungrouped_results: BTreeMap<String, serde_json::Value> = fetch_examples(client, &ungrouped_ids).await;
+
+        ungrouped_devices.iter().map(|d| {
+            let id = extract_device_id(d).unwrap_or_default();
+            let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let dev_status = d.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let mut entry = json!({
+                "id": id,
+                "name": name,
+                "status": dev_status,
+            });
+            if let Some(metrics) = ungrouped_results.get(&id) {
+                entry["metrics"] = compact_metric_values(metrics);
+            }
+            entry
+        }).collect()
+    } else {
+        ungrouped_devices.iter().map(|d| {
+            let id = extract_device_id(d).unwrap_or_default();
+            let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let dev_status = d.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+            json!({"id": id, "name": name, "status": dev_status})
+        }).collect()
+    };
+
+    let response = json!({
+        "summary": {
+            "total": total,
+            "online": online_count,
+            "offline": offline_count,
+            "type_count": typed_groups.len(),
+        },
+        "types": types_response,
+        "ungrouped": ungrouped_response,
+    });
+
+    Ok(CliResponse::success(response, "Devices listed"))
 }
 
-/// Get device by ID
+/// Fetch example metrics for multiple devices sequentially.
+/// Types are typically 2-5, so sequential is fast enough.
+async fn fetch_examples(
+    client: &ApiClient,
+    ids: &[(String, String)],
+) -> BTreeMap<String, serde_json::Value> {
+    let mut map = BTreeMap::new();
+    for (_, id) in ids {
+        match client.get(&format!("/devices/{}/current", id)).await {
+            Ok(data) => { map.insert(id.clone(), data); }
+            Err(_) => continue,
+        }
+    }
+    map
+}
+
+/// Sanitize a metric value for LLM consumption.
+/// Truncates long strings (likely base64 binary data) to avoid wasting tokens.
+fn sanitize_metric_value(val: &serde_json::Value) -> serde_json::Value {
+    match val {
+        serde_json::Value::String(s) => {
+            if s.len() > 80 {
+                // Truncate and mark as binary/large — LLM doesn't need the full payload
+                let prefix = &s[..s.floor_char_boundary(60)];
+                json!(format!("{}... <truncated, {} bytes total>", prefix, s.len()))
+            } else {
+                val.clone()
+            }
+        }
+        _ => val.clone(),
+    }
+}
+
+/// Sanitize the full /devices/{id}/current response to truncate binary metric values.
+fn sanitize_device_current(data: &serde_json::Value) -> serde_json::Value {
+    let mut result = data.clone();
+    // Navigate to data.metrics and sanitize each metric's value
+    let metrics = result.pointer_mut("/data/metrics");
+    if let Some(m) = metrics.and_then(|v| v.as_object_mut()) {
+        for (_name, info) in m.iter_mut() {
+            if let Some(obj) = info.as_object_mut() {
+                if let Some(val) = obj.get_mut("value") {
+                    *val = sanitize_metric_value(val);
+                }
+            }
+        }
+    }
+    result
+}
+
+/// Extract device array from API response (handles multiple response shapes).
+fn extract_device_array(data: &serde_json::Value) -> Vec<serde_json::Value> {
+    data.get("data")
+        .and_then(|d| d.get("devices"))
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// Extract device ID from a device object.
+fn extract_device_id(device: &serde_json::Value) -> Option<String> {
+    device.get("device_id")
+        .or_else(|| device.get("id"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// Build metric field names, command names, and example object from /current response.
+fn build_example(
+    example_id: &str,
+    current_data: &serde_json::Value,
+    devs: &[serde_json::Value],
+) -> (serde_json::Value, serde_json::Value, serde_json::Value) {
+    let response_data = current_data.get("data").unwrap_or(current_data);
+    let metrics = response_data.get("metrics");
+    let commands = response_data.get("commands");
+
+    let mut field_names = Vec::new();
+    let mut example_values = serde_json::Map::new();
+
+    let example_name = devs.iter()
+        .find(|d| extract_device_id(d).as_deref() == Some(example_id))
+        .and_then(|d| d.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .unwrap_or_default();
+
+    // Extract metric field names + example values
+    if let Some(metrics_obj) = metrics.and_then(|m| m.as_object()) {
+        for (name, info) in metrics_obj {
+            if let Some(val) = info.get("value") {
+                if !val.is_null() {
+                    field_names.push(json!(name));
+                    example_values.insert(name.clone(), sanitize_metric_value(val));
+                }
+            }
+        }
+    }
+
+    // Extract command names
+    let command_names: Vec<serde_json::Value> = commands
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|cmd| cmd.get("name").and_then(|n| n.as_str()).map(|s| json!(s)))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    example_values.insert("id".to_string(), json!(example_id));
+    example_values.insert("name".to_string(), json!(example_name));
+
+    (json!(field_names), json!(command_names), json!(example_values))
+}
+
+/// Extract compact metric values from /current response (for ungrouped devices).
+fn compact_metric_values(current_data: &serde_json::Value) -> serde_json::Value {
+    let metrics = current_data.get("data")
+        .and_then(|d| d.get("metrics"))
+        .or_else(|| current_data.get("metrics"));
+
+    if let Some(metrics_obj) = metrics.and_then(|m| m.as_object()) {
+        let mut values = serde_json::Map::new();
+        for (name, info) in metrics_obj {
+            if let Some(val) = info.get("value") {
+                if !val.is_null() {
+                    values.insert(name.clone(), sanitize_metric_value(val));
+                }
+            }
+        }
+        json!(values)
+    } else {
+        json!({})
+    }
+}
+
+/// Build device list for a type group, truncated to MAX_DEVICES_PER_TYPE.
+fn build_device_list(devs: &[serde_json::Value]) -> serde_json::Value {
+    let total = devs.len();
+    let list: Vec<serde_json::Value> = devs.iter()
+        .take(MAX_DEVICES_PER_TYPE)
+        .map(|d| {
+            let id = extract_device_id(d).unwrap_or_default();
+            let name = d.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let dev_status = d.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+            json!({"id": id, "name": name, "status": dev_status})
+        })
+        .collect();
+
+    let mut result = json!({ "list": list });
+    if total > MAX_DEVICES_PER_TYPE {
+        result["total"] = json!(total);
+        result["truncated"] = json!(true);
+    }
+    result
+}
+
+/// Get device details (metadata + metrics + commands) via /current endpoint.
 pub async fn get_device(client: &ApiClient, id: &str) -> Result<CliResponse> {
-    let data = client.get(&format!("/devices/{}", id)).await?;
-    Ok(CliResponse::success(data, "Device retrieved"))
+    let data = client.get(&format!("/devices/{}/current", id)).await?;
+    let sanitized = sanitize_device_current(&data);
+    Ok(CliResponse::success(sanitized, "Device details retrieved"))
 }
 
 /// Create a new device
@@ -94,7 +402,8 @@ pub async fn delete_device(client: &ApiClient, id: &str) -> Result<CliResponse> 
 /// Get latest metrics for a device
 pub async fn get_latest_metrics(client: &ApiClient, id: &str) -> Result<CliResponse> {
     let data = client.get(&format!("/devices/{}/current", id)).await?;
-    Ok(CliResponse::success(data, "Latest metrics retrieved"))
+    let sanitized = sanitize_device_current(&data);
+    Ok(CliResponse::success(sanitized, "Latest metrics retrieved"))
 }
 
 /// Get historical telemetry data for a device

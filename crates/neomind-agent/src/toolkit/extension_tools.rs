@@ -16,6 +16,37 @@ use neomind_core::extension::*;
 use neomind_core::extension::{DynExtension, ExtensionCommand};
 use neomind_core::tools::ToolCategory;
 
+/// Maximum length for a string value before truncation in extension output.
+const MAX_STRING_VALUE_LEN: usize = 200;
+
+/// Recursively sanitize extension output to truncate large base64/binary strings.
+/// LLM is a text consumer — it doesn't need raw binary payloads, just metadata.
+fn sanitize_extension_output(value: &Value) -> Value {
+    match value {
+        Value::String(s) => {
+            if s.len() > MAX_STRING_VALUE_LEN {
+                let prefix_len = s.floor_char_boundary(80);
+                Value::String(format!(
+                    "{}... <truncated, {} bytes total>",
+                    &s[..prefix_len],
+                    s.len()
+                ))
+            } else {
+                value.clone()
+            }
+        }
+        Value::Object(map) => {
+            let sanitized: serde_json::Map<String, Value> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), sanitize_extension_output(v)))
+                .collect();
+            Value::Object(sanitized)
+        }
+        Value::Array(arr) => Value::Array(arr.iter().map(sanitize_extension_output).collect()),
+        _ => value.clone(),
+    }
+}
+
 /// Extension tool wrapper - exposes an extension command as a Tool.
 ///
 /// This wraps a specific command from an extension, allowing it to be called
@@ -222,9 +253,7 @@ impl ExtensionTool {
                     .collect();
                 Value::Object(normalized)
             }
-            Value::Array(arr) => {
-                Value::Array(arr.iter().map(Self::normalize_image_args).collect())
-            }
+            Value::Array(arr) => Value::Array(arr.iter().map(Self::normalize_image_args).collect()),
             _ => args.clone(),
         }
     }
@@ -267,7 +296,7 @@ impl Tool for ExtensionTool {
 
         match result {
             Ok(inner) => match inner {
-                Ok(value) => Ok(ToolOutput::success(value)),
+                Ok(value) => Ok(ToolOutput::success(sanitize_extension_output(&value))),
                 Err(e) => match e {
                     ExtensionError::CommandNotFound(cmd) => {
                         Ok(ToolOutput::error(format!("Command not found: {}", cmd)))

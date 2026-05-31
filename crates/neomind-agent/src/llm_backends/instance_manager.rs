@@ -362,9 +362,10 @@ impl LlmBackendInstanceManager {
     pub async fn set_active(&self, id: &str) -> Result<(), LlmError> {
         // Atomically verify instance exists via DashMap reference guard.
         // Holding the guard prevents concurrent removal until we finish.
-        let _guard = self.instances.get(id).ok_or_else(|| {
-            LlmError::BackendUnavailable(format!("Backend instance {}", id))
-        })?;
+        let _guard = self
+            .instances
+            .get(id)
+            .ok_or_else(|| LlmError::BackendUnavailable(format!("Backend instance {}", id)))?;
 
         // Clear runtime cache when switching
         self.runtime_cache.clear();
@@ -375,10 +376,9 @@ impl LlmBackendInstanceManager {
             .map_err(|e| LlmError::InvalidInput(e.to_string()))?;
 
         // Update in-memory state
-        let mut active_id = self
-            .active_id
-            .write()
-            .map_err(|_| LlmError::InvalidInput("Failed to acquire active_id write lock".to_string()))?;
+        let mut active_id = self.active_id.write().map_err(|_| {
+            LlmError::InvalidInput("Failed to acquire active_id write lock".to_string())
+        })?;
         *active_id = Some(id.to_string());
 
         Ok(())
@@ -516,10 +516,9 @@ impl LlmBackendInstanceManager {
         }
 
         // Update active_id
-        let mut self_active_id = self
-            .active_id
-            .write()
-            .map_err(|_| LlmError::InvalidInput("Failed to acquire active_id write lock".to_string()))?;
+        let mut self_active_id = self.active_id.write().map_err(|_| {
+            LlmError::InvalidInput("Failed to acquire active_id write lock".to_string())
+        })?;
         *self_active_id = active_id;
 
         Ok(())

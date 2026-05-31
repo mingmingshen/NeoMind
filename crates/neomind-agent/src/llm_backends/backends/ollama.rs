@@ -1003,202 +1003,200 @@ impl LlmRuntime for OllamaRuntime {
                                 while let Some(nl_pos) =
                                     buffer[search_start..].iter().position(|&b| b == b'\n')
                                 {
-                                        let line_end = search_start + nl_pos;
-                                        let line_bytes = &buffer[..line_end];
-                                        let line =
-                                            String::from_utf8_lossy(line_bytes).trim().to_string();
+                                    let line_end = search_start + nl_pos;
+                                    let line_bytes = &buffer[..line_end];
+                                    let line =
+                                        String::from_utf8_lossy(line_bytes).trim().to_string();
 
-                                        buffer = buffer[line_end + 1..].to_vec();
-                                        search_start = 0;
+                                    buffer = buffer[line_end + 1..].to_vec();
+                                    search_start = 0;
 
-                                        if line.is_empty() {
-                                            continue;
-                                        }
+                                    if line.is_empty() {
+                                        continue;
+                                    }
 
-                                        let json_str = if let Some(prefix) =
-                                            line.strip_prefix("data: ")
-                                        {
-                                            prefix
-                                        } else if let Some(prefix) = line.strip_prefix("data:") {
-                                            prefix
-                                        } else {
-                                            &line
-                                        };
+                                    let json_str = if let Some(prefix) = line.strip_prefix("data: ")
+                                    {
+                                        prefix
+                                    } else if let Some(prefix) = line.strip_prefix("data:") {
+                                        prefix
+                                    } else {
+                                        &line
+                                    };
 
-                                        // Debug: log the raw response
-                                        tracing::debug!("Ollama raw response: {}", json_str);
+                                    // Debug: log the raw response
+                                    tracing::debug!("Ollama raw response: {}", json_str);
 
-                                        if let Ok(ollama_chunk) =
-                                            serde_json::from_str::<OllamaStreamResponse>(json_str)
-                                        {
-                                            // Handle native tool calls - preserve JSON format to keep tool ID
-                                            if !ollama_chunk.message.tool_calls.is_empty() {
-                                                // BUSINESS LOG: Tool calls detected
-                                                let tool_names: Vec<&str> = ollama_chunk
+                                    if let Ok(ollama_chunk) =
+                                        serde_json::from_str::<OllamaStreamResponse>(json_str)
+                                    {
+                                        // Handle native tool calls - preserve JSON format to keep tool ID
+                                        if !ollama_chunk.message.tool_calls.is_empty() {
+                                            // BUSINESS LOG: Tool calls detected
+                                            let tool_names: Vec<&str> = ollama_chunk
+                                                .message
+                                                .tool_calls
+                                                .iter()
+                                                .map(|t| t.function.name.as_str())
+                                                .collect();
+                                            tracing::info!(
+                                                "🔧 LLM requested {} tool calls: {}",
+                                                tool_names.len(),
+                                                tool_names.join(", ")
+                                            );
+                                            // Build JSON array to preserve tool IDs (OpenAI-compatible format)
+                                            let tool_calls_json: Vec<serde_json::Value> =
+                                                ollama_chunk
                                                     .message
                                                     .tool_calls
                                                     .iter()
-                                                    .map(|t| t.function.name.as_str())
-                                                    .collect();
-                                                tracing::info!(
-                                                    "🔧 LLM requested {} tool calls: {}",
-                                                    tool_names.len(),
-                                                    tool_names.join(", ")
-                                                );
-                                                // Build JSON array to preserve tool IDs (OpenAI-compatible format)
-                                                let tool_calls_json: Vec<serde_json::Value> =
-                                                    ollama_chunk
-                                                        .message
-                                                        .tool_calls
-                                                        .iter()
-                                                        .map(|tc| {
-                                                            serde_json::json!({
-                                                                "id": tc.id,
-                                                                "name": tc.function.name,
-                                                                "arguments": tc.function.arguments
-                                                            })
+                                                    .map(|tc| {
+                                                        serde_json::json!({
+                                                            "id": tc.id,
+                                                            "name": tc.function.name,
+                                                            "arguments": tc.function.arguments
                                                         })
-                                                        .collect();
-                                                let json_str =
-                                                    serde_json::to_string(&tool_calls_json)
-                                                        .unwrap_or_default();
-                                                tracing::debug!(
-                                                    "Ollama: converted tool_calls to JSON: {}",
-                                                    json_str
-                                                );
-                                                let _ = tx.send(Ok((json_str, false))).await;
+                                                    })
+                                                    .collect();
+                                            let json_str = serde_json::to_string(&tool_calls_json)
+                                                .unwrap_or_default();
+                                            tracing::debug!(
+                                                "Ollama: converted tool_calls to JSON: {}",
+                                                json_str
+                                            );
+                                            let _ = tx.send(Ok((json_str, false))).await;
 
-                                                // CRITICAL FIX: Don't return immediately!
-                                                // Continue consuming the stream until done=true to avoid:
-                                                // 1. Leaving unconsumed data in the HTTP connection
-                                                // 2. Causing issues with subsequent requests
-                                                // 3. Leaving the stream in an inconsistent state
-                                                //
-                                                // Set a flag to ignore any further thinking/content after tool_calls
-                                                // But still process the stream until Ollama sends done=true
-                                                println!(
+                                            // CRITICAL FIX: Don't return immediately!
+                                            // Continue consuming the stream until done=true to avoid:
+                                            // 1. Leaving unconsumed data in the HTTP connection
+                                            // 2. Causing issues with subsequent requests
+                                            // 3. Leaving the stream in an inconsistent state
+                                            //
+                                            // Set a flag to ignore any further thinking/content after tool_calls
+                                            // But still process the stream until Ollama sends done=true
+                                            println!(
                                                     "[ollama.rs] Tool calls sent, will continue consuming stream until done=true (ignoring further content)"
                                                 );
-                                                tool_calls_sent = true;
-                                                // Don't return here - let the stream continue until done=true
-                                                // Continue to the next iteration to process remaining chunks
-                                                continue;
-                                            }
+                                            tool_calls_sent = true;
+                                            // Don't return here - let the stream continue until done=true
+                                            // Continue to the next iteration to process remaining chunks
+                                            continue;
+                                        }
 
-                                            // IMPORTANT: Skip processing thinking/content if tool_calls were already sent
-                                            if tool_calls_sent {
-                                                // Skip - don't send any more chunks to the client
-                                            } else if !ollama_chunk.message.thinking.is_empty()
-                                                && !skip_remaining_thinking
-                                            {
-                                                // IMPORTANT: Process content BEFORE checking done flag
-                                                // The final chunk with done=true may still contain content that must be sent
-                                                // CRITICAL FIX: Only send thinking if user requested it AND model supports it
-                                                // qwen3 models generate thinking but we filter it out for performance
+                                        // IMPORTANT: Skip processing thinking/content if tool_calls were already sent
+                                        if tool_calls_sent {
+                                            // Skip - don't send any more chunks to the client
+                                        } else if !ollama_chunk.message.thinking.is_empty()
+                                            && !skip_remaining_thinking
+                                        {
+                                            // IMPORTANT: Process content BEFORE checking done flag
+                                            // The final chunk with done=true may still contain content that must be sent
+                                            // CRITICAL FIX: Only send thinking if user requested it AND model supports it
+                                            // qwen3 models generate thinking but we filter it out for performance
 
-                                                // Track thinking characters for loop detection
-                                                let thinking_content =
-                                                    &ollama_chunk.message.thinking;
-                                                thinking_chars += thinking_content.chars().count();
-                                                total_chars += thinking_content.chars().count();
+                                            // Track thinking characters for loop detection
+                                            let thinking_content = &ollama_chunk.message.thinking;
+                                            thinking_chars += thinking_content.chars().count();
+                                            total_chars += thinking_content.chars().count();
 
-                                                // SAFETY CHECK 1: Total characters limit (hard cutoff)
-                                                if total_chars > stream_config.max_total_chars {
-                                                    tracing::error!(
+                                            // SAFETY CHECK 1: Total characters limit (hard cutoff)
+                                            if total_chars > stream_config.max_total_chars {
+                                                tracing::error!(
                                                         "[ollama.rs] CRITICAL: Total chars limit reached ({} > {}). Terminating stream to prevent infinite loop.",
                                                         total_chars,
                                                         stream_config.max_total_chars
                                                     );
-                                                    terminate_early_reason = Some(format!(
-                                                        "Total output limit reached: {} chars",
-                                                        total_chars
-                                                    ));
-                                                    terminate_early = true;
-                                                    break;
-                                                }
+                                                terminate_early_reason = Some(format!(
+                                                    "Total output limit reached: {} chars",
+                                                    total_chars
+                                                ));
+                                                terminate_early = true;
+                                                break;
+                                            }
 
-                                                // Track when thinking started
-                                                if thinking_start_time.is_none() {
-                                                    thinking_start_time = Some(Instant::now());
-                                                }
+                                            // Track when thinking started
+                                            if thinking_start_time.is_none() {
+                                                thinking_start_time = Some(Instant::now());
+                                            }
 
-                                                // Check if thinking has gone on too long
-                                                if let Some(start) = thinking_start_time {
-                                                    if start.elapsed()
-                                                        > stream_config.max_thinking_time()
-                                                        && !skip_remaining_thinking
-                                                    {
-                                                        tracing::warn!(
+                                            // Check if thinking has gone on too long
+                                            if let Some(start) = thinking_start_time {
+                                                if start.elapsed()
+                                                    > stream_config.max_thinking_time()
+                                                    && !skip_remaining_thinking
+                                                {
+                                                    tracing::warn!(
                                                         "[ollama.rs] Thinking timeout ({:?} elapsed, {} chars). Skipping remaining thinking, waiting for content.",
                                                         start.elapsed(),
                                                         thinking_chars
                                                     );
-                                                        // Skip future thinking chunks but continue stream for content
-                                                        skip_remaining_thinking = true;
-                                                        thinking_skip_start = Some(Instant::now());
-                                                    }
+                                                    // Skip future thinking chunks but continue stream for content
+                                                    skip_remaining_thinking = true;
+                                                    thinking_skip_start = Some(Instant::now());
                                                 }
+                                            }
 
-                                                // If thinking was skipped but model keeps producing thinking for too long, terminate
-                                                if skip_remaining_thinking {
-                                                    if let Some(skip_start) = thinking_skip_start {
-                                                        if skip_start.elapsed() > Duration::from_secs(180) {
-                                                            tracing::warn!(
-                                                                "[ollama.rs] Model still producing thinking 180s after timeout. Terminating stream."
-                                                            );
-                                                            terminate_early = true;
-                                                            terminate_early_reason = Some("Thinking timeout - model stuck in thinking loop".to_string());
-                                                        }
-                                                    }
-                                                }
-
-                                                // Detect consecutive identical thinking chunks (model stuck in loop)
-                                                if thinking_content == &last_thinking_chunk {
-                                                    consecutive_same_thinking += 1;
-                                                    if consecutive_same_thinking
-                                                        > stream_config.max_thinking_loop
+                                            // If thinking was skipped but model keeps producing thinking for too long, terminate
+                                            if skip_remaining_thinking {
+                                                if let Some(skip_start) = thinking_skip_start {
+                                                    if skip_start.elapsed()
+                                                        > Duration::from_secs(180)
                                                     {
                                                         tracing::warn!(
+                                                                "[ollama.rs] Model still producing thinking 180s after timeout. Terminating stream."
+                                                            );
+                                                        terminate_early = true;
+                                                        terminate_early_reason = Some("Thinking timeout - model stuck in thinking loop".to_string());
+                                                    }
+                                                }
+                                            }
+
+                                            // Detect consecutive identical thinking chunks (model stuck in loop)
+                                            if thinking_content == &last_thinking_chunk {
+                                                consecutive_same_thinking += 1;
+                                                if consecutive_same_thinking
+                                                    > stream_config.max_thinking_loop
+                                                {
+                                                    tracing::warn!(
                                                             "[ollama.rs] Model stuck in thinking loop ({} identical chunks: \"{}\"). Skipping remaining thinking, waiting for content.",
                                                             consecutive_same_thinking,
                                                             thinking_content
                                                         );
-                                                        // Skip future thinking chunks but continue stream for content
-                                                        if !skip_remaining_thinking {
-                                                            skip_remaining_thinking = true;
-                                                            thinking_skip_start = Some(Instant::now());
-                                                        }
-                                                    }
-                                                } else {
-                                                    consecutive_same_thinking = 0;
-                                                    last_thinking_chunk = thinking_content.clone();
-                                                }
-
-                                                // SAFETY CHECK 2: Detect if model is stuck in thinking loop
-                                                if thinking_chars > stream_config.max_thinking_chars
-                                                {
-                                                    tracing::warn!(
-                                                        "[ollama.rs] Max thinking chars reached ({} > {}). Skipping remaining thinking chunks, waiting for content.",
-                                                        thinking_chars,
-                                                        stream_config.max_thinking_chars
-                                                    );
                                                     // Skip future thinking chunks but continue stream for content
                                                     if !skip_remaining_thinking {
                                                         skip_remaining_thinking = true;
                                                         thinking_skip_start = Some(Instant::now());
                                                     }
                                                 }
+                                            } else {
+                                                consecutive_same_thinking = 0;
+                                                last_thinking_chunk = thinking_content.clone();
+                                            }
 
-                                                if should_send_thinking {
-                                                    let _ = tx
-                                                        .send(Ok((
-                                                            ollama_chunk.message.thinking.clone(),
-                                                            true,
-                                                        )))
-                                                        .await;
-                                                } else {
-                                                    // Skip thinking content - model generated it but we don't want it
-                                                    tracing::debug!(
+                                            // SAFETY CHECK 2: Detect if model is stuck in thinking loop
+                                            if thinking_chars > stream_config.max_thinking_chars {
+                                                tracing::warn!(
+                                                        "[ollama.rs] Max thinking chars reached ({} > {}). Skipping remaining thinking chunks, waiting for content.",
+                                                        thinking_chars,
+                                                        stream_config.max_thinking_chars
+                                                    );
+                                                // Skip future thinking chunks but continue stream for content
+                                                if !skip_remaining_thinking {
+                                                    skip_remaining_thinking = true;
+                                                    thinking_skip_start = Some(Instant::now());
+                                                }
+                                            }
+
+                                            if should_send_thinking {
+                                                let _ = tx
+                                                    .send(Ok((
+                                                        ollama_chunk.message.thinking.clone(),
+                                                        true,
+                                                    )))
+                                                    .await;
+                                            } else {
+                                                // Skip thinking content - model generated it but we don't want it
+                                                tracing::debug!(
                                                         "Ollama generated thinking (len={}, total_thinking={}) but filtering it out (user_requested={:?}, model_supports={})",
                                                         ollama_chunk
                                                             .message
@@ -1209,29 +1207,29 @@ impl LlmRuntime for OllamaRuntime {
                                                         user_requested_thinking,
                                                         model_supports_thinking
                                                     );
-                                                    // Don't send thinking chunks to the client
-                                                }
+                                                // Don't send thinking chunks to the client
                                             }
+                                        }
 
-                                            // Then send response content (final answer)
-                                            // Only process content if tool_calls haven't been sent yet
-                                            if !tool_calls_sent
-                                                && !ollama_chunk.message.content.is_empty()
-                                            {
-                                                let content = &ollama_chunk.message.content;
-                                                // Content from Ollama's message.content is the actual response.
-                                                // Thinking is already separated in message.thinking field.
-                                                total_chars += content.chars().count();
-                                                let _ = tx.send(Ok((content.clone(), false))).await;
-                                            }
+                                        // Then send response content (final answer)
+                                        // Only process content if tool_calls haven't been sent yet
+                                        if !tool_calls_sent
+                                            && !ollama_chunk.message.content.is_empty()
+                                        {
+                                            let content = &ollama_chunk.message.content;
+                                            // Content from Ollama's message.content is the actual response.
+                                            // Thinking is already separated in message.thinking field.
+                                            total_chars += content.chars().count();
+                                            let _ = tx.send(Ok((content.clone(), false))).await;
+                                        }
 
-                                            if ollama_chunk.done {
-                                                // BUSINESS LOG: Stream completion summary
-                                                // Use accumulated counters, not final chunk (which is often empty)
-                                                let actual_content_len =
-                                                    total_chars.saturating_sub(thinking_chars);
+                                        if ollama_chunk.done {
+                                            // BUSINESS LOG: Stream completion summary
+                                            // Use accumulated counters, not final chunk (which is often empty)
+                                            let actual_content_len =
+                                                total_chars.saturating_sub(thinking_chars);
 
-                                                tracing::info!(
+                                            tracing::info!(
                                                     "✅ LLM stream complete: thinking={} chars, content={} chars, total_chunks={}, prompt_eval={:?}, eval={:?}",
                                                     thinking_chars,
                                                     actual_content_len,
@@ -1240,37 +1238,37 @@ impl LlmRuntime for OllamaRuntime {
                                                     ollama_chunk.eval_count
                                                 );
 
-                                                // Send token usage as in-band marker before closing
-                                                if let Some(prompt_tokens) =
-                                                    ollama_chunk.prompt_eval_count
-                                                {
-                                                    let _ = tx
-                                                        .send(Ok((
-                                                            format!(
-                                                                "\n__NEOMIND_TOKEN_PROMPT:{}__",
-                                                                prompt_tokens
-                                                            ),
-                                                            false,
-                                                        )))
-                                                        .await;
-                                                }
+                                            // Send token usage as in-band marker before closing
+                                            if let Some(prompt_tokens) =
+                                                ollama_chunk.prompt_eval_count
+                                            {
+                                                let _ = tx
+                                                    .send(Ok((
+                                                        format!(
+                                                            "\n__NEOMIND_TOKEN_PROMPT:{}__",
+                                                            prompt_tokens
+                                                        ),
+                                                        false,
+                                                    )))
+                                                    .await;
+                                            }
 
-                                                // Warn if no content was generated (possible token budget issue)
-                                                if actual_content_len == 0 && tool_calls_sent {
-                                                    tracing::warn!(
+                                            // Warn if no content was generated (possible token budget issue)
+                                            if actual_content_len == 0 && tool_calls_sent {
+                                                tracing::warn!(
                                                         "⚠️  Stream ended with tool calls but no content. Tool execution will follow."
                                                     );
-                                                } else if actual_content_len == 0 {
-                                                    tracing::warn!(
+                                            } else if actual_content_len == 0 {
+                                                tracing::warn!(
                                                         "⚠️  Stream ended with no content! Token budget may have been exhausted during thinking."
                                                     );
-                                                }
-
-                                                _sent_done = true;
-                                                return;
                                             }
+
+                                            _sent_done = true;
+                                            return;
                                         }
                                     }
+                                }
                             }
                             Err(e) => {
                                 let _ = tx.send(Err(LlmError::Network(e.to_string()))).await;

@@ -3,11 +3,11 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::skills;
-use super::tool::{Tool, ToolCategory};
 use super::error::{Result, ToolError};
-use super::ToolOutput;
 use super::object_schema;
+use super::tool::{Tool, ToolCategory};
+use super::ToolOutput;
+use crate::skills;
 
 /// Tool for managing operation guides (skills).
 ///
@@ -90,14 +90,16 @@ Actions:
 - delete: Delete a user skill by ID
 
 Available skill IDs (load these when relevant):
-- device-management: Device CRUD, telemetry, control, write-metric
+- device-onboarding: Device connection, MQTT, webhook, drafts
 - dashboard-management: Dashboard CRUD, widget layout, data binding
 - rule-management: Rule DSL, triggers, actions, CRUD
 - agent-management: AI Agent CRUD, scheduling, execution modes
-- message-management: Message sending, querying
-- transform-management: Data transform CRUD
-- extension-management: Extension list, enable/disable
-- system-info: System status, LLM backends
+- message-management: Message sending, channel configuration
+- transform-management: Data transform CRUD, JS code
+- extension-development: Extension development, FFI, build
+- widget-development: Custom widget creation, manifest, bundle
+- connector-management: External MQTT broker connections
+- data-push-management: Data push to external systems
 
 When to load a skill:
 - User asks to create/update/delete any entity → load the relevant skill FIRST

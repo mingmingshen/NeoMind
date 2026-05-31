@@ -380,6 +380,6 @@ neomind dashboard update <DASHBOARD_ID> --components '[{
 | 组件不在组件库中 | IIFE 未赋值到全局 | 检查 `global['{global_name}'] = Component` 与 manifest 一致 |
 | 渲染空白 | 根元素未填满容器 | 外层 div 添加 `width: '100%', height: '100%'` |
 | "保留 ID" 错误 | ID 与内置组件冲突 | 用 `neomind widget list` 查看已有组件，换一个 ID |
-| 数据不显示 | 数据源绑定错误 | 用 `neomind device latest <ID>` 验证指标名 |
+| 数据不显示 | 数据源绑定错误 | 用 `neomind device get <ID>` 验证指标名 |
 | 颜色不对 | CSS 硬编码 | 使用 `var(--color-*)` 变量 |
 | 安装失败 | ZIP 结构错误 | ZIP 根目录必须包含 `manifest.json` + `bundle.js` |

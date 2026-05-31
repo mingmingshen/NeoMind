@@ -1,8 +1,8 @@
 //! Memory management tool for persistent and session-scoped storage.
 
 use async_trait::async_trait;
-use serde_json::Value;
 use neomind_storage::MarkdownMemoryStore;
+use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -12,12 +12,13 @@ use super::ToolOutput;
 
 /// Tool for managing persistent memory across sessions.
 ///
-/// Supports two types of memory:
+/// Supports:
 /// - Persistent: USER.md (user profile), KNOWLEDGE.md (domain knowledge)
-/// - Session-scoped: scratch, notes, todo (temporary files cleared after 7 days)
+/// - Custom files: `custom/{name}.md` (domain-specific knowledge, LLM auto-created)
+/// - Session: `sessions/{id}/notes.md` (multi-step task tracking, 7-day TTL)
 pub struct MemoryTool {
     store: Arc<RwLock<MarkdownMemoryStore>>,
-    session_id: Option<String>,
+    session_id: Arc<RwLock<Option<String>>>,
 }
 
 impl MemoryTool {
@@ -25,13 +26,25 @@ impl MemoryTool {
     pub fn new(store: Arc<RwLock<MarkdownMemoryStore>>) -> Self {
         Self {
             store,
-            session_id: None,
+            session_id: Arc::new(RwLock::new(None)),
         }
     }
 
-    /// Set the session ID for session-scoped operations.
-    pub fn set_session_id(&mut self, session_id: String) {
-        self.session_id = Some(session_id);
+    /// Create a new memory tool with a shared session ID handle.
+    /// This allows the API layer to set the session ID per-request.
+    pub fn with_session_handle(
+        store: Arc<RwLock<MarkdownMemoryStore>>,
+        session_handle: Arc<RwLock<Option<String>>>,
+    ) -> Self {
+        Self {
+            store,
+            session_id: session_handle,
+        }
+    }
+
+    /// Get a handle to set the session ID (call after registration).
+    pub fn session_id_handle(&self) -> Arc<RwLock<Option<String>>> {
+        self.session_id.clone()
     }
 
     /// Get preview text (first 50 chars).
@@ -73,10 +86,21 @@ impl MemoryTool {
     }
 
     /// Validate that session_id is set for session-scoped operations.
-    fn require_session_id(&self) -> Result<&str> {
-        self.session_id.as_ref()
-            .map(|s| s.as_str())
-            .ok_or_else(|| ToolError::Execution("Session ID required for session-scoped operations. Use set_session_id() first.".into()))
+    async fn require_session_id(&self) -> Result<String> {
+        self.session_id
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| {
+                ToolError::Execution(
+                    "Session ID required for session-scoped operations.".into(),
+                )
+            })
+    }
+
+    /// Parse a target string. Returns Ok(Some(name)) for custom:{name}, Ok(None) for built-in targets.
+    fn parse_custom_target(target: &str) -> Option<&str> {
+        target.strip_prefix("custom:")
     }
 }
 
@@ -95,18 +119,19 @@ Actions:
 - remove: Find and remove text from a memory target
 - read: Read the full content of a memory target
 - list: Show overview of all memory targets (chars used, preview)
+- create: Create a new custom memory file (target must be custom:{name})
 
 Targets:
 - user: Persistent user profile and preferences (USER.md)
 - knowledge: System knowledge and domain info (KNOWLEDGE.md)
-- scratch: Temporary session notes (cleared after 7 days)
-- notes: Session-specific notes (cleared after 7 days)
-- todo: Session task list (cleared after 7 days)
+- session: Session-scoped notes for multi-step task tracking (cleared after 7 days)
+- custom:{name}: Domain-specific custom file (e.g., custom:mqtt-setup, custom:device-map). Created with action='create'.
 
 Examples:
 - Add user preference: action='add', target='user', content='Prefers dark mode'
 - Replace in knowledge: action='replace', target='knowledge', old_text='old info', content='new info'
-- Read session notes: action='read', target='notes'
+- Read session notes: action='read', target='session'
+- Create custom file: action='create', target='custom:mqtt-setup', content='Broker at 192.168.1.1:1883...'
 - List all targets: action='list'"##
     }
 
@@ -116,13 +141,12 @@ Examples:
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["add", "replace", "remove", "read", "list"],
+                    "enum": ["add", "replace", "remove", "read", "list", "create"],
                     "description": "The memory action to perform"
                 },
                 "target": {
                     "type": "string",
-                    "enum": ["user", "knowledge", "scratch", "notes", "todo"],
-                    "description": "Which memory target to operate on"
+                    "description": "Which memory target to operate on: 'user', 'knowledge', 'session', or 'custom:{name}'"
                 },
                 "content": {
                     "type": "string",
@@ -151,31 +175,74 @@ Examples:
             .ok_or_else(|| ToolError::InvalidArguments("target is required".into()))?;
 
         match action {
+            "create" => {
+                let content = args["content"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments("content is required for create".into())
+                })?;
+
+                let custom_name = Self::parse_custom_target(target).ok_or_else(|| {
+                    ToolError::InvalidArguments(format!(
+                        "Create action requires target in format 'custom:{{name}}'. Got: '{}'",
+                        target
+                    ))
+                })?;
+
+                let store = self.store.read().await;
+                store
+                    .write_custom_file(custom_name, content)
+                    .map_err(|e| ToolError::Execution(e.to_string()))?;
+
+                Ok(ToolOutput::success(serde_json::json!({
+                    "message": format!("Created custom file '{}' ({} chars)", custom_name, content.len())
+                })))
+            }
             "add" => {
-                let content = args["content"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidArguments("content is required for add".into()))?;
+                let content = args["content"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments("content is required for add".into())
+                })?;
 
                 let store = self.store.read().await;
 
-                let result = match target {
-                    "user" | "knowledge" => {
-                        let existing = store.read_file(target).await?;
-                        let new_content = Self::append_content(&existing, content);
-                        store.write_file(target, &new_content).await?;
-                        format!("Added to {} ({} chars)", target, new_content.len())
+                let result = if let Some(custom_name) = Self::parse_custom_target(target) {
+                    let existing = store
+                        .read_custom_file(custom_name)
+                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    let new_content = Self::append_content(&existing, content);
+                    store
+                        .write_custom_file(custom_name, &new_content)
+                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    format!(
+                        "Added to custom:{} ({} chars)",
+                        custom_name,
+                        new_content.len()
+                    )
+                } else {
+                    match target {
+                        "user" | "knowledge" => {
+                            let existing = store.read_file(target).await?;
+                            let new_content = Self::append_content(&existing, content);
+                            store.write_file(target, &new_content).await?;
+                            format!("Added to {} ({} chars)", target, new_content.len())
+                        }
+                        "session" => {
+                            let session_id = self.require_session_id().await?;
+                            let existing = store.read_session_file(&session_id, "notes").await?;
+                            let new_content = Self::append_content(&existing, content);
+                            store
+                                .write_session_file(&session_id, "notes", &new_content)
+                                .await?;
+                            format!(
+                                "Added to session notes ({} chars)",
+                                new_content.len()
+                            )
+                        }
+                        _ => {
+                            return Err(ToolError::InvalidArguments(format!(
+                                "Invalid target '{}'. Must be one of: user, knowledge, session, custom:{{name}}",
+                                target
+                            )))
+                        }
                     }
-                    "scratch" | "notes" | "todo" => {
-                        let session_id = self.require_session_id()?;
-                        let existing = store.read_session_file(session_id, target).await?;
-                        let new_content = Self::append_content(&existing, content);
-                        store.write_session_file(session_id, target, &new_content).await?;
-                        format!("Added to session {} ({} chars)", target, new_content.len())
-                    }
-                    _ => return Err(ToolError::InvalidArguments(format!(
-                        "Invalid target '{}'. Must be one of: user, knowledge, scratch, notes, todo",
-                        target
-                    )))
                 };
 
                 Ok(ToolOutput::success(serde_json::json!({
@@ -183,33 +250,55 @@ Examples:
                 })))
             }
             "replace" => {
-                let content = args["content"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidArguments("content is required for replace".into()))?;
-                let old_text = args["old_text"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidArguments("old_text is required for replace".into()))?;
+                let content = args["content"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments("content is required for replace".into())
+                })?;
+                let old_text = args["old_text"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments("old_text is required for replace".into())
+                })?;
 
                 let store = self.store.read().await;
 
-                let result = match target {
-                    "user" | "knowledge" => {
-                        let existing = store.read_file(target).await?;
-                        let new_content = Self::replace_in_content(&existing, old_text, content)?;
-                        store.write_file(target, &new_content).await?;
-                        format!("Replaced in {} ({} chars)", target, new_content.len())
+                let result = if let Some(custom_name) = Self::parse_custom_target(target) {
+                    let existing = store
+                        .read_custom_file(custom_name)
+                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    let new_content = Self::replace_in_content(&existing, old_text, content)?;
+                    store
+                        .write_custom_file(custom_name, &new_content)
+                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    format!(
+                        "Replaced in custom:{} ({} chars)",
+                        custom_name,
+                        new_content.len()
+                    )
+                } else {
+                    match target {
+                        "user" | "knowledge" => {
+                            let existing = store.read_file(target).await?;
+                            let new_content = Self::replace_in_content(&existing, old_text, content)?;
+                            store.write_file(target, &new_content).await?;
+                            format!("Replaced in {} ({} chars)", target, new_content.len())
+                        }
+                        "session" => {
+                            let session_id = self.require_session_id().await?;
+                            let existing = store.read_session_file(&session_id, "notes").await?;
+                            let new_content = Self::replace_in_content(&existing, old_text, content)?;
+                            store
+                                .write_session_file(&session_id, "notes", &new_content)
+                                .await?;
+                            format!(
+                                "Replaced in session notes ({} chars)",
+                                new_content.len()
+                            )
+                        }
+                        _ => {
+                            return Err(ToolError::InvalidArguments(format!(
+                                "Invalid target '{}'. Must be one of: user, knowledge, session, custom:{{name}}",
+                                target
+                            )))
+                        }
                     }
-                    "scratch" | "notes" | "todo" => {
-                        let session_id = self.require_session_id()?;
-                        let existing = store.read_session_file(session_id, target).await?;
-                        let new_content = Self::replace_in_content(&existing, old_text, content)?;
-                        store.write_session_file(session_id, target, &new_content).await?;
-                        format!("Replaced in session {} ({} chars)", target, new_content.len())
-                    }
-                    _ => return Err(ToolError::InvalidArguments(format!(
-                        "Invalid target '{}'. Must be one of: user, knowledge, scratch, notes, todo",
-                        target
-                    )))
                 };
 
                 Ok(ToolOutput::success(serde_json::json!({
@@ -217,30 +306,52 @@ Examples:
                 })))
             }
             "remove" => {
-                let old_text = args["old_text"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidArguments("old_text is required for remove".into()))?;
+                let old_text = args["old_text"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments("old_text is required for remove".into())
+                })?;
 
                 let store = self.store.read().await;
 
-                let result = match target {
-                    "user" | "knowledge" => {
-                        let existing = store.read_file(target).await?;
-                        let new_content = Self::remove_from_content(&existing, old_text)?;
-                        store.write_file(target, &new_content).await?;
-                        format!("Removed from {} ({} chars)", target, new_content.len())
+                let result = if let Some(custom_name) = Self::parse_custom_target(target) {
+                    let existing = store
+                        .read_custom_file(custom_name)
+                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    let new_content = Self::remove_from_content(&existing, old_text)?;
+                    store
+                        .write_custom_file(custom_name, &new_content)
+                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    format!(
+                        "Removed from custom:{} ({} chars)",
+                        custom_name,
+                        new_content.len()
+                    )
+                } else {
+                    match target {
+                        "user" | "knowledge" => {
+                            let existing = store.read_file(target).await?;
+                            let new_content = Self::remove_from_content(&existing, old_text)?;
+                            store.write_file(target, &new_content).await?;
+                            format!("Removed from {} ({} chars)", target, new_content.len())
+                        }
+                        "session" => {
+                            let session_id = self.require_session_id().await?;
+                            let existing = store.read_session_file(&session_id, "notes").await?;
+                            let new_content = Self::remove_from_content(&existing, old_text)?;
+                            store
+                                .write_session_file(&session_id, "notes", &new_content)
+                                .await?;
+                            format!(
+                                "Removed from session notes ({} chars)",
+                                new_content.len()
+                            )
+                        }
+                        _ => {
+                            return Err(ToolError::InvalidArguments(format!(
+                                "Invalid target '{}'. Must be one of: user, knowledge, session, custom:{{name}}",
+                                target
+                            )))
+                        }
                     }
-                    "scratch" | "notes" | "todo" => {
-                        let session_id = self.require_session_id()?;
-                        let existing = store.read_session_file(session_id, target).await?;
-                        let new_content = Self::remove_from_content(&existing, old_text)?;
-                        store.write_session_file(session_id, target, &new_content).await?;
-                        format!("Removed from session {} ({} chars)", target, new_content.len())
-                    }
-                    _ => return Err(ToolError::InvalidArguments(format!(
-                        "Invalid target '{}'. Must be one of: user, knowledge, scratch, notes, todo",
-                        target
-                    )))
                 };
 
                 Ok(ToolOutput::success(serde_json::json!({
@@ -250,28 +361,41 @@ Examples:
             "read" => {
                 let store = self.store.read().await;
 
-                let result = match target {
-                    "user" | "knowledge" => {
-                        let content = store.read_file(target).await?;
-                        serde_json::json!({
-                            "target": target,
-                            "content": content,
-                            "chars": content.len()
-                        })
+                let result = if let Some(custom_name) = Self::parse_custom_target(target) {
+                    let content = store
+                        .read_custom_file(custom_name)
+                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    serde_json::json!({
+                        "target": target,
+                        "content": content,
+                        "chars": content.len()
+                    })
+                } else {
+                    match target {
+                        "user" | "knowledge" => {
+                            let content = store.read_file(target).await?;
+                            serde_json::json!({
+                                "target": target,
+                                "content": content,
+                                "chars": content.len()
+                            })
+                        }
+                        "session" => {
+                            let session_id = self.require_session_id().await?;
+                            let content = store.read_session_file(&session_id, "notes").await?;
+                            serde_json::json!({
+                                "target": "session",
+                                "content": content,
+                                "chars": content.len()
+                            })
+                        }
+                        _ => {
+                            return Err(ToolError::InvalidArguments(format!(
+                                "Invalid target '{}'. Must be one of: user, knowledge, session, custom:{{name}}",
+                                target
+                            )))
+                        }
                     }
-                    "scratch" | "notes" | "todo" => {
-                        let session_id = self.require_session_id()?;
-                        let content = store.read_session_file(session_id, target).await?;
-                        serde_json::json!({
-                            "target": target,
-                            "content": content,
-                            "chars": content.len()
-                        })
-                    }
-                    _ => return Err(ToolError::InvalidArguments(format!(
-                        "Invalid target '{}'. Must be one of: user, knowledge, scratch, notes, todo",
-                        target
-                    )))
                 };
 
                 Ok(ToolOutput::success(result))
@@ -294,32 +418,42 @@ Examples:
                     }
                 });
 
-                // Read session files if session_id is set
-                if let Some(ref session_id) = self.session_id {
-                    let scratch_content = store.read_session_file(session_id, "scratch").await?;
-                    let notes_content = store.read_session_file(session_id, "notes").await?;
-                    let todo_content = store.read_session_file(session_id, "todo").await?;
-
-                    result["scratch"] = serde_json::json!({
-                        "chars": scratch_content.len(),
-                        "preview": Self::get_preview(&scratch_content)
-                    });
-                    result["notes"] = serde_json::json!({
+                // Read session notes if session_id is set
+                if let Some(session_id) = self.session_id.read().await.clone() {
+                    let notes_content = store.read_session_file(&session_id, "notes").await?;
+                    result["session"] = serde_json::json!({
                         "chars": notes_content.len(),
                         "preview": Self::get_preview(&notes_content)
                     });
-                    result["todo"] = serde_json::json!({
-                        "chars": todo_content.len(),
-                        "preview": Self::get_preview(&todo_content)
-                    });
+                }
+
+                // Read custom files
+                let custom_files = store
+                    .list_custom_files()
+                    .map_err(|e| ToolError::Execution(e.to_string()))?;
+                if !custom_files.is_empty() {
+                    let mut customs = serde_json::Map::new();
+                    for (name, chars) in &custom_files {
+                        let content = store
+                            .read_custom_file(name)
+                            .map_err(|e| ToolError::Execution(e.to_string()))?;
+                        customs.insert(
+                            format!("custom:{}", name),
+                            serde_json::json!({
+                                "chars": chars,
+                                "preview": Self::get_preview(&content)
+                            }),
+                        );
+                    }
+                    result["custom_files"] = Value::Object(customs);
                 }
 
                 Ok(ToolOutput::success(result))
             }
             _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action '{}'. Available actions: add, replace, remove, read, list",
+                "Unknown action '{}'. Available actions: add, replace, remove, read, list, create",
                 action
-            )))
+            ))),
         }
     }
 }

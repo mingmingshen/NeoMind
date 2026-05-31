@@ -258,8 +258,8 @@ impl AgentExecutor {
         // Execute the actual query if time_series_storage is available
         let query_result = if let Some(storage) = &self.time_series_storage {
             let default_secs = 24 * 3600; // 24h
-            let range_secs = crate::toolkit::time_utils::parse_time_range(time_spec)
-                .unwrap_or(default_secs);
+            let range_secs =
+                crate::toolkit::time_utils::parse_time_range(time_spec).unwrap_or(default_secs);
             let end_time = chrono::Utc::now().timestamp();
             let start_time = end_time - range_secs;
 
@@ -281,11 +281,17 @@ impl AgentExecutor {
                             metric,
                         );
                         // Cap output size to prevent token overflow in LLM context
-                        let output = serde_json::to_string_pretty(&compressed)
-                            .unwrap_or_else(|_| format!("{} data points retrieved", ts_result.points.len()));
+                        let output =
+                            serde_json::to_string_pretty(&compressed).unwrap_or_else(|_| {
+                                format!("{} data points retrieved", ts_result.points.len())
+                            });
                         if output.chars().count() > 4000 {
                             let truncated: String = output.chars().take(4000).collect();
-                            format!("{}...(truncated, {} points total)", truncated, ts_result.points.len())
+                            format!(
+                                "{}...(truncated, {} points total)",
+                                truncated,
+                                ts_result.points.len()
+                            )
                         } else {
                             output
                         }
@@ -603,7 +609,8 @@ impl AgentExecutor {
 
             // Handle query decisions (e.g., "query:device_id:metric:time_range")
             if decision.action.starts_with("query:") {
-                self.handle_query_decision(agent, decision, &mut actions_executed).await;
+                self.handle_query_decision(agent, decision, &mut actions_executed)
+                    .await;
                 continue;
             }
 

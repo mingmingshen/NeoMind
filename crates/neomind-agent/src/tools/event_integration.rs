@@ -970,7 +970,10 @@ mod tests {
     #[tokio::test]
     async fn test_event_integrated_registry() {
         let registry = ToolRegistryBuilder::new()
-            .with_tool(Arc::new(MockTool::new("shell", "Shell tool for CLI commands")))
+            .with_tool(Arc::new(MockTool::new(
+                "shell",
+                "Shell tool for CLI commands",
+            )))
             .with_tool(Arc::new(MockTool::new("list_devices", "List devices tool")))
             .with_tool(Arc::new(MockTool::new("create_rule", "Create rule tool")))
             .with_tool(Arc::new(MockTool::new("list_rules", "List rules tool")))

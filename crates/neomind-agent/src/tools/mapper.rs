@@ -1116,13 +1116,20 @@ mod tests {
         let args = serde_json::json!({"device": "sensor_1"});
 
         let legacy_names = vec![
-            "device_discover", "list_devices", "get_device_data", "device_query"
+            "device_discover",
+            "list_devices",
+            "get_device_data",
+            "device_query",
         ];
 
         for legacy_name in legacy_names {
             let mapped = map_tool_parameters(legacy_name, &args);
-            assert_eq!(mapped.get("action").unwrap(), "list",
-                "Legacy tool {} should infer action=list", legacy_name);
+            assert_eq!(
+                mapped.get("action").unwrap(),
+                "list",
+                "Legacy tool {} should infer action=list",
+                legacy_name
+            );
         }
 
         let mapped = map_tool_parameters("device_analyze", &args);

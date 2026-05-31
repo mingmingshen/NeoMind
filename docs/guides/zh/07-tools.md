@@ -21,7 +21,6 @@ crates/neomind-agent/src/
 │   ├── shell.rs                        # Shell工具（neomind CLI执行）
 │   ├── skill_tool.rs                   # 技能管理工具
 │   ├── extension_tools.rs              # 扩展工具生成器和执行器
-│   ├── ai_metric.rs                    # AI指标查询工具
 │   ├── session_search.rs              # 会话历史搜索工具
 │   ├── time_utils.rs                  # 时间范围解析工具
 │   └── error.rs                        # 工具错误类型
@@ -232,17 +231,6 @@ pub struct ExtensionToolGenerator;
 
 // 从扩展清单动态生成工具定义
 // 通过扩展运行器执行扩展工具调用
-```
-
-### AI 指标工具
-
-```rust
-/// AI 指标查询工具
-pub struct AiMetricTool;
-pub struct AiMetricsRegistry;
-
-// 查询设备和扩展的时序指标
-// 输入: { "data_source_id": "device:sensor_1:temperature", "time_range": "1h" }
 ```
 
 ### 会话搜索工具

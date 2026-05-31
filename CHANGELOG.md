@@ -9,11 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`web_fetch` tool** — AI agent can now fetch URL content directly. Returns cleaned text (HTML stripped) or raw content with configurable max length (default 5000, max 50000 chars). Security: SSRF protection blocks private/local IPs (localhost, 10.x, 192.168.x, 172.16-31.x, IPv6 unique local, link-local, IPv4-mapped IPv6), validates redirect targets, enforces 15s timeout and 1MB response limit. Content-Type media type parsing prevents binary bypass via parameter injection
+- **`file_write` tool** — AI agent can create or overwrite files within allowed directories (data dir + `NEOMIND_ALLOWED_WRITE_DIRS` env var). Atomic writes via temp-file-then-rename. Supports all text file types (.rs, .toml, .py, .js, .json, .md, .conf, etc.). Blocks binary extensions (.so/.dll/.exe/.sys) and .env files. Content limit: 1MB. Auto-creates parent directories by default. Preserves file permissions on overwrite
+- **`file_edit` tool** — AI agent can perform precise string replacement in existing files. Parameters: `old_string`/`new_string` with optional `replace_all`. CRLF/LF line ending normalization for cross-platform matching. File size limit: 10MB. Error messages include file preview for context when old_string not found. Atomic write preserves file permissions
+- **`path_validator` module** — Shared security layer for file tools. Symlink escape prevention via `find_existing_ancestor()` + canonicalization. Path traversal (`..`) detection at component level. `NEOMIND_ALLOWED_WRITE_DIRS` env var for extension development directories
+- **Memory tool 2-file API** — New file-based memory endpoints: `GET/PUT /memory/file/{category}` for direct file read/write. Memory tool now supports custom category files (`custom/{name}.md`) and per-request session binding via shared handle
+- **Device list grouped by type** — `neomind device list` now groups devices by `device_type`, shows metric schema with example values from online devices (parallel enrichment), and truncates large lists (>50 devices) for token budget protection
+- **LLM backend create via CLI** — `neomind llm create` registers new LLM backend instances from the command line
+- **Thinking model loop detection** — Ollama backend detects and cuts off runaway thinking (loops, excessive length) for qwen3/deepseek-r1 models
+
+### Changed
+
+- **Tool prompt architecture** — `builder.rs` now includes structured tool descriptions (Type 1: shell, Type 2: skill, Type 3: file/web) with parameter docs, security notes, and usage examples in the system prompt. `TOOL_STRATEGY` section guides LLM on when to use each tool type
+- **Memory tool actions expanded** — Added `read_file`, `write_file`, `list_files` actions for direct file manipulation alongside existing category-based actions
+- **Code formatting cleanup** — `cargo fmt` applied across agent, storage, API crates for consistent formatting
+
+### Removed
+
+- **`think` tool** — Removed the explicit thinking tool (338 lines). Thinking models now handle reasoning internally via streaming. The `think` namespace removed from LLM tool routing and staged agent filter
+
 ### Fixed
 
 - **Custom Layer background image UI redesign** — Merged awkward two-field layout (URL + separate file upload) into a single inline field with URL input + Upload button, matching ImageSourceField pattern
 - **LayerEditorDialog save button i18n** — Added missing `common.save` translation key so save button shows localized text instead of raw key
 - **Missing zh translations for spatial config** — Added `backgroundType`, `backgroundImageUrl`, `layerItemBinding`, `manageLayerItems` and related keys to Chinese locale
+
+---
+
+## [v0.8.3] - 2026-05-31
+
+### Removed
+
+- **`ai_metric` tool** — Removed the AI Metric tool and all related infrastructure. This tool allowed LLM agents to write custom time-series metrics (`ai:{group}:{field}`), but had no reliable use case — the Memory system already covers cross-session knowledge persistence. Full cleanup across backend, frontend, i18n, and docs:
+  - **Rust**: Deleted `crates/neomind-agent/src/toolkit/ai_metric.rs` (614 lines). Removed `AiMetricsRegistry` from `AgentState`, `init_tools()`, `refresh_extension_tools()`. Removed `DataSourceType::Ai` enum variant and `DataSourceId::ai()` from `neomind-core`. Removed `collect_ai_sources()` from data handler. Removed `"ai:"` from `KNOWN_PREFIXES` in telemetry migration
+  - **Frontend**: Removed `'ai-metric'` from `DataSourceType` union, `AIMetricDataSource` interface, `aiGroup` field. Cleaned all 6 config schema files, `UnifiedDataSourceConfig`, `DataSourceIndicator`, `DualModeSourceField`, `ComponentConfigBuilder`, `componentDataApi`
+  - **i18n**: Removed `aiMetric`, `aiMetricDesc`, `noAiMetrics`, `aiGroupPlaceholder` from en/zh locales
+  - **Docs**: Removed ai_metric references from agent (en/zh), tools (en/zh), storage (en/zh), and web dashboard (en/zh) documentation
+
+- **`session_search` tool** — Removed conversation history search tool. LLM already has full conversation context in its prompt window, making self-search redundant. Memory system handles cross-session knowledge persistence. Deleted `crates/neomind-agent/src/toolkit/session_search.rs` (127 lines)
 
 ---
 

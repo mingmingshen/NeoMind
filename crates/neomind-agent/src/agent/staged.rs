@@ -375,8 +375,11 @@ impl Default for ToolFilter {
             always_include: {
                 let mut set = HashSet::new();
                 // System tools are always available
-                set.insert("think".to_string());
                 set.insert("tool_search".to_string());
+                // File and web tools should always be available for agent workflows
+                set.insert("web_fetch".to_string());
+                set.insert("file_write".to_string());
+                set.insert("file_edit".to_string());
                 set
             },
         }
@@ -413,7 +416,7 @@ impl ToolFilter {
                 "workflow"
             } else if name.contains("data") || name.contains("query") || name.contains("metrics") {
                 "data"
-            } else if name == "think" || name == "tool_search" {
+            } else if name == "tool_search" {
                 "system"
             } else {
                 "general"
@@ -552,7 +555,6 @@ mod tests {
         let filter = ToolFilter::default();
 
         let all_tools = vec![
-            json!({"name": "think", "namespace": "system"}),
             json!({"name": "tool_search", "namespace": "system"}),
             json!({"name": "list_devices", "namespace": "device"}),
             json!({"name": "shell", "namespace": "device"}),

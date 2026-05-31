@@ -27,8 +27,8 @@ pub fn parse_time_range(input: &str) -> Option<i64> {
         "h" => num * 3600,
         "d" => num * 86400,
         "w" => num * 7 * 86400,
-        "m" => num * 30 * 86400,            // m = months
-        "mo" => num * 30 * 86400,           // mo = months (explicit)
+        "m" => num * 30 * 86400,  // m = months
+        "mo" => num * 30 * 86400, // mo = months (explicit)
         _ => return None,
     })
 }

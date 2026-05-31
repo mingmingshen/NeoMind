@@ -231,12 +231,18 @@ mod tests {
         vec![
             ("device_list".to_string(), "List all devices".to_string()),
             ("device_get".to_string(), "Get device details".to_string()),
-            ("device_create".to_string(), "Create a new device".to_string()),
+            (
+                "device_create".to_string(),
+                "Create a new device".to_string(),
+            ),
             ("device_update".to_string(), "Update device".to_string()),
             ("device_delete".to_string(), "Delete device".to_string()),
             ("rule_list".to_string(), "List automation rules".to_string()),
             ("rule_get".to_string(), "Get rule details".to_string()),
-            ("rule_create".to_string(), "Create automation rule".to_string()),
+            (
+                "rule_create".to_string(),
+                "Create automation rule".to_string(),
+            ),
             ("rule_enable".to_string(), "Enable a rule".to_string()),
             ("rule_disable".to_string(), "Disable a rule".to_string()),
             ("workflow_list".to_string(), "List workflows".to_string()),
@@ -430,8 +436,10 @@ mod tests {
         let tool = create_test_tool();
         let results = tool.search("DEVICE");
         assert!(!results.is_empty());
-        assert!(results.iter().all(|r| r.name.to_lowercase().contains("device") ||
-                                     r.description.to_lowercase().contains("device")));
+        assert!(results
+            .iter()
+            .all(|r| r.name.to_lowercase().contains("device")
+                || r.description.to_lowercase().contains("device")));
     }
 
     #[test]
@@ -439,13 +447,25 @@ mod tests {
         let tool = create_test_tool();
         let results = tool.search("device");
         // Name matches should come before description matches
-        let name_matches: Vec<_> = results.iter().filter(|r| r.matched_field == "name").collect();
-        let desc_matches: Vec<_> = results.iter().filter(|r| r.matched_field == "description").collect();
+        let name_matches: Vec<_> = results
+            .iter()
+            .filter(|r| r.matched_field == "name")
+            .collect();
+        let desc_matches: Vec<_> = results
+            .iter()
+            .filter(|r| r.matched_field == "description")
+            .collect();
 
         // All name matches should come before description matches
         if !name_matches.is_empty() && !desc_matches.is_empty() {
-            let last_name_idx = results.iter().position(|r| r.matched_field == "name").unwrap();
-            let first_desc_idx = results.iter().position(|r| r.matched_field == "description").unwrap();
+            let last_name_idx = results
+                .iter()
+                .position(|r| r.matched_field == "name")
+                .unwrap();
+            let first_desc_idx = results
+                .iter()
+                .position(|r| r.matched_field == "description")
+                .unwrap();
             assert!(last_name_idx < first_desc_idx);
         }
     }
@@ -457,7 +477,11 @@ mod tests {
         let tool = ToolSearchTool::new(tool_names, tools);
 
         let results = tool.search("e"); // Should match almost everything
-        assert!(results.len() <= 10, "Results should be limited to 10, got {}", results.len());
+        assert!(
+            results.len() <= 10,
+            "Results should be limited to 10, got {}",
+            results.len()
+        );
     }
 
     #[test]
@@ -469,23 +493,21 @@ mod tests {
 
     #[test]
     fn test_from_definitions() {
-        let definitions = vec![
-            ToolDefinition {
-                name: "test_tool".to_string(),
-                description: "A test tool".to_string(),
-                parameters: serde_json::json!({}),
-                example: None,
-                category: ToolCategory::System,
-                scenarios: vec![],
-                relationships: ToolRelationships::default(),
-                deprecated: false,
-                replaced_by: None,
-                version: "1.0.0".to_string(),
-                examples: vec![],
-                response_format: None,
-                namespace: None,
-            },
-        ];
+        let definitions = vec![ToolDefinition {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+            parameters: serde_json::json!({}),
+            example: None,
+            category: ToolCategory::System,
+            scenarios: vec![],
+            relationships: ToolRelationships::default(),
+            deprecated: false,
+            replaced_by: None,
+            version: "1.0.0".to_string(),
+            examples: vec![],
+            response_format: None,
+            namespace: None,
+        }];
 
         let tool = ToolSearchTool::from_definitions(&definitions);
         assert_eq!(tool.tool_names.len(), 1);
@@ -561,7 +583,8 @@ mod tests {
         let result = tool.execute(args).await.unwrap();
         assert!(result.success);
         // Should only return device tools with "list"
-        let tools_result: Vec<ToolSearchResult> = serde_json::from_value(result.data["tools"].clone()).unwrap();
+        let tools_result: Vec<ToolSearchResult> =
+            serde_json::from_value(result.data["tools"].clone()).unwrap();
         assert!(!tools_result.is_empty());
         assert!(tools_result.iter().all(|t| t.name.starts_with("device")));
     }
@@ -613,10 +636,16 @@ mod tests {
     #[test]
     fn test_search_with_special_characters() {
         let tool = ToolSearchTool::new(
-            vec!["tool-with-dash".to_string(), "tool_with_underscore".to_string()],
+            vec![
+                "tool-with-dash".to_string(),
+                "tool_with_underscore".to_string(),
+            ],
             vec![
                 ("tool-with-dash".to_string(), "Tool with dash".to_string()),
-                ("tool_with_underscore".to_string(), "Tool with underscore".to_string()),
+                (
+                    "tool_with_underscore".to_string(),
+                    "Tool with underscore".to_string(),
+                ),
             ],
         );
 
@@ -628,10 +657,17 @@ mod tests {
     #[test]
     fn test_search_exact_name_match_priority() {
         let tool = ToolSearchTool::new(
-            vec!["device".to_string(), "device_controller".to_string(), "other_tool".to_string()],
+            vec![
+                "device".to_string(),
+                "device_controller".to_string(),
+                "other_tool".to_string(),
+            ],
             vec![
                 ("device".to_string(), "Main device tool".to_string()),
-                ("device_controller".to_string(), "Controller for devices".to_string()),
+                (
+                    "device_controller".to_string(),
+                    "Controller for devices".to_string(),
+                ),
                 ("other_tool".to_string(), "Manages device state".to_string()),
             ],
         );
@@ -648,7 +684,9 @@ mod tests {
         let results = tool.search("control");
         // Should match tools with "control" in name/description
         assert!(!results.is_empty());
-        assert!(results.iter().any(|r| r.name.contains("control") || r.description.contains("control")));
+        assert!(results
+            .iter()
+            .any(|r| r.name.contains("control") || r.description.contains("control")));
     }
 
     #[tokio::test]

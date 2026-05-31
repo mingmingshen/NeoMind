@@ -14,7 +14,7 @@
  * Legacy DataSource type — mixes source and mode into a single discriminator.
  * @deprecated Use `DataSourceSource` + `DataSourceMode` instead.
  */
-export type DataSourceType = 'device' | 'metric' | 'command' | 'telemetry' | 'device-info' | 'system' | 'extension' | 'extension-metric' | 'extension-command' | 'transform' | 'ai-metric' | 'agent'
+export type DataSourceType = 'device' | 'metric' | 'command' | 'telemetry' | 'device-info' | 'system' | 'extension' | 'extension-metric' | 'extension-command' | 'transform' | 'agent'
 
 /** Unified source type — identifies where data comes from */
 export type DataSourceSource = 'device' | 'extension' | 'system' | 'transform' | 'ai'
@@ -183,14 +183,6 @@ export interface TransformDataSource extends DataSourceBase {
   metricId?: string
 }
 
-// AI Metric (polled via telemetry)
-export interface AIMetricDataSource extends DataSourceBase {
-  type: 'ai-metric'
-  aiGroup?: string
-  sourceId?: string
-  metricId?: string
-}
-
 // Agent
 export interface AgentDataSource extends DataSourceBase {
   type: 'agent'
@@ -217,7 +209,6 @@ export type StrictDataSource =
   | ExtensionMetricDataSource
   | ExtensionCommandDataSource
   | TransformDataSource
-  | AIMetricDataSource
   | AgentDataSource
 
 /**
@@ -256,7 +247,6 @@ export interface DataSource {
   extensionDataType?: string
   extensionUnit?: string
   transformId?: string
-  aiGroup?: string
   agentId?: string
   // Unified fields (Phase 1)
   source?: DataSourceSource
@@ -361,8 +351,6 @@ export function migrateToUnified(ds: DataSource): DataSource {
       m.source = 'system'; m.id = 'neomind'; m.field = ds.systemMetric; m.mode = 'latest'; break
     case 'transform':
       m.source = 'transform'; m.id = ds.transformId || ds.sourceId?.replace('transform:', ''); m.field = ds.metricId; m.mode = 'timeseries'; break
-    case 'ai-metric':
-      m.source = 'ai'; m.id = ds.aiGroup || ds.sourceId?.replace('ai:', ''); m.field = ds.metricId; m.mode = 'timeseries'; break
     case 'agent':
       m.source = 'ai'; m.id = ds.agentId || ds.sourceId; m.field = 'status'; m.mode = 'latest'; break
   }

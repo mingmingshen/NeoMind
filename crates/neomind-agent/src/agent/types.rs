@@ -861,7 +861,8 @@ impl LargeDataCache {
     fn evict_if_needed(&mut self) {
         // Evict by count
         while self.entries.len() > MAX_CACHE_ENTRIES {
-            if let Some(oldest_key) = self.entries
+            if let Some(oldest_key) = self
+                .entries
                 .iter()
                 .min_by_key(|(_, v)| v.cached_at)
                 .map(|(k, _)| k.clone())
@@ -877,7 +878,8 @@ impl LargeDataCache {
         let total_size: usize = self.entries.values().map(|e| e.size_bytes).sum();
         if total_size > MAX_CACHE_TOTAL_BYTES {
             // Sort by age (oldest first) and evict until under budget
-            let mut sorted: Vec<(String, i64)> = self.entries
+            let mut sorted: Vec<(String, i64)> = self
+                .entries
                 .iter()
                 .map(|(k, v)| (k.clone(), v.cached_at))
                 .collect();
@@ -889,7 +891,11 @@ impl LargeDataCache {
                     break;
                 }
                 if let Some(entry) = self.entries.remove(&key) {
-                    tracing::debug!("Evicting cache entry '{}' (size limit, freed {} bytes)", key, entry.size_bytes);
+                    tracing::debug!(
+                        "Evicting cache entry '{}' (size limit, freed {} bytes)",
+                        key,
+                        entry.size_bytes
+                    );
                     current_size -= entry.size_bytes;
                 }
             }

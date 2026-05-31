@@ -10,8 +10,6 @@ triggers:
   tool_target:
     - tool: connector
       actions: [list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe]
-    - tool: broker
-      actions: [list, get, create, update, delete, test]
 anti_triggers:
   keywords: [dashboard, 仪表盘, agent, 代理, extension develop, 扩展开发, rule, 规则]
 ---

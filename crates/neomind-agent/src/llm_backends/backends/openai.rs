@@ -959,7 +959,10 @@ impl CloudRuntime {
                     // Handle rate limit response — read body for debugging
                     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                         let body = response.text().await.unwrap_or_default();
-                        tracing::warn!("Rate limited (429) response body: {}", &body[..body.len().min(500)]);
+                        tracing::warn!(
+                            "Rate limited (429) response body: {}",
+                            &body[..body.len().min(500)]
+                        );
                         let _ = tx
                             .send(Err(LlmError::Generation("Rate limited by API".to_string())))
                             .await;
@@ -996,117 +999,113 @@ impl CloudRuntime {
                                 while let Some(nl_pos) =
                                     buffer[search_start..].iter().position(|&b| b == b'\n')
                                 {
-                                        let line_end = search_start + nl_pos;
-                                        let line_bytes = &buffer[..line_end];
-                                        let line =
-                                            String::from_utf8_lossy(line_bytes).trim().to_string();
+                                    let line_end = search_start + nl_pos;
+                                    let line_bytes = &buffer[..line_end];
+                                    let line =
+                                        String::from_utf8_lossy(line_bytes).trim().to_string();
 
-                                        // Remove processed line from buffer
-                                        buffer = buffer[line_end + 1..].to_vec();
-                                        search_start = 0;
+                                    // Remove processed line from buffer
+                                    buffer = buffer[line_end + 1..].to_vec();
+                                    search_start = 0;
 
-                                        if line.is_empty() {
-                                            continue;
-                                        }
-                                        if line == "data: [DONE]" {
-                                            // Flush any accumulated tool calls
-                                            if !accumulated_tool_calls.is_empty() {
-                                                let tool_calls_json: Vec<serde_json::Value> =
-                                                    accumulated_tool_calls
-                                                        .values()
-                                                        .map(|tc| {
-                                                            let args: serde_json::Value =
-                                                                serde_json::from_str(&tc.arguments)
-                                                                    .unwrap_or_else(|_| {
-                                                                        serde_json::json!({})
-                                                                    });
-                                                            serde_json::json!({
-                                                                "id": tc.id,
-                                                                "name": tc.name,
-                                                                "arguments": args
-                                                            })
+                                    if line.is_empty() {
+                                        continue;
+                                    }
+                                    if line == "data: [DONE]" {
+                                        // Flush any accumulated tool calls
+                                        if !accumulated_tool_calls.is_empty() {
+                                            let tool_calls_json: Vec<serde_json::Value> =
+                                                accumulated_tool_calls
+                                                    .values()
+                                                    .map(|tc| {
+                                                        let args: serde_json::Value =
+                                                            serde_json::from_str(&tc.arguments)
+                                                                .unwrap_or_else(|_| {
+                                                                    serde_json::json!({})
+                                                                });
+                                                        serde_json::json!({
+                                                            "id": tc.id,
+                                                            "name": tc.name,
+                                                            "arguments": args
                                                         })
-                                                        .collect();
-                                                let json_str =
-                                                    serde_json::to_string(&tool_calls_json)
-                                                        .unwrap_or_default();
-                                                let _ = tx.send(Ok((json_str, false))).await;
-                                            }
-                                            let _ = tx.send(Ok((String::new(), false))).await;
-                                            continue;
+                                                    })
+                                                    .collect();
+                                            let json_str = serde_json::to_string(&tool_calls_json)
+                                                .unwrap_or_default();
+                                            let _ = tx.send(Ok((json_str, false))).await;
                                         }
-                                        if let Some(json) = line.strip_prefix("data: ") {
-                                            if let Ok(evt) =
-                                                serde_json::from_str::<StreamChunkEvent>(json)
-                                            {
-                                                // Check for usage data in final chunk (stream_options.include_usage=true)
-                                                if let Some(ref usage) = evt.usage {
-                                                    if usage.prompt_tokens > 0 {
+                                        let _ = tx.send(Ok((String::new(), false))).await;
+                                        continue;
+                                    }
+                                    if let Some(json) = line.strip_prefix("data: ") {
+                                        if let Ok(evt) =
+                                            serde_json::from_str::<StreamChunkEvent>(json)
+                                        {
+                                            // Check for usage data in final chunk (stream_options.include_usage=true)
+                                            if let Some(ref usage) = evt.usage {
+                                                if usage.prompt_tokens > 0 {
+                                                    let _ = tx
+                                                        .send(Ok((
+                                                            format!(
+                                                                "\n__NEOMIND_TOKEN_PROMPT:{}__",
+                                                                usage.prompt_tokens
+                                                            ),
+                                                            false,
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+
+                                            if let Some(choice) = evt.choices.first() {
+                                                // Handle content
+                                                if let Some(ref content) = choice.delta.content {
+                                                    if !content.is_empty() {
                                                         let _ = tx
-                                                            .send(Ok((
-                                                                format!(
-                                                                    "\n__NEOMIND_TOKEN_PROMPT:{}__",
-                                                                    usage.prompt_tokens
-                                                                ),
-                                                                false,
-                                                            )))
+                                                            .send(Ok((content.clone(), false)))
                                                             .await;
                                                     }
                                                 }
 
-                                                if let Some(choice) = evt.choices.first() {
-                                                    // Handle content
-                                                    if let Some(ref content) = choice.delta.content
-                                                    {
-                                                        if !content.is_empty() {
-                                                            let _ = tx
-                                                                .send(Ok((content.clone(), false)))
-                                                                .await;
+                                                // Handle tool calls (incremental)
+                                                if let Some(ref tool_calls) =
+                                                    choice.delta.tool_calls
+                                                {
+                                                    for tc in tool_calls {
+                                                        let entry = accumulated_tool_calls
+                                                            .entry(tc.index)
+                                                            .or_insert(AccumulatedToolCall {
+                                                                id: None,
+                                                                name: None,
+                                                                arguments: String::new(),
+                                                            });
+
+                                                        if let Some(ref id) = tc.id {
+                                                            entry.id = Some(id.clone());
                                                         }
-                                                    }
 
-                                                    // Handle tool calls (incremental)
-                                                    if let Some(ref tool_calls) =
-                                                        choice.delta.tool_calls
-                                                    {
-                                                        for tc in tool_calls {
-                                                            let entry = accumulated_tool_calls
-                                                                .entry(tc.index)
-                                                                .or_insert(AccumulatedToolCall {
-                                                                    id: None,
-                                                                    name: None,
-                                                                    arguments: String::new(),
-                                                                });
-
-                                                            if let Some(ref id) = tc.id {
-                                                                entry.id = Some(id.clone());
+                                                        if let Some(ref func) = tc.function {
+                                                            if let Some(ref name) = func.name {
+                                                                entry.name = Some(name.clone());
                                                             }
-
-                                                            if let Some(ref func) = tc.function {
-                                                                if let Some(ref name) = func.name {
-                                                                    entry.name = Some(name.clone());
-                                                                }
-                                                                if let Some(ref args) =
-                                                                    func.arguments
-                                                                {
-                                                                    entry.arguments.push_str(args);
-                                                                }
+                                                            if let Some(ref args) = func.arguments {
+                                                                entry.arguments.push_str(args);
                                                             }
                                                         }
                                                     }
+                                                }
 
-                                                    // Check for finish reason - flush tool calls.
-                                                    // Also flush on "length" (truncation) to recover
-                                                    // partial tool calls instead of silently dropping them.
-                                                    let should_flush = matches!(
-                                                        choice.finish_reason.as_deref(),
-                                                        Some("tool_calls") | Some("length")
-                                                    ) && !accumulated_tool_calls.is_empty();
+                                                // Check for finish reason - flush tool calls.
+                                                // Also flush on "length" (truncation) to recover
+                                                // partial tool calls instead of silently dropping them.
+                                                let should_flush = matches!(
+                                                    choice.finish_reason.as_deref(),
+                                                    Some("tool_calls") | Some("length")
+                                                ) && !accumulated_tool_calls
+                                                    .is_empty();
 
-                                                    if should_flush {
-                                                        let tool_calls_json: Vec<
-                                                            serde_json::Value,
-                                                        > = accumulated_tool_calls
+                                                if should_flush {
+                                                    let tool_calls_json: Vec<serde_json::Value> =
+                                                        accumulated_tool_calls
                                                             .values()
                                                             .map(|tc| {
                                                                 let args: serde_json::Value =
@@ -1123,17 +1122,16 @@ impl CloudRuntime {
                                                                 })
                                                             })
                                                             .collect();
-                                                        let json_str =
-                                                            serde_json::to_string(&tool_calls_json)
-                                                                .unwrap_or_default();
-                                                        let _ =
-                                                            tx.send(Ok((json_str, false))).await;
-                                                        accumulated_tool_calls.clear();
-                                                    }
+                                                    let json_str =
+                                                        serde_json::to_string(&tool_calls_json)
+                                                            .unwrap_or_default();
+                                                    let _ = tx.send(Ok((json_str, false))).await;
+                                                    accumulated_tool_calls.clear();
                                                 }
                                             }
                                         }
                                     }
+                                }
                             }
                             Err(e) => {
                                 let _ = tx.send(Err(LlmError::Network(e.to_string()))).await;
@@ -1183,7 +1181,10 @@ impl CloudRuntime {
 
                     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                         let body = response.text().await.unwrap_or_default();
-                        tracing::warn!("Rate limited (429) non-streaming body: {}", &body[..body.len().min(500)]);
+                        tracing::warn!(
+                            "Rate limited (429) non-streaming body: {}",
+                            &body[..body.len().min(500)]
+                        );
                         let _ = tx
                             .send(Err(LlmError::Generation("Rate limited by API".to_string())))
                             .await;
@@ -1236,128 +1237,120 @@ impl CloudRuntime {
                                 while let Some(nl_pos) =
                                     buffer[search_start..].iter().position(|&b| b == b'\n')
                                 {
-                                        let line_end = search_start + nl_pos;
-                                        let line_bytes = &buffer[..line_end];
-                                        let line =
-                                            String::from_utf8_lossy(line_bytes).trim().to_string();
+                                    let line_end = search_start + nl_pos;
+                                    let line_bytes = &buffer[..line_end];
+                                    let line =
+                                        String::from_utf8_lossy(line_bytes).trim().to_string();
 
-                                        buffer = buffer[line_end + 1..].to_vec();
-                                        search_start = 0;
+                                    buffer = buffer[line_end + 1..].to_vec();
+                                    search_start = 0;
 
-                                        if line.is_empty() {
-                                            continue;
-                                        }
+                                    if line.is_empty() {
+                                        continue;
+                                    }
 
-                                        if let Some(json) = line.strip_prefix("data: ") {
-                                            if let Ok(evt) =
-                                                serde_json::from_str::<AnthropicStreamEvent>(json)
-                                            {
-                                                match evt {
-                                                    AnthropicStreamEvent::ContentBlockStart {
-                                                        index,
-                                                        content_block,
-                                                    } => {
-                                                        // For tool_use blocks, extract id and name
-                                                        if content_block
-                                                            .get("type")
+                                    if let Some(json) = line.strip_prefix("data: ") {
+                                        if let Ok(evt) =
+                                            serde_json::from_str::<AnthropicStreamEvent>(json)
+                                        {
+                                            match evt {
+                                                AnthropicStreamEvent::ContentBlockStart {
+                                                    index,
+                                                    content_block,
+                                                } => {
+                                                    // For tool_use blocks, extract id and name
+                                                    if content_block
+                                                        .get("type")
+                                                        .and_then(|v| v.as_str())
+                                                        == Some("tool_use")
+                                                    {
+                                                        let id = content_block
+                                                            .get("id")
                                                             .and_then(|v| v.as_str())
-                                                            == Some("tool_use")
-                                                        {
-                                                            let id = content_block
-                                                                .get("id")
-                                                                .and_then(|v| v.as_str())
-                                                                .map(|s| s.to_string());
-                                                            let name = content_block
-                                                                .get("name")
-                                                                .and_then(|v| v.as_str())
-                                                                .map(|s| s.to_string());
-                                                            accumulated_tool_calls
-                                                                .entry(index)
-                                                                .or_insert((
-                                                                    id,
-                                                                    name,
-                                                                    String::new(),
-                                                                ));
-                                                        }
+                                                            .map(|s| s.to_string());
+                                                        let name = content_block
+                                                            .get("name")
+                                                            .and_then(|v| v.as_str())
+                                                            .map(|s| s.to_string());
+                                                        accumulated_tool_calls
+                                                            .entry(index)
+                                                            .or_insert((id, name, String::new()));
                                                     }
-                                                    AnthropicStreamEvent::ContentBlockDelta {
-                                                        index,
-                                                        delta,
-                                                    } => {
-                                                        match delta.delta_type.as_str() {
-                                                            "text_delta" => {
-                                                                if let Some(ref text) = delta.text {
-                                                                    if !text.is_empty() {
-                                                                        let _ = tx
-                                                                            .send(Ok((
-                                                                                text.clone(),
-                                                                                false,
-                                                                            )))
-                                                                            .await;
-                                                                    }
+                                                }
+                                                AnthropicStreamEvent::ContentBlockDelta {
+                                                    index,
+                                                    delta,
+                                                } => {
+                                                    match delta.delta_type.as_str() {
+                                                        "text_delta" => {
+                                                            if let Some(ref text) = delta.text {
+                                                                if !text.is_empty() {
+                                                                    let _ = tx
+                                                                        .send(Ok((
+                                                                            text.clone(),
+                                                                            false,
+                                                                        )))
+                                                                        .await;
                                                                 }
                                                             }
-                                                            "input_json_delta" => {
-                                                                // Accumulate tool call arguments
-                                                                if let Some(ref partial) =
-                                                                    delta.partial_json
-                                                                {
-                                                                    let entry =
-                                                                        accumulated_tool_calls
-                                                                            .entry(index)
-                                                                            .or_insert((
-                                                                                None,
-                                                                                None,
-                                                                                String::new(),
-                                                                            ));
-                                                                    entry.2.push_str(partial);
-                                                                }
-                                                            }
-                                                            _ => {}
                                                         }
+                                                        "input_json_delta" => {
+                                                            // Accumulate tool call arguments
+                                                            if let Some(ref partial) =
+                                                                delta.partial_json
+                                                            {
+                                                                let entry = accumulated_tool_calls
+                                                                    .entry(index)
+                                                                    .or_insert((
+                                                                        None,
+                                                                        None,
+                                                                        String::new(),
+                                                                    ));
+                                                                entry.2.push_str(partial);
+                                                            }
+                                                        }
+                                                        _ => {}
                                                     }
-                                                    AnthropicStreamEvent::ContentBlockStop {
-                                                        index,
-                                                    } => {
-                                                        // Flush accumulated tool call if present
-                                                        if let Some((id, name, args_json)) =
-                                                            accumulated_tool_calls.remove(&index)
-                                                        {
-                                                            if name.is_some() {
-                                                                let args: serde_json::Value =
-                                                                    serde_json::from_str(
-                                                                        &args_json,
-                                                                    )
+                                                }
+                                                AnthropicStreamEvent::ContentBlockStop {
+                                                    index,
+                                                } => {
+                                                    // Flush accumulated tool call if present
+                                                    if let Some((id, name, args_json)) =
+                                                        accumulated_tool_calls.remove(&index)
+                                                    {
+                                                        if name.is_some() {
+                                                            let args: serde_json::Value =
+                                                                serde_json::from_str(&args_json)
                                                                     .unwrap_or_else(|_| {
                                                                         serde_json::json!({})
                                                                     });
-                                                                // Wrap in array format for consistent parsing with OpenAI format
-                                                                // This ensures detect_json_tool_calls can properly detect the tool call
-                                                                let tc_json = serde_json::json!([{
-                                                                    "id": id,
-                                                                    "name": name,
-                                                                    "arguments": args
-                                                                }]);
-                                                                let json_str =
-                                                                    serde_json::to_string(&tc_json)
-                                                                        .unwrap_or_default();
-                                                                let _ = tx
-                                                                    .send(Ok((json_str, false)))
-                                                                    .await;
-                                                            }
+                                                            // Wrap in array format for consistent parsing with OpenAI format
+                                                            // This ensures detect_json_tool_calls can properly detect the tool call
+                                                            let tc_json = serde_json::json!([{
+                                                                "id": id,
+                                                                "name": name,
+                                                                "arguments": args
+                                                            }]);
+                                                            let json_str =
+                                                                serde_json::to_string(&tc_json)
+                                                                    .unwrap_or_default();
+                                                            let _ = tx
+                                                                .send(Ok((json_str, false)))
+                                                                .await;
                                                         }
                                                     }
-                                                    AnthropicStreamEvent::MessageStop => {
-                                                        // Signal end of stream
-                                                        let _ = tx
-                                                            .send(Ok((String::new(), false)))
-                                                            .await;
-                                                    }
-                                                    _ => {}
                                                 }
+                                                AnthropicStreamEvent::MessageStop => {
+                                                    // Signal end of stream
+                                                    let _ =
+                                                        tx.send(Ok((String::new(), false))).await;
+                                                }
+                                                _ => {}
                                             }
                                         }
                                     }
+                                }
                             }
                             Err(e) => {
                                 let _ = tx.send(Err(LlmError::Network(e.to_string()))).await;

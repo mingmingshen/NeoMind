@@ -21,7 +21,6 @@ crates/neomind-agent/src/
 │   ├── shell.rs                        # Shell tool (neomind CLI execution)
 │   ├── skill_tool.rs                   # Skill management tool
 │   ├── extension_tools.rs              # Extension tool generator and executor
-│   ├── ai_metric.rs                    # AI metric query tools
 │   ├── session_search.rs              # Session history search tool
 │   ├── time_utils.rs                  # Time range parsing utilities
 │   └── error.rs                        # Tool error types
@@ -220,17 +219,6 @@ pub struct ExtensionToolGenerator;
 
 // Dynamically generates tool definitions from extension manifests
 // Executes extension tool calls via the extension runner
-```
-
-### AI Metric Tool
-
-```rust
-/// AI metric query tools
-pub struct AiMetricTool;
-pub struct AiMetricsRegistry;
-
-// Query time-series metrics for devices and extensions
-// Input: { "data_source_id": "device:sensor_1:temperature", "time_range": "1h" }
 ```
 
 ### Session Search Tool

@@ -614,6 +614,19 @@
     "lines": "行",
     "empty": "暂无内容",
     "charsUsed": "已使用 {{used}} / {{limit}} 字符",
-    "noContent": "暂无内容"
+    "noContent": "暂无内容",
+    "custom": {
+      "title": "自定义文件",
+      "create": "创建",
+      "createTitle": "创建自定义文件",
+      "fileName": "文件名",
+      "fileNameHint": "小写字母、数字、连字符、下划线，1-32 个字符。",
+      "fileContent": "内容（Markdown）",
+      "empty": "暂无自定义文件。创建一个来存储领域特定知识。",
+      "deleted": "自定义文件已删除",
+      "created": "自定义文件已创建",
+      "delete": "删除",
+      "deleteConfirm": "确定删除此自定义文件？此操作无法撤销。"
+    }
   }
 }

@@ -104,7 +104,8 @@ impl Skill {
             self.body.clone()
         } else {
             // Find correct UTF-8 byte boundary for budget_chars characters
-            let byte_cutoff = self.body
+            let byte_cutoff = self
+                .body
                 .char_indices()
                 .nth(budget_chars)
                 .map(|(i, _)| i)

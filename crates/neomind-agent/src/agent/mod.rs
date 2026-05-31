@@ -122,7 +122,13 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
                 let summary: Arc<str> = if msg.content.len() > 800 {
                     let name = msg.tool_call_name.as_deref().unwrap_or("unknown");
                     let preview: String = msg.content.chars().take(500).collect();
-                    format!("[Tool: {} result ({} chars): {}...]", name, msg.content.len(), preview).into()
+                    format!(
+                        "[Tool: {} result ({} chars): {}...]",
+                        name,
+                        msg.content.len(),
+                        preview
+                    )
+                    .into()
                 } else {
                     msg.content.clone()
                 };
@@ -846,16 +852,12 @@ impl Agent {
         let mut registry = crate::toolkit::ToolRegistryBuilder::new().build();
 
         // Add agent-specific tools
+        use crate::tools::ToolSearchTool;
         use crate::tools::{AskUserTool, ClarifyIntentTool, ConfirmActionTool};
-        use crate::tools::{ThinkTool, ToolSearchTool};
 
         // Create tool search tool (starts with empty tool list)
         let tool_search = ToolSearchTool::from_definitions(&[]);
         registry.register(std::sync::Arc::new(tool_search));
-
-        // Create and register think tool
-        let think_tool = ThinkTool::new();
-        registry.register(std::sync::Arc::new(think_tool));
 
         // === 添加用户交互工具 ===
         // ask_user: 向用户询问缺失信息
@@ -1235,9 +1237,7 @@ impl Agent {
 
     /// Generate a dynamic system prompt with tool descriptions.
     /// This ensures the prompt always reflects the currently available tools.
-    async fn generate_dynamic_system_prompt(
-        &self,
-    ) -> String {
+    async fn generate_dynamic_system_prompt(&self) -> String {
         // Generate base prompt (static parts: system_prompt + tools)
         let mut prompt = self.generate_base_prompt();
 
@@ -1262,9 +1262,7 @@ impl Agent {
 
     /// Generate base prompt (static parts: system_prompt + tools).
     /// This avoids rebuilding tool descriptions on every request.
-    fn generate_base_prompt(
-        &self,
-    ) -> String {
+    fn generate_base_prompt(&self) -> String {
         let mut prompt = String::from(self.config.system_prompt.trim());
 
         prompt.push_str("\n\n## Available Tools (Quick Reference)\n\n");
@@ -1309,7 +1307,9 @@ impl Agent {
         }
 
         prompt.push_str("## Usage Guide\n");
-        prompt.push_str("- Use `shell` tool with `neomind` CLI commands for all platform operations\n");
+        prompt.push_str(
+            "- Use `shell` tool with `neomind` CLI commands for all platform operations\n",
+        );
         prompt.push_str("- Multiple tool calls can be executed in parallel for faster response\n");
 
         prompt
@@ -1576,7 +1576,9 @@ impl Agent {
         let followup_analysis = {
             let mut shared = self.shared_state.write().await;
             let ctx_snapshot = shared.conversation_context.clone();
-            shared.smart_followup.analyze_input(user_message, &ctx_snapshot)
+            shared
+                .smart_followup
+                .analyze_input(user_message, &ctx_snapshot)
         };
 
         // Handle smart followup cases
@@ -1662,17 +1664,18 @@ impl Agent {
         }
 
         // === INTENT ANALYSIS + CONVERSATION CONTEXT: Run in parallel ===
-        let ((intent_analysis, _context_bundle), enhanced_input) = tokio::join!(
-            self.analyze_intent(user_message),
-            async {
+        let ((intent_analysis, _context_bundle), enhanced_input) =
+            tokio::join!(self.analyze_intent(user_message), async {
                 let shared = self.shared_state.read().await;
-                if let Some(resolved) = shared.conversation_context.resolve_ambiguous_command(user_message) {
+                if let Some(resolved) = shared
+                    .conversation_context
+                    .resolve_ambiguous_command(user_message)
+                {
                     resolved
                 } else {
                     shared.conversation_context.enhance_input(user_message)
                 }
-            }
-        );
+            });
         tracing::debug!(
             intent = ?intent_analysis.intent_type,
             confidence = intent_analysis.confidence,
@@ -1730,7 +1733,9 @@ impl Agent {
                         })
                         .collect();
                     let mut shared = self.shared_state.write().await;
-                    shared.conversation_context.update(user_message, &tool_results);
+                    shared
+                        .conversation_context
+                        .update(user_message, &tool_results);
                 }
 
                 let processing_time = start.elapsed().as_millis() as u64;
@@ -1910,7 +1915,8 @@ impl Agent {
             user_message,
             images,
             StreamSafeguards::default(),
-        ).await
+        )
+        .await
     }
 
     /// Process a multimodal user message with streaming response and custom safeguards.
@@ -2040,9 +2046,13 @@ impl Agent {
             // Check cache validity: same max_tokens and small message delta
             let cached = state.compaction_cache.take();
             let compacted = if let Some((cached_count, cached_max, ref cached_msgs)) = cached {
-                if cached_max == effective_max && current_count > cached_count && current_count <= cached_count + 4 {
+                if cached_max == effective_max
+                    && current_count > cached_count
+                    && current_count <= cached_count + 4
+                {
                     // Incremental: only compact the new messages and append
-                    let new_msgs: Vec<AgentMessage> = history_without_last.iter()
+                    let new_msgs: Vec<AgentMessage> = history_without_last
+                        .iter()
                         .skip(cached_count)
                         .cloned()
                         .collect();
@@ -2269,9 +2279,14 @@ impl Agent {
                             Ok(p) => p,
                             Err(e) => {
                                 tracing::warn!("tool concurrency semaphore closed: {}", e);
-                                return (name, id, arguments, Err(NeoMindError::Tool(
-                                    "tool concurrency semaphore closed".to_string(),
-                                )));
+                                return (
+                                    name,
+                                    id,
+                                    arguments,
+                                    Err(NeoMindError::Tool(
+                                        "tool concurrency semaphore closed".to_string(),
+                                    )),
+                                );
                             }
                         };
                         let result = self.execute_tool(&name, &arguments).await;
@@ -3050,7 +3065,8 @@ END"#
             conversation_summary,
             summary_up_to_index,
             StreamSafeguards::default(),
-        ).await
+        )
+        .await
     }
 
     /// Process a user message with streaming response and custom safeguards (e.g., interrupt signal).
@@ -3164,7 +3180,8 @@ mod tests {
             json!({"type": "object", "properties": {"command": {"type": "string"}}})
         }
         async fn execute(&self, _args: serde_json::Value) -> Result<ToolOutput> {
-            let data = json!({"devices": [{"id": "mock_device_1", "name": "模拟设备"}], "count": 1});
+            let data =
+                json!({"devices": [{"id": "mock_device_1", "name": "模拟设备"}], "count": 1});
             Ok(ToolOutput::success(data))
         }
     }
@@ -3219,14 +3236,11 @@ mod tests {
         registry.register(std::sync::Arc::new(MockGreetTool));
 
         // Add default agent tools
+        use crate::tools::ToolSearchTool;
         use crate::tools::{AskUserTool, ClarifyIntentTool, ConfirmActionTool};
-        use crate::tools::{ThinkTool, ToolSearchTool};
 
         let tool_search = ToolSearchTool::from_definitions(&[]);
         registry.register(std::sync::Arc::new(tool_search));
-
-        let think_tool = ThinkTool::new();
-        registry.register(std::sync::Arc::new(think_tool));
 
         let ask_user_tool = AskUserTool::new();
         registry.register(std::sync::Arc::new(ask_user_tool));

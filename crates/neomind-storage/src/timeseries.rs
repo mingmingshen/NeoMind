@@ -560,7 +560,7 @@ impl TimeSeriesStore {
     /// Returns the number of migrated keys.
     pub fn migrate_device_prefix(&self) -> Result<u64, Error> {
         // Known prefixes that are already correct — skip them
-        const KNOWN_PREFIXES: &[&str] = &["device:", "extension:", "transform:", "ai:"];
+        const KNOWN_PREFIXES: &[&str] = &["device:", "extension:", "transform:"];
 
         let write_txn = self.db.begin_write()?;
         let migrated;

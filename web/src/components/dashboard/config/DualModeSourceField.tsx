@@ -52,7 +52,7 @@ export interface DualModeSourceFieldProps {
   /** Callback when data source changes */
   onDataSourceChange: (ds: DataSourceOrList | undefined) => void
   /** Allowed data source types */
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command' | 'transform' | 'ai-metric'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command' | 'transform'>
   /** Label for the field */
   label: string
   /** Placeholder text for manual input */
@@ -76,7 +76,6 @@ function getTypeIcon(type?: string) {
     case 'extension': return Puzzle
     case 'extension-command': return Zap
     case 'transform': return Workflow
-    case 'ai-metric': return Brain
     default: return Database
   }
 }

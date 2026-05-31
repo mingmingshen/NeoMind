@@ -862,7 +862,6 @@ impl ServerState {
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
             system_memory_store,
-            neomind_agent::toolkit::ai_metric::AiMetricsRegistry::new(std::path::Path::new("data")),
         );
 
         // ========== Build AUTH STATE ==========
@@ -1079,7 +1078,6 @@ impl ServerState {
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
             system_memory_store,
-            neomind_agent::toolkit::ai_metric::AiMetricsRegistry::new(std::path::Path::new("data")),
         );
 
         // ========== Build AUTH STATE ==========
@@ -1626,12 +1624,6 @@ impl ServerState {
             .build();
 
         // Register standalone tools that don't map to CLI commands
-        // Session search — searches conversation history
-        let session_store = self.agents.session_manager.session_store();
-        registry.register(Arc::new(
-            neomind_agent::toolkit::SessionSearchTool::new(session_store),
-        ));
-
         // Skill tool — manages skill CRUD (not CLI-replaceable)
         let skill_registry = self.agents.session_manager.skill_registry();
         {
@@ -1642,18 +1634,23 @@ impl ServerState {
             registry.register(Arc::new(tool));
         }
 
-        // AI metric tool — collects metrics into time-series storage
+        // Web fetch tool — retrieves URL content
+        registry.register(Arc::new(neomind_agent::toolkit::WebFetchTool::new()));
+        // File write tool — creates/overwrites files in data/
+        registry.register(Arc::new(neomind_agent::toolkit::FileWriteTool::new(self.data_dir.clone())));
+        // File edit tool — precise string replacement in files
+        registry.register(Arc::new(neomind_agent::toolkit::FileEditTool::new(self.data_dir.clone())));
+
+        // Memory tool — persistent memory across sessions
         {
-            let storage = self.devices.telemetry.clone();
-            let ai_registry = self.agents.ai_metrics_registry.clone();
-            let mut ai_tool = neomind_agent::toolkit::ai_metric::AiMetricTool::new(
-                storage,
-                ai_registry,
+            let memory_store = tokio::sync::RwLock::new(
+                (*self.agents.system_memory_store).clone(),
             );
-            if let Some(bus) = &self.core.event_bus {
-                ai_tool = ai_tool.with_event_bus(bus.clone());
-            }
-            registry.register(Arc::new(ai_tool));
+            let memory_tool = neomind_agent::toolkit::MemoryTool::with_session_handle(
+                std::sync::Arc::new(memory_store),
+                self.agents.memory_session_handle.clone(),
+            );
+            registry.register(Arc::new(memory_tool));
         }
 
         let tool_registry = Arc::new(registry);
@@ -1693,11 +1690,6 @@ impl ServerState {
             .build();
 
         // Re-register standalone tools
-        let session_store = self.agents.session_manager.session_store();
-        registry.register(Arc::new(
-            neomind_agent::toolkit::SessionSearchTool::new(session_store),
-        ));
-
         let skill_registry = self.agents.session_manager.skill_registry();
         {
             let tool = neomind_agent::toolkit::skill_tool::SkillTool::with_data_dir(
@@ -1707,18 +1699,10 @@ impl ServerState {
             registry.register(Arc::new(tool));
         }
 
-        {
-            let storage = self.devices.telemetry.clone();
-            let ai_registry = self.agents.ai_metrics_registry.clone();
-            let mut ai_tool = neomind_agent::toolkit::ai_metric::AiMetricTool::new(
-                storage,
-                ai_registry,
-            );
-            if let Some(bus) = &self.core.event_bus {
-                ai_tool = ai_tool.with_event_bus(bus.clone());
-            }
-            registry.register(Arc::new(ai_tool));
-        }
+        // Re-register web/file tools
+        registry.register(Arc::new(neomind_agent::toolkit::WebFetchTool::new()));
+        registry.register(Arc::new(neomind_agent::toolkit::FileWriteTool::new(self.data_dir.clone())));
+        registry.register(Arc::new(neomind_agent::toolkit::FileEditTool::new(self.data_dir.clone())));
 
         let tool_registry = Arc::new(registry);
         let tool_count = tool_registry.len();

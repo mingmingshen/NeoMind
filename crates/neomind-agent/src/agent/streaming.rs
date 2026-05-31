@@ -33,14 +33,55 @@ use crate::llm::LlmInterface;
 /// and inject a forced continuation prompt.
 const ACTION_VERBS: &[&str] = &[
     // Chinese
-    "创建", "新建", "删除", "控制", "启用", "禁用", "启动", "停止", "更新", "修改",
-    "开启", "关闭", "打开", "发送", "写入", "分享", "安装", "卸载", "移除",
-    "批量启用", "批量删除", "批量创建", "全部启动", "添加", "替换", "绑定",
-    "检查", "巡检",
+    "创建",
+    "新建",
+    "删除",
+    "控制",
+    "启用",
+    "禁用",
+    "启动",
+    "停止",
+    "更新",
+    "修改",
+    "开启",
+    "关闭",
+    "打开",
+    "发送",
+    "写入",
+    "分享",
+    "安装",
+    "卸载",
+    "移除",
+    "批量启用",
+    "批量删除",
+    "批量创建",
+    "全部启动",
+    "添加",
+    "替换",
+    "绑定",
+    "检查",
+    "巡检",
     // English
-    "create", "delete", "control", "enable", "disable", "start", "stop",
-    "update", "turn on", "turn off", "switch", "send", "write", "share",
-    "install", "uninstall", "remove", "add", "replace", "bind",
+    "create",
+    "delete",
+    "control",
+    "enable",
+    "disable",
+    "start",
+    "stop",
+    "update",
+    "turn on",
+    "turn off",
+    "switch",
+    "send",
+    "write",
+    "share",
+    "install",
+    "uninstall",
+    "remove",
+    "add",
+    "replace",
+    "bind",
 ];
 
 /// Check if the user message requests a mutation/action (not just a query).
@@ -55,9 +96,22 @@ fn user_message_requires_action(msg: &str) -> bool {
 fn all_tools_were_read_only(executed_commands: &[&str], _all_results: &[(String, String)]) -> bool {
     // Mutation command patterns — if ANY of these appear, it's NOT read-only
     const MUTATION_COMMANDS: &[&str] = &[
-        " create", " delete", " update", " control", " enable", " disable",
-        " write-metric", " send-message", " share", " install ", " uninstall ",
-        " control ", " send ", " channel-create", " channel-update", " channel-delete",
+        " create",
+        " delete",
+        " update",
+        " control",
+        " enable",
+        " disable",
+        " write-metric",
+        " send-message",
+        " share",
+        " install ",
+        " uninstall ",
+        " control ",
+        " send ",
+        " channel-create",
+        " channel-update",
+        " channel-delete",
     ];
 
     // If no commands were executed, we can't determine — assume not read-only
@@ -85,50 +139,97 @@ fn extract_action_hint(msg: &str) -> String {
     // Domain detection
     let domain = if msg_lower.contains("规则") || msg_lower.contains("rule") {
         "rule"
-    } else if msg_lower.contains("agent") || msg_lower.contains("代理") || msg_lower.contains("智能体") {
+    } else if msg_lower.contains("agent")
+        || msg_lower.contains("代理")
+        || msg_lower.contains("智能体")
+    {
         "agent"
-    } else if msg_lower.contains("设备") || msg_lower.contains("device") || msg_lower.contains("sensor") {
+    } else if msg_lower.contains("设备")
+        || msg_lower.contains("device")
+        || msg_lower.contains("sensor")
+    {
         "device"
-    } else if msg_lower.contains("仪表盘") || msg_lower.contains("仪表板") || msg_lower.contains("dashboard") || msg_lower.contains("面板") {
+    } else if msg_lower.contains("仪表盘")
+        || msg_lower.contains("仪表板")
+        || msg_lower.contains("dashboard")
+        || msg_lower.contains("面板")
+    {
         "dashboard"
     } else if msg_lower.contains("转换") || msg_lower.contains("transform") {
         "transform"
-    } else if msg_lower.contains("组件") || msg_lower.contains("widget") || msg_lower.contains("小部件") {
+    } else if msg_lower.contains("组件")
+        || msg_lower.contains("widget")
+        || msg_lower.contains("小部件")
+    {
         "widget"
-    } else if msg_lower.contains("扩展") || msg_lower.contains("extension") || msg_lower.contains("插件") {
+    } else if msg_lower.contains("扩展")
+        || msg_lower.contains("extension")
+        || msg_lower.contains("插件")
+    {
         "extension"
-    } else if msg_lower.contains("消息") || msg_lower.contains("message") || msg_lower.contains("通知") || msg_lower.contains("通道") || msg_lower.contains("channel") {
+    } else if msg_lower.contains("消息")
+        || msg_lower.contains("message")
+        || msg_lower.contains("通知")
+        || msg_lower.contains("通道")
+        || msg_lower.contains("channel")
+    {
         "message"
     } else {
         ""
     };
 
     // Action detection
-    let action = if msg_lower.contains("创建") || msg_lower.contains("create") || msg_lower.contains("新建") {
-        "create"
-    } else if msg_lower.contains("删除") || msg_lower.contains("delete") || msg_lower.contains("移除") {
-        "delete"
-    } else if msg_lower.contains("控制") || msg_lower.contains("control") || msg_lower.contains("打开") || msg_lower.contains("关闭") || msg_lower.contains("开启") {
-        "control"
-    } else if msg_lower.contains("启用") || msg_lower.contains("enable") || msg_lower.contains("启动") || msg_lower.contains("start") {
-        "enable/start"
-    } else if msg_lower.contains("禁用") || msg_lower.contains("disable") || msg_lower.contains("停止") || msg_lower.contains("stop") {
-        "disable/stop"
-    } else if msg_lower.contains("更新") || msg_lower.contains("update") || msg_lower.contains("修改") || msg_lower.contains("替换") {
-        "update"
-    } else if msg_lower.contains("写入") || msg_lower.contains("write") || msg_lower.contains("发送") || msg_lower.contains("send") {
-        "write/send"
-    } else if msg_lower.contains("添加") || msg_lower.contains("add") {
-        "add"
-    } else if msg_lower.contains("安装") || msg_lower.contains("install") {
-        "install"
-    } else if msg_lower.contains("卸载") || msg_lower.contains("uninstall") {
-        "uninstall"
-    } else if msg_lower.contains("分享") || msg_lower.contains("share") {
-        "share"
-    } else {
-        ""
-    };
+    let action =
+        if msg_lower.contains("创建") || msg_lower.contains("create") || msg_lower.contains("新建")
+        {
+            "create"
+        } else if msg_lower.contains("删除")
+            || msg_lower.contains("delete")
+            || msg_lower.contains("移除")
+        {
+            "delete"
+        } else if msg_lower.contains("控制")
+            || msg_lower.contains("control")
+            || msg_lower.contains("打开")
+            || msg_lower.contains("关闭")
+            || msg_lower.contains("开启")
+        {
+            "control"
+        } else if msg_lower.contains("启用")
+            || msg_lower.contains("enable")
+            || msg_lower.contains("启动")
+            || msg_lower.contains("start")
+        {
+            "enable/start"
+        } else if msg_lower.contains("禁用")
+            || msg_lower.contains("disable")
+            || msg_lower.contains("停止")
+            || msg_lower.contains("stop")
+        {
+            "disable/stop"
+        } else if msg_lower.contains("更新")
+            || msg_lower.contains("update")
+            || msg_lower.contains("修改")
+            || msg_lower.contains("替换")
+        {
+            "update"
+        } else if msg_lower.contains("写入")
+            || msg_lower.contains("write")
+            || msg_lower.contains("发送")
+            || msg_lower.contains("send")
+        {
+            "write/send"
+        } else if msg_lower.contains("添加") || msg_lower.contains("add") {
+            "add"
+        } else if msg_lower.contains("安装") || msg_lower.contains("install") {
+            "install"
+        } else if msg_lower.contains("卸载") || msg_lower.contains("uninstall") {
+            "uninstall"
+        } else if msg_lower.contains("分享") || msg_lower.contains("share") {
+            "share"
+        } else {
+            ""
+        };
 
     if domain.is_empty() && action.is_empty() {
         String::new()
@@ -147,10 +248,7 @@ pub type ToolResultStream = Pin<Box<dyn Stream<Item = (String, String)> + Send>>
 pub type EventChannel = tokio::sync::mpsc::Sender<AgentEvent>;
 
 // Re-export compaction types for use in other modules
-pub use neomind_core::llm::compaction::{
-    CompactionConfig,
-    MessagePriority,
-};
+pub use neomind_core::llm::compaction::{CompactionConfig, MessagePriority};
 
 /// Configuration for stream processing safeguards
 ///
@@ -514,7 +612,6 @@ impl ToolResultCache {
         }
     }
 
-
     /// Generate cache key from tool name and arguments.
     /// Sorts object keys to ensure consistent keys regardless of parameter order.
     fn make_key(name: &str, arguments: &Value) -> String {
@@ -711,11 +808,7 @@ pub(crate) fn truncate_result_utf8(result: &str, max_chars: usize) -> String {
         return result.to_string();
     }
     let truncated: String = result.chars().take(max_chars).collect();
-    format!(
-        "{}... (truncated, total {} chars)",
-        truncated,
-        char_count
-    )
+    format!("{}... (truncated, total {} chars)", truncated, char_count)
 }
 
 /// Deduplicate accumulated tool results across multiple rounds.
@@ -1559,13 +1652,11 @@ fn truncate_agent_message(msg: &AgentMessage, max_len: usize) -> AgentMessage {
     if let Some(thinking) = &truncated.thinking {
         if thinking.len() > max_len / 2 {
             let half = thinking.floor_char_boundary(max_len / 2);
-            truncated.thinking = Some(
-                if let Some(last_space) = thinking[..half].rfind(' ') {
-                    format!("{}...", &thinking[..last_space])
-                } else {
-                    format!("{}...", &thinking[..half])
-                },
-            );
+            truncated.thinking = Some(if let Some(last_space) = thinking[..half].rfind(' ') {
+                format!("{}...", &thinking[..last_space])
+            } else {
+                format!("{}...", &thinking[..half])
+            });
         }
     }
 

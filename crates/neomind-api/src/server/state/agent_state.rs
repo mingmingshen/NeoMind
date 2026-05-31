@@ -39,6 +39,9 @@ pub struct AgentState {
     /// System memory store for Markdown-based persistent memory.
     pub system_memory_store: Arc<MarkdownMemoryStore>,
 
+    /// Handle to set session ID on the memory tool (shared across sessions).
+    pub memory_session_handle: Arc<RwLock<Option<String>>>,
+
     /// Memory scheduler for background extraction/compression (lazy-initialized).
     pub memory_scheduler: Arc<RwLock<Option<MemoryScheduler>>>,
 }
@@ -58,6 +61,7 @@ impl AgentState {
             agent_store,
             agent_manager,
             system_memory_store,
+            memory_session_handle: Arc::new(RwLock::new(None)),
             memory_scheduler: Arc::new(RwLock::new(None)),
         }
     }
@@ -120,6 +124,7 @@ impl AgentState {
             system_memory_store: Arc::new(MarkdownMemoryStore::new(
                 std::env::temp_dir().join("test-memory"),
             )),
+            memory_session_handle: Arc::new(RwLock::new(None)),
             memory_scheduler: Arc::new(RwLock::new(None)),
         }
     }

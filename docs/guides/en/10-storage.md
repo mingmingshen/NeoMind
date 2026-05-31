@@ -93,9 +93,8 @@ pub fn create_backend(
 | Device telemetry | `{device_id}` | `{metric_name}` | Metrics reported by devices |
 | Extension metrics | `extension:{ext_id}` | `{metric_name}` | Metrics collected by extensions |
 | Transform metrics | `transform:{trans_id}` | `{metric_name}` | Virtual metrics from transforms |
-| AI metrics | `ai:{group}` | `{field}` | Custom metrics created by AI agents |
 
-**DataSourceId Format**: `{type}:{id}:{field}` (e.g., `extension:weather:temp`, `ai:anomaly:score`)
+**DataSourceId Format**: `{type}:{id}:{field}` (e.g., `extension:weather:temp`)
 
 ```rust
 pub struct TimeSeriesStore {

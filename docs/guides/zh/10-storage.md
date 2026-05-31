@@ -93,9 +93,8 @@ pub fn create_backend(
 | 设备遥测 | `{device_id}` | `{metric_name}` | 设备上报的指标数据 |
 | 扩展指标 | `extension:{ext_id}` | `{metric_name}` | 扩展采集的指标数据 |
 | 转换指标 | `transform:{trans_id}` | `{metric_name}` | 转换后的虚拟指标 |
-| AI 指标 | `ai:{group}` | `{field}` | AI 智能体创建的自定义指标 |
 
-**DataSourceId 格式**: `{type}:{id}:{field}`（如 `extension:weather:temp`、`ai:anomaly:score`）
+**DataSourceId 格式**: `{type}:{id}:{field}`（如 `extension:weather:temp`）
 
 ```rust
 pub struct TimeSeriesStore {

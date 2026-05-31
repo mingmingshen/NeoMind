@@ -85,20 +85,23 @@ impl ShellTool {
             cmd.env("NEOMIND_API_KEY", key);
         }
 
+        // Force JSON output — the AI agent is a machine consumer that needs
+        // structured data. Without this, CLI defaults to human-readable format
+        // which strips most useful information from the output.
+        cmd.env("NEOMIND_JSON", "1");
+
         cmd
     }
 
     /// Resolve API key for neomind CLI commands.
     /// Checks env var first, then auto-auth from local redb.
     fn resolve_api_key() -> Option<String> {
-        std::env::var("NEOMIND_API_KEY").ok()
-            .or_else(|| {
-                // Try auto-auth (reads data/api_keys.redb)
-                // Use the same path resolution as the neomind CLI
-                let data_dir = std::env::var("NEOMIND_DATA_DIR")
-                    .unwrap_or_else(|_| "data".to_string());
-                neomind_cli_ops::auto_auth::read_default_api_key_from(&data_dir)
-            })
+        std::env::var("NEOMIND_API_KEY").ok().or_else(|| {
+            // Try auto-auth (reads data/api_keys.redb)
+            // Use the same path resolution as the neomind CLI
+            let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+            neomind_cli_ops::auto_auth::read_default_api_key_from(&data_dir)
+        })
     }
 
     /// Execute a command with timeout and output capture.
@@ -347,8 +350,9 @@ impl ShellTool {
                     Some("Required fields: --name, --type. Use 'neomind device types list' to see valid device types.".to_string())
                 } else if action == "control" && is_not_found {
                     Some("Device not found. Run 'neomind device list' first, then use 'neomind device control <ID> --command <CMD>'.".to_string())
-                } else if (action == "history" || action == "latest") && combined.contains("metric") {
-                    Some("Don't guess metric names. Run 'neomind device latest <ID>' first to discover actual metric field names, then use exact names with --metric.".to_string())
+                } else if (action == "history" || action == "latest") && combined.contains("metric")
+                {
+                    Some("Don't guess metric names. Run 'neomind device list' to see all metric_fields per type, or 'neomind device get <ID>' for a specific device's actual field names.".to_string())
                 } else {
                     Some("Available actions: list, get, create, update, delete, latest, history, control, write-metric, webhook-url, types, drafts. ID is positional: neomind device <action> <ID> [flags].".to_string())
                 }
@@ -367,8 +371,10 @@ impl ShellTool {
             "rule" => {
                 if is_not_found {
                     Some("Run 'neomind rule list' to see available rules.".to_string())
-                } else if action == "create" && (is_validation || combined.contains("dsl") || combined.contains("parse")) {
-                    Some("Rule DSL syntax: RULE \"<name>\" WHEN <condition> DO <action> END. Example: RULE \"Temp Alert\" WHEN sensor-001.temperature > 30 DO NOTIFY \"Too hot\" END. Use actual device_id (not 'device.' prefix). Run `neomind device list` and `neomind device latest <ID>` to discover IDs and metrics.".to_string())
+                } else if action == "create"
+                    && (is_validation || combined.contains("dsl") || combined.contains("parse"))
+                {
+                    Some("Rule DSL syntax: RULE \"<name>\" WHEN <condition> DO <action> END. Example: RULE \"Temp Alert\" WHEN sensor-001.temperature > 30 DO NOTIFY \"Too hot\" END. Use actual device_id (not 'device.' prefix). Run `neomind device list` to discover IDs and metric_fields grouped by type.".to_string())
                 } else if action == "enable" || action == "disable" {
                     Some("Run 'neomind rule list' to find the rule ID, then 'neomind rule <enable|disable> <ID>'.".to_string())
                 } else {
@@ -408,7 +414,10 @@ impl ShellTool {
             }
             "widget" => {
                 if is_not_found {
-                    Some("Run 'neomind widget list' to see available widgets (built-in + custom).".to_string())
+                    Some(
+                        "Run 'neomind widget list' to see available widgets (built-in + custom)."
+                            .to_string(),
+                    )
                 } else if action == "create" && is_validation {
                     Some("Valid widget types: chart, gauge, stat, table, image, custom. Example: neomind widget create \"My Chart\" --widget-type chart".to_string())
                 } else if action == "install" && is_validation {
@@ -426,30 +435,13 @@ impl ShellTool {
                     Some("Available actions: list, get, send, read, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-types, channel-test".to_string())
                 }
             }
-            "settings" => {
-                Some("Available actions: timezone, timezones, retention, cleanup. Example: neomind settings timezone Asia/Shanghai".to_string())
-            }
-            "config" => {
-                if is_validation {
-                    Some("Config JSON must be valid. Use 'neomind config export' to see current config format, then modify and re-import.".to_string())
-                } else {
-                    Some("Available actions: export, import, validate. Use --data flag with JSON string.".to_string())
-                }
-            }
-            "automation" => {
-                if is_not_found {
-                    Some("Run 'neomind automation list' to see all automations.".to_string())
-                } else {
-                    Some("Available actions: list, get, export, import, enable, disable, executions. Use --type to filter: rule, transform, agent.".to_string())
-                }
-            }
             "llm" => {
                 if is_not_found {
                     Some("Run 'neomind llm list' to see configured backends.".to_string())
                 } else if action == "create" && is_validation {
                     Some("Required fields: --name, --type (ollama|openai|custom), --endpoint, --model. Example: neomind llm create --name local --type ollama --endpoint http://localhost:11434 --model qwen3:4b".to_string())
                 } else {
-                    Some("Available actions: list, get, models, create, update, delete, activate, test".to_string())
+                    Some("Available actions: list, get, models, create, update, delete, activate, test. Example: neomind llm create --name local --type ollama --endpoint http://localhost:11434 --model qwen3:4b".to_string())
                 }
             }
             _ => None,
@@ -470,14 +462,14 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 
 ## Critical Syntax Rules
 - **ID is always a positional argument**, NEVER a `--id` flag. Correct: `neomind device get abc123`. Wrong: `neomind device get --id abc123`.
-- **NEVER guess metric names**. Always discover them first via `neomind device latest <ID>` (shows actual metric field names), then use the exact names in `--metric` or rule conditions.
+- **NEVER guess metric names**. Always discover them first via `neomind device list` (shows metric_fields per type) or `neomind device get <ID>` (shows all metric names + values for one device), then use the exact names in `--metric` or rule conditions.
 - **When a command fails with "unexpected argument"**, you likely used flag syntax where positional was expected. Rewrite without the flag.
 
 ## NeoMind CLI Domains
 
 | Domain | Key Actions | Description |
 |--------|------------|-------------|
-| device | list, get, create, update, delete, latest, history, control, write-metric, webhook-url, types, drafts | Device management, telemetry, control commands. Adapters: `mqtt` (bidirectional, topic-based) and `webhook` (receive-only HTTP POST). `create` returns auto-generated ID (e.g. `TH_bf11d93d`). For webhook devices, use `webhook-url <ID>` to get the push URL. `types` subcommand: list/get/create/delete. `drafts` subcommand: list/get/approve/reject/config |
+| device | list, get, create, update, delete, history, control, write-metric, webhook-url, types, drafts | **Discovery**: `device list` returns devices **grouped by type** with `metric_fields` (actual field names from real data), `example` (one online device's current values per type), and all device IDs/names/status. **One command for complete discovery** — no need to call `device latest` separately. `device get <ID>` returns full picture: metadata + config + all metrics + available commands. `device latest <ID>` is an alias for `device get`. CRUD: create/update/delete. Telemetry: `history <ID>` for time-series. Control: `control <ID> <CMD>`. Adapters: `mqtt`/`webhook`. `types` subcommand: list/get/create/delete (for managing type definitions). `drafts` subcommand: list/get/approve/reject/config |
 | dashboard | list, get, create, update, delete, share, add-components, remove-components | Dashboard CRUD. `--components` replaces ALL; use `add-components` to append safely |
 | widget | list, get, bundle, create, install, uninstall, market-list, market-install | IIFE React components. `create` scaffolds manifest.json + bundle.js. Props: dataSource (.value, .timeSeries), config, title |
 | rule | list, get, create, update, delete, enable, disable, test, history | Rules use DSL: `RULE ... WHEN ... DO ... END` |
@@ -487,10 +479,7 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 | message | list, get, send, read/ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-test, channel-types, channel-type-schema | Send requires `--title` + `--body` + `--severity`. Use `channel-types` to discover types, `channel-type-schema <TYPE>` for config schema. |
 | system | info | MQTT broker, webhook URL, network info |
 | connector | list, get, create, update, delete, test, subscriptions, subscribe, unsubscribe | Data connectors (MQTT, webhook, etc.) |
-| llm | list, get, models, create, update, delete, activate, test | LLM backend management; `models` lists Ollama models |
-| settings | timezone, timezones, retention, cleanup | System settings: timezone, data retention, manual cleanup |
-| config | export, import, validate | Full system configuration backup/restore |
-| automation | list, get, export, import, enable, disable, executions | Unified automation management (rules, transforms, agents) |
+| llm | list, get, models, create, update, delete, activate, test | LLM backend management. `create` needs `--name` + `--type` (ollama/openai/custom) + `--endpoint` + `--model`. `activate` sets as default. `test` verifies connection |
 | push | list, get, create, update, delete, start, stop, test, logs, stats | Data push targets. `create` needs `--name` + `--config`. Type auto-detected from config (webhook/mqtt). Optional: `--schedule` (event/interval) + `--sources` for filtering. |
 
 > **Discover command details**: run `neomind <domain> <action> --help` to see all flags, examples, and usage notes.
@@ -508,7 +497,7 @@ RULE "<name>" WHEN <condition> DO <action> END
 - Actions: `NOTIFY "msg" [channels]`, `EXECUTE device.cmd(key=val)`, `ALERT "title" "msg" SEVERITY`, `TRIGGER_AGENT id "input"`
 - Template vars: `{{device.name}}`, `{{value}}`
 - New rules are **disabled** — must `neomind rule enable <ID>` after create
-- Metric names must match exactly — use `device latest <ID>` to discover real names
+- Metric names must match exactly — use `device list` (grouped by type with metric_fields) or `device get <ID>` to discover real names
 
 ```bash
 neomind rule create --dsl 'RULE high_temp WHEN sensor-001.temperature > 30 DO NOTIFY "High temp on {{device.name}}: {{value}}°C" END'
@@ -553,7 +542,7 @@ DataSource unified fields (v0.8.2+):
 **IMPORTANT**: Always include BOTH unified fields (`source`/`mode`/`id`/`field`) AND legacy fields (`type`/`sourceId`/`property`/`extensionId`/`extensionMetric`) for backward compatibility.
 
 **Critical rules:**
-- **NEVER guess metric names** — always discover via `device latest <ID>` or `extension info <ID>` first
+- **NEVER guess metric names** — always discover via `device list` (metric_fields per type) or `device get <ID>` or `extension info <ID>` first
 - `id` = entity identifier (device ID, extension ID), `field` = metric/command name — same field for all source types
 - **extension field MUST be `COMMAND:FIELD` format** (e.g. `get_weather:temperature_c`). Discover via `extension info <ID>` → each command has `id` and `output_fields[].name`. NEVER use bare field names like `temperature_c` — they silently fail to load data.
 - Charts always use `mode: "timeseries"`; indicators use `mode: "latest"`
@@ -562,7 +551,7 @@ DataSource unified fields (v0.8.2+):
 
 ### Transform JS Rules
 **Discover first, code second** — NEVER guess field names:
-- Device metrics: `neomind device latest <ID>` → see actual field names and structure
+- Device metrics: `neomind device get <ID>` → see actual field names and structure
 - Extension metrics: `neomind extension info <ID>` → see commands, params, return fields
 - Existing transforms: `neomind transform metrics` or `transform data-sources`
 
@@ -583,7 +572,7 @@ Extension calls are pre-executed asynchronously before user code runs.
 
 ```bash
 # Workflow: discover → test → create
-neomind device latest sensor-001          # Step 1: discover fields
+neomind device list                       # Step 1: discover fields (metric_fields per type)
 neomind transform test-code --code '...' --input '{"temperature": 25}'  # Step 2: test
 neomind transform create --name 'F to C' --code 'return (input - 32) * 5 / 9'  # Step 3: create
 ```

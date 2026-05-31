@@ -69,7 +69,8 @@ pub(crate) fn build_history_context(agent: &AiAgent, config: &HistoryConfig) -> 
 
     // 1. Recent execution history (conversation turns) — change-detected, collapses duplicates
     if !agent.conversation_history.is_empty() {
-        let entries = format_changed_history(&agent.conversation_history, config.max_history_entries);
+        let entries =
+            format_changed_history(&agent.conversation_history, config.max_history_entries);
         if !entries.is_empty() {
             parts.push(format!(
                 "### Recent Execution History ({} events)\n{}\n\
@@ -523,10 +524,8 @@ pub(crate) fn format_changed_history(
         let mut scan = idx;
         while scan > 0 {
             scan -= 1;
-            let older_fp = conclusion_fingerprint(
-                &history[scan].output.conclusion,
-                history[scan].success,
-            );
+            let older_fp =
+                conclusion_fingerprint(&history[scan].output.conclusion, history[scan].success);
             if older_fp == fp {
                 similar_count += 1;
                 idx = scan; // Skip past these
@@ -541,7 +540,11 @@ pub(crate) fn format_changed_history(
                 .unwrap_or_else(|| "??".to_string());
             entries.push(format!(
                 "- [{} ~ {}][{}] {} (×{} similar)",
-                first_ts, ts, status, conclusion, similar_count + 1
+                first_ts,
+                ts,
+                status,
+                conclusion,
+                similar_count + 1
             ));
         } else {
             entries.push(format!("- [{}][{}] {}", ts, status, conclusion));

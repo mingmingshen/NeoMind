@@ -785,9 +785,12 @@ export function AgentMonitorWidget({
     agentNotFoundRef.current = false
     setExecutions([])
     setExecutionDetails({})
-    loadAgent()
-    loadExecutions()
-    loadUserMessages()
+    loadAgent().then(() => {
+      if (!agentNotFoundRef.current) {
+        loadExecutions()
+        loadUserMessages()
+      }
+    })
   }, [agentId])
 
   // Load execution details for flow nodes (all visible executions)

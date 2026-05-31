@@ -414,11 +414,8 @@ impl AgentExecutor {
             let history_points = &result.points[start_idx..];
 
             // Use adaptive compression for compact output
-            let compressed = neomind_storage::compress_series_adaptive(
-                history_points,
-                device_id,
-                metric_name,
-            );
+            let compressed =
+                neomind_storage::compress_series_adaptive(history_points, device_id, metric_name);
             values_json["history"] = compressed["series"].clone();
             values_json["history_count"] = serde_json::json!(history_points.len());
 
@@ -546,7 +543,10 @@ impl AgentExecutor {
                 bound.clone()
             } else {
                 // Get all available metrics for this device
-                let all_metrics = storage.list_metrics(&format!("device:{}", device_id)).await.unwrap_or_default();
+                let all_metrics = storage
+                    .list_metrics(&format!("device:{}", device_id))
+                    .await
+                    .unwrap_or_default();
                 tracing::debug!(
                     device_id = %device_id,
                     metrics_count = all_metrics.len(),

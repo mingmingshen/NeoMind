@@ -51,7 +51,6 @@ use crate::agent::semantic_mapper::SemanticToolMapper;
 use crate::agent::types::LlmBackend;
 use crate::error::{NeoMindError, Result as AgentResult};
 
-
 /// Internal representation of image content for multimodal LLM messages.
 #[allow(dead_code)]
 enum ImageContent {
@@ -146,9 +145,8 @@ pub(crate) use data_collector::get_time_context;
 pub(crate) use intent::extract_threshold;
 pub(crate) use response_parser::{
     extract_command_from_description, extract_device_from_description, extract_json_from_codeblock,
-    extract_json_from_mixed_text, extract_string_field, json_value_to_string,
-    sanitize_json_string, summarize_tool_output,
-    try_recover_truncated_json,
+    extract_json_from_mixed_text, extract_string_field, json_value_to_string, sanitize_json_string,
+    summarize_tool_output, try_recover_truncated_json,
 };
 
 /// Build JSON Schema parameters from extension command parameters.
@@ -264,7 +262,8 @@ fn compact_executor_messages(messages: &mut [Message], keep_recent: usize) {
             let text = messages[i].content.as_text();
             if text.len() > 200 {
                 let preview = &text[..text.floor_char_boundary(100)];
-                messages[i].content = Content::text(format!("[Previous reasoning: {}...]", preview));
+                messages[i].content =
+                    Content::text(format!("[Previous reasoning: {}...]", preview));
             }
             compacted_count += 1;
         }
@@ -426,10 +425,7 @@ impl AgentExecutor {
         use neomind_storage::agents::ExecutionMode;
 
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
-        let registry_available = self
-            .tool_registry
-            .read()
-            .is_some();
+        let registry_available = self.tool_registry.read().is_some();
 
         if !(llm_supports_tools && registry_available) {
             tracing::info!(
@@ -477,31 +473,31 @@ impl AgentExecutor {
         use neomind_core::llm::backend::sanitize_tool_name;
 
         let defs = registry.definitions();
-        let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut name_map: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
 
-        let to_tool_def =
-            |d: &crate::toolkit::tool::ToolDefinition, map: &mut std::collections::HashMap<String, String>| -> neomind_core::llm::backend::ToolDefinition {
-                let sanitized = sanitize_tool_name(&d.name);
-                if sanitized != d.name {
-                    map.entry(sanitized.clone()).or_insert_with(|| d.name.clone());
-                }
-                neomind_core::llm::backend::ToolDefinition {
-                    name: sanitized,
-                    description: d.description.clone(),
-                    parameters: d.parameters.clone(),
-                }
-            };
+        let to_tool_def = |d: &crate::toolkit::tool::ToolDefinition,
+                           map: &mut std::collections::HashMap<String, String>|
+         -> neomind_core::llm::backend::ToolDefinition {
+            let sanitized = sanitize_tool_name(&d.name);
+            if sanitized != d.name {
+                map.entry(sanitized.clone())
+                    .or_insert_with(|| d.name.clone());
+            }
+            neomind_core::llm::backend::ToolDefinition {
+                name: sanitized,
+                description: d.description.clone(),
+                parameters: d.parameters.clone(),
+            }
+        };
 
         // Both Focused and Free get the same tool set.
         // Focused JSON path: execute_decisions whitelist enforces scope.
         // Free mode (tool calling): all tools available, agent decides what to use.
         let filtered = match tool_config {
             Some(config) if !config.allowed_tools.is_empty() => {
-                let allowed: std::collections::HashSet<&str> = config
-                    .allowed_tools
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect();
+                let allowed: std::collections::HashSet<&str> =
+                    config.allowed_tools.iter().map(|s| s.as_str()).collect();
 
                 defs.iter()
                     .filter(|d| allowed.contains(d.name.as_str()))
@@ -611,7 +607,8 @@ impl AgentExecutor {
              Stop calling tools and write your final response when:\n\
              - You have collected enough data to answer the task.\n\
              - A tool call failed and retrying won't help.\n\
-             Write your analysis directly — do NOT use JSON or code blocks.\n".to_string()
+             Write your analysis directly — do NOT use JSON or code blocks.\n"
+                .to_string()
         } else {
             format!(
                 "\n## When to stop\n\
@@ -743,10 +740,7 @@ impl AgentExecutor {
     /// Build sections for Free mode:
     /// - resource_info: flat resource list
     /// - current_data: full pre-collected data dump
-    fn build_free_sections(
-        agent: &AiAgent,
-        data_collected: &[DataCollected],
-    ) -> (String, String) {
+    fn build_free_sections(agent: &AiAgent, data_collected: &[DataCollected]) -> (String, String) {
         let resource_info = if agent.resources.is_empty() {
             String::new()
         } else {
@@ -940,8 +934,7 @@ impl AgentExecutor {
                 Err(e) => {
                     // Thinking model fallback: some models (qwen3, deepseek-r1) put tool calls
                     // in the thinking field instead of the main text output.
-                    let text_empty = output.text.trim().is_empty()
-                        || output.text.trim().len() < 20;
+                    let text_empty = output.text.trim().is_empty() || output.text.trim().len() < 20;
                     if text_empty {
                         if let Some(ref thinking) = output.thinking {
                             if let Ok((_, thinking_calls)) = parse_tool_calls(thinking) {
@@ -990,8 +983,7 @@ impl AgentExecutor {
             // Remove duplicate tool calls within the same round (same name + similar args).
             let mut seen_this_round: HashSet<String> = HashSet::new();
             tool_calls.retain(|tc| {
-                let args_preview = serde_json::to_string(&tc.arguments)
-                    .unwrap_or_default();
+                let args_preview = serde_json::to_string(&tc.arguments).unwrap_or_default();
                 let bound = args_preview.len().min(100);
                 let args_short = &args_preview[..args_preview.floor_char_boundary(bound)];
                 let sig = format!("{}:{}", tc.name, args_short);
@@ -1003,8 +995,7 @@ impl AgentExecutor {
             // the same arguments. This prevents small models from wasting tokens.
             let before_count = tool_calls.len();
             tool_calls.retain(|tc| {
-                let args_preview = serde_json::to_string(&tc.arguments)
-                    .unwrap_or_default();
+                let args_preview = serde_json::to_string(&tc.arguments).unwrap_or_default();
                 let bound = args_preview.len().min(100);
                 let args_short = &args_preview[..args_preview.floor_char_boundary(bound)];
                 let sig = format!("{}:{}", tc.name, args_short);
@@ -1036,12 +1027,11 @@ impl AgentExecutor {
                     Content::text(
                         "Those tool calls were already executed in previous rounds with the same \
                          arguments. Please use different tools or parameters, or provide your \
-                         final answer based on the results you already have."
+                         final answer based on the results you already have.",
                     ),
                 ));
                 continue;
             }
-
 
             // --- Duplicate round detection ---
             // Compare tool signatures (name + key arguments) to detect truly stuck loops.
@@ -1051,11 +1041,14 @@ impl AgentExecutor {
                 let mut sigs: Vec<String> = tool_calls
                     .iter()
                     .map(|tc| {
-                        let action = tc.arguments.get("action")
+                        let action = tc
+                            .arguments
+                            .get("action")
                             .and_then(|v| v.as_str())
                             .unwrap_or("");
                         let mut sig = format!("{}|{}", tc.name, action);
-                        for param in &["device_id", "metric", "agent_id", "rule_id", "extension_id"] {
+                        for param in &["device_id", "metric", "agent_id", "rule_id", "extension_id"]
+                        {
                             if let Some(val) = tc.arguments.get(*param).and_then(|v| v.as_str()) {
                                 sig.push_str(&format!("|{}", val));
                             }
@@ -1403,10 +1396,7 @@ impl AgentExecutor {
                 if all_tool_results.is_empty() {
                     "No tools were executed.".to_string()
                 } else {
-                    format!(
-                        "Executed {} tool operation(s).",
-                        all_tool_results.len()
-                    )
+                    format!("Executed {} tool operation(s).", all_tool_results.len())
                 }
             });
 
@@ -1626,9 +1616,7 @@ impl AgentExecutor {
 
     /// Update the tool registry (e.g. after extensions are loaded).
     pub fn set_tool_registry(&self, registry: Arc<crate::toolkit::ToolRegistry>) {
-        *self
-            .tool_registry
-            .write() = Some(registry);
+        *self.tool_registry.write() = Some(registry);
     }
 
     // ========================================================================
@@ -2118,10 +2106,7 @@ impl AgentExecutor {
                     let agent_id_for_log = agent.id.clone();
                     let backend_sems = self.backend_semaphores.clone();
                     let executor_skill_registry = self._config.skill_registry.clone();
-                    let executor_tool_registry = self
-                        .tool_registry
-                        .read()
-                        .clone();
+                    let executor_tool_registry = self.tool_registry.read().clone();
                     let executor_extension_registry = self.extension_registry.clone();
                     let executor_memory_store = self.memory_store.clone();
                     let backend_id = agent
@@ -2332,10 +2317,7 @@ impl AgentExecutor {
             let agent_id_for_log = agent.id.clone();
             let backend_sems = self.backend_semaphores.clone();
             let executor_skill_registry = self._config.skill_registry.clone();
-            let executor_tool_registry = self
-                .tool_registry
-                .read()
-                .clone();
+            let executor_tool_registry = self.tool_registry.read().clone();
             let executor_extension_registry = self.extension_registry.clone();
             let executor_memory_store = self.memory_store.clone();
             let backend_id = agent
@@ -2497,18 +2479,20 @@ impl AgentExecutor {
                             filter.get("device_id").and_then(|v| v.as_str())
                         {
                             if (filter_device == "all" || filter_device == source_id)
-                                && source_type == "device" {
-                                    return true;
-                                }
+                                && source_type == "device"
+                            {
+                                return true;
+                            }
                         }
                     } else if event_type == "extension.output" {
                         if let Some(filter_ext) =
                             filter.get("extension_id").and_then(|v| v.as_str())
                         {
                             if (filter_ext == "all" || filter_ext == source_id)
-                                && source_type == "extension" {
-                                    return true;
-                                }
+                                && source_type == "extension"
+                            {
+                                return true;
+                            }
                         }
                     }
                 }
@@ -2743,11 +2727,9 @@ impl AgentExecutor {
         // to Err and a proper Failed execution record is created instead of
         // silently disappearing.
         let execution_result: AgentResult<(DecisionProcess, StorageExecutionResult)> =
-            match std::panic::AssertUnwindSafe(
-                self.execute_internal(context, event_data.clone())
-            )
-            .catch_unwind()
-            .await
+            match std::panic::AssertUnwindSafe(self.execute_internal(context, event_data.clone()))
+                .catch_unwind()
+                .await
             {
                 Ok(Ok(result)) => Ok(result),
                 Ok(Err(e)) => Err(e),

@@ -185,7 +185,7 @@ impl From<neomind_rules::RuleError> for ErrorResponse {
             }
             m if m.contains("WHEN clause not found") => {
                 "WHEN clause is required. Syntax: WHEN <device_id>.<metric> <op> <value>\n\
-                 Run 'neomind device list' and 'neomind device latest <ID>' to discover valid IDs and metrics.".to_string()
+                 Run 'neomind device list' (shows metric_fields per type) or 'neomind device get <ID>' to discover valid IDs and metrics.".to_string()
             }
             m if m.contains("Invalid condition") || m.contains("Invalid threshold") => {
                 "Condition format: <device_id>.<metric> <op> <number>\n\

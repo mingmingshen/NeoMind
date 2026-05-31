@@ -1079,8 +1079,13 @@ impl AgentStore {
 
         for item in table.iter()? {
             let (_id, bytes) = item?;
-            let mut agent: AiAgent = serde_json::from_slice(bytes.value())
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let mut agent: AiAgent = match serde_json::from_slice(bytes.value()) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("Skipping corrupted agent record {}: {}", _id.value(), e);
+                    continue;
+                }
+            };
 
             // Normalize memory limits for backward compatibility
             normalize_agent_memory_limits(&mut agent);
@@ -1517,8 +1522,13 @@ impl AgentStore {
 
         for item in table.iter()? {
             let (_id, bytes) = item?;
-            let execution: AgentExecutionRecord = serde_json::from_slice(bytes.value())
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let execution: AgentExecutionRecord = match serde_json::from_slice(bytes.value()) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("Skipping corrupted execution record {}: {}", _id.value(), e);
+                    continue;
+                }
+            };
 
             if self.matches_execution_filter(&execution, &filter) {
                 executions.push(execution);
@@ -1566,8 +1576,15 @@ impl AgentStore {
         let mut to_remove: Vec<String> = Vec::new();
         for item in table.iter()? {
             let (id, bytes) = item?;
-            let execution: AgentExecutionRecord = serde_json::from_slice(bytes.value())
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let execution: AgentExecutionRecord = match serde_json::from_slice(bytes.value()) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("Skipping corrupted execution record {}: {}", id.value(), e);
+                    // Remove corrupted records during cleanup
+                    to_remove.push(id.value().to_string());
+                    continue;
+                }
+            };
 
             if execution.timestamp < older_than {
                 to_remove.push(id.value().to_string());

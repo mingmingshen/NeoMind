@@ -659,10 +659,7 @@
     "commandSetValue": "设置值",
     "transform": "数据转换",
     "transformDesc": "数据转换输出",
-    "aiMetric": "AI 指标",
-    "aiMetricDesc": "AI 代理生成的指标",
     "noTransforms": "暂无数据转换",
-    "noAiMetrics": "暂无 AI 指标",
     "boundTo": "已绑定 {{source}}",
     "configureInTab": "在数据源选项卡中配置",
     "unbindDataSource": "解绑数据源"

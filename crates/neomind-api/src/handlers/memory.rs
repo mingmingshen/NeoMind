@@ -726,3 +726,108 @@ pub async fn update_memory_file(
         ),
     }
 }
+
+// ============================================================================
+// Custom Files API
+// ============================================================================
+
+/// GET /api/memory/custom - List all custom files
+pub async fn list_custom_files(State(state): State<ServerState>) -> Response {
+    let store = get_memory_store(&state);
+    if let Err(e) = store.init() {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to initialize store: {}", e),
+        );
+    }
+
+    match store.list_custom_files() {
+        Ok(files) => {
+            let files_json: Vec<serde_json::Value> = files
+                .into_iter()
+                .map(|(name, chars)| {
+                    serde_json::json!({
+                        "name": name,
+                        "chars": chars,
+                    })
+                })
+                .collect();
+            Json(serde_json::json!({
+                "success": true,
+                "files": files_json,
+            }))
+            .into_response()
+        }
+        Err(e) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to list custom files: {}", e),
+        ),
+    }
+}
+
+/// GET /api/memory/custom/:name - Read a custom file
+pub async fn get_custom_file(
+    State(state): State<ServerState>,
+    Path(name): Path<String>,
+) -> Response {
+    let store = get_memory_store(&state);
+
+    match store.read_custom_file(&name) {
+        Ok(content) => Json(serde_json::json!({
+            "success": true,
+            "name": name,
+            "content": content,
+            "chars": content.chars().count(),
+        }))
+        .into_response(),
+        Err(e) => error_response(
+            StatusCode::NOT_FOUND,
+            format!("Custom file not found: {}", e),
+        ),
+    }
+}
+
+/// PUT /api/memory/custom/:name - Create or update a custom file
+pub async fn update_custom_file(
+    State(state): State<ServerState>,
+    Path(name): Path<String>,
+    Json(req): Json<UpdateMemoryRequest>,
+) -> Response {
+    let store = get_memory_store(&state);
+
+    match store.write_custom_file(&name, &req.content) {
+        Ok(()) => {
+            tracing::info!(name = %name, chars = req.content.len(), "Custom memory file updated via API");
+            Json(serde_json::json!({
+                "success": true,
+                "message": format!("Custom file '{}' updated", name),
+                "chars": req.content.chars().count(),
+            }))
+            .into_response()
+        }
+        Err(e) => error_response(
+            StatusCode::BAD_REQUEST,
+            format!("Failed to write custom file '{}': {}", name, e),
+        ),
+    }
+}
+
+/// DELETE /api/memory/custom/:name - Delete a custom file
+pub async fn delete_custom_file(
+    State(state): State<ServerState>,
+    Path(name): Path<String>,
+) -> Response {
+    let store = get_memory_store(&state);
+
+    match store.delete_custom_file(&name) {
+        Ok(()) => Json(serde_json::json!({
+            "success": true,
+            "message": format!("Custom file '{}' deleted", name),
+        }))
+        .into_response(),
+        Err(e) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to delete custom file '{}': {}", name, e),
+        ),
+    }
+}

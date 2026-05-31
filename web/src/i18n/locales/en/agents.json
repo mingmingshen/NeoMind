@@ -614,6 +614,19 @@
     "lines": "lines",
     "empty": "No content yet",
     "charsUsed": "{{used}} / {{limit}} chars",
-    "noContent": "No content yet"
+    "noContent": "No content yet",
+    "custom": {
+      "title": "Custom Files",
+      "create": "Create",
+      "createTitle": "Create Custom File",
+      "fileName": "File Name",
+      "fileNameHint": "Lowercase letters, digits, hyphens, underscores. 1-32 chars.",
+      "fileContent": "Content (Markdown)",
+      "empty": "No custom files. Create one to store domain-specific knowledge.",
+      "deleted": "Custom file deleted",
+      "created": "Custom file created",
+      "delete": "Delete",
+      "deleteConfirm": "Delete this custom file? This cannot be undone."
+    }
   }
 }

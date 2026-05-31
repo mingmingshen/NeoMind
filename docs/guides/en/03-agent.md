@@ -49,7 +49,6 @@ crates/neomind-agent/src/
 │   ├── shell.rs                #   Shell command execution (v0.6.10)
 │   ├── skill_tool.rs           #   Skill management tool (v0.6.10)
 │   ├── extension_tools.rs      #   Extension tool generator and executor
-│   ├── ai_metric.rs            #   AI metric query tools
 │   ├── session_search.rs       #   Session search tool
 │   ├── time_utils.rs           #   Time range parsing utilities
 │   └── error.rs                #   Tool error types
@@ -547,7 +546,6 @@ pub enum ToolCallStatus {
 - ShellTool                // System command execution via neomind CLI (v0.6.10)
 - SkillTool                // User-defined skill management (v0.6.10)
 - ExtensionTool            // Extension tool generator and executor
-- AiMetricTool             // AI metric query tools
 - SessionSearchTool        // Session history search
 
 /// Infrastructure
@@ -763,7 +761,7 @@ neomind device list --type temperature
 neomind rule create --dsl "RULE temp_alert WHEN device.temp > 30 DO notify"
 
 # Query latest readings
-neomind device latest <device_id>
+neomind device get <device_id>
 ```
 
 ## Common Errors

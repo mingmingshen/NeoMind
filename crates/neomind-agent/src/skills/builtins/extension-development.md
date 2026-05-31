@@ -9,7 +9,7 @@ triggers:
   keywords: [extension development, create extension, build extension, extension sdk, neomind extension, 扩展开发, 开发扩展, extension create, extension build, custom extension, neomind_export, Extension trait, capability, FFI, native extension, .nep]
   tool_target:
     - tool: extension
-      actions: [create, build, validate, install, uninstall]
+      actions: [create, build, validate, install, uninstall, list, get, status, logs, config, reload]
 anti_triggers:
   keywords: [widget, component, IIFE, bundle.js, dashboard component]
 ---
@@ -40,7 +40,7 @@ NeoMind Server
 
 ```bash
 neomind device list                    # What devices exist?
-neomind device latest <DEVICE_ID>      # What metrics do they have?
+neomind device get <DEVICE_ID>      # What metrics do they have?
 neomind extension list                 # What extensions are installed?
 neomind llm list                       # What LLM backends available?
 neomind system info                    # MQTT broker, webhook URL
@@ -53,6 +53,14 @@ neomind extension create my-extension --extension-type tool -o ./extensions
 ```
 
 ### Step 2: Edit `src/lib.rs` (see complete template below)
+
+If extension source is inside the data directory (e.g., `data/extensions/my-extension/src/lib.rs`), use `file_write` or `file_edit`:
+```
+file_write(path="extensions/my-extension/src/lib.rs", content="use neomind_extension_sdk::prelude::*;\n...")
+file_edit(path="extensions/my-extension/Cargo.toml", old_string='name = "old-name"', new_string='name = "new-name"')
+```
+
+If the extension source is outside the data directory, use shell commands or set `NEOMIND_ALLOWED_WRITE_DIRS` env var to include the development directory.
 
 ### Step 3: Build & Install
 

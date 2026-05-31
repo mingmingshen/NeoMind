@@ -687,10 +687,7 @@
     "commandSetValue": "Set Value",
     "transform": "Transforms",
     "transformDesc": "Data transformation outputs",
-    "aiMetric": "AI Metrics",
-    "aiMetricDesc": "AI agent generated metrics",
     "noTransforms": "No transform data sources",
-    "noAiMetrics": "No AI metrics",
     "boundTo": "Bound to {{source}}",
     "configureInTab": "Configure in Data Source tab",
     "unbindDataSource": "Unbind data source"

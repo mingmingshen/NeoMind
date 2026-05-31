@@ -15,10 +15,9 @@
 //! │   ## Agent Experiences            #   - Domain Knowledge (AI-managed)
 //! │                                   #   - Agent Experiences (auto-generated)
 //! ├── agents/{agent_id}.md            # Agent summaries (created by bridge)
-//! └── sessions/{session_id}/          # Session temp files (no char limit)
-//!     ├── notes.md
-//!     ├── scratch.md
-//!     └── todo.md
+//! ├── custom/{name}.md                # Custom domain-specific files (max agent_char_limit chars/file)
+//! └── sessions/{session_id}/          # Session temp files (no char limit, 7-day TTL)
+//!     └── notes.md
 //! ```
 //!
 //! ## Migration from Legacy
@@ -402,9 +401,10 @@ pub struct SessionStats {
 /// - `KNOWLEDGE.md` - System knowledge (max `knowledge_char_limit` chars, default 3000)
 ///
 /// **Session temp files (unlimited):**
-/// - `sessions/{session_id}/notes.md` - Session notes
-/// - `sessions/{session_id}/scratch.md` - Scratch pad
-/// - `sessions/{session_id}/todo.md` - To-do list
+/// - `sessions/{session_id}/notes.md` - Session notes (7-day TTL)
+///
+/// **Custom files (LLM auto-created):**
+/// - `custom/{name}.md` - Domain-specific knowledge (max `agent_char_limit` chars/file)
 ///
 /// **Agent files (managed by bridge):**
 /// - `agents/{agent_id}.md` - Agent summaries (max `agent_char_limit` chars, default 500)
@@ -442,6 +442,7 @@ impl MarkdownMemoryStore {
         fs::create_dir_all(&self.base_path)?;
         fs::create_dir_all(self.base_path.join("agents"))?;
         fs::create_dir_all(self.base_path.join("sessions"))?;
+        fs::create_dir_all(self.base_path.join("custom"))?;
 
         // Create USER.md if it doesn't exist
         let user_path = self.base_path.join("USER.md");
@@ -776,6 +777,100 @@ impl MarkdownMemoryStore {
         }
 
         Ok(deleted_count)
+    }
+
+    // ========================================================================
+    // Custom files API (domain-specific memory files)
+    // ========================================================================
+
+    /// Validate a custom file name.
+    /// Must be 1-32 chars, only lowercase alphanumeric, hyphens, underscores.
+    fn validate_custom_name(name: &str) -> Result<()> {
+        if name.is_empty() || name.len() > 32 {
+            return Err(Error::InvalidInput(
+                "Custom file name must be 1-32 characters".to_string(),
+            ));
+        }
+        if !name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+        {
+            return Err(Error::InvalidInput(
+                "Custom file name must only contain lowercase letters, digits, hyphens, and underscores".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Read a custom memory file. Returns empty string if not found.
+    pub fn read_custom_file(&self, name: &str) -> Result<String> {
+        Self::validate_custom_name(name)?;
+        let path = self.base_path.join("custom").join(format!("{}.md", name));
+        if !path.exists() {
+            return Ok(String::new());
+        }
+        fs::read_to_string(&path)
+            .map_err(|e| Error::Storage(format!("Failed to read custom file {}: {}", name, e)))
+    }
+
+    /// Write a custom memory file. Enforces per-file char limit.
+    pub fn write_custom_file(&self, name: &str, content: &str) -> Result<()> {
+        Self::validate_custom_name(name)?;
+        let limit = self.config.agent_char_limit; // reuse agent_char_limit as per-file limit
+        let char_count = content.chars().count();
+        if char_count > limit {
+            return Err(Error::InvalidInput(format!(
+                "Custom file content exceeds {} char limit: {} > {}",
+                name,
+                char_count,
+                limit
+            )));
+        }
+        let dir = self.base_path.join("custom");
+        fs::create_dir_all(&dir)?;
+        let path = dir.join(format!("{}.md", name));
+        fs::write(&path, content)
+            .map_err(|e| Error::Storage(format!("Failed to write custom file {}: {}", name, e)))?;
+        info!(name = %name, chars = char_count, "Wrote custom memory file");
+        Ok(())
+    }
+
+    /// List all custom memory files. Returns (name, char_count) pairs.
+    pub fn list_custom_files(&self) -> Result<Vec<(String, usize)>> {
+        let custom_dir = self.base_path.join("custom");
+        if !custom_dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut files = Vec::new();
+        for entry in fs::read_dir(&custom_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().map(|e| e == "md").unwrap_or(false) {
+                if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
+                    let content = fs::read_to_string(&path).unwrap_or_default();
+                    files.push((name.to_string(), content.chars().count()));
+                }
+            }
+        }
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(files)
+    }
+
+    /// Delete a custom memory file.
+    pub fn delete_custom_file(&self, name: &str) -> Result<()> {
+        Self::validate_custom_name(name)?;
+        let path = self.base_path.join("custom").join(format!("{}.md", name));
+        if path.exists() {
+            fs::remove_file(&path)
+                .map_err(|e| Error::Storage(format!("Failed to delete custom file {}: {}", name, e)))?;
+            info!(name = %name, "Deleted custom memory file");
+        }
+        Ok(())
+    }
+
+    /// Get the custom directory path.
+    pub fn custom_dir(&self) -> PathBuf {
+        self.base_path.join("custom")
     }
 
     // ========================================================================

@@ -18,25 +18,30 @@ anti_triggers:
 
 Agents are LLM-powered automated tasks. They can be scheduled (interval/cron) or event-driven, and have access to the shell tool to execute CLI commands.
 
-## CRITICAL: Create → Activate Pattern
+## CRITICAL: Create → Active Pattern
 
-New agents are created in **paused** state. You MUST activate them:
+New agents are created in **active** state and start executing immediately (if scheduled). Use this pattern:
 
 ```bash
 neomind agent create --name 'Monitor' --prompt 'Check battery levels'
-# → Returns agent ID (e.g., agent-abc123)
+# → Returns agent ID (e.g., agent-abc123), already active and running
 
+# To pause later:
+neomind agent control agent-abc123 --status paused
+
+# To resume:
 neomind agent control agent-abc123 --status active
-# → Now it's running
 ```
 
 ## Schedule Types
 
-| Type | `--schedule-type` | `--schedule-config` | Example |
-|------|-------------------|---------------------|---------|
+| Type | `--schedule-type` | Shortcut / `--schedule-config` | Example |
+|------|-------------------|-------------------------------|---------|
 | Event | `event` (default) | Not needed | Manual trigger via `invoke` |
-| Interval | `interval` | Seconds as string | `--schedule-config '300'` = every 5 min |
-| Cron | `cron` | Cron expression | `--schedule-config '0 9 * * *'` = daily 9 AM |
+| Interval | `interval` | `--every 5m` (shortcut) or `--schedule-config '300'` | `--every 5m` = every 5 min |
+| Cron | `cron` | `--schedule-config` | `--schedule-config '0 9 * * *'` = daily 9 AM |
+
+**`--every` shortcut**: `--every 30s`, `--every 5m`, `--every 1h`, `--every 2d` — replaces `--schedule-type interval --schedule-config <seconds>`.
 
 ## Execution Modes
 
@@ -114,31 +119,25 @@ neomind agent send-message <ID> --body 'Directive' --type instruction
 ### Interval-Based Monitoring Agent
 
 ```bash
-# 1. Create agent that runs every 5 minutes
+# 1. Create agent that runs every 5 minutes (active immediately)
 neomind agent create \
   --name 'Battery Monitor' \
   --prompt 'Check all devices battery levels. List devices below 20%. Send warning if any found.' \
-  --schedule-type interval \
-  --schedule-config '300'
+  --every 5m
 
-# 2. Activate
-neomind agent control <AGENT_ID> --status active
-
-# 3. Check results after a few minutes
+# 2. Check results after a few minutes
 neomind agent latest-execution <AGENT_ID>
 ```
 
 ### Cron-Based Daily Report
 
 ```bash
-# Daily at 9:00 AM
+# Daily at 9:00 AM (active immediately)
 neomind agent create \
   --name 'Morning Report' \
   --prompt 'Summarize all device statuses. Count online/offline. Report anomalies from last 24 hours.' \
   --schedule-type cron \
   --schedule-config '0 9 * * *'
-
-neomind agent control <AGENT_ID> --status active
 ```
 
 ### On-Demand Analysis Agent
@@ -160,12 +159,9 @@ neomind agent invoke <AGENT_ID> --input 'Analyze temperature trends for sensor-0
 neomind agent create \
   --name 'Sensor Monitor' \
   --prompt 'Monitor temperature and humidity sensors. Alert if any reading is abnormal.' \
-  --schedule-type interval \
-  --schedule-config '300' \
+  --every 5m \
   --execution-mode focused \
   --device-ids 'sensor-001,sensor-002,sensor-003'
-
-neomind agent control <AGENT_ID> --status active
 ```
 
 ### Debug Agent Issues
@@ -199,9 +195,8 @@ neomind agent control <ID> --status active
 ### Full Lifecycle
 
 ```bash
-neomind agent create --name 'Health Check' --prompt 'Check all devices' --schedule-type interval --schedule-config '600'
-neomind agent control <ID> --status active
-# ... wait, check results ...
+neomind agent create --name 'Health Check' --prompt 'Check all devices' --every 10m
+# ... agent starts immediately, check results ...
 neomind agent latest-execution <ID>
 neomind agent control <ID> --status paused    # Stop when done
 neomind agent delete <ID>                      # Remove when no longer needed
@@ -213,7 +208,7 @@ neomind agent delete <ID>                      # Remove when no longer needed
 |-------|-------|----------|
 | "Agent not found" | Wrong ID | Run `neomind agent list` for valid IDs |
 | Create fails | Missing `--name` or `--prompt` | Both are required flags |
-| Agent not running on schedule | Status is `paused` | Run `agent control <ID> --status active` |
+| Agent not running on schedule | Status is `paused` or wrong schedule config | Run `agent get <ID>` to check status and schedule, then `agent control <ID> --status active` if paused |
 | Control fails | Invalid status value | Only `active` and `paused` are valid |
 | Focused mode error | No resources bound | Add `--device-ids` or `--resources` |
 | Execution shows error | LLM or tool failure | Check `agent conversation <ID>` for details |

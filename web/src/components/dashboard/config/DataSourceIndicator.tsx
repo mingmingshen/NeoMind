@@ -36,8 +36,6 @@ export function getSourceSummary(ds: DataSource): string {
       return ds.extensionId ? `cmd:${ds.extensionId}:${ds.extensionCommand ?? ''}` : 'cmd'
     case 'transform':
       return `tf:${ds.transformId ?? ''}`
-    case 'ai-metric':
-      return `ai:${ds.aiGroup ?? ''}`
     default:
       return sourceId || 'source'
   }

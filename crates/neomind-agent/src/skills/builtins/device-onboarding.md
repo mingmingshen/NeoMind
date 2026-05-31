@@ -11,7 +11,7 @@ triggers:
     - tool: system
       actions: [info]
     - tool: device
-      actions: [create, list, types, control, latest, drafts, webhook-url]
+      actions: [create, list, types, control, latest, drafts, webhook-url, update, delete, history, write-metric]
 anti_triggers:
   keywords: [rule, 规则, agent, 代理, dashboard, 仪表盘, transform, 转换]
 ---
@@ -323,7 +323,7 @@ Check `neomind system info` → `mqtt.tls_enabled`. If true, use `mqtts://` sche
 ```bash
 neomind system info    # Check mqtt.connected and mqtt.devices_connected
 neomind device list    # See all registered devices
-neomind device latest <ID>  # Check latest data from a device
+neomind device get <ID>  # Check latest data from a device
 ```
 
 ### "My device sends data but it doesn't appear"
@@ -368,7 +368,7 @@ These typically require a **gateway** that translates the protocol to MQTT or HT
 | `neomind device create --name <NAME> [--device-type <T>] [--adapter-type <A>]` | Create device |
 | `neomind device update <ID> [--name <N>] [--config '<JSON>']` | Update device |
 | `neomind device delete <ID>` | Delete device |
-| `neomind device latest <ID>` | Get latest metric values |
+| `neomind device get <ID>` | Get device details (metrics + commands) |
 | `neomind device history <ID> [--metric <M>] [--time-range <R>]` | Telemetry history |
 | `neomind device control <ID> <CMD> [--params '<JSON>']` | Send command |
 | `neomind device types list` | List device types |
@@ -423,6 +423,6 @@ curl -X POST http://<SERVER_IP>:9375/api/devices/<DEVICE_ID>/webhook \
 - **"TLS handshake failed"**: TLS is enabled on the broker (port uses `mqtts://`). The device must be configured to use TLS and trust the CA certificate. The CA cert can be downloaded from the web UI.
 - **"Received corrupt message"**: Device is connecting with plain TCP to a TLS-enabled port. Switch to `mqtts://` or configure TLS on the device side.
 - **"Webhook returns 404"**: The device must be created first via `neomind device create` before sending webhook data. Use the exact device ID from the create response.
-- **"Data not updating"**: Run `neomind device latest <ID>` to check latest readings. If stale, verify the device is still publishing. Check `neomind system info` for MQTT connection status.
+- **"Data not updating"**: Run `neomind device get <ID>` to check latest readings. If stale, verify the device is still publishing. Check `neomind system info` for MQTT connection status.
 - **"Device sent data but not in device list"**: New devices appear as drafts. Run `neomind device drafts list` to find pending devices, then `neomind device drafts approve <ID>` to register.
 - **"Too many unknown devices appearing"**: Adjust auto-discovery settings with `neomind device drafts config --max-samples 5` or disable with `--enabled false`.

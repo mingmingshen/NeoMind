@@ -167,9 +167,8 @@ fn extract_image_insight(situation_analysis: &str, conclusion: &str) -> String {
     let max_chars = 200;
 
     // Sentence-ending punctuation used to find a natural break point
-    let is_sentence_end = |c: char| -> bool {
-        matches!(c, '。' | '.' | '！' | '？' | '!' | '?')
-    };
+    let is_sentence_end =
+        |c: char| -> bool { matches!(c, '。' | '.' | '！' | '？' | '!' | '?') };
 
     // Try to find a visually descriptive segment from situation_analysis
     let visual_markers: &[&str] = &[
@@ -190,10 +189,7 @@ fn extract_image_insight(situation_analysis: &str, conclusion: &str) -> String {
     for marker in visual_markers {
         if let Some(pos) = situation_analysis.find(marker) {
             // Take up to max_chars characters (not bytes) after the marker position
-            let segment: String = situation_analysis[pos..]
-                .chars()
-                .take(max_chars)
-                .collect();
+            let segment: String = situation_analysis[pos..].chars().take(max_chars).collect();
 
             // Try to cut at the last sentence boundary
             let cut = segment

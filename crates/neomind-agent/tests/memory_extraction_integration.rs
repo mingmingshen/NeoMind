@@ -152,10 +152,7 @@ async fn test_chat_extraction_skips_system_evolution() -> anyhow::Result<()> {
         .iter()
         .filter(|c| !c.trim().is_empty())
         .count();
-    assert!(
-        non_empty >= 1,
-        "At least 1 file should be populated"
-    );
+    assert!(non_empty >= 1, "At least 1 file should be populated");
 
     Ok(())
 }
