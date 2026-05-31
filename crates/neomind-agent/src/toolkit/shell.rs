@@ -511,20 +511,21 @@ Grid is 12 columns. `--components` **replaces ALL** — always use `add-componen
 **Quick copy-paste templates** (replace values in CAPS):
 ```bash
 # 1. Value card (single metric): 4x2
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c1","type":"value-card","title":"LABEL","position":{"x":0,"y":0,"w":4,"h":2},"data_source":{"type":"device","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"latest","sourceId":"DEVICE_ID","property":"METRIC_NAME"}}]'
+#    IMPORTANT: type MUST be "telemetry" (not "device") for metric bindings
+neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c1","type":"value-card","title":"LABEL","position":{"x":0,"y":0,"w":4,"h":2},"data_source":{"type":"telemetry","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"latest","sourceId":"DEVICE_ID","metricId":"METRIC_NAME","timeRange":1,"limit":50}}]'
 
 # 2. Line chart (trend): 12x4
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c2","type":"line-chart","title":"LABEL","position":{"x":0,"y":2,"w":12,"h":4},"data_source":{"type":"device","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"timeseries","sourceId":"DEVICE_ID","property":"METRIC_NAME","timeWindow":{"type":"last_24hours"}}}]'
+neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c2","type":"line-chart","title":"LABEL","position":{"x":0,"y":2,"w":12,"h":4},"data_source":{"type":"telemetry","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"timeseries","sourceId":"DEVICE_ID","metricId":"METRIC_NAME","timeRange":1,"limit":50,"timeWindow":{"type":"last_24hours"}}}]'
 
 # 3. Gauge: 3x3
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c3","type":"gauge","title":"LABEL","position":{"x":4,"y":0,"w":3,"h":3},"data_source":{"type":"device","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"latest","sourceId":"DEVICE_ID","property":"METRIC_NAME"},"display":{"min":0,"max":100,"unit":"%"}}]'
+neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c3","type":"gauge","title":"LABEL","position":{"x":4,"y":0,"w":3,"h":3},"data_source":{"type":"telemetry","source":"device","id":"DEVICE_ID","field":"METRIC_NAME","mode":"latest","sourceId":"DEVICE_ID","metricId":"METRIC_NAME","timeRange":1,"limit":50},"display":{"min":0,"max":100,"unit":"%"}}]'
 
 # 4. Extension metric: use id + field as COMMAND:FIELD
 #    Discover via: neomind extension info <ID> -> commands[].id + commands[].output_fields[].name
 neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c4","type":"value-card","title":"LABEL","position":{"x":0,"y":0,"w":4,"h":2},"data_source":{"type":"extension-metric","source":"extension","id":"EXT_ID","field":"COMMAND:FIELD","mode":"timeseries","extensionId":"EXT_ID","extensionMetric":"COMMAND:FIELD"}}]'
 
 # 5. Multi-series line chart: data_source as array
-neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c5","type":"line-chart","title":"LABEL","position":{"x":0,"y":2,"w":12,"h":4},"data_source":[{"type":"device","source":"device","id":"DEV1","field":"metric1","mode":"timeseries","sourceId":"DEV1","property":"metric1"},{"type":"device","source":"device","id":"DEV2","field":"metric2","mode":"timeseries","sourceId":"DEV2","property":"metric2"}],"timeWindow":"1h"}]'
+neomind dashboard add-components DASHBOARD_ID --components '[{"id":"c5","type":"line-chart","title":"LABEL","position":{"x":0,"y":2,"w":12,"h":4},"data_source":[{"type":"telemetry","source":"device","id":"DEV1","field":"metric1","mode":"timeseries","sourceId":"DEV1","metricId":"metric1","timeRange":1,"limit":50},{"type":"telemetry","source":"device","id":"DEV2","field":"metric2","mode":"timeseries","sourceId":"DEV2","metricId":"metric2","timeRange":1,"limit":50}],"timeWindow":"1h"}]'
 ```
 
 DataSource unified fields (v0.8.2+):
@@ -539,7 +540,7 @@ DataSource unified fields (v0.8.2+):
 | `system` | `latest` | `neomind` | system metric | System stats (cpu, memory, etc) |
 | `system` | `timeseries` | `neomind` | system metric | System stats over time |
 
-**IMPORTANT**: Always include BOTH unified fields (`source`/`mode`/`id`/`field`) AND legacy fields (`type`/`sourceId`/`property`/`extensionId`/`extensionMetric`) for backward compatibility.
+**IMPORTANT**: Device metrics MUST use `"type":"telemetry"` (NOT `"device"`). The `"device"` type is reserved for map markers (no metric). Always include both unified fields (`source`/`mode`/`id`/`field`) AND legacy fields (`sourceId`/`metricId`/`extensionId`/`extensionMetric`) for full editor compatibility.
 
 **Critical rules:**
 - **NEVER guess metric names** — always discover via `device list` (metric_fields per type) or `device get <ID>` or `extension info <ID>` first

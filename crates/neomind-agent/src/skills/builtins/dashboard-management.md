@@ -91,13 +91,15 @@ neomind dashboard add-components <DASHBOARD_ID> --components '[
     "title": "Temperature",
     "position": {"x": 0, "y": 0, "w": 4, "h": 2},
     "data_source": {
-      "type": "device",
+      "type": "telemetry",
       "source": "device",
       "id": "sensor-001",
       "field": "temperature",
       "mode": "latest",
       "sourceId": "sensor-001",
-      "property": "temperature"
+      "metricId": "temperature",
+      "timeRange": 1,
+      "limit": 50
     },
     "display": {"unit": "°C", "format": ".1f"}
   }
@@ -118,15 +120,15 @@ neomind dashboard create --name 'Battery Monitor'
 # Step 3: Add ALL components using add-components (append mode)
 neomind dashboard add-components <DASHBOARD_ID> --components '[
   {"id":"b1","type":"value-card","title":"Sensor 1 Battery","position":{"x":0,"y":0,"w":4,"h":2},
-   "data_source":{"type":"device","source":"device","id":"sensor-001","field":"battery","mode":"latest","sourceId":"sensor-001","property":"battery"},
+   "data_source":{"type":"telemetry","source":"device","id":"sensor-001","field":"battery","mode":"latest","sourceId":"sensor-001","metricId":"battery","timeRange":1,"limit":50},
    "display":{"unit":"%","format":".0f"}},
   {"id":"b2","type":"value-card","title":"Sensor 2 Battery","position":{"x":4,"y":0,"w":4,"h":2},
-   "data_source":{"type":"device","source":"device","id":"sensor-002","field":"battery","mode":"latest","sourceId":"sensor-002","property":"battery"},
+   "data_source":{"type":"telemetry","source":"device","id":"sensor-002","field":"battery","mode":"latest","sourceId":"sensor-002","metricId":"battery","timeRange":1,"limit":50},
    "display":{"unit":"%","format":".0f"}},
   {"id":"chart","type":"line-chart","title":"Battery Trends","position":{"x":0,"y":2,"w":12,"h":4},
    "data_source":[
-     {"type":"device","source":"device","id":"sensor-001","field":"battery","mode":"timeseries","sourceId":"sensor-001","property":"battery","timeWindow":{"type":"last_24hours"}},
-     {"type":"device","source":"device","id":"sensor-002","field":"battery","mode":"timeseries","sourceId":"sensor-002","property":"battery","timeWindow":{"type":"last_24hours"}}
+     {"type":"telemetry","source":"device","id":"sensor-001","field":"battery","mode":"timeseries","sourceId":"sensor-001","metricId":"battery","timeRange":1,"limit":50,"timeWindow":{"type":"last_24hours"}},
+     {"type":"telemetry","source":"device","id":"sensor-002","field":"battery","mode":"timeseries","sourceId":"sensor-002","metricId":"battery","timeRange":1,"limit":50,"timeWindow":{"type":"last_24hours"}}
    ],
    "display":{"unit":"%","showLegend":true}}
 ]'
@@ -168,17 +170,22 @@ All data sources use **unified fields** (`source`/`mode`/`id`/`field`) plus lega
 
 ```json
 {
-  "type": "device",
+  "type": "telemetry",
   "source": "device",
   "id": "<device-id>",
   "field": "<metric-name>",
   "mode": "latest",
   "sourceId": "<device-id>",
-  "property": "<metric-name>"
+  "metricId": "<metric-name>",
+  "timeRange": 1,
+  "limit": 50
 }
 ```
 
-**IMPORTANT**: Must use real metric names from `device list` (metric_fields) or `device get <ID>`. Common names: `temperature`, `humidity`, `battery`, `cpu`, `memory`, `status`.
+**IMPORTANT**:
+- `type` MUST be `"telemetry"` (NOT `"device"`) — the frontend component editor uses `type` to determine the binding category. `type: "device"` is only for map markers (no metric).
+- Must use real metric names from `device list` (metric_fields) or `device get <ID>`. Common names: `temperature`, `humidity`, `battery`, `cpu`, `memory`, `status`.
+- Include both `field` (unified) and `metricId` (legacy) with the same value for full compatibility.
 
 ### Extension Metrics
 
@@ -205,13 +212,15 @@ All data sources use **unified fields** (`source`/`mode`/`id`/`field`) plus lega
 Add `mode: "timeseries"` and time range to any data_source:
 ```json
 {
-  "type": "device",
+  "type": "telemetry",
   "source": "device",
   "id": "sensor-01",
   "field": "temperature",
   "mode": "timeseries",
   "sourceId": "sensor-01",
-  "property": "temperature",
+  "metricId": "temperature",
+  "timeRange": 1,
+  "limit": 50,
   "timeWindow": {"type": "last_24hours"},
   "aggregateExt": "avg"
 }
@@ -225,12 +234,14 @@ Charts accept `data_source` as **array** for multiple series.
 
 | Error | Wrong | Correct |
 |-------|-------|---------|
+| Device metric not binding in editor | `"type":"device"` | `"type":"telemetry"` — `device` type is only for map markers |
+| Device metric missing `metricId` | Only `"field":"battery"` | Add `"metricId":"battery"` for editor compatibility |
 | Extension data not binding | Missing `source:"extension"` | Add `"source":"extension"` and `"id"` |
 | Extension field not binding | `"field":"temperature_c"` | `"field":"get_weather:temperature_c"` |
-| Device data not binding | Missing `source:"device"` | Add `"source":"device"` and `"id"` |
 | Chart shows no history | `"mode":"latest"` | Charts need `"mode":"timeseries"` |
 | No data shows | Guessed metric name | Run `device list` or `device get <ID>` first |
 | "Device not found" | Wrong id | Run `device list` for valid IDs |
+| Community widget shows "--" | Widget ignores `fetchData` | Widget must call `props.fetchData()` to get data |
 
 ## Widget Types Reference
 
@@ -314,7 +325,7 @@ neomind dashboard get <ID>
 neomind dashboard add-components <ID> --components '[
   {"id":"new_chart","type":"line-chart","title":"New Chart",
    "position":{"x":0,"y":4,"w":12,"h":4},
-   "data_source":{"type":"device","source":"device","id":"sensor-001","field":"temperature","mode":"timeseries","sourceId":"sensor-001","property":"temperature","timeWindow":{"type":"last_24hours"}}}
+   "data_source":{"type":"telemetry","source":"device","id":"sensor-001","field":"temperature","mode":"timeseries","sourceId":"sensor-001","metricId":"temperature","timeRange":1,"limit":50,"timeWindow":{"type":"last_24hours"}}}
 ]'
 ```
 
@@ -330,7 +341,7 @@ neomind dashboard create --name 'Weather Comparison'
 neomind dashboard add-components <ID> --components '[
   {"id":"indoor","type":"value-card","title":"Indoor Temp",
    "position":{"x":0,"y":0,"w":4,"h":2},
-   "data_source":{"type":"device","source":"device","id":"sensor-001","field":"temperature","mode":"latest","sourceId":"sensor-001","property":"temperature"},
+   "data_source":{"type":"telemetry","source":"device","id":"sensor-001","field":"temperature","mode":"latest","sourceId":"sensor-001","metricId":"temperature","timeRange":1,"limit":50},
    "display":{"unit":"°C"}},
   {"id":"outdoor","type":"value-card","title":"Outdoor Temp",
    "position":{"x":4,"y":0,"w":4,"h":2},
@@ -339,7 +350,7 @@ neomind dashboard add-components <ID> --components '[
   {"id":"compare","type":"line-chart","title":"Temperature Comparison",
    "position":{"x":0,"y":2,"w":12,"h":4},
    "data_source":[
-     {"type":"device","source":"device","id":"sensor-001","field":"temperature","mode":"timeseries","sourceId":"sensor-001","property":"temperature","timeWindow":{"type":"last_24hours"}},
+     {"type":"telemetry","source":"device","id":"sensor-001","field":"temperature","mode":"timeseries","sourceId":"sensor-001","metricId":"temperature","timeRange":1,"limit":50,"timeWindow":{"type":"last_24hours"}},
      {"type":"extension-metric","source":"extension","id":"weather-forecast-v2","field":"get_weather:temperature_c","mode":"timeseries","extensionId":"weather-forecast-v2","extensionMetric":"get_weather:temperature_c","timeWindow":{"type":"last_24hours"}}
    ],
    "display":{"showLegend":true}}

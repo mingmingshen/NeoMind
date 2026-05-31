@@ -195,7 +195,7 @@ import { notifySuccess, notifyError } from '@/lib/notify'
 import { confirm } from '@/hooks/use-confirm'
 
 // Renderers extracted to Renderers.tsx
-import { renderDashboardComponent, ComponentWrapper, scheduleDashboardIdleTask, builtInTypes } from './Renderers'
+import { renderDashboardComponent, ComponentWrapper, builtInTypes } from './Renderers'
 
 // Extracted sub-modules
 import { getComponentLibrary, type ComponentCategory } from './componentLibraryUtils'
@@ -312,12 +312,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     }
   }, [componentLibraryOpen, libraryTab, fetchMarket])
 
-  // Fetch installed components on mount (needed for community registry sync)
-  // and when component library opens
+  // Fetch installed components early for community registry sync
+  // This MUST complete before community widgets can receive fetchData prop
   useEffect(() => {
-    return scheduleDashboardIdleTask(() => {
-      fetchInstalled()
-    }, 2500)
+    fetchInstalled()
   }, [fetchInstalled])
 
   const filteredLibrary = useMemo(() => {
@@ -1061,7 +1059,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         ),
       }
     }) ?? []
-  }, [componentsStableKey, editMode, isMobile])
+  }, [componentsStableKey, editMode, isMobile, installedComponents.length])
 
   // Track initial config load to avoid unnecessary updates
   const initialConfigRef = useRef<any>(null)

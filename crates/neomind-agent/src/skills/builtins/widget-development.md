@@ -50,7 +50,7 @@ neomind dashboard add-components <DASHBOARD_ID> --components '[{
   "type": "custom",
   "title": "My Widget",
   "position": {"x": 0, "y": 0, "w": 6, "h": 4},
-  "data_source": {"type": "device", "source": "device", "id": "DEVICE_ID", "field": "temperature", "mode": "latest", "sourceId": "DEVICE_ID", "property": "temperature"}
+  "data_source": {"type": "telemetry","source":"device","id":"DEVICE_ID","field":"temperature","mode":"latest","sourceId":"DEVICE_ID","metricId":"temperature","timeRange":1,"limit":50}
 }]'
 ```
 
@@ -101,7 +101,7 @@ manifest.json: `"global_name": "MyWidget"` — the IIFE assigns to `var MyWidget
 - Bundle must be under 50KB
 - Container must fill space: `className: 'h-full w-full'` or `style: {width:'100%',height:'100%'}`
 - Every element in `jsxs` children arrays must have a unique `key` prop
-- `props.fetchData()` available for on-demand data access (no React hook needed)
+- **CRITICAL: `props.dataSource` is the raw config object (NOT resolved data). You MUST call `props.fetchData()` to get actual values.** Never read `props.dataSource.value` — it does not exist. Use `useState` + `useEffect` to call `fetchData()` on mount.
 
 ## React Hooks Available
 

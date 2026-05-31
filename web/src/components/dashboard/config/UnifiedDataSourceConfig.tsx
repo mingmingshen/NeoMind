@@ -402,8 +402,17 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
 
     switch (dataSource.type) {
       case 'device':
-        // Plain device reference (for map markers) - no property/metric
-        items.add(`device:${dsId}` as SelectedItem)
+        if (dsField && dsField !== 'location') {
+          // Device with a metric field → treat as device-metric (AI often uses this format)
+          items.add(`device-metric:${dsId}:${dsField}` as SelectedItem)
+        } else {
+          // Plain device reference (for map markers) - no property/metric
+          items.add(`device:${dsId}` as SelectedItem)
+        }
+        break
+      case 'metric':
+        // Metric type → device-metric selection
+        items.add(`device-metric:${dsId}:${dsField ?? dataSource.metricId}` as SelectedItem)
         break
       case 'telemetry':
         items.add(`device-metric:${dsId}:${dsField ?? dataSource.metricId}` as SelectedItem)

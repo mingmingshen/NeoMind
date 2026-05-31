@@ -156,17 +156,44 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                         <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 pb-3 px-1">
                           {category.items.map((item) => {
                             const Icon = item.icon
+                            const isCommunity = installedComponents.some(c => c.id === item.id)
                             return (
-                              <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => onAddComponent(item.id)}
-                                className="h-auto w-full flex flex-col items-center p-3 text-center rounded-lg border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer active:scale-[0.98]"
-                              >
-                                <Icon className="h-5 w-5 mb-1.5 text-muted-foreground shrink-0" />
-                                <span className="text-xs font-medium w-full truncate">{item.name}</span>
-                                <p className={`${textNano} text-muted-foreground mt-0.5 w-full line-clamp-2 leading-tight`}>{item.description}</p>
-                              </button>
+                              <div key={item.id} className="relative group">
+                                <button
+                                  type="button"
+                                  onClick={() => onAddComponent(item.id)}
+                                  className="h-auto w-full flex flex-col items-center p-3 text-center rounded-lg border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer active:scale-[0.98]"
+                                >
+                                  <Icon className="h-5 w-5 mb-1.5 text-muted-foreground shrink-0" />
+                                  <span className="text-xs font-medium w-full truncate">{item.name}</span>
+                                  <p className={`${textNano} text-muted-foreground mt-0.5 w-full line-clamp-2 leading-tight`}>{item.description}</p>
+                                </button>
+                                {isCommunity && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="absolute top-1 right-1 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-error"
+                                    disabled={installingId === item.id}
+                                    aria-label={t('componentLibrary.uninstall')}
+                                    onClick={async (e) => {
+                                      e.stopPropagation()
+                                      onSetInstalling(item.id)
+                                      try {
+                                        await onUninstall(item.id)
+                                        notifySuccess(t('componentLibrary.uninstallSuccess'))
+                                      } catch {
+                                        notifyError(t('componentLibrary.installError'))
+                                      } finally {
+                                        onSetInstalling(null)
+                                      }
+                                    }}
+                                  >
+                                    {installingId === item.id
+                                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                                      : <Trash2 className="h-3 w-3" />}
+                                  </Button>
+                                )}
+                              </div>
                             )
                           })}
                         </div>
