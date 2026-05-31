@@ -51,6 +51,7 @@ import {
   ScanEye,
   // Community
   Store,
+  Code,
 } from 'lucide-react'
 
 // ============================================================================
@@ -604,7 +605,10 @@ export function filterComponents(options: RegistryFilterOptions = {}): Component
 }
 
 /**
- * Group components by category (includes dynamic components)
+ * Group components by category (includes dynamic and community components)
+ *
+ * Community components are split into "local" (CLI/upload) and "marketplace"
+ * based on the `source` field — handled by communityMetaToComponentMeta().
  */
 export function groupComponentsByCategory(options: RegistryFilterOptions = {}): GroupedComponentRegistry {
   const components = filterComponents(options)
@@ -621,7 +625,7 @@ export function groupComponentsByCategory(options: RegistryFilterOptions = {}): 
     return acc
   }, {} as Record<string, GroupedComponentRegistry[number]>)
 
-  // Return in a consistent order (including custom and community categories)
+  // Return in a consistent order
   const categoryOrder: ComponentCategory[] = [
     'indicators',
     'charts',
@@ -630,7 +634,8 @@ export function groupComponentsByCategory(options: RegistryFilterOptions = {}): 
     'spatial',
     'business',
     'custom', // Extension components
-    'community', // Community marketplace components
+    'local', // Local/AI-created community components
+    'marketplace', // Marketplace-installed community components
   ]
 
   return categoryOrder
@@ -650,7 +655,8 @@ export function getCategoryInfo(category: ComponentCategory): { name: string; ic
     spatial: { name: 'Spatial & Media', icon: MapPin },
     business: { name: 'Business Components', icon: Bot },
     custom: { name: 'Extension Components', icon: LayersIcon }, // For dynamic components
-    community: { name: 'Community Components', icon: Store }, // For community components
+    local: { name: 'My Components', icon: Code }, // Local/AI-created community components
+    marketplace: { name: 'Marketplace', icon: Store }, // Marketplace-installed community components
   }
 
   return categoryInfos[category]

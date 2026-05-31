@@ -339,6 +339,7 @@ pub async fn market_install_handler(
 
     // Set install timestamp
     manifest.installed_at = chrono::Utc::now().timestamp();
+    manifest.source = Some("marketplace".to_string());
 
     // Install via store (blocking filesystem operation)
     let store = state.frontend_component_store.clone();
@@ -473,6 +474,7 @@ pub async fn install_component_handler(
 
     // Set install timestamp
     manifest.installed_at = chrono::Utc::now().timestamp();
+    manifest.source = Some("local".to_string());
 
     // Install via store (blocking filesystem operation)
     let store = state.frontend_component_store.clone();
@@ -649,6 +651,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "value_card".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let led_indicator = ComponentManifest {
@@ -682,6 +685,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "led_indicator".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let sparkline = ComponentManifest {
@@ -721,6 +725,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "sparkline".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let progress_bar = ComponentManifest {
@@ -760,6 +765,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "progress_bar".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     // -- Charts --
@@ -803,6 +809,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "line_chart".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let area_chart = ComponentManifest {
@@ -845,6 +852,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "area_chart".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let bar_chart = ComponentManifest {
@@ -880,6 +888,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "bar_chart".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let pie_chart = ComponentManifest {
@@ -914,6 +923,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "pie_chart".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let radar_chart = ComponentManifest {
@@ -946,6 +956,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "radar_chart".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     // -- Controls --
@@ -978,6 +989,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "toggle_switch".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     // -- Display --
@@ -1010,6 +1022,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "markdown_display".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let image_display = ComponentManifest {
@@ -1047,6 +1060,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "image_display".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let image_history = ComponentManifest {
@@ -1085,6 +1099,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "image_history".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let web_display = ComponentManifest {
@@ -1122,6 +1137,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "web_display".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     // -- Spatial --
@@ -1156,6 +1172,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "map_display".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let video_display = ComponentManifest {
@@ -1195,6 +1212,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "video_display".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let custom_layer = ComponentManifest {
@@ -1227,6 +1245,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "custom_layer".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     // -- Business --
@@ -1254,6 +1273,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "agent_monitor_widget".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     let ai_analyst = ComponentManifest {
@@ -1280,6 +1300,7 @@ fn builtin_component_list() -> Vec<ComponentManifest> {
         global_name: "ai_analyst".into(),
         export_name: None,
         installed_at: 0,
+        source: None,
     };
 
     vec![

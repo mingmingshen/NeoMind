@@ -277,11 +277,12 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const {
     marketComponents, marketLoading, installed: installedComponents,
     fetchMarket, fetchInstalled, installFromMarket, uninstall: uninstallComponent,
+    refreshComponent: refreshComponentAction,
   } = useStore((s) => ({
     marketComponents: s.marketComponents, marketLoading: s.marketLoading,
     installed: s.installed, fetchMarket: s.fetchMarket,
     fetchInstalled: s.fetchInstalled, installFromMarket: s.installFromMarket,
-    uninstall: s.uninstall,
+    uninstall: s.uninstall, refreshComponent: s.refreshComponent,
   }))
 
   // Extension lifecycle management for hot updates
@@ -1505,6 +1506,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 installingId={installingId}
                 onInstall={installFromMarket}
                 onUninstall={uninstallComponent}
+                onRefreshComponent={refreshComponentAction}
                 onSetInstalling={setInstallingId}
                 importDialogOpen={importDialogOpen}
                 onImportDialogOpenChange={setImportDialogOpen}

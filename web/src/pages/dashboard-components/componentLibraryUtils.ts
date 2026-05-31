@@ -89,7 +89,8 @@ const categoryLabelKeys: Record<string, string> = {
   controls: 'controls',
   business: 'business',
   custom: 'custom',
-  community: 'community',
+  local: 'localComponents',
+  marketplace: 'marketplace',
 }
 
 // ============================================================================

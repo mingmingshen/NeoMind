@@ -94,6 +94,10 @@ pub struct ComponentManifest {
     pub export_name: Option<String>,
     #[serde(default)]
     pub installed_at: i64,
+    /// Origin of the component: `"local"` (CLI/upload) or `"marketplace"`.
+    /// `None` for legacy components installed before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 fn default_icon() -> String {
@@ -295,6 +299,7 @@ mod tests {
             global_name: "TestComponent".to_string(),
             export_name: None,
             installed_at: 1700000000,
+            source: None,
         }
     }
 

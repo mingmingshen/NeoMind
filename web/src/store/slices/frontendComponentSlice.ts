@@ -39,6 +39,7 @@ export interface FrontendComponentSlice extends FrontendComponentState {
   installFromMarket: (componentId: string) => Promise<void>
   installManualZip: (zipFile: File) => Promise<FrontendComponentMeta>
   uninstall: (id: string) => Promise<void>
+  refreshComponent: (id: string) => Promise<void>
 }
 
 // ============================================================================
@@ -258,5 +259,24 @@ export const createFrontendComponentSlice: StateCreator<
     } finally {
       set({ loading: false })
     }
+  },
+
+  /**
+   * Refresh a local component — clears registry cache and re-fetches from API.
+   * Used when the bundle.js is updated (e.g. by AI re-generating the component).
+   */
+  refreshComponent: async (id) => {
+    // Clear community registry caches for this component
+    communityRegistry.refreshComponent(id)
+
+    // Force re-fetch by clearing cache
+    set((state) => ({
+      fetchCache: Object.fromEntries(
+        Object.entries(state.fetchCache).filter(([key]) => key !== 'installed')
+      ),
+    }))
+
+    // Re-fetch installed list (will re-register with community registry)
+    await get().fetchInstalled()
   },
 })

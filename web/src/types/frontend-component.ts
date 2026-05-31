@@ -55,6 +55,8 @@ export interface FrontendComponentMeta {
   global_name: string
   export_name?: string
   installed_at: number
+  /** Origin: `"local"` (CLI/upload) or `"marketplace"`. Undefined for legacy components. */
+  source?: 'local' | 'marketplace'
 }
 
 /**

@@ -187,7 +187,7 @@ export class CommunityComponentRegistry {
           return null
         }
 
-        const Component = await this.loadViaScriptTag(bundleUrl, globalName, meta.export_name)
+        const Component = await this.loadViaScriptTag(bundleUrl, globalName, meta.export_name, type)
 
         // Check if Component is valid
         if (!Component) {
@@ -241,7 +241,7 @@ export class CommunityComponentRegistry {
    * Load an IIFE bundle via script tag injection
    * Returns the component export from the global variable
    */
-  private async loadViaScriptTag(bundleUrl: string, globalName: string, exportName?: string): Promise<unknown> {
+  private async loadViaScriptTag(bundleUrl: string, globalName: string, exportName?: string, componentId?: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
       // Check if the global variable already exists (bundle already loaded)
       const existingGlobal = (window as any)[globalName]
@@ -269,6 +269,9 @@ export class CommunityComponentRegistry {
       const script = document.createElement('script')
       script.src = bundleUrl
       script.async = true
+      if (componentId) {
+        script.setAttribute('data-component-id', componentId)
+      }
 
       // Set up load handler
       script.onload = () => {
@@ -342,6 +345,35 @@ export class CommunityComponentRegistry {
       // Inject the script
       document.head.appendChild(script)
     })
+  }
+
+  /**
+   * Refresh a component: clear its cached module, loading promise, and old script tag.
+   * Does NOT re-load — the caller should re-fetch from API and then loadComponent().
+   *
+   * @param type - Component type (ID) to refresh
+   */
+  refreshComponent(type: string): void {
+    const meta = this.state.components[type]
+
+    // Remove old <script> tag if present
+    const oldScript = document.querySelector(`script[data-component-id="${type}"]`)
+    if (oldScript) {
+      oldScript.remove()
+    }
+
+    // Clear caches
+    delete this.state.loadedModules[type]
+    delete this.state.loadingPromises[type]
+
+    // Clear global variable
+    if (meta?.global_name) {
+      try {
+        delete (window as any)[meta.global_name]
+      } catch (e) {
+        console.warn(`[CommunityRegistry] Failed to clear global ${meta.global_name}:`, e)
+      }
+    }
   }
 
   /**
@@ -424,7 +456,7 @@ export class CommunityComponentRegistry {
       type: meta.id as any, // Community component types are dynamic
       name: getName(),
       description: getDescription(),
-      category: 'community',
+      category: (meta.source === 'marketplace' ? 'marketplace' : 'local') as any,
       icon: IconComponent,
       sizeConstraints: sizeConstraints as any,
       hasDataSource: meta.has_data_source,

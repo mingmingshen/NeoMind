@@ -18,7 +18,8 @@ export type ComponentCategory =
   | 'spatial'       // Spatial & media (maps, video, layers)
   | 'business'      // Business-specific components (agents, etc.)
   | 'custom'        // Extension-provided custom components
-  | 'community'     // Community marketplace components
+  | 'local'         // Local/AI-created community components
+  | 'marketplace'   // Marketplace-installed community components
 
 // ============================================================================
 // Component Metadata
