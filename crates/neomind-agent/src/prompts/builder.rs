@@ -572,6 +572,7 @@ Do NOT write to memory frequently. Only write when you have **genuinely importan
 - Information that might change soon
 - Redundant content already in memory (read first!)
 - Every detail from every conversation
+- System resource counts (devices/rules/extensions) — use tools to query live state
 
 ### Targets
 | Target | Char limit | Purpose |

@@ -357,8 +357,6 @@ pub struct MemoryStats {
     pub sessions: SessionStats,
     /// Custom files stats
     pub custom_files: Vec<CustomFileStats>,
-    /// Last resource summary timestamp (Unix seconds)
-    pub last_resource_summary: Option<i64>,
 }
 
 /// File statistics
@@ -658,9 +656,6 @@ impl MarkdownMemoryStore {
             .map(|(name, chars)| CustomFileStats { name, chars })
             .collect();
 
-        // Check for resource summary timestamp
-        let last_resource_summary = self.read_last_resource_summary_time().await.ok().flatten();
-
         Ok(MemoryStats {
             user: FileStats {
                 chars: user_chars,
@@ -676,21 +671,7 @@ impl MarkdownMemoryStore {
                 total_temp_files,
             },
             custom_files,
-            last_resource_summary,
         })
-    }
-
-    /// Read the last resource summary timestamp from a metadata file
-    async fn read_last_resource_summary_time(&self) -> Result<Option<i64>> {
-        let path = self.base_path.join(".resource_summary_time");
-        if !path.exists() {
-            return Ok(None);
-        }
-        let content = fs::read_to_string(&path)?;
-        match content.trim().parse::<i64>() {
-            Ok(ts) => Ok(Some(ts)),
-            Err(_) => Ok(None),
-        }
     }
 
     // ========================================================================

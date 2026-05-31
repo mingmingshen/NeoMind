@@ -1,7 +1,6 @@
 //! Memory scheduler for background maintenance tasks
 //!
 //! Runs periodic tasks for:
-//! - System resource summary (data-driven, no LLM calls)
 //! - Agent memory bridge (redb → markdown)
 //! - Temp file cleanup (session directories)
 
@@ -79,11 +78,6 @@ impl MemoryScheduler {
             loop {
                 tokio::select! {
                     _ = timer.tick() => {
-                        // Job 1: System Resource Summary
-                        if let Err(e) = Self::run_system_summary_job(&store).await {
-                            error!(error = %e, "System summary job failed");
-                        }
-
                         // Job 2: Agent Memory Bridge (if agent store available)
                         if let Some(ref agent_store) = agent_store {
                             if let Err(e) = Self::run_agent_bridge_job(&store, agent_store, &config).await {
@@ -100,45 +94,6 @@ impl MemoryScheduler {
                 }
             }
         }));
-    }
-
-    /// Job 1: System Resource Summary
-    /// Generates a data-driven summary of system resources and updates KNOWLEDGE.md
-    async fn run_system_summary_job(
-        store: &Arc<RwLock<MarkdownMemoryStore>>,
-    ) -> Result<(), String> {
-        // TODO: Wire up real system state queries when integrating with API layer
-        // For now, use placeholder values
-        let (devices, rules, extensions, dashboards) = Self::get_system_counts().await;
-
-        let summary = generate_system_summary(devices, rules, extensions, dashboards);
-
-        let store_guard = store.read().await;
-        store_guard
-            .replace_section("knowledge", "System Resources", &summary)
-            .await
-            .map_err(|e| format!("Failed to update system summary: {}", e))?;
-
-        info!(
-            devices = devices,
-            rules = rules,
-            extensions = extensions,
-            dashboards = dashboards,
-            summary_len = summary.len(),
-            "System summary updated"
-        );
-
-        Ok(())
-    }
-
-    /// Get system resource counts (stubbed for now)
-    async fn get_system_counts() -> (usize, usize, usize, usize) {
-        // TODO: Integrate with real system state
-        // - Device count from device store
-        // - Rule count from rule engine
-        // - Extension count from extension registry
-        // - Dashboard count from dashboard store
-        (0, 0, 0, 0)
     }
 
     /// Job 2: Agent Memory Bridge
@@ -358,19 +313,6 @@ impl Drop for MemoryScheduler {
     }
 }
 
-/// Generate a system resource summary from live state.
-fn generate_system_summary(
-    devices: usize,
-    rules: usize,
-    extensions: usize,
-    dashboards: usize,
-) -> String {
-    format!(
-        "## System Resources\n\n- Devices: {} online\n- Rules: {} active\n- Extensions: {} installed\n- Dashboards: {} configured",
-        devices, rules, extensions, dashboards
-    )
-}
-
 /// Format an agent's memory into a markdown summary.
 fn format_agent_summary(agent: &AiAgent) -> String {
     let mut lines = vec![
@@ -481,15 +423,6 @@ fn format_agent_summary(agent: &AiAgent) -> String {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-
-    #[test]
-    fn test_generate_system_summary() {
-        let summary = generate_system_summary(5, 10, 3, 2);
-        assert!(summary.contains("Devices: 5 online"));
-        assert!(summary.contains("Rules: 10 active"));
-        assert!(summary.contains("Extensions: 3 installed"));
-        assert!(summary.contains("Dashboards: 2 configured"));
-    }
 
     #[test]
     fn test_scheduler_creation() {
