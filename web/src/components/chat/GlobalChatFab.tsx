@@ -1,8 +1,8 @@
 /**
- * GlobalChatFab - Floating action button + full-screen chat overlay
+ * GlobalChatFab - Floating action button + floating chat window
  *
- * Shows a FAB on all non-chat pages. Clicking expands to a full-screen chat overlay
- * with smooth scale-up animation from the FAB position.
+ * Shows a FAB on all non-chat pages. Clicking opens a floating chat window
+ * anchored to the bottom-right, with smooth scale-up animation from the FAB position.
  * Minimize button collapses back to FAB with reverse animation.
  *
  * The panel chat has its own independent session — does not affect the main chat page.
@@ -86,20 +86,7 @@ export function GlobalChatFab() {
         <MessageSquare className="h-5 w-5" />
       </button>
 
-      {/* Full-screen overlay backdrop */}
-      <div
-        className={cn(
-          "fixed inset-0 z-[90]",
-          "bg-black/50 backdrop-blur-sm",
-          "transition-opacity duration-300 ease-out",
-          panelState === "closed"
-            ? "opacity-0 pointer-events-none"
-            : "opacity-100"
-        )}
-        onClick={isStreaming ? undefined : handleClose}
-      />
-
-      {/* Full-screen chat panel */}
+      {/* Floating chat window — bottom-right corner */}
       <div
         className={cn(
           "fixed z-[100]",
@@ -109,7 +96,7 @@ export function GlobalChatFab() {
           "transition-all duration-300 ease-out",
           // State-dependent positioning & sizing
           panelState !== "closed"
-            ? "inset-0 sm:inset-4 md:inset-8 rounded-none sm:rounded-2xl opacity-100 scale-100"
+            ? "bottom-24 right-6 w-[calc(100vw-3rem)] h-[70vh] sm:w-[380px] sm:h-[560px] rounded-2xl opacity-100 scale-100"
             : "bottom-20 right-6 w-14 h-14 rounded-full opacity-0 scale-0 pointer-events-none",
           "backdrop-blur-2xl",
           "border border-glass-border",
