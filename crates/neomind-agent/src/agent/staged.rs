@@ -374,8 +374,6 @@ impl Default for ToolFilter {
         Self {
             always_include: {
                 let mut set = HashSet::new();
-                // System tools are always available
-                set.insert("tool_search".to_string());
                 // File and web tools should always be available for agent workflows
                 set.insert("web_fetch".to_string());
                 set.insert("file_write".to_string());
@@ -416,8 +414,6 @@ impl ToolFilter {
                 "workflow"
             } else if name.contains("data") || name.contains("query") || name.contains("metrics") {
                 "data"
-            } else if name == "tool_search" {
-                "system"
             } else {
                 "general"
             }

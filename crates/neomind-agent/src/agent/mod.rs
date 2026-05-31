@@ -852,12 +852,7 @@ impl Agent {
         let mut registry = crate::toolkit::ToolRegistryBuilder::new().build();
 
         // Add agent-specific tools
-        use crate::tools::ToolSearchTool;
         use crate::tools::{AskUserTool, ClarifyIntentTool, ConfirmActionTool};
-
-        // Create tool search tool (starts with empty tool list)
-        let tool_search = ToolSearchTool::from_definitions(&[]);
-        registry.register(std::sync::Arc::new(tool_search));
 
         // === 添加用户交互工具 ===
         // ask_user: 向用户询问缺失信息
@@ -3236,11 +3231,7 @@ mod tests {
         registry.register(std::sync::Arc::new(MockGreetTool));
 
         // Add default agent tools
-        use crate::tools::ToolSearchTool;
         use crate::tools::{AskUserTool, ClarifyIntentTool, ConfirmActionTool};
-
-        let tool_search = ToolSearchTool::from_definitions(&[]);
-        registry.register(std::sync::Arc::new(tool_search));
 
         let ask_user_tool = AskUserTool::new();
         registry.register(std::sync::Arc::new(ask_user_tool));

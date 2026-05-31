@@ -856,8 +856,6 @@ impl LlmInterface {
                 "workflow"
             } else if name.contains("data") || name.contains("query") || name.contains("metrics") {
                 "data"
-            } else if name == "tool_search" {
-                "system"
             } else {
                 "general"
             }
