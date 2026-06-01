@@ -19,28 +19,31 @@ pub struct MemoryConfig {
     /// Max chars for KNOWLEDGE.md
     #[serde(default = "default_knowledge_limit")]
     pub knowledge_char_limit: usize,
-    /// Max chars per agent summary file
+    /// Max chars per agent/custom memory file
     #[serde(default = "default_agent_limit")]
     pub agent_char_limit: usize,
-    /// Max number of agent summary files
-    #[serde(default = "default_max_agents")]
-    pub max_agents: usize,
     /// TTL in days for session temp files
     #[serde(default = "default_ttl")]
     pub temp_file_ttl_days: u64,
-    /// Interval in seconds for scheduled jobs
-    #[serde(default = "default_schedule_interval")]
-    pub schedule_interval_secs: u64,
+    /// Interval in seconds for system context resource inventory refresh
+    #[serde(default = "default_context_interval")]
+    pub system_context_interval_secs: u64,
+    /// Interval in seconds for LLM-based chat/agent summarization
+    #[serde(default = "default_summary_interval")]
+    pub summary_interval_secs: u64,
+    /// LLM backend ID for summarization. None = use active backend.
+    #[serde(default)]
+    pub summary_backend_id: Option<String>,
 }
 
 fn default_enabled() -> bool { true }
 fn default_storage_path() -> String { "data/memory".to_string() }
 fn default_user_limit() -> usize { 2000 }
 fn default_knowledge_limit() -> usize { 3000 }
-fn default_agent_limit() -> usize { 500 }
-fn default_max_agents() -> usize { 5 }
+fn default_agent_limit() -> usize { 1000 }
 fn default_ttl() -> u64 { 7 }
-fn default_schedule_interval() -> u64 { 3600 }
+fn default_context_interval() -> u64 { 600 }
+fn default_summary_interval() -> u64 { 7200 }
 
 impl Default for MemoryConfig {
     fn default() -> Self {
@@ -50,9 +53,10 @@ impl Default for MemoryConfig {
             user_char_limit: default_user_limit(),
             knowledge_char_limit: default_knowledge_limit(),
             agent_char_limit: default_agent_limit(),
-            max_agents: default_max_agents(),
             temp_file_ttl_days: default_ttl(),
-            schedule_interval_secs: default_schedule_interval(),
+            system_context_interval_secs: default_context_interval(),
+            summary_interval_secs: default_summary_interval(),
+            summary_backend_id: None,
         }
     }
 }
@@ -90,10 +94,11 @@ mod tests {
         assert!(config.enabled);
         assert_eq!(config.user_char_limit, 2000);
         assert_eq!(config.knowledge_char_limit, 3000);
-        assert_eq!(config.agent_char_limit, 500);
-        assert_eq!(config.max_agents, 5);
+        assert_eq!(config.agent_char_limit, 1000);
         assert_eq!(config.temp_file_ttl_days, 7);
-        assert_eq!(config.schedule_interval_secs, 3600);
+        assert_eq!(config.system_context_interval_secs, 600);
+        assert_eq!(config.summary_interval_secs, 7200);
+        assert!(config.summary_backend_id.is_none());
     }
 
     #[test]
@@ -106,15 +111,18 @@ mod tests {
 
     #[test]
     fn test_old_config_fields_ignored() {
-        // Old config JSON with extraction/compression fields should still parse (serde ignores unknown)
+        // Old config JSON with removed fields (max_agents, schedule_interval_secs) should still parse
         let old_json = r#"{
             "enabled": true,
             "storage_path": "data/memory",
             "user_char_limit": 2000,
             "knowledge_char_limit": 3000,
+            "max_agents": 5,
+            "schedule_interval_secs": 3600,
             "extraction": {"similarity_threshold": 0.85}
         }"#;
         let config: MemoryConfig = serde_json::from_str(old_json).unwrap();
         assert!(config.enabled);
+        assert_eq!(config.system_context_interval_secs, 600); // uses default
     }
 }

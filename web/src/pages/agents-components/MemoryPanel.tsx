@@ -28,6 +28,14 @@ import {
 } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { ResponsiveTable } from "@/components/shared"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -48,7 +56,7 @@ import { cn } from "@/lib/utils"
 import { fontMonoStack, textMini } from "@/design-system/tokens/typography"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useIsMobile } from "@/hooks/useMobile"
-import type { MemorySystemConfig } from "@/types"
+import type { MemorySystemConfig, LlmBackendInstance } from "@/types"
 
 // Default config for initialization
 const defaultConfig: MemorySystemConfig = {
@@ -56,10 +64,11 @@ const defaultConfig: MemorySystemConfig = {
   storage_path: "data/memory",
   user_char_limit: 2000,
   knowledge_char_limit: 3000,
-  agent_char_limit: 500,
-  max_agents: 5,
+  agent_char_limit: 1000,
   temp_file_ttl_days: 7,
-  schedule_interval_secs: 3600,
+  system_context_interval_secs: 600,
+  summary_interval_secs: 7200,
+  summary_backend_id: null,
 }
 
 // Custom file type from stats API
@@ -128,8 +137,6 @@ interface MemoryPanelProps {
 
 export interface MemoryPanelRef {
   openConfig: () => void
-  triggerExtract: () => void
-  isExtracting: boolean
   openCreateFile: () => void
 }
 
@@ -164,7 +171,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   const [config, setConfig] = useState<MemorySystemConfig>(defaultConfig)
   const [configLoading, setConfigLoading] = useState(false)
   const [configSaving, setConfigSaving] = useState(false)
-  const [extracting, setExtracting] = useState(false)
+  const [llmBackends, setLlmBackends] = useState<LlmBackendInstance[]>([])
 
   // Load configuration
   const loadConfig = useCallback(async () => {
@@ -178,6 +185,17 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
       setConfigLoading(false)
     }
   }, [handleError])
+
+  // Load LLM backends when config dialog opens
+  useEffect(() => {
+    if (configOpen) {
+      api.listLlmBackends()
+        .then((res) => {
+          setLlmBackends(res.backends || [])
+        })
+        .catch(() => {})
+    }
+  }, [configOpen])
 
   useEffect(() => {
     loadConfig()
@@ -193,44 +211,6 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
       handleError(error, { operation: "Save memory config" })
     } finally {
       setConfigSaving(false)
-    }
-  }
-
-  // Trigger manual extraction (resource summary)
-  const handleExtract = async () => {
-    setExtracting(true)
-    toast({
-      title: t("systemMemory.extractStarted", "Extraction Started"),
-      description: t("systemMemory.extractStartedDesc", "Extracting memories from conversations..."),
-    })
-    try {
-      const result = await api.triggerMemoryExtract()
-      toast({
-        title: t("systemMemory.extractStarted", "Extraction Started"),
-        description: result.message || t("systemMemory.extractStartedDesc", "Extraction is running in the background. Check stats after a moment."),
-      })
-      loadStats()
-      setTimeout(() => loadStats(), 30000)
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.name === 'AbortError' || error.message.includes('abort')) {
-          handleError(error, {
-            operation: "Trigger memory extraction",
-            userMessage: "Request timed out. The extraction is taking too long - please try again later."
-          })
-        } else if (error.message.includes('Load failed') || error.message.includes('Failed to fetch')) {
-          handleError(error, {
-            operation: "Trigger memory extraction",
-            userMessage: "Could not connect to the server. Please ensure the backend is running."
-          })
-        } else {
-          handleError(error, { operation: "Trigger memory extraction" })
-        }
-      } else {
-        handleError(error, { operation: "Trigger memory extraction" })
-      }
-    } finally {
-      setExtracting(false)
     }
   }
 
@@ -379,14 +359,12 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
       setConfigOpen(true)
       loadConfig()
     },
-    triggerExtract: handleExtract,
-    isExtracting: extracting,
     openCreateFile: () => {
       setNewFileName("")
       setNewFileContent("")
       setCreateDialogOpen(true)
     },
-  }), [handleExtract, loadConfig, extracting])
+  }), [loadConfig])
 
   // Get char limit for a file from config
   const getCharLimit = (fileId: string, isCustom: boolean): number => {
@@ -802,50 +780,13 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                     <div className="space-y-2">
                       <Label>{t("systemMemory.config.enabled", "Enabled")}</Label>
                       <div className="flex items-center h-10">
-                        <div
-                          role="switch"
-                          aria-checked={config.enabled}
-                          tabIndex={0}
-                          className={cn(
-                            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
-                            config.enabled ? "bg-primary" : "bg-muted"
-                          )}
-                          onClick={() =>
-                            setConfig({ ...config, enabled: !config.enabled })
+                        <Switch
+                          checked={config.enabled}
+                          onCheckedChange={(checked) =>
+                            setConfig({ ...config, enabled: checked })
                           }
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault()
-                              setConfig({ ...config, enabled: !config.enabled })
-                            }
-                          }}
-                        >
-                          <span
-                            className={cn(
-                              "pointer-events-none block h-5 w-5 rounded-full bg-primary-foreground shadow-lg ring-0 transition-transform",
-                              config.enabled ? "translate-x-5" : "translate-x-0"
-                            )}
-                          />
-                        </div>
+                        />
                       </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t("systemMemory.config.maxAgents", "Max Agents")}</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={50}
-                        value={config.max_agents}
-                        onChange={(e) =>
-                          setConfig({
-                            ...config,
-                            max_agents: parseInt(e.target.value) || 5,
-                          })
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t("systemMemory.config.maxAgentsHint", "Maximum number of agents with memory")}
-                      </p>
                     </div>
                   </div>
                 </div>
@@ -896,25 +837,6 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                       </p>
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("systemMemory.config.agentCharLimit", "Agent Memory Limit")}</Label>
-                      <Input
-                        type="number"
-                        min={100}
-                        max={5000}
-                        step={50}
-                        value={config.agent_char_limit}
-                        onChange={(e) =>
-                          setConfig({
-                            ...config,
-                            agent_char_limit: parseInt(e.target.value) || 500,
-                          })
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t("systemMemory.config.agentCharLimitHint", "Max characters per agent memory")}
-                      </p>
-                    </div>
-                    <div className="space-y-2">
                       <Label>{t("systemMemory.config.tempFileTtl", "Temp File TTL (Days)")}</Label>
                       <Input
                         type="number"
@@ -943,24 +865,74 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>{t("systemMemory.config.scheduleInterval", "Extraction Interval")}</Label>
+                      <Label>{t("systemMemory.config.refreshInterval", "Refresh Interval")}</Label>
                       <Input
                         type="number"
                         min={60}
                         max={86400}
                         step={60}
-                        value={config.schedule_interval_secs}
+                        value={config.system_context_interval_secs}
                         onChange={(e) =>
                           setConfig({
                             ...config,
-                            schedule_interval_secs: parseInt(e.target.value) || 3600,
+                            system_context_interval_secs: parseInt(e.target.value) || 300,
                           })
                         }
                       />
                       <p className="text-xs text-muted-foreground">
-                        {t("systemMemory.config.scheduleIntervalHint", "Seconds between memory extractions ({{minutes}} min)", {
-                          minutes: Math.round((config.schedule_interval_secs || 3600) / 60),
+                        {t("systemMemory.config.refreshIntervalHint", "Seconds between resource inventory refresh ({{minutes}} min)", {
+                          minutes: Math.round((config.system_context_interval_secs || 600) / 60),
                         })}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("systemMemory.config.summaryInterval", "Summary Interval")}</Label>
+                      <Input
+                        type="number"
+                        min={600}
+                        max={86400}
+                        step={60}
+                        value={config.summary_interval_secs}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            summary_interval_secs: parseInt(e.target.value) || 3600,
+                          })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("systemMemory.config.summaryIntervalHint", "Seconds between LLM chat/agent summaries ({{minutes}} min)", {
+                          minutes: Math.round((config.summary_interval_secs || 7200) / 60),
+                        })}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("systemMemory.config.summaryBackend", "Summary LLM Backend")}</Label>
+                      <Select
+                        value={config.summary_backend_id || "__active__"}
+                        onValueChange={(value) =>
+                          setConfig({
+                            ...config,
+                            summary_backend_id: value === "__active__" ? null : value,
+                          })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("systemMemory.config.useActive", "Use active backend")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__active__">
+                            {t("systemMemory.config.useActive", "Use active backend")}
+                          </SelectItem>
+                          {llmBackends.map((b) => (
+                            <SelectItem key={b.id} value={b.id}>
+                              {b.name || b.id}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {t("systemMemory.config.summaryBackendHint", "LLM backend for chat/agent summarization")}
                       </p>
                     </div>
                   </div>

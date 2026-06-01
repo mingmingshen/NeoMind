@@ -20,7 +20,7 @@ import { useEvents } from "@/hooks/useEvents"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { showErrorToast } from "@/lib/error-messages"
 import { useIsMobile } from "@/hooks/useMobile"
-import { Loader2, Bot, Plus, Brain, Cpu, Settings, Sparkles, Zap, BookOpen, Edit, Play, FileText } from "lucide-react"
+import { Loader2, Bot, Plus, Brain, Cpu, Settings, Zap, BookOpen, Edit, Play, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
 import type { AiAgent, AiAgentDetail, Extension, UnifiedDataSourceInfo } from "@/types"
@@ -88,7 +88,6 @@ export function AgentsPage() {
   const [agents, setAgents] = useState<AiAgent[]>([])
   const [loading, setLoading] = useState(false)
   const [memoryRefreshKey, setMemoryRefreshKey] = useState(0)
-  const [isExtracting, setIsExtracting] = useState(false)
   const memoryPanelRef = useRef<MemoryPanelRef>(null)
   const skillsPanelRef = useRef<SkillsPanelHandle>(null)
 
@@ -480,17 +479,6 @@ export function AgentsPage() {
     }
   }, [agentsWithExecutingStatus, agentsPage, isMobile])
 
-  // Wrapper functions for memory operations with loading state
-  const handleTriggerExtract = useCallback(async () => {
-    if (isExtracting) return
-    setIsExtracting(true)
-    try {
-      await memoryPanelRef.current?.triggerExtract()
-    } finally {
-      setIsExtracting(false)
-    }
-  }, [isExtracting])
-
   const tabs = [
     { value: 'agents', label: tAgent('tabs.agents'), icon: <Cpu className="h-4 w-4" /> },
     { value: 'memory', label: tAgent('tabs.memory'), icon: <Brain className="h-4 w-4" /> },
@@ -503,7 +491,6 @@ export function AgentsPage() {
     ? [
         { label: tAgent('systemMemory.custom.create', 'Add File'), icon: <FileText className="h-4 w-4" />, onClick: () => memoryPanelRef.current?.openCreateFile() },
         { label: tAgent('systemMemory.config.title', 'Config'), icon: <Settings className="h-4 w-4" />, onClick: () => memoryPanelRef.current?.openConfig() },
-        { label: tAgent('systemMemory.extract', 'Extract'), icon: isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />, onClick: handleTriggerExtract, loading: isExtracting, disabled: isExtracting },
       ]
     : activeTab === 'skills'
     ? [

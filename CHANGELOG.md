@@ -19,15 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Device list grouped by type** — `neomind device list` now groups devices by `device_type`, shows metric schema with example values from online devices (parallel enrichment), and truncates large lists (>50 devices) for token budget protection
 - **LLM backend create via CLI** — `neomind llm create` registers new LLM backend instances from the command line
 - **Thinking model loop detection** — Ollama backend detects and cuts off runaway thinking (loops, excessive length) for qwen3/deepseek-r1 models
+- **Chat page context injection** — When the global chat FAB is opened from a page (dashboard, devices, automation, etc.), a short neutral context string (`[context] page:dashboard "name", N components`) is automatically prepended to the first user message so the AI knows which page the user is on. Context is reactive to route changes, injected only on the first message per session, and resets on new conversation
+- **Dashboard community components split** — Component library now separates "My Components" (locally created / AI-generated) from "Marketplace" (installed from registry). Added `source` field to distinguish origins, with reinstall support for local components to refresh updated bundles
+- **System context resource inventory** — Periodic background task gathers device/agent/extension/dashboard names and writes to KNOWLEDGE.md `<!-- system-context -->` marker section (800 char limit, 10min interval). AI now knows what resources exist without tool calls
+- **LLM chat/agent summarization** — Periodic background task uses LLM to summarize recent chat sessions → `<!-- chat-summary -->` in USER.md (200 chars) and active agent execution patterns → `<!-- agent-summary -->` in KNOWLEDGE.md (300 chars). Configurable backend selection and 2h interval
 
 ### Changed
 
+- **Memory system refactor** — Replaced old LLM-based chat extraction (`POST /api/memory/extract`) with marker-based periodic summarization. Removed dead extraction pipeline (compat stubs, category files). Memory writes are now: (1) user via memory tool, (2) background periodic summaries. Old `user_profile.md`/`task_patterns.md`/`domain_knowledge.md` files (417KB of noise) replaced by clean USER.md/KNOWLEDGE.md
+- **Memory config defaults** — `agent_char_limit`: 500→1000, `summary_interval_secs`: 3600→7200, `system_context_interval_secs`: 300→600. Added `summary_backend_id` field for selecting LLM backend for summarization (defaults to active backend)
+- **Agent short-term memory** — Capacity increased from 10→20 entries. `summarize_agent_context()` now includes both situation and conclusion for richer context. Learned patterns get time-based confidence decay (10%/week, removed after 28 days). Baselines pruned when data sources no longer present
+- **Memory config dialog** — Replaced manual toggle switch with Radix UI Switch component. Added LLM backend selector for summarization. Removed Extract button from toolbar
 - **Tool prompt architecture** — `builder.rs` now includes structured tool descriptions (Type 1: shell, Type 2: skill, Type 3: file/web) with parameter docs, security notes, and usage examples in the system prompt. `TOOL_STRATEGY` section guides LLM on when to use each tool type
 - **Memory tool actions expanded** — Added `read_file`, `write_file`, `list_files` actions for direct file manipulation alongside existing category-based actions
 - **Memory panel unified** — Custom memory files merged into the same table as user/knowledge files. Single unified dialog for view/edit. "Add File" button in tab actions bar. Eliminated ~200 lines of duplicate state and dialogs
 - **Memory stats API unified** — `GET /api/memory/stats` now returns `{ files, custom_files }` using the new `store.stats()` API instead of deprecated `all_stats()`. Fixed stats display (was always showing 0 chars due to key mismatch)
 - **Code formatting cleanup** — `cargo fmt` applied across agent, storage, API crates for consistent formatting
 - **Table vertical alignment** — ResponsiveTable cells now use flex centering for consistent vertical alignment across rows with varying content heights
+- **Global chat floating window** — Replaced full-screen backdrop overlay with a fixed-size floating window (380×560 desktop, 70vh mobile) anchored to bottom-right. Users can now chat while viewing Dashboard/device pages behind the window
+- **Memory scheduler cleanup** — Removed system resource summary job that wrote stale "System Resources" sections to KNOWLEDGE.md every schedule interval, wasting the char budget on transient data queryable live via CLI tools
 
 ### Removed
 
@@ -35,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ToolFilter` dead code** — Removed unused `ToolFilter` struct, `filter_by_intent()`, `intent_prompt()` from `staged.rs` (~130 lines). Removed dead `classify_intent()`, `get_intent_prompt()`, `filter_tools_by_intent()` methods and `tool_filter` field from `LlmInterface` in `llm.rs` (~140 lines including tests). Removed unused `IntentCategory::namespace()` and `IntentClassifier::classify_category()`
 - **Chat memory toggle** — Memory is now always enabled (configurable via settings). The per-session toggle was redundant since the memory tool provides on-demand access regardless of snapshot preload
 - **Chat skill selector** — LLM already auto-selects skills via the `skill` tool based on user intent. Manual preloading was redundant and added UI clutter
+- **Memory extract endpoint** — Removed `POST /api/memory/extract` and frontend Extract button. Old LLM-based chat extraction produced 417KB of noisy data (3551 entries, mostly duplicates). Replaced by background periodic summarization
+- **Dead memory modules** — Removed `compat.rs` (empty stubs), `lifecycle.rs` (unused hooks), `short_term.rs`, `mid_term.rs`, `long_term.rs`, `tiered.rs`, `bm25.rs`, `embeddings.rs` (all unused after refactor)
 - **Unused `write_last_resource_summary_time`** — Removed dead method from `MarkdownMemoryStore`
 
 ### Fixed
@@ -53,6 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Char counting consistency** — Fixed `write_file()`, `stats()`, and agent stats to use `.chars().count()` instead of `.len()` for correct UTF-8/Chinese text handling
 - **Extraction lock resilience** — Extraction guard now uses `Drop` pattern to ensure lock is released even on panic, preventing permanent lock-out
 - **Missing i18n keys** — Added `systemMemory.extract` and `systemMemory.custom.description` to en/zh locales
+- **Session sidebar card overflow** — Fixed Radix ScrollArea Viewport injecting `display:table` + `min-width:100%` causing cards to overflow. Added CSS override to Viewport component and proper `min-w-0` flex constraints for text truncation
+- **Session action buttons** — Edit/delete buttons now compact (`h-4 w-4`) and absolutely positioned floating on card right side with hover reveal, instead of inline layout
+- **Dashboard stuck skeleton screens** — Fixed three root causes: loading counter leak on telemetry-only sources, retry storm (reduced to 1 retry at 500ms), and added 3s hard deadline force-clear
+- **Dashboard cross-tab sync** — Emit `DashboardUpdated` event on CRUD operations. VisualDashboard subscribes for real-time sync across browser tabs
+- **Dashboard chart tooltip crash** — Fixed crash when rendering telemetry point objects `{timestamp, time, value}` as React children. LineChart now correctly extracts numeric values
+- **Community widget data flow** — Fixed `fetchData` prop not reaching community widgets due to missing `installedComponents.length` dependency in rendering useMemo. Removed 2.5s fetch delay for immediate registry sync
+- **Data source editor binding** — Fixed `dataSourceToSelectedItems` not recognizing `type:"telemetry"` and `type:"device"` with metric fields, causing editor to not show bound state for AI-created data sources
 
 ---
 

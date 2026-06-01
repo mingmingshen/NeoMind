@@ -20,7 +20,7 @@ use neomind_storage::llm_backends::LlmBackendStore;
 use crate::automation::{
     store::SharedAutomationStore, transform::TransformEngine, AutoOnboardManager,
 };
-use neomind_agent::memory::TieredMemory;
+
 use neomind_messages::MessageManager;
 use neomind_data_push::PushManager;
 
@@ -385,10 +385,6 @@ impl ServerState {
         self.automation.rule_history_store.clone()
     }
 
-    /// Get memory (backward compatibility).
-    pub fn memory(&self) -> Arc<tokio::sync::RwLock<TieredMemory>> {
-        self.agents.memory.clone()
-    }
 
     /// Get agent store (backward compatibility).
     pub fn agent_store(&self) -> Arc<neomind_storage::AgentStore> {
@@ -840,12 +836,6 @@ impl ServerState {
         // Await parallel-opened session manager
         let session_manager = session_manager_h.await.expect("session_manager task panicked");
 
-        // Create tiered memory
-        let memory_config = crate::config::get_memory_config();
-        let memory = Arc::new(tokio::sync::RwLock::new(TieredMemory::with_config(
-            memory_config,
-        )));
-
         // Await parallel-opened agent store
         let agent_store = agent_store_h.await.expect("agent_store task panicked");
 
@@ -858,7 +848,6 @@ impl ServerState {
 
         let agents = AgentState::new(
             Arc::new(session_manager),
-            memory,
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
             system_memory_store,
@@ -1063,10 +1052,6 @@ impl ServerState {
 
         // ========== Build AGENT STATE ==========
         let session_manager = SessionManager::memory();
-        let memory_config = crate::config::get_memory_config();
-        let memory = Arc::new(tokio::sync::RwLock::new(TieredMemory::with_config(
-            memory_config,
-        )));
         let agent_store = neomind_storage::AgentStore::memory().unwrap();
         let system_memory_store = Arc::new(neomind_storage::MarkdownMemoryStore::new(
             std::env::temp_dir().join("neomind-test-memory"),
@@ -1074,7 +1059,6 @@ impl ServerState {
 
         let agents = AgentState::new(
             Arc::new(session_manager),
-            memory,
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
             system_memory_store,

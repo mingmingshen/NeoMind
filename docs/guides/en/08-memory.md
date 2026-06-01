@@ -225,7 +225,6 @@ GET    /api/memory/config                  # Get memory configuration
 PUT    /api/memory/config                  # Update configuration
 
 # Operations
-POST   /api/memory/extract                 # Trigger manual extraction
 POST   /api/memory/compress                # Trigger manual compression
 
 # Legacy API (Backward Compatible)
@@ -260,16 +259,11 @@ curl -X POST http://localhost:9375/api/memory/categories/task_patterns/entries \
   }'
 ```
 
-### Manual Extraction Trigger
+### Manual Compression
 
 ```bash
-# Trigger extraction from specific session
-curl -X POST http://localhost:9375/api/memory/extract \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "session_123",
-    "force": false
-  }'
+# Trigger manual compression/eviction
+curl -X POST http://localhost:9375/api/memory/compress
 ```
 
 ## Design Principles

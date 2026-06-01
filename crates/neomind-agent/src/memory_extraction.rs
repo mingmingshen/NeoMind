@@ -10,6 +10,7 @@ use neomind_core::llm::backend::{GenerationParams, LlmInput, LlmRuntime};
 use neomind_storage::{MarkdownMemoryStore, SessionMessage};
 
 use crate::error::Result;
+use crate::memory::dedup::DedupProcessor;
 use crate::memory::extractor::{AgentExtractor, ExtractResult, MemoryAction};
 
 /// Memory extractor that uses LLM to extract and persist memories
@@ -35,6 +36,9 @@ impl MemoryExtractor {
     }
 
     /// Extract memories from chat messages
+    ///
+    /// Test-only. Production uses the memory tool for writes.
+    /// The `/api/memory/extract` endpoint has been removed.
     ///
     /// This method:
     /// 1. Formats chat messages into a prompt
@@ -85,13 +89,11 @@ impl MemoryExtractor {
         Ok(count)
     }
 
-    /// Extract memories from agent execution
+    /// Extract memories from agent execution.
     ///
-    /// This method:
-    /// 1. Formats agent execution record into a prompt
-    /// 2. Calls LLM to extract memory candidates
-    /// 3. Parses the response
-    /// 4. Appends extracted memories to category files
+    /// NOTE: This method is currently only used in integration tests.
+    /// Production agent memory updates go through the executor's
+    /// `update_memory()` path instead.
     ///
     /// # Arguments
     /// * `agent_name` - Name of the agent
@@ -262,6 +264,7 @@ impl MemoryExtractor {
     async fn persist_memories(&self, result: ExtractResult) -> Result<usize> {
         let mut count = 0;
         let store = self.store.read().await;
+        let dedup = DedupProcessor::with_defaults();
 
         for candidate in result.memories {
             // Security scan - block prompt injection and data exfiltration
@@ -311,12 +314,19 @@ impl MemoryExtractor {
             // Handle action
             let should_add = match &candidate.action {
                 MemoryAction::Append => {
-                    // For append, check duplicates if enabled
-                    if self.is_duplicate(&content, &candidate.content) {
+                    // Use n-gram Jaccard similarity for dedup
+                    let existing_entries: Vec<String> = content
+                        .lines()
+                        .filter(|l| l.trim().starts_with("- ["))
+                        .filter_map(|l| Self::extract_entry_content(l))
+                        .collect();
+                    if let Some((idx, sim)) = dedup.find_similar(&candidate.content, &existing_entries) {
                         tracing::debug!(
                             content = %candidate.content,
                             target = %target,
-                            "Skipping duplicate memory (append)"
+                            similar_to = %existing_entries.get(idx).unwrap_or(&"".to_string()),
+                            similarity = sim,
+                            "Skipping similar memory (append)"
                         );
                         false
                     } else {
@@ -439,28 +449,6 @@ impl MemoryExtractor {
         }
 
         merged
-    }
-
-    /// Check if content already exists using simple string matching
-    fn is_duplicate(&self, existing_content: &str, new_content: &str) -> bool {
-        // Extract content parts from existing entries (strip markdown formatting)
-        let existing_entries: Vec<String> = existing_content
-            .lines()
-            .filter(|l| l.trim().starts_with("- ["))
-            .map(|l| {
-                // Extract just the content part between date and importance
-                if let Some(content) = Self::extract_entry_content(l) {
-                    content
-                } else {
-                    l.to_string()
-                }
-            })
-            .collect();
-
-        // Simple check for exact or near-exact duplicates
-        existing_entries
-            .iter()
-            .any(|entry| entry.to_lowercase().trim() == new_content.to_lowercase().trim())
     }
 
     /// Extract the text content from a markdown memory entry line

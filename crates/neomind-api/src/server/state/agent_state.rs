@@ -2,7 +2,6 @@
 //!
 //! Contains all AI agent-related services:
 //! - SessionManager for chat sessions
-//! - TieredMemory for conversation history and knowledge
 //! - AgentStore for agent persistence
 //! - AgentManager for executing user-defined agents
 //! - MarkdownMemoryStore for system-level memory
@@ -11,9 +10,8 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use neomind_agent::memory::{MemoryScheduler, TieredMemory};
+use neomind_agent::memory::MemoryScheduler;
 use neomind_agent::SessionManager;
-use neomind_core::llm::backend::LlmRuntime;
 use neomind_storage::{AgentStore, MarkdownMemoryStore, MemoryConfig};
 
 /// AI Agent manager type alias.
@@ -26,9 +24,6 @@ pub type AgentManager = Arc<neomind_agent::ai_agent::AiAgentManager>;
 pub struct AgentState {
     /// Session manager for chat sessions.
     pub session_manager: Arc<SessionManager>,
-
-    /// Tiered memory system for conversation history and knowledge.
-    pub memory: Arc<RwLock<TieredMemory>>,
 
     /// AI Agent store for user-defined automation agents.
     pub agent_store: Arc<AgentStore>,
@@ -50,14 +45,12 @@ impl AgentState {
     /// Create a new agent state.
     pub fn new(
         session_manager: Arc<SessionManager>,
-        memory: Arc<RwLock<TieredMemory>>,
         agent_store: Arc<AgentStore>,
         agent_manager: Arc<RwLock<Option<AgentManager>>>,
         system_memory_store: Arc<MarkdownMemoryStore>,
     ) -> Self {
         Self {
             session_manager,
-            memory,
             agent_store,
             agent_manager,
             system_memory_store,
@@ -66,9 +59,9 @@ impl AgentState {
         }
     }
 
-    /// Start the memory scheduler with LLM runtime.
+    /// Start the memory scheduler (temp file cleanup).
     /// Idempotent: if a scheduler is already running, returns Ok without creating a duplicate.
-    pub async fn start_memory_scheduler(&self, _llm: Arc<dyn LlmRuntime>) -> Result<(), String> {
+    pub async fn start_memory_scheduler(&self) -> Result<(), String> {
         // Idempotency check — avoid spawning duplicate background tasks
         {
             let guard = self.memory_scheduler.read().await;
@@ -89,9 +82,6 @@ impl AgentState {
         let manager = Arc::new(RwLock::new(neomind_agent::memory::MemoryManager::new(
             config.clone(),
         )));
-
-        // Session store available for future use (e.g., memory tool integration)
-        let _session_store = self.session_manager.session_store();
 
         let mut scheduler = MemoryScheduler::new(manager, store, config);
 
@@ -118,7 +108,6 @@ impl AgentState {
     pub fn minimal() -> Self {
         Self {
             session_manager: Arc::new(SessionManager::memory()),
-            memory: Arc::new(RwLock::new(TieredMemory::default())),
             agent_store: AgentStore::memory().unwrap(),
             agent_manager: Arc::new(RwLock::new(None)),
             system_memory_store: Arc::new(MarkdownMemoryStore::new(

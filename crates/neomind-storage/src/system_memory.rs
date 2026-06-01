@@ -585,6 +585,93 @@ impl MarkdownMemoryStore {
         Ok(())
     }
 
+    /// Replace content between `<!-- {marker} --> ... <!-- /{marker} -->` in a target file.
+    ///
+    /// If the marker is not found, the section is appended before the closing marker
+    /// or at the end of the file. Each update fully replaces the previous content —
+    /// zero accumulation.
+    ///
+    /// # Arguments
+    /// * `target` - Either "user" or "knowledge"
+    /// * `marker` - Marker name (e.g., "system-context", "chat-summary")
+    /// * `new_content` - Content to place between the markers
+    ///
+    /// # Returns
+    /// `Ok(true)` if file was modified, `Ok(false)` if content unchanged.
+    pub async fn replace_marker_section(
+        &self,
+        target: &str,
+        marker: &str,
+        new_content: &str,
+    ) -> Result<bool> {
+        let path = match target {
+            "user" => self.base_path.join("USER.md"),
+            "knowledge" => self.base_path.join("KNOWLEDGE.md"),
+            _ => return Err(Error::InvalidInput(format!("Invalid target: {}", target))),
+        };
+
+        let current = if path.exists() {
+            fs::read_to_string(&path)
+                .map_err(|e| Error::Storage(format!("Failed to read {}.md: {}", target, e)))?
+        } else {
+            String::new()
+        };
+
+        let original = current.clone();
+        let open_tag = format!("<!-- {} -->", marker);
+        let close_tag = format!("<!-- /{} -->", marker);
+
+        let new_text = if let Some(start) = current.find(&open_tag) {
+            // Marker exists — replace content between markers
+            let after_open = start + open_tag.len();
+            if let Some(end) = current[after_open..].find(&close_tag) {
+                let close_pos = after_open + end;
+                let mut result = String::with_capacity(start + new_content.len() + (current.len() - close_pos));
+                result.push_str(&current[..after_open]);
+                result.push('\n');
+                result.push_str(new_content);
+                result.push('\n');
+                result.push_str(&current[close_pos..]);
+                result
+            } else {
+                // Open tag found but no close tag — recover by replacing everything after open tag
+                let mut result = String::with_capacity(after_open + new_content.len() + close_tag.len() + 4);
+                result.push_str(&current[..after_open]);
+                result.push('\n');
+                result.push_str(new_content);
+                result.push('\n');
+                result.push_str(&close_tag);
+                result.push('\n');
+                result
+            }
+        } else {
+            // Marker not found — append new section
+            let mut result = current.clone();
+            if !result.ends_with('\n') {
+                result.push('\n');
+            }
+            result.push('\n');
+            result.push_str(&open_tag);
+            result.push('\n');
+            result.push_str(new_content);
+            result.push('\n');
+            result.push_str(&close_tag);
+            result.push('\n');
+            result
+        };
+
+        // Check if anything changed
+        if new_text == original {
+            return Ok(false);
+        }
+
+        fs::write(&path, &new_text)
+            .map_err(|e| Error::Storage(format!("Failed to write {}.md: {}", target, e)))?;
+
+        info!(target = %target, marker = %marker, "Replaced marker section");
+        Ok(true)
+    }
+
     /// Get stats for all memory targets.
     pub async fn stats(&self) -> Result<MemoryStats> {
         // Read USER.md
@@ -1651,10 +1738,11 @@ mod tests_new_layout {
             storage_path: temp_dir.path().to_str().unwrap().to_string(),
             user_char_limit: 2000,
             knowledge_char_limit: 3000,
-            agent_char_limit: 500,
-            max_agents: 5,
+            agent_char_limit: 1000,
             temp_file_ttl_days: 7,
-            schedule_interval_secs: 3600,
+            system_context_interval_secs: 600,
+            summary_interval_secs: 7200,
+            summary_backend_id: None,
         };
         let store = MarkdownMemoryStore::with_config(temp_dir.path(), config);
         store.init().unwrap();

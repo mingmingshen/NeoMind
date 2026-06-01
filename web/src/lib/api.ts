@@ -2143,31 +2143,6 @@ export const api = {
     }),
 
   /**
-   * Trigger manual extraction
-   * POST /api/memory/extract
-   * Note: Extraction runs in background on the server, so this returns quickly
-   */
-  triggerMemoryExtract: (sessionId?: string, force = true) => {
-    // Create timeout signal with fallback for older browsers
-    let signal: AbortSignal | undefined
-    try {
-      signal = AbortSignal.timeout(30 * 1000) // 30 seconds - server returns immediately, extraction runs in background
-    } catch (e) {
-      console.warn('AbortSignal.timeout not supported, request will have no timeout', e)
-      signal = undefined
-    }
-
-    return fetchAPI<{ success: boolean; extracted: number; message: string }>('/memory/extract', {
-      method: 'POST',
-      body: JSON.stringify({
-        session_id: sessionId || null,
-        force,
-      }),
-      signal,
-    })
-  },
-
-  /**
    * Trigger manual compression
    * POST /api/memory/compress
    * Note: This operation may take a long time, so we use a 5-minute timeout

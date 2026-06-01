@@ -936,9 +936,10 @@ export interface MemorySystemConfig {
   user_char_limit: number
   knowledge_char_limit: number
   agent_char_limit: number
-  max_agents: number
   temp_file_ttl_days: number
-  schedule_interval_secs: number
+  system_context_interval_secs: number
+  summary_interval_secs: number
+  summary_backend_id: string | null
 }
 
 // ========== Events Types ==========

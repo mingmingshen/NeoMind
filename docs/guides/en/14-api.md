@@ -414,7 +414,6 @@ GET    /api/memory/export
 GET    /api/memory/stats
 GET    /api/memory/config
 PUT    /api/memory/config
-POST   /api/memory/extract
 POST   /api/memory/compress
 GET    /api/memory/category/:category
 PUT    /api/memory/category/:category

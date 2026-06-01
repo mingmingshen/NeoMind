@@ -14,12 +14,11 @@ pub(crate) fn extract_semantic_patterns(
             continue;
         }
 
-        // Extract pattern type
+        // Extract pattern type — skip "info" type entirely (not meaningful enough)
         let pattern_type = match decision.decision_type.as_str() {
             "alert" => "anomaly_detection",
             "command" => "automated_control",
-            "info" => "information_logging",
-            _ => "general_pattern",
+            _ => continue, // Skip "info" and other non-actionable types
         };
 
         // Extract symptom (what condition triggered this)
@@ -57,39 +56,87 @@ pub(crate) fn extract_semantic_patterns(
         patterns.push(pattern);
     }
 
+    // Quality gate: filter out generic/routine patterns
+    patterns.retain(is_pattern_worth_storing);
+
     patterns
 }
 
+/// Check if a pattern is worth storing — skip generic/routine entries.
+fn is_pattern_worth_storing(pattern: &LearnedPattern) -> bool {
+    let desc_lower = pattern.description.to_lowercase();
+    let generic_phrases = [
+        "status normal",
+        "no action",
+        "routine check",
+        "information logging",
+        "routine",
+        "no anomaly",
+        "within normal range",
+    ];
+    if generic_phrases.iter().any(|p| desc_lower.contains(p)) {
+        return false;
+    }
+    // Skip patterns with very short descriptions (no real information)
+    if pattern.description.len() < 15 {
+        return false;
+    }
+    true
+}
+
 pub(crate) fn extract_symptom(situation_analysis: &str, decision: &Decision) -> String {
-    // Try to extract from situation analysis - use static strings for common cases
+    // Try to extract actual numeric values from situation_analysis
+    let numeric_re = regex::Regex::new(r"(\d+\.?\d*)\s*(?:°C|℃|度|%|℃|Pa|kPa|hPa|mmHg|V|A|W|mV)").ok();
+
     if !situation_analysis.is_empty() {
-        // Look for key phrases indicating conditions
+        // Try to extract numeric values for context-rich symptoms
+        let numbers: Vec<&str> = numeric_re
+            .as_ref()
+            .map(|re| re.find_iter(situation_analysis).map(|m| m.as_str()).collect())
+            .unwrap_or_default();
+
         if situation_analysis.contains("超过")
             || situation_analysis.contains("高于")
             || situation_analysis.contains("exceeds")
             || situation_analysis.contains("above")
         {
+            if !numbers.is_empty() {
+                return format!("Value {} exceeds threshold", numbers.join(", "));
+            }
             return "Value exceeds threshold".to_string();
         }
         if situation_analysis.contains("低于") || situation_analysis.contains("below") {
+            if !numbers.is_empty() {
+                return format!("Value {} below threshold", numbers.join(", "));
+            }
             return "Value below threshold".to_string();
         }
         if situation_analysis.contains("异常")
             || situation_analysis.contains("不正常")
             || situation_analysis.contains("abnormal")
         {
+            if !numbers.is_empty() {
+                return format!("Abnormal: {}", numbers.join(", "));
+            }
             return "Abnormal state detected".to_string();
         }
+        // For "normal/stable" — include numeric values if available
         if situation_analysis.contains("正常")
             || situation_analysis.contains("稳定")
             || situation_analysis.contains("normal")
             || situation_analysis.contains("stable")
         {
+            if !numbers.is_empty() {
+                return format!("{} within normal range", numbers.join(", "));
+            }
             return "Status normal".to_string();
         }
+
+        // If situation_analysis has content but no known keywords,
+        // don't produce a symptom — let it fall through to decision type fallback
     }
 
-    // Fallback to decision type - use static strings
+    // Fallback to decision type
     match decision.decision_type.as_str() {
         "alert" => "Alert condition detected".to_string(),
         "command" => "Automation trigger met".to_string(),
@@ -132,10 +179,9 @@ pub(crate) fn extract_trigger_conditions(decision: &Decision) -> serde_json::Val
 }
 
 pub(crate) fn extract_semantic_description(decision: &Decision, symptom: &str) -> String {
-    // Convert specific descriptions to abstract patterns
     let desc = &decision.description;
 
-    // Pattern: "Temp sensor 1 shows 25 degrees" -> "Temp anomaly triggered alert"
+    // Pattern: "Temp sensor 1 shows 25 degrees" -> "Temp 25°C normal (baseline: 24.1°C)"
     if desc.contains("温度") || desc.contains("temp") {
         return format!("Temp {} - {}", symptom, decision.action);
     }
@@ -146,7 +192,7 @@ pub(crate) fn extract_semantic_description(decision: &Decision, symptom: &str) -
         return format!("Pressure {} - {}", symptom, decision.action);
     }
 
-    // Generic abstract description
+    // Generic description — include symptom detail
     format!("{} - {}", symptom, decision.action)
 }
 
@@ -319,9 +365,27 @@ impl AgentExecutor {
             && success
             && !has_anomaly
             && !has_new_image_analysis;
+
+        // Also skip non-routine executions whose conclusion is purely generic
+        // (e.g., "所有设备正常" with an info-level decision)
+        let conclusion_lower = conclusion.to_lowercase();
+        let is_generic_conclusion = conclusion_lower.contains("正常")
+            || conclusion_lower.contains("normal")
+            || conclusion_lower.contains("稳定")
+            || conclusion_lower.contains("stable")
+            || conclusion_lower.contains("无异常")
+            || conclusion_lower.contains("no anomaly")
+            || conclusion_lower.contains("无需操作")
+            || conclusion_lower.contains("no action");
+
         let is_duplicate = !has_new_image_analysis && recent_duplicate_count >= 2;
 
-        if !is_routine_success && !is_duplicate {
+        // Skip writing if: routine success, duplicate, or generic conclusion with no real action
+        let should_skip = is_routine_success
+            || is_duplicate
+            || (is_generic_conclusion && !has_alert_or_command && !has_anomaly && !has_new_image_analysis);
+
+        if !should_skip {
             // Prepare decision summaries for Short-Term Memory
             let mut decision_summaries: Vec<String> = decisions
                 .iter()
@@ -376,8 +440,9 @@ impl AgentExecutor {
                 execution_id = %execution_id,
                 is_routine = is_routine_success,
                 is_duplicate = is_duplicate,
+                is_generic = is_generic_conclusion,
                 recent_duplicate_count,
-                "Skipping short-term/long-term memory: routine or duplicate"
+                "Skipping short-term/long-term memory: routine, duplicate, or generic"
             );
         }
 

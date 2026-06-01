@@ -3,7 +3,6 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::llm_backends::{OllamaConfig, OllamaRuntime};
-use crate::memory::compat::persist_agent_memory;
 use futures::future::join_all;
 use futures::FutureExt;
 use neomind_core::llm::backend::LlmRuntime;
@@ -2876,19 +2875,6 @@ impl AgentExecutor {
             execution_id = %execution_id,
             "Execution and conversation turn saved successfully"
         );
-
-        // Extract and persist memory from successful agent execution
-        if record.status == ExecutionStatus::Completed {
-            if let Some(ref memory_store) = self.memory_store {
-                if let Err(e) = persist_agent_memory(memory_store, &record, &agent_name).await {
-                    tracing::warn!(
-                        agent_id = %agent_id,
-                        error = %e,
-                        "Failed to persist agent memory (non-blocking)"
-                    );
-                }
-            }
-        }
 
         // Reset agent status based on result
         // Disarm the RAII guard — normal completion handles status reset

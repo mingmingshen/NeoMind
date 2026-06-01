@@ -732,7 +732,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/memory/config",
             get(memory::get_config).put(memory::update_config),
         )
-        .route("/api/memory/extract", post(memory::trigger_extract))
         .route("/api/memory/compress", post(memory::trigger_compress))
         .route(
             "/api/memory/category/:category",

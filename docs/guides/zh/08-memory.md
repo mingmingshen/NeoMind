@@ -225,7 +225,6 @@ GET    /api/memory/config                  # 获取记忆配置
 PUT    /api/memory/config                  # 更新配置
 
 # 操作
-POST   /api/memory/extract                 # 手动触发提取
 POST   /api/memory/compress                # 手动触发压缩
 
 # 旧版 API（向后兼容）
@@ -260,16 +259,11 @@ curl -X POST http://localhost:9375/api/memory/categories/task_patterns/entries \
   }'
 ```
 
-### 手动触发提取
+### 手动压缩
 
 ```bash
-# 从指定会话触发提取
-curl -X POST http://localhost:9375/api/memory/extract \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "session_123",
-    "force": false
-  }'
+# 手动触发压缩/清理
+curl -X POST http://localhost:9375/api/memory/compress
 ```
 
 ## 设计原则

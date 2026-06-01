@@ -8,7 +8,7 @@
 
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::Error;
@@ -383,7 +383,7 @@ pub struct ImportantMemory {
 
 /// Default short-term memory limit (number of summaries).
 fn default_short_term_limit() -> usize {
-    10
+    20
 }
 
 /// Default long-term memory limit (number of important memories).
@@ -439,6 +439,41 @@ fn truncate_chars(s: &str, max: usize) -> String {
     format!("{}...", truncated)
 }
 
+/// Compute bigram Jaccard similarity between two strings.
+/// Same algorithm as DedupProcessor in neomind-agent, inlined here to avoid
+/// circular dependency between neomind-storage and neomind-agent.
+fn text_similarity(a: &str, b: &str) -> f32 {
+    let bigrams = |s: &str| -> HashSet<String> {
+        let chars: Vec<char> = s.to_lowercase().chars().collect();
+        if chars.len() < 2 {
+            return HashSet::from_iter([s.to_lowercase()]);
+        }
+        (0..=chars.len() - 2)
+            .map(|i| chars[i..i + 2].iter().collect())
+            .collect()
+    };
+    let set_a = bigrams(a);
+    let set_b = bigrams(b);
+    if set_a.is_empty() && set_b.is_empty() {
+        return 1.0;
+    }
+    let intersection = set_a.intersection(&set_b).count() as f32;
+    let union = set_a.union(&set_b).count() as f32;
+    if union == 0.0 {
+        return 0.0;
+    }
+    intersection / union
+}
+
+/// Check if text contains generic/routine markers.
+fn is_generic_content(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    let generic_markers = [
+        "正常", "正常范围", "no action", "normal", "stable", "routine", "status normal",
+    ];
+    generic_markers.iter().any(|m| lower.contains(m))
+}
+
 impl AgentMemory {
     /// Add a memory summary to short-term memory.
     /// Automatically archives to long-term if capacity exceeded.
@@ -471,6 +506,7 @@ impl AgentMemory {
 
     /// Archive old short-term memories to long-term memory.
     /// Keeps only the most recent summaries in short-term.
+    /// Deduplicates against existing long-term entries using text similarity.
     pub fn archive_to_long_term(&mut self) {
         let now = chrono::Utc::now().timestamp();
         self.short_term.last_archived_at = Some(now);
@@ -487,6 +523,34 @@ impl AgentMemory {
 
             // Only keep memories above threshold
             if importance >= self.long_term.min_importance {
+                let content = format!(
+                    "{} -> {}",
+                    truncate_chars(&summary.situation, 100),
+                    truncate_chars(&summary.conclusion, 100)
+                );
+
+                // Check for similar existing entry — update timestamp instead of duplicating
+                let similar_idx = self
+                    .long_term
+                    .memories
+                    .iter()
+                    .position(|m| text_similarity(&m.content, &content) > 0.7);
+
+                if let Some(idx) = similar_idx {
+                    // Update existing entry's last_accessed_at and take the higher importance
+                    let existing = &mut self.long_term.memories[idx];
+                    existing.last_accessed_at = now;
+                    if importance > existing.importance {
+                        existing.importance = importance;
+                    }
+                    tracing::debug!(
+                        existing_content = %existing.content,
+                        new_content = %content,
+                        "Updated existing long-term memory instead of creating duplicate"
+                    );
+                    continue;
+                }
+
                 let memory = ImportantMemory {
                     id: uuid::Uuid::new_v4().to_string(),
                     memory_type: if summary.success {
@@ -495,11 +559,7 @@ impl AgentMemory {
                         "failed_execution"
                     }
                     .to_string(),
-                    content: format!(
-                        "{} -> {}",
-                        truncate_chars(&summary.situation, 100),
-                        truncate_chars(&summary.conclusion, 100)
-                    ),
+                    content,
                     importance,
                     created_at: summary.timestamp,
                     last_accessed_at: now,
@@ -521,6 +581,34 @@ impl AgentMemory {
         // Prune long-term memory if needed
         self.prune_long_term_memory();
 
+        // Decay old learned patterns — reduce confidence for patterns not seen in 7 days
+        let seven_days_secs: i64 = 7 * 86400;
+        self.learned_patterns.retain(|p| {
+            let age_secs = now - p.learned_at;
+            age_secs < seven_days_secs * 4 // remove patterns older than 28 days
+        });
+        for pattern in &mut self.learned_patterns {
+            let age_secs = now - pattern.learned_at;
+            if age_secs > seven_days_secs {
+                // Reduce confidence by 10% per week of age
+                let weeks_old = (age_secs / seven_days_secs) as f32;
+                pattern.confidence *= 0.9_f32.powf(weeks_old);
+            }
+        }
+
+        // Prune baselines with no matching recent data sources
+        let recent_sources: HashSet<&str> = self
+            .short_term
+            .summaries
+            .iter()
+            .flat_map(|s| s.decisions.iter().map(|d| d.as_str()))
+            .collect();
+        // Keep baselines that appeared in any recent summary or are very new
+        self.baselines.retain(|key, _| {
+            recent_sources.iter().any(|s| s.contains(key.as_str()))
+                || self.trend_data.iter().rev().take(50).any(|t| t.metric == *key)
+        });
+
         tracing::debug!(
             short_term_count = self.short_term.summaries.len(),
             long_term_count = self.long_term.memories.len(),
@@ -529,7 +617,7 @@ impl AgentMemory {
     }
 
     /// Calculate importance score for a memory summary.
-    /// Factors in: recency, success/failure, decision significance.
+    /// Factors in: recency, success/failure, decision significance, generic content penalty.
     fn calculate_importance(&self, summary: &MemorySummary) -> f32 {
         let mut importance = 0.5; // Base importance
 
@@ -543,6 +631,11 @@ impl AgentMemory {
             importance += 0.15;
         }
 
+        // Strongly deprioritize generic/routine conclusions
+        if is_generic_content(&summary.conclusion) || is_generic_content(&summary.situation) {
+            importance *= 0.3;
+        }
+
         // Time decay (older memories are less important unless accessed)
         let age_hours = (chrono::Utc::now().timestamp() - summary.timestamp) as f32 / 3600.0;
         let decay_factor = 1.0 / (1.0 + age_hours / 24.0); // Half-life of 24 hours
@@ -553,15 +646,23 @@ impl AgentMemory {
     }
 
     /// Prune long-term memory to stay within capacity.
-    /// Removes low-importance and stale memories.
+    /// Removes low-importance, stale, and generic memories first.
     pub fn prune_long_term_memory(&mut self) {
         if self.long_term.memories.len() <= self.long_term.max_memories {
             return;
         }
 
-        // Sort by: (1) low importance first, (2) old last_accessed_at
+        // Sort by: (1) generic content first to remove, (2) low importance, (3) old last_accessed_at
         self.long_term.memories.sort_by(|a, b| {
-            // Prioritize keeping high-importance memories
+            // Generic entries are sorted to the front (removed first)
+            let a_generic = is_generic_content(&a.content);
+            let b_generic = is_generic_content(&b.content);
+            match (a_generic, b_generic) {
+                (true, false) => return std::cmp::Ordering::Less, // a is generic, remove first
+                (false, true) => return std::cmp::Ordering::Greater,
+                _ => {}
+            }
+            // Then by low importance first
             match a.importance.partial_cmp(&b.importance) {
                 Some(std::cmp::Ordering::Equal) => {}
                 Some(ord) => return ord,
@@ -650,41 +751,71 @@ impl AgentMemory {
     }
 
     /// Add a pattern directly to long-term memory.
+    /// Uses fuzzy matching to avoid near-duplicate patterns.
     /// Also updates the legacy learned_patterns field for backward compatibility.
     pub fn add_pattern(&mut self, pattern: LearnedPattern) {
-        // Check if similar pattern exists in both locations
-        let exists_in_long_term = self.long_term.patterns.iter().any(|p| {
-            p.pattern_type == pattern.pattern_type && p.description == pattern.description
+        if pattern.confidence < 0.7 {
+            return;
+        }
+
+        // Fuzzy dedup: find similar patterns in both locations
+        let similar_in_long_term = self.long_term.patterns.iter().position(|p| {
+            p.pattern_type == pattern.pattern_type
+                && text_similarity(&p.description, &pattern.description) > 0.7
         });
-        let exists_in_legacy = self.learned_patterns.iter().any(|p| {
-            p.pattern_type == pattern.pattern_type && p.description == pattern.description
+        let similar_in_legacy = self.learned_patterns.iter().position(|p| {
+            p.pattern_type == pattern.pattern_type
+                && text_similarity(&p.description, &pattern.description) > 0.7
         });
 
-        if !exists_in_long_term && !exists_in_legacy && pattern.confidence >= 0.7 {
-            // Add to both long_term.patterns and legacy learned_patterns
-            // This maintains backward compatibility while using the new structure
-            self.long_term.patterns.push(pattern.clone());
-            self.learned_patterns.push(pattern);
-
-            // Prune long_term.patterns if needed
-            if self.long_term.patterns.len() > 15 {
-                self.long_term.patterns.sort_by(|a, b| {
-                    b.confidence
-                        .partial_cmp(&a.confidence)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
-                self.long_term.patterns.truncate(15);
+        match (similar_in_long_term, similar_in_legacy) {
+            // New pattern — add to both
+            (None, None) => {
+                self.long_term.patterns.push(pattern.clone());
+                self.learned_patterns.push(pattern);
             }
-
-            // Also prune legacy learned_patterns
-            if self.learned_patterns.len() > 15 {
-                self.learned_patterns.sort_by(|a, b| {
-                    b.confidence
-                        .partial_cmp(&a.confidence)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
-                self.learned_patterns.truncate(15);
+            // Similar exists with lower confidence — replace
+            (Some(lt_idx), Some(leg_idx)) => {
+                if pattern.confidence > self.long_term.patterns[lt_idx].confidence {
+                    self.long_term.patterns[lt_idx] = pattern.clone();
+                    self.learned_patterns[leg_idx] = pattern;
+                }
             }
+            // Similar only in long_term
+            (Some(lt_idx), None) => {
+                if pattern.confidence > self.long_term.patterns[lt_idx].confidence {
+                    self.long_term.patterns[lt_idx] = pattern.clone();
+                    // Also add to legacy for consistency
+                    self.learned_patterns.push(pattern);
+                }
+            }
+            // Similar only in legacy
+            (None, Some(leg_idx)) => {
+                if pattern.confidence > self.learned_patterns[leg_idx].confidence {
+                    self.learned_patterns[leg_idx] = pattern.clone();
+                    self.long_term.patterns.push(pattern);
+                }
+            }
+        }
+
+        // Prune long_term.patterns if needed
+        if self.long_term.patterns.len() > 15 {
+            self.long_term.patterns.sort_by(|a, b| {
+                b.confidence
+                    .partial_cmp(&a.confidence)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            self.long_term.patterns.truncate(15);
+        }
+
+        // Also prune legacy learned_patterns
+        if self.learned_patterns.len() > 15 {
+            self.learned_patterns.sort_by(|a, b| {
+                b.confidence
+                    .partial_cmp(&a.confidence)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            self.learned_patterns.truncate(15);
         }
     }
 

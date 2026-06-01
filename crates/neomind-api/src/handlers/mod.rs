@@ -127,6 +127,6 @@ pub use tools::{get_tool_handler, list_tools_handler};
 // System Memory API
 pub use memory::{
     delete_memory_file, export_all, export_memory, get_all_memory, get_category, get_config,
-    get_memory_content, get_stats, trigger_compress, trigger_extract, update_category,
+    get_memory_content, get_stats, trigger_compress, update_category,
     update_config, update_memory_content,
 };

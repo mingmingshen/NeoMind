@@ -6,6 +6,8 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::memory::dedup::DedupProcessor;
+
 use super::error::{Result, ToolError};
 use super::tool::{Tool, ToolCategory};
 use super::ToolOutput;
@@ -213,6 +215,7 @@ Examples:
                 })?;
 
                 let store = self.store.write().await;
+                let dedup = DedupProcessor::with_defaults();
 
                 let result = if let Some(custom_name) = Self::parse_custom_target(target) {
                     let existing = store
@@ -231,6 +234,29 @@ Examples:
                     match target {
                         "user" | "knowledge" => {
                             let existing = store.read_file(target).await?;
+                            // Check similarity against existing entries
+                            let existing_lines: Vec<String> = existing
+                                .lines()
+                                .filter(|l| l.trim().starts_with("- ["))
+                                .filter_map(|l| {
+                                    // Strip "- [date] " prefix and " [importance: N]" suffix
+                                    let trimmed = l.trim();
+                                    let after_date = trimmed.strip_prefix("- [")?;
+                                    let close_bracket = after_date.find(']')?;
+                                    let content_part = &after_date[close_bracket + 1..];
+                                    let cleaned = if let Some(idx) = content_part.rfind(" [importance:") {
+                                        &content_part[..idx]
+                                    } else {
+                                        content_part
+                                    };
+                                    Some(cleaned.trim().to_string())
+                                })
+                                .collect();
+                            if let Some((_, sim)) = dedup.find_similar(content, &existing_lines) {
+                                return Ok(ToolOutput::success(serde_json::json!({
+                                    "message": format!("Skipped: similar content already exists (similarity: {:.0}%)", sim * 100.0)
+                                })));
+                            }
                             let new_content = Self::append_content(&existing, content);
                             store.write_file(target, &new_content).await?;
                             format!("Added to {} ({} chars)", target, new_content.chars().count())

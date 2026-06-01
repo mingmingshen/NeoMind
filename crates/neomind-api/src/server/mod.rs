@@ -9,6 +9,7 @@ pub mod install_service;
 pub mod middleware;
 pub mod router;
 pub mod state;
+pub mod system_context;
 pub mod tools;
 pub mod types;
 pub mod uninstall_service;
@@ -282,54 +283,85 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
                 }
             }
 
-            // Start memory scheduler
+            // Start memory scheduler (temp file cleanup)
             {
                 let agents_state = bg_state.agents.clone();
                 tokio::spawn(async move {
-                    let mut retry_interval = tokio::time::interval(Duration::from_secs(30));
-                    let mut attempts = 0u32;
+                    if let Err(e) = agents_state.start_memory_scheduler().await {
+                        tracing::warn!(
+                            category = "memory",
+                            error = %e,
+                            "Failed to start memory scheduler"
+                        );
+                    }
+                });
+            }
+
+            // Start periodic system context + LLM summarization
+            {
+                let ctx_state = bg_state.clone();
+                tokio::spawn(async move {
+                    use neomind_storage::MemoryConfig;
+
+                    // Wait for system to stabilize
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+
+                    let config = MemoryConfig::load();
+                    let context_interval = config.system_context_interval_secs.max(60);
+                    let summary_interval = config.summary_interval_secs.max(600);
+
+                    let mut context_timer = tokio::time::interval(Duration::from_secs(context_interval));
+                    let mut summary_timer = tokio::time::interval(Duration::from_secs(summary_interval));
+
+                    tracing::info!(
+                        context_interval_secs = context_interval,
+                        summary_interval_secs = summary_interval,
+                        "System context background task started"
+                    );
 
                     loop {
-                        retry_interval.tick().await;
+                        tokio::select! {
+                            _ = context_timer.tick() => {
+                                let context = crate::server::system_context::gather_system_context(&ctx_state).await;
 
-                        let Ok(instance_manager) = neomind_agent::get_instance_manager() else {
-                            attempts += 1;
-                            if attempts % 10 == 1 {
-                                tracing::info!(
-                                    attempts = attempts,
-                                    "Waiting for LLM instance manager to initialize memory scheduler"
-                                );
+                                if let Err(e) = ctx_state.agents.system_memory_store
+                                    .replace_marker_section("knowledge", "system-context", &context)
+                                    .await
+                                {
+                                    tracing::warn!(error = %e, "Failed to update system context");
+                                }
                             }
-                            continue;
-                        };
+                            _ = summary_timer.tick() => {
+                                // Reload config each tick to pick up runtime changes
+                                let current_config = MemoryConfig::load();
+                                let llm_result = async {
+                                    let manager = neomind_agent::get_instance_manager().ok()?;
+                                    match &current_config.summary_backend_id {
+                                        Some(id) => manager.get_runtime(id).await.ok(),
+                                        None => manager.get_active_runtime().await.ok(),
+                                    }
+                                }.await;
 
-                        let Ok(runtime) = instance_manager.get_active_runtime().await else {
-                            attempts += 1;
-                            if attempts % 10 == 1 {
-                                tracing::info!(
-                                    attempts = attempts,
-                                    "Waiting for LLM runtime to start memory scheduler"
-                                );
-                            }
-                            continue;
-                        };
+                                let llm = match llm_result {
+                                    Some(rt) => rt,
+                                    None => {
+                                        tracing::debug!("No active LLM runtime, skipping summary");
+                                        continue;
+                                    }
+                                };
 
-                        match agents_state.start_memory_scheduler(runtime).await {
-                            Ok(()) => {
-                                tracing::info!(
-                                    category = "memory",
-                                    "Memory scheduler started (attempt {})",
-                                    attempts + 1
-                                );
-                                break;
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    category = "memory",
-                                    error = %e,
-                                    "Failed to start memory scheduler, will retry"
-                                );
-                                attempts += 1;
+                                let session_store = ctx_state.agents.session_manager.session_store();
+                                let _ = crate::server::system_context::summarize_chat_context(
+                                    &session_store,
+                                    &llm,
+                                    &ctx_state.agents.system_memory_store,
+                                ).await;
+
+                                let _ = crate::server::system_context::summarize_agent_context(
+                                    &ctx_state.agents.agent_store,
+                                    &llm,
+                                    &ctx_state.agents.system_memory_store,
+                                ).await;
                             }
                         }
                     }
