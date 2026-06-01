@@ -126,6 +126,10 @@ NeoMind is a modular ecosystem with specialized repositories for each concern:
 | **Face Recognition** | ArcFace-based face recognition with enrollment and matching. Supports face database management, real-time detection from camera feeds, and confidence-threshold matching for access control scenarios. |
 | **OCR Device Inference** | PP-OCRv4 text recognition on device camera feeds. Extracts text from images and video frames with support for multi-language recognition. Useful for meter reading, license plate recognition, and document processing. |
 | **Stream Player** | Video player dashboard component supporting RTSP, RTMP, and HLS protocols. Provides low-latency playback with snapshot capture, fullscreen mode, and device metric overlay. |
+| **Home Assistant Bridge** | Bidirectional integration with Home Assistant via REST and WebSocket APIs. Automatic entity discovery, state synchronization, and service call support for device control. |
+| **LoRaWAN Bridge** | Connect to LoRaWAN Network Servers (ChirpStack v3/v4, TTN) for IoT device data collection, payload decoding (Cayenne LPP, custom binary), and downlink command injection. |
+| **Modbus Bridge** | Modbus TCP/RTU device integration with flexible register map decoding (uint16, int16, uint32, float32, etc.). Multi-device management with independent polling loops. |
+| **Uink-RMS Bridge** | Bridge for Uink-RMS e-paper displays. JWT authentication, device template registration, batch device sync, and telemetry collection (battery, temperature, signal strength). |
 
 ### Supported Devices
 
