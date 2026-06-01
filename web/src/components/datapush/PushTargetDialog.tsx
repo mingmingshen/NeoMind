@@ -151,6 +151,8 @@ export function PushTargetDialog() {
   const [batchEnabled, setBatchEnabled] = useState(false)
   const [batchSize, setBatchSize] = useState(50)
   const [batchIntervalMs, setBatchIntervalMs] = useState(2000)
+  // Pending patterns from editing target — expanded into selectedSources once sources load
+  const [pendingPatterns, setPendingPatterns] = useState<string[] | null>(null)
 
   const toggleGroupExpand = useCallback((key: string) => {
     setExpandedGroups(prev => {
@@ -197,20 +199,8 @@ export function PushTargetDialog() {
 
         const patterns = editingPushTarget.data_filter.source_patterns
         if (patterns.length > 0) {
-          // Exact field IDs go into selectedSources, prefix patterns into manual
-          const exact: string[] = []
-          const prefix: string[] = []
-          for (const p of patterns) {
-            if (p.endsWith(':')) {
-              prefix.push(p)
-            } else {
-              exact.push(p)
-            }
-          }
-          setSelectedSources(new Set(exact))
-          if (prefix.length > 0) {
-            setManualPatterns(patterns.join(', '))
-          }
+          // Store patterns for later expansion once sources are loaded
+          setPendingPatterns(patterns)
         }
 
         // Batch config
@@ -240,6 +230,30 @@ export function PushTargetDialog() {
     }
   }, [pushTargetDialogOpen])
 
+  // Expand pending source patterns into selectedSources once sources are loaded
+  useEffect(() => {
+    if (!pendingPatterns || sources.length === 0) return
+    const exact: string[] = []
+    const prefix: string[] = []
+    for (const p of pendingPatterns) {
+      if (p.endsWith(':')) {
+        prefix.push(p)
+      } else {
+        exact.push(p)
+      }
+    }
+    // Expand prefix patterns: match all source IDs that start with the prefix
+    for (const p of prefix) {
+      for (const src of sources) {
+        if (src.id.startsWith(p)) {
+          exact.push(src.id)
+        }
+      }
+    }
+    setSelectedSources(new Set(exact))
+    setPendingPatterns(null)
+  }, [pendingPatterns, sources])
+
   const resetForm = () => {
     setName('')
     setNameError(null)
@@ -267,6 +281,7 @@ export function PushTargetDialog() {
     setBatchEnabled(false)
     setBatchSize(10)
     setBatchIntervalMs(1000)
+    setPendingPatterns(null)
   }
 
   // Group sources by type → then by source_name
