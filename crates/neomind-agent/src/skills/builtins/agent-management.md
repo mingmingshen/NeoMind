@@ -50,6 +50,38 @@ neomind agent control agent-abc123 --status active
 | `free` (default) | No bound resources, agent has full platform access | General monitoring, analysis tasks |
 | `focused` | Bound to specific devices/rules | Requires `--device-ids` or `--resources` |
 
+## Choosing the Right LLM Backend
+
+Before creating an agent, check available backends and their capabilities:
+
+```bash
+neomind llm list
+```
+
+The response includes a `capabilities` object per backend. Match it to your task:
+
+| Task Type | Required Capability | How to Check |
+|-----------|-------------------|--------------|
+| Text-only (monitoring, alerts, reports) | None (any backend works) | — |
+| Vision / Image analysis | `multimodal: true` or `supports_images: true` | Look for vision models (e.g., `qwen3-vl`, `gpt-4o`) |
+| Tool calling / function calling | `function_calling: true` | Most modern models support this |
+| Long context tasks | `max_context` value | Compare context window sizes |
+
+> If `--llm-backend` is not specified, the **default active backend** is used.
+
+**Example — creating a vision-capable agent:**
+```bash
+# Step 1: Find a backend with multimodal support
+neomind llm list
+# Look for backends where capabilities.multimodal or capabilities.supports_images is true
+
+# Step 2: Create agent with that backend
+neomind agent create \
+  --name 'Image Analyzer' \
+  --prompt 'Analyze device camera images and detect anomalies' \
+  --llm-backend <multimodal_backend_id>
+```
+
 ## Command Reference
 
 ### Create Agent
@@ -68,7 +100,7 @@ neomind agent create \
 ```
 
 **Required**: `--name`, `--prompt`
-**Important**: `--llm-backend` selects LLM backend (use `neomind llm list` to see available backends).
+**Important**: `--llm-backend` selects which LLM powers the agent. Run `neomind llm list` first and match backend capabilities to your task (see "Choosing the Right LLM Backend" above).
 
 ### Control Agent
 

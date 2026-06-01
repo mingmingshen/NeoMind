@@ -5,7 +5,51 @@ use crate::ApiClient;
 
 /// List configured LLM backends
 pub async fn list_backends(client: &ApiClient) -> Result<CliResponse> {
-    let data = client.get("/llm-backends").await?;
+    let mut data = client.get("/llm-backends").await?;
+
+    // Add capability tags to each backend for easy scanning
+    if let Some(backends) = data.get_mut("backends").and_then(|b| b.as_array_mut()) {
+        for backend in backends.iter_mut() {
+            let mut tags: Vec<String> = Vec::new();
+
+            if backend.get("is_active").and_then(|v| v.as_bool()).unwrap_or(false) {
+                tags.push("active".to_string());
+            }
+            if let Some(caps) = backend.get("capabilities") {
+                if caps.get("multimodal").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    tags.push("multimodal".to_string());
+                }
+                if caps.get("supports_images").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    tags.push("vision".to_string());
+                }
+                if caps.get("supports_audio").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    tags.push("audio".to_string());
+                }
+                if caps.get("function_calling").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    tags.push("tool-use".to_string());
+                }
+                if caps.get("thinking_display").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    tags.push("thinking".to_string());
+                }
+                if caps.get("streaming").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    tags.push("streaming".to_string());
+                }
+                if let Some(ctx) = caps.get("max_context").and_then(|v| v.as_u64()) {
+                    if ctx > 0 {
+                        tags.push(format!("ctx:{:.0}k", ctx as f64 / 1024.0));
+                    }
+                }
+            }
+            if let Some(healthy) = backend.get("healthy").and_then(|v| v.as_bool()) {
+                if !healthy {
+                    tags.push("unhealthy".to_string());
+                }
+            }
+
+            backend["_tags"] = json!(tags);
+        }
+    }
+
     Ok(CliResponse::success(data, "LLM backends listed"))
 }
 
