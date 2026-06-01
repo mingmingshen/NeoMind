@@ -196,6 +196,58 @@ pub(crate) fn extract_semantic_description(decision: &Decision, symptom: &str) -
     format!("{} - {}", symptom, decision.action)
 }
 
+/// Extract a concise insight from execution results using rule-based heuristics.
+/// No LLM call — pure pattern matching on conclusion, decisions, and data.
+fn extract_execution_insight(
+    situation: &str,
+    conclusion: &str,
+    decisions: &[Decision],
+    data: &[DataCollected],
+    success: bool,
+    baselines: &HashMap<String, f64>,
+) -> Option<String> {
+    // Rule 1: Failed execution → extract reason from conclusion
+    if !success {
+        let reason = truncate_to(conclusion, 120);
+        return Some(format!("Execution failed: {}", reason));
+    }
+
+    // Rule 2: Alert or command decision → capture trigger and action
+    if let Some(d) = decisions
+        .iter()
+        .find(|d| matches!(d.decision_type.as_str(), "alert" | "command"))
+    {
+        let desc = truncate_to(&d.description, 100);
+        return Some(desc);
+    }
+
+    // Rule 3: Numeric value deviates from baseline by >20%
+    for item in data {
+        if let (Some(val), Some(&baseline)) = (
+            item.values.get("value").and_then(|v| v.as_f64()),
+            baselines.get(&item.source),
+        ) {
+            if baseline.abs() > 0.01 {
+                let deviation = ((val - baseline) / baseline * 100.0).abs();
+                if deviation > 20.0 {
+                    return Some(format!(
+                        "{} deviates {:.0}% from baseline: current {:.1} vs baseline {:.1}",
+                        item.source, deviation, val, baseline
+                    ));
+                }
+            }
+        }
+    }
+
+    // Rule 4: Anomaly keywords detected in situation
+    let lower = situation.to_lowercase();
+    if lower.contains("异常") || lower.contains("abnormal") || lower.contains("anomaly") {
+        return Some(truncate_to(conclusion, 120));
+    }
+
+    None // Routine execution, no special insight
+}
+
 /// Build a fingerprint for an image analysis entry.
 /// Takes the first 80 chars of the entry — coarse enough to catch duplicate
 /// observations of the same scene, but granular enough to distinguish changes.
@@ -396,6 +448,16 @@ impl AgentExecutor {
             // Append image analysis summaries so they persist in short-term memory
             decision_summaries.extend(image_analyses);
 
+            // Extract rule-based insight from this execution
+            let insight = extract_execution_insight(
+                situation_analysis,
+                conclusion,
+                decisions,
+                data,
+                success,
+                &memory.baselines,
+            );
+
             tracing::debug!(
                 agent_id = %agent.id,
                 execution_id = %execution_id,
@@ -403,6 +465,7 @@ impl AgentExecutor {
                 conclusion_len = cleaned_conclusion.len(),
                 decisions_count = decision_summaries.len(),
                 has_image_analysis,
+                has_insight = insight.is_some(),
                 "About to add to short_term memory"
             );
 
@@ -412,6 +475,7 @@ impl AgentExecutor {
                 cleaned_conclusion,
                 decision_summaries,
                 success,
+                insight,
             );
 
             tracing::debug!(
@@ -576,5 +640,108 @@ impl AgentExecutor {
             duration_ms,
             success,
         }
+    }
+}
+
+/// Use LLM to reflect on accumulated insights and produce/update a TaskProfile.
+/// Returns None if insufficient insights or if the LLM call fails.
+pub(crate) async fn reflect_task_profile(
+    agent_name: &str,
+    user_prompt: &str,
+    summaries: &[MemorySummary],
+    existing_profile: Option<&TaskProfile>,
+    llm: &Arc<dyn LlmRuntime + Send + Sync>,
+) -> Option<TaskProfile> {
+    // Collect recent summaries that have insights
+    let insights: Vec<&MemorySummary> = summaries
+        .iter()
+        .rev()
+        .filter(|s| s.insight.is_some())
+        .take(10)
+        .collect();
+    if insights.len() < 3 {
+        return None;
+    }
+
+    let insight_text = insights
+        .iter()
+        .map(|s| {
+            let ts = chrono::DateTime::from_timestamp(s.timestamp, 0)
+                .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                .unwrap_or_else(|| "??".to_string());
+            format!("- [{}] {}", ts, s.insight.as_ref().unwrap())
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let existing_section = existing_profile
+        .map(|p| {
+            let ts = chrono::DateTime::from_timestamp(p.updated_at, 0)
+                .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                .unwrap_or_else(|| "??".to_string());
+            format!(
+                "\n\nCurrent profile (v{}, {}):\n{}",
+                p.version, ts, p.summary
+            )
+        })
+        .unwrap_or_default();
+
+    let prompt = format!(
+        "You are the task reflection module for AI Agent \"{}\".\n\
+         Agent's task: {}\n\n\
+         Recent execution findings:\n{}\n{}\n\n\
+         Synthesize these findings into an updated task knowledge summary.\n\
+         Requirements:\n\
+         - Each point starts with \"- \" (3-5 key points)\n\
+         - Include specific numbers: value ranges, thresholds, time patterns\n\
+         - Discard outdated or corrected conclusions\n\
+         - Max 500 characters total\n\
+         - Output ONLY the summary, nothing else",
+        agent_name, user_prompt, insight_text, existing_section
+    );
+
+    let input = LlmInput::new(prompt).with_params(GenerationParams {
+        temperature: Some(0.3),
+        max_tokens: Some(512),
+        thinking_enabled: Some(false),
+        ..Default::default()
+    });
+
+    match llm.generate(input).await {
+        Ok(output) => {
+            let summary = output.text.trim().to_string();
+            if summary.is_empty() {
+                return None;
+            }
+            // Truncate to 500 chars instead of discarding — LLMs often ignore length limits
+            let summary: String = summary.chars().take(500).collect();
+            Some(TaskProfile {
+                summary,
+                updated_at: chrono::Utc::now().timestamp(),
+                executions_reflected: existing_profile
+                    .map(|p| p.executions_reflected)
+                    .unwrap_or(0)
+                    + insights.len() as u32,
+                version: existing_profile.map(|p| p.version + 1).unwrap_or(1),
+            })
+        }
+        Err(_) => None,
+    }
+}
+
+/// Check if a reflection cycle should be triggered based on memory state.
+pub(crate) fn should_trigger_reflection(memory: &AgentMemory, has_insight: bool) -> bool {
+    if !has_insight {
+        return false;
+    }
+    match &memory.task_profile {
+        None => memory
+            .short_term
+            .summaries
+            .iter()
+            .filter(|s| s.insight.is_some())
+            .count()
+            >= 5,
+        Some(p) => (chrono::Utc::now().timestamp() - p.updated_at) > 6 * 3600,
     }
 }

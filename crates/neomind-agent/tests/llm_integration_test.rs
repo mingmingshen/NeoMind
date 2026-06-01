@@ -101,6 +101,7 @@ impl LlmTestContext {
                 baselines: Default::default(),
                 learned_patterns: vec![],
                 trend_data: vec![],
+                task_profile: None,
                 updated_at: now,
             },
             conversation_history: vec![],

@@ -66,22 +66,27 @@ impl HistoryConfig {
 /// Used by both Focused (analyze_with_llm) and Free (build_tool_system_prompt) paths.
 pub(crate) fn build_history_context(agent: &AiAgent, config: &HistoryConfig) -> String {
     let mut parts: Vec<String> = Vec::new();
+    let now = chrono::Utc::now().timestamp();
 
-    // 1. Recent execution history (conversation turns) — change-detected, collapses duplicates
-    if !agent.conversation_history.is_empty() {
-        let entries =
-            format_changed_history(&agent.conversation_history, config.max_history_entries);
-        if !entries.is_empty() {
+    // 1. Task Knowledge (accumulated wisdom from reflection) — highest priority
+    if let Some(ref profile) = agent.memory.task_profile {
+        if !profile.summary.is_empty() {
+            let age_hours = (now - profile.updated_at) / 3600;
+            let freshness = if age_hours < 6 { "fresh" } else { "aging" };
             parts.push(format!(
-                "### Recent Execution History ({} events)\n{}\n\
-                 Use this to track trends and avoid repeating the same analysis.",
-                entries.len(),
-                entries.join("\n")
+                "### Task Knowledge (v{}, {})\n\
+                 Apply these lessons to current analysis:\n{}",
+                profile.version, freshness, profile.summary
             ));
         }
     }
 
-    // 2. Short-term memory summaries (recent execution results)
+    // 2. Merged Recent Execution History (short-term summaries + conversation history)
+    // Short-term summaries have richer context (situation → conclusion + insight),
+    // so they take priority. Conversation history fills gaps.
+    let mut history_lines: Vec<String> = Vec::new();
+
+    // Short-term summaries with insights
     if !agent.memory.short_term.summaries.is_empty() {
         let recent: Vec<String> = agent
             .memory
@@ -95,42 +100,68 @@ pub(crate) fn build_history_context(agent: &AiAgent, config: &HistoryConfig) -> 
                     .map(|dt| dt.format("%m-%d %H:%M").to_string())
                     .unwrap_or_else(|| "??".to_string());
                 let status = if s.success { "OK" } else { "FAIL" };
-                format!("- [{}][{}] {}", ts, status, truncate_to(&s.conclusion, 80))
+                let mut line = format!("- [{}][{}] {}", ts, status, truncate_to(&s.conclusion, 80));
+                if let Some(ref insight) = s.insight {
+                    line.push_str(&format!(" | Insight: {}", truncate_to(insight, 60)));
+                }
+                line
             })
             .collect();
-        parts.push(format!("### Short-term Memory\n{}", recent.join("\n")));
+        history_lines.extend(recent);
     }
 
-    // 3. Learned patterns (high confidence only)
+    // Supplement with conversation history if short-term is sparse
+    if history_lines.len() < config.max_history_entries && !agent.conversation_history.is_empty() {
+        let entries =
+            format_changed_history(&agent.conversation_history, config.max_history_entries.saturating_sub(history_lines.len()));
+        history_lines.extend(entries);
+    }
+
+    if !history_lines.is_empty() {
+        parts.push(format!(
+            "### Recent Execution History\n{}\n\
+             Use this to track trends and avoid repeating the same analysis.",
+            history_lines.join("\n")
+        ));
+    }
+
+    // 3. Learned patterns (high confidence only, filtered for usefulness)
     if !agent.memory.learned_patterns.is_empty() {
         let patterns: Vec<String> = agent
             .memory
             .learned_patterns
             .iter()
             .filter(|p| p.confidence >= config.pattern_confidence)
-            .take(config.max_patterns)
-            .map(|p| {
-                format!(
-                    "- [{}] {} ({:.0}%)",
-                    p.pattern_type,
-                    p.description,
-                    p.confidence * 100.0
-                )
+            .filter(|p| {
+                let desc_lower = p.description.to_lowercase();
+                !desc_lower.contains("status normal")
+                    && !desc_lower.contains("within normal range")
+                    && p.description.len() > 20
             })
+            .take(config.max_patterns)
+            .map(|p| format!("- {} ({:.0}% confidence)", p.description, p.confidence * 100.0))
             .collect();
         if !patterns.is_empty() {
             parts.push(format!("### Learned Patterns\n{}", patterns.join("\n")));
         }
     }
 
-    // 4. Baseline values
+    // 4. Baseline values with human-readable device names from resources
     if !agent.memory.baselines.is_empty() {
         let bl: Vec<String> = agent
             .memory
             .baselines
             .iter()
             .take(config.max_baselines)
-            .map(|(k, v)| format!("- {}: {:.2}", k, v))
+            .map(|(k, v)| {
+                let display_name = agent
+                    .resources
+                    .iter()
+                    .find(|r| k.contains(&r.resource_id))
+                    .map(|r| r.name.as_str())
+                    .unwrap_or(k);
+                format!("- {} baseline: {:.1}", display_name, v)
+            })
             .collect();
         parts.push(format!("### Known Baselines\n{}", bl.join("\n")));
     }

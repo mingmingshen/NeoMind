@@ -1946,6 +1946,18 @@ export interface AgentMemory {
   learned_patterns: LearnedPattern[]
   trend_data: TrendPoint[]
   updated_at: string
+  // Task-level accumulated knowledge
+  task_profile?: TaskProfile | null
+}
+
+/**
+ * Evolving task-level knowledge from reflection
+ */
+export interface TaskProfile {
+  summary: string
+  updated_at: number
+  executions_reflected: number
+  version: number
 }
 
 /**
@@ -1976,6 +1988,7 @@ export interface MemorySummary {
   conclusion: string
   decisions: string[]
   success: boolean
+  insight?: string | null
 }
 
 /**

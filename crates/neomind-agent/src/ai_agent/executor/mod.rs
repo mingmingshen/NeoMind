@@ -5,7 +5,7 @@
 use crate::llm_backends::{OllamaConfig, OllamaRuntime};
 use futures::future::join_all;
 use futures::FutureExt;
-use neomind_core::llm::backend::LlmRuntime;
+use neomind_core::llm::backend::{GenerationParams, LlmInput, LlmRuntime};
 use neomind_core::{
     message::{Content, ContentPart, Message, MessageRole},
     EventBus, MetricValue, NeoMindEvent,
@@ -33,8 +33,10 @@ use neomind_storage::{
     LearnedPattern,
     LlmBackendStore,
     MarkdownMemoryStore,
+    MemorySummary,
     ReasoningStep,
     ResourceType,
+    TaskProfile,
     TrendPoint,
     TurnInput,
     TurnOutput,
@@ -3114,7 +3116,7 @@ impl AgentExecutor {
                 .await;
 
                 // Update memory with Free mode results
-                let updated_memory = self
+                let mut updated_memory = self
                     .update_memory(
                         &agent,
                         &decision_process.data_collected,
@@ -3125,6 +3127,34 @@ impl AgentExecutor {
                         true,
                     )
                     .await?;
+
+                // Trigger reflection if conditions are met
+                let last_insight = updated_memory
+                    .short_term
+                    .summaries
+                    .last()
+                    .and_then(|s| s.insight.as_ref())
+                    .is_some();
+                if memory::should_trigger_reflection(&updated_memory, last_insight) {
+                    if let Ok(Some(llm)) = self.get_llm_runtime_for_agent(&agent).await {
+                        if let Some(profile) = memory::reflect_task_profile(
+                            &agent.name,
+                            &agent.user_prompt,
+                            &updated_memory.short_term.summaries,
+                            updated_memory.task_profile.as_ref(),
+                            &llm,
+                        )
+                        .await
+                        {
+                            tracing::info!(
+                                agent_id = %agent.id,
+                                version = profile.version,
+                                "Task profile reflected"
+                            );
+                            updated_memory.task_profile = Some(profile);
+                        }
+                    }
+                }
 
                 self.store
                     .update_agent_memory(&agent.id, updated_memory.clone())
@@ -3250,7 +3280,7 @@ impl AgentExecutor {
                 let report = self.maybe_generate_report(&agent, &data_collected).await?;
 
                 // Step 5: Update memory with learnings
-                let updated_memory = self
+                let mut updated_memory = self
                     .update_memory(
                         &agent,
                         &data_collected,
@@ -3261,6 +3291,34 @@ impl AgentExecutor {
                         true,
                     )
                     .await?;
+
+                // Trigger reflection if conditions are met
+                let last_insight = updated_memory
+                    .short_term
+                    .summaries
+                    .last()
+                    .and_then(|s| s.insight.as_ref())
+                    .is_some();
+                if memory::should_trigger_reflection(&updated_memory, last_insight) {
+                    if let Ok(Some(llm)) = self.get_llm_runtime_for_agent(&agent).await {
+                        if let Some(profile) = memory::reflect_task_profile(
+                            &agent.name,
+                            &agent.user_prompt,
+                            &updated_memory.short_term.summaries,
+                            updated_memory.task_profile.as_ref(),
+                            &llm,
+                        )
+                        .await
+                        {
+                            tracing::info!(
+                                agent_id = %agent.id,
+                                version = profile.version,
+                                "Task profile reflected"
+                            );
+                            updated_memory.task_profile = Some(profile);
+                        }
+                    }
+                }
 
                 // Save updated memory
                 self.store

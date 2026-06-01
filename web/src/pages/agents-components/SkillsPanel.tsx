@@ -317,7 +317,7 @@ anti_triggers:
             key: "body_length",
             label: "Size",
             align: "right",
-            width: "w-20",
+            width: "w-24",
           },
         ]}
         data={tableData as unknown as Record<string, unknown>[]}

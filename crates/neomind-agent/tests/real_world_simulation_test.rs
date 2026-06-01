@@ -193,6 +193,7 @@ impl SimulationContext {
                 baselines: Default::default(),
                 learned_patterns: vec![],
                 trend_data: vec![],
+                task_profile: None,
                 updated_at: now,
                 working: WorkingMemory::default(),
                 short_term: ShortTermMemory::default(),

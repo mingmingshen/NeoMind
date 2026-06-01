@@ -279,8 +279,25 @@ pub struct AgentMemory {
     /// Trend data points (for analysis)
     #[serde(default)]
     pub trend_data: Vec<TrendPoint>,
+    /// Evolving task-level knowledge summary.
+    /// Updated periodically by LLM reflection. Max 500 chars.
+    #[serde(default)]
+    pub task_profile: Option<TaskProfile>,
     /// Last memory update
     pub updated_at: i64,
+}
+
+/// Evolving task-level knowledge accumulated from execution experience.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskProfile {
+    /// Accumulated knowledge text (max 500 chars)
+    pub summary: String,
+    /// When this profile was last updated
+    pub updated_at: i64,
+    /// Total executions reflected into this profile
+    pub executions_reflected: u32,
+    /// Version — incremented each reflection cycle
+    pub version: u32,
 }
 
 /// Working memory - current execution context.
@@ -358,6 +375,9 @@ pub struct MemorySummary {
     pub decisions: Vec<String>,
     /// Success flag
     pub success: bool,
+    /// Key finding or lesson from this execution (max 150 chars)
+    #[serde(default)]
+    pub insight: Option<String>,
 }
 
 /// An important memory for long-term storage with importance scoring.
@@ -423,6 +443,7 @@ impl Default for AgentMemory {
             learned_patterns: Vec::new(),
             baselines: HashMap::new(),
             trend_data: Vec::new(),
+            task_profile: None,
             updated_at: chrono::Utc::now().timestamp(),
         }
     }
@@ -484,6 +505,7 @@ impl AgentMemory {
         conclusion: String,
         decisions: Vec<String>,
         success: bool,
+        insight: Option<String>,
     ) {
         let summary = MemorySummary {
             timestamp: chrono::Utc::now().timestamp(),
@@ -492,6 +514,7 @@ impl AgentMemory {
             conclusion,
             decisions,
             success,
+            insight,
         };
 
         self.short_term.summaries.push(summary);

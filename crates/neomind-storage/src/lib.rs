@@ -166,6 +166,7 @@ pub use agents::{
     ResourceType,
     ScheduleType,
     ShortTermMemory,
+    TaskProfile,
     TrendPoint,
     TurnInput,
     TurnOutput,

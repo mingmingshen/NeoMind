@@ -211,6 +211,17 @@ struct AgentMemoryDto {
     learned_patterns: Vec<LearnedPatternDto>,
     trend_data: Vec<TrendPointDto>,
     updated_at: String,
+    // Task-level accumulated knowledge
+    task_profile: Option<TaskProfileDto>,
+}
+
+/// Task profile for API responses.
+#[derive(Debug, serde::Serialize)]
+struct TaskProfileDto {
+    summary: String,
+    updated_at: i64,
+    executions_reflected: u32,
+    version: u32,
 }
 
 /// Working memory for API responses.
@@ -247,6 +258,7 @@ struct MemorySummaryDto {
     conclusion: String,
     decisions: Vec<String>,
     success: bool,
+    insight: Option<String>,
 }
 
 /// Important memory for API responses.
@@ -604,6 +616,7 @@ impl From<&AiAgent> for AgentDetailDto {
                             conclusion: s.conclusion.clone(),
                             decisions: s.decisions.clone(),
                             success: s.success,
+                            insight: s.insight.clone(),
                         })
                         .collect(),
                     max_summaries: agent.memory.short_term.max_summaries,
@@ -670,6 +683,12 @@ impl From<&AiAgent> for AgentDetailDto {
                     })
                     .collect(),
                 updated_at: format_datetime(agent.memory.updated_at),
+                task_profile: agent.memory.task_profile.as_ref().map(|p| TaskProfileDto {
+                    summary: p.summary.clone(),
+                    updated_at: p.updated_at,
+                    executions_reflected: p.executions_reflected,
+                    version: p.version,
+                }),
             }),
             resources: agent
                 .resources
@@ -1795,6 +1814,7 @@ pub async fn get_agent_memory(
                     conclusion: s.conclusion.clone(),
                     decisions: s.decisions.clone(),
                     success: s.success,
+                    insight: s.insight.clone(),
                 })
                 .collect(),
             max_summaries: agent.memory.short_term.max_summaries,
@@ -1861,6 +1881,12 @@ pub async fn get_agent_memory(
             })
             .collect(),
         updated_at: format_datetime(agent.memory.updated_at),
+        task_profile: agent.memory.task_profile.as_ref().map(|p| TaskProfileDto {
+            summary: p.summary.clone(),
+            updated_at: p.updated_at,
+            executions_reflected: p.executions_reflected,
+            version: p.version,
+        }),
     };
 
     ok(json!(memory))

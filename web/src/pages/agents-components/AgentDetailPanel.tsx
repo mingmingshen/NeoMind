@@ -29,6 +29,8 @@ import {
   MessageSquare,
   History,
   Sparkles,
+  Lightbulb,
+  BookOpen,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { textNano } from "@/design-system/tokens/typography"
@@ -549,7 +551,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
   const longTermMemoriesCount = memory.long_term?.memories?.length || 0
 
   // Check if memory is empty
-  const isEmptyMemory = stateVarCount === 0 && learnedPatternsCount === 0 && shortTermSummariesCount === 0 && longTermMemoriesCount === 0 && longTermPatternsCount === 0
+  const isEmptyMemory = stateVarCount === 0 && learnedPatternsCount === 0 && shortTermSummariesCount === 0 && longTermMemoriesCount === 0 && longTermPatternsCount === 0 && !memory.task_profile
 
   if (isEmptyMemory) {
     return (
@@ -635,6 +637,25 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
           </DetailSection>
         )}
 
+        {/* Task Knowledge - accumulated wisdom */}
+        {memory.task_profile && (
+          <DetailSection
+            title={t('agents:memory.taskKnowledge')}
+            icon={BookOpen}
+          >
+            <div className="text-xs text-muted-foreground mb-2">
+              {t('agents:memory.taskKnowledgeHint', {
+                version: memory.task_profile.version,
+                date: formatTime(memory.task_profile.updated_at),
+                executions: memory.task_profile.executions_reflected
+              })}
+            </div>
+            <div className="text-sm whitespace-pre-line bg-background px-3 py-2 rounded-lg border border-border">
+              {memory.task_profile.summary}
+            </div>
+          </DetailSection>
+        )}
+
         {/* Short-Term Memory - Recent Executions */}
         {shortTermSummariesCount > 0 && (
           <DetailSection
@@ -683,6 +704,13 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Zap className="h-4 w-4" />
                         <span>{summary.decisions.length} {t('agents:memory.decisions')}</span>
+                      </div>
+                    )}
+
+                    {summary.insight && (
+                      <div className="mt-2 flex items-start gap-1.5 text-xs text-accent-orange">
+                        <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        <span>{summary.insight}</span>
                       </div>
                     )}
                   </div>
