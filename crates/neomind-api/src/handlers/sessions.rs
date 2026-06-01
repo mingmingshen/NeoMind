@@ -49,9 +49,6 @@ async fn process_stream_to_channel(
     const PENDING_SAVE_EVENT_INTERVAL: u32 = 20;
     const PENDING_SAVE_TIME_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 
-    // Clone user_message for later use in memory consolidation
-    let user_message_for_memory = user_message.clone();
-
     // P0.3: Create pending stream state for recovery
     let session_store = state.agents.session_manager.session_store();
     let mut pending_state = PendingStreamState::new(session_id.clone(), user_message);
@@ -232,101 +229,6 @@ async fn process_stream_to_channel(
                     AgentEvent::End { prompt_tokens } => {
                         // P0.3: Delete pending state on successful completion
                         let _ = session_store.delete_pending_stream(&session_id);
-
-                        // Auto-consolidate conversation to tiered memory
-                        // This stores the conversation in mid-term memory for future retrieval
-                        let assistant_response = pending_state.content.clone();
-                        let thinking = if !pending_state.thinking.is_empty() {
-                            Some(pending_state.thinking.clone())
-                        } else {
-                            None
-                        };
-
-                        // Spawn a background task to consolidate to memory with timeout
-                        let session_id_clone = session_id.clone();
-                        let user_message_clone = user_message_for_memory.clone();
-                        let state_clone = state.clone();
-                        let assistant_response_clone = assistant_response.clone();
-                        let thinking_clone = thinking.clone();
-
-                        tokio::spawn(async move {
-                            // Memory consolidation timeout: 5 seconds
-                            // Prevents background tasks from hanging indefinitely
-                            let consolidate_timeout = Duration::from_secs(5);
-
-                            let consolidate_result = tokio::time::timeout(
-                                consolidate_timeout,
-                                state_clone
-                                    .agents
-                                    .memory
-                                    .write()
-                                    .await
-                                    .consolidate(&session_id_clone),
-                            )
-                            .await;
-
-                            match consolidate_result {
-                                Ok(Ok(())) => {
-                                    // Also directly add to mid-term memory for immediate retrieval
-                                    let response_with_thinking =
-                                        if let Some(thinking_content) = thinking_clone {
-                                            if !thinking_content.is_empty() {
-                                                format!(
-                                                    "{}\n\nThinking: {}",
-                                                    assistant_response_clone, thinking_content
-                                                )
-                                            } else {
-                                                assistant_response_clone.clone()
-                                            }
-                                        } else {
-                                            assistant_response_clone.clone()
-                                        };
-
-                                    let add_result = tokio::time::timeout(
-                                        Duration::from_secs(2),
-                                        state_clone.agents.memory.write().await.add_conversation(
-                                            &session_id_clone,
-                                            &user_message_clone,
-                                            &response_with_thinking,
-                                        ),
-                                    )
-                                    .await;
-
-                                    match add_result {
-                                        Ok(Ok(())) => {
-                                            tracing::debug!(
-                                                "Conversation consolidated to memory: session={}",
-                                                session_id_clone
-                                            );
-                                        }
-                                        Ok(Err(e)) => {
-                                            tracing::warn!(
-                                                "Failed to add conversation to mid-term memory: {}",
-                                                e
-                                            );
-                                        }
-                                        Err(_) => {
-                                            tracing::warn!(
-                                                "Timeout adding conversation to mid-term memory: session={}",
-                                                session_id_clone
-                                            );
-                                        }
-                                    }
-                                }
-                                Ok(Err(e)) => {
-                                    tracing::warn!(
-                                        "Failed to consolidate short-term to mid-term memory: {}",
-                                        e
-                                    );
-                                }
-                                Err(_) => {
-                                    tracing::warn!(
-                                        "Timeout consolidating memory for session={}",
-                                        session_id_clone
-                                    );
-                                }
-                            }
-                        });
 
                         // === Context Summarization ===
                         // If context usage exceeds 60%, trigger background summarization
@@ -1187,10 +1089,21 @@ async fn handle_ws_socket(
                                             }
                                         }
 
+                                        // Prepend page context if provided
+                                        let final_message = if let Some(ref ctx) = chat_req.page_context {
+                                            if !ctx.is_empty() {
+                                                format!("{}\n\n{}", ctx, chat_req.message)
+                                            } else {
+                                                chat_req.message.clone()
+                                            }
+                                        } else {
+                                            chat_req.message.clone()
+                                        };
+
                                         // Use streaming for multimodal messages
                                         match task_state.agents.session_manager.process_message_multimodal_with_backend_stream(
                                             &task_session_id,
-                                            &chat_req.message,
+                                            &final_message,
                                             images.clone(),
                                             backend_id_str.as_deref(),
                                         ).await {
@@ -1235,12 +1148,22 @@ async fn handle_ws_socket(
                                     } else {
                                         // Regular text-only message - use streaming
                                         let selected_skills = chat_req.selected_skills.clone();
+                                        // Prepend page context if provided (only on first message per session)
+                                        let final_message = if let Some(ref ctx) = chat_req.page_context {
+                                            if !ctx.is_empty() {
+                                                format!("{}\n\n{}", ctx, chat_req.message)
+                                            } else {
+                                                chat_req.message.clone()
+                                            }
+                                        } else {
+                                            chat_req.message.clone()
+                                        };
                                         // Set session ID on memory tool for session-scoped operations
                                         {
                                             let mut handle = state.agents.memory_session_handle.write().await;
                                             *handle = Some(session_id.clone());
                                         }
-                                        match state.agents.session_manager.process_message_events_with_backend_and_skills(&session_id, &chat_req.message, backend_id, &selected_skills).await {
+                                        match state.agents.session_manager.process_message_events_with_backend_and_skills(&session_id, &final_message, backend_id, &selected_skills).await {
                                             Ok(stream) => {
                                                 // Clone the channel sender and session ID for the spawned task
                                                 let task_tx = stream_tx.clone();

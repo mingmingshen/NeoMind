@@ -44,6 +44,9 @@ pub struct ChatRequest {
     /// Optional skill IDs pinned by the user for this session.
     #[serde(rename = "selectedSkills", default)]
     pub selected_skills: Vec<String>,
+    /// Optional page context for first message (short neutral description of current page).
+    #[serde(rename = "pageContext", default)]
+    pub page_context: Option<String>,
 }
 
 /// Chat response to the web client.

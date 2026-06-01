@@ -601,6 +601,7 @@ export interface ClientChatMessage {
   sessionId?: string
   backendId?: string  // Optional LLM backend ID to use for this message
   selectedSkills?: string[]  // Skill IDs pinned by user for this session
+  pageContext?: string  // Short neutral page context, sent only on first message
 }
 
 // MQTT Broker Types

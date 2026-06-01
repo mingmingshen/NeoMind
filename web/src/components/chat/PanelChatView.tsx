@@ -19,6 +19,7 @@ import {
   selectLlmBackendState,
   selectChatActions,
 } from "@/store/selectors"
+import { usePageContext } from "@/hooks/usePageContext"
 import { MergedMessageList } from "./MergedMessageList"
 import { Send, X, Minimize2, Bot, Plus, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -185,6 +186,10 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize, onNavi
   const [input, setInput] = useState("")
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
+  // Page context — reactive, only read when sending first message
+  const pageContext = usePageContext()
+  const hasInjectedContextRef = useRef(false)
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -254,6 +259,7 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize, onNavi
     localStorage.removeItem(PANEL_SESSION_KEY)
     panelSessionIdRef.current = null
     setPanelMessages([])
+    hasInjectedContextRef.current = false
     dispatch({ type: 'RESET' })
     await createPanelSession()
   }, [streamState.isStreaming, createPanelSession])
@@ -382,9 +388,12 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize, onNavi
     const streamMsgId = generateId()
     setCurrentStreamMessageId(streamMsgId)
     currentStreamMessageIdRef.current = streamMsgId
-    ws.sendMessage(text)
+    // Inject page context on first message only
+    const contextToSend = !hasInjectedContextRef.current && pageContext ? pageContext : undefined
+    if (!hasInjectedContextRef.current) hasInjectedContextRef.current = true
+    ws.sendMessage(text, undefined, undefined, contextToSend)
     requestAnimationFrame(() => inputRef.current?.focus())
-  }, [input, streamState.isStreaming, addPanelMessage, createPanelSession])
+  }, [input, streamState.isStreaming, addPanelMessage, createPanelSession, pageContext])
 
   const filteredMessages = useMemo(() => filterPartialMessages(panelMessages), [panelMessages])
 

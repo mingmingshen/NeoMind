@@ -276,13 +276,14 @@ export class ChatWebSocket {
     }
   }
 
-  sendMessage(content: string, images?: ChatImage[], selectedSkills?: string[]) {
+  sendMessage(content: string, images?: ChatImage[], selectedSkills?: string[], pageContext?: string) {
     this.sendRequest({
       message: content,
       images: images,
       sessionId: this.sessionId || undefined,
       backendId: this.activeBackendId || undefined,
       selectedSkills: selectedSkills && selectedSkills.length > 0 ? selectedSkills : undefined,
+      pageContext: pageContext || undefined,
     })
   }
 
