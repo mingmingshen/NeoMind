@@ -3116,6 +3116,13 @@ impl AgentExecutor {
                 .await;
 
                 // Update memory with Free mode results
+                // Free mode: deterministic insight — extract from conclusion when any tool failed
+                let free_insight = if execution_result.success_rate < 1.0 {
+                    Some(truncate_to(&decision_process.conclusion, 150))
+                } else {
+                    None
+                };
+                let has_insight = free_insight.is_some();
                 let mut updated_memory = self
                     .update_memory(
                         &agent,
@@ -3125,17 +3132,12 @@ impl AgentExecutor {
                         &decision_process.conclusion,
                         &execution_id,
                         true,
+                        free_insight,
                     )
                     .await?;
 
                 // Trigger reflection if conditions are met
-                let last_insight = updated_memory
-                    .short_term
-                    .summaries
-                    .last()
-                    .and_then(|s| s.insight.as_ref())
-                    .is_some();
-                if memory::should_trigger_reflection(&updated_memory, last_insight) {
+                if memory::should_trigger_reflection(&updated_memory, has_insight) {
                     if let Ok(Some(llm)) = self.get_llm_runtime_for_agent(&agent).await {
                         if let Some(profile) = memory::reflect_task_profile(
                             &agent.name,
@@ -3184,6 +3186,7 @@ impl AgentExecutor {
                 reasoning_steps,
                 decisions,
                 conclusion,
+                insight,
             } => {
                 // Send thinking event for analysis completion
                 self.send_thinking(
@@ -3280,6 +3283,7 @@ impl AgentExecutor {
                 let report = self.maybe_generate_report(&agent, &data_collected).await?;
 
                 // Step 5: Update memory with learnings
+                let has_insight = insight.is_some();
                 let mut updated_memory = self
                     .update_memory(
                         &agent,
@@ -3289,17 +3293,12 @@ impl AgentExecutor {
                         &conclusion,
                         &execution_id,
                         true,
+                        insight,
                     )
                     .await?;
 
                 // Trigger reflection if conditions are met
-                let last_insight = updated_memory
-                    .short_term
-                    .summaries
-                    .last()
-                    .and_then(|s| s.insight.as_ref())
-                    .is_some();
-                if memory::should_trigger_reflection(&updated_memory, last_insight) {
+                if memory::should_trigger_reflection(&updated_memory, has_insight) {
                     if let Ok(Some(llm)) = self.get_llm_runtime_for_agent(&agent).await {
                         if let Some(profile) = memory::reflect_task_profile(
                             &agent.name,

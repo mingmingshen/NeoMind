@@ -210,7 +210,6 @@
     "confidence": "Confidence",
     "taskKnowledge": "Task Knowledge",
     "taskKnowledgeHint": "v{{version}} · Updated {{date}} · Based on {{executions}} executions",
-    "recentInsights": "Recent Key Findings",
     "conclusion": "Conclusion",
     "generatedReport": "Generated Report",
     "actionsExecuted": "Actions Executed",

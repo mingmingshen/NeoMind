@@ -196,85 +196,6 @@ pub(crate) fn extract_semantic_description(decision: &Decision, symptom: &str) -
     format!("{} - {}", symptom, decision.action)
 }
 
-/// Extract a concise insight from execution results using rule-based heuristics.
-/// No LLM call — pure pattern matching on conclusion, decisions, and data.
-fn extract_execution_insight(
-    situation: &str,
-    conclusion: &str,
-    decisions: &[Decision],
-    data: &[DataCollected],
-    success: bool,
-    baselines: &HashMap<String, f64>,
-) -> Option<String> {
-    // Rule 1: Failed execution → extract reason from conclusion
-    if !success {
-        let reason = truncate_to(conclusion, 120);
-        return Some(format!("Execution failed: {}", reason));
-    }
-
-    // Rule 2: Alert or command decision → capture trigger and action
-    if let Some(d) = decisions
-        .iter()
-        .find(|d| matches!(d.decision_type.as_str(), "alert" | "command"))
-    {
-        let desc = truncate_to(&d.description, 100);
-        return Some(desc);
-    }
-
-    // Rule 2b: Free-mode tool decisions are all "info" type, but action content
-    // may reveal alerts/notifications (e.g., shell tool sending alerts via CLI)
-    if let Some(d) = decisions.iter().find(|d| {
-        let action_lower = d.action.to_lowercase();
-        let desc_lower = d.description.to_lowercase();
-        action_lower.contains("alert")
-            || action_lower.contains("notify")
-            || action_lower.contains("send_message")
-            || desc_lower.contains("alert")
-            || desc_lower.contains("告警")
-            || desc_lower.contains("通知")
-    }) {
-        let desc = if !d.description.is_empty() {
-            truncate_to(&d.description, 100)
-        } else {
-            truncate_to(&d.action, 100)
-        };
-        return Some(desc);
-    }
-
-    // Rule 3: Numeric value deviates from baseline by >20%
-    for item in data {
-        if let (Some(val), Some(&baseline)) = (
-            item.values.get("value").and_then(|v| v.as_f64()),
-            baselines.get(&item.source),
-        ) {
-            if baseline.abs() > 0.01 {
-                let deviation = ((val - baseline) / baseline * 100.0).abs();
-                if deviation > 20.0 {
-                    return Some(format!(
-                        "{} deviates {:.0}% from baseline: current {:.1} vs baseline {:.1}",
-                        item.source, deviation, val, baseline
-                    ));
-                }
-            }
-        }
-    }
-
-    // Rule 4: Anomaly keywords detected in situation OR conclusion
-    let situation_lower = situation.to_lowercase();
-    let conclusion_lower = conclusion.to_lowercase();
-    if situation_lower.contains("异常")
-        || situation_lower.contains("abnormal")
-        || situation_lower.contains("anomaly")
-        || conclusion_lower.contains("异常")
-        || conclusion_lower.contains("abnormal")
-        || conclusion_lower.contains("anomaly")
-    {
-        return Some(truncate_to(conclusion, 120));
-    }
-
-    None // Routine execution, no special insight
-}
-
 /// Build a fingerprint for an image analysis entry.
 /// Takes the first 80 chars of the entry — coarse enough to catch duplicate
 /// observations of the same scene, but granular enough to distinguish changes.
@@ -350,6 +271,7 @@ impl AgentExecutor {
         conclusion: &str,
         execution_id: &str,
         success: bool,
+        insight: Option<String>,
     ) -> AgentResult<AgentMemory> {
         let mut memory = agent.memory.clone();
 
@@ -475,15 +397,8 @@ impl AgentExecutor {
             // Append image analysis summaries so they persist in short-term memory
             decision_summaries.extend(image_analyses);
 
-            // Extract rule-based insight from this execution
-            let insight = extract_execution_insight(
-                situation_analysis,
-                conclusion,
-                decisions,
-                data,
-                success,
-                &memory.baselines,
-            );
+            // Truncate insight to 150 chars if present
+            let insight = insight.map(|s| truncate_to(&s, 150));
 
             tracing::debug!(
                 agent_id = %agent.id,

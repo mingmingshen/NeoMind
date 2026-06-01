@@ -15,6 +15,7 @@ pub(crate) enum AnalysisResult {
         reasoning_steps: Vec<ReasoningStep>,
         decisions: Vec<Decision>,
         conclusion: String,
+        insight: Option<String>,
     },
     Free {
         decision_process: DecisionProcess,
@@ -488,7 +489,7 @@ impl AgentExecutor {
                     .analyze_with_llm(llm, agent, data, parsed_intent, execution_id)
                     .await
                 {
-                    Ok((situation_analysis, reasoning_steps, decisions, conclusion)) => {
+                    Ok((situation_analysis, reasoning_steps, decisions, conclusion, insight)) => {
                         tracing::info!(
                             agent_id = %agent.id,
                             "LLM-based analysis completed successfully"
@@ -498,6 +499,7 @@ impl AgentExecutor {
                             reasoning_steps,
                             decisions,
                             conclusion,
+                            insight,
                         });
                     }
                     Err(e) => {
@@ -532,6 +534,7 @@ impl AgentExecutor {
             reasoning_steps,
             decisions,
             conclusion,
+            insight: None, // rule-based analysis has no insight
         })
     }
 
@@ -542,7 +545,7 @@ impl AgentExecutor {
         data: &[DataCollected],
         parsed_intent: Option<&neomind_storage::ParsedIntent>,
         execution_id: &str,
-    ) -> AgentResult<(String, Vec<ReasoningStep>, Vec<Decision>, String)> {
+    ) -> AgentResult<(String, Vec<ReasoningStep>, Vec<Decision>, String, Option<String>)> {
         use neomind_core::llm::backend::{GenerationParams, LlmInput};
 
         let current_time = chrono::Utc::now();
@@ -907,23 +910,23 @@ impl AgentExecutor {
         let system_prompt = if has_valid_images {
             if is_chinese {
                 format!(
-                    "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n{}\n{}",
+                    "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\",\n  \"insight\": \"可选的关键发现，例行执行可省略\"\n}}\n\n{}\n{}",
                     role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
                 )
             } else {
                 format!(
-                    "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Image content description\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Analysis step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\"\n}}\n\n{}\n{}",
+                    "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Image content description\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Analysis step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\",\n  \"insight\": \"Optional key finding, omit if routine\"\n}}\n\n{}\n{}",
                     role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
                 )
             }
         } else if is_chinese {
             format!(
-                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n{}\n{}",
+                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\",\n  \"insight\": \"可选的关键发现，例行执行可省略\"\n}}\n\n{}\n{}",
                 role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
             )
         } else {
             format!(
-                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Situation analysis\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\"\n}}\n\n{}\n{}",
+                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Situation analysis\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\",\n  \"insight\": \"Optional key finding, omit if routine\"\n}}\n\n{}\n{}",
                 role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
             )
         };
@@ -1118,6 +1121,9 @@ impl AgentExecutor {
                     decisions: Vec<DecisionFromLlm>,
                     #[serde(default)]
                     conclusion: serde_json::Value,
+                    /// Key finding worth remembering (optional, omit if routine)
+                    #[serde(default)]
+                    insight: Option<String>,
                 }
 
                 impl LlmResponse {
@@ -1231,7 +1237,9 @@ impl AgentExecutor {
                             }
                         }
 
-                        Ok((situation_analysis, reasoning_steps, decisions, conclusion))
+                        let insight = response.insight.filter(|s| !s.is_empty());
+
+                        Ok((situation_analysis, reasoning_steps, decisions, conclusion, insight))
                     }
                     Err(parse_error) => {
                         // Convert error to string safely to avoid UTF-8 boundary panics
@@ -1298,11 +1306,14 @@ impl AgentExecutor {
                                         })
                                         .collect();
 
+                                    let insight = response.insight.filter(|s| !s.is_empty());
+
                                     return Ok((
                                         situation_analysis,
                                         reasoning_steps,
                                         decisions,
                                         conclusion,
+                                        insight,
                                     ));
                                 }
                                 Err(_) => {
@@ -1367,6 +1378,8 @@ impl AgentExecutor {
                                         })
                                         .collect();
 
+                                    let insight = response.insight.filter(|s| !s.is_empty());
+
                                     return Ok((
                                         situation_analysis,
                                         reasoning_steps,
@@ -1379,6 +1392,7 @@ impl AgentExecutor {
                                         } else {
                                             conclusion
                                         },
+                                        insight,
                                     ));
                                 }
                                 Err(e) => {
@@ -1506,6 +1520,7 @@ impl AgentExecutor {
                                         } else {
                                             conclusion
                                         },
+                                        None, // recovery path — no reliable insight
                                     ));
                                 } else {
                                     // Both situation_analysis and conclusion are empty, fall through to final fallback
@@ -1560,7 +1575,7 @@ impl AgentExecutor {
                             "Using raw LLM response as fallback (content preserved)"
                         );
 
-                        Ok((situation_analysis, reasoning_steps, decisions, conclusion))
+                        Ok((situation_analysis, reasoning_steps, decisions, conclusion, None))
                     }
                 }
             }
