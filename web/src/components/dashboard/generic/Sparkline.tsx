@@ -482,7 +482,8 @@ function SparklineComponent({
 
       const result = toNumberArray(rawData, [])
       if (result.length >= 2) return result
-      // Data source set but not enough data — return empty (EmptyState will show)
+      // Data source set but not enough data — show sample preview in editMode, empty otherwise
+      if (editMode) return DEFAULT_SAMPLE_DATA
       return []
     }
 

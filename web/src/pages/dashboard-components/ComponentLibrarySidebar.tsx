@@ -155,7 +155,7 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                         <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
                       </CollapsibleTrigger>
                       <CollapsibleContent>
-                        <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 pb-3 px-1">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 pb-3 px-1">
                           {category.items.map((item) => {
                             const Icon = item.icon
                             const installedComp = installedComponents.find(c => c.id === item.id)
@@ -166,11 +166,15 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                                 <button
                                   type="button"
                                   onClick={() => onAddComponent(item.id)}
-                                  className="h-[104px] w-full flex flex-col items-center p-3 text-center rounded-lg border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer active:scale-[0.98]"
+                                  className="w-full h-[72px] flex items-center gap-3 py-2 px-3 rounded-xl border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer active:scale-[0.98] text-left"
                                 >
-                                  <Icon className="h-5 w-5 mb-1.5 text-muted-foreground shrink-0" />
-                                  <span className="text-xs font-medium w-full truncate">{item.name}</span>
-                                  <p className={`${textNano} text-muted-foreground mt-0.5 w-full line-clamp-2 leading-tight`}>{item.description}</p>
+                                  <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${category.categoryColor}`}>
+                                    <Icon className="h-4.5 w-4.5 shrink-0" />
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-xs font-medium block truncate">{item.name}</span>
+                                    <p className={`${textNano} text-muted-foreground mt-0.5 line-clamp-2 leading-snug`}>{item.description}</p>
+                                  </div>
                                 </button>
                                 {isCommunity && (
                                   <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -259,10 +263,10 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                       const mcName = typeof mc.name === 'string' ? mc.name : (mc.name[i18n.language] || mc.name.en || Object.values(mc.name)[0] || mc.id)
                       const mcDesc = typeof mc.description === 'string' ? mc.description : (mc.description[i18n.language] || mc.description.en || Object.values(mc.description)[0] || '')
                       return (
-                        <div key={mc.id} className="rounded-lg border border-border bg-card p-3 flex flex-col gap-2 h-[140px]">
-                          <div className="flex items-start gap-2">
-                            <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center shrink-0">
-                              <McIcon className="w-4 h-4 text-primary" />
+                        <div key={mc.id} className="rounded-xl border border-border bg-card p-3.5 flex flex-col gap-2">
+                          <div className="flex items-start gap-2.5">
+                            <div className="w-9 h-9 rounded-lg bg-success-light flex items-center justify-center shrink-0">
+                              <McIcon className="w-4 h-4 text-success" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">

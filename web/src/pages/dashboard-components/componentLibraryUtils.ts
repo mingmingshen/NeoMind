@@ -27,6 +27,7 @@ export interface ComponentCategory {
   category: string
   categoryLabel: string
   categoryIcon: ComponentIconType
+  categoryColor: string
   items: ComponentItem[]
 }
 
@@ -93,6 +94,19 @@ const categoryLabelKeys: Record<string, string> = {
   marketplace: 'marketplace',
 }
 
+/** Category → accent color (background for icon badge, top strip) */
+const categoryColors: Record<string, string> = {
+  indicators: 'bg-info-light text-info',
+  charts: 'bg-success-light text-success',
+  controls: 'bg-warning-light text-warning',
+  display: 'bg-info-light text-info',
+  spatial: 'bg-warning-light text-warning',
+  business: 'bg-success-light text-success',
+  custom: 'bg-warning-light text-warning',
+  local: 'bg-info-light text-info',
+  marketplace: 'bg-success-light text-success',
+}
+
 // ============================================================================
 // Factory
 // ============================================================================
@@ -111,6 +125,7 @@ export function getComponentLibrary(t: (key: string) => string): ComponentCatego
       category: group.category,
       categoryLabel: labelKey ? t(`componentLibrary.${labelKey}`) : catInfo.name,
       categoryIcon: catInfo.icon,
+      categoryColor: categoryColors[group.category] || 'bg-muted text-muted-foreground',
       items: group.components.map((comp) => {
         const iconName = (comp.icon as any)?.displayName || 'Box'
         const IconComponent = typeof comp.icon === 'function' ? comp.icon : (lucideRecord[iconName] || Box)

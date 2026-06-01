@@ -50,7 +50,7 @@ export const SessionListItem = React.memo<SessionListItemProps>(
         role="button"
         tabIndex={0}
         className={cn(
-          "group relative w-full flex items-center gap-2 rounded-md px-2 py-2 text-sm cursor-pointer transition-colors text-left overflow-hidden",
+          "group relative w-full flex items-center gap-2 rounded-md px-2 py-2 text-sm cursor-pointer transition-colors text-left overflow-hidden min-w-0",
           isActive
             ? "bg-primary text-primary-foreground"
             : "hover:bg-muted"
@@ -58,8 +58,8 @@ export const SessionListItem = React.memo<SessionListItemProps>(
         style={{ touchAction: 'manipulation' }}
       >
         <MessageSquare className="h-4 w-4 shrink-0" />
-        {/* Title with max width constraint */}
-        <div className="min-w-0 flex-1 max-w-[150px]">
+        {/* Title with flex shrink */}
+        <div className="min-w-0 flex-1">
           <div className="truncate font-medium">
             {getDisplayName(session)}
           </div>
