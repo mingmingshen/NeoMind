@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
-import { ResponsiveTable } from "@/components/shared"
+import { ResponsiveTable, EmptyState } from "@/components/shared"
 import { Eye, Pencil, Trash2, Download, MoreVertical, Cpu, Database, Activity } from "lucide-react"
 import type { DeviceType } from "@/types"
 import { api } from "@/lib/api"
@@ -255,6 +255,13 @@ export function DeviceTypeList({
             },
           },
         ]}
+        emptyState={
+          <EmptyState
+            icon={<Database className="h-12 w-12" />}
+            title={t('devices:emptyType.title', 'No device types')}
+            description={t('devices:emptyType.description', 'Create a device type to define device categories')}
+          />
+        }
       />
       )}
     </>

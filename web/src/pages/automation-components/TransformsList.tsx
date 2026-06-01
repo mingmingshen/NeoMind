@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
-import { ResponsiveTable } from "@/components/shared"
+import { ResponsiveTable, EmptyState } from "@/components/shared"
 import { Edit, Trash2, Code, Database, Globe, Cpu, HardDrive, Download, MoreVertical } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
@@ -300,6 +300,13 @@ export function TransformsList({
           },
         },
       ]}
+      emptyState={
+        <EmptyState
+          icon={<Code className="h-12 w-12" />}
+          title={t('automation:emptyTransforms.title', 'No transforms')}
+          description={t('automation:emptyTransforms.description', 'Create your first transform to process device data')}
+        />
+      }
     />
     )
   )

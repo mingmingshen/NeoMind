@@ -227,7 +227,7 @@ fn extract_device_array(data: &serde_json::Value) -> Vec<serde_json::Value> {
     data.get("data")
         .and_then(|d| d.get("devices"))
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().cloned().collect())
+        .map(|arr| arr.to_vec())
         .unwrap_or_default()
 }
 

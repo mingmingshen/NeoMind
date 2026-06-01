@@ -318,7 +318,7 @@ impl MemoryExtractor {
                     let existing_entries: Vec<String> = content
                         .lines()
                         .filter(|l| l.trim().starts_with("- ["))
-                        .filter_map(|l| Self::extract_entry_content(l))
+                        .filter_map(Self::extract_entry_content)
                         .collect();
                     if let Some((idx, sim)) = dedup.find_similar(&candidate.content, &existing_entries) {
                         tracing::debug!(

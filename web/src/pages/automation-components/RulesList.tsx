@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
-import { ResponsiveTable } from "@/components/shared"
+import { ResponsiveTable, EmptyState } from "@/components/shared"
 import { Edit, Play, Trash2, Bell, FileText, FlaskConical, AlertTriangle, Sparkles, Timer, Zap, MoreVertical } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import type { Rule, RuleAction } from "@/types"
@@ -448,6 +448,13 @@ export function RulesList({
           },
         },
       ]}
+      emptyState={
+        <EmptyState
+          icon={<Sparkles className="h-12 w-12" />}
+          title={t('automation:emptyRules.title', 'No rules')}
+          description={t('automation:emptyRules.description', 'Create your first rule to automate actions based on conditions')}
+        />
+      }
     />
     )
   )

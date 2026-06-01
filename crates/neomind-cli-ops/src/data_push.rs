@@ -51,7 +51,7 @@ pub async fn create_target(
         Ok(v) => v,
         Err(e) => {
             return Ok(CliResponse::error_with_suggestion(
-                &format!("Invalid config JSON: {}", e),
+                format!("Invalid config JSON: {}", e),
                 "INVALID_JSON",
                 match target_type {
                     "webhook" => "Example: --config '{\"url\":\"https://example.com/webhook\"}'",
@@ -67,7 +67,7 @@ pub async fn create_target(
         "webhook" | "mqtt" => {}
         _ => {
             return Ok(CliResponse::error_with_suggestion(
-                &format!("Unknown target type '{}'.", target_type),
+                format!("Unknown target type '{}'.", target_type),
                 "UNKNOWN_TYPE",
                 "Valid types: webhook, mqtt.",
             ));

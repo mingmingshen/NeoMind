@@ -144,9 +144,9 @@ pub async fn create_channel(
         Ok(v) => v,
         Err(e) => {
             return Ok(CliResponse::error_with_suggestion(
-                &format!("Invalid config JSON: {}", e),
+                format!("Invalid config JSON: {}", e),
                 "INVALID_JSON",
-                &format!("Example for {}: run `neomind message channel-type-schema {}`", channel_type, channel_type),
+                format!("Example for {}: run `neomind message channel-type-schema {}`", channel_type, channel_type),
             ));
         }
     };
@@ -164,9 +164,9 @@ pub async fn create_channel(
                 .unwrap_or_default();
             if !valid_types.is_empty() && !valid_types.contains(&channel_type) {
                 return Ok(CliResponse::error_with_suggestion(
-                    &format!("Unknown channel type '{}'.", channel_type),
+                    format!("Unknown channel type '{}'.", channel_type),
                     "UNKNOWN_TYPE",
-                    &format!("Available types: {}. Run `neomind message channel-types` for details.", valid_types.join(", ")),
+                    format!("Available types: {}. Run `neomind message channel-types` for details.", valid_types.join(", ")),
                 ));
             }
         }
@@ -186,9 +186,9 @@ pub async fn create_channel(
                     .collect();
                 if !missing.is_empty() {
                     return Ok(CliResponse::error_with_suggestion(
-                        &format!("Missing required config field(s): {}.", missing.join(", ")),
+                        format!("Missing required config field(s): {}.", missing.join(", ")),
                         "MISSING_FIELDS",
-                        &format!("Run `neomind message channel-type-schema {}` for field details.", channel_type),
+                        format!("Run `neomind message channel-type-schema {}` for field details.", channel_type),
                     ));
                 }
             }

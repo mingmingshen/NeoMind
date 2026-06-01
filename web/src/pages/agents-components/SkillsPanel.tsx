@@ -21,7 +21,7 @@ import {
   Target,
 } from "lucide-react"
 import CodeMirror from "@uiw/react-codemirror"
-import { ResponsiveTable } from "@/components/shared"
+import { ResponsiveTable, EmptyState } from "@/components/shared"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -408,6 +408,13 @@ anti_triggers:
             },
           },
         ]}
+        emptyState={
+          <EmptyState
+            icon={<BookOpen className="h-12 w-12" />}
+            title="No skills"
+            description="Create your first skill to extend agent capabilities"
+          />
+        }
       />
 
       {/* Unified Dialog (view / edit / create) */}

@@ -152,11 +152,11 @@ fn parse_sections(content: &str) -> std::collections::HashMap<String, String> {
     let mut current_name = String::new();
 
     for line in content.lines() {
-        if line.starts_with("## ") {
+        if let Some(rest) = line.strip_prefix("## ") {
             if !current_name.is_empty() {
                 sections.insert(current_name.clone(), current_section.trim().to_string());
             }
-            current_name = line[3..].to_string();
+            current_name = rest.to_string();
             current_section = String::new();
         } else {
             current_section.push_str(line);

@@ -470,7 +470,7 @@ pub fn get_embedded_broker_config() -> EmbeddedBrokerConfig {
                 // First run: resolve from config.toml/defaults and persist to redb
                 // so the dynamic auth handler reads the same values
                 let config = load_embedded_broker_config()
-                    .unwrap_or_else(EmbeddedBrokerConfig::default);
+                    .unwrap_or_default();
 
                 if let Ok(config_value) = serde_json::to_value(&config) {
                     if let Err(e) = store.save_embedded_broker_config(&config_value) {

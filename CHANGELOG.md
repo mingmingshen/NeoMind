@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.8.4] - 2026-06-02
+
+### Added
+
+- **4 new bridge extensions** — Home Assistant Bridge, LoRaWAN Bridge, Modbus Bridge, and Uink-RMS Bridge added to the extension marketplace for broader IoT protocol coverage
+
+### Changed
+
+- **Clippy cleanup** — Fixed 45 clippy warnings across 4 crates (`neomind-cli-ops`, `neomind-storage`, `neomind-agent`, `neomind-api`). Introduced `CredentialValidator` type alias for complex closure types, replaced `iter().cloned().collect()` with `to_vec()`, used `strip_prefix` instead of manual slicing, and resolved `await_holding_lock` in shutdown by cloning `Arc` before dropping the read guard
+
+### Removed
+
+- **~8,900 lines of dead frontend code** — Removed 30+ unused components, hooks, and utility modules that were superseded by page-level implementations:
+  - `components/automation/` — AlertsTab, AutomationCreatorDialog, AutomationsTab, TransformsTabContent, TransformExecutionHistory (replaced by `pages/automation-components/`)
+  - `components/devices/` — DeviceControl, DeviceRealtime, TemplatePreview (replaced by `pages/devices/`)
+  - `components/extensions/` — ExtensionDataSourceSelector, ExtensionMetricSelector, ExtensionToolSelector, ExtensionTransformConfig (inlined into pages)
+  - `components/shared/` — BulkActionBar, FullScreenEditor, KeepAlive, MonitorStatsGrid, SearchBar, SearchResultsDialog (unused)
+  - `components/layout/` — SubPageHeader (unused)
+  - `hooks/` — useApiData, useComponentPerf, useDialog, useInterval, useLoadingButton, useMessages (replaced by store-level fetchCache pattern)
+  - `lib/` — extension-stream-hooks, fetch-with-timeout, react-query-hooks, status/utils, validation/utils, related test
+
+---
+
 ## [v0.8.3] - 2026-06-01
 
 ### Added

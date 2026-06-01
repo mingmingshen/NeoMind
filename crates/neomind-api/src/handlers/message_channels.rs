@@ -587,14 +587,12 @@ pub async fn update_channel_filter_handler(
     }
 
     // Build ChannelFilter
-    let mut filter = ChannelFilter::default();
-
-    filter.source_types = req.source_types;
-    filter.categories = req.categories;
-
-    if let Some(sev) = req.min_severity {
-        filter.min_severity = neomind_messages::MessageSeverity::from_string(&sev);
-    }
+    let min_severity = req.min_severity.as_ref().map(|sev| neomind_messages::MessageSeverity::from_string(sev)).unwrap_or_default();
+    let filter = ChannelFilter {
+        source_types: req.source_types,
+        categories: req.categories,
+        min_severity,
+    };
 
     // Save filter
     registry_guard

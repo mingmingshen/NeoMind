@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ResponsiveTable } from "@/components/shared"
+import { ResponsiveTable, EmptyState } from "@/components/shared"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
@@ -606,6 +606,13 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
             },
           },
         ]}
+        emptyState={
+          <EmptyState
+            icon={<FileText className="h-12 w-12" />}
+            title={t('systemMemory.empty.title', 'No memory files')}
+            description={t('systemMemory.empty.description', 'Memory files will appear here once configured')}
+          />
+        }
       />
       )}
 

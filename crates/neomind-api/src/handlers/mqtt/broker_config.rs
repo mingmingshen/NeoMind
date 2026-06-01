@@ -191,7 +191,7 @@ pub async fn update_broker_config_handler(
     }
     if let Some(port) = req.port {
         if !(1024..=65535).contains(&port) {
-            return Err(ErrorResponse::bad_request("Port must be between 1024 and 65535".to_string()).into());
+            return Err(ErrorResponse::bad_request("Port must be between 1024 and 65535".to_string()));
         }
         config.port = port;
     }
@@ -295,17 +295,17 @@ pub async fn add_credential_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Validate username
     if req.username.is_empty() || req.username.len() > 64 {
-        return Err(ErrorResponse::bad_request("Username must be 1-64 characters".to_string()).into());
+        return Err(ErrorResponse::bad_request("Username must be 1-64 characters".to_string()));
     }
     if req.username.starts_with("__neomind") {
         return Err(ErrorResponse::bad_request(
             "Username cannot start with '__neomind' (reserved for system use)".to_string()
-        ).into());
+        ));
     }
 
     // Validate password
     if req.password.len() < 4 {
-        return Err(ErrorResponse::bad_request("Password must be at least 4 characters".to_string()).into());
+        return Err(ErrorResponse::bad_request("Password must be at least 4 characters".to_string()));
     }
 
     let store = config::open_settings_store()
@@ -317,7 +317,7 @@ pub async fn add_credential_handler(
         .map_err(|e| ErrorResponse::internal(format!("Failed to load credentials: {}", e)))?;
 
     if creds.len() >= 100 {
-        return Err(ErrorResponse::bad_request("Maximum credential limit (100) reached".to_string()).into());
+        return Err(ErrorResponse::bad_request("Maximum credential limit (100) reached".to_string()));
     }
 
     // Hash password with bcrypt (cost factor 12)
@@ -353,7 +353,7 @@ pub async fn delete_credential_handler(
     if username.starts_with("__neomind") {
         return Err(ErrorResponse::bad_request(
             "Cannot delete system credentials (starting with '__neomind')".to_string()
-        ).into());
+        ));
     }
 
     let store = config::open_settings_store()
@@ -364,7 +364,7 @@ pub async fn delete_credential_handler(
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete credential: {}", e)))?;
 
     if !deleted {
-        return Err(ErrorResponse::not_found(format!("Credential not found: {}", username)).into());
+        return Err(ErrorResponse::not_found(format!("Credential not found: {}", username)));
     }
 
     tracing::info!(username = %username, "Deleted MQTT credential");
@@ -470,7 +470,7 @@ pub async fn upload_tls_handler(
 fn validate_pem(pem: &str, label: &str) -> Result<(), ErrorResponse> {
     let trimmed = pem.trim();
     if trimmed.is_empty() {
-        return Err(ErrorResponse::bad_request(format!("{} PEM cannot be empty", label)).into());
+        return Err(ErrorResponse::bad_request(format!("{} PEM cannot be empty", label)));
     }
 
     // Check for PEM headers
@@ -478,7 +478,7 @@ fn validate_pem(pem: &str, label: &str) -> Result<(), ErrorResponse> {
         return Err(ErrorResponse::bad_request(format!(
             "{} must be in PEM format (-----BEGIN ...-----END ...-----)",
             label
-        )).into());
+        )));
     }
 
     Ok(())
@@ -568,8 +568,8 @@ pub async fn download_ca_cert_handler() -> Result<axum::response::Response, Erro
         serde_json::from_value::<EmbeddedBrokerConfig>(config_value)
             .map_err(|e| ErrorResponse::internal(format!("Failed to parse broker config: {}", e)))?
     } else {
-        let default_config = config::get_embedded_broker_config();
-        default_config
+        
+        config::get_embedded_broker_config()
     };
 
     let ca_path = config

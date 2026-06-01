@@ -722,11 +722,9 @@ impl MarkdownMemoryStore {
                     session_count += 1;
                     // Count temp files in this session
                     if let Ok(entries) = fs::read_dir(&path) {
-                        for e in entries {
-                            if let Ok(e) = e {
-                                if e.path().extension().map(|ex| ex == "md").unwrap_or(false) {
-                                    temp_file_count += 1;
-                                }
+                        for e in entries.flatten() {
+                            if e.path().extension().map(|ex| ex == "md").unwrap_or(false) {
+                                temp_file_count += 1;
                             }
                         }
                     }

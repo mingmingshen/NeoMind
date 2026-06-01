@@ -1,12 +1,6 @@
 // Automation Components
 export { SimpleRuleBuilderSplit } from "./SimpleRuleBuilderSplit"
-export { AutomationCreatorDialog } from "./AutomationCreatorDialog"
-export type { AutomationCreatorDialogProps } from "./AutomationCreatorDialog"
-export { AutomationsTab } from "./AutomationsTab"
-export type { AutomationsTabProps } from "./AutomationsTab"
-export { TransformsTabContent } from "./TransformsTabContent"
 export { TransformBuilder as TransformBuilderSplit } from "./TransformBuilderSplit"
 export { TransformTestDialog } from "./TransformTestDialog"
 export { DeviceTransformsDialog } from "./DeviceTransformsDialog"
 export { TransformsBadge } from "./TransformsBadge"
-export { AlertsTab } from "./AlertsTab"

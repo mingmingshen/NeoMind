@@ -11,7 +11,7 @@ const FORBIDDEN_NAMES: &[&str] = &[".env"];
 const FORBIDDEN_BINARY_EXTENSIONS: &[&str] = &["so", "dll", "exe", "sys"];
 
 /// Maximum content size for file_write (1 MB).
-pub const MAX_CONTENT_SIZE: usize = 1 * 1024 * 1024;
+pub const MAX_CONTENT_SIZE: usize = 1024 * 1024;
 
 /// Maximum file size for file_edit (10 MB).
 pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;

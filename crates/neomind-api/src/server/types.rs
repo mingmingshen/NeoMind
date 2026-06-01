@@ -4,6 +4,8 @@ use futures::Stream;
 use std::pin::Pin;
 use std::sync::Arc;
 
+pub type CredentialValidator = Arc<dyn Fn(&str, &str) -> bool + Send + Sync>;
+
 use neomind_agent::SessionManager;
 use neomind_core::{extension::ExtensionRegistry, EventBus};
 use neomind_devices::adapter::AdapterResult;
@@ -212,7 +214,7 @@ impl ServerState {
         }
 
         // 3. Create new broker with updated config and credential validator
-        let credential_validator: std::sync::Arc<dyn Fn(&str, &str) -> bool + Send + Sync> =
+        let credential_validator: CredentialValidator =
             std::sync::Arc::new(move |username: &str, password: &str| {
                 let store = match crate::config::open_settings_store() {
                     Ok(s) => s,
@@ -1285,7 +1287,7 @@ impl ServerState {
 
         // Credential validator closure: validates username/password against redb.
         // Called by the auth hook on every MQTT CONNECT when auth_enabled is true.
-        let credential_validator: Arc<dyn Fn(&str, &str) -> bool + Send + Sync> =
+        let credential_validator: CredentialValidator =
             Arc::new(move |username: &str, password: &str| {
                 let store = match open_settings_store() {
                     Ok(s) => s,

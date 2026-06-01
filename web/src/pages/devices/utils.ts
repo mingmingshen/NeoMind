@@ -68,31 +68,3 @@ export function getImageDataUrl(value: unknown): string | null {
   return null
 }
 
-// Format metric value for display
-export function formatMetricValue(value: unknown, dataType?: string, t?: (key: string) => string): string {
-  if (value === null || value === undefined) return "-"
-  if (typeof value === "boolean") return value ? (t?.('devices.yes') || "是") : (t?.('devices.no') || "否")
-  if (typeof value === "number") {
-    if (dataType === "integer") {
-      return value.toLocaleString("zh-CN")
-    }
-    return parseFloat(value.toFixed(2)).toString()
-  }
-  // For base64 images, show a placeholder text
-  if (isBase64Image(value)) return t?.('devices.image') || "[图片]"
-  return String(value)
-}
-
-// Check if value is a base64 image for rendering
-export function isImageValue(value: unknown): boolean {
-  return typeof value === "string" && isBase64Image(value)
-}
-
-// Generate device type ID from name
-export function generateDeviceTypeId(name: string): string {
-  return name.toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_]/g, "")
-    .replace(/_+/g, "_")
-    .replace(/^_|_$/g, "")
-}

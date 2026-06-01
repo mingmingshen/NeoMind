@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
-import { ResponsiveTable, StatusBadge } from "@/components/shared"
+import { ResponsiveTable, StatusBadge, EmptyState } from "@/components/shared"
 import { Eye, MoreVertical, Trash2, Cpu, Database, Waves, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { textMini } from "@/design-system/tokens/typography"
@@ -262,6 +262,13 @@ export function DeviceList({
             },
           },
         ]}
+        emptyState={
+          <EmptyState
+            icon={<Cpu className="h-12 w-12" />}
+            title={t('devices:empty.title', 'No devices')}
+            description={t('devices:empty.description', 'Add your first device to get started')}
+          />
+        }
       />
       )}
     </>

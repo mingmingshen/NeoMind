@@ -24,32 +24,10 @@ import {
   AlertTriangle,
   Loader2,
   Clock,
-  Plus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { AiAgent } from "@/types"
-
-interface CreateCardProps {
-  onClick: () => void
-}
-
-export function CreateCard({ onClick }: CreateCardProps) {
-  const { t } = useTranslation('agents')
-  return (
-    <button
-      onClick={onClick}
-      className="group flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border hover:border-border hover:bg-muted-20 transition-all min-h-[200px]"
-    >
-      <div className="w-12 h-12 rounded-full bg-muted-50 flex items-center justify-center group-hover:bg-muted transition-colors">
-        <Plus className="h-6 w-6 text-muted-foreground group-hover:text-primary transition-colors" />
-      </div>
-      <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
-        {t('card.createAgent')}
-      </span>
-    </button>
-  )
-}
 
 interface AgentCardProps {
   agent: AiAgent & { currentThinking?: string | null }

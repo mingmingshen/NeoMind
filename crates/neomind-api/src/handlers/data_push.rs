@@ -53,7 +53,7 @@ pub async fn create_push_target_handler(
     let target = manager
         .create_target(request)
         .await
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({
         "id": target.id,
@@ -76,7 +76,7 @@ pub async fn list_push_targets_handler(
 
     let targets = manager
         .list_targets()
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({
         "targets": targets,
@@ -97,8 +97,8 @@ pub async fn get_push_target_handler(
 
     let target = manager
         .get_target(&id)
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Push target not found: {}", id)))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Push target not found: {}", id)))?;
 
     ok(json!(target))
 }
@@ -118,7 +118,7 @@ pub async fn update_push_target_handler(
     let target = manager
         .update_target(&id, request)
         .await
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({
         "id": target.id,
@@ -141,10 +141,10 @@ pub async fn delete_push_target_handler(
     let deleted = manager
         .delete_target(&id)
         .await
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     if !deleted {
-        return Err(ErrorResponse::not_found(&format!(
+        return Err(ErrorResponse::not_found(format!(
             "Push target not found: {}",
             id
         )));
@@ -167,7 +167,7 @@ pub async fn test_push_target_handler(
     let log = manager
         .test_target(&id)
         .await
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!(log))
 }
@@ -186,7 +186,7 @@ pub async fn start_push_target_handler(
     manager
         .start_target(&id)
         .await
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({"message": "Push target started"}))
 }
@@ -205,7 +205,7 @@ pub async fn stop_push_target_handler(
     manager
         .stop_target(&id)
         .await
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({"message": "Push target stopped"}))
 }
@@ -226,7 +226,7 @@ pub async fn list_delivery_logs_handler(
     let offset = params.offset.unwrap_or(0);
     let (logs, total) = manager
         .list_delivery_logs(&id, limit, offset)
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({
         "logs": logs,
@@ -246,7 +246,7 @@ pub async fn get_push_stats_handler(
 
     let stats = manager
         .get_stats()
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!(stats))
 }

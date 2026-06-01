@@ -17,6 +17,8 @@ import type { PushTarget } from '@/types'
 import { DeliveryHistoryPanel } from './DeliveryHistoryPanel'
 import { PushTargetDialog } from './PushTargetDialog'
 
+const PAGE_SIZE = 10
+
 export function PushTargetsTab() {
   const { t } = useTranslation()
   const {
@@ -33,6 +35,7 @@ export function PushTargetsTab() {
 
   const [logsTargetId, setLogsTargetId] = useState<string | null>(null)
   const [testingId, setTestingId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     fetchPushTargets()
@@ -197,12 +200,20 @@ export function PushTargetsTab() {
     },
   ]
 
+  // Pagination
+  useEffect(() => {
+    const maxPage = Math.ceil(pushTargets.length / PAGE_SIZE) || 1
+    if (page > maxPage) setPage(maxPage)
+  }, [pushTargets.length])
+
+  const paginatedTargets = pushTargets.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
   return (
     <div className="space-y-4">
       {/* Table */}
       <ResponsiveTable
         columns={columns}
-        data={pushTargets as unknown as Record<string, unknown>[]}
+        data={paginatedTargets as unknown as Record<string, unknown>[]}
         renderCell={renderCell}
         rowKey={(row) => (row as unknown as PushTarget).id}
         actions={actions}
@@ -216,6 +227,16 @@ export function PushTargetsTab() {
           />
         }
       />
+
+      {/* Pagination */}
+      {pushTargets.length > PAGE_SIZE && (
+        <Pagination
+          total={pushTargets.length}
+          pageSize={PAGE_SIZE}
+          currentPage={page}
+          onPageChange={setPage}
+        />
+      )}
 
       {/* Delivery History Dialog */}
       <DeliveryHistoryPanel
