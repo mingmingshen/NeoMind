@@ -1205,6 +1205,44 @@ impl AgentExecutor {
                             })
                             .collect();
 
+                        // === Fallback: fill missing fields from situation_analysis ===
+                        // Small models often omit reasoning_steps, conclusion, or decisions.
+                        // If situation_analysis has content, derive defaults from it.
+
+                        let reasoning_steps = if reasoning_steps.is_empty()
+                            && !situation_analysis.is_empty()
+                        {
+                            vec![neomind_storage::ReasoningStep {
+                                step_number: 1,
+                                description: truncate_to(&situation_analysis, 200),
+                                step_type: "llm_analysis".to_string(),
+                                input: None,
+                                output: truncate_to(&situation_analysis, 300),
+                                confidence: 0.7,
+                            }]
+                        } else {
+                            reasoning_steps
+                        };
+
+                        let conclusion = if conclusion.is_empty() && !situation_analysis.is_empty()
+                        {
+                            truncate_to(&situation_analysis, 200)
+                        } else {
+                            conclusion
+                        };
+
+                        let decisions = if decisions.is_empty() && !situation_analysis.is_empty() {
+                            vec![neomind_storage::Decision {
+                                decision_type: "info".to_string(),
+                                description: truncate_to(&situation_analysis, 100),
+                                action: "log".to_string(),
+                                rationale: "Analysis completed".to_string(),
+                                expected_outcome: conclusion.clone(),
+                            }]
+                        } else {
+                            decisions
+                        };
+
                         // Emit AgentThinking events for each reasoning step
                         if let Some(ref bus) = self.event_bus {
                             let event_timestamp = chrono::Utc::now().timestamp();
