@@ -416,7 +416,7 @@ export function SessionSidebar({
 
           {/* Session List */}
           <ScrollArea className="flex-1 min-h-0" viewportRef={scrollViewportRef}>
-            <div className="px-2 pb-2 space-y-0.5">
+            <div className="px-2 pb-2 space-y-0.5 overflow-x-hidden">
               {sortedSessions.length === 0 ? (
                 <div className="py-8 text-center">
                   <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
@@ -436,7 +436,7 @@ export function SessionSidebar({
                         key={session.sessionId}
                         onClick={() => !isEditing && handleSwitchSession(session.sessionId)}
                         className={cn(
-                          "group relative p-2 rounded-lg cursor-pointer transition-all",
+                          "group relative flex items-start gap-2 p-2 rounded-lg cursor-pointer transition-all",
                           isActive
                             ? "bg-muted"
                             : "hover:bg-muted-50",
@@ -477,25 +477,25 @@ export function SessionSidebar({
                         ) : (
                           // Normal mode
                           <>
-                            <div className="flex items-start gap-2">
+                            <div className="flex items-start gap-2 min-w-0 flex-1">
                               <MessageSquare className={cn(
                                 "h-4 w-4 mt-0.5 shrink-0",
                                 isActive ? "text-foreground" : "text-muted-foreground"
                               )} />
-                              <div className="flex-1 min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <h4 className={cn(
                                   "text-sm truncate",
                                   isActive ? "text-foreground font-medium" : "text-muted-foreground"
                                 )}>
                                   {getSessionTitle(session)}
                                 </h4>
-                                <div className={cn("flex items-center gap-1.5 mt-0.5", textNano, "text-muted-foreground")}>
-                                  <Clock className="h-2.5 w-2.5" />
-                                  <span>{session.updatedAt ? formatTimestamp(session.updatedAt / 1000, false) : formatTimestamp(session.createdAt / 1000, false)}</span>
+                                <div className={cn("flex items-center gap-1.5 mt-0.5 overflow-hidden", textNano, "text-muted-foreground")}>
+                                  <Clock className="h-2.5 w-2.5 shrink-0" />
+                                  <span className="truncate">{session.updatedAt ? formatTimestamp(session.updatedAt / 1000, false) : formatTimestamp(session.createdAt / 1000, false)}</span>
                                   {session.messageCount ? (
                                     <>
-                                      <span>·</span>
-                                      <span>{t('session.messages', { count: session.messageCount })}</span>
+                                      <span className="shrink-0">·</span>
+                                      <span className="truncate">{t('session.messages', { count: session.messageCount })}</span>
                                     </>
                                   ) : null}
                                 </div>
@@ -503,33 +503,22 @@ export function SessionSidebar({
                             </div>
 
                             {/* Action buttons */}
-                            <div className={cn(
-                              "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5",
-                              "opacity-0 group-hover:opacity-100 transition-opacity"
-                            )}>
-                              {/* Edit button */}
+                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
                                 onClick={(e) => handleEditClick(e, session)}
-                                className={cn(
-                                  "p-1 rounded transition-all",
-                                  "flex items-center justify-center",
-                                  "text-muted-foreground hover:text-destructive hover:bg-muted"
-                                )}
+                                className="h-4 w-4 flex items-center justify-center overflow-hidden rounded text-muted-foreground hover:bg-muted hover:text-foreground"
                               >
-                                <Pencil className="h-4 w-4" />
+                                <Pencil className="h-3 w-3 shrink-0" />
                               </button>
-                              {/* Delete button */}
                               <button
                                 onClick={(e) => handleDeleteClick(e, session.sessionId)}
                                 disabled={isDeleting}
                                 className={cn(
-                                  "p-1 rounded transition-all",
-                                  "flex items-center justify-center",
-                                  "text-muted-foreground hover:text-destructive hover:bg-muted",
+                                  "h-4 w-4 flex items-center justify-center overflow-hidden rounded text-muted-foreground hover:bg-muted hover:text-destructive",
                                   isDeleting && "opacity-50"
                                 )}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 className="h-3 w-3 shrink-0" />
                               </button>
                             </div>
                           </>
@@ -567,7 +556,7 @@ export function SessionSidebar({
       <>
         <div
           className={cn(
-            "h-full bg-bg-50 border-r border-border flex flex-col transition-[width] duration-200",
+            "h-full bg-bg-50 border-r border-border flex flex-col transition-[width] duration-200 overflow-hidden",
             collapsed ? "w-12" : "w-64"
           )}
         >
