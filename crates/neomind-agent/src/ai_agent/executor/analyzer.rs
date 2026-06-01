@@ -1122,8 +1122,9 @@ impl AgentExecutor {
                     #[serde(default)]
                     conclusion: serde_json::Value,
                     /// Key finding worth remembering (optional, omit if routine)
+                    /// Uses Value to tolerate non-string types from small models (e.g. true, 0, null)
                     #[serde(default)]
-                    insight: Option<String>,
+                    insight: serde_json::Value,
                 }
 
                 impl LlmResponse {
@@ -1237,7 +1238,7 @@ impl AgentExecutor {
                             }
                         }
 
-                        let insight = response.insight.filter(|s| !s.is_empty());
+                        let insight = response.insight.as_str().map(|s| s.to_string()).filter(|s| !s.is_empty());
 
                         Ok((situation_analysis, reasoning_steps, decisions, conclusion, insight))
                     }
@@ -1306,7 +1307,7 @@ impl AgentExecutor {
                                         })
                                         .collect();
 
-                                    let insight = response.insight.filter(|s| !s.is_empty());
+                                    let insight = response.insight.as_str().map(|s| s.to_string()).filter(|s| !s.is_empty());
 
                                     return Ok((
                                         situation_analysis,
@@ -1378,7 +1379,7 @@ impl AgentExecutor {
                                         })
                                         .collect();
 
-                                    let insight = response.insight.filter(|s| !s.is_empty());
+                                    let insight = response.insight.as_str().map(|s| s.to_string()).filter(|s| !s.is_empty());
 
                                     return Ok((
                                         situation_analysis,
