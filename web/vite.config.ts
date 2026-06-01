@@ -213,6 +213,11 @@ export default defineConfig({
             return 'vendor-icons'
           }
 
+          // HLS.js — lazy loaded via dynamic import() in VideoDisplay
+          if (id.includes('node_modules/hls.js')) {
+            return 'vendor-hls'
+          }
+
           // Heavy export libraries — lazy loaded via dynamic import()
           if (
             id.includes('node_modules/xlsx') ||

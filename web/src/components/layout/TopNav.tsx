@@ -43,7 +43,7 @@ import {
 import { ThemeToggle } from "./ThemeToggle"
 import { InstanceSelector } from "./InstanceSelector"
 import { InstanceManagerDialog } from "@/components/instances/InstanceManagerDialog"
-import { useState, useEffect, useRef, useCallback, forwardRef, startTransition } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, startTransition } from "react"
 import { setTopNavHeight } from "@/hooks/useVisualViewport"
 import { useIsMobile } from "@/hooks/useMobile"
 
@@ -103,15 +103,18 @@ export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
   const [alertDropdownOpen, setAlertDropdownOpen] = useState(false)
   const [instanceManagerOpen, setInstanceManagerOpen] = useState(false)
 
-  // Fetch alerts on mount and periodically
+  // Fetch alerts on mount and periodically (60s, reduced from 30s)
   useEffect(() => {
     fetchAlerts()
-    const interval = setInterval(fetchAlerts, 30000)
+    const interval = setInterval(fetchAlerts, 60000)
     return () => clearInterval(interval)
   }, [fetchAlerts])
 
-  // Count unacknowledged alerts
-  const unreadCount = alerts.filter(a => !a.acknowledged && a.status !== 'resolved' && a.status !== 'acknowledged').length
+  // Count unacknowledged alerts - memoized
+  const unreadCount = useMemo(
+    () => alerts.filter(a => !a.acknowledged && a.status !== 'resolved' && a.status !== 'acknowledged').length,
+    [alerts]
+  )
 
   // Get current path without trailing slash for comparison
   const currentPath = location.pathname.endsWith('/') && location.pathname !== '/'

@@ -9,10 +9,20 @@
 import { getPortalRoot } from '@/lib/portal'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import Hls from 'hls.js'
+import type Hls from 'hls.js'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+
+// Lazy-load hls.js (~300KB) only when video playback is needed
+let hlsModule: typeof import('hls.js').default | null = null
+async function loadHls() {
+  if (!hlsModule) {
+    const mod = await import('hls.js')
+    hlsModule = mod.default
+  }
+  return hlsModule
+}
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { useDataSource } from '@/hooks/useDataSource'
 import {
@@ -206,6 +216,10 @@ function VideoPlayer({
       if (isCancelled) return
 
       if (type === 'hls') {
+        // Lazy-load hls.js only when needed
+        const Hls = await loadHls()
+        if (isCancelled) return
+
         // Always use hls.js for better compatibility
         if (Hls.isSupported()) {
           const hls = new Hls(createHlsConfig())
@@ -289,7 +303,10 @@ function VideoPlayer({
       if (isCancelled || isDestroyingRef.current) return
 
       const video = videoRef.current
-      if (!video || !Hls.isSupported()) return
+      if (!video) return
+
+      const Hls = await loadHls()
+      if (!Hls || !Hls.isSupported() || isCancelled) return
 
       await cleanupHls()
       if (isCancelled) return

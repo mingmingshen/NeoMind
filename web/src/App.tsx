@@ -380,17 +380,6 @@ function App() {
     }
   }, [isAuthenticated, setWsConnected, currentPath])
 
-  // Periodic extension component sync (keeps dashboard components up to date)
-  useEffect(() => {
-    if (!isAuthenticated || currentPath === '/setup') return
-
-    const interval = setInterval(() => {
-      extensionSyncRef.current?.()
-    }, 60000)
-
-    return () => clearInterval(interval)
-  }, [isAuthenticated, currentPath])
-
 
   // Show loading screen in Tauri until backend is ready
   if (isTauri && !backendReady) {

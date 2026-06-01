@@ -995,7 +995,7 @@ a {
 }
 
 /* Agent Monitor Widget - Sci-fi animations */
-@keyframes shimmer {
+@keyframes shimmer-sweep {
   0% {
     transform: translateX(-100%);
   }
