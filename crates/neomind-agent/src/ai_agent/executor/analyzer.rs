@@ -1207,7 +1207,7 @@ impl AgentExecutor {
 
                         // === Fallback: fill missing fields from situation_analysis ===
                         // Small models often omit reasoning_steps, conclusion, or decisions.
-                        // If situation_analysis has content, derive defaults from it.
+                        // Deterministic fill — no extra LLM call, no circular risk.
 
                         let reasoning_steps = if reasoning_steps.is_empty()
                             && !situation_analysis.is_empty()
