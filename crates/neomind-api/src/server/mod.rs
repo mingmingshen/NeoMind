@@ -81,6 +81,10 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     state.init_auto_onboarding_events().await;
     startup.service("Auto-onboarding events", ServiceStatus::Started);
 
+    // Start enabled data push targets (must be after event bus is ready)
+    state.init_data_push_targets().await;
+    startup.service("Data push targets", ServiceStatus::Started);
+
     // Configuration phase
     startup.phase_config();
 

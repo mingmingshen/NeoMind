@@ -224,8 +224,17 @@ impl PushScheduler {
         interval_secs: u64,
         mut cancel: tokio::sync::watch::Receiver<bool>,
     ) -> tokio::task::JoinHandle<()> {
+        let event_bus = self.event_bus.clone();
+        let store = self.store.clone();
+        let renderer = self.renderer.clone();
+
         tokio::spawn(async move {
-            let _dest = match create_destination(&target.target_type, &target.config) {
+            let Some(bus) = event_bus else {
+                tracing::warn!(target_id = %target.id, "No event bus available for interval target");
+                return;
+            };
+
+            let dest = match create_destination(&target.target_type, &target.config) {
                 Ok(d) => d,
                 Err(e) => {
                     tracing::error!(target_id = %target.id, error = %e, "Failed to create destination");
@@ -233,18 +242,49 @@ impl PushScheduler {
                 }
             };
 
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            let mut rx = bus.subscribe();
+            let mut matcher = DataSourceMatcher::new(target.data_filter.clone());
+            let mut buffer: Vec<(String, serde_json::Value, i64)> = Vec::new();
+            let flush_interval = std::time::Duration::from_secs(interval_secs);
+
             tracing::info!(target_id = %target.id, interval_secs, "Interval push target started");
+
+            // Use interval as flush timer; collect events between ticks
+            let mut flush_timer = tokio::time::interval(flush_interval);
+            // Skip the first immediate tick
+            flush_timer.tick().await;
 
             loop {
                 tokio::select! {
                     _ = cancel.changed() => {
+                        // Flush remaining buffer before stopping
+                        if !buffer.is_empty() {
+                            flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                        }
                         tracing::info!(target_id = %target.id, "Interval target stopped");
                         return;
                     }
-                    _ = interval.tick() => {
-                        // For interval targets, query TimeSeriesStore for matching data
-                        tracing::debug!(target_id = %target.id, "Interval tick - querying data sources");
+                    result = rx.recv() => {
+                        if cancel.has_changed().unwrap_or(false) {
+                            if !buffer.is_empty() {
+                                flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                            }
+                            return;
+                        }
+                        if let Some((event, _metadata)) = result {
+                            if let Some((source_id, value, ts)) = extract_event_data(&event) {
+                                let value_str = value.to_string();
+                                if matcher.should_push(&source_id, &value_str) {
+                                    buffer.push((source_id, value, ts));
+                                }
+                            }
+                        }
+                    }
+                    _ = flush_timer.tick() => {
+                        if !buffer.is_empty() {
+                            tracing::debug!(target_id = %target.id, count = buffer.len(), "Interval flush");
+                            flush_batch(&target, &store, &renderer, dest.as_ref(), &mut buffer).await;
+                        }
                     }
                 }
             }

@@ -1129,6 +1129,23 @@ impl ServerState {
         tracing::info!(category = "storage", "Data directory created/verified");
     }
 
+    /// Start enabled data push targets from persistent storage.
+    ///
+    /// Must be called after the event bus is initialized.
+    pub async fn init_data_push_targets(&self) {
+        let push_manager = self.data_push.read().await;
+        if let Some(manager) = push_manager.as_ref() {
+            match manager.start_enabled_targets().await {
+                Ok(()) => {
+                    tracing::info!(category = "data_push", "Enabled push targets started");
+                }
+                Err(e) => {
+                    tracing::warn!(category = "data_push", error = %e, "Failed to start enabled push targets");
+                }
+            }
+        }
+    }
+
     /// Initialize extensions from persistent storage.
     ///
     /// This loads all extensions marked with `auto_start=true` from the extension store.
