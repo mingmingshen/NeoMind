@@ -196,8 +196,20 @@ export const createDashboardCrudSlice: StateCreator<
           if (!target && !currentState.currentDashboardId && migrated.length > 0) {
             target = migrated.find((d: Dashboard) => d.isDefault) || migrated[0]
           }
-          if (target && !currentState.currentDashboard) {
-            set({ currentDashboardId: target.id, currentDashboard: target })
+          if (target) {
+            // Always update currentDashboard so live edits (AI, other clients) are reflected
+            set({
+              currentDashboardId: target.id,
+              currentDashboard: target,
+            })
+          } else if (currentState.currentDashboardId) {
+            // Current dashboard was deleted — switch to first available
+            const fallback = migrated.find((d: Dashboard) => d.isDefault) || migrated[0]
+            if (fallback) {
+              set({ currentDashboardId: fallback.id, currentDashboard: fallback })
+            } else {
+              set({ currentDashboardId: null, currentDashboard: null })
+            }
           }
         } else {
           set({ dashboards: [] })

@@ -33,6 +33,7 @@ Creating dashboards with data-bound components is the most complex CLI operation
 5. **NEVER use Python/pipe/file tricks** — each shell call is an isolated process; you cannot share data between calls via files, pipes, or variables. Build the complete JSON string inline.
 6. **Use `widget get <type>` to inspect config_schema** before configuring unfamiliar widgets
 7. **NEVER use emoji in component titles or descriptions** — use plain text labels only. Example: use "Temperature" not "Temperature", use "Humidity" not "Humidity"
+8. **Charts (line-chart, area-chart, bar-chart, sparkline, pie-chart) MUST use `mode: "timeseries"`** — using `mode: "latest"` on charts causes rendering errors. Always include `timeWindow` (e.g., `"timeWindow": {"type": "last_24hours"}`) for proper historical data. Value-cards and indicators use `mode: "latest"`.
 
 ## Component Management Commands
 

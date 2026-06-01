@@ -32,7 +32,7 @@ import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors, chartColorsHex } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate } from '@/types/dashboard'
 import { ChartContainer, ChartTooltip, EmptyState, ErrorState, useChartDimensions, useStaggeredData, createMemoRenderer, useChartPipeline } from '../shared'
-import { isSeriesDataArray, isNumberArray, isMultiSourceData, alignMultiSource, type SeriesData } from '../shared'
+import { isSeriesDataArray, isNumberArray, isMultiSourceData, alignMultiSource, extractNumericValue, type SeriesData } from '../shared'
 import {
   createChartTimeFormatter,
 } from '@/lib/telemetryTransform'
@@ -295,12 +295,13 @@ const LineChartInner = function LineChart({
 
   const series = alignedSeries.length > 0 ? alignedSeries : normalizedSeries
 
-  // Build chart data for recharts
+  // Build chart data for recharts — ensure all values are numeric
   const chartData = useMemo(() => {
     return chartLabels.map((label, idx) => {
       const point: any = { name: label }
       series.forEach((s, i) => {
-        point[`series${i}`] = s.data?.[idx] ?? null
+        const raw = s.data?.[idx]
+        point[`series${i}`] = raw != null ? extractNumericValue(raw) : null
       })
       return point
     })
@@ -665,12 +666,13 @@ export const AreaChart = memo(function AreaChart({
 
   const series = alignedSeries.length > 0 ? alignedSeries : normalizedSeries
 
-  // Build chart data for recharts
+  // Build chart data for recharts — ensure all values are numeric
   const chartData = useMemo(() => {
     return chartLabels.map((label, idx) => {
       const point: any = { name: label }
       series.forEach((s, i) => {
-        point[`series${i}`] = s.data?.[idx] ?? null
+        const raw = s.data?.[idx]
+        point[`series${i}`] = raw != null ? extractNumericValue(raw) : null
       })
       return point
     })

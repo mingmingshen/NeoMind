@@ -264,6 +264,14 @@ pub enum NeoMindEvent {
         timestamp: i64,
     },
 
+    // ========== Dashboard Events ==========
+    /// Dashboard was created, updated, or deleted
+    DashboardUpdated {
+        dashboard_id: String,
+        action: String,
+        timestamp: i64,
+    },
+
     // ========== User Events ==========
     /// User message (for LLM)
     UserMessage {
@@ -462,6 +470,7 @@ impl NeoMindEvent {
             Self::ExtensionCommandStarted { .. } => "ExtensionCommandStarted",
             Self::ExtensionCommandCompleted { .. } => "ExtensionCommandCompleted",
             Self::ExtensionCommandFailed { .. } => "ExtensionCommandFailed",
+            Self::DashboardUpdated { .. } => "DashboardUpdated",
             Self::Custom { .. } => "Custom",
         }
     }
@@ -513,7 +522,8 @@ impl NeoMindEvent {
             | Self::ExtensionLifecycle { timestamp, .. }
             | Self::ExtensionCommandStarted { timestamp, .. }
             | Self::ExtensionCommandCompleted { timestamp, .. }
-            | Self::ExtensionCommandFailed { timestamp, .. } => *timestamp,
+            | Self::ExtensionCommandFailed { timestamp, .. }
+            | Self::DashboardUpdated { timestamp, .. } => *timestamp,
             Self::Custom { .. } => {
                 // Custom events don't have a timestamp, use current time
                 chrono::Utc::now().timestamp()

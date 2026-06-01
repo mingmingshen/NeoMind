@@ -33,6 +33,7 @@ export type EventType =
   | 'ExtensionOutput'
   | 'ExtensionLifecycle'
   | 'FrontendComponentLifecycle'
+  | 'DashboardUpdated'
   | 'Custom'
 
 export interface CustomEvent extends NeoMindEvent {

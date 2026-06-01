@@ -3,6 +3,24 @@
  * Used by LineChart, BarChart, and PieChart.
  */
 
+/**
+ * Shared chart tooltip component for Recharts.
+ * Used by LineChart, BarChart, and PieChart.
+ */
+
+/** Safely format a tooltip value — handles telemetry point objects */
+function formatTooltipValue(val: unknown): string {
+  if (val === null || val === undefined) return '-'
+  if (typeof val === 'number') return String(val)
+  if (typeof val === 'string') return val
+  if (typeof val === 'boolean') return String(val)
+  // Telemetry point object {timestamp, time, value}
+  if (typeof val === 'object' && val !== null && 'value' in val) {
+    return formatTooltipValue((val as { value: unknown }).value)
+  }
+  return JSON.stringify(val)
+}
+
 export function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) {
   if (!active || !payload?.length) return null
 
@@ -17,7 +35,7 @@ export function ChartTooltip({ active, payload, label }: { active?: boolean; pay
               style={{ backgroundColor: entry.color }}
             />
             <span className="text-muted-foreground font-medium">{entry.name}:</span>
-            <span className="tabular-nums font-semibold">{entry.value}</span>
+            <span className="tabular-nums font-semibold">{formatTooltipValue(entry.value)}</span>
           </div>
         ))}
       </div>

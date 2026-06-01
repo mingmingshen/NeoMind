@@ -17,11 +17,26 @@ use super::{
     ServerState,
 };
 use crate::models::ErrorResponse;
+use neomind_core::event::NeoMindEvent;
 use neomind_storage::dashboards::{
     default_templates, Dashboard as StoredDashboard, DashboardComponent as StoredComponent,
     DashboardLayout as StoredLayout, DashboardTemplate as StoredTemplate,
     SharePermissions as StoredSharePermissions, ShareToken as StoredShareToken,
 };
+
+/// Emit a DashboardUpdated event to notify frontend of changes.
+fn emit_dashboard_event(state: &ServerState, dashboard_id: &str, action: &str) {
+    if let Some(event_bus) = state.core.event_bus.clone() {
+        let event = NeoMindEvent::DashboardUpdated {
+            dashboard_id: dashboard_id.to_string(),
+            action: action.to_string(),
+            timestamp: chrono::Utc::now().timestamp(),
+        };
+        tokio::spawn(async move {
+            event_bus.publish(event).await;
+        });
+    }
+}
 
 // ============================================================================
 // API Types (match frontend expectations)
@@ -478,6 +493,8 @@ pub async fn create_dashboard_handler(
         .save(&stored_dashboard)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save dashboard: {}", e)))?;
 
+    emit_dashboard_event(&state, &stored_dashboard.id, "create");
+
     ok(stored_to_api(&stored_dashboard))
 }
 
@@ -530,6 +547,8 @@ pub async fn update_dashboard_handler(
         .save(&dashboard)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save dashboard: {}", e)))?;
 
+    emit_dashboard_event(&state, &id, "update");
+
     ok(stored_to_api(&dashboard))
 }
 
@@ -573,6 +592,8 @@ pub async fn add_components_handler(
         .save(&dashboard)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save dashboard: {}", e)))?;
 
+    emit_dashboard_event(&state, &id, "add_components");
+
     ok(stored_to_api(&dashboard))
 }
 
@@ -599,6 +620,8 @@ pub async fn remove_components_handler(
         .dashboard_store
         .save(&dashboard)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save dashboard: {}", e)))?;
+
+    emit_dashboard_event(&state, &id, "remove_components");
 
     ok(serde_json::json!({
         "ok": true,
@@ -640,6 +663,8 @@ pub async fn delete_dashboard_handler(
         .dashboard_store
         .delete(&id)
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete dashboard: {}", e)))?;
+
+    emit_dashboard_event(&state, &id, "delete");
 
     ok(serde_json::json!({
         "ok": true,

@@ -16,6 +16,7 @@ import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { useExtensionLifecycle } from '@/hooks/useExtensionLifecycle'
 import { useCommunityComponentLifecycle } from '@/hooks/useCommunityComponentLifecycle'
 import { useDashboardPrefetch } from '@/hooks/useDashboardPrefetch'
+import { useEvents } from '@/hooks/useEvents'
 import { logError } from '@/lib/errors'
 import { clearTelemetryCache } from '@/hooks/useDataSource/fetch'
 import { fetchCache } from '@/lib/utils/async'
@@ -530,6 +531,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     fetchDevices()
     fetchDeviceTypes()
   }, [fetchDashboards, fetchDevices, fetchDeviceTypes])
+
+  // Real-time dashboard sync: refetch when another client or AI modifies dashboards
+  useEvents({
+    eventTypes: ['DashboardUpdated'],
+    onEvent: () => {
+      fetchDashboards()
+    },
+  })
 
   // Retry device fetching when devices are empty (backend DB may still be loading)
   // Max 10 retries (30s) to avoid polling forever when no devices exist
