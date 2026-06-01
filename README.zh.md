@@ -166,6 +166,14 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 <details>
 <summary>更多安装选项</summary>
 
+**Docker 部署：**
+
+```bash
+git clone https://github.com/camthink-ai/NeoMind.git
+cd NeoMind
+docker compose up -d
+```
+
 **指定版本：**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.8.3 sh
@@ -298,7 +306,10 @@ NeoMind/
 │   └── src-tauri/               # Tauri 桌面后端（Rust）
 ├── scripts/                     # 部署脚本
 ├── docs/                        # 文档
-└── deploy/                      # 部署配置
+├── deploy/                      # 部署配置（nginx、systemd）
+├── Dockerfile                   # 多阶段 Docker 构建
+├── docker-compose.yml           # Docker Compose 配置
+└── .env.example                 # 环境变量模板
 ```
 
 ## 更多截图

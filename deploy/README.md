@@ -10,6 +10,9 @@ NeoMind supports multiple deployment strategies:
 ├────────────────┬────────────────────────────────────────────────────────┤
 │  Method        │  Use Case                                              │
 ├────────────────┼────────────────────────────────────────────────────────┤
+│  Docker        │  Easiest setup, recommended for servers               │
+│  (compose)     │  One command to start, auto health check              │
+├────────────────┼────────────────────────────────────────────────────────┤
 │  Desktop App   │  Personal use, out-of-the-box experience              │
 │  (Tauri)       │  macOS / Windows / Linux                              │
 ├────────────────┼────────────────────────────────────────────────────────┤
@@ -21,14 +24,211 @@ NeoMind supports multiple deployment strategies:
 └────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-## Option 1: Desktop Application (Recommended for Personal Use)
+## Option 1: Docker Deployment (Recommended)
+
+The fastest way to deploy NeoMind on a server. Single container includes frontend, backend API, and embedded MQTT broker.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────┐
+│              NeoMind Container           │
+│                                         │
+│  ┌─────────────┐  ┌──────────────────┐  │
+│  │ Frontend     │  │ Backend API      │  │
+│  │ (static)     │  │ (Axum + WebSocket)│  │
+│  │ :9375        │  │ :9375            │  │
+│  └─────────────┘  └──────────────────┘  │
+│  ┌─────────────┐                        │
+│  │ MQTT Broker  │   Volume: /app/data   │
+│  │ :1883        │   (redb databases,    │
+│  └─────────────┘    logs, extensions)   │
+└─────────────────────────────────────────┘
+```
+
+### Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/camthink-ai/NeoMind.git
+cd NeoMind
+
+# Start NeoMind
+docker compose up -d
+
+# Check status
+docker compose ps
+docker compose logs -f neomind
+```
+
+Open browser and visit `http://your-server-ip:9375`
+
+### Configuration
+
+Create a `.env` file from the example:
+
+```bash
+cp .env.example .env
+```
+
+Available environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEOMIND_HTTP_PORT` | `9375` | HTTP API + Web UI port |
+| `NEOMIND_MQTT_PORT` | `1883` | MQTT broker port |
+| `RUST_LOG` | `neomind=info` | Log level (trace/debug/info/warn/error) |
+| `TZ` | `Asia/Shanghai` | Container timezone |
+| `NEOMIND_JWT_SECRET` | *(random)* | JWT secret — set for persistent auth across restarts |
+| `NEOMIND_ENCRYPTION_KEY` | *(auto)* | Data encryption key — set for persistent encryption |
+
+> **Important**: If `NEOMIND_JWT_SECRET` is not set, a random secret is generated on each restart, which will invalidate existing sessions. For production, set a fixed secret.
+
+### Data Persistence
+
+Data is stored in a Docker named volume `neomind-data` mounted at `/app/data`:
+
+```
+/app/data/
+├── agents.redb         # Agent configurations
+├── dashboards.redb     # Dashboard layouts
+├── devices.redb        # Device registry
+├── extensions.redb     # Extension data
+├── extensions/         # Extension binaries
+├── llm_backends.redb   # LLM backend configs
+├── memory/             # Agent memory storage
+├── messages.redb       # Message history
+├── sessions.redb       # Chat sessions
+├── settings.redb       # App settings
+├── telemetry.redb      # Time-series metrics
+├── users.redb          # User accounts
+├── encryption_key      # Auto-generated encryption key
+└── logs/               # Application logs
+```
+
+To back up data:
+
+```bash
+# Create backup
+docker compose exec neomind tar czf - /app/data > neomind-backup-$(date +%Y%m%d).tar.gz
+
+# Or copy the volume
+docker run --rm -v neomind-data:/data -v $(pwd):/backup alpine tar czf /backup/neomind-data.tar.gz -C /data .
+```
+
+### Updating
+
+```bash
+# Pull latest code and rebuild
+git pull
+docker compose up -d --build
+```
+
+### Port Reference
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 9375 | HTTP/WS | Web UI + API + WebSocket |
+| 1883 | MQTT | Device connections (MQTT 3.1.1 / 5.0) |
+
+### Connecting Devices
+
+After starting the container, IoT devices can connect via:
+
+- **MQTT**: `mqtt://your-server-ip:1883` (no auth by default)
+- **Webhook**: `http://your-server-ip:9375/api/devices/webhook/{device-id}`
+
+### Connecting LLM Backends
+
+NeoMind supports multiple LLM backends. Configure them in the Web UI under **Settings > LLM**:
+
+- **Ollama** (local): If running Ollama on the same host, use `http://host.docker.internal:11434` or the host's IP
+- **Cloud APIs**: OpenAI, Anthropic, Google, Qwen, DeepSeek, GLM, etc.
+
+### Connecting to External Ollama
+
+If you have Ollama running on the host machine:
+
+```bash
+# Option 1: Use host.docker.internal (Docker Desktop)
+Ollama Endpoint: http://host.docker.internal:11434
+
+# Option 2: Use host network IP
+Ollama Endpoint: http://192.168.x.x:11434
+
+# Option 3: Add Ollama as a compose service
+```
+
+To add Ollama as a companion service, create `docker-compose.override.yml`:
+
+```yaml
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    # Uncomment for GPU support:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  ollama-data:
+```
+
+Then in NeoMind Web UI, set Ollama endpoint to `http://ollama:11434`.
+
+### Troubleshooting
+
+**Container won't start:**
+```bash
+docker compose logs neomind           # Check logs
+docker compose exec neomind curl -f http://localhost:9375/api/health  # Health check
+```
+
+**Permission denied on data volume:**
+```bash
+docker compose exec neomind ls -la /app/data/  # Check permissions
+```
+
+**Device can't connect via MQTT:**
+```bash
+# Verify MQTT port is exposed
+docker compose port neomind 1883
+
+# Test MQTT connection from host
+mosquitto_pub -h localhost -p 1883 -t "test" -m "hello"
+```
+
+**WebSocket disconnects behind reverse proxy:**
+
+If using nginx as a reverse proxy in front of the container:
+```nginx
+proxy_read_timeout 86400;
+proxy_send_timeout 86400;
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+```
+
+---
+
+## Option 2: Desktop Application
 
 Download the installer for your platform:
 - **macOS**: `.dmg` file
 - **Windows**: `.msi` or `.exe`
 - **Linux**: `.AppImage` or `.deb`
 
-## Option 2: Single Server Deployment (Recommended for Small Teams)
+## Option 3: Single Server Deployment (Bare Metal)
 
 ### 1. Download Files
 
@@ -79,7 +279,7 @@ sudo nginx -t && sudo nginx -s reload
 
 Open browser and visit `http://your-server-ip` or `http://your-domain.com`
 
-## Option 3: Cross-Origin Deployment (Recommended for Production)
+## Option 4: Cross-Origin Deployment (Production Scale)
 
 Frontend and backend on different domains, communicating via CORS.
 
@@ -117,7 +317,7 @@ Deploy the `dist/` directory to:
 - Netlify
 - AWS S3 + CloudFront
 
-## Systemd Service Configuration (Linux)
+## Systemd Service Configuration (Linux Bare Metal)
 
 Create `/etc/systemd/system/neomind.service`:
 
@@ -137,6 +337,7 @@ RestartSec=5
 
 # Environment variables
 Environment=NEOMIND_LOG_LEVEL=info
+Environment=NEOMIND_WEB_DIR=/var/www/neomind
 
 # Security settings
 NoNewPrivileges=true
@@ -156,60 +357,3 @@ sudo systemctl enable neomind
 sudo systemctl start neomind
 sudo systemctl status neomind
 ```
-
-## Docker Deployment (Optional)
-
-```dockerfile
-# Dockerfile example
-FROM node:20-alpine AS frontend
-WORKDIR /app/web
-COPY web/package*.json ./
-RUN npm ci
-COPY web/ ./
-RUN npm run build
-
-FROM rust:1.85-alpine AS backend
-RUN apk add --no-cache musl-dev
-WORKDIR /app
-COPY Cargo.* ./
-COPY crates/ ./crates/
-RUN cargo build --release -p neomind-cli
-
-FROM alpine:3.19
-RUN apk add --no-cache ca-certificates
-COPY --from=backend /app/target/release/neomind /usr/local/bin/
-COPY --from=frontend /app/web/dist /var/www/neomind
-EXPOSE 9375
-CMD ["neomind", "serve"]
-```
-
-## Troubleshooting
-
-### Extension Loading Fails?
-
-Ensure:
-1. Backend API is accessible (`/api/extensions/...`)
-2. Nginx is configured with WebSocket support
-3. CORS is properly configured (enabled by default)
-
-### WebSocket Connection Drops?
-
-Check Nginx config:
-```nginx
-proxy_read_timeout 86400;
-proxy_send_timeout 86400;
-```
-
-### File Upload Fails?
-
-Check Nginx config:
-```nginx
-client_max_body_size 100M;
-```
-
-## Port Reference
-
-| Port | Purpose |
-|------|---------|
-| 9375 | HTTP API server |
-| 9376 | MQTT Broker (optional) |

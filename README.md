@@ -166,6 +166,14 @@ Access the web UI at `http://your-server:9375`.
 <details>
 <summary>More installation options</summary>
 
+**Docker:**
+
+```bash
+git clone https://github.com/camthink-ai/NeoMind.git
+cd NeoMind
+docker compose up -d
+```
+
 **Specific version:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.8.3 sh
@@ -298,7 +306,10 @@ NeoMind/
 │   └── src-tauri/               # Tauri desktop backend (Rust)
 ├── scripts/                     # Deployment scripts
 ├── docs/                        # Documentation
-└── deploy/                      # Deployment configs
+├── deploy/                      # Deployment configs (nginx, systemd)
+├── Dockerfile                   # Multi-stage Docker build
+├── docker-compose.yml           # Docker Compose configuration
+└── .env.example                 # Environment variable template
 ```
 
 ## More Screenshots
