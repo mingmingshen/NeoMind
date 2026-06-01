@@ -221,6 +221,26 @@ fn extract_execution_insight(
         return Some(desc);
     }
 
+    // Rule 2b: Free-mode tool decisions are all "info" type, but action content
+    // may reveal alerts/notifications (e.g., shell tool sending alerts via CLI)
+    if let Some(d) = decisions.iter().find(|d| {
+        let action_lower = d.action.to_lowercase();
+        let desc_lower = d.description.to_lowercase();
+        action_lower.contains("alert")
+            || action_lower.contains("notify")
+            || action_lower.contains("send_message")
+            || desc_lower.contains("alert")
+            || desc_lower.contains("告警")
+            || desc_lower.contains("通知")
+    }) {
+        let desc = if !d.description.is_empty() {
+            truncate_to(&d.description, 100)
+        } else {
+            truncate_to(&d.action, 100)
+        };
+        return Some(desc);
+    }
+
     // Rule 3: Numeric value deviates from baseline by >20%
     for item in data {
         if let (Some(val), Some(&baseline)) = (
@@ -239,9 +259,16 @@ fn extract_execution_insight(
         }
     }
 
-    // Rule 4: Anomaly keywords detected in situation
-    let lower = situation.to_lowercase();
-    if lower.contains("异常") || lower.contains("abnormal") || lower.contains("anomaly") {
+    // Rule 4: Anomaly keywords detected in situation OR conclusion
+    let situation_lower = situation.to_lowercase();
+    let conclusion_lower = conclusion.to_lowercase();
+    if situation_lower.contains("异常")
+        || situation_lower.contains("abnormal")
+        || situation_lower.contains("anomaly")
+        || conclusion_lower.contains("异常")
+        || conclusion_lower.contains("abnormal")
+        || conclusion_lower.contains("anomaly")
+    {
         return Some(truncate_to(conclusion, 120));
     }
 
