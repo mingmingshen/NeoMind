@@ -1473,10 +1473,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               </h1>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <Button
                 variant={editMode ? "default" : "outline"}
-                size="sm"
+                size="icon"
                 onClick={() => {
                   const nextMode = !editMode
                   setEditMode(nextMode)
@@ -1485,41 +1485,35 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     setMobileEditBarOpen(false)
                   }
                 }}
-                className="h-8 text-xs rounded-lg gap-1.5"
+                className="h-8 w-8 rounded-lg"
+                title={editMode ? t('common.done') : t('common:editDashboard')}
               >
                 {editMode ? (
-                  <>
-                    <Check className="h-3.5 w-3.5" />
-                    <span>{t('common.done')}</span>
-                  </>
+                  <Check className="h-4 w-4" />
                 ) : (
-                  <>
-                    <Settings2 className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{t('common:editDashboard')}</span>
-                    <span className="sm:hidden">{t('common:edit', 'Edit')}</span>
-                  </>
+                  <Settings2 className="h-4 w-4" />
                 )}
               </Button>
 
               <Button
                 variant="outline"
-                size="sm"
-                className="h-8 text-xs rounded-lg gap-1.5"
+                size="icon"
+                className="h-8 w-8 rounded-lg"
                 disabled={!editMode}
                 onClick={() => editMode && setComponentLibraryOpen(true)}
+                title={t('visualDashboard.addComponent')}
               >
-                <Plus className="h-3.5 w-3.5" />
-                <span>{t('visualDashboard.addComponent')}</span>
+                <Plus className="h-4 w-4" />
               </Button>
 
               <Button
                 variant="outline"
-                size="sm"
-                className="h-8 text-xs rounded-lg gap-1.5"
+                size="icon"
+                className="h-8 w-8 rounded-lg"
                 onClick={() => setShareDialogOpen(true)}
+                title={t('visualDashboard.share.title')}
               >
-                <Share2 className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t('visualDashboard.share.title')}</span>
+                <Share2 className="h-4 w-4" />
               </Button>
 
               <ComponentLibrarySidebar
