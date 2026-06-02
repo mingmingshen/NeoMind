@@ -19,46 +19,85 @@ use super::backends::ollama::{detect_model_context, OllamaConfig, OllamaRuntime}
 
 /// Ensure an instance has correct capabilities.
 ///
-/// IMPORTANT: For Ollama and llama.cpp, this function ONLY upgrades capabilities
-/// (false→true). It NEVER downgrades, because API-detected values (from /api/show
-/// or /props) are authoritative and already persisted to storage by create_runtime().
+/// Synchronizes the stored `supports_multimodal` flag with neomind-core's
+/// layered detection (LiteLLM registry → conservative heuristic → false),
+/// unless the user has explicitly overridden it via `multimodal_user_override`.
 ///
-/// For cloud backends (OpenAI, Anthropic, etc.), name-based detection is the only
-/// source, so full correction is applied.
+/// Resolution order:
+/// 1. **User override** (`multimodal_user_override = Some(v)`) — sacred, never touched.
+/// 2. **Auto-detection** — layered detector; both upgrades and downgrades are applied.
+///
+/// `multimodal_source` is set to `"user_override"` when the user has overridden,
+/// `"registry"` if the layered detector found the model in LiteLLM, or
+/// `"heuristic"` otherwise. Runtime API sources (`/api/show`, `/props`) are
+/// tracked separately when the runtime refreshes them.
 fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendInstance {
-    if matches!(instance.backend_type, LlmBackendType::Ollama) {
-        // Use neomind-core's unified detection as fallback.
-        // Only upgrade — never override API-detected values.
-        let detected_vision = detect_vision_capability(&instance.model);
-        if !instance.capabilities.supports_multimodal && detected_vision {
-            instance.capabilities.supports_multimodal = true;
-        }
-    } else if matches!(instance.backend_type, LlmBackendType::LlamaCpp) {
-        // Only upgrade from false to true — /props is authoritative.
-        if !instance.capabilities.supports_multimodal {
-            let detected_multimodal = detect_vision_capability(&instance.model);
-            if detected_multimodal {
-                tracing::info!(
-                    backend_id = %instance.id,
-                    model = %instance.model,
-                    "Upgrading llama.cpp multimodal capability from model name"
-                );
-                instance.capabilities.supports_multimodal = true;
-            }
-        }
-    } else {
-        // Cloud backends: name-based detection is the primary source.
-        let detected_multimodal = detect_vision_capability(&instance.model);
-        if instance.capabilities.supports_multimodal != detected_multimodal {
+    // User override is sacred — never auto-correct.
+    if let Some(user_val) = instance.capabilities.multimodal_user_override {
+        if instance.capabilities.supports_multimodal != user_val
+            || instance.capabilities.multimodal_source.as_deref() != Some("user_override")
+        {
             tracing::info!(
                 backend_id = %instance.id,
                 model = %instance.model,
-                old_multimodal = instance.capabilities.supports_multimodal,
-                new_multimodal = detected_multimodal,
-                "Correcting multimodal capability for cloud backend"
+                user_override = user_val,
+                "Preserving user multimodal override"
             );
-            instance.capabilities.supports_multimodal = detected_multimodal;
+            instance.capabilities.supports_multimodal = user_val;
+            instance.capabilities.multimodal_source = Some("user_override".to_string());
         }
+        return instance;
+    }
+
+    // Runtime API detection (Ollama /api/show) is also authoritative — it
+    // reflects what the actual model file can do, which is more accurate
+    // than name-based heuristic for models like gemma3 (multimodal but not
+    // in our heuristic table). Don't downgrade it to a heuristic guess.
+    // The background refresh loop will re-query /api/show periodically.
+    if instance.capabilities.multimodal_source.as_deref() == Some("runtime_api") {
+        return instance;
+    }
+
+    // No user override, no live runtime probe — sync to layered detection. Both upgrade and downgrade
+    // are allowed; the legacy "only upgrade" behavior caused sticky false
+    // positives (e.g. qwen3.5:2b-mlx misclassified as multimodal).
+    let detected_multimodal = detect_vision_capability(&instance.model);
+
+    if instance.capabilities.supports_multimodal != detected_multimodal {
+        // Value changed — must update. Compute new source based on which layer
+        // produced the value.
+        let source: Option<&str> = if neomind_core::llm::registry::lookup_vision(&instance.model).is_some() {
+            Some("registry")
+        } else if neomind_core::llm::registry::heuristic_vision_match(&instance.model) {
+            Some("heuristic")
+        } else {
+            None
+        };
+        tracing::info!(
+            backend_id = %instance.id,
+            backend_type = ?instance.backend_type,
+            model = %instance.model,
+            old_multimodal = instance.capabilities.supports_multimodal,
+            new_multimodal = detected_multimodal,
+            source = ?source,
+            "Syncing multimodal capability to layered-detected value"
+        );
+        instance.capabilities.supports_multimodal = detected_multimodal;
+        instance.capabilities.multimodal_source = source.map(str::to_string);
+    } else if instance.capabilities.multimodal_source.is_none() {
+        // Value already correct but source is unset (legacy row from before
+        // this field was added). Backfill the source without changing the
+        // value. If a previous "runtime_api" source was set, we leave it
+        // alone — the value came from a runtime probe and we have no reason
+        // to relabel it.
+        let source: Option<&str> = if neomind_core::llm::registry::lookup_vision(&instance.model).is_some() {
+            Some("registry")
+        } else if neomind_core::llm::registry::heuristic_vision_match(&instance.model) {
+            Some("heuristic")
+        } else {
+            None
+        };
+        instance.capabilities.multimodal_source = source.map(str::to_string);
     }
     instance
 }
@@ -199,31 +238,50 @@ impl LlmBackendInstanceManager {
 
             let (multimodal, thinking, tools, max_ctx) = match &detected {
                 Some(caps) => {
-                    // Update stored capabilities if detection succeeded and values differ
-                    let changed = instance.capabilities.supports_multimodal
-                        != caps.supports_multimodal
-                        || instance.capabilities.supports_thinking != caps.supports_thinking
+                    // Update stored capabilities if detection succeeded and values differ.
+                    // CRITICAL: respect user override — only update fields that aren't
+                    // explicitly overridden by the user.
+                    let user_override = instance.capabilities.multimodal_user_override;
+                    // Effective "old" multimodal depends on override
+                    let old_multimodal = user_override
+                        .unwrap_or(instance.capabilities.supports_multimodal);
+                    let multimodal_changed = old_multimodal != caps.supports_multimodal;
+                    let other_changed = instance.capabilities.supports_thinking != caps.supports_thinking
                         || instance.capabilities.supports_tools != caps.supports_tools
                         || instance.capabilities.max_context != caps.max_context;
-                    if changed {
+                    if multimodal_changed || other_changed {
                         tracing::info!(
                             backend_id = %instance.id,
                             model = %instance.model,
                             old_ctx = instance.capabilities.max_context,
                             new_ctx = caps.max_context,
+                            user_override = ?user_override,
                             "Updated Ollama capabilities from /api/show"
                         );
-                        // Write back to storage and in-memory cache
                         let mut updated = instance.clone();
-                        updated.capabilities.supports_multimodal = caps.supports_multimodal;
+                        // Only write multimodal if user hasn't overridden it.
+                        // If user_override is Some, the override value is authoritative;
+                        // we still record source = "runtime_api" so the next refresh
+                        // cycle can re-evaluate, but we never overwrite the user's choice.
+                        if user_override.is_none() {
+                            updated.capabilities.supports_multimodal = caps.supports_multimodal;
+                        }
                         updated.capabilities.supports_thinking = caps.supports_thinking;
                         updated.capabilities.supports_tools = caps.supports_tools;
                         let cap = std::env::var("NEOMIND_MAX_CONTEXT").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(usize::MAX); updated.capabilities.max_context = caps.max_context.min(cap);
+                        // Always update source to indicate the runtime API was consulted
+                        // (but only when there's no user override, since override is authoritative).
+                        if user_override.is_none() {
+                            updated.capabilities.multimodal_source = Some("runtime_api".to_string());
+                        }
                         let _ = self.storage.save_instance(&updated);
                         self.instances.insert(instance.id.clone(), updated);
                     }
+                    // For runtime override: if user has override, use their value;
+                    // otherwise use the /api/show value.
+                    let runtime_multimodal = user_override.unwrap_or(caps.supports_multimodal);
                     (
-                        caps.supports_multimodal,
+                        runtime_multimodal,
                         caps.supports_thinking,
                         caps.supports_tools,
                         caps.max_context,
@@ -287,31 +345,39 @@ impl LlmBackendInstanceManager {
 
                 let (multimodal, thinking, tools, max_ctx) = match &detected {
                     Some(caps) => {
-                        // Update stored capabilities if detection succeeded and values differ
-                        let changed = instance.capabilities.supports_multimodal
-                            != caps.supports_multimodal
-                            || instance.capabilities.max_context != caps.max_context
+                        // Update stored capabilities if detection succeeded and values differ.
+                        // Respect user override — only update fields that aren't explicitly
+                        // overridden by the user. Same pattern as the Ollama path above.
+                        let user_override = instance.capabilities.multimodal_user_override;
+                        let old_multimodal = user_override
+                            .unwrap_or(instance.capabilities.supports_multimodal);
+                        let multimodal_changed = old_multimodal != caps.supports_multimodal;
+                        let other_changed = instance.capabilities.max_context != caps.max_context
                             || instance.capabilities.supports_tools != caps.supports_tools;
-                        if changed {
+                        if multimodal_changed || other_changed {
                             tracing::info!(
                                 backend_id = %instance.id,
                                 old_multimodal = instance.capabilities.supports_multimodal,
                                 new_multimodal = caps.supports_multimodal,
                                 old_ctx = instance.capabilities.max_context,
                                 new_ctx = caps.max_context,
+                                user_override = ?user_override,
                                 "Updated llama.cpp capabilities from /props detection"
                             );
-                            // Write back to storage and in-memory cache
                             let mut updated = instance.clone();
-                            updated.capabilities.supports_multimodal = caps.supports_multimodal;
+                            if user_override.is_none() {
+                                updated.capabilities.supports_multimodal = caps.supports_multimodal;
+                                updated.capabilities.multimodal_source = Some("runtime_api".to_string());
+                            }
                             updated.capabilities.supports_thinking = caps.supports_thinking;
                             updated.capabilities.supports_tools = caps.supports_tools;
                             updated.capabilities.max_context = caps.max_context;
                             let _ = self.storage.save_instance(&updated);
                             self.instances.insert(instance.id.clone(), updated);
                         }
+                        let runtime_multimodal = user_override.unwrap_or(caps.supports_multimodal);
                         (
-                            caps.supports_multimodal,
+                            runtime_multimodal,
                             caps.supports_thinking,
                             caps.supports_tools,
                             caps.max_context,
@@ -864,6 +930,120 @@ pub struct BackendTypeDefinition {
     pub supports_multimodal: bool,
 }
 
+// =====================================================================
+// Background capability refresh
+// =====================================================================
+
+/// How often the background refresh task re-queries runtime APIs.
+const CAPABILITY_REFRESH_INTERVAL_SECS: u64 = 3600; // 1 hour
+
+impl LlmBackendInstanceManager {
+    /// Refresh capabilities for all Ollama (and llama.cpp, when supported)
+    /// instances by re-querying their runtime APIs.
+    ///
+    /// Skips instances whose `multimodal_user_override` is set — those are
+    /// sacred. Both upgrade AND downgrade are applied based on what the
+    /// runtime reports.
+    pub async fn refresh_all_capabilities(&self) {
+        let snapshots: Vec<LlmBackendInstance> = self
+            .instances
+            .iter()
+            .map(|item| item.value().clone())
+            .collect();
+
+        let mut updated = 0usize;
+        for mut inst in snapshots {
+            // Skip user-overridden instances.
+            if inst.capabilities.multimodal_user_override.is_some() {
+                continue;
+            }
+
+            let new_multimodal = match inst.backend_type {
+                LlmBackendType::Ollama => match self.query_ollama_multimodal(&inst).await {
+                    Some(v) => v,
+                    None => continue, // API unavailable, skip silently
+                },
+                _ => continue, // Cloud/llama.cpp handled elsewhere or static
+            };
+
+            if inst.capabilities.supports_multimodal != new_multimodal {
+                tracing::info!(
+                    backend_id = %inst.id,
+                    backend_type = ?inst.backend_type,
+                    model = %inst.model,
+                    old = inst.capabilities.supports_multimodal,
+                    new = new_multimodal,
+                    source = "runtime_api",
+                    "Refreshed multimodal capability from runtime API"
+                );
+                inst.capabilities.supports_multimodal = new_multimodal;
+                inst.capabilities.multimodal_source = Some("runtime_api".to_string());
+                inst.updated_at = chrono::Utc::now().timestamp();
+
+                // Persist back to storage.
+                if let Err(e) = self.storage.save_instance(&inst) {
+                    tracing::warn!(
+                        backend_id = %inst.id,
+                        error = %e,
+                        "Failed to persist refreshed capability"
+                    );
+                }
+                // Update in-memory map.
+                self.instances.insert(inst.id.clone(), inst);
+                updated += 1;
+            }
+        }
+
+        if updated > 0 {
+            tracing::info!(
+                updated = updated,
+                "Background capability refresh completed with updates"
+            );
+            // Invalidate the runtime cache so the next `get_active_runtime()`
+            // rebuilds a runtime with the refreshed capabilities. Without this,
+            // a cached OllamaRuntime would keep its old `capabilities_override`
+            // and the running session would see stale vision capability.
+            self.runtime_cache.clear();
+            // Also clear health cache to force re-evaluation.
+            self.health_cache.clear();
+        }
+    }
+
+    /// Query an Ollama instance's `/api/show` to determine current
+    /// multimodal capability. Returns `None` if the API is unavailable.
+    async fn query_ollama_multimodal(&self, inst: &LlmBackendInstance) -> Option<bool> {
+        use super::backends::ollama::{ModelCapability, OllamaConfig, OllamaRuntime};
+
+        let config = OllamaConfig::new(&inst.model).with_endpoint(
+            inst.endpoint.as_deref().unwrap_or("http://localhost:11434"),
+        );
+        let runtime = OllamaRuntime::new(config).ok()?;
+        runtime
+            .fetch_capabilities_from_api()
+            .await
+            .map(|c: ModelCapability| c.supports_multimodal)
+    }
+
+    /// Spawn a background task that periodically refreshes runtime-detected
+    /// capabilities. The task runs forever; the handle is dropped (detached)
+    /// since the manager's lifetime equals the process lifetime.
+    pub fn start_capability_refresh_loop(self: &Arc<Self>) {
+        let manager = self.clone();
+        tokio::spawn(async move {
+            // Wait an initial 60s after startup before the first refresh,
+            // so we don't pound the backend during boot.
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            loop {
+                manager.refresh_all_capabilities().await;
+                tokio::time::sleep(std::time::Duration::from_secs(
+                    CAPABILITY_REFRESH_INTERVAL_SECS,
+                ))
+                .await;
+            }
+        });
+    }
+}
+
 /// Global singleton for the instance manager
 static INSTANCE_MANAGER: OnceLock<RwLock<Option<Arc<LlmBackendInstanceManager>>>> = OnceLock::new();
 
@@ -897,6 +1077,9 @@ pub fn get_instance_manager() -> Result<Arc<LlmBackendInstanceManager>, LlmError
         .map_err(|e| LlmError::InvalidInput(format!("Failed to open backend store: {}", e)))?;
 
     let manager = Arc::new(LlmBackendInstanceManager::new(backend_store));
+    // Start the background capability-refresh loop (runtime API re-query).
+    // Detached — runs for the process lifetime.
+    manager.start_capability_refresh_loop();
     *guard = Some(manager.clone());
     Ok(manager)
 }

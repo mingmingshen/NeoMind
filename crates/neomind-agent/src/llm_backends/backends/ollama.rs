@@ -1495,37 +1495,23 @@ fn detect_model_capabilities(model_name: &str) -> ModelCapability {
         && !name_lower.contains("micro")
         && !name_lower.contains("nano");
 
-    // Models that support multimodal (vision)
-    // Common Ollama vision models: qwen-vl, qwen2-vl, qwen3-vl, llava, bakllava, moondream, etc.
-    // IMPORTANT: This is name-based heuristic detection. For accurate detection,
-    // use Ollama's /api/show endpoint through runtime.capabilities() method.
-    let supports_multimodal = name_lower.contains("vl")
-        || name_lower.contains("vision")
-        || name_lower.contains("-mm")
-        || name_lower.contains(":mm")
-        || name_lower.contains("llava")
-        || name_lower.contains("bakllava")
-        || name_lower.contains("moondream")
-        || name_lower.contains("minigpt")
-        || name_lower.contains("clip")
-        || name_lower.contains("minicpm-v")
-        || name_lower.contains("pixtral")  // Mistral's vision model
-        || name_lower.contains("llama3.2-vision")
-        || name_lower.contains("gemma3")   // Gemma 3 (4B+) supports vision
-        || name_lower.contains("ministral") // Ministral models support vision
-        || name_lower.contains("mistral3")   // Mistral3 architecture supports vision
-        || name_lower.contains("cogvlm")
-        || name_lower.contains("internvl")
-        || name_lower.contains("yi-vl")
-        || name_lower.contains("deepseek-vl")
-        || name_lower.contains("multimodal")
-        // Generic qwen vision patterns: qwen-vl, qwen2-vl, qwen3-vl, qwen3.5-vl, etc.
-        // IMPORTANT: plain qwen3.5 / qwen3 / qwen2.5 are TEXT-ONLY; only -vl variants are vision.
-        || name_lower.contains("qwen") && (name_lower.contains("-vl") || name_lower.contains(":vl") || name_lower.contains("_vl"))
-        || name_lower.contains("llama") && name_lower.contains("vision");
+    // Multimodal (vision) capability — delegate to neomind-core's layered
+    // detection: LiteLLM registry → conservative heuristic → false.
+    //
+    // This replaces a large per-family pattern list that had false positives
+    // (e.g. `qwen3.5` matching text-only models). The centralized detector
+    // is the single source of truth — see `neomind_core::llm::capability` and
+    // `neomind_core::llm::registry` for the data sources.
+    //
+    // For accurate runtime detection, prefer `capabilities_override` populated
+    // from Ollama's `/api/show` endpoint (returned as the `capabilities` array
+    // by the `runtime_capabilities()` method on this struct).
+    let supports_multimodal = neomind_core::llm::detect_vision_capability(model_name);
 
-    // Detect maximum context window based on model family
-    let max_context = detect_model_context(model_name);
+    // Maximum context window: prefer LiteLLM registry (curated, model-specific)
+    // then fall back to Ollama-specific context sizes tuned for local models.
+    let max_context = neomind_core::llm::registry::lookup_max_input_tokens(model_name)
+        .unwrap_or_else(|| detect_model_context(model_name));
 
     ModelCapability {
         supports_tools,

@@ -916,6 +916,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/llm-backends/:id/test",
             post(llm_backends::test_backend_handler),
         )
+        .route(
+            "/api/llm-backends/:id/capabilities",
+            axum::routing::patch(llm_backends::update_capabilities_override_handler),
+        )
         // Instances API (remote backend management)
         .route("/api/instances", get(instances::list_instances_handler))
         .route("/api/instances", post(instances::create_instance_handler))

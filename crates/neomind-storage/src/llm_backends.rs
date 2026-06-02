@@ -80,9 +80,31 @@ pub struct BackendCapabilities {
     #[serde(default)]
     pub supports_streaming: bool,
 
-    /// Supports multimodal (vision) input
+    /// Supports multimodal (vision) input.
+    ///
+    /// This is the *effective* value: if `multimodal_user_override` is `Some(v)`,
+    /// that value is used; otherwise this reflects auto-detection (registry →
+    /// heuristic → runtime API).
     #[serde(default)]
     pub supports_multimodal: bool,
+
+    /// User-set override for multimodal capability.
+    ///
+    /// - `Some(true)`  — user explicitly marked this backend as vision-capable.
+    /// - `Some(false)` — user explicitly marked this backend as text-only.
+    /// - `None`        — auto-detection governs `supports_multimodal`.
+    ///
+    /// When set, automatic capability sync respects this and does NOT overwrite
+    /// it. Cleared by passing `None` via the PATCH capabilities API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multimodal_user_override: Option<bool>,
+
+    /// Provenance of the current `supports_multimodal` value, for diagnostics.
+    ///
+    /// Values: `"user_override"`, `"runtime_api"`, `"registry"`, `"heuristic"`,
+    /// `"default"`. `None` on legacy rows predating this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multimodal_source: Option<String>,
 
     /// Supports thinking/reasoning output
     #[serde(default)]
@@ -174,6 +196,7 @@ impl LlmBackendInstance {
                     supports_thinking: true,
                     supports_tools: true,
                     max_context: 8192,
+                    ..Default::default()
                 },
             ),
             LlmBackendType::OpenAi => (
@@ -185,6 +208,7 @@ impl LlmBackendInstance {
                     supports_thinking: false,
                     supports_tools: true,
                     max_context: 128000,
+                    ..Default::default()
                 },
             ),
             LlmBackendType::Anthropic => (
@@ -196,6 +220,7 @@ impl LlmBackendInstance {
                     supports_thinking: false,
                     supports_tools: true,
                     max_context: 200000,
+                    ..Default::default()
                 },
             ),
             LlmBackendType::Google => (
@@ -207,6 +232,7 @@ impl LlmBackendInstance {
                     supports_thinking: false,
                     supports_tools: true,
                     max_context: 1000000,
+                    ..Default::default()
                 },
             ),
             LlmBackendType::XAi => (
@@ -218,6 +244,7 @@ impl LlmBackendInstance {
                     supports_thinking: false,
                     supports_tools: false,
                     max_context: 128000,
+                    ..Default::default()
                 },
             ),
             LlmBackendType::Qwen => (
@@ -229,6 +256,7 @@ impl LlmBackendInstance {
                     supports_thinking: false,
                     supports_tools: true,
                     max_context: 128000,
+                    ..Default::default()
                 },
             ),
             LlmBackendType::DeepSeek => (
@@ -240,6 +268,7 @@ impl LlmBackendInstance {
                     supports_thinking: true,
                     supports_tools: true,
                     max_context: 128000,
+                    ..Default::default()
                 },
             ),
             LlmBackendType::GLM => (
@@ -251,6 +280,7 @@ impl LlmBackendInstance {
                     supports_thinking: false,
                     supports_tools: true,
                     max_context: 128000,
+                    ..Default::default()
                 },
             ),
             LlmBackendType::LlamaCpp => (
@@ -262,6 +292,7 @@ impl LlmBackendInstance {
                     supports_thinking: true,
                     supports_tools: true,
                     max_context: 4096,
+                    ..Default::default()
                 },
             ),
             LlmBackendType::MiniMax => (
@@ -273,6 +304,7 @@ impl LlmBackendInstance {
                     supports_thinking: false,
                     supports_tools: false,
                     max_context: 512000,
+                    ..Default::default()
                 },
             ),
         };
@@ -349,6 +381,7 @@ impl LlmBackendInstance {
                 supports_thinking: true,
                 supports_tools: true,
                 max_context: 4096,
+                ..Default::default()
             },
             LlmBackendType::Ollama => BackendCapabilities {
                 supports_streaming: true,
@@ -356,6 +389,7 @@ impl LlmBackendInstance {
                 supports_thinking: true,
                 supports_tools: true,
                 max_context: 8192,
+                ..Default::default()
             },
             LlmBackendType::OpenAi => BackendCapabilities {
                 supports_streaming: true,
@@ -363,6 +397,7 @@ impl LlmBackendInstance {
                 supports_thinking: false,
                 supports_tools: true,
                 max_context: 128000,
+                ..Default::default()
             },
             LlmBackendType::Anthropic => BackendCapabilities {
                 supports_streaming: true,
@@ -370,6 +405,7 @@ impl LlmBackendInstance {
                 supports_thinking: false,
                 supports_tools: true,
                 max_context: 200000,
+                ..Default::default()
             },
             LlmBackendType::Google => BackendCapabilities {
                 supports_streaming: true,
@@ -377,6 +413,7 @@ impl LlmBackendInstance {
                 supports_thinking: false,
                 supports_tools: true,
                 max_context: 1000000,
+                ..Default::default()
             },
             LlmBackendType::XAi => BackendCapabilities {
                 supports_streaming: true,
@@ -384,6 +421,7 @@ impl LlmBackendInstance {
                 supports_thinking: false,
                 supports_tools: false,
                 max_context: 128000,
+                ..Default::default()
             },
             LlmBackendType::Qwen => BackendCapabilities {
                 supports_streaming: true,
@@ -391,6 +429,7 @@ impl LlmBackendInstance {
                 supports_thinking: false,
                 supports_tools: true,
                 max_context: 128000,
+                ..Default::default()
             },
             LlmBackendType::DeepSeek => BackendCapabilities {
                 supports_streaming: true,
@@ -398,6 +437,7 @@ impl LlmBackendInstance {
                 supports_thinking: true,
                 supports_tools: true,
                 max_context: 128000,
+                ..Default::default()
             },
             LlmBackendType::GLM => BackendCapabilities {
                 supports_streaming: true,
@@ -405,6 +445,7 @@ impl LlmBackendInstance {
                 supports_thinking: false,
                 supports_tools: true,
                 max_context: 128000,
+                ..Default::default()
             },
             LlmBackendType::MiniMax => BackendCapabilities {
                 supports_streaming: true,
@@ -412,6 +453,7 @@ impl LlmBackendInstance {
                 supports_thinking: false,
                 supports_tools: false,
                 max_context: 512000,
+                ..Default::default()
             },
         }
     }

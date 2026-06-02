@@ -656,7 +656,26 @@ impl LlmInterface {
     /// Priority: Runtime capabilities > Storage layer capabilities
     /// This ensures correct detection when user selects a specific backend via backendId.
     pub async fn supports_multimodal(&self) -> bool {
-        // First, try to query the runtime directly (most accurate - uses model name detection)
+        // 1. User override is sacred — check first. If the user has explicitly
+        //    set multimodal_user_override, their value wins over every other
+        //    signal (runtime detection, registry, heuristic).
+        if self.uses_instance_manager() {
+            if let Some(manager) = &self.instance_manager {
+                if let Some(instance) = manager.get_active_instance() {
+                    if let Some(override_val) = instance.capabilities.multimodal_user_override {
+                        tracing::debug!(
+                            override_val = %override_val,
+                            model = %instance.model,
+                            "supports_multimodal: respecting user override"
+                        );
+                        return override_val;
+                    }
+                }
+            }
+        }
+
+        // 2. Runtime detection (most accurate — uses /api/show for Ollama, or
+        //    model-name detection for cloud providers).
         if let Ok(runtime) = self.get_runtime().await {
             let caps = runtime.capabilities();
             tracing::debug!(
@@ -669,11 +688,10 @@ impl LlmInterface {
 
         tracing::debug!("supports_multimodal: no runtime available, checking instance manager");
 
-        // Fall back to instance manager if runtime is not available
+        // 3. Fall back to stored capabilities (instance manager).
         if self.uses_instance_manager() {
             if let Some(manager) = &self.instance_manager {
                 if let Some(instance) = manager.get_active_instance() {
-                    // Instance has capabilities with supports_multimodal (storage layer)
                     tracing::debug!(
                         supports_multimodal = %instance.capabilities.supports_multimodal,
                         model = %instance.model,

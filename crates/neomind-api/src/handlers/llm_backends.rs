@@ -481,8 +481,42 @@ pub async fn update_backend_handler(
         instance.thinking_enabled = thinking_enabled;
     }
     if let Some(mut capabilities) = req.capabilities {
+        // Preserve user-set fields that the frontend doesn't render.
+        // The capabilities object sent by the frontend typically doesn't include
+        // `multimodal_user_override` or `multimodal_source` (those are managed via
+        // the dedicated PATCH /capabilities endpoint). Without this preservation,
+        // any user override would be silently wiped every time the user saved an
+        // unrelated field change like temperature.
+        let saved_user_override = instance.capabilities.multimodal_user_override;
+
         // Adjust capabilities based on model name
         adjust_capabilities_for_model(&instance.model, &mut capabilities);
+
+        // Restore preserved fields unless the caller explicitly cleared them
+        // (sending `null` for the override). Since the request deserializer
+        // can't distinguish "absent" from "explicit null" for an Option<bool>,
+        // we always restore — the dedicated PATCH endpoint is the only way to
+        // clear an override.
+        //
+        // Source handling: we only restore source when an override is being
+        // restored (since the override forces source = "user_override").
+        // When there is no override, adjust_capabilities_for_model above
+        // already set source correctly from the layered detection, so we
+        // must NOT clobber it with the stale saved_source here.
+        if capabilities.multimodal_user_override.is_none() {
+            capabilities.multimodal_user_override = saved_user_override;
+            if let Some(override_val) = saved_user_override {
+                // Override restored → all three fields must reflect it:
+                // supports_multimodal (effective value), source (provenance),
+                // and multimodal_user_override (already set above). Without
+                // syncing supports_multimodal, the runtime would read the
+                // auto-detected value and ignore the user's override.
+                capabilities.supports_multimodal = override_val;
+                capabilities.multimodal_source = Some("user_override".to_string());
+            }
+            // else: leave source alone — adjust_capabilities_for_model set it.
+        }
+
         instance.capabilities = capabilities;
     }
     instance.updated_at = chrono::Utc::now().timestamp();
@@ -521,6 +555,94 @@ pub async fn delete_backend_handler(
 
     ok(json!({
         "message": format!("Backend instance {} deleted", id),
+    }))
+}
+
+/// Request body for the capabilities-override PATCH endpoint.
+///
+/// All fields are optional. `multimodal: null` clears the override (returns
+/// to auto-detection); `multimodal: true/false` pins the value.
+#[derive(Debug, Deserialize)]
+pub struct UpdateCapabilitiesOverrideRequest {
+    /// Override the multimodal/vision capability.
+    ///
+    /// - `Some(true)`/`Some(false)` — pin the value, skip auto-detection.
+    /// - `None` — clear the override, resume auto-detection.
+    ///
+    /// JSON `null` and field-absence both deserialize to `None` (serde's
+    /// default behavior for `Option<T>`).
+    #[serde(default)]
+    pub multimodal: Option<bool>,
+}
+
+/// Set or clear a user override on backend capabilities.
+///
+/// `PATCH /api/llm-backends/:id/capabilities`
+///
+/// Currently only the `multimodal` (vision) capability is overridable — this
+/// is the main source of false positives in auto-detection, and is the field
+/// users most commonly need to correct manually.
+pub async fn update_capabilities_override_handler(
+    State(_state): State<ServerState>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateCapabilitiesOverrideRequest>,
+) -> HandlerResult<serde_json::Value> {
+    let manager = get_manager()?;
+
+    let mut instance = manager
+        .get_instance(&id)
+        .ok_or_else(|| ErrorResponse::not_found(format!("Backend instance {}", id)))?;
+
+    // Apply override.
+    instance.capabilities.multimodal_user_override = req.multimodal;
+    if let Some(v) = req.multimodal {
+        instance.capabilities.supports_multimodal = v;
+        instance.capabilities.multimodal_source = Some("user_override".to_string());
+        tracing::info!(
+            backend_id = %id,
+            model = %instance.model,
+            override_value = v,
+            "User set multimodal override"
+        );
+    } else {
+        // Override cleared — re-run layered detection immediately so the
+        // stored value reflects the auto-detected truth.
+        let detected = neomind_core::llm::detect_vision_capability(&instance.model);
+        // Source attribution: 3-tier (registry / heuristic / unknown).
+        // Use the same logic as `adjust_capabilities_for_model` so the source
+        // is consistent across creation, update, and override-clear paths.
+        let source: Option<&str> = if neomind_core::llm::registry::lookup_vision(&instance.model).is_some() {
+            Some("registry")
+        } else if neomind_core::llm::registry::heuristic_vision_match(&instance.model) {
+            Some("heuristic")
+        } else {
+            None
+        };
+        tracing::info!(
+            backend_id = %id,
+            model = %instance.model,
+            detected = detected,
+            source = ?source,
+            "User cleared multimodal override, re-detected"
+        );
+        instance.capabilities.supports_multimodal = detected;
+        instance.capabilities.multimodal_source = source.map(str::to_string);
+    }
+    instance.updated_at = chrono::Utc::now().timestamp();
+
+    manager
+        .upsert_instance(instance.clone())
+        .await
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+
+    manager.clear_cache();
+
+    ok(json!({
+        "id": id,
+        "supports_multimodal": instance.capabilities.supports_multimodal,
+        "multimodal_user_override": instance.capabilities.multimodal_user_override,
+        "multimodal_source": instance.capabilities.multimodal_source,
+        "message": "Capabilities override applied",
     }))
 }
 
@@ -1015,9 +1137,14 @@ async fn get_model_capabilities_from_show(
     Ok(BackendCapabilities {
         supports_streaming: true,
         supports_multimodal,
+        // Track that this value came from a live runtime probe, so that
+        // `ensure_instance_capabilities` doesn't second-guess it with the
+        // less-accurate name-based heuristic on next load.
+        multimodal_source: Some("runtime_api".to_string()),
         supports_thinking,
         supports_tools,
         max_context,
+        ..Default::default()
     })
 }
 
@@ -1060,12 +1187,23 @@ fn detect_ollama_model_capabilities_from_name(model_name: &str) -> BackendCapabi
 
     let max_context = detect_ollama_model_context(model_name);
 
+    // Source attribution matches `adjust_capabilities_for_model`.
+    let multimodal_source = if neomind_core::llm::registry::lookup_vision(model_name).is_some() {
+        Some("registry".to_string())
+    } else if neomind_core::llm::registry::heuristic_vision_match(model_name) {
+        Some("heuristic".to_string())
+    } else {
+        None
+    };
+
     BackendCapabilities {
         supports_streaming: true,
         supports_multimodal,
+        multimodal_source,
         supports_thinking,
         supports_tools,
         max_context,
+        ..Default::default()
     }
 }
 
@@ -1247,6 +1385,7 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_thinking: true,
             supports_tools: true,
             max_context: 8192,
+            ..Default::default()
         },
         LlmBackendType::OpenAi => BackendCapabilities {
             supports_streaming: true,
@@ -1254,6 +1393,7 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_thinking: false,
             supports_tools: true,
             max_context: 128000,
+            ..Default::default()
         },
         LlmBackendType::Anthropic => BackendCapabilities {
             supports_streaming: true,
@@ -1261,6 +1401,7 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_thinking: false,
             supports_tools: true,
             max_context: 200000,
+            ..Default::default()
         },
         LlmBackendType::Google => BackendCapabilities {
             supports_streaming: true,
@@ -1268,6 +1409,7 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_thinking: false,
             supports_tools: true,
             max_context: 1000000,
+            ..Default::default()
         },
         LlmBackendType::XAi => BackendCapabilities {
             supports_streaming: true,
@@ -1275,6 +1417,7 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_thinking: false,
             supports_tools: false,
             max_context: 128000,
+            ..Default::default()
         },
         LlmBackendType::Qwen => BackendCapabilities {
             supports_streaming: true,
@@ -1282,6 +1425,7 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_thinking: false,
             supports_tools: true,
             max_context: 32768,
+            ..Default::default()
         },
         LlmBackendType::DeepSeek => BackendCapabilities {
             supports_streaming: true,
@@ -1289,6 +1433,7 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_thinking: false,
             supports_tools: true,
             max_context: 65536,
+            ..Default::default()
         },
         LlmBackendType::GLM => BackendCapabilities {
             supports_streaming: true,
@@ -1296,6 +1441,7 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_thinking: false,
             supports_tools: true,
             max_context: 131072,
+            ..Default::default()
         },
         LlmBackendType::MiniMax => BackendCapabilities {
             supports_streaming: true,
@@ -1303,6 +1449,7 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_thinking: false,
             supports_tools: true,
             max_context: 512000,
+            ..Default::default()
         },
         LlmBackendType::LlamaCpp => BackendCapabilities {
             supports_streaming: true,
@@ -1310,6 +1457,7 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_thinking: true,
             supports_tools: true,
             max_context: 4096,
+            ..Default::default()
         },
     }
 }
@@ -1320,8 +1468,23 @@ fn adjust_capabilities_for_model(model_name: &str, capabilities: &mut BackendCap
     let name_lower = model_name.to_lowercase();
 
     // === Multimodal (vision) detection ===
-    // Use the same logic as neomind-core capability detection
+    // Use the same logic as neomind-core capability detection.
+    // Also record provenance so the frontend and diagnostics can show WHERE
+    // the value came from. We do NOT touch `multimodal_user_override` here —
+    // that field is sacred and only set by the explicit override endpoint.
     capabilities.supports_multimodal = detect_vision_capability(&name_lower);
+    if capabilities.multimodal_user_override.is_none() {
+        // Determine source: registry hit vs heuristic vs unknown.
+        // We can't tell "registry" from "heuristic" from this call site without
+        // re-running the layered lookup, so we use the more specific helper.
+        if neomind_core::llm::registry::lookup_vision(&name_lower).is_some() {
+            capabilities.multimodal_source = Some("registry".to_string());
+        } else if neomind_core::llm::registry::heuristic_vision_match(&name_lower) {
+            capabilities.multimodal_source = Some("heuristic".to_string());
+        } else {
+            capabilities.multimodal_source = None;
+        }
+    }
 
     // === Thinking detection ===
     // Models that support extended thinking (deepseek-r1, qwen thinking models)
@@ -1491,6 +1654,7 @@ pub async fn list_llamacpp_server_info_handler(
         supports_thinking: true,
         supports_tools: true,
         max_context: 4096,
+        ..Default::default()
     };
 
     if is_healthy {

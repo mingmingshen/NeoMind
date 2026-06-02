@@ -8,6 +8,7 @@ pub mod compaction;
 pub mod memory_consolidation;
 pub mod modality;
 pub mod models;
+pub mod registry;
 pub mod token_counter;
 
 pub use backend::{

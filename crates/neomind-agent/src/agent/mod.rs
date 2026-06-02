@@ -939,7 +939,7 @@ impl Agent {
                 api_key,
                 endpoint,
                 model,
-                capabilities: _,
+                capabilities,
             } => {
                 tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -957,13 +957,14 @@ impl Agent {
                 let runtime = CloudRuntime::new(config).map_err(
                     |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
                 )?;
+                let runtime = apply_cloud_capabilities(runtime, capabilities);
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::DeepSeek {
                 api_key,
                 endpoint,
                 model,
-                capabilities: _,
+                capabilities,
             } => {
                 tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -981,13 +982,14 @@ impl Agent {
                 let runtime = CloudRuntime::new(config).map_err(
                     |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
                 )?;
+                let runtime = apply_cloud_capabilities(runtime, capabilities);
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::GLM {
                 api_key,
                 endpoint,
                 model,
-                capabilities: _,
+                capabilities,
             } => {
                 tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -1005,13 +1007,14 @@ impl Agent {
                 let runtime = CloudRuntime::new(config).map_err(
                     |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
                 )?;
+                let runtime = apply_cloud_capabilities(runtime, capabilities);
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::MiniMax {
                 api_key,
                 endpoint,
                 model,
-                capabilities: _,
+                capabilities,
             } => {
                 tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -1029,13 +1032,14 @@ impl Agent {
                 let runtime = CloudRuntime::new(config).map_err(
                     |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
                 )?;
+                let runtime = apply_cloud_capabilities(runtime, capabilities);
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::Anthropic {
                 api_key,
                 endpoint,
                 model,
-                capabilities: _,
+                capabilities,
             } => {
                 tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -1053,13 +1057,14 @@ impl Agent {
                 let runtime = CloudRuntime::new(config).map_err(
                     |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
                 )?;
+                let runtime = apply_cloud_capabilities(runtime, capabilities);
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::Google {
                 api_key,
                 endpoint,
                 model,
-                capabilities: _,
+                capabilities,
             } => {
                 tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -1077,13 +1082,14 @@ impl Agent {
                 let runtime = CloudRuntime::new(config).map_err(
                     |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
                 )?;
+                let runtime = apply_cloud_capabilities(runtime, capabilities);
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::XAi {
                 api_key,
                 endpoint,
                 model,
-                capabilities: _,
+                capabilities,
             } => {
                 tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -1101,13 +1107,14 @@ impl Agent {
                 let runtime = CloudRuntime::new(config).map_err(
                     |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
                 )?;
+                let runtime = apply_cloud_capabilities(runtime, capabilities);
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::OpenAi {
                 api_key,
                 endpoint,
                 model,
-                capabilities: _,
+                capabilities,
             } => {
                 tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -1125,6 +1132,7 @@ impl Agent {
                 let runtime = CloudRuntime::new(config).map_err(
                     |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
                 )?;
+                let runtime = apply_cloud_capabilities(runtime, capabilities);
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             #[cfg(feature = "llamacpp")]
@@ -1189,6 +1197,7 @@ impl Agent {
 
         Ok(())
     }
+
 
     /// Set a custom LLM runtime directly (for testing purposes).
     pub async fn set_custom_llm(&self, llm: Arc<dyn LlmRuntime>) {
@@ -3118,6 +3127,40 @@ END"#
         let event_stream = self.process_stream_events(user_message, None, None).await?;
         Ok(events_to_string_stream(event_stream))
     }
+}
+
+/// Apply storage-derived `BackendCapabilities` to a freshly-constructed
+/// `CloudRuntime`, so that cloud backends in the chat / configure_llm flow
+/// honor the same layered capability detection (registry → heuristic → user
+/// override) that Ollama and llama.cpp already honor.
+///
+/// Without this, cloud backends would fall back to the static
+/// `is_vision_model()` pattern match in `openai.rs`, which can disagree with
+/// `detect_vision_capability()` and silently drops user overrides.
+fn apply_cloud_capabilities(
+    mut runtime: CloudRuntime,
+    capabilities: Option<neomind_core::BackendCapabilities>,
+) -> CloudRuntime {
+    if let Some(caps) = capabilities {
+        tracing::debug!(
+            multimodal = %caps.multimodal,
+            thinking_display = %caps.thinking_display,
+            function_calling = %caps.function_calling,
+            max_context = %caps.max_context.unwrap_or(128000),
+            "Applying capabilities override to CloudRuntime"
+        );
+        runtime = runtime.with_capabilities_override(
+            caps.multimodal,
+            caps.thinking_display,
+            caps.function_calling,
+            caps.max_context.unwrap_or(128000),
+        );
+    } else {
+        tracing::debug!(
+            "No capabilities provided for CloudRuntime, using provider-default detection"
+        );
+    }
+    runtime
 }
 
 /// Drop implementation for Agent to log session lifecycle for observability.

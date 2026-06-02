@@ -144,103 +144,40 @@ impl CapabilityDetector {
     }
 
     /// Detect vision/multimodal capability.
+    ///
+    /// Implements a 3-tier layered detection:
+    ///
+    /// **Tier 1 — LiteLLM registry (authoritative for cloud/commercial models):**
+    /// Looks up the embedded `model_registry.json` (2748+ entries sourced from
+    /// LiteLLM's community-maintained catalog). Returns immediately if found,
+    /// since this data is curated and frequently updated.
+    ///
+    /// **Tier 2 — Conservative heuristic (for local/Ollama models only):**
+    /// Only matches *unambiguous* vision-name patterns. Family-name matches
+    /// (e.g. `qwen3.5`, `gemma3`, `mistral3`) are deliberately **NOT** used
+    /// because they cause false positives — most of these are text-only, with
+    /// only specific `-vl`/`-vision` variants supporting multimodal input.
+    ///
+    /// **Tier 3 — Default `false`:** Unknown models are assumed text-only.
+    /// Callers needing authoritative detection should query the runtime API
+    /// (Ollama `/api/show`, llama.cpp `/props`) — see `runtime_capabilities.rs`.
+    /// Users can also override via `multimodal_user_override` in storage.
     pub fn detect_vision(&self, model: &str) -> bool {
-        // 通用视觉关键词
-        if model.contains("vision") || model.contains("-vl") || model.contains("_vl") {
+        // Tier 1: registry lookup
+        if let Some(v) = crate::llm::registry::lookup_vision(model) {
+            return v;
+        }
+
+        // Tier 2: conservative heuristic for models not in registry
+        // (local/Ollama, regional providers). See `heuristic_vision_match`
+        // for rationale on which patterns are considered unambiguous.
+        if crate::llm::registry::heuristic_vision_match(model) {
             return true;
         }
 
-        // OpenAI
-        // GPT-4o 系列 (包括 gpt-4o, gpt-4o-mini)
-        // GPT-4-turbo (支持 Vision)
-        // GPT-4.5 (支持全模态)
-        // 注意: GPT-4 (不带 turbo/vision)、GPT-3.5、o1、o3 不支持视觉
-        if model.contains("-4o")
-            || (model.contains("gpt-4-turbo") && !model.contains("gpt-4-turbo-preview"))
-            || model.contains("gpt-4.5")
-        {
-            return true;
-        }
-
-        // Anthropic - Claude 3 系列和特定的 Claude 4 模型支持视觉
-        // Claude 3 系列: claude-3-opus, claude-3-sonnet, claude-3-haiku, // Claude 3.5 系列: claude-3.5-sonnet, claude-3.5-haiku
-        // Claude 4 系列: claude-opus-4, claude-sonnet-4, claude-haiku-4 (注意: 必须是精确匹配，不能包含 -5)
-        // 例如: claude-haiku-4-5-20251001 不支持视觉
-        let has_vision = model.contains("claude-3")
-            || (model.contains("claude-opus-4") && !model.contains("claude-opus-4-5"))
-            || (model.contains("claude-sonnet-4") && !model.contains("claude-sonnet-4-5"))
-            || (model.contains("claude-haiku-4") && !model.contains("claude-haiku-4-5"));
-
-        if has_vision {
-            return true;
-        }
-
-        // Google - 所有 Gemini 原生支持多模态
-        if model.contains("gemini") {
-            return true;
-        }
-
-        // Qwen (阿里通义千问)
-        // qwen-vl 系列: qwen-vl-max, qwen-vl-plus, qwen3-vl-plus, qwen3-vl-flash
-        // qwen2.5-vl, qwen2-vl 系列
-        // qvq 系列 (视觉推理): qvq-max, qvq-plus
-        // qwen-omni 系列 (全模态): qwen-omni-turbo, qwen-omni-max, qwen3-omni-flash
-        // qwen3.5 系列: 原生支持文本、图像、视频 (包括 qwen3.5:4b 等本地模型)
-        // qwen3.5-plus (云 API)
-        // 注意: qwen-turbo, qwen-long, qwen-coder 不支持视觉
-        if model.contains("qwen-vl")
-            || model.contains("qwen2.5-vl")
-            || model.contains("qwen2-vl")
-            || model.contains("qwen3-vl")
-            || model.contains("qwen-omni")
-            || model.contains("qwen3-omni")
-            || model.contains("qvq")
-            || model.contains("qwen3.5")
-        {
-            return true;
-        }
-
-        // DeepSeek
-        // deepseek-vl 系列: deepseek-vl-7b-chat, deepseek-vl-1.3b-chat
-        // 注意: deepseek-chat, deepseek-r1, deepseek-coder 不支持视觉
-        if model.contains("deepseek-vl") {
-            return true;
-        }
-
-        // GLM (智谱)
-        // glm-4v 系列: glm-4v, glm-4v-plus, glm-4v-flash
-        // 注意: glm-4-plus, glm-4-flash, glm-5, glm-z1 不支持视觉
-        if model.contains("glm-4v") {
-            return true;
-        }
-
-        // MiniMax
-        // minimax-vl-01 (视觉语言模型)
-        // m2-her (支持视觉)
-        // 注意: m2-1, m2-2, minimax-text, abab 不支持视觉
-        if model.contains("minimax-vl") || model.contains("m2-her") {
-            return true;
-        }
-
-        // Grok (xAI)
-        // grok-2-vision, grok-2-vision-latest, grok-vision-beta
-        // 注意: grok-beta, grok-3, grok-4 不支持视觉
-        if model.contains("grok") && model.contains("vision") {
-            return true;
-        }
-
-        // Ollama/Local Models - Basic detection for common patterns
-        // NOTE: For accurate detection, use Ollama's /api/show endpoint
-        // which returns a "capabilities" array including "vision"
-        if model.contains("-vl")
-            || model.contains("_vl")
-            || model.contains("llava")
-            || model.contains("moondream")
-            || model.contains("vision")
-        {
-            return true;
-        }
-
+        // Tier 3: unknown — assume text-only (conservative default).
+        // False negative is recoverable (user can override); false positive
+        // causes silent image drops or hallucinated image analysis.
         false
     }
 
