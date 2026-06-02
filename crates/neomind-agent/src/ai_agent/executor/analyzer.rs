@@ -608,11 +608,18 @@ impl AgentExecutor {
             // Fall back to base64 data
             if let Some(base64) = d.values.get("image_base64").and_then(|v| v.as_str()) {
                 if !base64.is_empty() {
+                    // Prefer stored mime → fall back to magic-prefix
+                    // inference → final jpeg fallback.
                     let mime = d
                         .values
                         .get("image_mime_type")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("image/jpeg");
+                        .map(|s| s.to_string())
+                        .or_else(|| {
+                            crate::image_utils::infer_mime_from_base64_prefix(base64)
+                                .map(|s| s.to_string())
+                        })
+                        .unwrap_or_else(|| "image/jpeg".to_string());
                     // Clean base64: strip whitespace/newlines, remove non-base64 characters
                     let cleaned_base64: String = base64
                         .chars()
@@ -674,6 +681,33 @@ impl AgentExecutor {
 
         // Only use multimodal mode if we have valid images AND LLM supports vision
         let has_valid_images = !image_parts.is_empty() && llm_supports_vision;
+
+        // === DIAGNOSTIC LOG: vision path decision ===
+        {
+            let model_name = llm.model_name().to_string();
+            tracing::info!(
+                target: "neomind::agent::event_value",
+                agent_id = %agent.id,
+                model_name = %model_name,
+                llm_supports_vision,
+                image_parts_count = image_parts.len(),
+                image_sources_count = image_sources_info.len(),
+                has_valid_images,
+                data_total = data.len(),
+                "[DIAG] analyzer vision decision"
+            );
+            for (i, (src, dtype, content)) in image_parts.iter().enumerate() {
+                let (kind, len) = match content {
+                    ImageContent::Base64(d, m) => ("base64", format!("len={}, mime={}", d.len(), m)),
+                    ImageContent::Url(u) => ("url", format!("url={}", u)),
+                };
+                tracing::info!(
+                    target: "neomind::agent::event_value",
+                    idx = i, source = %src, data_type = %dtype, kind = kind, detail = %len,
+                    "[DIAG] image_part"
+                );
+            }
+        }
 
         // Log when images are available but LLM doesn't support vision
         if !image_parts.is_empty() && !llm_supports_vision {
@@ -1078,13 +1112,31 @@ impl AgentExecutor {
 
         // Add timeout for LLM generation (5 minutes max)
         const LLM_TIMEOUT_SECS: u64 = 300;
+        let llm_call_start = std::time::Instant::now();
+        tracing::info!(
+            target: "neomind::agent::event_value",
+            agent_id = %agent.id,
+            model = %llm.model_name(),
+            has_valid_images,
+            image_parts_count = image_parts.len(),
+            "[DIAG] >>> Sending LLM generate() request"
+        );
         let llm_result = match tokio::time::timeout(
             std::time::Duration::from_secs(LLM_TIMEOUT_SECS),
             llm.generate(input),
         )
         .await
         {
-            Ok(result) => result,
+            Ok(result) => {
+                tracing::info!(
+                    target: "neomind::agent::event_value",
+                    agent_id = %agent.id,
+                    elapsed_ms = llm_call_start.elapsed().as_millis() as u64,
+                    is_ok = result.is_ok(),
+                    "[DIAG] <<< LLM generate() returned"
+                );
+                result
+            }
             Err(_) => {
                 tracing::warn!(
                     agent_id = %agent.id,
@@ -1101,6 +1153,22 @@ impl AgentExecutor {
         match llm_result {
             Ok(output) => {
                 let json_str = output.text.trim();
+                let preview: String = json_str.chars().take(200).collect();
+                tracing::info!(
+                    target: "neomind::agent::event_value",
+                    agent_id = %agent.id,
+                    text_len = json_str.len(),
+                    is_empty = json_str.is_empty(),
+                    preview = %preview,
+                    "[DIAG] LLM output text received"
+                );
+                if json_str.is_empty() {
+                    tracing::warn!(
+                        target: "neomind::agent::event_value",
+                        agent_id = %agent.id,
+                        "[DIAG] LLM returned EMPTY text — model may not support multimodal or refused the request"
+                    );
+                }
                 // Extract JSON if wrapped in markdown
                 let json_str = extract_json_from_codeblock(json_str).unwrap_or(json_str);
 

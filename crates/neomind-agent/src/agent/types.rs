@@ -629,26 +629,15 @@ impl AgentMessage {
         let mut parts = vec![ContentPart::text(self.content.to_string())];
 
         for image in images {
-            // Parse data URL (format: "data:image/png;base64,iVBOR...")
-            let (mime_type, base64_data) = if let Some(pos) = image.data.find(',') {
-                let prefix = &image.data[..pos];
-                // Extract mime type from "data:image/png;base64,"
-                let mime = image.mime_type.clone().unwrap_or_else(|| {
-                    if let Some(start) = prefix.strip_prefix("data:") {
-                        start.split(';').next().unwrap_or("image/png").to_string()
-                    } else {
-                        "image/png".to_string()
-                    }
-                });
-                let data = &image.data[pos + 1..];
-                (mime, data)
-            } else {
-                // Not a data URL, use as-is
-                (
-                    image.mime_type.clone().unwrap_or("image/png".to_string()),
-                    image.data.as_str(),
-                )
-            };
+            // Prefer the mime type stored with the message (set at upload time).
+            // If missing, parse from the data URL header or infer from magic bytes.
+            let parsed = crate::image_utils::parse_image_data(&image.data);
+            let mime_type = image
+                .mime_type
+                .clone()
+                .or_else(|| parsed.map(|p| p.mime_type.to_string()))
+                .unwrap_or_else(|| "image/png".to_string());
+            let base64_data = parsed.map(|p| p.base64).unwrap_or(image.data.as_str());
 
             parts.push(ContentPart::image_base64(base64_data, mime_type));
         }

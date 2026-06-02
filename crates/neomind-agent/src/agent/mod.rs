@@ -1788,29 +1788,15 @@ impl Agent {
 
         // Process images for both ContentPart and storage
         for image_data in &images {
-            // Extract mime type from data URL
-            let (mime_type_str, base64_part) = if image_data.starts_with("data:image/") {
-                if let Some(pos) = image_data.find(',') {
-                    let mime = if image_data.contains("data:image/png") {
-                        "image/png"
-                    } else if image_data.contains("data:image/jpeg")
-                        || image_data.contains("data:image/jpg")
-                    {
-                        "image/jpeg"
-                    } else if image_data.contains("data:image/webp") {
-                        "image/webp"
-                    } else if image_data.contains("data:image/gif") {
-                        "image/gif"
-                    } else {
-                        "image/png"
-                    };
-                    (mime, &image_data[pos + 1..])
-                } else {
-                    ("image/png", image_data.as_str())
-                }
-            } else {
-                ("image/png", image_data.as_str())
-            };
+            // Parse via shared utility — handles data URLs, raw base64, and
+            // jpg/jpeg aliasing consistently across all multimodal paths.
+            let parsed = crate::image_utils::parse_image_data(image_data)
+                .unwrap_or(crate::image_utils::ParsedImage {
+                    mime_type: "image/png",
+                    base64: image_data.as_str(),
+                });
+            let mime_type_str = parsed.mime_type;
+            let base64_part = parsed.base64;
 
             // Add to ContentPart for LLM
             parts.push(neomind_core::ContentPart::image_base64(

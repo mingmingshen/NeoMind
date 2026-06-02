@@ -816,14 +816,21 @@ impl AgentExecutor {
                 }
                 if let Some(base64) = d.values.get("image_base64").and_then(|v| v.as_str()) {
                     if !base64.is_empty() {
+                        // Prefer stored mime → fall back to magic-prefix
+                        // inference → final jpeg fallback.
                         let mime = d
                             .values
                             .get("image_mime_type")
                             .and_then(|v| v.as_str())
-                            .unwrap_or("image/jpeg");
+                            .map(|s| s.to_string())
+                            .or_else(|| {
+                                crate::image_utils::infer_mime_from_base64_prefix(base64)
+                                    .map(|s| s.to_string())
+                            })
+                            .unwrap_or_else(|| "image/jpeg".to_string());
                         return Some(ContentPart::image_base64(
                             base64.to_string(),
-                            mime.to_string(),
+                            mime,
                         ));
                     }
                 }

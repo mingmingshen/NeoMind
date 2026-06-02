@@ -756,10 +756,53 @@ impl AgentExecutor {
                             // Has both current value and historical data
                             let json_value = metric_value_to_json(&metric_value.value);
 
+                            // Detect image data so the analyzer can route via multimodal.
+                            // Without this, an extension image metric (e.g.,
+                            // extension:yolov8:values.image) would dump raw base64 into
+                            // the text context and bloat the LLM prompt.
+                            let is_image = is_image_metric(field_path, &json_value);
+                            let (image_url, image_base64, image_mime) = if is_image {
+                                extract_image_data(&json_value)
+                            } else {
+                                (None, None, None)
+                            };
+
+                            let mut values_json = serde_json::json!({
+                                "extension_id": extension_id,
+                                "value": json_value,
+                                "timestamp": metric_value.timestamp,
+                                "points_count": points_count,
+                                "has_history": points_count > 1,
+                                "_is_image": is_image,
+                            });
+                            if let Some(url) = &image_url {
+                                values_json["image_url"] = serde_json::json!(url);
+                            }
+                            if let Some(b64) = &image_base64 {
+                                values_json["image_base64"] = serde_json::json!(b64);
+                                // Strip raw value — base64 bloats JSON serialization
+                                // and the image is already represented as image_base64.
+                                values_json.as_object_mut().map(|o| o.remove("value"));
+                            }
+                            if let Some(mime) = &image_mime {
+                                values_json["image_mime_type"] = serde_json::json!(mime);
+                            }
+
+                            if is_image {
+                                tracing::info!(
+                                    extension_id = %extension_id,
+                                    field_path = %field_path,
+                                    has_base64 = image_base64.is_some(),
+                                    has_url = image_url.is_some(),
+                                    mime = ?image_mime,
+                                    "[COLLECT] Extension metric identified as image"
+                                );
+                            }
+
                             tracing::debug!(
                                 extension_id = %extension_id,
                                 field_path = %field_path,
-                                value = ?json_value,
+                                is_image,
                                 points_count,
                                 "[COLLECT] Extension metric found with historical data"
                             );
@@ -767,13 +810,7 @@ impl AgentExecutor {
                             Ok(Some(DataCollected {
                                 source: resource_id.clone(),
                                 data_type: field_path.clone(),
-                                values: serde_json::json!({
-                                    "extension_id": extension_id,
-                                    "value": json_value,
-                                    "timestamp": metric_value.timestamp,
-                                    "points_count": points_count,
-                                    "has_history": points_count > 1,
-                                }),
+                                values: values_json,
                                 timestamp,
                             }))
                         }
@@ -781,23 +818,54 @@ impl AgentExecutor {
                             // Only current value available, no historical data
                             let json_value = metric_value_to_json(&metric_value.value);
 
+                            let is_image = is_image_metric(field_path, &json_value);
+                            let (image_url, image_base64, image_mime) = if is_image {
+                                extract_image_data(&json_value)
+                            } else {
+                                (None, None, None)
+                            };
+
+                            let mut values_json = serde_json::json!({
+                                "extension_id": extension_id,
+                                "value": json_value,
+                                "timestamp": metric_value.timestamp,
+                                "points_count": 1,
+                                "has_history": false,
+                                "_is_image": is_image,
+                            });
+                            if let Some(url) = &image_url {
+                                values_json["image_url"] = serde_json::json!(url);
+                            }
+                            if let Some(b64) = &image_base64 {
+                                values_json["image_base64"] = serde_json::json!(b64);
+                                values_json.as_object_mut().map(|o| o.remove("value"));
+                            }
+                            if let Some(mime) = &image_mime {
+                                values_json["image_mime_type"] = serde_json::json!(mime);
+                            }
+
+                            if is_image {
+                                tracing::info!(
+                                    extension_id = %extension_id,
+                                    field_path = %field_path,
+                                    has_base64 = image_base64.is_some(),
+                                    has_url = image_url.is_some(),
+                                    mime = ?image_mime,
+                                    "[COLLECT] Extension metric identified as image (current only)"
+                                );
+                            }
+
                             tracing::debug!(
                                 extension_id = %extension_id,
                                 field_path = %field_path,
-                                value = ?json_value,
+                                is_image,
                                 "[COLLECT] Extension metric found (current only)"
                             );
 
                             Ok(Some(DataCollected {
                                 source: resource_id.clone(),
                                 data_type: field_path.clone(),
-                                values: serde_json::json!({
-                                    "extension_id": extension_id,
-                                    "value": json_value,
-                                    "timestamp": metric_value.timestamp,
-                                    "points_count": 1,
-                                    "has_history": false,
-                                }),
+                                values: values_json,
                                 timestamp,
                             }))
                         }
@@ -805,9 +873,47 @@ impl AgentExecutor {
                             // No current value but historical data exists
                             let latest = &storage_result.points[storage_result.points.len() - 1];
 
+                            let is_image = is_image_metric(field_path, &latest.value);
+                            let (image_url, image_base64, image_mime) = if is_image {
+                                extract_image_data(&latest.value)
+                            } else {
+                                (None, None, None)
+                            };
+
+                            let mut values_json = serde_json::json!({
+                                "extension_id": extension_id,
+                                "value": latest.value,
+                                "timestamp": latest.timestamp,
+                                "points_count": points_count,
+                                "has_history": points_count > 1,
+                                "_is_image": is_image,
+                            });
+                            if let Some(url) = &image_url {
+                                values_json["image_url"] = serde_json::json!(url);
+                            }
+                            if let Some(b64) = &image_base64 {
+                                values_json["image_base64"] = serde_json::json!(b64);
+                                values_json.as_object_mut().map(|o| o.remove("value"));
+                            }
+                            if let Some(mime) = &image_mime {
+                                values_json["image_mime_type"] = serde_json::json!(mime);
+                            }
+
+                            if is_image {
+                                tracing::info!(
+                                    extension_id = %extension_id,
+                                    field_path = %field_path,
+                                    has_base64 = image_base64.is_some(),
+                                    has_url = image_url.is_some(),
+                                    mime = ?image_mime,
+                                    "[COLLECT] Extension metric identified as image (historical only)"
+                                );
+                            }
+
                             tracing::debug!(
                                 extension_id = %extension_id,
                                 field_path = %field_path,
+                                is_image,
                                 points_count,
                                 "[COLLECT] Extension metric found in historical data only"
                             );
@@ -815,13 +921,7 @@ impl AgentExecutor {
                             Ok(Some(DataCollected {
                                 source: resource_id.clone(),
                                 data_type: field_path.clone(),
-                                values: serde_json::json!({
-                                    "extension_id": extension_id,
-                                    "value": latest.value,
-                                    "timestamp": latest.timestamp,
-                                    "points_count": points_count,
-                                    "has_history": points_count > 1,
-                                }),
+                                values: values_json,
                                 timestamp,
                             }))
                         }
@@ -943,6 +1043,36 @@ impl AgentExecutor {
         // First, add the triggering event data directly
         let event_value_json = serde_json::to_value(&event_data.value).unwrap_or_default();
 
+        // === DIAGNOSTIC LOG: raw event value ===
+        {
+            let value_kind = match &event_value_json {
+                serde_json::Value::String(s) => {
+                    let preview: String = s.chars().take(120).collect();
+                    let has_data_prefix = s.starts_with("data:image/");
+                    let has_http = s.starts_with("http://") || s.starts_with("https://");
+                    let has_jpeg_magic = s.contains("/9j/");
+                    let has_png_magic = s.contains("iVBORw0KGgo");
+                    format!(
+                        "String{{ len={}, has_data_prefix={}, has_http={}, has_jpeg_magic={}, has_png_magic={}, preview=\"{}\" }}",
+                        s.len(), has_data_prefix, has_http, has_jpeg_magic, has_png_magic, preview
+                    )
+                }
+                serde_json::Value::Object(obj) => {
+                    let keys: Vec<&String> = obj.keys().collect();
+                    format!("Object{{ keys={:?}, field_count={} }}", keys, obj.len())
+                }
+                other => format!("{:?}", other),
+            };
+            tracing::info!(
+                target: "neomind::agent::event_value",
+                source_type = %event_data.source.source_type,
+                source_id = %event_data.source.source_id,
+                field = %event_data.source.field,
+                value_kind = %value_kind,
+                "[DIAG] Raw event-triggered value"
+            );
+        }
+
         // Check if the event value is an image
         let is_image = is_image_metric(&event_data.source.field, &event_value_json);
         let (image_url, image_base64, image_mime) = if is_image {
@@ -950,6 +1080,19 @@ impl AgentExecutor {
         } else {
             (None, None, None)
         };
+
+        // === DIAGNOSTIC LOG: image extraction result ===
+        tracing::info!(
+            target: "neomind::agent::event_value",
+            source_id = %event_data.source.source_id,
+            field = %event_data.source.field,
+            is_image,
+            has_url = image_url.is_some(),
+            has_base64 = image_base64.is_some(),
+            base64_len = image_base64.as_ref().map(|s| s.len()).unwrap_or(0),
+            mime = ?image_mime,
+            "[DIAG] Image extraction result"
+        );
 
         let mut event_values = serde_json::json!({
             "value": event_data.value,
@@ -1039,12 +1182,20 @@ pub(crate) fn extract_image_data(
 ) -> (Option<String>, Option<String>, Option<String>) {
     if let Some(s) = value.as_str() {
         if s.starts_with("http://") || s.starts_with("https://") {
+            tracing::info!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: matched URL branch");
             (Some(s.to_string()), None, None)
         } else if s.starts_with("data:image/") {
+            tracing::info!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: matched data:image/ branch, len={}", s.len());
             if let Some(rest) = s.strip_prefix("data:image/") {
                 let parts: Vec<&str> = rest.splitn(2, ';').collect();
                 if parts.len() == 2 {
-                    let mime_type = parts[0].to_string();
+                    // Canonicalize known subtypes (incl. jpg→jpeg alias).
+                    // For unknown subtypes like heic/avif, preserve the
+                    // literal "image/<subtype>" so downstream can decide.
+                    let subtype = parts[0].to_ascii_lowercase();
+                    let mime_type = crate::image_utils::normalize_mime_subtype(&subtype)
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| format!("image/{}", subtype));
                     if let Some(data) = parts[1].strip_prefix("base64,") {
                         (None, Some(data.to_string()), Some(mime_type))
                     } else {
@@ -1056,22 +1207,43 @@ pub(crate) fn extract_image_data(
             } else {
                 (None, Some(s.to_string()), Some("image/jpeg".to_string()))
             }
-        } else if s.len() > 100 && (s.contains("/9j/") || s.contains("iVBORw0KGgo")) {
-            let mime_type = if s.contains("iVBORw0KGgo") {
-                "image/png"
+        } else if s.len() > 100 {
+            // Detect image MIME from base64 magic prefix. Use starts_with
+            // (NOT contains) so a text string that merely mentions "/9j/"
+            // somewhere in the middle isn't misclassified as an image.
+            let mime_type = crate::image_utils::infer_mime_from_base64_prefix(s);
+            if let Some(mt) = mime_type {
+                tracing::info!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: matched magic-bytes branch, len={}, mime={}", s.len(), mt);
+                (None, Some(s.to_string()), Some(mt.to_string()))
             } else {
-                "image/jpeg"
-            };
-            (None, Some(s.to_string()), Some(mime_type.to_string()))
+                tracing::warn!(
+                    target: "neomind::agent::event_value",
+                    len = s.len(),
+                    starts_with = ?s.chars().take(40).collect::<String>(),
+                    "[DIAG] extract_image_data: STRING branch FALLTHROUGH (no match) — value not recognized as image"
+                );
+                (None, None, None)
+            }
         } else {
+            tracing::warn!(
+                target: "neomind::agent::event_value",
+                len = s.len(),
+                starts_with = ?s.chars().take(40).collect::<String>(),
+                has_jpeg_magic = s.contains("/9j/"),
+                has_png_magic = s.contains("iVBORw0KGgo"),
+                "[DIAG] extract_image_data: STRING branch FALLTHROUGH (no match) — value not recognized as image"
+            );
             (None, None, None)
         }
     } else if let Some(obj) = value.as_object() {
+        let keys: Vec<&String> = obj.keys().collect();
+        tracing::info!(target: "neomind::agent::event_value", keys = ?keys, "[DIAG] extract_image_data: examining Object");
         if let Some(url) = obj
             .get("image_url")
             .or(obj.get("url"))
             .and_then(|v| v.as_str())
         {
+            tracing::info!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: matched Object URL field");
             return (Some(url.to_string()), None, None);
         }
         if let Some(base64) = obj
@@ -1080,15 +1252,22 @@ pub(crate) fn extract_image_data(
             .or(obj.get("image_data"))
             .and_then(|v| v.as_str())
         {
+            tracing::info!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: matched Object base64/data/image_data field, len={}", base64.len());
+            // Prefer the explicit mime_type/type field; otherwise infer from
+            // base64 magic prefix; only fall back to jpeg if neither works.
             let mime = obj
                 .get("mime_type")
                 .or(obj.get("type"))
                 .and_then(|v| v.as_str())
-                .unwrap_or("image/jpeg");
-            return (None, Some(base64.to_string()), Some(mime.to_string()));
+                .map(|m| m.to_string())
+                .or_else(|| crate::image_utils::infer_mime_from_base64_prefix(base64).map(|s| s.to_string()))
+                .unwrap_or_else(|| "image/jpeg".to_string());
+            return (None, Some(base64.to_string()), Some(mime));
         }
+        tracing::warn!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: OBJECT branch FALLTHROUGH — no recognized image keys");
         (None, None, None)
     } else {
+        tracing::warn!(target: "neomind::agent::event_value", "[DIAG] extract_image_data: value is neither String nor Object");
         (None, None, None)
     }
 }
@@ -1118,10 +1297,10 @@ pub(crate) fn is_image_metric(metric_name: &str, value: &serde_json::Value) -> b
         if s.starts_with("data:image/") {
             return true;
         }
-        // Check for common base64 prefixes without data URL scheme
-        if s.len() > 100 && (s.contains("/9j/") || s.contains("iVBORw0KGgo")) {
-            // /9j/ is JPEG magic number in base64
-            // iVBORw0KGgo is PNG magic number in base64
+        // Check for common base64 prefixes without data URL scheme.
+        // IMPORTANT: use starts_with (not contains) so a text string that
+        // merely mentions "/9j/" somewhere in the middle isn't misclassified.
+        if s.len() > 100 && crate::image_utils::infer_mime_from_base64_prefix(s).is_some() {
             return true;
         }
         false

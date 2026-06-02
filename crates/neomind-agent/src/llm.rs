@@ -1549,6 +1549,8 @@ impl LlmInterface {
         include_tools: bool,
         _restore_thinking: bool,
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
+        // Check early before user_message is moved into the messages vec.
+        let has_user_images = user_message.has_images();
         let model_arc = Arc::clone(&self.model);
         let max_ctx = self.max_context_length().await;
         let _prompt_budget = (max_ctx * 50) / 100;
@@ -1700,10 +1702,23 @@ impl LlmInterface {
             vec![system_msg, user_message]
         };
 
-        // Get tool definitions
+        // Get tool definitions — filter out "vision" when the user message already
+        // contains images.  The model is multimodal and can analyse them directly;
+        // the vision tool is only needed for fetching images from URLs/files.
         let tools = self.tool_definitions.read().await;
         let tools_input = if tools.is_empty() {
             None
+        } else if has_user_images {
+            let filtered: Vec<_> = tools
+                .iter()
+                .filter(|t| t.name != "vision")
+                .cloned()
+                .collect();
+            if filtered.is_empty() {
+                None
+            } else {
+                Some(filtered)
+            }
         } else {
             Some(tools.clone())
         };

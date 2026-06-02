@@ -1644,6 +1644,21 @@ impl ServerState {
         // File edit tool — precise string replacement in files
         registry.register(Arc::new(neomind_agent::toolkit::FileEditTool::new(self.data_dir.clone())));
 
+        // Vision tool — auto-detect VLM backend and register if available
+        if let Ok(llm_manager) = neomind_agent::llm_backends::get_instance_manager() {
+            let has_vlm = llm_manager.list_instances().iter()
+                .any(|inst| inst.capabilities.supports_multimodal);
+            if has_vlm {
+                registry.register(Arc::new(neomind_agent::toolkit::VisionTool::new(
+                    neomind_agent::toolkit::VisionConfig::default(),
+                    llm_manager,
+                )));
+                tracing::info!(category = "ai", "Vision tool registered (VLM backend detected)");
+            }
+        } else {
+            tracing::debug!(category = "ai", "Vision tool skipped: LLM instance manager not available");
+        }
+
         // Memory tool — persistent memory across sessions
         {
             let memory_store = tokio::sync::RwLock::new(
@@ -1706,6 +1721,21 @@ impl ServerState {
         registry.register(Arc::new(neomind_agent::toolkit::WebFetchTool::new()));
         registry.register(Arc::new(neomind_agent::toolkit::FileWriteTool::new(self.data_dir.clone())));
         registry.register(Arc::new(neomind_agent::toolkit::FileEditTool::new(self.data_dir.clone())));
+
+        // Vision tool — auto-detect VLM backend and register if available
+        if let Ok(llm_manager) = neomind_agent::llm_backends::get_instance_manager() {
+            let has_vlm = llm_manager.list_instances().iter()
+                .any(|inst| inst.capabilities.supports_multimodal);
+            if has_vlm {
+                registry.register(Arc::new(neomind_agent::toolkit::VisionTool::new(
+                    neomind_agent::toolkit::VisionConfig::default(),
+                    llm_manager,
+                )));
+                tracing::info!(category = "ai", "Vision tool registered (VLM backend detected)");
+            }
+        } else {
+            tracing::debug!(category = "ai", "Vision tool skipped: LLM instance manager not available");
+        }
 
         // Re-register memory tool with shared session handle
         {

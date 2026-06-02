@@ -3106,22 +3106,8 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
     // Add images as ContentPart
     for image_data in &images {
-        if image_data.starts_with("data:image/") {
-            if let Some(base64_part) = image_data.split(',').nth(1) {
-                // Extract mime type from data URL
-                let mime_type = if image_data.contains("data:image/png") {
-                    "image/png"
-                } else if image_data.contains("data:image/jpeg") {
-                    "image/jpeg"
-                } else if image_data.contains("data:image/webp") {
-                    "image/webp"
-                } else if image_data.contains("data:image/gif") {
-                    "image/gif"
-                } else {
-                    "image/png"
-                };
-                parts.push(ContentPart::image_base64(base64_part, mime_type));
-            }
+        if let Some(parsed) = crate::image_utils::parse_image_data(image_data) {
+            parts.push(ContentPart::image_base64(parsed.base64, parsed.mime_type));
         }
     }
 
@@ -3181,18 +3167,8 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     let user_images: Vec<AgentMessageImage> = images
         .into_iter()
         .map(|data_url| {
-            // Extract mime type from data URL if available
-            let mime_type = if data_url.contains("data:image/jpeg") {
-                Some("image/jpeg".to_string())
-            } else if data_url.contains("data:image/png") {
-                Some("image/png".to_string())
-            } else if data_url.contains("data:image/webp") {
-                Some("image/webp".to_string())
-            } else if data_url.contains("data:image/gif") {
-                Some("image/gif".to_string())
-            } else {
-                None
-            };
+            let mime_type = crate::image_utils::parse_image_data(&data_url)
+                .map(|p| p.mime_type.to_string());
             AgentMessageImage {
                 data: data_url,
                 mime_type,

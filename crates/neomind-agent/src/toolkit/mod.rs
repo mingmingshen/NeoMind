@@ -16,6 +16,7 @@ pub mod shell;
 pub mod skill_tool;
 pub mod time_utils;
 pub mod tool;
+pub mod vision;
 pub mod web_fetch;
 
 // Re-exports commonly used types
@@ -47,6 +48,8 @@ pub use memory_tool::MemoryTool;
 
 pub use file_edit::FileEditTool;
 pub use file_write::FileWriteTool;
+pub use vision::{VisionConfig, VisionTool};
+
 pub use web_fetch::WebFetchTool;
 
 pub use time_utils::{parse_time_range, TransformStore};

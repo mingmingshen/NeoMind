@@ -40,6 +40,7 @@ pub mod config;
 pub mod context;
 pub mod context_selector;
 pub mod error;
+pub mod image_utils;
 pub mod llm;
 pub mod llm_backends; // Merged from neomind-llm crate
 pub mod memory;

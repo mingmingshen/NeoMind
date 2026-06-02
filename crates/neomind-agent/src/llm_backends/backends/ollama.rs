@@ -363,12 +363,21 @@ fn extract_images_from_content(content: &Content) -> Vec<String> {
     };
 
     let mut images = Vec::new();
+    let mut dropped_count: usize = 0;
 
     for part in parts {
         match part {
             ContentPart::ImageUrl { url, .. } => {
                 if let Some(img) = extract_image_from_url(url) {
                     images.push(img);
+                } else {
+                    dropped_count += 1;
+                    tracing::error!(
+                        url_preview = %url.chars().take(120).collect::<String>(),
+                        "[multimodal] Image was DROPPED and will NOT be sent to the LLM. \
+                         Ollama backend only supports data:image/...;base64,... URLs. \
+                         Pre-encode HTTP/file images to base64 data URLs before dispatch."
+                    );
                 }
             }
             ContentPart::ImageBase64 {
@@ -386,6 +395,15 @@ fn extract_images_from_content(content: &Content) -> Vec<String> {
                 // Text part, no image
             }
         }
+    }
+
+    if dropped_count > 0 {
+        tracing::error!(
+            dropped_count,
+            kept_count = images.len(),
+            "[multimodal] {} image(s) were silently dropped before reaching the LLM",
+            dropped_count
+        );
     }
 
     images
@@ -1493,7 +1511,7 @@ fn detect_model_capabilities(model_name: &str) -> ModelCapability {
         || name_lower.contains("minicpm-v")
         || name_lower.contains("pixtral")  // Mistral's vision model
         || name_lower.contains("llama3.2-vision")
-        || name_lower.contains("gemma3")   // Gemma 3 supports vision
+        || name_lower.contains("gemma3")   // Gemma 3 (4B+) supports vision
         || name_lower.contains("ministral") // Ministral models support vision
         || name_lower.contains("mistral3")   // Mistral3 architecture supports vision
         || name_lower.contains("cogvlm")
@@ -1501,9 +1519,9 @@ fn detect_model_capabilities(model_name: &str) -> ModelCapability {
         || name_lower.contains("yi-vl")
         || name_lower.contains("deepseek-vl")
         || name_lower.contains("multimodal")
-        || name_lower.contains("qwen3.5")    // Qwen3.5 supports multimodal natively
-        // Check for common vision model patterns with version numbers
-        || name_lower.contains("qwen") && (name_lower.contains("-vl") || name_lower.contains(":vl"))
+        // Generic qwen vision patterns: qwen-vl, qwen2-vl, qwen3-vl, qwen3.5-vl, etc.
+        // IMPORTANT: plain qwen3.5 / qwen3 / qwen2.5 are TEXT-ONLY; only -vl variants are vision.
+        || name_lower.contains("qwen") && (name_lower.contains("-vl") || name_lower.contains(":vl") || name_lower.contains("_vl"))
         || name_lower.contains("llama") && name_lower.contains("vision");
 
     // Detect maximum context window based on model family

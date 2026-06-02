@@ -1503,25 +1503,17 @@ impl LlmRuntime for CloudRuntime {
 
 // Helper functions
 
-/// Extract media type and base64 data from a data URL.
-/// Returns (media_type, base64_data).
+/// Extract media type and base64 data from an image data URL or raw base64.
+/// Returns (media_type, base64_data) — always non-empty.
+///
+/// Delegates to [`crate::image_utils::parse_image_data`] for canonical MIME
+/// handling (jpg→jpeg aliasing, magic-prefix inference for raw base64).
 fn extract_data_url(url: &str) -> (String, String) {
-    if url.starts_with("data:") {
-        // Format: data:image/png;base64,iVBORw0KGgo...
-        if let Some(rest) = url.strip_prefix("data:") {
-            if let Some((mime_and_encoding, data)) = rest.split_once(',') {
-                // mime_and_encoding is like "image/png;base64"
-                let media_type = mime_and_encoding
-                    .split(';')
-                    .next()
-                    .unwrap_or("image/png")
-                    .to_string();
-                return (media_type, data.to_string());
-            }
-        }
+    match crate::image_utils::parse_image_data(url) {
+        Some(parsed) => (parsed.mime_type.to_string(), parsed.base64.to_string()),
+        // Empty input or utterly unrecognizable — last-resort fallback.
+        None => ("image/png".to_string(), url.to_string()),
     }
-    // Fallback
-    ("image/png".to_string(), url.to_string())
 }
 
 fn image_detail_to_string(detail: &ImageDetail) -> String {
