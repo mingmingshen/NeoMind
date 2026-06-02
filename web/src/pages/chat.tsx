@@ -166,6 +166,7 @@ export function ChatPage() {
   const navigate = useNavigate()
   const { handleError } = useErrorHandler()
   const llmBackends = useStore((state) => state.llmBackends)
+  const llmBackendLoading = useStore((state) => state.llmBackendLoading)
   const activeBackendId = useStore((state) => state.activeBackendId)
   const activateBackend = useStore((state) => state.activateBackend)
   const loadBackends = useStore((state) => state.loadBackends)
@@ -769,8 +770,8 @@ export function ChatPage() {
   // Show chat area if there are messages or currently streaming
   const hasMessages = filteredMessages.length > 0 || isStreaming
 
-  // Show LLM setup prompt if not configured
-  if (!llmBackends || llmBackends.length === 0) {
+  // Show LLM setup prompt if not configured (only after loading completes)
+  if (!llmBackendLoading && (!llmBackends || llmBackends.length === 0)) {
     return (
       <div className="flex h-full items-center justify-center bg-background">
         <div className="text-center max-w-md px-6">
@@ -859,6 +860,14 @@ export function ChatPage() {
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
             isDesktop={true}
           />
+        </div>
+      )}
+      {/* Desktop sidebar skeleton while sessions are loading (only when sidebar isn't shown yet) */}
+      {isDesktop && !sessionsLoaded && !(sessions.length > 0 || !isWelcomeMode) && (
+        <div className="shrink-0 self-stretch w-64 border-r flex flex-col p-3 space-y-2">
+          <div className="h-8 w-full bg-muted rounded-lg animate-pulse" />
+          <div className="h-8 w-full bg-muted rounded-lg animate-pulse" />
+          <div className="h-8 w-2/3 bg-muted rounded-lg animate-pulse" />
         </div>
       )}
 
