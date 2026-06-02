@@ -188,6 +188,7 @@
     "execute": "Execute"
   },
   "commandsLabel": "Commands",
+  "metricsLabel": "Metrics",
   "metricsDesc": "Data metrics provided by extensions",
   "commandsDesc": "Commands that can be executed on extensions",
   "noDataSources": "No extension data sources available",

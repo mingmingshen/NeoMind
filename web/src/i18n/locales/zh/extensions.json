@@ -188,6 +188,7 @@
     "execute": "执行"
   },
   "commandsLabel": "命令",
+  "metricsLabel": "指标",
   "metricsDesc": "扩展提供的数据指标",
   "commandsDesc": "可以在扩展上执行的命令",
   "noDataSources": "无可用扩展数据源",

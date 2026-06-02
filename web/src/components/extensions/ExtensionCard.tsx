@@ -102,13 +102,13 @@ export function ExtensionCard({
           {extension.commands?.length > 0 && (
             <span className={cn(textMini, "text-muted-foreground flex items-center gap-1")}>
               <Terminal className="h-3 w-3" />
-              {extension.commands.length} {t('commands', { defaultValue: 'commands' })}
+              {extension.commands.length} {t('commandsLabel', { defaultValue: 'commands' })}
             </span>
           )}
           {extension.metrics?.length > 0 && (
             <span className={cn(textMini, "text-muted-foreground flex items-center gap-1")}>
               <Database className="h-3 w-3" />
-              {extension.metrics.length} {t('metrics', { defaultValue: 'metrics' })}
+              {extension.metrics.length} {t('metricsLabel', { defaultValue: 'metrics' })}
             </span>
           )}
         </div>
