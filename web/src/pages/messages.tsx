@@ -5,7 +5,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
-import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination, ResponsiveTable } from '@/components/shared'
+import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination, ResponsiveTable, EmptyState } from '@/components/shared'
 import { MessageSquare, Network, Settings, Filter as FilterIcon, Inbox, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
@@ -48,12 +48,10 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet'
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   AlertCircle,
   Info,
@@ -71,7 +69,6 @@ import {
   TestTube,
   Mail,
   UserPlus,
-  ChevronDown,
   Check,
   Tag,
   Plus,
@@ -79,8 +76,8 @@ import {
   MessageCircle,
   Hash,
   MessagesSquare,
+  Radio,
 } from 'lucide-react'
-import { Separator } from '@/components/ui/separator'
 import { CreateMessageDialog } from '@/components/messages/CreateMessageDialog'
 import { ChannelEditorDialog } from '@/components/messages/ChannelEditorDialog'
 import { formatTimestamp } from '@/lib/utils/format'
@@ -607,8 +604,8 @@ export default function MessagesPage() {
 
   // Filter dropdown for actionsExtra
   const filterExtra = activeTab === 'messages' ? (
-    <Sheet>
-      <SheetTrigger asChild>
+    <Popover>
+      <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
           <FilterIcon className="h-4 w-4" />
           {t('messages.filter.title')}
@@ -618,215 +615,141 @@ export default function MessagesPage() {
             </Badge>
           )}
         </Button>
-      </SheetTrigger>
-      <SheetContent className="w-[320px] sm:w-[400px] p-0 flex flex-col">
-        <div className="p-4 border-b shrink-0">
-          <div className="flex items-center justify-between">
-            <SheetTitle className="flex items-center gap-2">
-              <FilterIcon className="h-5 w-5" />
-              {t('messages.filter.title')}
-            </SheetTitle>
-            {hasActiveFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs text-muted-foreground hover:text-foreground"
-                onClick={clearAllFilters}
-              >
-                <X className="h-4 w-4 mr-1" />
-                {t('messages.filter.clear')}
-              </Button>
-            )}
-          </div>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[340px] p-0 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b bg-muted-30">
+          <span className="text-sm font-semibold">{t('messages.filter.title')}</span>
           {hasActiveFilters && (
-            <p className="text-sm text-muted-foreground mt-1">
-              {t('messages.filter.activeCount', { count: getActiveFilterCount() })}
-            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-foreground px-2"
+              onClick={clearAllFilters}
+            >
+              <X className="h-3 w-3 mr-1" />
+              {t('messages.filter.clear')}
+            </Button>
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {/* Severity Section */}
-          <CollapsibleSection
-            title={t('messages.severity.label')}
-            icon={<AlertTriangle className="h-4 w-4" />}
-            count={selectedSeverities.size}
-            defaultOpen={true}
-          >
-            <div className="space-y-1">
+        <div className="px-4 py-3 space-y-4 max-h-[60vh] overflow-y-auto">
+          {/* Severity */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('messages.severity.label')}</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
               {(['emergency', 'critical', 'warning', 'info'] as MessageSeverity[]).map((sev) => {
                 const icons = {
-                  emergency: <ShieldAlert className="h-4 w-4 text-error" />,
-                  critical: <AlertCircle className="h-4 w-4 text-error" />,
-                  warning: <AlertTriangle className="h-4 w-4 text-warning" />,
-                  info: <Info className="h-4 w-4 text-info" />,
+                  emergency: <ShieldAlert className="h-3.5 w-3.5" />,
+                  critical: <AlertCircle className="h-3.5 w-3.5" />,
+                  warning: <AlertTriangle className="h-3.5 w-3.5" />,
+                  info: <Info className="h-3.5 w-3.5" />,
                 }
-                const bgColors = {
-                  emergency: "bg-error-light border-error",
-                  critical: "bg-error-light border-error",
-                  warning: "bg-warning-light border-warning",
-                  info: "bg-info-light border-info",
+                const colors = {
+                  emergency: "text-error bg-error-light border-error",
+                  critical: "text-error bg-error-light border-error",
+                  warning: "text-warning bg-warning-light border-warning",
+                  info: "text-info bg-info-light border-info",
                 }
                 return (
                   <button
                     key={sev}
                     onClick={() => toggleSeverity(sev)}
                     className={cn(
-                      "w-full flex items-center justify-between p-2.5 rounded-lg border transition-all",
+                      "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-all",
                       selectedSeverities.has(sev)
-                        ? `${bgColors[sev]} border-primary`
-                        : "border-border hover:bg-muted-50"
+                        ? colors[sev]
+                        : "border-border text-muted-foreground hover:bg-muted-50 hover:text-foreground"
                     )}
                   >
-                    <div className="flex items-center gap-2">
-                      {icons[sev]}
-                      <span className="text-sm font-medium">{t(`messages.severity.${sev}`)}</span>
-                    </div>
-                    {selectedSeverities.has(sev) && (
-                      <Check className="h-4 w-4 text-primary" />
-                    )}
+                    {icons[sev]}
+                    {t(`messages.severity.${sev}`)}
                   </button>
                 )
               })}
             </div>
-          </CollapsibleSection>
+          </div>
 
-          <Separator />
-
-          {/* Status Section */}
-          <CollapsibleSection
-            title={t('messages.status.label')}
-            icon={<CheckCircle2 className="h-4 w-4" />}
-            count={selectedStatuses.size}
-          >
-            <div className="grid grid-cols-2 gap-2">
+          {/* Status */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('messages.status.label')}</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
               {(['active', 'acknowledged', 'resolved', 'archived'] as MessageStatus[]).map((stat) => {
-                const statusConfig = {
-                  active: { color: "text-info", bg: "bg-info-light border-info" },
-                  acknowledged: { color: "text-warning", bg: "bg-warning-light border-warning" },
-                  resolved: { color: "text-success", bg: "bg-success-light border-success" },
-                  archived: { color: "text-muted-foreground", bg: "bg-muted border-border" },
+                const colors = {
+                  active: "text-info bg-info-light border-info",
+                  acknowledged: "text-warning bg-warning-light border-warning",
+                  resolved: "text-success bg-success-light border-success",
+                  archived: "text-muted-foreground bg-muted border-border",
                 }
                 return (
                   <button
                     key={stat}
                     onClick={() => toggleStatus(stat)}
                     className={cn(
-                      "flex items-center gap-2 p-2.5 rounded-lg border transition-all",
+                      "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-all",
                       selectedStatuses.has(stat)
-                        ? `${statusConfig[stat].bg} border-primary`
-                        : "border-border hover:bg-muted-50"
+                        ? colors[stat]
+                        : "border-border text-muted-foreground hover:bg-muted-50 hover:text-foreground"
                     )}
                   >
-                    <span className="text-sm">{t(`messages.status.${stat}`)}</span>
-                    {selectedStatuses.has(stat) && (
-                      <Check className={cn("h-4 w-4 ml-auto", statusConfig[stat].color)} />
-                    )}
+                    {selectedStatuses.has(stat) && <Check className="h-3 w-3" />}
+                    {t(`messages.status.${stat}`)}
                   </button>
                 )
               })}
             </div>
-          </CollapsibleSection>
+          </div>
 
-          <Separator />
-
-          {/* Category Section */}
+          {/* Category */}
           {availableCategories.length > 0 && (
-            <>
-              <CollapsibleSection
-                title={t('messages.category.label')}
-                icon={<Tag className="h-4 w-4" />}
-                count={selectedCategories.size}
-              >
-                <div className="flex flex-wrap gap-2">
-                  {availableCategories.map((cat) => {
-                    const config = getCategoryConfig(cat)
-                    const Icon = config.icon
-                    return (
-                      <button
-                        key={cat}
-                        onClick={() => toggleCategory(cat)}
-                        className={cn(
-                          "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-all",
-                          selectedCategories.has(cat)
-                            ? "bg-muted border-primary text-primary"
-                            : "border-border hover:border-border hover:bg-muted-50"
-                        )}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {t(config.label)}
-                      </button>
-                    )
-                  })}
-                </div>
-              </CollapsibleSection>
-              <Separator />
-            </>
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('messages.category.label')}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {availableCategories.map((cat) => {
+                  const config = getCategoryConfig(cat)
+                  const Icon = config.icon
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => toggleCategory(cat)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-all",
+                        selectedCategories.has(cat)
+                          ? "bg-primary/10 text-primary border-primary/30"
+                          : "border-border text-muted-foreground hover:bg-muted-50 hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {t(config.label)}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t shrink-0 bg-muted-30">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              {hasActiveFilters
-                ? t('messages.filter.showing', { count: filteredCount })
-                : t('messages.filter.allVisible')
-              }
-            </p>
-            <SheetClose asChild>
-              <Button size="sm" className="gap-2">
-                <Check className="h-4 w-4" />
-                {t('apply')}
-              </Button>
-            </SheetClose>
-          </div>
+        <div className="px-4 py-2.5 border-t bg-muted-30">
+          <p className="text-xs text-muted-foreground">
+            {hasActiveFilters
+              ? t('messages.filter.showing', { count: filteredCount })
+              : t('messages.filter.allVisible')
+            }
+          </p>
         </div>
-      </SheetContent>
-    </Sheet>
+      </PopoverContent>
+    </Popover>
   ) : null
-
-  // Collapsible Section Component
-  function CollapsibleSection({
-    title,
-    icon,
-    count,
-    defaultOpen = false,
-    children,
-  }: {
-    title: string
-    icon: React.ReactNode
-    count: number
-    defaultOpen?: boolean
-    children: React.ReactNode
-  }) {
-    const [isOpen, setIsOpen] = useState(defaultOpen)
-
-    return (
-      <div className="py-2">
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full flex items-center justify-between px-4 py-2 hover:bg-muted-50 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            {icon}
-            <span className="font-medium text-sm">{title}</span>
-            {count > 0 && (
-              <Badge variant="secondary" className="h-5 px-1.5 text-xs">
-                {count}
-              </Badge>
-            )}
-          </div>
-          <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
-        </button>
-        {isOpen && (
-          <div className="px-4 py-2">
-            {children}
-          </div>
-        )}
-      </div>
-    )
-  }
 
   return (
     <>
@@ -939,10 +862,11 @@ export default function MessagesPage() {
                   </Card>
                 ))
               ) : messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center text-center py-12">
-                  <Inbox className="h-10 w-10 text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">{t('messages.empty.title')}</p>
-                </div>
+                <EmptyState
+                  icon={<Mail className="h-12 w-12" />}
+                  title={t('messages.empty.title')}
+                  description={t('messages.empty.description')}
+                />
               ) : (
                 messages.map((message) => {
                   const severityConfig = SEVERITY_CONFIG[message.severity] || SEVERITY_CONFIG.info
@@ -1206,10 +1130,11 @@ export default function MessagesPage() {
               loading={loading}
               emptyState={
                 !loading && messages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center text-center">
-                    <Inbox className="h-10 w-10 text-muted-foreground mb-2" />
-                    <p className="text-sm text-muted-foreground">{t('messages.empty.title')}</p>
-                  </div>
+                  <EmptyState
+                    icon={<Mail className="h-12 w-12" />}
+                    title={t('messages.empty.title')}
+                    description={t('messages.empty.description')}
+                  />
                 ) : undefined
               }
             />
@@ -1236,10 +1161,11 @@ export default function MessagesPage() {
                   </Card>
                 ))
               ) : channels.length === 0 ? (
-                <div className="flex flex-col items-center justify-center text-center py-12">
-                  <Inbox className="h-10 w-10 text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">{t('messages.channels.empty.title')}</p>
-                </div>
+                <EmptyState
+                  icon={<Radio className="h-12 w-12" />}
+                  title={t('messages.channels.empty.title')}
+                  description={t('messages.channels.empty.description')}
+                />
               ) : (
                 channels.map((channel) => {
                   const config: Record<string, { icon: typeof Bell; color: string }> = {
@@ -1554,10 +1480,11 @@ export default function MessagesPage() {
             loading={loading}
             emptyState={
               !loading && channels.length === 0 ? (
-                <div className="flex flex-col items-center justify-center text-center">
-                  <Inbox className="h-10 w-10 text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">{t('messages.channels.empty.title')}</p>
-                </div>
+                <EmptyState
+                  icon={<Radio className="h-12 w-12" />}
+                  title={t('messages.channels.empty.title')}
+                  description={t('messages.channels.empty.description')}
+                />
               ) : undefined
             }
           />

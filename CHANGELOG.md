@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Extensions page empty state redesign** — Replaced generic "No extensions found" with a rich ecosystem showcase: horizontal marquee scrolling 12 real extension preview cards (YOLO Video, Face Recognition, BACnet, Modbus, LoRaWAN, ONVIF, Home Assistant, Stream Player, Weather, OCR, OPC-UA, Image Analyzer), 8 category tags matching actual extension types, and CSS-only animation with edge fade and hover-pause
+
+- **Messages page filter redesign** — Replaced heavy Sheet side-drawer with a lightweight Popover dropdown filter panel. Compact pill-style buttons replace bulky collapsible sections for Severity, Status, and Category filters. Removed CollapsibleSection component and unused Sheet/Separator/ChevronDown imports
+
 - **Multimodal image upload avoids redundant vision tool call** — When a user uploads an image to a multimodal-capable model (e.g., GPT-4o, qwen-vl), the image is sent directly as native `Content::Parts` and the `vision` tool is filtered from the tool list. This prevents the model from calling the vision tool on images it can already see, eliminating a redundant LLM round-trip (following industry best practice: OpenAI, Anthropic, CrewAI all recommend native multimodal over tool-mediated vision)
 
 - **Dashboard telemetry data split** — Separated real-time device telemetry (`deviceTelemetry` Record) from the `devices` array to eliminate cascading re-renders. Previously, every WebSocket metric update mapped over the entire `devices` array, causing all dashboard components to re-render. Now high-frequency metric writes only update a per-device telemetry map, while the `devices` array reference stays stable. Dashboard components use targeted selectors with `shallow` equality to re-render only when their bound device's telemetry changes. This reduces re-renders from O(n) per metric update to O(1).
