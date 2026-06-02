@@ -68,17 +68,17 @@ function InlineEdit({
           if (e.key === 'Enter' && draft.trim()) onSave(draft.trim())
           if (e.key === 'Escape') onCancel()
         }}
-        className="h-7 text-sm flex-1 px-1.5"
+        className="h-7 text-sm flex-1 px-1.5 rounded-md"
         autoFocus
       />
       <button
-        className="h-6 w-6 shrink-0 flex items-center justify-center rounded text-success hover:bg-success-light transition-colors"
+        className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
         onClick={() => draft.trim() && onSave(draft.trim())}
       >
         <Check className="h-3.5 w-3.5" />
       </button>
       <button
-        className="h-6 w-6 shrink-0 flex items-center justify-center rounded hover:bg-muted transition-colors"
+        className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
         onClick={onCancel}
       >
         <X className="h-3.5 w-3.5" />
@@ -147,12 +147,64 @@ function DashboardSidebarContent({
         </div>
       )}
 
+      {/* Create new dashboard — top area */}
+      <div className="px-3 pt-3 pb-1">
+        {showCreateInput ? (
+          <div className="flex items-center gap-1">
+            <Input
+              ref={createInputRef}
+              value={newDashboardName}
+              onChange={(e) => setNewDashboardName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newDashboardName.trim()) {
+                  onCreate(newDashboardName.trim())
+                  setNewDashboardName('')
+                  setShowCreateInput(false)
+                }
+                if (e.key === 'Escape') {
+                  setShowCreateInput(false)
+                  setNewDashboardName('')
+                }
+              }}
+              placeholder={t('sidebar.namePlaceholder')}
+              className="h-7 text-sm flex-1 rounded-md"
+              autoFocus
+            />
+            <button
+              className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
+              onClick={() => {
+                if (newDashboardName.trim()) {
+                  onCreate(newDashboardName.trim())
+                  setNewDashboardName('')
+                  setShowCreateInput(false)
+                }
+              }}
+            >
+              <Check className="h-3.5 w-3.5" />
+            </button>
+            <button
+              className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
+              onClick={() => { setShowCreateInput(false); setNewDashboardName('') }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowCreateInput(true)}
+            className="flex items-center justify-center gap-1.5 h-7 rounded-md text-xs font-medium bg-muted text-muted-foreground hover:text-foreground hover:bg-muted-50 transition-colors w-full"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {t('sidebar.newDashboard')}
+          </button>
+        )}
+      </div>
+
       {/* Dashboard List */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+      <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
         {dashboards.map((dashboard) => {
           const isActive = dashboard.id === currentDashboardId
           const isEditing = editingId === dashboard.id
-          const count = dashboard.components?.length ?? 0
 
           return (
             <div
@@ -168,7 +220,7 @@ function DashboardSidebarContent({
               }}
               onDoubleClick={() => !isEditing && setEditingId(dashboard.id)}
               className={cn(
-                'group relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all',
+                'group relative flex items-center gap-2.5 px-3 py-2 rounded-md cursor-pointer transition-all',
                 isActive
                   ? 'bg-primary/8 text-foreground'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -217,56 +269,6 @@ function DashboardSidebarContent({
             </div>
           )
         })}
-
-        {/* Create new dashboard */}
-        {showCreateInput ? (
-          <div className="flex items-center gap-1 px-1 py-0.5">
-            <Input
-              ref={createInputRef}
-              value={newDashboardName}
-              onChange={(e) => setNewDashboardName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && newDashboardName.trim()) {
-                  onCreate(newDashboardName.trim())
-                  setNewDashboardName('')
-                  setShowCreateInput(false)
-                }
-                if (e.key === 'Escape') {
-                  setShowCreateInput(false)
-                  setNewDashboardName('')
-                }
-              }}
-              placeholder={t('sidebar.namePlaceholder')}
-              className="h-7 text-sm flex-1 px-1.5"
-              autoFocus
-            />
-            <button
-              className="h-6 w-6 shrink-0 flex items-center justify-center rounded text-success hover:bg-success-light transition-colors"
-              onClick={() => {
-                if (newDashboardName.trim()) {
-                  onCreate(newDashboardName.trim())
-                  setNewDashboardName('')
-                  setShowCreateInput(false)
-                }
-              }}
-            >
-              <Check className="h-3.5 w-3.5" />
-            </button>
-            <button
-              className="h-6 w-6 shrink-0 flex items-center justify-center rounded hover:bg-muted transition-colors"
-              onClick={() => { setShowCreateInput(false); setNewDashboardName('') }}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowCreateInput(true)}
-            className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors w-full border border-dashed border-border"
-          >
-            <Plus className="h-4 w-4 shrink-0" />
-            <span className="text-sm">{t('sidebar.newDashboard')}</span>
-          </button>
         )}
       </div>
     </>
