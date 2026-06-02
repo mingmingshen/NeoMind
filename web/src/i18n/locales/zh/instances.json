@@ -57,5 +57,9 @@
     "nameRequired": "名称不能为空",
     "urlRequired": "地址不能为空",
     "urlInvalid": "地址必须以 http:// 或 https:// 开头"
-  }
+  },
+  "minPasswordLength": "密码最少字符数",
+  "minUsernameLength": "用户名最少字符数",
+  "userAlreadyExists": "用户已存在",
+  "authFailed": "认证失败"
 }

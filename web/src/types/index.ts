@@ -1404,6 +1404,10 @@ export type LlmBackendType = 'ollama' | 'openai' | 'anthropic' | 'google' | 'xai
 export interface BackendCapabilities {
   supports_streaming: boolean
   supports_multimodal: boolean
+  /** User-set override for multimodal; when set, auto-detection is skipped. */
+  multimodal_user_override?: boolean | null
+  /** Provenance of `supports_multimodal`: 'user_override' | 'runtime_api' | 'registry' | 'heuristic' | 'default'. */
+  multimodal_source?: string | null
   supports_thinking: boolean
   supports_tools: boolean
   max_context: number

@@ -116,7 +116,8 @@
     "all": "All",
     "running": "Running",
     "stopped": "Stopped",
-    "error": "Error"
+    "error": "Error",
+    "active": "Active"
   },
   "extensionTools": "Extension Tools",
   "loadingCapabilities": "Loading extension capabilities...",
@@ -144,7 +145,15 @@
   "noTransformExtensions": "No extensions with transform capabilities found",
   "noCommands": "No extension commands available",
   "noMetrics": "No metrics available",
-  "metrics": "Metrics",
+  "metrics": {
+    "historyError": "History Error",
+    "noMetrics": "No Metrics",
+    "viewHistory": "View History",
+    "timeRange": "Time Range",
+    "noHistory": "No History",
+    "time": "Time",
+    "value": "Value"
+  },
   "viewHistory": "View History",
   "timeRange": "Time Range",
   "1hour": "1H",
@@ -173,7 +182,11 @@
   "transformSummary": "Transform Configuration",
   "extension": "Extension",
   "command": "Command",
-  "commands": "commands",
+  "commands": {
+    "noCommands": "No Commands",
+    "executing": "Executing",
+    "execute": "Execute"
+  },
   "commandsLabel": "Commands",
   "metricsDesc": "Data metrics provided by extensions",
   "commandsDesc": "Commands that can be executed on extensions",
@@ -225,7 +238,10 @@
       "Error": "Error"
     },
     "uninstall": "Uninstall",
-    "unregister": "Unregister"
+    "unregister": "Unregister",
+    "details": "Details",
+    "reload": "Reload",
+    "active": "Active"
   },
   "marketplace": "Marketplace",
   "market": {
@@ -266,5 +282,60 @@
   "confirmUninstall": "Completely Uninstall Extension",
   "confirmUninstallDescription": "Are you sure you want to completely uninstall \"{{name}}\"? This will remove ALL extension files including source code, and this action CANNOT be undone.",
   "extensionUninstalled": "Extension completely uninstalled",
-  "extensionUninstalledDesc": "All extension files have been removed"
+  "extensionUninstalledDesc": "All extension files have been removed",
+  "active": "Active",
+  "tryDifferentFilters": "Try Different Filters",
+  "clearFilters": "Clear Filters",
+  "showingResults": "Showing Results",
+  "filteredResults": "Filtered Results",
+  "logs": {
+    "cleared": "Cleared",
+    "loading": "Loading",
+    "count": "Count",
+    "refresh": "Refresh",
+    "clear": "Clear",
+    "noLogs": "No Logs"
+  },
+  "sections": {
+    "overview": "Overview",
+    "config": "Config",
+    "commands": "Commands",
+    "metrics": "Metrics",
+    "logs": "Logs"
+  },
+  "overview": {
+    "basicInfo": "Basic Info",
+    "health": "Health",
+    "fileInfo": "File Info"
+  },
+  "info": {
+    "id": "Id",
+    "name": "Name",
+    "version": "Version",
+    "state": "State",
+    "commands": "Commands",
+    "metrics": "Metrics",
+    "description": "Description",
+    "author": "Author",
+    "healthy": "Healthy",
+    "unhealthy": "Unhealthy"
+  },
+  "file": {
+    "filePath": "File Path",
+    "loadedAt": "Loaded At"
+  },
+  "config": {
+    "noConfig": "No Config",
+    "title": "Title",
+    "configure": "Configure",
+    "changesNote": "Changes Note",
+    "saveReload": "Save Reload"
+  },
+  "extensionList": "Extension List",
+  "extensionReloaded": "Extension Reloaded",
+  "extensionUploaded": "Extension Uploaded",
+  "extensionInstalled": "Extension Installed",
+  "confirmReload": "Confirm Reload",
+  "confirmReloadDescription": "Confirm Reload Description",
+  "reload": "Reload"
 }

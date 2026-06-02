@@ -104,7 +104,7 @@ export function DeviceBindingConfig({
       </Select>
       {selectedDevice && (
         <div className="text-xs text-muted-foreground mt-1">
-          {selectedDevice.device_type} · {selectedDevice.online ? t('common.online', 'Online') : t('common.offline', 'Offline')}
+          {selectedDevice.device_type} · {selectedDevice.online ? t('online') : t('offline')}
         </div>
       )}
     </ConfigSection>

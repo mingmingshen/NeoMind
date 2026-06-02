@@ -1413,23 +1413,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden bg-background">
-      {/* Sidebar - Dashboard List - hidden in fullscreen */}
-      {!isFullscreen && (
-        <DashboardListSidebar
-          dashboards={dashboards}
-          currentDashboardId={currentDashboardId}
-          onSwitch={handleDashboardSwitch}
-          onCreate={handleDashboardCreate}
-          onRename={handleDashboardRename}
-          onDelete={handleDashboardDelete}
-          open={sidebarOpen}
-          onOpenChange={handleSidebarOpenChange}
-          isDesktop={isDesktop}
-        />
-      )}
-
-      {/* Main Content */}
+    <div className="flex flex-col h-full overflow-hidden bg-background">
+      {/* Fullscreen portal */}
       {isFullscreen && createPortal(
         <div className="fixed inset-0 z-[100] bg-background flex flex-col">
           <div className="flex-1 overflow-auto p-4 relative">
@@ -1451,29 +1436,28 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         </div>,
         getPortalRoot()
       )}
-      <div className={cn(
-        "flex-1 flex flex-col overflow-hidden",
-        isFullscreen && "hidden"
-      )}>
-          <header className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border bg-background z-10">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => isMobile ? handleSidebarOpenChange(true) : handleSidebarOpenChange(!sidebarOpen)}
-                className={cn(
-                  "h-6 w-6 active:scale-95",
-                  !isDesktop && sidebarOpen && "bg-muted"
-                )}
-              >
-                <PanelsTopLeft className="h-4 w-4" />
-              </Button>
-              <h1 className="text-sm font-semibold">
-                {currentDashboard.name}
-              </h1>
-            </div>
 
-            <div className="flex items-center gap-1">
+      {/* Unified toolbar - full width */}
+      {!isFullscreen && (
+        <header className="shrink-0 flex items-center justify-between px-4 h-11 border-b border-border bg-background z-10">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => isMobile ? handleSidebarOpenChange(true) : handleSidebarOpenChange(!sidebarOpen)}
+              className={cn(
+                "h-6 w-6 active:scale-95",
+                !isDesktop && sidebarOpen && "bg-muted"
+              )}
+            >
+              <PanelsTopLeft className="h-4 w-4" />
+            </Button>
+            <h1 className="text-sm font-semibold">
+              {currentDashboard.name}
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-1">
               <Button
                 variant={editMode ? "default" : "outline"}
                 size="icon"
@@ -1548,11 +1532,43 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 <Maximize className="h-4 w-4" />
               </Button>
             </div>
-          </header>
+        </header>
+      )}
+
+      {/* Body: sidebar + content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar - Desktop only (mobile uses portal drawer) */}
+        {!isFullscreen && isDesktop && (
+          <DashboardListSidebar
+            dashboards={dashboards}
+            currentDashboardId={currentDashboardId}
+            onSwitch={handleDashboardSwitch}
+            onCreate={handleDashboardCreate}
+            onRename={handleDashboardRename}
+            onDelete={handleDashboardDelete}
+            open={sidebarOpen}
+            onOpenChange={handleSidebarOpenChange}
+            isDesktop={true}
+          />
+        )}
+
+        {/* Mobile sidebar drawer */}
+        {!isFullscreen && !isDesktop && (
+          <DashboardListSidebar
+            dashboards={dashboards}
+            currentDashboardId={currentDashboardId}
+            onSwitch={handleDashboardSwitch}
+            onCreate={handleDashboardCreate}
+            onRename={handleDashboardRename}
+            onDelete={handleDashboardDelete}
+            open={sidebarOpen}
+            onOpenChange={handleSidebarOpenChange}
+            isDesktop={false}
+          />
+        )}
 
         {/* Dashboard Grid */}
-        <div className={cn("flex-1 overflow-auto p-4 relative")}>
-
+        <div className={cn("flex-1 overflow-auto p-4 relative", isFullscreen && "hidden")}>
           {(currentDashboard.components?.length ?? 0) === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
               <LayoutDashboard className="h-16 w-16 mb-4 opacity-50" />

@@ -116,7 +116,8 @@
     "all": "全部",
     "running": "运行中",
     "stopped": "已停止",
-    "error": "错误"
+    "error": "错误",
+    "active": "活跃"
   },
   "extensionTools": "扩展工具",
   "loadingCapabilities": "加载扩展能力中...",
@@ -144,7 +145,15 @@
   "noTransformExtensions": "未找到支持转换的扩展",
   "noCommands": "无可用扩展命令",
   "noMetrics": "无可用指标",
-  "metrics": "指标",
+  "metrics": {
+    "historyError": "历史数据加载失败",
+    "noMetrics": "暂无指标",
+    "viewHistory": "查看历史",
+    "timeRange": "时间范围",
+    "noHistory": "暂无历史数据",
+    "time": "时间",
+    "value": "数值"
+  },
   "viewHistory": "查看历史",
   "timeRange": "时间范围",
   "1hour": "1小时",
@@ -173,7 +182,11 @@
   "transformSummary": "转换配置",
   "extension": "扩展",
   "command": "命令",
-  "commands": "个命令",
+  "commands": {
+    "noCommands": "暂无指令",
+    "executing": "执行中",
+    "execute": "执行"
+  },
   "commandsLabel": "命令",
   "metricsDesc": "扩展提供的数据指标",
   "commandsDesc": "可以在扩展上执行的命令",
@@ -225,7 +238,10 @@
       "Error": "错误"
     },
     "uninstall": "完全卸载",
-    "unregister": "注销"
+    "unregister": "注销",
+    "details": "详情",
+    "reload": "重新加载",
+    "active": "活跃"
   },
   "marketplace": "扩展市场",
   "market": {
@@ -266,5 +282,60 @@
   "confirmUninstall": "完全卸载扩展",
   "confirmUninstallDescription": "确定要完全卸载 \"{{name}}\" 吗？这将删除所有扩展文件（包括源代码），此操作**无法撤销**。",
   "extensionUninstalled": "扩展已完全卸载",
-  "extensionUninstalledDesc": "所有扩展文件已被删除"
+  "extensionUninstalledDesc": "所有扩展文件已被删除",
+  "active": "活跃",
+  "tryDifferentFilters": "尝试不同的筛选条件",
+  "clearFilters": "清除筛选",
+  "showingResults": "显示结果",
+  "filteredResults": "筛选结果",
+  "logs": {
+    "cleared": "已清除",
+    "loading": "加载中",
+    "count": "数量",
+    "refresh": "刷新",
+    "clear": "清除",
+    "noLogs": "暂无日志"
+  },
+  "sections": {
+    "overview": "概览",
+    "config": "配置",
+    "commands": "指令",
+    "metrics": "指标",
+    "logs": "日志"
+  },
+  "overview": {
+    "basicInfo": "基本信息",
+    "health": "健康状态",
+    "fileInfo": "文件信息"
+  },
+  "info": {
+    "id": "ID",
+    "name": "名称",
+    "version": "版本",
+    "state": "状态",
+    "commands": "指令",
+    "metrics": "指标",
+    "description": "描述",
+    "author": "作者",
+    "healthy": "健康",
+    "unhealthy": "异常"
+  },
+  "file": {
+    "filePath": "文件路径",
+    "loadedAt": "加载时间"
+  },
+  "config": {
+    "noConfig": "暂无配置",
+    "title": "标题",
+    "configure": "配置",
+    "changesNote": "更改说明",
+    "saveReload": "保存并重新加载"
+  },
+  "extensionList": "扩展列表",
+  "extensionReloaded": "扩展已重新加载",
+  "extensionUploaded": "扩展已上传",
+  "extensionInstalled": "扩展已安装",
+  "confirmReload": "确认重新加载",
+  "confirmReloadDescription": "重新加载将中断正在执行的指令，确定要继续吗？",
+  "reload": "重新加载"
 }

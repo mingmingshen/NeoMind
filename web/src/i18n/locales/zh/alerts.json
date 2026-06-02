@@ -54,5 +54,10 @@
   "testChannel": "测试",
   "testing": "测试中...",
   "noChannelTypes": "暂无通道类型",
-  "noChannelTypesDesc": "无法从服务器加载告警通道类型"
+  "noChannelTypesDesc": "无法从服务器加载告警通道类型",
+  "notConfigured": {
+    "title": "LLM 未配置",
+    "description": "请先配置 LLM 后端以使用聊天功能",
+    "goToSettings": "前往设置"
+  }
 }

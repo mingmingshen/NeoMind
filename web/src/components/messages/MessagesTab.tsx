@@ -149,7 +149,7 @@ export function MessagesTab({
           icon={<AlertCircle className="h-12 w-12" />}
           title={t('messages.error')}
           description={error.message}
-          action={{ label: t('common.retry'), onClick: onRefresh }}
+          action={{ label: t('retry'), onClick: onRefresh }}
         />
       </div>
     )

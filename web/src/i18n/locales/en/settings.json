@@ -134,7 +134,6 @@
   "cleanupFailed": "Cleanup failed",
   "retentionUpdated": "Retention settings updated",
   "retentionUpdateFailed": "Failed to update retention settings",
-  "languageRegion": "Language & Region",
   "broker": {
     "settings": "Embedded Broker Settings",
     "settingsDescription": "Configure the built-in MQTT broker for device connections",
@@ -209,5 +208,22 @@
     "Australia.Sydney": "Sydney (UTC+10/+11)",
     "Pacific.Auckland": "Auckland (UTC+12/+13)",
     "UTC": "UTC (UTC+0)"
-  }
+  },
+  "llm": {
+    "endpoint": "Endpoint",
+    "backendTypeRequired": "Backend Type Required",
+    "backendCreated": "Backend Created",
+    "createFailed": "Create Failed",
+    "updateFailed": "Update Failed",
+    "create": "Create",
+    "edit": "Edit",
+    "name": "Name",
+    "namePlaceholder": "e.g., My LLM Backend",
+    "model": "Model",
+    "apiKey": "Api Key",
+    "apiKeyPlaceholder": "Enter API key...",
+    "configPlaceholder": "Configuration JSON..."
+  },
+  "updateReady": "Update Ready",
+  "availableMemory": "Available Memory"
 }

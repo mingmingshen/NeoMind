@@ -331,14 +331,14 @@ export default function MessagesPage() {
       const result = await api.testMessageChannel(channelName)
       if (result.success) {
         setTestResults(prev => ({ ...prev, [channelName]: { success: true, message: result.message || 'Test sent successfully' } }))
-        toast({ title: t('common.success'), description: `Channel "${channelName}" test successful` })
+        toast({ title: t('success'), description: `Channel "${channelName}" test successful` })
       } else {
         throw new Error(result.message || 'Test failed')
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       setTestResults(prev => ({ ...prev, [channelName]: { success: false, message: errorMsg } }))
-      toast({ title: t('common.failed'), description: errorMsg, variant: 'destructive' })
+      toast({ title: t('failed'), description: errorMsg, variant: 'destructive' })
     } finally {
       setTestingChannel(null)
     }
@@ -352,7 +352,7 @@ export default function MessagesPage() {
         c.name === channelName ? { ...c, enabled } : c
       ))
       toast({
-        title: t('common.success'),
+        title: t('success'),
         description: enabled
           ? t('messages.channels.enableSuccess', 'Channel enabled')
           : t('messages.channels.disableSuccess', 'Channel disabled')

@@ -27,7 +27,7 @@ export interface SelectFieldProps {
 }
 
 export function SelectField({ label, value, onChange, options, className }: SelectFieldProps) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('dashboardComponents')
 
   const handleChange = (newValue: string) => {
     onChange(newValue)
@@ -62,7 +62,7 @@ export interface ImageSourceFieldProps {
 }
 
 export function ImageSourceField({ value, onChange }: ImageSourceFieldProps) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('dashboardComponents')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {

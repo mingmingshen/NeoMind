@@ -37,8 +37,8 @@
   "projectInfo": "项目信息",
   "architecture": "架构",
   "repository": "代码仓库",
-  "builtWith": "Built with",
-  "forIntelligence": "for edge intelligence",
+  "builtWith": "构建于",
+  "forIntelligence": "面向边缘智能",
   "systemInfo": "系统信息",
   "systemInfoUnavailable": "系统信息不可用",
   "platform": "平台",
@@ -134,7 +134,6 @@
   "cleanupFailed": "清理失败",
   "retentionUpdated": "保留设置已更新",
   "retentionUpdateFailed": "保留设置更新失败",
-  "languageRegion": "语言与地区",
   "broker": {
     "settings": "内置 Broker 设置",
     "settingsDescription": "配置用于设备连接的内置 MQTT Broker",
@@ -209,5 +208,22 @@
     "Australia.Sydney": "悉尼 (UTC+10/+11)",
     "Pacific.Auckland": "奥克兰 (UTC+12/+13)",
     "UTC": "UTC (UTC+0)"
-  }
+  },
+  "llm": {
+    "endpoint": "端点",
+    "backendTypeRequired": "后端类型为必填项",
+    "backendCreated": "后端已创建",
+    "createFailed": "创建失败",
+    "updateFailed": "更新失败",
+    "create": "创建",
+    "edit": "编辑",
+    "name": "名称",
+    "namePlaceholder": "如：我的 LLM 后端",
+    "model": "模型",
+    "apiKey": "API 密钥",
+    "apiKeyPlaceholder": "输入 API 密钥...",
+    "configPlaceholder": "配置 JSON..."
+  },
+  "updateReady": "更新就绪",
+  "availableMemory": "可用内存"
 }

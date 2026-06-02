@@ -96,7 +96,6 @@
   },
   "tabs": {
     "agents": "智能体",
-    "executions": "执行记录",
     "memory": "记忆",
     "skills": "技能",
     "createSkill": "添加技能"
@@ -233,7 +232,12 @@
     "target": "目标",
     "channel": "渠道",
     "recipient": "接收者",
-    "lastArchived": "上次归档"
+    "lastArchived": "上次归档",
+    "inputData": "输入数据",
+    "llmResponse": "LLM 响应",
+    "showLess": "收起",
+    "showMore": "展开",
+    "round": "轮次"
   },
   "userMessages": {
     "empty": "暂无消息",
@@ -478,7 +482,7 @@
     },
     "advanced": {
       "title": "高级配置",
-      "dataCollection": "数据收集配置",
+      "dataCollection": "数据采集",
       "selectMetricsFirst": "请先选择指标",
       "executionMode": "执行模式",
       "chatMode": "对话模式",
@@ -491,7 +495,6 @@
       "freeModeDescription": "LLM 自主探索和决策，支持多轮工具调用。适合复杂自动化和设备控制。",
       "focusedModeRequiresResources": "精准模式需要至少绑定一个资源",
       "saveToken": "省 Token",
-      "dataCollection": "数据采集",
       "timeRange": "时间范围",
       "includeHistory": "包含历史数据",
       "includeTrend": "包含趋势分析",
@@ -558,12 +561,6 @@
       "UTC": "UTC (UTC+0)"
     }
   },
-  "tabs": {
-    "agents": "智能体",
-    "memory": "记忆",
-    "skills": "技能",
-    "createSkill": "添加技能"
-  },
   "skills": {
     "originAll": "全部",
     "originBuiltin": "内置",
@@ -603,7 +600,14 @@
       "tempFileTtlHint": "临时文件清理前的保留天数",
       "schedule": "调度",
       "scheduleInterval": "提取间隔",
-      "scheduleIntervalHint": "记忆提取间隔秒数（{{minutes}} 分钟）"
+      "scheduleIntervalHint": "记忆提取间隔秒数（{{minutes}} 分钟）",
+      "refreshInterval": "刷新间隔",
+      "refreshIntervalHint": "刷新智能体记忆上下文的频率",
+      "summaryInterval": "摘要间隔",
+      "summaryIntervalHint": "对话历史摘要的频率",
+      "summaryBackend": "摘要后端",
+      "useActive": "使用活跃后端",
+      "summaryBackendHint": "用于生成摘要的 LLM 后端"
     },
     "viewEdit": "查看/编辑",
     "export": "导出",
@@ -615,7 +619,10 @@
     "cancel": "取消",
     "edit": "编辑",
     "lines": "行",
-    "empty": "暂无内容",
+    "empty": {
+      "title": "暂无智能体",
+      "description": "暂无智能体，创建一个来自动执行任务"
+    },
     "charsUsed": "已使用 {{used}} / {{limit}} 字符",
     "noContent": "暂无内容",
     "custom": {
@@ -631,6 +638,13 @@
       "delete": "删除",
       "deleteConfirm": "确定删除此自定义文件？此操作无法撤销。",
       "description": "自定义知识文件"
-    }
-  }
+    },
+    "actions": "操作"
+  },
+  "common": {
+    "cancel": "取消",
+    "save": "保存",
+    "saving": "保存中"
+  },
+  "executionNotFound": "未找到执行记录"
 }

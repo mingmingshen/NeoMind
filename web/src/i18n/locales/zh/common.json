@@ -181,14 +181,14 @@
       "emailConfigHint": "配置 SMTP 设置以发送邮件通知",
       "telegramConfig": "Telegram 配置",
       "telegramConfigHint": "配置 Telegram 机器人发送通知",
-      "botToken": "Bot Token",
-      "chatId": "Chat ID",
+      "botToken": "机器人令牌",
+      "chatId": "聊天 ID",
       "wecomConfig": "企业微信配置",
       "wecomConfigHint": "配置企业微信机器人 Webhook",
-      "webhookKey": "Webhook Key",
+      "webhookKey": "Webhook 密钥",
       "dingtalkConfig": "钉钉配置",
       "dingtalkConfigHint": "配置钉钉自定义机器人",
-      "accessToken": "Access Token",
+      "accessToken": "访问令牌",
       "secret": "签名密钥",
       "secretOptional": "可选，用于签名验证",
       "slackConfig": "Slack 配置",
@@ -198,20 +198,20 @@
       "hookId": "Hook ID",
       "authType": "认证方式",
       "authNone": "无",
-      "authBearer": "Bearer Token",
-      "authBasic": "Basic Auth",
-      "authApiKey": "API Key",
+      "authBearer": "Bearer 令牌",
+      "authBasic": "Basic 认证",
+      "authApiKey": "API 密钥",
       "authCustom": "自定义 Headers",
-      "bearerToken": "Token",
+      "bearerToken": "令牌",
       "bearerTokenPlaceholder": "输入 Bearer Token",
       "basicUser": "用户名",
       "basicUserPlaceholder": "用户名",
       "basicPass": "密码",
       "basicPassPlaceholder": "密码",
       "apiKeyHeader": "Header 名称",
-      "apiKeyValue": "API Key",
+      "apiKeyValue": "API 密钥",
       "apiKeyValuePlaceholder": "输入 API Key",
-      "headerName": "Header",
+      "headerName": "请求头",
       "headerValue": "值",
       "addHeader": "添加 Header",
       "timeout": "超时时间（秒）",
@@ -223,7 +223,14 @@
       "failed": "失败",
       "retrying": "重试中",
       "pending": "等待中",
-      "retryCount": "重试 {{count}} 次"
+      "retryCount": "重试 {{count}} 次",
+      "timeoutLabel": "超时",
+      "timeoutHint": "Webhook 投递超时时间",
+      "webhookConfigDesc": "配置 Webhook 端点 URL 和请求头",
+      "emailConfigDesc": "配置 SMTP 服务器和邮件收件人",
+      "addRecipient": "添加收件人",
+      "categoriesHint": "选择要转发的告警类别",
+      "minSeverityHint": "要转发的最低严重级别"
     },
     "confirmBulkDelete": "删除消息",
     "confirmBulkDeleteDesc": "确定要删除 {{count}} 条消息吗?",
@@ -238,11 +245,13 @@
     "resolveError": "解决失败",
     "formTitle": {
       "label": "标题",
-      "placeholder": "消息标题"
+      "placeholder": "消息标题",
+      "required": "必填"
     },
     "content": {
       "label": "消息内容",
-      "placeholder": "输入消息内容"
+      "placeholder": "输入消息内容",
+      "required": "必填"
     },
     "sourceType": {
       "label": "来源类型",
@@ -265,7 +274,22 @@
       "invalidJson": "JSON 格式无效"
     },
     "timestamp": "时间戳",
-    "metadata": "元数据"
+    "metadata": "元数据",
+    "basicSettings": "基本设置",
+    "basicSettingsDesc": "基本通知设置",
+    "contentSection": "内容设置",
+    "contentSectionDesc": "配置通知内容和格式",
+    "sourceSection": "来源设置",
+    "sourceSectionDesc": "选择通知的数据来源",
+    "archiveSuccess": "归档成功",
+    "archiveError": "归档失败",
+    "viewDetails": "查看详情",
+    "createSuccess": "创建成功",
+    "createError": "创建失败",
+    "messageDetails": "消息详情",
+    "basicInfo": "基本信息",
+    "basicInfoDesc": "基本信息",
+    "metadataDesc": "附加元数据"
   },
   "connection": {
     "connected": "已连接",
@@ -323,7 +347,6 @@
   "back": "返回",
   "submit": "提交",
   "create": "创建",
-  "add": "添加",
   "creating": "创建中...",
   "saving": "保存中...",
   "deleting": "删除中...",
@@ -481,25 +504,6 @@
       "general": "通用"
     }
   },
-  "placeholders": {
-    "search": "搜索...",
-    "searchComponents": "搜索组件...",
-    "searchDevices": "搜索设备...",
-    "searchAgents": "搜索智能体...",
-    "searchDashboard": "搜索仪表板...",
-    "enterValue": "输入值",
-    "enterName": "输入名称",
-    "enterTitle": "输入标题",
-    "enterDescription": "输入描述",
-    "selectOption": "选择选项",
-    "jsonExample": "{\"key\": \"value\"}",
-    "emailExample": "test@example.com",
-    "passwordPlaceholder": "••••••••",
-    "urlExample": "https://example.com",
-    "pathExample": "/path/to/file",
-    "commaSeparated": "项目1, 项目2, 项目3",
-    "optional": "(可选)"
-  },
   "units": {
     "celsius": "°C",
     "percent": "%",
@@ -534,16 +538,6 @@
     "fetching": "获取中...",
     "updating": "更新中...",
     "deleting": "删除中..."
-  },
-  "searchBar": {
-    "placeholder": "搜索设备、规则...",
-    "results": "搜索结果 ({{count}})",
-    "suggestions": "建议",
-    "noResults": "未找到匹配结果",
-    "startTyping": "输入关键词开始搜索",
-    "typeDevice": "设备",
-    "typeRule": "规则",
-    "typeAlert": "告警"
   },
   "alertLevels": {
     "critical": "严重",
@@ -581,27 +575,10 @@
     "error": "错误",
     "unknown": "未知"
   },
-  "range": {
-    "min": "最小:",
-    "max": "最大:"
-  },
   "theme": {
     "light": "浅色",
     "dark": "深色",
     "system": "跟随系统"
-  },
-  "tools": {
-    "available": "可用工具",
-    "totalCalls": "总调用:",
-    "successful": "成功:",
-    "failed": "失败:",
-    "avgTime": "平均耗时:",
-    "all": "全部",
-    "loading": "加载工具中...",
-    "noTools": "暂无工具",
-    "noToolsDesc": "系统中没有可用的工具",
-    "calls": "调用:",
-    "avg": "平均:"
   },
   "session": {
     "history": "会话历史",
@@ -620,10 +597,6 @@
     "resumeResponseDesc": "检测到之前断线时有正在进行的响应",
     "discard": "放弃",
     "resume": "恢复"
-  },
-  "range": {
-    "min": "最小值",
-    "max": "最大值"
   },
   "language": {
     "switchToEnglish": "Switch to English",
@@ -655,7 +628,7 @@
     "intervalSecs": "推送间隔（秒）",
     "sourcePatterns": "数据源匹配模式",
     "sourcePatternsPlaceholder": "device:sensor1:, extension:weather:",
-    "sourcePatternsHint": "逗号分隔的前缀匹配，留空表示匹配所有数据源",
+    "sourcePatternsHint": "逗号分隔的模式，如 device:sensor1:, extension:weather:",
     "template": "负载模板（可选）",
     "templateHint": "Handlebars 模板，可用变量：{{source_id}}, {{value}}, {{timestamp}}",
     "allSources": "所有数据源",
@@ -691,7 +664,7 @@
     "deselectAllFields": "取消全选",
     "back": "上一步",
     "next": "下一步",
-    "webhookAuthToken": "Bearer Token",
+    "webhookAuthToken": "Bearer 令牌",
     "webhookAuthTokenPlaceholder": "认证令牌",
     "webhookBasicAuth": "Basic 认证",
     "webhookUsername": "用户名",
@@ -715,6 +688,58 @@
     "batchOn": "批量聚合",
     "batchSize": "批量大小",
     "batchInterval": "最大间隔 (ms)",
-    "sourcePatternsHint": "逗号分隔的模式，如 device:sensor1:, extension:weather:"
-  }
+    "status": "状态",
+    "updated": "已更新",
+    "running": "运行中",
+    "stopped": "已停止",
+    "toggle": "切换",
+    "nameRequired": "名称为必填项",
+    "urlRequired": "URL 为必填项"
+  },
+  "active": "活跃",
+  "test": "测试连接",
+  "chart": {
+    "value": "数值",
+    "temperature": "温度",
+    "humidity": "湿度",
+    "series": "系列 {{count}}"
+  },
+  "adding": "添加中...",
+  "chat": {
+    "suggestions": {
+      "badge": "推荐"
+    }
+  },
+  "categories": {
+    "active": "活跃"
+  },
+  "tryDifferentFilters": "尝试不同的筛选条件",
+  "clearFilters": "清除筛选",
+  "showingResults": "显示结果",
+  "filteredResults": "筛选结果",
+  "reload": "重新加载",
+  "dashboard": {
+    "config": {
+      "deviceBinding": "设备绑定",
+      "noCompatibleDevices": "无兼容设备",
+      "selectDevice": "选择设备"
+    },
+    "defaultTitle": "仪表板",
+    "newChat": "新建对话"
+  },
+  "minPasswordLength": "密码最少字符数",
+  "minUsernameLength": "用户名最少字符数",
+  "userAlreadyExists": "用户已存在",
+  "authFailed": "认证失败",
+  "done": "完成",
+  "memory": {
+    "showLess": "收起",
+    "showMore": "展开"
+  },
+  "passwordNeedsLetter": "密码需要包含字母",
+  "passwordNeedsNumber": "密码需要包含数字",
+  "minutes": "分钟",
+  "day": "天",
+  "days": "天",
+  "week": "周"
 }

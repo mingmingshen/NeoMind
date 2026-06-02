@@ -38,5 +38,8 @@
   },
   "searchBar": {
     "placeholder": "搜索设备、规则..."
+  },
+  "common": {
+    "clear": "清除"
   }
 }

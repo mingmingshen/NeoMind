@@ -317,7 +317,7 @@ export function MessageChannelsTab({
           icon={<RefreshCw className="h-12 w-12" />}
           title={t('messages.channels.error')}
           description={error.message}
-          action={{ label: t('common.retry'), onClick: onRefresh }}
+          action={{ label: t('retry'), onClick: onRefresh }}
         />
       ) : channels.length === 0 ? (
         <EmptyState
@@ -380,7 +380,7 @@ export function MessageChannelsTab({
                       disabled={testingChannel === channel.name}
                     >
                       <TestTube className="h-4 w-4 mr-1" />
-                      {testingChannel === channel.name ? t('common.testing') : t('messages.channels.test')}
+                      {testingChannel === channel.name ? t('testing') : t('messages.channels.test')}
                     </Button>
                     {channel.channel_type !== 'console' && channel.channel_type !== 'memory' && (
                       <Button

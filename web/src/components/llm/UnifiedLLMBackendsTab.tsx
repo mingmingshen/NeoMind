@@ -10,6 +10,9 @@ import {
   TestTube,
   Edit,
   Trash2,
+  Eye,
+  Wrench,
+  Brain,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -468,6 +471,38 @@ export function UnifiedLLMBackendsTab({
                         <CardDescription className="font-mono text-xs">
                           {instance.config?.model as string || '-'}
                         </CardDescription>
+                        {/* Capability icons — same monochrome style as chat model dropdown */}
+                        {(() => {
+                          const caps = instance.capabilities as BackendCapabilities | undefined
+                          if (!caps) return null
+                          return (
+                            <div className="flex items-center gap-1 mt-2 text-muted-foreground">
+                              {caps.supports_multimodal && (
+                                <span
+                                  title={
+                                    caps.multimodal_user_override != null
+                                      ? t('plugins:llm.capabilityVisionOverride', {
+                                          source: caps.multimodal_source ?? 'user_override',
+                                        })
+                                      : t('plugins:llm.capabilityVision')
+                                  }
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                </span>
+                              )}
+                              {caps.supports_tools && (
+                                <span title={t('plugins:llm.capabilityTools')}>
+                                  <Wrench className="h-3.5 w-3.5" />
+                                </span>
+                              )}
+                              {caps.supports_thinking && (
+                                <span title={t('plugins:llm.capabilityThinking')}>
+                                  <Brain className="h-3.5 w-3.5" />
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </div>
                       <div className="flex items-center gap-1">
                         <Button

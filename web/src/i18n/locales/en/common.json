@@ -223,7 +223,14 @@
       "failed": "Failed",
       "retrying": "Retrying",
       "pending": "Pending",
-      "retryCount": "Retry {{count}}"
+      "retryCount": "Retry {{count}}",
+      "timeoutLabel": "Timeout Label",
+      "timeoutHint": "Timeout for webhook delivery",
+      "webhookConfigDesc": "Configure webhook endpoint URL and headers",
+      "emailConfigDesc": "Configure SMTP server and email recipients",
+      "addRecipient": "Add Recipient",
+      "categoriesHint": "Select which alert categories to forward",
+      "minSeverityHint": "Minimum severity level to forward"
     },
     "confirmBulkDelete": "Delete Messages",
     "confirmBulkDeleteDesc": "Are you sure you want to delete {{count}} message(s)?",
@@ -238,11 +245,13 @@
     "resolveError": "Resolve Failed",
     "formTitle": {
       "label": "Title",
-      "placeholder": "Message title"
+      "placeholder": "Message title",
+      "required": "Required"
     },
     "content": {
       "label": "Message",
-      "placeholder": "Enter the message content"
+      "placeholder": "Enter the message content",
+      "required": "Required"
     },
     "sourceType": {
       "label": "Source Type",
@@ -265,7 +274,22 @@
       "invalidJson": "Invalid JSON format"
     },
     "timestamp": "Timestamp",
-    "metadata": "Metadata"
+    "metadata": "Metadata",
+    "basicSettings": "Basic Settings",
+    "basicSettingsDesc": "Basic notification settings",
+    "contentSection": "Content Section",
+    "contentSectionDesc": "Configure notification content and format",
+    "sourceSection": "Source Section",
+    "sourceSectionDesc": "Select data sources for notifications",
+    "archiveSuccess": "Archive Success",
+    "archiveError": "Archive Error",
+    "viewDetails": "View Details",
+    "createSuccess": "Create Success",
+    "createError": "Create Error",
+    "messageDetails": "Message Details",
+    "basicInfo": "Basic Info",
+    "basicInfoDesc": "Basic channel information",
+    "metadataDesc": "Additional channel metadata"
   },
   "connection": {
     "connected": "Connected",
@@ -323,7 +347,6 @@
   "back": "Back",
   "submit": "Submit",
   "create": "Create",
-  "add": "Add",
   "creating": "Creating...",
   "saving": "Saving...",
   "deleting": "Deleting...",
@@ -485,25 +508,6 @@
       "general": "General"
     }
   },
-  "placeholders": {
-    "search": "Search...",
-    "searchComponents": "Search components...",
-    "searchDevices": "Search devices...",
-    "searchAgents": "Search agents...",
-    "searchDashboard": "Search dashboard...",
-    "enterValue": "Enter a value",
-    "enterName": "Enter name",
-    "enterTitle": "Enter title",
-    "enterDescription": "Enter description",
-    "selectOption": "Select an option",
-    "jsonExample": "{\"key\": \"value\"}",
-    "emailExample": "test@example.com",
-    "passwordPlaceholder": "••••••••",
-    "urlExample": "https://example.com",
-    "pathExample": "/path/to/file",
-    "commaSeparated": "item1, item2, item3",
-    "optional": "(optional)"
-  },
   "units": {
     "celsius": "°C",
     "percent": "%",
@@ -538,16 +542,6 @@
     "fetching": "Fetching...",
     "updating": "Updating...",
     "deleting": "Deleting..."
-  },
-  "searchBar": {
-    "placeholder": "Search devices, rules...",
-    "results": "Results ({{count}})",
-    "suggestions": "Suggestions",
-    "noResults": "No matching results",
-    "startTyping": "Enter keywords to start searching",
-    "typeDevice": "Device",
-    "typeRule": "Rule",
-    "typeAlert": "Alert"
   },
   "alertLevels": {
     "critical": "Critical",
@@ -585,27 +579,10 @@
     "error": "Error",
     "unknown": "Unknown"
   },
-  "range": {
-    "min": "Min:",
-    "max": "Max:"
-  },
   "theme": {
     "light": "Light",
     "dark": "Dark",
     "system": "System"
-  },
-  "tools": {
-    "available": "Available Tools",
-    "totalCalls": "Total calls:",
-    "successful": "Success:",
-    "failed": "Failed:",
-    "avgTime": "Avg time:",
-    "all": "All",
-    "loading": "Loading tools...",
-    "noTools": "No tools available",
-    "noToolsDesc": "There are no tools available in the system",
-    "calls": "Calls:",
-    "avg": "Avg:"
   },
   "session": {
     "history": "Session History",
@@ -624,10 +601,6 @@
     "resumeResponseDesc": "Detected an in-progress response from previous disconnection",
     "discard": "Discard",
     "resume": "Resume"
-  },
-  "range": {
-    "min": "Min",
-    "max": "Max"
   },
   "language": {
     "switchToEnglish": "Switch to English",
@@ -659,7 +632,7 @@
     "intervalSecs": "Interval (seconds)",
     "sourcePatterns": "Data Source Patterns",
     "sourcePatternsPlaceholder": "device:sensor1:, extension:weather:",
-    "sourcePatternsHint": "Comma-separated prefixes. Leave empty for all sources.",
+    "sourcePatternsHint": "Comma-separated patterns, e.g. device:sensor1:, extension:weather:",
     "template": "Payload Template (optional)",
     "templateHint": "Handlebars template. Variables: {{source_id}}, {{value}}, {{timestamp}}",
     "allSources": "All sources",
@@ -719,6 +692,54 @@
     "batchOn": "Batched",
     "batchSize": "Batch Size",
     "batchInterval": "Max Interval (ms)",
-    "sourcePatternsHint": "Comma-separated patterns, e.g. device:sensor1:, extension:weather:"
-  }
+    "status": "Status",
+    "updated": "Updated",
+    "running": "Running",
+    "stopped": "Stopped",
+    "toggle": "Toggle",
+    "nameRequired": "Name Required",
+    "urlRequired": "Url Required"
+  },
+  "active": "Active",
+  "test": "Test Connection",
+  "chart": {
+    "value": "Value",
+    "temperature": "Temperature",
+    "humidity": "Humidity",
+    "series": "Series {{count}}"
+  },
+  "adding": "Adding...",
+  "chat": {
+    "suggestions": {
+      "badge": "Badge"
+    }
+  },
+  "categories": {
+    "active": "Active"
+  },
+  "tryDifferentFilters": "Try Different Filters",
+  "clearFilters": "Clear Filters",
+  "showingResults": "Showing Results",
+  "filteredResults": "Filtered Results",
+  "reload": "Reload",
+  "dashboard": {
+    "config": {
+      "deviceBinding": "Device Binding",
+      "noCompatibleDevices": "No Compatible Devices",
+      "selectDevice": "Select Device"
+    },
+    "defaultTitle": "Dashboard",
+    "newChat": "New Chat"
+  },
+  "minPasswordLength": "Min Password Length",
+  "minUsernameLength": "Min Username Length",
+  "userAlreadyExists": "User Already Exists",
+  "authFailed": "Auth Failed",
+  "done": "Done",
+  "memory": {
+    "showLess": "Show Less",
+    "showMore": "Show More"
+  },
+  "passwordNeedsLetter": "Password Needs Letter",
+  "passwordNeedsNumber": "Password Needs Number"
 }

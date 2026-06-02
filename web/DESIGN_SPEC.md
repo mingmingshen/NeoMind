@@ -755,12 +755,77 @@ const { isSubmitting, handleSubmit } = useFormSubmit({
 
 All user-visible text must use the translation system. Translation files are in `src/i18n/locales/{en,zh}/`.
 
-```tsx
-const { t } = useTranslation(['common', 'devices'])
-<span>{t('devices:title')}</span>
-```
+### 12.1 Basic Usage
 
 **NEVER hardcode strings** in components — always use `t()` with appropriate key.
+
+```tsx
+// ✅ Correct
+const { t } = useTranslation(['common', 'devices'])
+<span>{t('devices:title')}</span>
+
+// ❌ Wrong
+<span>Device Title</span>
+```
+
+### 12.2 Namespace Rules
+
+| Rule | Description |
+|------|-------------|
+| **One namespace per domain** | `devices.json` for device page keys, `agents.json` for agent page keys, etc. |
+| **`common.json` is the default namespace** | Only for truly shared keys (cancel, save, delete, error messages). NOT for page-specific or component-specific keys. |
+| **`dashboardComponents` namespace** | ALL dashboard widget/component keys go in `dashboard-components.json`, registered as `dashboardComponents`. This includes `visualDashboard.*`, `configRenderer.*`, `dataSource.*`, etc. |
+| **Register before use** | Every namespace must be: (1) imported in `config.ts`, (2) listed in `ns` array, (3) declared in `types.ts`. |
+| **No orphaned files** | Locale files must be loaded by `config.ts`. If no code references a namespace, delete both the file and its registration. |
+
+### 12.3 Key Naming Convention
+
+```
+{pageOrFeature}.{componentOrSection}.{field}
+```
+
+Examples:
+- `devices.add.adapterType` — device page, add dialog, adapter type field
+- `agents.card.successRate` — agents page, card component, success rate label
+- `common.actions` — shared across all pages
+
+**NEVER** put page-specific keys in `common.json`. If a key is only used by one page or component, it belongs in that page's namespace.
+
+### 12.4 Cross-Namespace References
+
+When a component needs keys from another namespace, use the explicit `ns:key` syntax:
+
+```tsx
+// ✅ Explicit namespace reference
+const { t } = useTranslation()  // default = common
+<span>{t('devices:add.adapterType')}</span>
+
+// ✅ Or include the namespace in useTranslation
+const { t } = useTranslation(['common', 'devices'])
+<span>{t('add.adapterType')}</span>  // resolves in 'devices' ns
+```
+
+**Prefer `useTranslation('targetNamespace')`** for components that primarily use one namespace. Use `t('ns:key')` only when you need a few keys from other namespaces.
+
+### 12.5 Adding New Keys Checklist
+
+When adding i18n keys, follow this checklist:
+
+1. **Identify the correct namespace** — which page/feature does this key belong to?
+2. **Add to BOTH `en/` and `zh/` files** — EN and ZH must have identical key structure
+3. **Provide real translations** — no placeholder text like "Desc", "Placeholder", "Title"
+4. **Register if new namespace** — update `config.ts` (import + resource + ns array) and `types.ts`
+5. **Verify** — run `npx tsc --noEmit` to catch missing keys
+
+### 12.6 Common Mistakes to Avoid
+
+| Mistake | Correct Approach |
+|---------|-----------------|
+| Adding dashboard widget keys to `common.json` | Use `dashboardComponents` namespace |
+| Creating a new `.json` file without registering it | Must add to `config.ts` imports + `ns` array + `types.ts` |
+| EN/ZH key structure mismatch | Both files must have the same key paths |
+| Hardcoded English in ZH file | All ZH values must be Chinese translations |
+| Loading unused namespaces in `useTranslation()` | Only list namespaces you actually use keys from |
 
 ---
 

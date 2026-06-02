@@ -54,5 +54,10 @@
   "testChannel": "Test",
   "testing": "Testing...",
   "noChannelTypes": "No channel types available",
-  "noChannelTypesDesc": "Unable to load alert channel types from the server"
+  "noChannelTypesDesc": "Unable to load alert channel types from the server",
+  "notConfigured": {
+    "title": "LLM Not Configured",
+    "description": "Please configure LLM backend to use chat feature",
+    "goToSettings": "Go to Settings"
+  }
 }

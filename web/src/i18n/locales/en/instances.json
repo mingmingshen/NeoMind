@@ -57,5 +57,9 @@
     "nameRequired": "Name is required",
     "urlRequired": "URL is required",
     "urlInvalid": "URL must start with http:// or https://"
-  }
+  },
+  "minPasswordLength": "Min Password Length",
+  "minUsernameLength": "Min Username Length",
+  "userAlreadyExists": "User Already Exists",
+  "authFailed": "Auth Failed"
 }

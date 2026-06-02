@@ -12,7 +12,9 @@
       "deviceType": "Device Type",
       "device": "Single Device"
     },
-    "selectScope": "Select..."
+    "selectScope": "Select...",
+    "enableTransform": "Enable Transform",
+    "enableRule": "Enable Rule"
   },
   "validation": {
     "errorTitle": "Please complete the following configuration",
@@ -164,7 +166,7 @@
   "editRuleDesc": "Modify rule name and DSL definition",
   "createRuleTitle": "Create New Rule",
   "createRuleDesc": "Use rule DSL to define trigger conditions and actions",
-  "alertTitle": "Alert Title",
+  "alertTitle": "Alert",
   "alertSeverity": "Severity",
   "alertMessage": "Alert Message",
   "info": "Info",
@@ -226,7 +228,6 @@
   "enterValue": "Enter value",
   "preview": "Preview",
   "previewDSL": "Preview DSL",
-  "useTemplate": "Use Template",
   "ruleDescription": "Rule Description",
   "generateRule": "Generate Rule",
   "generating": "Generating...",
@@ -239,7 +240,6 @@
   "imported": "Imported",
   "skipped": "Skipped",
   "importFailed": "Import failed",
-  "templates": "Templates",
   "importExport": "Import / Export",
   "selectPlaceholder": "Select an option...",
   "selectDevice": "Select a device",
@@ -268,13 +268,11 @@
   "continueToManual": "Continue to Manual",
   "ruleRecommended": "Rule Recommended",
   "reason": "Reason",
-  "complexity": "Complexity",
   "switchToRule": "Switch to Rule",
   "createRuleManual": "Create Rule (Manual)",
   "intentAnalysisFailed": "Intent analysis failed",
   "tryAgain": "Try Again",
   "skipAnalysis": "Skip Analysis",
-  "searchPlaceholder": "Search automations...",
   "noAutomations": "No automations",
   "noAutomationsDesc": "Create your first automation using AI, templates, or manual configuration",
   "conversionComplete": "Automation converted successfully",
@@ -438,11 +436,9 @@
   "generatedMetrics": "Generated Metrics",
   "noMetricsGenerated": "No metrics were generated. Check your transform configuration",
   "testFailed": "Test failed",
-  "testing": "Testing...",
   "runTest": "Run Test",
   "transformNamePlaceholder": "e.g., Temperature Average",
   "transformDescriptionPlaceholder": "Describe what this transform does...",
-  "selectPlaceholder": "Select an option...",
   "ruleSaved": "Rule saved successfully",
   "transformSaved": "Transform saved successfully",
   "itemDeleted": "Item deleted successfully",
@@ -459,13 +455,12 @@
   },
   "ruleBuilder": {
     "title": "Create Automation Rule",
-    "description": "Define trigger conditions and actions to execute when conditions are met",
+    "description": "Description",
     "createRuleDesc": "Define trigger conditions and actions to execute when conditions are met",
     "editRuleDesc": "Modify the automation rule configuration",
     "ruleName": "Rule Name",
     "ruleNameRequired": "Please enter a rule name",
     "ruleNamePlaceholder": "e.g., Auto AC on high temperature",
-    "description": "Description",
     "descriptionPlaceholder": "Rule description (optional)",
     "enabled": "Enabled",
     "fixErrors": "Please fix the following errors:",
@@ -506,7 +501,7 @@
     "seconds": "seconds",
     "minutes": "minutes",
     "hours": "hours",
-    "noActions": "No actions yet, click buttons above to add",
+    "noActions": "No actions yet",
     "executeActions": "Execute Actions",
     "executeCommand": "Execute Command",
     "sendNotification": "Send Notification",
@@ -545,7 +540,7 @@
       "reviewShort": "Preview",
       "reviewDesc": "Review rule configuration"
     },
-    "triggerType": "Trigger Configuration",
+    "triggerType": "Trigger Type",
     "review": {
       "title": "Preview",
       "description": "Review rule configuration",
@@ -576,7 +571,6 @@
     "tags": "Tags",
     "addTag": "Add tag",
     "tagsHint": "Add tags to categorize this rule (press Enter to add)",
-    "triggerType": "Trigger Type",
     "deviceTriggerDesc": "Trigger when device state meets conditions",
     "scheduleTriggerDesc": "Execute automatically on a set time cycle",
     "manualTriggerDesc": "This rule must be triggered manually",
@@ -589,16 +583,13 @@
     "customCron": "Custom",
     "useTemplate": "Use Template",
     "nextExecution": "Next execution",
-    "manualTriggerDesc": "This rule must be triggered manually",
     "preview": "Live Preview",
     "overview": "Overview",
     "conditions": "Conditions",
     "actions": "Actions",
     "noCondition": "No trigger condition",
-    "noActions": "No actions yet",
     "untitled": "Untitled Rule",
     "forDuration": "Duration",
-    "enabled": "Enabled",
     "disabled": "Disabled",
     "triggerDevice": "Device Trigger",
     "triggerSchedule": "Schedule Trigger",
@@ -638,7 +629,7 @@
     "transformCodeLabel": "Transform Code",
     "testPanel": "Test Panel",
     "scopeLabel": "Scope",
-    "accessRawData": "Access raw data",
+    "accessRawData": "for raw data",
     "selectScope": "Select...",
     "noCode": "// No code",
     "tips": {
@@ -659,11 +650,7 @@
     },
     "selectDeviceType": "Select device type",
     "selectDevice": "Select device",
-    "outputPrefix": "Output prefix",
-    "outputPrefixHint": "Only lowercase English, numbers, and underscores. Output format: {prefix}.{key}",
     "outputPrefixPlaceholder": "transform",
-    "codeTemplates": "Code Templates",
-    "run": "Run",
     "saving": "Saving...",
     "save": "Save",
     "cancel": "Cancel",
@@ -685,64 +672,10 @@
     "preview": "Live Preview",
     "overview": "Overview",
     "deviceMetrics": "Device Metrics",
-    "extensionDataSources": "Extension Sources",
-    "transformCode": "Transform Code",
+    "extensionDataSources": "Extension Data Sources",
     "codeLabel": "Transform Code",
-    "outputData": "Output Result",
     "more": "More",
     "disabled": "Disabled",
-    "test": {
-      "title": "Test & Validate",
-      "description": "Test the execution result of transform code",
-      "codeLines": "Code lines",
-      "scope": "Scope",
-      "transformCode": "Transform Code",
-      "testPanel": "Test Panel",
-      "runTest": "Run Test",
-      "generatingMock": "Generating mock data...",
-      "clearTest": "Clear Test",
-      "inputPlaceholder": "Enter JSON data...",
-      "outputPlaceholder": "Click run to see output..."
-    },
-    "scope": {
-      "global": "Global",
-      "deviceType": "Device Type",
-      "device": "Device"
-    },
-    "validationErrors": {
-      "name": "Please enter transform name",
-      "code": "Please enter transform code",
-      "outputPrefix": "Only lowercase English, numbers, and underscores",
-      "scopeValue": "Please select scope value"
-    },
-    "mockData": "Mock",
-    "clear": "Clear",
-    "clickRunToSeeOutput": "Click \"Run\" to see output",
-    "scopeLabel": "Scope",
-    "accessVia": "Access via",
-    "accessRawData": "for raw data",
-    "templates": {
-      "simple": "Simple Transform",
-      "extensionOnly": "Extension Data Only",
-      "combined": "Device + Extension Data",
-      "temperature": "Temperature",
-      "batteryStatus": "Battery Status",
-      "hexParse": "Hex Parse",
-      "dataAggregate": "Data Aggregate",
-      "addMetrics": "Add Metrics",
-      "statusCheck": "Status Check",
-      "passThrough": "Pass Through",
-      "extensionInvoke": "Call Extension Action"
-    },
-    "deviceMetrics": "Device Metrics",
-    "extensionDataSources": "Extension Data Sources",
-    "selectSources": "Select Sources",
-    "selectTemplate": "Template",
-    "insertData": "Insert Data",
-    "noExtensionSources": "No extension data sources available",
-    "noSourcesSelectedHint": "Click 'Select Sources' to add extension data",
-    "noVariablesHint": "No variables available",
-    "extensionDataHint": "Extension data accessible via input.extensions.{ext_id}.{command}.{field}",
     "test": {
       "title": "Test & Verify",
       "description": "Test the transform code execution result",
@@ -757,6 +690,40 @@
       "inputPlaceholder": "Enter JSON data...",
       "outputPlaceholder": "Click Run to see output..."
     },
+    "scope": {
+      "global": "Global",
+      "deviceType": "Device Type",
+      "device": "Device"
+    },
+    "validationErrors": {
+      "name": "Please enter transform name",
+      "code": "Please enter transform code",
+      "outputPrefix": "Only lowercase English, numbers, and underscores",
+      "scopeValue": "Please select scope value"
+    },
+    "mockData": "Mock",
+    "clickRunToSeeOutput": "Click \"Run\" to see output",
+    "accessVia": "Access via",
+    "templates": {
+      "simple": "Simple Transform",
+      "extensionOnly": "Extension Data Only",
+      "combined": "Device + Extension Data",
+      "temperature": "Temperature",
+      "batteryStatus": "Battery Status",
+      "hexParse": "Hex Parse",
+      "dataAggregate": "Data Aggregate",
+      "addMetrics": "Add Metrics",
+      "statusCheck": "Status Check",
+      "passThrough": "Pass Through",
+      "extensionInvoke": "Call Extension Action"
+    },
+    "selectSources": "Select Sources",
+    "selectTemplate": "Template",
+    "insertData": "Insert Data",
+    "noExtensionSources": "No extension data sources available",
+    "noSourcesSelectedHint": "Click 'Select Sources' to add extension data",
+    "noVariablesHint": "No variables available",
+    "extensionDataHint": "Extension data accessible via input.extensions.{ext_id}.{command}.{field}",
     "comparisonOperators": {
       "greaterThan": "Greater than",
       "lessThan": "Less than",
@@ -893,25 +860,45 @@
       "schedule": {
         "name": "Scheduled Task",
         "description": "Execute operations on schedule",
-        "examples": ["Open curtains at 7am daily", "Turn off all lights at 10pm daily", "Check temperature every hour"]
+        "examples": [
+          "Open curtains at 7am daily",
+          "Turn off all lights at 10pm daily",
+          "Check temperature every hour"
+        ]
       },
       "condition": {
         "name": "Condition Trigger",
         "description": "Execute when conditions are met",
-        "examples": ["Turn on AC when temp exceeds 30°C", "Turn on lights when motion detected", "Start humidifier when humidity below 40%"]
+        "examples": [
+          "Turn on AC when temp exceeds 30°C",
+          "Turn on lights when motion detected",
+          "Start humidifier when humidity below 40%"
+        ]
       },
       "scene": {
         "name": "Scene Mode",
         "description": "Control multiple devices with one tap",
-        "examples": ["Home mode: lights on, temp adjust, music on", "Away mode: all devices off, security on", "Sleep mode: lights off, volume down"]
+        "examples": [
+          "Home mode: lights on, temp adjust, music on",
+          "Away mode: all devices off, security on",
+          "Sleep mode: lights off, volume down"
+        ]
       },
       "alert": {
         "name": "Alert Notification",
         "description": "Send notifications for anomalies",
-        "examples": ["Notify when device offline", "Alert when temperature abnormal", "Log when sensor malfunction"]
+        "examples": [
+          "Notify when device offline",
+          "Alert when temperature abnormal",
+          "Log when sensor malfunction"
+        ]
       }
     },
-    "quickExamples": ["AC on high temp", "Schedule lights", "Lights on motion"]
+    "quickExamples": [
+      "AC on high temp",
+      "Schedule lights",
+      "Lights on motion"
+    ]
   },
   "agentCreator": {
     "title": "Create Agent",
@@ -1045,5 +1032,29 @@
       "RuleExecuted": "Rule Executed",
       "AlertCreated": "Alert Created"
     }
+  },
+  "status": "Status",
+  "deviceTransforms": "Device Transforms",
+  "deviceTypeTransforms": "Device Type Transforms",
+  "allTransforms": "All Transforms",
+  "transformsForDesc": "Available data transforms",
+  "manageTransformsDesc": "Create and manage data transformation pipelines",
+  "noTransformsForDevice": "No Transforms For Device",
+  "createFirstTransform": "Create First Transform",
+  "jsCode": "Js Code",
+  "noCode": "No Code",
+  "property": "Property",
+  "testResults": "Test Results",
+  "testRule": "Test Rule",
+  "ruleWouldTrigger": "Rule Would Trigger",
+  "ruleWouldNotTrigger": "Rule Would Not Trigger",
+  "log": "Log",
+  "emptyTransforms": {
+    "title": "No Transforms",
+    "description": "Description"
+  },
+  "emptyRules": {
+    "title": "No Rules",
+    "description": "Description"
   }
 }

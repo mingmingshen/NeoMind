@@ -13,7 +13,7 @@ import { Sliders, Info, Cpu, Plug } from "lucide-react"
 type SettingsTabValue = "llm" | "connections" | "preferences" | "about"
 
 export function SettingsPage() {
-  const { t } = useTranslation(["common", "settings", "llm", "connections", "extensions"])
+  const { t } = useTranslation(["common", "settings", "extensions"])
   const [searchParams] = useSearchParams()
   const tabFromUrl = searchParams.get("tab") as SettingsTabValue | null
   const [activeTab, setActiveTab] = useState<SettingsTabValue>(() => {

@@ -96,7 +96,6 @@
   },
   "tabs": {
     "agents": "Agents",
-    "executions": "Executions",
     "memory": "Memory",
     "skills": "Skills",
     "createSkill": "Add Skill"
@@ -233,7 +232,12 @@
     "target": "Target",
     "channel": "Channel",
     "recipient": "Recipient",
-    "lastArchived": "Last archived"
+    "lastArchived": "Last archived",
+    "inputData": "Input Data",
+    "llmResponse": "Llm Response",
+    "showLess": "Show Less",
+    "showMore": "Show More",
+    "round": "Round"
   },
   "userMessages": {
     "empty": "No messages yet",
@@ -478,7 +482,7 @@
     },
     "advanced": {
       "title": "Advanced Configuration",
-      "dataCollection": "Data Collection Config",
+      "dataCollection": "Data Collection",
       "selectMetricsFirst": "Please select metrics first",
       "executionMode": "Execution Mode",
       "chatMode": "Chat Mode",
@@ -491,7 +495,6 @@
       "freeModeDescription": "LLM freely explores and decides with multi-round tool calling. Best for complex automation and device control.",
       "focusedModeRequiresResources": "Focused Mode requires at least one resource binding",
       "saveToken": "Save Tokens",
-      "dataCollection": "Data Collection",
       "timeRange": "Time Range",
       "includeHistory": "Include History",
       "includeTrend": "Include Trend",
@@ -558,12 +561,6 @@
       "UTC": "UTC (UTC+0)"
     }
   },
-  "tabs": {
-    "agents": "Agents",
-    "memory": "Memory",
-    "skills": "Skills",
-    "createSkill": "Add Skill"
-  },
   "skills": {
     "originAll": "All",
     "originBuiltin": "Builtin",
@@ -603,7 +600,14 @@
       "tempFileTtlHint": "Days before temp files are cleaned up",
       "schedule": "Schedule",
       "scheduleInterval": "Extraction Interval",
-      "scheduleIntervalHint": "Seconds between memory extractions ({{minutes}} min)"
+      "scheduleIntervalHint": "Seconds between memory extractions ({{minutes}} min)",
+      "refreshInterval": "Refresh Interval",
+      "refreshIntervalHint": "How often to refresh agent memory context",
+      "summaryInterval": "Summary Interval",
+      "summaryIntervalHint": "How often to summarize conversation history",
+      "summaryBackend": "Summary Backend",
+      "useActive": "Use Active",
+      "summaryBackendHint": "LLM backend used for summarization"
     },
     "viewEdit": "View/Edit",
     "export": "Export",
@@ -615,7 +619,10 @@
     "cancel": "Cancel",
     "edit": "Edit",
     "lines": "lines",
-    "empty": "No content yet",
+    "empty": {
+      "title": "No Agents",
+      "description": "Description"
+    },
     "charsUsed": "{{used}} / {{limit}} chars",
     "noContent": "No content yet",
     "custom": {
@@ -631,6 +638,13 @@
       "delete": "Delete",
       "deleteConfirm": "Delete this custom file? This cannot be undone.",
       "description": "Custom knowledge file"
-    }
-  }
+    },
+    "actions": "Actions"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving"
+  },
+  "executionNotFound": "Execution Not Found"
 }

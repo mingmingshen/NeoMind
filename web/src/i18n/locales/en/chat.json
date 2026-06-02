@@ -32,12 +32,14 @@
     "supportsThinking": "Supports thinking",
     "addImage": "Add image",
     "notSupportImage": "Current model doesn't support images",
-    "visionError": "The current model doesn't support image input.\n\nPlease select a model that supports vision (like qwen3.5:4b), or remove the image and try again.\n\nModels that support vision show the 👁️ icon."
+    "visionError": "The current model doesn't support image input.\n\nPlease select a model that supports vision (like qwen3.5:4b), or remove the image and try again.\n\nModels that support vision show the 👁️ icon.",
+    "supportsTools": "Supports Tools"
   },
   "thinking": {
     "title": "Thinking process",
     "thinking": "Thinking...",
-    "characters": "characters"
+    "characters": "characters",
+    "rounds": "Rounds"
   },
   "progress": {
     "thinking": "Thinking",
@@ -49,7 +51,8 @@
     "collecting": "Collecting",
     "analyzing": "Analyzing",
     "executing": "Executing",
-    "generating": "Generating"
+    "generating": "Generating",
+    "compacting": "Compacting"
   },
   "toolCall": {
     "title": "Tool calls",
@@ -201,5 +204,18 @@
       "delete": "Deleted",
       "install": "Installed"
     }
+  },
+  "newChat": "New Chat",
+  "chat": {
+    "suggestions": {
+      "badge": "Badge"
+    }
+  },
+  "status": {
+    "typing": "Typing",
+    "wait": "Wait"
+  },
+  "footer": {
+    "disclaimer": "Disclaimer"
   }
 }

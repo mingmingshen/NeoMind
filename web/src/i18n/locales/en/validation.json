@@ -17,5 +17,9 @@
   "confirmPassword": "Passwords do not match",
   "fieldRequired": "This field is required",
   "selectOption": "Please select an option",
-  "enterValue": "Please enter a value"
+  "enterValue": "Please enter a value",
+  "minPasswordLength": "Min Password Length",
+  "minUsernameLength": "Min Username Length",
+  "passwordNeedsLetter": "Password Needs Letter",
+  "passwordNeedsNumber": "Password Needs Number"
 }

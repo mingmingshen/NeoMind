@@ -32,12 +32,14 @@
     "supportsThinking": "支持思考",
     "addImage": "添加图片",
     "notSupportImage": "当前模型不支持图片",
-    "visionError": "当前模型不支持图像输入。\n\n请选择一个支持视觉的模型（如 qwen3.5:4b），或者移除图片后重试。\n\n支持视觉的模型会显示 👁️ 图标。"
+    "visionError": "当前模型不支持图像输入。\n\n请选择一个支持视觉的模型（如 qwen3.5:4b），或者移除图片后重试。\n\n支持视觉的模型会显示 👁️ 图标。",
+    "supportsTools": "支持工具调用"
   },
   "thinking": {
     "title": "思考过程",
     "thinking": "思考中...",
-    "characters": "字符"
+    "characters": "字符",
+    "rounds": "轮次"
   },
   "progress": {
     "thinking": "思考中",
@@ -49,7 +51,8 @@
     "collecting": "收集中",
     "analyzing": "分析中",
     "executing": "执行中",
-    "generating": "生成中"
+    "generating": "生成中",
+    "compacting": "压缩上下文中"
   },
   "toolCall": {
     "title": "工具调用",
@@ -180,9 +183,6 @@
     "description": "请先配置 LLM 后端以使用聊天功能",
     "goToSettings": "前往设置"
   },
-  "suggestions": {
-    "badge": "推荐"
-  },
   "build": {
     "view": "查看",
     "undo": "撤销",
@@ -195,7 +195,7 @@
       "extension": "扩展",
       "widget": "组件",
       "transform": "转换",
-      "agent": "Agent",
+      "agent": "智能体",
       "message": "消息"
     },
     "actions": {
@@ -204,5 +204,18 @@
       "delete": "已删除",
       "install": "已安装"
     }
+  },
+  "newChat": "新对话",
+  "chat": {
+    "suggestions": {
+      "badge": "推荐"
+    }
+  },
+  "status": {
+    "typing": "输入中",
+    "wait": "等待中"
+  },
+  "footer": {
+    "disclaimer": "免责声明"
   }
 }

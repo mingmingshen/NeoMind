@@ -50,5 +50,9 @@
   "quickLlm": "Configure AI Model",
   "quickLlmDesc": "Set up Ollama, OpenAI, or other LLM providers",
   "quickExplore": "Explore Platform",
-  "quickExploreDesc": "Discover devices, automation, and more features"
+  "quickExploreDesc": "Discover devices, automation, and more features",
+  "minPasswordLength": "Min Password Length",
+  "minUsernameLength": "Min Username Length",
+  "passwordNeedsLetter": "Password Needs Letter",
+  "passwordNeedsNumber": "Password Needs Number"
 }

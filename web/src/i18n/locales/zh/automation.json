@@ -12,7 +12,9 @@
       "deviceType": "设备类型",
       "device": "单个设备"
     },
-    "selectScope": "选择..."
+    "selectScope": "选择...",
+    "enableTransform": "启用转换",
+    "enableRule": "启用规则"
   },
   "validation": {
     "errorTitle": "请完善以下配置",
@@ -162,7 +164,7 @@
   "editRuleDesc": "修改规则名称和 DSL 定义",
   "createRuleTitle": "创建新规则",
   "createRuleDesc": "使用规则 DSL 定义触发条件和执行动作",
-  "alertTitle": "告警标题",
+  "alertTitle": "告警",
   "alertSeverity": "严重程度",
   "alertMessage": "告警消息",
   "info": "信息",
@@ -239,7 +241,7 @@
   "importFailed": "导入失败",
   "templates": "模板",
   "importExport": "导入 / 导出",
-  "selectPlaceholder": "请选择...",
+  "selectPlaceholder": "选择一个选项...",
   "selectDevice": "选择设备",
   "selectMetric": "选择指标",
   "missingRequiredParam": "缺少必需参数",
@@ -265,13 +267,11 @@
   "continueToManual": "继续手动配置",
   "ruleRecommended": "推荐使用规则",
   "reason": "原因",
-  "complexity": "复杂度",
   "switchToRule": "切换为规则",
   "createRuleManual": "创建规则（手动）",
   "intentAnalysisFailed": "意图分析失败",
   "tryAgain": "重试",
   "skipAnalysis": "跳过分析",
-  "searchPlaceholder": "搜索自动化...",
   "noAutomations": "暂无自动化",
   "noAutomationsDesc": "使用 AI、模板或手动配置创建您的第一个自动化",
   "conversionComplete": "自动化转换成功",
@@ -434,11 +434,9 @@
   "generatedMetrics": "生成的指标",
   "noMetricsGenerated": "未生成任何指标。请检查数据处理配置",
   "testFailed": "测试失败",
-  "testing": "测试中...",
   "runTest": "运行测试",
   "transformNamePlaceholder": "例如：温度平均值",
   "transformDescriptionPlaceholder": "描述此数据处理的功能...",
-  "selectPlaceholder": "选择一个选项...",
   "ruleSaved": "规则保存成功",
   "transformSaved": "数据处理保存成功",
   "itemDeleted": "项目删除成功",
@@ -455,13 +453,12 @@
   },
   "ruleBuilder": {
     "title": "创建自动化规则",
-    "description": "定义触发条件和执行动作，当条件满足时自动执行",
+    "description": "描述",
     "createRuleDesc": "定义触发条件和执行动作，当条件满足时自动执行",
     "editRuleDesc": "修改自动化规则配置",
     "ruleName": "规则名称",
     "ruleNameRequired": "请输入规则名称",
     "ruleNamePlaceholder": "例如：温度过高自动开空调",
-    "description": "描述",
     "descriptionPlaceholder": "规则描述（可选）",
     "enabled": "已启用",
     "fixErrors": "请修正以下错误：",
@@ -502,7 +499,7 @@
     "seconds": "秒",
     "minutes": "分钟",
     "hours": "小时",
-    "noActions": "暂无动作，点击上方按钮添加",
+    "noActions": "暂无执行动作",
     "executeActions": "执行动作",
     "executeCommand": "执行命令",
     "sendNotification": "发送通知",
@@ -541,7 +538,7 @@
       "reviewShort": "预览",
       "reviewDesc": "检查规则配置"
     },
-    "triggerType": "触发配置",
+    "triggerType": "触发方式",
     "review": {
       "title": "预览确认",
       "description": "检查规则配置",
@@ -572,7 +569,6 @@
     "tags": "标签",
     "addTag": "添加标签",
     "tagsHint": "添加标签对规则进行分类（按 Enter 添加）",
-    "triggerType": "触发方式",
     "deviceTriggerDesc": "当设备状态满足条件时触发",
     "scheduleTriggerDesc": "按设定的时间周期自动执行",
     "manualTriggerDesc": "此规则需要手动触发执行",
@@ -585,20 +581,17 @@
     "customCron": "自定义",
     "useTemplate": "使用模板",
     "nextExecution": "下次执行",
-    "manualTriggerDesc": "此规则需要手动触发执行",
     "preview": "实时预览",
     "overview": "概览",
     "conditions": "条件",
     "actions": "动作",
     "noCondition": "暂无触发条件",
-    "noActions": "暂无执行动作",
     "untitled": "未命名规则",
     "forDuration": "持续时间",
-    "trigger": {
-      "deviceState": "设备触发",
-      "schedule": "定时触发",
-      "manual": "手动触发"
-    }
+    "disabled": "已禁用",
+    "triggerDevice": "设备触发",
+    "triggerSchedule": "定时触发",
+    "triggerManual": "手动触发"
   },
   "transformBuilder": {
     "title": "创建数据转换",
@@ -634,10 +627,10 @@
     "clear": "清除",
     "transformCodeLabel": "转换代码",
     "testPanel": "测试面板",
-    "scopeLabel": "作用范围",
+    "scopeLabel": "适用范围",
     "accessRawData": "访问原始数据",
     "selectScope": "选择...",
-    "noCode": "// No code",
+    "noCode": "// 无代码",
     "stepShort": {
       "basic": "基本",
       "code": "代码",
@@ -661,11 +654,7 @@
     },
     "selectDeviceType": "选择设备类型",
     "selectDevice": "选择设备",
-    "outputPrefix": "输出前缀",
-    "outputPrefixHint": "仅支持英文小写、数字和下划线。转换后的指标名称格式：{前缀}.{key}",
     "outputPrefixPlaceholder": "transform",
-    "codeTemplates": "代码模板",
-    "run": "运行",
     "saving": "保存中...",
     "save": "保存",
     "cancel": "取消",
@@ -684,6 +673,7 @@
       "description": "测试转换代码的执行结果",
       "codeLines": "代码行数",
       "scope": "作用范围",
+      "extensionSources": "扩展数据源",
       "transformCode": "转换代码",
       "testPanel": "测试面板",
       "runTest": "运行测试",
@@ -704,11 +694,8 @@
       "scopeValue": "请选择作用范围"
     },
     "mockData": "模拟数据",
-    "clear": "清除",
     "clickRunToSeeOutput": "点击\\\"运行\\\"查看输出结果",
-    "scopeLabel": "适用范围",
     "accessVia": "代码中可通过",
-    "accessRawData": "访问原始数据",
     "templates": {
       "simple": "简单转换",
       "extensionOnly": "仅使用扩展数据",
@@ -731,20 +718,6 @@
     "noSourcesSelectedHint": "点击「选择数据源」添加扩展数据",
     "noVariablesHint": "暂无可用变量",
     "extensionDataHint": "扩展数据可通过 input.extensions.{扩展ID}.{命令}.{字段} 访问",
-    "test": {
-      "title": "测试验证",
-      "description": "测试转换代码的执行结果",
-      "codeLines": "代码行数",
-      "scope": "作用范围",
-      "extensionSources": "扩展数据源",
-      "transformCode": "转换代码",
-      "testPanel": "测试面板",
-      "runTest": "运行测试",
-      "generatingMock": "生成模拟数据...",
-      "clearTest": "清除测试",
-      "inputPlaceholder": "输入 JSON 数据...",
-      "outputPlaceholder": "点击运行查看输出结果..."
-    },
     "comparisonOperators": {
       "greaterThan": "大于",
       "lessThan": "小于",
@@ -767,7 +740,9 @@
     "invokeExtension": "调用",
     "extensionInvokeHint": "点击生成调用此扩展操作的代码",
     "more": "更多",
-    "disabled": "禁用"
+    "disabled": "禁用",
+    "preview": "实时预览",
+    "overview": "概览"
   },
   "validationErrors": {
     "selectDevice": "请选择设备",
@@ -799,7 +774,7 @@
     "set": "设置",
     "delay": "延迟",
     "createAlert": "告警",
-    "httpRequest": "HTTP"
+    "httpRequest": "HTTP 请求"
   },
   "placeholders": {
     "selectDevice": "选择设备",
@@ -883,25 +858,45 @@
       "schedule": {
         "name": "定时任务",
         "description": "按时间执行操作",
-        "examples": ["每天早上7点打开窗帘", "每天晚上10点关闭所有灯光", "每小时检查一次温度"]
+        "examples": [
+          "每天早上7点打开窗帘",
+          "每天晚上10点关闭所有灯光",
+          "每小时检查一次温度"
+        ]
       },
       "condition": {
         "name": "条件触发",
         "description": "满足条件时执行",
-        "examples": ["温度超过30度时打开空调", "检测到有人时打开灯光", "湿度低于40%时开启加湿器"]
+        "examples": [
+          "温度超过30度时打开空调",
+          "检测到有人时打开灯光",
+          "湿度低于40%时开启加湿器"
+        ]
       },
       "scene": {
         "name": "场景模式",
         "description": "一键控制多个设备",
-        "examples": ["回家模式：打开灯、调温度、播放音乐", "离家模式：关闭所有设备、开启安防", "睡眠模式：关闭灯光、降低音量"]
+        "examples": [
+          "回家模式：打开灯、调温度、播放音乐",
+          "离家模式：关闭所有设备、开启安防",
+          "睡眠模式：关闭灯光、降低音量"
+        ]
       },
       "alert": {
         "name": "告警通知",
         "description": "异常情况发送通知",
-        "examples": ["设备离线时发送通知", "温度异常时告警", "传感器故障时记录日志"]
+        "examples": [
+          "设备离线时发送通知",
+          "温度异常时告警",
+          "传感器故障时记录日志"
+        ]
       }
     },
-    "quickExamples": ["温度超标开空调", "定时开关灯", "有人亮灯"]
+    "quickExamples": [
+      "温度超标开空调",
+      "定时开关灯",
+      "有人亮灯"
+    ]
   },
   "agentCreator": {
     "title": "创建智能体",
@@ -1035,5 +1030,31 @@
       "RuleExecuted": "规则执行",
       "AlertCreated": "告警创建"
     }
-  }
+  },
+  "status": "状态",
+  "deviceTransforms": "设备转换",
+  "deviceTypeTransforms": "设备类型转换",
+  "allTransforms": "全部转换",
+  "transformsForDesc": "可用的数据转换",
+  "manageTransformsDesc": "创建和管理数据转换管道",
+  "noTransformsForDevice": "该设备暂无转换",
+  "createFirstTransform": "创建第一个转换",
+  "jsCode": "JS 代码",
+  "noCode": "无代码",
+  "property": "属性",
+  "testResults": "测试结果",
+  "testRule": "测试规则",
+  "ruleWouldTrigger": "规则将触发",
+  "ruleWouldNotTrigger": "规则不会触发",
+  "log": "日志",
+  "emptyTransforms": {
+    "title": "暂无转换",
+    "description": "暂无数据转换，创建一个来处理设备数据"
+  },
+  "emptyRules": {
+    "title": "暂无规则",
+    "description": "暂无自动化规则，创建一个来自动响应设备事件"
+  },
+  "confidence": "置信度",
+  "enableTransform": "启用转换"
 }

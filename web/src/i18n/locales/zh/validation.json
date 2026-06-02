@@ -17,5 +17,9 @@
   "confirmPassword": "密码不匹配",
   "fieldRequired": "此字段为必填项",
   "selectOption": "请选择一个选项",
-  "enterValue": "请输入值"
+  "enterValue": "请输入值",
+  "minPasswordLength": "密码最少字符数",
+  "minUsernameLength": "用户名最少字符数",
+  "passwordNeedsLetter": "密码需要包含字母",
+  "passwordNeedsNumber": "密码需要包含数字"
 }
