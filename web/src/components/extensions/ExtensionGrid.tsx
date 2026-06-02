@@ -7,14 +7,48 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/shared/EmptyState"
 import {
-  Package,
   Search,
   X,
   Filter,
   Grid3x3,
+  Brain,
+  Wrench,
+  Plug,
+  Camera,
+  Eye,
+  Factory,
+  Home,
+  MonitorPlay,
+  ScanText,
+  UserCheck,
+  Wifi,
+  CloudSun,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Extension } from "@/types"
+
+// Extension showcase data for the marquee (matches real NeoMind-Extensions)
+interface ShowcaseExtension {
+  name: string
+  desc: string
+  icon: React.ReactNode
+  category: string
+}
+
+const showcaseExtensions: ShowcaseExtension[] = [
+  { name: "YOLO Video", desc: "Real-time video object detection with ROI analytics", icon: <Eye className="h-5 w-5" />, category: "AI Vision" },
+  { name: "Face Recognition", desc: "ArcFace embeddings with face gallery and identity matching", icon: <UserCheck className="h-5 w-5" />, category: "AI Vision" },
+  { name: "BACnet Bridge", desc: "Discover building automation devices and read sensors", icon: <Factory className="h-5 w-5" />, category: "Industrial" },
+  { name: "Modbus Bridge", desc: "Connect PLCs, power meters, and industrial devices", icon: <Factory className="h-5 w-5" />, category: "Industrial" },
+  { name: "LoRaWAN Bridge", desc: "Connect ChirpStack/TTN sensors with auto-discovery", icon: <Wifi className="h-5 w-5" />, category: "IoT" },
+  { name: "ONVIF Bridge", desc: "Discover IP cameras, get RTSP streams, PTZ control", icon: <Camera className="h-5 w-5" />, category: "Camera" },
+  { name: "Home Assistant", desc: "Import 3000+ HA entity integrations as devices", icon: <Home className="h-5 w-5" />, category: "Smart Home" },
+  { name: "Stream Player", desc: "RTSP/RTMP/HLS video playback with FFmpeg transcoding", icon: <MonitorPlay className="h-5 w-5" />, category: "Media" },
+  { name: "Weather Forecast", desc: "Real-time multi-city weather with OpenWeatherMap", icon: <CloudSun className="h-5 w-5" />, category: "Data" },
+  { name: "OCR Inference", desc: "Automatic OCR text recognition on device image streams", icon: <ScanText className="h-5 w-5" />, category: "AI Vision" },
+  { name: "OPC-UA Bridge", desc: "Connect industrial servers, browse nodes, subscribe changes", icon: <Factory className="h-5 w-5" />, category: "Industrial" },
+  { name: "Image Analyzer", desc: "Standalone image detection with ONNX/CoreML/CUDA acceleration", icon: <Brain className="h-5 w-5" />, category: "AI Vision" },
+]
 
 interface ExtensionGridProps {
   extensions: Extension[]
@@ -127,12 +161,76 @@ export function ExtensionGrid({
   }
 
   if (!extensions || extensions.length === 0) {
+    const categories = [
+      { icon: <Factory className="h-4 w-4" />, label: t("empty.catIndustrial") },
+      { icon: <Eye className="h-4 w-4" />, label: t("empty.catVision") },
+      { icon: <Camera className="h-4 w-4" />, label: t("empty.catCamera") },
+      { icon: <Wifi className="h-4 w-4" />, label: t("empty.catIot") },
+      { icon: <Home className="h-4 w-4" />, label: t("empty.catSmartHome") },
+      { icon: <MonitorPlay className="h-4 w-4" />, label: t("empty.catMedia") },
+      { icon: <CloudSun className="h-4 w-4" />, label: t("empty.catData") },
+      { icon: <Wrench className="h-4 w-4" />, label: t("empty.catTool") },
+    ]
+
+    const marqueeItems = [...showcaseExtensions, ...showcaseExtensions]
+
     return (
-      <EmptyState
-        icon={<Package className="h-12 w-12" />}
-        title={t("noExtensions", { defaultValue: "No Extensions" })}
-        description={t("noExtensionsDesc", { defaultValue: "Install extensions to add new capabilities to NeoMind." })}
-      />
+      <div className="flex flex-col items-center py-12 px-4">
+        {/* Hero */}
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent ring-1 ring-primary/10 mb-5">
+          <Plug className="h-8 w-8 text-primary" />
+        </div>
+        <h3 className="text-xl font-semibold">{t("empty.title")}</h3>
+        <p className="mt-2 text-sm text-muted-foreground max-w-md text-center leading-relaxed">
+          {t("empty.description")}
+        </p>
+
+        {/* Marquee */}
+        <div className="mt-8 w-full max-w-3xl overflow-hidden relative">
+          {/* Edge fades */}
+          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-background to-transparent" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-gradient-to-l from-background to-transparent" />
+
+          <div className="flex animate-marquee" style={{ "--marquee-duration": "50s" } as React.CSSProperties}>
+            {marqueeItems.map((ext, i) => (
+              <div
+                key={`${ext.name}-${i}`}
+                className="flex-shrink-0 w-56 mx-2 rounded-xl border bg-background/80 backdrop-blur-sm p-3.5 hover:border-primary/30 hover:bg-background transition-colors"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    {ext.icon}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{ext.name}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2 leading-tight">
+                      {ext.desc}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <span className="inline-flex items-center rounded-full bg-muted-50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {ext.category}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Category tags */}
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+          {categories.map((c) => (
+            <div
+              key={c.label}
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium text-muted-foreground bg-background"
+            >
+              <span className="shrink-0">{c.icon}</span>
+              {c.label}
+            </div>
+          ))}
+        </div>
+      </div>
     )
   }
 

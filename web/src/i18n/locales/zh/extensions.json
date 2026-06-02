@@ -8,6 +8,18 @@
   "extensionsDesc": "通过动态加载模块（.so/.wasm）扩展系统功能",
   "noExtensions": "暂无扩展",
   "noExtensionsDesc": "扩展是动态加载的模块（.so/.dylib/.dll/.wasm），用于扩展 NeoMind 的功能。它们提供 LLM 后端、设备协议、消息通道、AI 工具和自定义数据源。",
+  "empty": {
+    "title": "探索扩展生态",
+    "description": "浏览并安装扩展，为 NeoMind 边缘平台添加 AI 视觉、工业协议、IoT 集成等丰富能力。",
+    "catIndustrial": "工业协议",
+    "catVision": "AI 视觉",
+    "catCamera": "摄像头与视频",
+    "catIot": "IoT 与无线",
+    "catSmartHome": "智能家居",
+    "catMedia": "媒体流",
+    "catData": "数据服务",
+    "catTool": "AI 工具"
+  },
   "addExtension": "添加扩展",
   "loading": "加载中...",
   "extensionId": "扩展 ID",

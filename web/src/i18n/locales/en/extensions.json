@@ -8,6 +8,18 @@
   "extensionsDesc": "Extend system functionality via dynamically loaded modules (.so/.wasm)",
   "noExtensions": "No extensions found",
   "noExtensionsDesc": "Extensions are dynamically loaded modules (.so/.dylib/.dll/.wasm) that extend NeoMind's capabilities. They provide LLM providers, device protocols, message channels, AI tools, and custom data sources.",
+  "empty": {
+    "title": "Discover the Extension Ecosystem",
+    "description": "Browse and install extensions to add AI vision, industrial protocols, IoT integrations, and more to your NeoMind edge platform.",
+    "catIndustrial": "Industrial Protocols",
+    "catVision": "AI Vision",
+    "catCamera": "Camera & Video",
+    "catIot": "IoT & Wireless",
+    "catSmartHome": "Smart Home",
+    "catMedia": "Media Streaming",
+    "catData": "Data Services",
+    "catTool": "AI Tools"
+  },
   "addExtension": "Add Extension",
   "loading": "Loading...",
   "extensionId": "Extension ID",
