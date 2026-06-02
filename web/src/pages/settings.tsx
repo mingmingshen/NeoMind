@@ -2,23 +2,37 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useSearchParams } from "react-router-dom"
 import { useStore } from "@/store"
+import { useIsMobile } from "@/hooks/useMobile"
 import { PageLayout } from "@/components/layout/PageLayout"
-import { PageTabsBar, PageTabsContent, PageTabsBottomNav } from "@/components/shared"
+import { Button } from "@/components/ui/button"
+import { ArrowLeft } from "lucide-react"
 import { AboutTab } from "./settings/AboutTab"
 import { PreferencesTab } from "./settings/PreferencesTab"
 import { UnifiedLLMBackendsTab } from "@/components/llm/UnifiedLLMBackendsTab"
 import { UnifiedDeviceConnectionsTab } from "@/components/connections"
-import { Sliders, Info, Cpu, Plug } from "lucide-react"
+import {
+  SettingsNav,
+  SettingsSection as SettingsSectionType,
+  getSettingsSections,
+} from "./settings/SettingsNav"
+import { SettingsSectionList } from "./settings/SettingsSectionList"
 
-type SettingsTabValue = "llm" | "connections" | "preferences" | "about"
+type MobileView = "list" | "section"
 
 export function SettingsPage() {
   const { t } = useTranslation(["common", "settings", "extensions"])
-  const [searchParams] = useSearchParams()
-  const tabFromUrl = searchParams.get("tab") as SettingsTabValue | null
-  const [activeTab, setActiveTab] = useState<SettingsTabValue>(() => {
-    const validTabs: SettingsTabValue[] = ["llm", "connections", "preferences", "about"]
-    return tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "preferences"
+  const isMobile = useIsMobile()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const sectionFromUrl = searchParams.get("tab") as SettingsSectionType | null
+
+  const validSections: SettingsSectionType[] = ["llm", "connections", "preferences", "about"]
+  const [activeSection, setActiveSection] = useState<SettingsSectionType>(() => {
+    return sectionFromUrl && validSections.includes(sectionFromUrl) ? sectionFromUrl : "preferences"
+  })
+
+  // Mobile drill-down state
+  const [mobileView, setMobileView] = useState<MobileView>(() => {
+    return sectionFromUrl && validSections.includes(sectionFromUrl) ? "section" : "list"
   })
 
   // LLM Backend actions from store
@@ -27,60 +41,89 @@ export function SettingsPage() {
   const deleteBackend = useStore((state) => state.deleteBackend)
   const testBackend = useStore((state) => state.testBackend)
 
-  const tabs = [
-    { value: "llm" as SettingsTabValue, label: t("settings:llmBackends"), icon: <Cpu className="h-4 w-4" /> },
-    { value: "connections" as SettingsTabValue, label: t("settings:deviceConnections"), icon: <Plug className="h-4 w-4" /> },
-    { value: "preferences" as SettingsTabValue, label: t("settings:preferences"), icon: <Sliders className="h-4 w-4" /> },
-    { value: "about" as SettingsTabValue, label: t("settings:about"), icon: <Info className="h-4 w-4" /> },
-  ]
+  const sections = getSettingsSections(t)
 
-  return (
-    <>
-      <PageLayout
-        title={t('settings:title')}
-        subtitle={t('settings:description')}
-        borderedHeader={false}
-        hasBottomNav
-        headerContent={
-          <PageTabsBar
-            tabs={tabs}
-            activeTab={activeTab}
-            onTabChange={(v) => setActiveTab(v as SettingsTabValue)}
-          />
-        }
-      >
-        {/* LLM Backends Tab */}
-        <PageTabsContent value="llm" activeTab={activeTab}>
+  const handleSectionChange = (section: SettingsSectionType) => {
+    setActiveSection(section)
+    setSearchParams({ tab: section }, { replace: true })
+    if (isMobile) {
+      setMobileView("section")
+    }
+  }
+
+  const handleMobileBack = () => {
+    setMobileView("list")
+    setSearchParams({}, { replace: true })
+  }
+
+  // Render the active section content
+  const renderSection = () => {
+    switch (activeSection) {
+      case "llm":
+        return (
           <UnifiedLLMBackendsTab
             onCreateBackend={createBackend}
             onUpdateBackend={updateBackend}
             onDeleteBackend={deleteBackend}
             onTestBackend={testBackend}
           />
-        </PageTabsContent>
+        )
+      case "connections":
+        return <UnifiedDeviceConnectionsTab />
+      case "preferences":
+        return <PreferencesTab />
+      case "about":
+        return <AboutTab />
+    }
+  }
 
-        {/* Device Connections Tab */}
-        <PageTabsContent value="connections" activeTab={activeTab}>
-          <UnifiedDeviceConnectionsTab />
-        </PageTabsContent>
+  // Mobile drill-down view
+  const mobileSectionLabel = sections.find((s) => s.value === activeSection)?.label
 
-        {/* Preferences Tab */}
-        <PageTabsContent value="preferences" activeTab={activeTab}>
-          <PreferencesTab />
-        </PageTabsContent>
-
-        {/* About Tab */}
-        <PageTabsContent value="about" activeTab={activeTab}>
-          <AboutTab />
-        </PageTabsContent>
+  if (isMobile) {
+    return (
+      <PageLayout title={t("settings:title")} borderedHeader={false}>
+        {mobileView === "list" ? (
+          <div>
+            <h2 className="text-lg font-semibold mb-4">{t("settings:title")}</h2>
+            <SettingsSectionList sections={sections} onSectionSelect={handleSectionChange} />
+          </div>
+        ) : (
+          <div>
+            {/* Mobile section header with back button */}
+            <div className="flex items-center gap-2 mb-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleMobileBack}
+                aria-label={t("common:back")}
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <h2 className="text-base font-medium">{mobileSectionLabel}</h2>
+            </div>
+            {renderSection()}
+          </div>
+        )}
+        {/* Bottom spacer for safe area on mobile */}
+        <div style={{ height: "calc(2rem + env(safe-area-inset-bottom, 0px))" }} />
       </PageLayout>
+    )
+  }
 
-      {/* Mobile Bottom Navigation */}
-      <PageTabsBottomNav
-        tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={(v) => setActiveTab(v as SettingsTabValue)}
-      />
-    </>
+  // Desktop: sidebar + content
+  return (
+    <PageLayout title={t("settings:title")} subtitle={t("settings:description")} borderedHeader={false}>
+      <div className="flex gap-6">
+        <SettingsNav
+          sections={sections}
+          activeSection={activeSection}
+          onSectionChange={handleSectionChange}
+        />
+        <div className="flex-1 min-w-0">
+          {renderSection()}
+        </div>
+      </div>
+    </PageLayout>
   )
 }
