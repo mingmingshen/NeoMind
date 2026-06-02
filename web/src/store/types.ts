@@ -51,6 +51,9 @@ export interface SessionState {
 
 export interface DeviceState {
   devices: Device[]
+  /** Real-time telemetry split from devices array to avoid cascading re-renders.
+   *  Keyed by device ID, value is a flat map of metric→value. */
+  deviceTelemetry: Record<string, Record<string, unknown>>
   deviceTypes: DeviceType[]
   selectedDevice: Device | null
   selectedDeviceId: string | null

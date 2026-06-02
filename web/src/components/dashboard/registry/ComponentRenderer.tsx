@@ -411,9 +411,14 @@ const ComponentRenderer = memo(function ComponentRenderer({
     (communityMetaForDevice?.has_device_binding || dynamicMetaForDevice?.has_device_binding) && boundDeviceId
   )
 
-  // Subscribe to bound device from store
+  // Subscribe to bound device from store (static config only — does NOT change on telemetry updates)
   const boundDevice = useStore(useCallback((s: any) =>
     hasDeviceBinding ? findDevice(s.devices, boundDeviceId) : null
+  , [hasDeviceBinding, boundDeviceId]))
+
+  // Subscribe to bound device's telemetry independently (high-frequency updates)
+  const boundDeviceTelemetry = useStore(useCallback((s: any) =>
+    hasDeviceBinding && boundDeviceId ? s.deviceTelemetry[boundDeviceId] : undefined
   , [hasDeviceBinding, boundDeviceId]))
 
   const boundDeviceType = useStore(useCallback((s: any) =>
@@ -427,6 +432,8 @@ const ComponentRenderer = memo(function ComponentRenderer({
   // Build deviceContext and sendDeviceCommand for bound components
   const deviceContext = useMemo(() => {
     if (!hasDeviceBinding || !boundDevice) return undefined
+    // Read telemetry from split map, fallback to device.current_values
+    const currentValues = boundDeviceTelemetry || boundDevice.current_values || {}
     return {
       device: {
         id: boundDevice.id,
@@ -434,7 +441,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
         deviceType: boundDevice.device_type,
         status: boundDevice.online ? 'online' : 'offline',
         lastSeen: boundDevice.last_seen,
-        currentValues: boundDevice.current_values || {},
+        currentValues,
       },
       deviceType: boundDeviceType ? {
         name: boundDeviceType.name,
@@ -443,7 +450,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
         commands: boundDeviceType.commands || [],
       } : undefined,
     }
-  }, [hasDeviceBinding, boundDevice, boundDeviceType])
+  }, [hasDeviceBinding, boundDevice, boundDeviceType, boundDeviceTelemetry])
 
   const sendDeviceCommand = useMemo(() => {
     if (!hasDeviceBinding || !boundDeviceId) return undefined

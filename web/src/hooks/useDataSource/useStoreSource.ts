@@ -124,6 +124,7 @@ export function useStoreSource<T = unknown>(
 
   const prevStoreStateRef = useRef<{
     rawDevices: NeoMindStore['devices']
+    deviceTelemetry: NeoMindStore['deviceTelemetry']
     map: Map<string, Device>
   } | null>(null)
 
@@ -139,7 +140,9 @@ export function useStoreSource<T = unknown>(
     perfMark('readData')
     const { transform: transformFn, fallback: fallbackVal } = state.optionsRef.current
     const currentDataSources = state.dataSourcesRef.current
-    const currentDevices = useStore.getState().devices
+    const storeState = useStore.getState()
+    const currentDevices = storeState.devices
+    const currentTelemetry = storeState.deviceTelemetry
 
     if (currentDataSources.length === 0) {
       if (fallbackVal !== undefined) state.setData(fallbackVal)
@@ -175,21 +178,23 @@ export function useStoreSource<T = unknown>(
           if (!deviceId) { result = fallbackVal ?? null; return result }
           const property = getUnifiedField(ds) as string | undefined
           const device = findDevice(currentDevices, deviceId)
+          // Read telemetry from split map, fallback to device.current_values
+          const cv = currentTelemetry[deviceId] || device?.current_values
 
           if (!property) {
             result = device ?? null
           } else {
             const cacheKey = `${deviceId}:${property}`
-            if (device?.current_values && typeof device.current_values === 'object' && Object.keys(device.current_values).length > 0) {
-              const extracted = extractValueFromData(device.current_values, property)
+            if (cv && typeof cv === 'object' && Object.keys(cv).length > 0) {
+              const extracted = extractValueFromData(cv, property)
               if (extracted !== undefined) {
                 result = extracted
                 lastValidDataRef.current[cacheKey] = extracted
               } else {
                 let foundNested = false
                 for (const nestedKey of ['values', 'metrics', 'data']) {
-                  if (device.current_values[nestedKey] && typeof device.current_values[nestedKey] === 'object') {
-                    const nestedValue = extractValueFromData(device.current_values[nestedKey] as Record<string, unknown>, property)
+                  if (cv[nestedKey] && typeof cv[nestedKey] === 'object') {
+                    const nestedValue = extractValueFromData(cv[nestedKey] as Record<string, unknown>, property)
                     if (nestedValue !== undefined) { result = nestedValue; foundNested = true; lastValidDataRef.current[cacheKey] = nestedValue; break }
                   }
                 }
@@ -221,8 +226,9 @@ export function useStoreSource<T = unknown>(
           if (!deviceId) { result = fallbackVal ?? false; return result }
           const property = getUnifiedField(ds) || 'state'
           const device = findDevice(currentDevices, deviceId)
-          if (device?.current_values && typeof device.current_values === 'object') {
-            result = extractValueFromData(device.current_values, property) ?? false
+          const cv = currentTelemetry[deviceId] || device?.current_values
+          if (cv && typeof cv === 'object') {
+            result = extractValueFromData(cv, property) ?? false
           } else { result = false }
           result = safeExtractValue(result, false)
         } else if (mode === 'info' && source === 'device') {
@@ -287,7 +293,11 @@ export function useStoreSource<T = unknown>(
     }
 
     readDataFromStore()
-    prevStoreStateRef.current = { rawDevices: useStore.getState().devices, map: buildDeviceMap(useStore.getState().devices) }
+    prevStoreStateRef.current = {
+      rawDevices: useStore.getState().devices,
+      deviceTelemetry: useStore.getState().deviceTelemetry,
+      map: buildDeviceMap(useStore.getState().devices),
+    }
 
     let unsubscribed = false
 
@@ -298,9 +308,12 @@ export function useStoreSource<T = unknown>(
 
       const prev = prevStoreStateRef.current
       if (!prev) return
-      if (s.devices === prev.rawDevices) return
+
+      // Early exit: nothing changed at all
+      if (s.devices === prev.rawDevices && s.deviceTelemetry === prev.deviceTelemetry) return
 
       const devicesChanged = s.devices !== prev.rawDevices
+      const telemetryChanged = s.deviceTelemetry !== prev.deviceTelemetry
       const devicesLengthChanged = s.devices.length !== prev.rawDevices.length
       let currentValuesChanged = false
       const changedDeviceIds = new Set<string>()
@@ -308,33 +321,35 @@ export function useStoreSource<T = unknown>(
       // Only rebuild device map when reference changes
       const currMap = devicesChanged ? buildDeviceMap(s.devices) : prev.map
 
+      // Check telemetry changes (per-device diff for relevant devices only)
+      if (telemetryChanged && !devicesLengthChanged) {
+        for (const deviceId of relevantDeviceIds) {
+          const newTel = s.deviceTelemetry[deviceId]
+          const prevTel = prev.deviceTelemetry[deviceId]
+          if (newTel !== prevTel) {
+            currentValuesChanged = true
+            changedDeviceIds.add(deviceId)
+          }
+        }
+      }
+
+      // Check device info changes (status, online, last_seen)
       if (!devicesLengthChanged) {
         const prevMap = prev.map
-
         for (const deviceId of relevantDeviceIds) {
-          const device = currMap.get(deviceId)
-          const prevDevice = prevMap.get(deviceId)
-
-          if (device && prevDevice) {
-            if (device.current_values !== prevDevice.current_values) {
-              if (device.current_values && Object.keys(device.current_values).length > 0) {
-                currentValuesChanged = true
-                changedDeviceIds.add(deviceId)
-              }
-            }
-            if (deviceInfoIds.has(deviceId)) {
+          if (deviceInfoIds.has(deviceId)) {
+            const device = currMap.get(deviceId)
+            const prevDevice = prevMap.get(deviceId)
+            if (device && prevDevice) {
               if (device.status !== prevDevice.status || device.online !== prevDevice.online || device.last_seen !== prevDevice.last_seen) {
                 currentValuesChanged = true
                 changedDeviceIds.add(deviceId)
               }
-            }
-          } else if (device && !prevDevice) {
-            if (device.current_values && Object.keys(device.current_values).length > 0) {
+            } else if (device !== prevDevice) {
+              // Device added or removed
               currentValuesChanged = true
               changedDeviceIds.add(deviceId)
             }
-          } else if (!device && prevDevice) {
-            currentValuesChanged = true
           }
         }
       }
@@ -343,9 +358,13 @@ export function useStoreSource<T = unknown>(
         const hasRelevantChange = devicesLengthChanged ||
           Array.from(changedDeviceIds).some((id) => relevantDeviceIds.has(id)) ||
           (devicesChanged && changedDeviceIds.size === 0)
-        if (!hasRelevantChange && !currentValuesChanged) return
+        if (!hasRelevantChange && !currentValuesChanged) {
+          // Still update ref to avoid re-checking same state
+          prevStoreStateRef.current = { rawDevices: s.devices, deviceTelemetry: s.deviceTelemetry, map: currMap }
+          return
+        }
 
-        prevStoreStateRef.current = { rawDevices: s.devices, map: currMap }
+        prevStoreStateRef.current = { rawDevices: s.devices, deviceTelemetry: s.deviceTelemetry, map: currMap }
         readDataFromStore()
 
         // Telemetry merge from store changes — build synthetic events for all
@@ -362,8 +381,9 @@ export function useStoreSource<T = unknown>(
             let currentData = prevData as unknown
 
             for (const deviceId of changedDeviceIds) {
-              const device = findDevice(s.devices, deviceId)
-              if (!device?.current_values || typeof device.current_values !== 'object') continue
+              // Read telemetry from split map, fallback to device.current_values
+              const cv = s.deviceTelemetry[deviceId] || findDevice(s.devices, deviceId)?.current_values
+              if (!cv || typeof cv !== 'object') continue
 
               for (const ds of telSources) {
                 // Only device-sourced telemetry can match changedDeviceIds
@@ -371,7 +391,7 @@ export function useStoreSource<T = unknown>(
                 const dsId = getUnifiedId(ds)
                 if (dsId !== deviceId) continue
                 const metricId = getUnifiedField(ds) || 'value'
-                const latestValue = extractValueFromData(device.current_values, metricId)
+                const latestValue = extractValueFromData(cv, metricId)
                 if (latestValue === undefined) continue
 
                 // Inline the processTelemetryEvent logic for a single point

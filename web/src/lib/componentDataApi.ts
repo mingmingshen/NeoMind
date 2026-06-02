@@ -32,9 +32,12 @@ export async function resolveDataSourceData(
   switch (mode) {
     case 'latest': {
       if (source === 'device') {
-        const device = findDevice(useStore.getState().devices, id)
-        if (device?.current_values && typeof device.current_values === 'object') {
-          const value = extractValueFromData(device.current_values, field)
+        const storeState = useStore.getState()
+        const device = findDevice(storeState.devices, id)
+        // Read telemetry from split map, fallback to device.current_values
+        const cv = storeState.deviceTelemetry[id] || device?.current_values
+        if (cv && typeof cv === 'object') {
+          const value = extractValueFromData(cv, field)
           if (value !== undefined) return { value }
         }
         return { value: undefined }

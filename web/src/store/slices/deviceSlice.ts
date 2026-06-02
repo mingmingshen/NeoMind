@@ -121,6 +121,7 @@ export const createDeviceSlice: StateCreator<
 > = (set, get) => ({
   // Initial state
   devices: [],
+  deviceTelemetry: {},
   deviceTypes: [],
   selectedDevice: null,
   selectedDeviceId: null,
@@ -162,7 +163,16 @@ export const createDeviceSlice: StateCreator<
         // Then by last_seen descending
         return new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime()
       })
-      set({ devices: sortedDevices })
+
+      // Migrate current_values from devices into deviceTelemetry map
+      const telemetryInit: Record<string, Record<string, unknown>> = {}
+      for (const device of sortedDevices) {
+        if (device.current_values && typeof device.current_values === 'object' && Object.keys(device.current_values).length > 0) {
+          telemetryInit[device.id || device.device_id] = device.current_values
+        }
+      }
+
+      set({ devices: sortedDevices, deviceTelemetry: telemetryInit })
       if (sortedDevices.length === 0) {
         // Don't cache empty results — backend may still be loading devices from DB
         fetchCache.invalidate('devices')
@@ -367,14 +377,17 @@ export const createDeviceSlice: StateCreator<
       const data = await api.getDeviceCurrent(deviceId)
       set({ deviceCurrentState: data })
 
-      // Also update device in the devices list with current values
-      // This keeps the devices list in sync with the latest data
+      // Also update device telemetry with current values
+      const newValues = buildNestedValues(data.metrics || {})
       set((state) => ({
+        deviceTelemetry: newValues && Object.keys(newValues).length > 0
+          ? { ...state.deviceTelemetry, [deviceId]: newValues }
+          : state.deviceTelemetry,
         devices: state.devices.map((d) =>
           d.id === deviceId || d.device_id === deviceId
             ? {
                 ...d,
-                current_values: buildNestedValues(data.metrics || {}),
+                current_values: newValues,
               }
             : d
         ),
@@ -432,31 +445,26 @@ export const createDeviceSlice: StateCreator<
       const _t0 = performance.now()
       set((state) => {
         let changed = false
+        const telemetryPatch: Record<string, Record<string, unknown>> = {}
 
         // Track which device IDs from the batch already exist in store
         const existingIds = new Set<string>()
 
-        const updatedDevices = state.devices.map((device) => {
+        for (const device of state.devices) {
           const id = device.id || device.device_id
           existingIds.add(id)
           const deviceData = deviceDataMap[id]
-          if (!deviceData) {
-            return device
-          }
+          if (!deviceData) continue
 
           const newValues = buildNestedValues(deviceData.current_values)
 
-          // Skip update if current_values haven't actually changed
-          if (device.current_values && shallowEqualValues(device.current_values, newValues)) {
-            return device
-          }
+          // Check if telemetry actually changed (compare against deviceTelemetry first, then current_values)
+          const existing = state.deviceTelemetry[id] || device.current_values || {}
+          if (existing && shallowEqualValues(existing, newValues)) continue
 
           changed = true
-          return {
-            ...device,
-            current_values: newValues,
-          }
-        })
+          telemetryPatch[id] = newValues
+        }
 
         // For devices not yet in store, add placeholder entries with current_values
         // so that readDataFromStore can find them synchronously on first mount
@@ -467,6 +475,7 @@ export const createDeviceSlice: StateCreator<
           const newValues = buildNestedValues(deviceData.current_values)
           if (Object.keys(newValues).length === 0) continue
           changed = true
+          telemetryPatch[id] = newValues
           newDevices.push({
             id,
             device_id: id,
@@ -479,7 +488,10 @@ export const createDeviceSlice: StateCreator<
 
         if (!changed) return state as any
 
-        return { devices: newDevices.length > 0 ? [...updatedDevices, ...newDevices] : updatedDevices }
+        return {
+          deviceTelemetry: { ...state.deviceTelemetry, ...telemetryPatch },
+          devices: newDevices.length > 0 ? [...state.devices, ...newDevices] : state.devices,
+        }
       })
       const _dt = performance.now() - _t0
       if (_dt > 100) console.warn(`[perf] fetchDevicesCurrentBatch set(): ${Math.round(_dt)}ms`)
@@ -533,37 +545,66 @@ export const createDeviceSlice: StateCreator<
             deviceUpdates.get(update.deviceId)!.set(update.property, update.value)
           }
 
-          // Single pass over devices array
-          const updatedDevices = state.devices.map((device: any) => {
-            const devUpdates = deviceUpdates.get(device.id || device.device_id)
-            if (!devUpdates) return device
+          // Write telemetry to deviceTelemetry map (does NOT touch devices array)
+          const telemetryPatch: Record<string, Record<string, unknown>> = {}
+          const statusChangeIds = new Set<string>()
 
-            let currentValues = { ...(device.current_values || {}) }
-            let changed = false
-            for (const [prop, val] of devUpdates) {
-              // Skip if value hasn't changed (avoid unnecessary re-renders)
-              const oldVal = prop.includes('.') ? getNestedValue(currentValues, prop) : currentValues[prop]
+          const now = new Date().toISOString()
+          for (const [devId, props] of deviceUpdates) {
+            // Skip devices that no longer exist (deleted between push and flush)
+            const device = state.devices.find((d: any) => d.id === devId || d.device_id === devId)
+            if (!device && !state.deviceTelemetry[devId]) continue
+
+            const existing = state.deviceTelemetry[devId] || {}
+            let merged = { ...existing }
+            let telemetryChanged = false
+            for (const [prop, val] of props) {
+              const oldVal = prop.includes('.') ? getNestedValue(merged, prop) : merged[prop]
               if (oldVal === val) continue
-              currentValues = setNestedProperty(currentValues, prop, val)
-              changed = true
+              merged = setNestedProperty(merged, prop, val)
+              telemetryChanged = true
             }
-            if (!changed) return device
-            return { ...device, current_values: currentValues, last_seen: new Date().toISOString(), status: 'online', online: true }
-          })
+            if (telemetryChanged) {
+              telemetryPatch[devId] = merged
+              // Detect status transition (offline→online) — requires devices array update
+              if (device && device.status !== 'online') {
+                statusChangeIds.add(devId)
+              }
+            }
+          }
+
+          if (Object.keys(telemetryPatch).length === 0) return state as any
+
+          // Only update devices array for status changes (offline→online)
+          let updatedDevices = state.devices
+          if (statusChangeIds.size > 0) {
+            updatedDevices = state.devices.map((device: any) => {
+              const id = device.id || device.device_id
+              if (!statusChangeIds.has(id)) return device
+              return { ...device, last_seen: now, status: 'online', online: true }
+            })
+          }
 
           // Update selectedDevice if affected
           let updatedSelectedDevice = state.selectedDevice
           const selKey = state.selectedDevice?.id || state.selectedDevice?.device_id
-          const selUpdates = selKey ? deviceUpdates.get(selKey) : undefined
-          if (selUpdates && state.selectedDevice) {
-            let cv = { ...(state.selectedDevice.current_values || {}) }
-            for (const [prop, val] of selUpdates) {
-              cv = setNestedProperty(cv, prop, val)
+          if (selKey) {
+            const selTelemetry = telemetryPatch[selKey]
+            if (selTelemetry && state.selectedDevice) {
+              updatedSelectedDevice = {
+                ...state.selectedDevice,
+                current_values: selTelemetry,
+                last_seen: now,
+                ...(state.selectedDevice.status !== 'online' ? { status: 'online', online: true } : {}),
+              }
             }
-            updatedSelectedDevice = { ...state.selectedDevice, current_values: cv, last_seen: new Date().toISOString() }
           }
 
-          return { devices: updatedDevices, selectedDevice: updatedSelectedDevice }
+          return {
+            deviceTelemetry: { ...state.deviceTelemetry, ...telemetryPatch },
+            devices: updatedDevices,
+            selectedDevice: updatedSelectedDevice,
+          }
         })
       })
     }
@@ -575,18 +616,20 @@ export const createDeviceSlice: StateCreator<
   _applyCurrentValuesBatch: (results, deviceIds) => {
     set((state) => {
       let changed = false
+      const telemetryPatch: Record<string, Record<string, unknown>> = {}
 
+      // Build telemetry patch for devices that exist in store
       const existingIds = new Set<string>()
-      const updatedDevices = state.devices.map((device) => {
+      for (const device of state.devices) {
         const id = device.id || device.device_id
         existingIds.add(id)
         const entry = results[id] as { current_values?: Record<string, unknown> } | undefined
-        if (!entry?.current_values) return device
+        if (!entry?.current_values) continue
         const newValues = buildNestedValues(entry.current_values)
-        if (!newValues || Object.keys(newValues).length === 0) return device
+        if (!newValues || Object.keys(newValues).length === 0) continue
         changed = true
-        return { ...device, current_values: newValues }
-      })
+        telemetryPatch[id] = newValues
+      }
 
       // Add placeholder entries for devices not yet in store
       const newDevices: Device[] = []
@@ -597,11 +640,24 @@ export const createDeviceSlice: StateCreator<
         const newValues = buildNestedValues(cv)
         if (Object.keys(newValues).length === 0) continue
         changed = true
+        telemetryPatch[id] = newValues
         newDevices.push({ id, device_id: id, name: id, status: 'unknown', online: false, current_values: newValues } as Device)
       }
 
       if (!changed) return state as any
-      return { devices: newDevices.length > 0 ? [...updatedDevices, ...newDevices] : updatedDevices }
+
+      // Update selectedDevice if its telemetry is in the patch
+      let updatedSelectedDevice = state.selectedDevice
+      const selKey = state.selectedDevice?.id || state.selectedDevice?.device_id
+      if (selKey && telemetryPatch[selKey]) {
+        updatedSelectedDevice = { ...state.selectedDevice!, current_values: telemetryPatch[selKey] }
+      }
+
+      return {
+        deviceTelemetry: { ...state.deviceTelemetry, ...telemetryPatch },
+        devices: newDevices.length > 0 ? [...state.devices, ...newDevices] : state.devices,
+        selectedDevice: updatedSelectedDevice,
+      }
     })
   },
 })

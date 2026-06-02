@@ -11,9 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Vision tool** — AI agent can now analyze images from HTTP URLs, local files, data URLs, or raw base64 using a vision-language model (VLM). Auto-detects VLM backends via `supports_multimodal` capability and registers the tool automatically. Security hardened: SSRF protection with per-redirect validation, symlink-safe file reads via canonicalize-then-validate, MIME allowlist for data URLs, file extension whitelist with magic bytes validation, 10MB size limit. VLM backend selection follows priority: explicit config → active backend → first multimodal instance
 - **4 new bridge extensions** — Home Assistant Bridge, LoRaWAN Bridge, Modbus Bridge, and Uink-RMS Bridge added to the extension marketplace for broader IoT protocol coverage
 
 ### Changed
+
+- **Multimodal image upload avoids redundant vision tool call** — When a user uploads an image to a multimodal-capable model (e.g., GPT-4o, qwen-vl), the image is sent directly as native `Content::Parts` and the `vision` tool is filtered from the tool list. This prevents the model from calling the vision tool on images it can already see, eliminating a redundant LLM round-trip (following industry best practice: OpenAI, Anthropic, CrewAI all recommend native multimodal over tool-mediated vision)
+
+- **Dashboard telemetry data split** — Separated real-time device telemetry (`deviceTelemetry` Record) from the `devices` array to eliminate cascading re-renders. Previously, every WebSocket metric update mapped over the entire `devices` array, causing all dashboard components to re-render. Now high-frequency metric writes only update a per-device telemetry map, while the `devices` array reference stays stable. Dashboard components use targeted selectors with `shallow` equality to re-render only when their bound device's telemetry changes. This reduces re-renders from O(n) per metric update to O(1).
 
 - **Clippy cleanup** — Fixed 45 clippy warnings across 4 crates (`neomind-cli-ops`, `neomind-storage`, `neomind-agent`, `neomind-api`). Introduced `CredentialValidator` type alias for complex closure types, replaced `iter().cloned().collect()` with `to_vec()`, used `strip_prefix` instead of manual slicing, and resolved `await_holding_lock` in shutdown by cloning `Arc` before dropping the read guard
 

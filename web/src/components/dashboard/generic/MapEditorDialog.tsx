@@ -136,6 +136,7 @@ export function MapEditorDialog({
 
   // Get devices from store for reactive updates
   const devices = useStore(state => state.devices)
+  const deviceTelemetry = useStore(state => state.deviceTelemetry)
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -175,8 +176,9 @@ export function MapEditorDialog({
       let metricValue: string | undefined = undefined
       if (binding.type === 'metric' && sourceId) {
         const metricKey = ds.metricId || ds.property
-        if (device?.current_values && metricKey) {
-          const rawValue = findMetricValue(device.current_values, metricKey)
+        const cv = deviceTelemetry[sourceId] || device?.current_values
+        if (cv && metricKey) {
+          const rawValue = findMetricValue(cv, metricKey)
           if (rawValue !== undefined && rawValue !== null) {
             metricValue = typeof rawValue === 'number'
               ? rawValue.toFixed(1)

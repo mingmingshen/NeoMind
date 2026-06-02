@@ -142,6 +142,7 @@ export function LayerEditorDialog({
 
   // Get devices from store for reactive updates
   const devices = useStore(state => state.devices)
+  const deviceTelemetry = useStore(state => state.deviceTelemetry)
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -168,8 +169,9 @@ export function LayerEditorDialog({
 
     const getDeviceMetricValue = (deviceId: string, metricId: string): string | number | undefined => {
       const device = findDevice(devices, deviceId)
-      if (!device?.current_values) return undefined
-      const value = findMetricValue(device.current_values, metricId || '')
+      const cv = deviceTelemetry[deviceId] || device?.current_values
+      if (!cv) return undefined
+      const value = findMetricValue(cv, metricId || '')
       if (value !== undefined && value !== null) {
         return typeof value === 'number' ? value : String(value)
       }

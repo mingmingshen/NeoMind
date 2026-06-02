@@ -34,6 +34,7 @@ import type { DataSource } from '@/types/dashboard'
 import { EmptyState } from '../shared'
 import type { MapBinding } from './MapEditorDialog'
 import { useStore } from '@/store'
+import { shallow } from 'zustand/shallow'
 
 // Get sendCommand from store
 const useSendCommand = () => useStore(state => state.sendCommand)
@@ -799,18 +800,34 @@ export function MapDisplay({
 
   // Get devices from store for real-time metric updates
   const devices = useStore(state => state.devices)
+  // Only subscribe to telemetry for devices referenced by bindings (avoids re-rendering on every device's telemetry change)
+  const boundDeviceIds = useMemo(() => {
+    if (!bindings || bindings.length === 0) return [] as string[]
+    return bindings
+      .map(b => b.dataSource?.id || b.dataSource?.sourceId || (b.dataSource as any)?.deviceId || (b.dataSource?.metricId ? b.dataSource.metricId.split(':')[0] : undefined))
+      .filter((id): id is string => !!id)
+  }, [bindings])
+  const deviceTelemetry = useStore(useCallback((state: any) => {
+    if (boundDeviceIds.length === 0) return {} as Record<string, Record<string, unknown>>
+    const result: Record<string, Record<string, unknown>> = {}
+    for (const id of boundDeviceIds) {
+      if (state.deviceTelemetry[id]) result[id] = state.deviceTelemetry[id]
+    }
+    return result
+  }, [boundDeviceIds]), shallow)
 
   // Helper function to get device metric value with fuzzy matching
   const getDeviceMetricValue = useCallback((deviceId: string, metricId: string): string | number | undefined => {
     if (!deviceId) return undefined
     const device = findDevice(devices, deviceId)
-    if (!device?.current_values) return undefined
-    const value = findMetricValue(device.current_values, metricId)
+    const cv = deviceTelemetry[deviceId] || device?.current_values
+    if (!cv) return undefined
+    const value = findMetricValue(cv, metricId)
     if (value !== undefined && value !== null) {
       return typeof value === 'number' ? value : String(value)
     }
     return undefined
-  }, [devices])
+  }, [devices, deviceTelemetry])
 
   // Helper function to get device status
   const getDeviceStatus = useCallback((deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
@@ -824,10 +841,8 @@ export function MapDisplay({
   const convertBindingsToMarkers = useCallback((bindings: MapBinding[] | undefined): MapMarker[] => {
     if (!bindings || bindings.length === 0) return []
 
-    // Get devices from store for name lookup
-    const storeDevices = useStore.getState().devices
     const getDeviceName = (deviceId: string) => {
-      const device = storeDevices.find(d => d.id === deviceId || d.device_id === deviceId)
+      const device = findDevice(devices, deviceId)
       return device?.name || deviceId
     }
 
@@ -875,7 +890,7 @@ export function MapDisplay({
 
       return marker
     })
-  }, [center, getDeviceMetricValue, getDeviceStatus])
+  }, [center, devices, getDeviceMetricValue, getDeviceStatus])
 
   // Transform function to convert device data to MapMarker format
   const transformDeviceDataToMarkers = useCallback((rawData: unknown): MapMarker[] => {
@@ -961,7 +976,7 @@ export function MapDisplay({
   })
 
   // Convert bindings to markers - bindings take priority over dataSource data
-  const bindingsMarkers = convertBindingsToMarkers(bindings)
+  const bindingsMarkers = useMemo(() => convertBindingsToMarkers(bindings), [convertBindingsToMarkers, bindings])
 
   // Determine final markers with priority:
   // 1. bindings (highest priority - contains type info from config)

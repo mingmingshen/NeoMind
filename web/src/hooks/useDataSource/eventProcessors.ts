@@ -209,7 +209,9 @@ export function processNonTelemetryEvent(
   preserveMultiple: boolean, transform: ((data: unknown) => unknown) | undefined,
   fallback: unknown, setData: (updater: (prev: unknown) => unknown) => void, setLastUpdate: (ts: number) => void
 ) {
-  const currentDevices = useStore.getState().devices
+  const storeState = useStore.getState()
+  const currentDevices = storeState.devices
+  const currentTelemetry = storeState.deviceTelemetry
 
   setData((prevData: unknown) => {
     const results = dataSources.map((ds, index) => {
@@ -230,12 +232,12 @@ export function processNonTelemetryEvent(
           if ('metric' in eventData && 'value' in eventData && metricMatches) { result = eventData.value }
           else if (!eventMetric) { const extracted = extractValueFromData(eventData, property); if (extracted !== undefined) result = extracted }
           if (result === undefined) {
-            const device = findDevice(currentDevices, deviceId)
-            result = device?.current_values ? (extractValueFromData(device.current_values, property) ?? '-') : '-'
+            const cv = currentTelemetry[deviceId] || findDevice(currentDevices, deviceId)?.current_values
+            result = cv ? (extractValueFromData(cv, property) ?? '-') : '-'
           }
         } else {
-          const device = findDevice(currentDevices, deviceId)
-          result = device?.current_values ? (extractValueFromData(device.current_values, property) ?? '-') : '-'
+          const cv = currentTelemetry[deviceId] || findDevice(currentDevices, deviceId)?.current_values
+          result = cv ? (extractValueFromData(cv, property) ?? '-') : '-'
         }
         result = safeExtractValue(result, '-')
         return result
@@ -251,8 +253,8 @@ export function processNonTelemetryEvent(
           else if (!eventMetric) { const extracted = extractValueFromData(eventData, property); if (extracted !== undefined) result = extracted }
         }
         if (result === undefined) {
-          const device = findDevice(currentDevices, deviceId)
-          result = device?.current_values ? (extractValueFromData(device.current_values, property) ?? false) : false
+          const cv = currentTelemetry[deviceId] || findDevice(currentDevices, deviceId)?.current_values
+          result = cv ? (extractValueFromData(cv, property) ?? false) : false
         }
         result = safeExtractValue(result, false)
         return result

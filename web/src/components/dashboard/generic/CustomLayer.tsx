@@ -41,6 +41,7 @@ import {
 } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
 import { useStore } from '@/store'
+import { shallow } from 'zustand/shallow'
 
 // ============================================================================
 // Types
@@ -764,6 +765,21 @@ export function CustomLayer({
 
   // Get store for device data and command execution
   const devices = useStore(state => state.devices)
+  // Only subscribe to telemetry for devices referenced by bindings (avoids re-rendering on every device's telemetry change)
+  const boundDeviceIds = useMemo(() => {
+    if (!bindings || bindings.length === 0) return [] as string[]
+    return bindings
+      .map(b => b.dataSource?.id || b.dataSource?.sourceId || (b.dataSource as any)?.deviceId || (b.dataSource?.metricId ? b.dataSource.metricId.split(':')[0] : undefined))
+      .filter((id): id is string => !!id)
+  }, [bindings])
+  const deviceTelemetry = useStore(useCallback((state: any) => {
+    if (boundDeviceIds.length === 0) return {} as Record<string, Record<string, unknown>>
+    const result: Record<string, Record<string, unknown>> = {}
+    for (const id of boundDeviceIds) {
+      if (state.deviceTelemetry[id]) result[id] = state.deviceTelemetry[id]
+    }
+    return result
+  }, [boundDeviceIds]), shallow)
   const sendCommand = useStore(state => state.sendCommand)
 
   // Data source hook for backward compatibility
@@ -788,13 +804,14 @@ export function CustomLayer({
   const getDeviceMetricValue = useCallback((deviceId: string, metricId: string): string | number | undefined => {
     if (!deviceId) return undefined
     const device = findDevice(devices, deviceId)
-    if (!device?.current_values) return undefined
-    const value = findMetricValue(device.current_values, metricId)
+    const cv = deviceTelemetry[deviceId] || device?.current_values
+    if (!cv) return undefined
+    const value = findMetricValue(cv, metricId)
     if (value !== undefined && value !== null) {
       return typeof value === 'number' ? value : String(value)
     }
     return undefined
-  }, [devices])
+  }, [devices, deviceTelemetry])
 
   // Convert bindings to layer items - recomputes when bindings or devices change
   // This ensures metric values and device status are updated in real-time
@@ -950,7 +967,8 @@ export function CustomLayer({
       if (binding.type === 'metric' && deviceId) {
         const metricId = ds.metricId || ds.property
         const device = findDevice(devices, deviceId)
-        const metricValue = device?.current_values ? findMetricValue(device.current_values, metricId || '') : undefined
+        const cv = deviceTelemetry[deviceId] || device?.current_values
+        const metricValue = cv ? findMetricValue(cv, metricId || '') : undefined
 
         setInternalItems(prev =>
           prev.map(i => {
@@ -977,7 +995,7 @@ export function CustomLayer({
 
     // Update each binding
     bindings.forEach(updateItemFromDevice)
-  }, [devices, bindings, useInternalItems])
+  }, [devices, deviceTelemetry, bindings, useInternalItems])
 
   const sizeConfig = dashboardComponentSize[size]
 
