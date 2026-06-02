@@ -5,7 +5,7 @@
  * It uses Zustand's slice pattern for better code organization.
  */
 
-import { create } from 'zustand'
+import { createWithEqualityFn as create } from 'zustand/traditional'
 import { devtools, persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
 import { onUnauthorized, tokenManager, getApiKey } from '@/lib/api'
 
