@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v0.8.4] - 2026-06-02
 
+### Changed
+
+- **System prompt slim-down (73% token reduction)** — Reduced AI agent system prompt from ~7,500 to ~1,800 tokens, freeing ~5,700 tokens per request for conversation history (+32% available context). Three-layer architecture: (1) system prompt for core decision rules, (2) CLI `--help` for command details loaded on demand, (3) skill tool for complex workflows loaded on demand. Removed redundant CLI reference table (already in shell tool JSON description), few-shot examples (modern tool-calling models don't need them), and consolidated duplicate rules across PRINCIPLES/RESPONSE_FORMAT/THINKING_GUIDELINES. Added Typical Workflows table, response format patterns, error handling hint, and vision hint. Integrated vision capability detection so multimodal models automatically receive image analysis instructions.
+
 ### Added
 
 - **Vision tool** — AI agent can now analyze images from HTTP URLs, local files, data URLs, or raw base64 using a vision-language model (VLM). Auto-detects VLM backends via `supports_multimodal` capability and registers the tool automatically. Security hardened: SSRF protection with per-redirect validation, symlink-safe file reads via canonicalize-then-validate, MIME allowlist for data URLs, file extension whitelist with magic bytes validation, 10MB size limit. VLM backend selection follows priority: explicit config → active backend → first multimodal instance

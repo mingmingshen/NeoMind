@@ -831,20 +831,16 @@ impl LlmInterface {
         }
 
         // Build base prompt using PromptBuilder
+        let supports_vision = self.supports_multimodal().await;
         let base_prompt = PromptBuilder::new()
-            .with_thinking(true) // Include thinking guidelines
-            .with_examples(true) // Include usage examples
+            .with_thinking(true)
+            .with_vision(supports_vision)
             .build_system_prompt();
 
-        let mut prompt = String::with_capacity(4096);
-        prompt.push_str(&base_prompt);
-        prompt.push_str("\n\n");
+        let prompt = base_prompt;
 
-        // Add tool calling section (centralized in PromptBuilder)
-        prompt.push_str(&PromptBuilder::build_tool_calling_section());
-
-        // Cache the result
-        let cache_key = "base_prompt".to_string();
+        // Cache the result — key includes vision flag to invalidate on model change
+        let cache_key = format!("base_prompt_v:{}", supports_vision);
         {
             let mut cache_write = self.system_prompt_cache.write().await;
             *cache_write = Some((cache_key, prompt.clone()));

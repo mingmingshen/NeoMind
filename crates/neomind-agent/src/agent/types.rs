@@ -345,7 +345,6 @@ fn default_system_prompt() -> String {
     use crate::prompts::PromptBuilder;
     PromptBuilder::new()
         .with_thinking(true)
-        .with_examples(true)
         .build_system_prompt()
 }
 
