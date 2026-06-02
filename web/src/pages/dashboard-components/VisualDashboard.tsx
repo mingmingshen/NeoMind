@@ -36,6 +36,7 @@ import {
   ChevronRight,
   MoreVertical,
   Maximize,
+  PanelLeft,
   Minimize,
   // Indicator icons
   Hash,
@@ -1527,6 +1528,15 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             />
           ) : (
             <div className="flex items-center gap-2 min-w-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => isMobile ? handleSidebarOpenChange(true) : handleSidebarOpenChange(!sidebarOpen)}
+                className="h-7 w-7 shrink-0"
+                aria-label="Toggle sidebar"
+              >
+                <PanelLeft className="h-4 w-4" />
+              </Button>
               <h1 className="text-sm font-semibold truncate">
                 {currentDashboard.name}
               </h1>
