@@ -1,6 +1,6 @@
 # NeoMind User Guide
 
-> **Version**: v0.8.0 | **License**: Apache 2.0 | **Platform**: macOS, Windows, Linux
+> **Version**: v0.8.4 | **License**: Apache 2.0 | **Platform**: macOS, Windows, Linux
 
 NeoMind is an Edge AI Platform for IoT. Connect your devices, run AI agents for monitoring and automation, and visualize everything on real-time dashboards -- all powered by Rust for maximum performance on edge hardware.
 

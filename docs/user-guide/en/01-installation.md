@@ -100,20 +100,20 @@ This script detects your OS and architecture, downloads the latest binary to `/u
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VERSION` | Latest | Specific version, e.g. `0.8.0` |
+| `VERSION` | Latest | Specific version, e.g. `0.8.4` |
 | `INSTALL_DIR` | `/usr/local/bin` | Binary install directory |
 | `DATA_DIR` | `/var/lib/neomind` | Data storage directory |
 | `USE_NGINX` | `false` | Install and configure Nginx reverse proxy |
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh \
-  | VERSION=0.8.0 INSTALL_DIR=~/.local/bin DATA_DIR=~/.neomind sh
+  | VERSION=0.8.4 INSTALL_DIR=~/.local/bin DATA_DIR=~/.neomind sh
 ```
 
 ### Option B — Manual Binary
 
 ```bash
-VERSION=0.8.0
+VERSION=0.8.4
 
 # Download and extract
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-server-linux-amd64.tar.gz
@@ -292,14 +292,14 @@ The desktop app checks for updates automatically. When notified, download the ne
 ### Server (One-Line Install)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.8.0 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.8.4 sh
 sudo systemctl restart neomind
 ```
 
 ### Server (Manual Binary)
 
 ```bash
-VERSION=0.8.0
+VERSION=0.8.4
 sudo systemctl stop neomind
 sudo cp -r /var/lib/neomind /var/lib/neomind.bak   # backup
 

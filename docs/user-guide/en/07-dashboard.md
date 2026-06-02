@@ -8,18 +8,19 @@
 
 1. Click **Dashboard** in the top navigation bar (desktop) or scrollable tabs (mobile)
 2. If you have existing dashboards, the default one opens automatically
-3. To switch dashboards, use the sidebar on the left:
-   - Click any dashboard name to open it
-   - The active dashboard is highlighted
-   - Each entry shows the widget count
+3. Switch between dashboards using either of two layout modes (toggle persisted per browser):
+   - **Sidebar mode** (default): A list on the left shows every dashboard with its widget count. Click any name to open it; the active dashboard is highlighted.
+   - **Tab bar mode**: A horizontal scrollable tab bar in the header shows each dashboard as a tab. Click a tab to switch; the active tab has a stronger background. Hover the active tab to reveal a `⋮` menu with Rename / Delete actions.
+
+Switch between modes using the **`⊞` (top panel)** button at the top of the sidebar, or the **`≡` (left panel)** button at the left of the tab bar.
 
 If no dashboards exist yet, you will see an empty state prompting you to create one.
 
 ![Dashboard overview](../../img/dashboard_light.png)
 
 > Numbered annotations:
-> 1. Sidebar with dashboard list (collapse/expand with the chevron button)
-> 2. Dashboard name in the header bar
+> 1. Sidebar with dashboard list (collapse/expand with the chevron button), or tab bar in the header
+> 2. Dashboard name in the header bar (sidebar mode)
 > 3. **Edit** button (pencil icon) to enter layout editing mode
 > 4. **Share** button to manage public links
 > 5. Widget grid with live-updating data
@@ -28,12 +29,16 @@ If no dashboards exist yet, you will see an empty state prompting you to create 
 
 ## Creating a Dashboard
 
-1. Open the sidebar by clicking the dashboard icon or swiping from the left edge (mobile)
-2. Click the **"+ New Dashboard"** button at the bottom of the list
-3. Type a name and press Enter or click the checkmark
-4. The new dashboard opens immediately with an empty canvas
+1. Click the **"+ New Dashboard"** button — at the top of the sidebar list (sidebar mode) or the `+` icon on the left of the tab bar (tab bar mode)
+2. Type a name and press Enter or click the checkmark
+3. The new dashboard opens immediately with an empty canvas
 
-You can rename a dashboard at any time by clicking the pencil icon next to its name in the sidebar. To delete a dashboard, click the trash icon (a confirmation dialog will appear; the last remaining dashboard cannot be deleted).
+You can rename or delete a dashboard at any time:
+
+- **Sidebar mode**: Hover a dashboard in the list to reveal the pencil / trash icons next to its name.
+- **Tab bar mode**: Hover the active tab to reveal the `⋮` menu, then pick **Rename** or **Delete**.
+
+Deleting a dashboard asks for confirmation; the last remaining dashboard cannot be deleted.
 
 ---
 

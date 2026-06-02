@@ -100,20 +100,20 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `VERSION` | 最新版 | 指定版本号，如 `0.8.0` |
+| `VERSION` | 最新版 | 指定版本号，如 `0.8.4` |
 | `INSTALL_DIR` | `/usr/local/bin` | 二进制文件安装目录 |
 | `DATA_DIR` | `/var/lib/neomind` | 数据存储目录 |
 | `USE_NGINX` | `false` | 是否安装并配置 Nginx 反向代理 |
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh \
-  | VERSION=0.8.0 INSTALL_DIR=~/.local/bin DATA_DIR=~/.neomind sh
+  | VERSION=0.8.4 INSTALL_DIR=~/.local/bin DATA_DIR=~/.neomind sh
 ```
 
 ### 方式 B——手动安装二进制文件
 
 ```bash
-VERSION=0.8.0
+VERSION=0.8.4
 
 # 下载并解压
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-server-linux-amd64.tar.gz
@@ -292,14 +292,14 @@ mosquitto_pub -h localhost -p 1883 -t "test" -m "hello"  # 检查 MQTT
 ### 服务端（一行命令安装）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.8.0 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.8.4 sh
 sudo systemctl restart neomind
 ```
 
 ### 服务端（手动安装）
 
 ```bash
-VERSION=0.8.0
+VERSION=0.8.4
 sudo systemctl stop neomind
 sudo cp -r /var/lib/neomind /var/lib/neomind.bak   # 备份
 
