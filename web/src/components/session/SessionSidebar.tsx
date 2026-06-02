@@ -451,28 +451,24 @@ export function SessionSidebar({
                               value={editingTitle}
                               onChange={(e) => setEditingTitle(e.target.value)}
                               onKeyDown={(e) => handleEditKeyDown(e, session.sessionId)}
-                              className="h-7 text-sm flex-1"
+                              className="h-7 text-sm flex-1 rounded-md"
                               autoFocus
                               disabled={isUpdating}
                             />
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 shrink-0"
+                            <button
+                              className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
                               onClick={() => handleEditSave(session.sessionId)}
                               disabled={isUpdating || !editingTitle.trim()}
                             >
-                              <Check className="h-4 w-4 text-success" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 shrink-0"
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
                               onClick={handleEditCancel}
                               disabled={isUpdating}
                             >
-                              <X className="h-4 w-4" />
-                            </Button>
+                              <X className="h-3.5 w-3.5" />
+                            </button>
                           </div>
                         ) : (
                           // Normal mode
@@ -503,22 +499,24 @@ export function SessionSidebar({
                             </div>
 
                             {/* Action buttons */}
-                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
                                 onClick={(e) => handleEditClick(e, session)}
-                                className="h-4 w-4 flex items-center justify-center overflow-hidden rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                                className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors"
+                                title={t('session.rename')}
                               >
-                                <Pencil className="h-3 w-3 shrink-0" />
+                                <Pencil className="h-3 w-3" />
                               </button>
                               <button
                                 onClick={(e) => handleDeleteClick(e, session.sessionId)}
                                 disabled={isDeleting}
                                 className={cn(
-                                  "h-4 w-4 flex items-center justify-center overflow-hidden rounded text-muted-foreground hover:bg-muted hover:text-destructive",
+                                  "h-6 w-6 flex items-center justify-center rounded hover:bg-error-light text-muted-foreground hover:text-destructive transition-colors",
                                   isDeleting && "opacity-50"
                                 )}
+                                title={t('delete')}
                               >
-                                <Trash2 className="h-3 w-3 shrink-0" />
+                                <Trash2 className="h-3 w-3" />
                               </button>
                             </div>
                           </>

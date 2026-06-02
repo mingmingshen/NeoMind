@@ -14,11 +14,15 @@ import {
   Pencil,
   Check,
   X,
+  Clock,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { textBody, textNano } from '@/design-system/tokens/typography'
+import { formatTimestamp } from '@/lib/utils/format'
 import type { Dashboard } from '@/types/dashboard'
 import { confirm } from '@/hooks/use-confirm'
 
@@ -38,56 +42,6 @@ export interface DashboardListSidebarProps {
   className?: string
 }
 
-/** Inline rename input with auto-focus and select-all */
-function InlineEdit({
-  value,
-  onSave,
-  onCancel,
-}: {
-  value: string
-  onSave: (v: string) => void
-  onCancel: () => void
-}) {
-  const [draft, setDraft] = useState(value)
-  const ref = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    const el = ref.current
-    if (el) {
-      el.focus()
-      el.select()
-    }
-  }, [])
-
-  return (
-    <div className="flex items-center gap-1 h-full" onClick={(e) => e.stopPropagation()}>
-      <Input
-        ref={ref}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && draft.trim()) onSave(draft.trim())
-          if (e.key === 'Escape') onCancel()
-        }}
-        className="h-7 text-sm flex-1 px-1.5 rounded-md"
-        autoFocus
-      />
-      <button
-        className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
-        onClick={() => draft.trim() && onSave(draft.trim())}
-      >
-        <Check className="h-3.5 w-3.5" />
-      </button>
-      <button
-        className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
-        onClick={onCancel}
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  )
-}
-
 /** Shared content for both desktop and mobile sidebar layouts */
 function DashboardSidebarContent({
   dashboards,
@@ -101,8 +55,10 @@ function DashboardSidebarContent({
 }: Omit<DashboardListSidebarProps, 'open' | 'className'>) {
   const { t } = useTranslation('dashboardComponents')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
   const [showCreateInput, setShowCreateInput] = useState(false)
   const [newDashboardName, setNewDashboardName] = useState('')
+  const editInputRef = useRef<HTMLInputElement>(null)
   const createInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -110,6 +66,13 @@ function DashboardSidebarContent({
       createInputRef.current.focus()
     }
   }, [showCreateInput])
+
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus()
+      editInputRef.current.select()
+    }
+  }, [editingId])
 
   const handleDelete = async (id: string) => {
     const dashboard = dashboards.find(d => d.id === id)
@@ -135,23 +98,10 @@ function DashboardSidebarContent({
 
   return (
     <>
-      {/* Mobile-only header with close button */}
-      {!isDesktop && (
-        <div className="flex items-center justify-between px-3 h-11 border-b border-border">
-          <span className="font-medium text-xs text-muted-foreground uppercase tracking-wider">{t('sidebar.title')}</span>
-          <button
-            className="h-6 w-6 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
-            onClick={() => onOpenChange?.(false)}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Create new dashboard — top area */}
-      <div className="px-3 pt-3 pb-1">
+      {/* New Dashboard Button */}
+      <div className="p-3 pb-2">
         {showCreateInput ? (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Input
               ref={createInputRef}
               value={newDashboardName}
@@ -168,11 +118,11 @@ function DashboardSidebarContent({
                 }
               }}
               placeholder={t('sidebar.namePlaceholder')}
-              className="h-7 text-sm flex-1 rounded-md"
+              className="h-8 flex-1 rounded-lg placeholder:text-[11px]"
               autoFocus
             />
             <button
-              className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
+              className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
               onClick={() => {
                 if (newDashboardName.trim()) {
                   onCreate(newDashboardName.trim())
@@ -184,92 +134,151 @@ function DashboardSidebarContent({
               <Check className="h-3.5 w-3.5" />
             </button>
             <button
-              className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
+              className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
               onClick={() => { setShowCreateInput(false); setNewDashboardName('') }}
             >
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
         ) : (
-          <button
+          <Button
             onClick={() => setShowCreateInput(true)}
-            className="flex items-center justify-center gap-1.5 h-7 rounded-md text-xs font-medium bg-muted text-muted-foreground hover:text-foreground hover:bg-muted-50 transition-colors w-full"
+            variant="outline"
+            className="w-full h-8 text-sm rounded-lg"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-4 w-4 mr-1.5" />
             {t('sidebar.newDashboard')}
-          </button>
+          </Button>
         )}
       </div>
 
       {/* Dashboard List */}
-      <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
-        {dashboards.map((dashboard) => {
-          const isActive = dashboard.id === currentDashboardId
-          const isEditing = editingId === dashboard.id
-
-          return (
-            <div
-              key={dashboard.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => !isEditing && handleSwitch(dashboard.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  if (!isEditing) handleSwitch(dashboard.id)
-                }
-              }}
-              onDoubleClick={() => !isEditing && setEditingId(dashboard.id)}
-              className={cn(
-                'group relative flex items-center gap-2.5 px-3 py-2 rounded-md cursor-pointer transition-all',
-                isActive
-                  ? 'bg-primary/8 text-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              )}
-            >
-              {/* Active indicator */}
-              {isActive && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-full bg-primary" />
-              )}
-
-              {isEditing ? (
-                <InlineEdit
-                  value={dashboard.name}
-                  onSave={(name) => { onRename(dashboard.id, name); setEditingId(null) }}
-                  onCancel={() => setEditingId(null)}
-                />
-              ) : (
-                <>
-                  <LayoutDashboard className="h-4 w-4 shrink-0" />
-
-                  <span className="text-sm flex-1 truncate">
-                    {dashboard.name}
-                  </span>
-
-                  {/* Hover actions */}
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors"
-                      onClick={(e) => { e.stopPropagation(); setEditingId(dashboard.id) }}
-                      title={t('sidebar.rename')}
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </button>
-                    {dashboards.length > 1 && (
-                      <button
-                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-error-light text-muted-foreground hover:text-destructive transition-colors"
-                        onClick={(e) => { e.stopPropagation(); handleDelete(dashboard.id) }}
-                        title={t('sidebar.delete')}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="px-2 pb-2 space-y-0.5">
+          {dashboards.length === 0 ? (
+            <div className="py-8 text-center">
+              <LayoutDashboard className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+              <p className={cn(textNano, "text-muted-foreground")}>
+                {t('sidebar.newDashboard')}
+              </p>
             </div>
-          )
-        })}
+          ) : (
+            dashboards.map((dashboard) => {
+              const isActive = dashboard.id === currentDashboardId
+              const isEditing = editingId === dashboard.id
+              const count = dashboard.components?.length ?? 0
+
+              return (
+                <div
+                  key={dashboard.id}
+                  onClick={() => !isEditing && handleSwitch(dashboard.id)}
+                  className={cn(
+                    "group relative flex items-start gap-2 p-2 rounded-lg cursor-pointer transition-all",
+                    isActive
+                      ? "bg-muted"
+                      : "hover:bg-muted-50",
+                    isEditing && "bg-muted"
+                  )}
+                >
+                  {isEditing ? (
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <Input
+                        ref={editInputRef}
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && editingName.trim()) {
+                            onRename(dashboard.id, editingName.trim())
+                            setEditingId(null)
+                            setEditingName('')
+                          }
+                          if (e.key === 'Escape') {
+                            setEditingId(null)
+                            setEditingName('')
+                          }
+                        }}
+                        className="h-7 text-sm flex-1 rounded-md"
+                        autoFocus
+                      />
+                      <button
+                        className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
+                        onClick={() => {
+                          if (editingName.trim()) {
+                            onRename(dashboard.id, editingName.trim())
+                            setEditingId(null)
+                            setEditingName('')
+                          }
+                        }}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
+                        onClick={() => { setEditingId(null); setEditingName('') }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-2 min-w-0 flex-1">
+                        <LayoutDashboard className={cn(
+                          "h-4 w-4 mt-0.5 shrink-0",
+                          isActive ? "text-foreground" : "text-muted-foreground"
+                        )} />
+                        <div className="min-w-0 flex-1">
+                          <h4 className={cn(
+                            "text-sm truncate",
+                            isActive ? "text-foreground font-medium" : "text-muted-foreground"
+                          )}>
+                            {dashboard.name}
+                          </h4>
+                          <div className={cn("flex items-center gap-1.5 mt-0.5 overflow-hidden", textNano, "text-muted-foreground")}>
+                            <Clock className="h-2.5 w-2.5 shrink-0" />
+                            <span className="truncate">{formatTimestamp(dashboard.updatedAt / 1000, false)}</span>
+                            {count > 0 && (
+                              <>
+                                <span className="shrink-0">·</span>
+                                <span className="truncate">{t('sidebar.componentCount', { count })}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors"
+                          onClick={(e) => { e.stopPropagation(); setEditingId(dashboard.id); setEditingName(dashboard.name) }}
+                          title={t('sidebar.rename')}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        {dashboards.length > 1 && (
+                          <button
+                            className="h-6 w-6 flex items-center justify-center rounded hover:bg-error-light text-muted-foreground hover:text-destructive transition-colors"
+                            onClick={(e) => { e.stopPropagation(); handleDelete(dashboard.id) }}
+                            title={t('sidebar.delete')}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )
+            })
+          )}
+        </div>
+      </ScrollArea>
+
+      {/* Footer */}
+      <div className="p-2 border-t border-border">
+        <p className={cn(textNano, "text-muted-foreground text-center")}>
+          {t('sidebar.dashboardCount', { count: dashboards.length })}
+        </p>
       </div>
     </>
   )
