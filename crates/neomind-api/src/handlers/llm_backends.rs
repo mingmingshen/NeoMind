@@ -481,13 +481,15 @@ pub async fn update_backend_handler(
         instance.thinking_enabled = thinking_enabled;
     }
     if let Some(mut capabilities) = req.capabilities {
-        // Preserve user-set fields that the frontend doesn't render.
+        // Preserve fields that the frontend doesn't render.
         // The capabilities object sent by the frontend typically doesn't include
         // `multimodal_user_override` or `multimodal_source` (those are managed via
         // the dedicated PATCH /capabilities endpoint). Without this preservation,
-        // any user override would be silently wiped every time the user saved an
-        // unrelated field change like temperature.
+        // any user override or runtime_api detection would be silently wiped every
+        // time the user saved an unrelated field change like temperature.
         let saved_user_override = instance.capabilities.multimodal_user_override;
+        let saved_source = instance.capabilities.multimodal_source.clone();
+        let saved_multimodal = instance.capabilities.supports_multimodal;
 
         // Adjust capabilities based on model name
         adjust_capabilities_for_model(&instance.model, &mut capabilities);
@@ -498,11 +500,12 @@ pub async fn update_backend_handler(
         // we always restore — the dedicated PATCH endpoint is the only way to
         // clear an override.
         //
-        // Source handling: we only restore source when an override is being
-        // restored (since the override forces source = "user_override").
-        // When there is no override, adjust_capabilities_for_model above
-        // already set source correctly from the layered detection, so we
-        // must NOT clobber it with the stale saved_source here.
+        // Priority: user_override > runtime_api > name-based detection.
+        // The frontend doesn't send multimodal_source, so adjust_capabilities_for_model
+        // would overwrite a correct runtime_api detection with a less-accurate
+        // name-based guess (e.g. qwen3.5 correctly detected by Ollama /api/show as
+        // multimodal, but missed by both registry and heuristic). We must restore the
+        // runtime_api source and its associated multimodal value.
         if capabilities.multimodal_user_override.is_none() {
             capabilities.multimodal_user_override = saved_user_override;
             if let Some(override_val) = saved_user_override {
@@ -513,6 +516,12 @@ pub async fn update_backend_handler(
                 // auto-detected value and ignore the user's override.
                 capabilities.supports_multimodal = override_val;
                 capabilities.multimodal_source = Some("user_override".to_string());
+            } else if saved_source.as_deref() == Some("runtime_api") {
+                // Runtime API detection (Ollama /api/show) is authoritative —
+                // restore both the value and source so the correct detection
+                // from the third-party backend isn't lost.
+                capabilities.supports_multimodal = saved_multimodal;
+                capabilities.multimodal_source = saved_source;
             }
             // else: leave source alone — adjust_capabilities_for_model set it.
         }

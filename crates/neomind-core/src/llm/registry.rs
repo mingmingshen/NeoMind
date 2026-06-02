@@ -175,7 +175,7 @@ pub fn heuristic_vision_match(model: &str) -> bool {
     {
         return true;
     }
-    // Well-known vision model families
+    // Well-known vision model families (explicit vision branding)
     if m.contains("llava")
         || m.contains("moondream")
         || m.contains("minicpm-v")
@@ -190,6 +190,12 @@ pub fn heuristic_vision_match(model: &str) -> bool {
     // GLM uses `4v` to mark vision variants (glm-4v, glm-4v-plus, glm-4v-flash).
     // Pattern is specific enough not to collide with other model families.
     if m.contains("glm-4v") || m.contains("glm-5v") {
+        return true;
+    }
+    // Native multimodal families — ALL variants in these series support vision.
+    // Qwen 3.5/3.6: native multimodal (early fusion), all sizes support vision.
+    // Gemma 3: native multimodal, all sizes support vision.
+    if m.starts_with("qwen3.5") || m.starts_with("qwen3.6") || m.starts_with("gemma3") {
         return true;
     }
     false

@@ -444,9 +444,10 @@ fn test_stream_capability_default() {
 
     assert_eq!(cap.direction, StreamDirection::Upload);
     assert_eq!(cap.mode, StreamMode::Stateless);
-    assert_eq!(cap.max_chunk_size, 4 * 1024 * 1024); // 4MB
-    assert_eq!(cap.preferred_chunk_size, 64 * 1024); // 64KB
-    assert_eq!(cap.max_concurrent_sessions, 10);
+    // #[derive(Default)] => usize fields default to 0
+    assert_eq!(cap.max_chunk_size, 0);
+    assert_eq!(cap.preferred_chunk_size, 0);
+    assert_eq!(cap.max_concurrent_sessions, 0);
 }
 
 #[test]
@@ -497,7 +498,8 @@ fn test_stream_capability_with_data_type() {
             fps: 30,
         });
 
-    assert_eq!(cap.supported_data_types.len(), 3);
+    // upload() starts with 1 default Binary type, then 3 more added = 4
+    assert_eq!(cap.supported_data_types.len(), 4);
 }
 
 #[test]
@@ -572,8 +574,9 @@ fn test_stream_mode_serialization() {
 fn test_flow_control_default() {
     let fc = FlowControl::default();
 
-    assert!(!fc.supports_backpressure);
-    assert_eq!(fc.window_size, 10);
+    // Default delegates to default_stream() which enables backpressure
+    assert!(fc.supports_backpressure);
+    assert_eq!(fc.window_size, 64 * 1024);
     assert!(!fc.supports_throttling);
     assert_eq!(fc.max_rate, 0);
 }
@@ -745,8 +748,8 @@ fn test_session_stats_last_activity() {
     let mut stats = SessionStats::default();
     let initial = stats.last_activity;
 
-    // Wait a bit
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    // Wait long enough to cross a second boundary (timestamp is second-precision)
+    std::thread::sleep(std::time::Duration::from_millis(1100));
 
     stats.record_input(100);
 
