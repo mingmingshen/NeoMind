@@ -20,7 +20,6 @@ import { WelcomeArea } from "@/components/chat/WelcomeArea"
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
 import { ThinkingBlock } from "@/components/chat/ThinkingBlock"
 import { ToolProcessBlock, isThinkingDuplicate } from "@/components/chat/ToolCallVisualization"
-import { ConnectionStatus } from "@/components/chat/ConnectionStatus"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ws, type ConnectionState } from "@/lib/websocket"
 import { api } from "@/lib/api"
@@ -1181,15 +1180,6 @@ export function ChatPage() {
             : "fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-[var(--surface-glass)] backdrop-blur-xl"
         )} style={isDesktop ? undefined : { paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
           <div className="max-w-3xl mx-auto">
-            {/* Connection status - show on mobile when previously connected but now reconnecting/error */}
-            {!isDesktop && connectionState.wasConnected && (connectionState.status === 'reconnecting' || connectionState.status === 'error') && (
-              <div className="mb-2 flex justify-center">
-                <ConnectionStatus
-                  state={connectionState}
-                  onManualReconnect={handleManualReconnect}
-                />
-              </div>
-            )}
             {/* Image previews */}
             {attachedImages.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-1">
