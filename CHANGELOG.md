@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Vision tool** — AI agent can now analyze images from HTTP URLs, local files, data URLs, or raw base64 using a vision-language model (VLM). Auto-detects VLM backends via `supports_multimodal` capability and registers the tool automatically. Security hardened: SSRF protection with per-redirect validation, symlink-safe file reads via canonicalize-then-validate, MIME allowlist for data URLs, file extension whitelist with magic bytes validation, 10MB size limit. VLM backend selection follows priority: explicit config → active backend → first multimodal instance
 - **4 new bridge extensions** — Home Assistant Bridge, LoRaWAN Bridge, Modbus Bridge, and Uink-RMS Bridge added to the extension marketplace for broader IoT protocol coverage
+- **Layered multimodal capability detection** — Replace hardcoded heuristic with 3-tier resolution: LiteLLM registry (2,748 embedded model entries) → conservative heuristic → false. Add user override endpoint (`PATCH /api/llm-backends/:id/capabilities`), background refresh loop for Ollama instances (hourly `/api/show` polling), and source tracking (`user_override` > `runtime_api` > `registry` > `heuristic`). HTTP images pre-encoded to base64 for Ollama compatibility
+- **i18n comprehensive standards** — Added section 12 to DESIGN_SPEC.md covering namespace rules, key naming convention (`{page}.{section}.{field}`), cross-namespace references, and common mistakes checklist
 
 ### Changed
 
@@ -30,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Clippy cleanup** — Fixed 45 clippy warnings across 4 crates (`neomind-cli-ops`, `neomind-storage`, `neomind-agent`, `neomind-api`). Introduced `CredentialValidator` type alias for complex closure types, replaced `iter().cloned().collect()` with `to_vec()`, used `strip_prefix` instead of manual slicing, and resolved `await_holding_lock` in shutdown by cloning `Arc` before dropping the read guard
 
+### Fixed
+
+- **i18n ZH translations** — Batch translated 422 missing Chinese keys across 15 namespace files. Achieved EN/ZH parity (5,370 keys each, 17 active namespaces)
+- **i18n reference consistency** — Fixed `ConfigFieldComponents.tsx` using default namespace instead of explicit `dashboardComponents`. Fixed 6 files using `t('common.xxx')` anti-pattern in default namespace context (`DeviceBindingConfig`, `MessageChannelsTab`, `MessagesTab`, `messages.tsx`). Fixed `settings.tsx` listing unregistered namespaces (`llm`, `connections`)
+
 ### Removed
 
 - **~8,900 lines of dead frontend code** — Removed 30+ unused components, hooks, and utility modules that were superseded by page-level implementations:
@@ -40,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `components/layout/` — SubPageHeader (unused)
   - `hooks/` — useApiData, useComponentPerf, useDialog, useInterval, useLoadingButton, useMessages (replaced by store-level fetchCache pattern)
   - `lib/` — extension-stream-hooks, fetch-with-timeout, react-query-hooks, status/utils, validation/utils, related test
+- **Dead i18n namespaces** — Removed `commands.json` (58 keys, 0 references), `navigation.json` (12 keys, duplicated by `common.json` `nav`/`navShort`), `tools.json` (11 keys, unused), and orphaned camelCase `dashboardComponents.json` (merged into hyphenated version)
+- **245 duplicate i18n keys from common.json** — Removed sections that existed identically in `dashboard-components.json`: visualDashboard, sizes, imageDisplay, imageHistory, layerDisplay, mapDisplay, markdownDisplay, placeholders, range, searchBar, videoDisplay, webDisplay, common
 
 ---
 
