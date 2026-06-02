@@ -393,38 +393,36 @@ export function UnifiedLLMBackendsTab({
 
     return (
       <>
-        {/* Header with back button */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4">
+        {/* Header with back button — sticky */}
+        <div className="sticky top-0 z-10 -mx-1 px-1 pb-2 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4">
           <Button variant="ghost" size="sm" onClick={() => setView('list')} className="gap-1 self-start -ml-2">
             <ArrowLeft className="h-4 w-4" />
             {t('plugins:llm.back')}
           </Button>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className={cn("flex items-center justify-center w-10 h-10 rounded-lg shrink-0", info.iconBg)}>
               {info.icon}
             </div>
-            <div className="min-w-0">
-              <h2 className="text-lg sm:text-2xl font-bold truncate">{info.name}</h2>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg sm:text-2xl font-bold truncate">{info.name}</h2>
+                {selectedType.supports_streaming && (
+                  <Badge variant="outline" className="text-xs shrink-0">{t('plugins:llm.streamingOutput')}</Badge>
+                )}
+                {selectedType.default_model && (
+                  <Badge variant="outline" className="text-xs text-muted-foreground shrink-0">
+                    {t('plugins:llm.defaultModel')}: {selectedType.default_model}
+                  </Badge>
+                )}
+                {selectedType.requires_api_key && (
+                  <Badge variant="outline" className="text-xs text-warning border-warning shrink-0">
+                    {t('plugins:llm.requiresApiKey')}
+                  </Badge>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground line-clamp-2">{selectedType.description}</p>
             </div>
           </div>
-        </div>
-
-        {/* Type Info Badges */}
-        <div className="flex flex-wrap gap-2 text-sm mb-4">
-          {selectedType.requires_api_key && (
-            <Badge variant="outline" className="text-warning border-warning">
-              {t('plugins:llm.requiresApiKey')}
-            </Badge>
-          )}
-          {selectedType.supports_streaming && (
-            <Badge variant="outline">{t('plugins:llm.streamingOutput')}</Badge>
-          )}
-          {selectedType.default_model && (
-            <Badge variant="outline" className="text-muted-foreground">
-              {t('plugins:llm.defaultModel')}: {selectedType.default_model}
-            </Badge>
-          )}
         </div>
 
         {/* Instances */}

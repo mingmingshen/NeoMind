@@ -516,9 +516,9 @@ export function DeviceDetail({
 
   return (
     <>
-      <div className="flex flex-col flex-1 bg-gradient-to-b from-background to-muted">
+      <div className="flex flex-col flex-1 h-full overflow-hidden bg-gradient-to-b from-background to-muted">
         {/* Header */}
-        <div className={cn("flex items-center justify-between", isMobile ? "px-3 py-3" : "px-6 py-5")}>
+        <div className={cn("flex items-center justify-between shrink-0", isMobile ? "px-3 py-3" : "px-6 py-5")}>
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full">
               <ChevronLeft className="h-5 w-5" />

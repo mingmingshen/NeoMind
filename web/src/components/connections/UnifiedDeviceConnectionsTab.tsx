@@ -563,8 +563,8 @@ export function UnifiedDeviceConnectionsTab() {
 
       return (
         <>
-          {/* Header with back button */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
+          {/* Header with back button — sticky */}
+          <div className="sticky top-0 z-10 -mx-1 px-1 pb-2 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4">
             <Button variant="ghost" size="sm" onClick={() => setView('list')} className="gap-1 self-start -ml-2">
               <ArrowLeft className="h-4 w-4" />
               {t('plugins:llm.back')}
@@ -732,19 +732,19 @@ export function UnifiedDeviceConnectionsTab() {
 
     return (
       <>
-        {/* Header with back button */}
-        <div className="flex items-center gap-4 mb-4">
-          <Button variant="ghost" size="sm" onClick={() => setView('list')} className="gap-1">
+        {/* Header with back button — sticky */}
+        <div className="sticky top-0 z-10 -mx-1 px-1 pb-2 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-4">
+          <Button variant="ghost" size="sm" onClick={() => setView('list')} className="gap-1 self-start -ml-2">
             <ArrowLeft className="h-4 w-4" />
             {t('plugins:llm.back')}
           </Button>
           <div className="flex items-center gap-3">
-            <div className={cn("flex items-center justify-center w-10 h-10 rounded-lg", adapterType?.icon_bg)}>
+            <div className={cn("flex items-center justify-center w-10 h-10 rounded-lg shrink-0", adapterType?.icon_bg)}>
               <IconComponent className="h-6 w-6" />
             </div>
-            <div>
-              <h2 className="text-2xl font-bold">{adapterType?.name}</h2>
-              <p className="text-sm text-muted-foreground">{adapterType?.description}</p>
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-2xl font-bold truncate">{adapterType?.name}</h2>
+              <p className="text-sm text-muted-foreground line-clamp-2">{adapterType?.description}</p>
             </div>
           </div>
         </div>

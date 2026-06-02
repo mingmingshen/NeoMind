@@ -89,9 +89,9 @@ export function SettingsPage() {
             <SettingsSectionList sections={sections} onSectionSelect={handleSectionChange} />
           </div>
         ) : (
-          <div>
-            {/* Mobile section header with back button */}
-            <div className="flex items-center gap-2 mb-4">
+          <div className="flex flex-col h-full overflow-hidden">
+            {/* Mobile section header with back button — fixed */}
+            <div className="flex items-center gap-2 mb-4 shrink-0">
               <Button
                 variant="ghost"
                 size="icon"
@@ -102,7 +102,10 @@ export function SettingsPage() {
               </Button>
               <h2 className="text-base font-medium">{mobileSectionLabel}</h2>
             </div>
-            {renderSection()}
+            {/* Content area — scrolls independently */}
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {renderSection()}
+            </div>
           </div>
         )}
         {/* Bottom spacer for safe area on mobile */}
@@ -114,13 +117,13 @@ export function SettingsPage() {
   // Desktop: sidebar + content
   return (
     <PageLayout title={t("settings:title")} subtitle={t("settings:description")} borderedHeader={false}>
-      <div className="flex gap-6">
+      <div className="flex gap-6 h-full overflow-hidden">
         <SettingsNav
           sections={sections}
           activeSection={activeSection}
           onSectionChange={handleSectionChange}
         />
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 overflow-y-auto pr-1">
           {renderSection()}
         </div>
       </div>

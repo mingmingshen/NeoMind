@@ -45,6 +45,7 @@ export function SettingsNav({ sections, activeSection, onSectionChange }: Settin
               className={cn(
                 "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 "border-l-2",
+                "focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2",
                 isActive
                   ? "bg-muted border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:bg-muted-50 hover:text-foreground"
