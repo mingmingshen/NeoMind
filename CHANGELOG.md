@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **4 new bridge extensions** — Home Assistant Bridge, LoRaWAN Bridge, Modbus Bridge, and Uink-RMS Bridge added to the extension marketplace for broader IoT protocol coverage
 - **Layered multimodal capability detection** — Replace hardcoded heuristic with 3-tier resolution: LiteLLM registry (2,748 embedded model entries) → conservative heuristic → false. Add user override endpoint (`PATCH /api/llm-backends/:id/capabilities`), background refresh loop for Ollama instances (hourly `/api/show` polling), and source tracking (`user_override` > `runtime_api` > `registry` > `heuristic`). HTTP images pre-encoded to base64 for Ollama compatibility
 - **i18n comprehensive standards** — Added section 12 to DESIGN_SPEC.md covering namespace rules, key naming convention (`{page}.{section}.{field}`), cross-namespace references, and common mistakes checklist
+- **Dashboard tab bar layout mode** — Alternative to the left sidebar: a horizontal scrollable tab bar rendered inline in the toolbar header, freeing the full content width for the dashboard grid. Toggle via `PanelTop` button in the sidebar header or `PanelLeft` button on the tab bar; preference persisted in `localStorage` (`neomind_dashboard_layout_mode`). Active tab has a distinct `bg-muted` style with an elastically-expanding `⋮` action menu (cubic-bezier overshoot easing, 200ms) that reveals Rename/Delete on hover — no floating overlay. Left side has `[≡ sidebar][+]` controls; tab names truncate at 200px with full-name tooltip on hover. Layout mode is independent from the existing sidebar collapse state and fullscreen mode
+- **Tooltips on dashboard toolbar action buttons** — Edit/Done, Add Component, Share, and Fullscreen buttons now use Radix `Tooltip` (300ms delay) instead of native `title=` attribute, matching the hover-label pattern used elsewhere in the dashboard chrome
+- **i18n keys for tab bar** — Added `sidebar.switchToTabs` and a new `tabBar.*` namespace (`newDashboard`, `namePlaceholder`, `deleteTitle`, `deleteDescription`, `delete`, `rename`, `switchToSidebar`) in both `en` and `zh`
 
 ### Changed
 
@@ -31,11 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dashboard telemetry data split** — Separated real-time device telemetry (`deviceTelemetry` Record) from the `devices` array to eliminate cascading re-renders. Previously, every WebSocket metric update mapped over the entire `devices` array, causing all dashboard components to re-render. Now high-frequency metric writes only update a per-device telemetry map, while the `devices` array reference stays stable. Dashboard components use targeted selectors with `shallow` equality to re-render only when their bound device's telemetry changes. This reduces re-renders from O(n) per metric update to O(1).
 
 - **Clippy cleanup** — Fixed 45 clippy warnings across 4 crates (`neomind-cli-ops`, `neomind-storage`, `neomind-agent`, `neomind-api`). Introduced `CredentialValidator` type alias for complex closure types, replaced `iter().cloned().collect()` with `to_vec()`, used `strip_prefix` instead of manual slicing, and resolved `await_holding_lock` in shutdown by cloning `Arc` before dropping the read guard
+- **Dashboard list sorted by creation time** — Both sidebar and tab bar now display dashboards ordered by `createdAt` ascending (oldest first, newest at end), independent of backend fetch order or sync remapping. Newly created dashboards always appear at the end of the list
+- **Sidebar collapsed-mode cleanup** — Removed the `+` (new dashboard) button and its divider from the collapsed sidebar view. The collapsed column now shows only the dashboard icon list; creation requires expanding the sidebar first or using the tab bar's `+` button
+- **Sidebar item always shows component count** — Removed the `count > 0` guard so dashboards with 0 components display "0 components" instead of hiding the count row entirely
 
 ### Fixed
 
 - **i18n ZH translations** — Batch translated 422 missing Chinese keys across 15 namespace files. Achieved EN/ZH parity (5,370 keys each, 17 active namespaces)
 - **i18n reference consistency** — Fixed `ConfigFieldComponents.tsx` using default namespace instead of explicit `dashboardComponents`. Fixed 6 files using `t('common.xxx')` anti-pattern in default namespace context (`DeviceBindingConfig`, `MessageChannelsTab`, `MessagesTab`, `messages.tsx`). Fixed `settings.tsx` listing unregistered namespaces (`llm`, `connections`)
+- **Create-dashboard navigation race** — `handleDashboardCreate` now `await flushSync()` and reads the final `currentDashboardId` from the store before navigating, so the URL receives the stable post-remap dashboard id. Previously the URL would hold the local temporary id while the store later updated to the backend-assigned id, causing the URL ↔ Store sync to bounce the user off the newly created dashboard
 
 ### Removed
 

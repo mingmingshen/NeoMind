@@ -1067,7 +1067,17 @@
     "namePlaceholder": "Dashboard name...",
     "create": "Create",
     "newDashboard": "New Dashboard",
-    "dashboardCount": "{{count}} dashboards"
+    "dashboardCount": "{{count}} dashboards",
+    "switchToTabs": "Switch to tab bar"
+  },
+  "tabBar": {
+    "newDashboard": "New Dashboard",
+    "namePlaceholder": "Dashboard name...",
+    "deleteTitle": "Delete Dashboard",
+    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
+    "delete": "Delete",
+    "rename": "Rename",
+    "switchToSidebar": "Switch to sidebar"
   },
   "componentWrapper": {
     "config": "Config",

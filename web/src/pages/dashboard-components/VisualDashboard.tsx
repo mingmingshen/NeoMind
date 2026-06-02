@@ -30,7 +30,6 @@ import {
   Plus,
   Check,
   Settings2,
-  PanelsTopLeft,
   Copy,
   Trash2,
   Settings as SettingsIcon,
@@ -138,6 +137,12 @@ import {
 } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -179,6 +184,7 @@ import { MapEditorDialog, type MapBinding, type MapBindingType } from '@/compone
 import { CenterPickerDialog } from '@/components/dashboard/generic/CenterPickerDialog'
 import type { LayerBinding, LayerBindingType } from '@/components/dashboard/generic/CustomLayer'
 import { DashboardListSidebar } from '@/components/dashboard/DashboardListSidebar'
+import { DashboardTabBar } from '@/components/dashboard/DashboardTabBar'
 import { ShareManagerDialog } from '@/components/dashboard/ShareManagerDialog'
 import { InstallComponentDialog } from '@/pages/dashboard-components/InstallComponentDialog'
 import type { MarketComponentEntry } from '@/types/frontend-component'
@@ -299,6 +305,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   // Pre-batch data loading: 1 batch request + telemetry cache warm-up
   useDashboardPrefetch(currentDashboard?.components ?? [])
 
+  // Sort dashboards by creation time (oldest first, newest last).
+  // This ensures a stable, predictable order for both sidebar and tab bar,
+  // independent of backend fetch order or sync remapping.
+  const sortedDashboards = useMemo(
+    () => [...dashboards].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)),
+    [dashboards]
+  )
+
   // Memoize component library with refreshVersion dependency to trigger re-renders
   const componentLibrary = useMemo(() => getComponentLibrary(t), [t, refreshVersion, installedComponents.length])
 
@@ -387,10 +401,29 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     return window.innerWidth >= 1024 // Default to closed on mobile/tablet, open on desktop
   })
 
+  // Layout mode: 'sidebar' (default) or 'tabs' (horizontal tab bar in toolbar)
+  const [layoutMode, setLayoutMode] = useState<'sidebar' | 'tabs'>(() => {
+    const saved = localStorage.getItem('neomind_dashboard_layout_mode')
+    if (saved === 'tabs' || saved === 'sidebar') return saved
+    return 'sidebar'
+  })
+
   // Update localStorage when sidebar state changes
   const handleSidebarOpenChange = useCallback((open: boolean) => {
     setSidebarOpen(open)
     localStorage.setItem('neomind_dashboard_sidebar_open', String(open))
+  }, [])
+
+  // Switch to tab bar layout
+  const handleSwitchToTabs = useCallback(() => {
+    setLayoutMode('tabs')
+    localStorage.setItem('neomind_dashboard_layout_mode', 'tabs')
+  }, [])
+
+  // Switch back to sidebar layout
+  const handleSwitchToSidebar = useCallback(() => {
+    setLayoutMode('sidebar')
+    localStorage.setItem('neomind_dashboard_layout_mode', 'sidebar')
   }, [])
 
   // Fullscreen toggle function - CSS-only fullscreen for dashboard content
@@ -460,11 +493,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       },
       components: [],
     })
-    // Navigate to the new dashboard
     if (newId) {
-      navigate(`/visual-dashboard/${newId}`, { replace: true })
+      // Flush backend sync immediately to resolve any id remapping before navigating,
+      // so the URL gets the final stable dashboard id. Otherwise the URL would hold
+      // the local id while the store later updates to the backend-assigned id, causing
+      // the URL ↔ Store sync to bounce the user away from the newly created dashboard.
+      await useStore.getState().flushSync()
+      const finalId = useStore.getState().currentDashboardId ?? newId
+      setCurrentDashboard(finalId)
+      navigate(`/visual-dashboard/${finalId}`, { replace: true })
     }
-  }, [createDashboard, navigate])
+  }, [createDashboard, navigate, setCurrentDashboard])
 
   const handleDashboardRename = useCallback((id: string, name: string) => {
     updateDashboard(id, { name })
@@ -1355,31 +1394,51 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     // Show loading skeleton while dashboards are loading OR
     // while we have dashboards but haven't resolved currentDashboard yet (prevents flash)
     if (dashboardsLoading || (dashboards.length > 0 && !currentDashboardId)) {
+      const isTabMode = layoutMode === 'tabs'
       return (
         <div className="flex h-screen">
-          {/* Skeleton sidebar */}
-          <div className="hidden lg:flex w-64 shrink-0 flex-col border-r p-4 space-y-3">
-            <Skeleton className="h-8 w-full rounded-lg" />
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full rounded-lg" />
-            ))}
-          </div>
+          {/* Skeleton sidebar (only in sidebar mode) */}
+          {!isTabMode && (
+            <div className="hidden lg:flex w-64 shrink-0 flex-col border-r p-4 space-y-3">
+              <Skeleton className="h-8 w-full rounded-lg" />
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full rounded-lg" />
+              ))}
+            </div>
+          )}
           {/* Skeleton main content */}
-          <div className="flex-1 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <Skeleton className="h-7 w-40" />
-              <div className="flex gap-2">
+          <div className="flex-1 flex flex-col">
+            <div className="flex items-center justify-between px-4 h-11 border-b border-border">
+              {isTabMode ? (
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {/* Left: toggle + add skeletons */}
+                  <Skeleton className="h-7 w-7 rounded-md shrink-0" />
+                  <Skeleton className="h-7 w-7 rounded-md shrink-0" />
+                  <div className="h-5 w-px bg-border shrink-0" />
+                  {/* Middle: tab skeletons */}
+                  <div className="flex items-center gap-0.5 flex-1 min-w-0">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="h-7 w-24 rounded-md shrink-0" />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <Skeleton className="h-7 w-40" />
+              )}
+              <div className="flex gap-2 shrink-0">
                 <Skeleton className="h-9 w-9 rounded-lg" />
                 <Skeleton className="h-9 w-9 rounded-lg" />
               </div>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="border rounded-lg p-4 space-y-3">
-                  <Skeleton className="h-4 w-2/3" />
-                  <Skeleton className="h-20 w-full" />
-                </div>
-              ))}
+            <div className="flex-1 p-6 space-y-4">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="border rounded-lg p-4 space-y-3">
+                    <Skeleton className="h-4 w-2/3" />
+                    <Skeleton className="h-20 w-full" />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -1413,7 +1472,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-background">
+    <div className="flex h-full overflow-hidden bg-background">
       {/* Fullscreen portal */}
       {isFullscreen && createPortal(
         <div className="fixed inset-0 z-[100] bg-background flex flex-col">
@@ -1437,138 +1496,142 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         getPortalRoot()
       )}
 
-      {/* Unified toolbar - full width */}
-      {!isFullscreen && (
-        <header className="shrink-0 flex items-center justify-between px-4 h-11 border-b border-border bg-background z-10">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => isMobile ? handleSidebarOpenChange(true) : handleSidebarOpenChange(!sidebarOpen)}
-              className={cn(
-                "h-6 w-6 active:scale-95",
-                !isDesktop && sidebarOpen && "bg-muted"
-              )}
-            >
-              <PanelsTopLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-sm font-semibold">
-              {currentDashboard.name}
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-1">
-              <Button
-                variant={editMode ? "default" : "outline"}
-                size="icon"
-                onClick={() => {
-                  const nextMode = !editMode
-                  setEditMode(nextMode)
-                  if (!nextMode && isMobile) {
-                    setMobileSelectedId(null)
-                    setMobileEditBarOpen(false)
-                  }
-                }}
-                className="h-8 w-8 rounded-lg"
-                title={editMode ? t('common.done') : t('common:editDashboard')}
-              >
-                {editMode ? (
-                  <Check className="h-4 w-4" />
-                ) : (
-                  <Settings2 className="h-4 w-4" />
-                )}
-              </Button>
-
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-                disabled={!editMode}
-                onClick={() => editMode && setComponentLibraryOpen(true)}
-                title={t('visualDashboard.addComponent')}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 rounded-lg"
-                onClick={() => setShareDialogOpen(true)}
-                title={t('visualDashboard.share.title')}
-              >
-                <Share2 className="h-4 w-4" />
-              </Button>
-
-              <ComponentLibrarySidebar
-                open={componentLibraryOpen}
-                onOpenChange={setComponentLibraryOpen}
-                libraryTab={libraryTab}
-                onLibraryTabChange={setLibraryTab}
-                librarySearch={librarySearch}
-                onLibrarySearchChange={setLibrarySearch}
-                filteredLibrary={filteredLibrary}
-                onAddComponent={handleAddComponent}
-                marketComponents={marketComponents}
-                marketLoading={marketLoading}
-                installedComponents={installedComponents}
-                installingId={installingId}
-                onInstall={installFromMarket}
-                onUninstall={uninstallComponent}
-                onRefreshComponent={refreshComponentAction}
-                onSetInstalling={setInstallingId}
-                importDialogOpen={importDialogOpen}
-                onImportDialogOpenChange={setImportDialogOpen}
-              />
-
-              {/* Fullscreen toggle button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={toggleFullscreen}
-                title={t('visualDashboard.fullscreen')}
-              >
-                <Maximize className="h-4 w-4" />
-              </Button>
-            </div>
-        </header>
+      {/* Sidebar - separate column (only in sidebar layout mode) */}
+      {!isFullscreen && layoutMode === 'sidebar' && (
+        <DashboardListSidebar
+          dashboards={sortedDashboards}
+          currentDashboardId={currentDashboardId}
+          onSwitch={handleDashboardSwitch}
+          onCreate={handleDashboardCreate}
+          onRename={handleDashboardRename}
+          onDelete={handleDashboardDelete}
+          open={sidebarOpen}
+          onOpenChange={handleSidebarOpenChange}
+          isDesktop={isDesktop}
+          onSwitchToTabs={handleSwitchToTabs}
+        />
       )}
 
-      {/* Body: sidebar + content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar - Desktop only (mobile uses portal drawer) */}
-        {!isFullscreen && isDesktop && (
-          <DashboardListSidebar
-            dashboards={dashboards}
-            currentDashboardId={currentDashboardId}
-            onSwitch={handleDashboardSwitch}
-            onCreate={handleDashboardCreate}
-            onRename={handleDashboardRename}
-            onDelete={handleDashboardDelete}
-            open={sidebarOpen}
-            onOpenChange={handleSidebarOpenChange}
-            isDesktop={true}
-          />
-        )}
+      {/* Main content area */}
+      <div className={cn("flex-1 flex flex-col overflow-hidden", isFullscreen && "hidden")}>
+        <header className="shrink-0 flex items-center justify-between px-4 h-11 border-b border-border bg-background z-10">
+          {layoutMode === 'tabs' ? (
+            <DashboardTabBar
+              dashboards={sortedDashboards}
+              currentDashboardId={currentDashboardId}
+              onSwitch={handleDashboardSwitch}
+              onCreate={handleDashboardCreate}
+              onRename={handleDashboardRename}
+              onDelete={handleDashboardDelete}
+              onSwitchToSidebar={handleSwitchToSidebar}
+            />
+          ) : (
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-sm font-semibold truncate">
+                {currentDashboard.name}
+              </h1>
+            </div>
+          )}
 
-        {/* Mobile sidebar drawer */}
-        {!isFullscreen && !isDesktop && (
-          <DashboardListSidebar
-            dashboards={dashboards}
-            currentDashboardId={currentDashboardId}
-            onSwitch={handleDashboardSwitch}
-            onCreate={handleDashboardCreate}
-            onRename={handleDashboardRename}
-            onDelete={handleDashboardDelete}
-            open={sidebarOpen}
-            onOpenChange={handleSidebarOpenChange}
-            isDesktop={false}
-          />
-        )}
+          <TooltipProvider delayDuration={300}>
+            <div className="flex items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={editMode ? "default" : "outline"}
+                      size="icon"
+                      onClick={() => {
+                        const nextMode = !editMode
+                        setEditMode(nextMode)
+                        if (!nextMode && isMobile) {
+                          setMobileSelectedId(null)
+                          setMobileEditBarOpen(false)
+                        }
+                      }}
+                      className="h-8 w-8 rounded-lg"
+                    >
+                      {editMode ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <Settings2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {editMode ? t('common.done') : t('common:editDashboard')}
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 rounded-lg"
+                      disabled={!editMode}
+                      onClick={() => editMode && setComponentLibraryOpen(true)}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{t('visualDashboard.addComponent')}</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 rounded-lg"
+                      onClick={() => setShareDialogOpen(true)}
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{t('visualDashboard.share.title')}</TooltipContent>
+                </Tooltip>
+
+                <ComponentLibrarySidebar
+                  open={componentLibraryOpen}
+                  onOpenChange={setComponentLibraryOpen}
+                  libraryTab={libraryTab}
+                  onLibraryTabChange={setLibraryTab}
+                  librarySearch={librarySearch}
+                  onLibrarySearchChange={setLibrarySearch}
+                  filteredLibrary={filteredLibrary}
+                  onAddComponent={handleAddComponent}
+                  marketComponents={marketComponents}
+                  marketLoading={marketLoading}
+                  installedComponents={installedComponents}
+                  installingId={installingId}
+                  onInstall={installFromMarket}
+                  onUninstall={uninstallComponent}
+                  onRefreshComponent={refreshComponentAction}
+                  onSetInstalling={setInstallingId}
+                  importDialogOpen={importDialogOpen}
+                  onImportDialogOpenChange={setImportDialogOpen}
+                />
+
+                {/* Fullscreen toggle button */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={toggleFullscreen}
+                    >
+                      <Maximize className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{t('visualDashboard.fullscreen')}</TooltipContent>
+                </Tooltip>
+              </div>
+          </TooltipProvider>
+        </header>
 
         {/* Dashboard Grid */}
-        <div className={cn("flex-1 overflow-auto p-4 relative", isFullscreen && "hidden")}>
+        <div className="flex-1 overflow-auto p-4 relative">
           {(currentDashboard.components?.length ?? 0) === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
               <LayoutDashboard className="h-16 w-16 mb-4 opacity-50" />

@@ -1067,7 +1067,17 @@
     "namePlaceholder": "仪表板名称...",
     "create": "创建",
     "newDashboard": "新建仪表板",
-    "dashboardCount": "{{count}} 个仪表板"
+    "dashboardCount": "{{count}} 个仪表板",
+    "switchToTabs": "切换到标签栏"
+  },
+  "tabBar": {
+    "newDashboard": "新建仪表板",
+    "namePlaceholder": "仪表板名称...",
+    "deleteTitle": "删除仪表板",
+    "deleteDescription": "确定要删除「{{name}}」吗？此操作无法撤销。",
+    "delete": "删除",
+    "rename": "重命名",
+    "switchToSidebar": "切换到侧边栏"
   },
   "componentWrapper": {
     "config": "配置",
