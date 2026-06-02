@@ -223,7 +223,7 @@ export function PanelChatView({ onClose, onStreamingChange, showMinimize, onNavi
     const persistedId = localStorage.getItem(PANEL_SESSION_KEY)
     if (persistedId) {
       // Load history for persisted session
-      api.getSessionHistory(persistedId).then(result => {
+      api.getSessionHistory(persistedId, { skipErrorToast: true }).then(result => {
         panelSessionIdRef.current = persistedId
         ws.setSessionId(persistedId)
         const merged = mergeAssistantMessages(result.messages || [])

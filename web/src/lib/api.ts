@@ -320,7 +320,9 @@ export async function fetchAPI<T>(
     if (!skipErrorToast) {
       notifyFromError(message, 'Unauthorized')
     }
-    throw new Error(message)
+    const err = new Error(message)
+    ;(err as any).status = 401
+    throw err
   }
 
   // Handle other errors
@@ -329,7 +331,9 @@ export async function fetchAPI<T>(
     if (!skipErrorToast) {
       notifyFromError(message)
     }
-    throw new Error(message)
+    const err = new Error(message)
+    ;(err as any).status = response.status
+    throw err
   }
 
   // Parse JSON response
@@ -1053,7 +1057,7 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ title }),
     }),
-  getSessionHistory: (id: string) => fetchAPI<SessionHistoryResponse>(`/sessions/${id}/history`),
+  getSessionHistory: (id: string, options?: FetchOptions) => fetchAPI<SessionHistoryResponse>(`/sessions/${id}/history`, options),
   deleteSession: (id: string) =>
     fetchAPI<{ deleted: boolean; sessionId: string }>(`/sessions/${id}`, {
       method: 'DELETE',

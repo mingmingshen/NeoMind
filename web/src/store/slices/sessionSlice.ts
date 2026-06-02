@@ -149,8 +149,8 @@ export const createSessionSlice: StateCreator<
     ws.setSessionId(sessionId)
 
     try {
-      // Fetch the session history
-      const historyResult = await api.getSessionHistory(sessionId)
+      // Fetch the session history — skip global error toast since we handle recovery below
+      const historyResult = await api.getSessionHistory(sessionId, { skipErrorToast: true })
 
       // Validate the response before processing
       if (!historyResult) {
@@ -254,7 +254,7 @@ export const createSessionSlice: StateCreator<
             ws.setSessionId(firstSessionId)
           })
           // Load history for the first session asynchronously
-          api.getSessionHistory(firstSessionId).then(historyResult => {
+          api.getSessionHistory(firstSessionId, { skipErrorToast: true }).then(historyResult => {
             const mergedMessages = mergeAssistantMessages(historyResult.messages || [])
             set((state) => {
               // Only update if we're still on the same session
