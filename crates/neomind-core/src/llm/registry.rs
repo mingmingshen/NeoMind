@@ -17,13 +17,13 @@
 //!
 //! Update the registry by re-downloading from
 //! <https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json>
-//! into `crates/neomind-core/data/model_registry.json`.
+//! into `crates/neomind-core/src/assets/model_registry.json`.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 /// Embedded registry JSON (compile-time).
-const REGISTRY_JSON: &str = include_str!("../../data/model_registry.json");
+const REGISTRY_JSON: &str = include_str!("../assets/model_registry.json");
 
 /// Parsed registry entry. We parse the whole JSON as `serde_json::Value`
 /// first and store it raw — that way one malformed entry (e.g. the
