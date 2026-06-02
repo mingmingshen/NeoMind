@@ -117,6 +117,7 @@ import {
 } from 'lucide-react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Field } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -1351,12 +1352,35 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   }
 
   if (!currentDashboard) {
-    // Show loading state only if we're still loading
-    if (dashboardsLoading) {
+    // Show loading skeleton while dashboards are loading OR
+    // while we have dashboards but haven't resolved currentDashboard yet (prevents flash)
+    if (dashboardsLoading || (dashboards.length > 0 && !currentDashboardId)) {
       return (
-        <div className="flex items-center justify-center h-screen">
-          <div className="text-center">
-            <h2 className="text-lg font-medium mb-2">{t('visualDashboard.loadingDashboard')}</h2>
+        <div className="flex h-screen">
+          {/* Skeleton sidebar */}
+          <div className="hidden lg:flex w-64 shrink-0 flex-col border-r p-4 space-y-3">
+            <Skeleton className="h-8 w-full rounded-lg" />
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full rounded-lg" />
+            ))}
+          </div>
+          {/* Skeleton main content */}
+          <div className="flex-1 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-7 w-40" />
+              <div className="flex gap-2">
+                <Skeleton className="h-9 w-9 rounded-lg" />
+                <Skeleton className="h-9 w-9 rounded-lg" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="border rounded-lg p-4 space-y-3">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )
@@ -1449,7 +1473,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               </h1>
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <Button
                 variant={editMode ? "default" : "outline"}
                 size="sm"
@@ -1461,17 +1485,16 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     setMobileEditBarOpen(false)
                   }
                 }}
-                className={cn("h-7 text-xs rounded-md", editMode ? "shadow-sm" : "")}
+                className="h-8 text-xs rounded-lg gap-1.5"
               >
                 {editMode ? (
                   <>
-                    <Check className="h-4 w-4 mr-1" />
-                    <span className="hidden sm:inline">{t('common.done')}</span>
-                    <span className="sm:hidden">{t('common.done')}</span>
+                    <Check className="h-3.5 w-3.5" />
+                    <span>{t('common.done')}</span>
                   </>
                 ) : (
                   <>
-                    <Settings2 className="h-4 w-4 mr-1" />
+                    <Settings2 className="h-3.5 w-3.5" />
                     <span className="hidden sm:inline">{t('common:editDashboard')}</span>
                     <span className="sm:hidden">{t('common:edit', 'Edit')}</span>
                   </>
@@ -1479,24 +1502,23 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               </Button>
 
               <Button
-                variant="default"
+                variant="outline"
                 size="sm"
-                className="h-7 text-xs rounded-md shadow-sm"
+                className="h-8 text-xs rounded-lg gap-1.5"
                 disabled={!editMode}
                 onClick={() => editMode && setComponentLibraryOpen(true)}
               >
-                <Plus className="h-4 w-4 mr-1" />
-                <span className="hidden sm:inline">{t('visualDashboard.addComponent')}</span>
-                <span className="sm:hidden">{t('visualDashboard.addComponent')}</span>
+                <Plus className="h-3.5 w-3.5" />
+                <span>{t('visualDashboard.addComponent')}</span>
               </Button>
 
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs rounded-md"
+                className="h-8 text-xs rounded-lg gap-1.5"
                 onClick={() => setShareDialogOpen(true)}
               >
-                <Share2 className="h-4 w-4 mr-1" />
+                <Share2 className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">{t('visualDashboard.share.title')}</span>
               </Button>
 
