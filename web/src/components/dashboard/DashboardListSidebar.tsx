@@ -18,6 +18,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { textBody, textNano } from '@/design-system/tokens/typography'
 import type { Dashboard } from '@/types/dashboard'
 import { confirm } from '@/hooks/use-confirm'
 
@@ -269,7 +270,6 @@ function DashboardSidebarContent({
             </div>
           )
         })}
-        )}
       </div>
     </>
   )
