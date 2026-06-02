@@ -56,10 +56,27 @@ Replace horizontal tabs with a **sidebar navigation** on desktop and a **card-ba
 
 ### Navigation State
 
+- Rename existing `SettingsTabValue` type to `SettingsSection` (or keep the name — implementer's choice)
 - State tracked via `useState<SettingsSection>` in `SettingsPage`
-- URL param `?tab=llm` still supported for deep-linking (backward compat)
+- URL param `?tab=llm` still supported for deep-linking (backward compat, one-shot read on mount as current)
 - Valid sections: `"llm" | "connections" | "preferences" | "about"`
 - Default: `"preferences"` (same as current)
+
+### Mobile & Global TopNav Interaction
+
+The global mobile TopNav tab bar (with Settings entry) remains visible at all times. The in-page mobile back arrow sits within the Settings page content area, below the global TopNav. No conflict — two distinct navigation levels:
+- **Global TopNav**: switches between top-level app pages (Dashboard, Chat, Settings, etc.)
+- **In-page nav**: switches between settings sections
+
+When a user taps a section on mobile and enters drill-down view:
+- The back arrow + section title appears at the top of the page content
+- The global TopNav remains visible above it
+- URL updates to `?tab=<section>` to support deep-linking
+- Pressing the in-page back arrow returns to the section list (URL reverts to `/settings`)
+
+### Bottom Spacing
+
+When removing `hasBottomNav` from `PageLayout`, add manual bottom padding on mobile via `pb-safe` or `pb-[calc(2rem+env(safe-area-inset-bottom))]` to the scroll container. Desktop needs no special bottom spacing beyond the default.
 
 ### Section Components (Unchanged)
 
@@ -106,8 +123,28 @@ Replace horizontal tabs with a **sidebar navigation** on desktop and a **card-ba
 
 ## Implementation Notes
 
-- Use `useMediaQuery` or `md:` responsive classes for desktop/mobile split
+- Use `useIsMobile()` from `@/hooks/useMobile` for desktop/mobile detection (project convention, not `useMediaQuery`)
 - Mobile uses a simple state machine: `"list" | "section"` — list shows section cards, section shows the component + back arrow
 - Desktop sidebar always visible, content area switches components
-- Keep `borderedHeader={false}` and remove `hasBottomNav` from PageLayout (settings handles its own mobile nav)
+- Keep `borderedHeader={false}` and remove `hasBottomNav` from PageLayout. Add manual mobile bottom padding (see Bottom Spacing section)
+- The sidebar+content layout sits inside `PageLayout` children. The sidebar does NOT need edge-to-edge positioning — standard `PageLayout` padding is fine. Use `md:flex md:gap-6` inside the content area.
 - No new dependencies required
+
+### Accessibility
+
+- Sidebar nav items use `role="tablist"` / `role="tab"` with `aria-selected` on active item
+- Mobile section list uses `role="list"` / `role="listitem"` with `aria-label` on each row
+- Keyboard navigation: arrow keys cycle through sidebar items, Enter activates
+
+### Icons
+
+| Section | Icon (lucide-react) | Label i18n Key |
+|---------|---------------------|----------------|
+| LLM | `Cpu` | `settings:llmBackends` |
+| Connections | `Plug` | `settings:deviceConnections` |
+| Preferences | `Sliders` | `settings:preferences` |
+| About | `Info` | `settings:about` |
+
+### Store Subscriptions
+
+The LLM backend store selectors (`createBackend`, `updateBackend`, `deleteBackend`, `testBackend`) remain in `settings.tsx` and are passed as props to `UnifiedLLMBackendsTab` — same pattern as current code, no change needed.
