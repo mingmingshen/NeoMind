@@ -107,8 +107,8 @@ function DashboardSidebarContent({
 
   return (
     <>
-      {/* Header - matches dashboard header height and padding */}
-      <div className="flex items-center justify-between px-4 h-[52px] border-b border-border">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 h-12 border-b border-border">
         <div className="flex items-center gap-2">
           <LayoutDashboard className="w-4 h-4 text-primary" />
           <h2 className="font-semibold text-sm">{t('sidebar.title')}</h2>
@@ -116,7 +116,7 @@ function DashboardSidebarContent({
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6"
+          className="h-7 w-7"
           onClick={() => onOpenChange?.(false)}
         >
           {isDesktop ? <ChevronLeft className="h-4 w-4" /> : <X className="h-4 w-4" />}
@@ -124,7 +124,7 @@ function DashboardSidebarContent({
       </div>
 
       {/* Dashboard List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-1">
+      <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
         {dashboards.map((dashboard) => {
           const isEditing = editingId === dashboard.id
           const isActive = dashboard.id === currentDashboardId
@@ -134,14 +134,17 @@ function DashboardSidebarContent({
             <div
               key={dashboard.id}
               className={cn(
-                'group rounded-lg border transition-all active:scale-95',
+                'group relative rounded-lg transition-all',
                 isActive
-                  ? 'bg-muted border-border'
-                  : 'bg-background border-border hover:bg-muted-50'
+                  ? 'bg-primary/8 ring-1 ring-primary/15'
+                  : 'hover:bg-muted-50'
               )}
             >
+              {isActive && (
+                <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary" />
+              )}
               {isEditing ? (
-                <div className="flex items-center gap-1 p-2">
+                <div className="flex items-center gap-1 p-2 pl-3">
                   <Input
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
@@ -153,10 +156,10 @@ function DashboardSidebarContent({
                     autoFocus
                   />
                   <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleSaveEdit}>
-                    <Check className="h-4 w-4 text-success" />
+                    <Check className="h-3.5 w-3.5 text-success" />
                   </Button>
                   <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCancelEdit}>
-                    <X className="h-4 w-4" />
+                    <X className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               ) : (
@@ -170,28 +173,33 @@ function DashboardSidebarContent({
                       handleSwitch(dashboard.id)
                     }
                   }}
-                  className="w-full text-left p-2.5 cursor-pointer hover:bg-muted-50 rounded-md"
+                  className="w-full text-left px-3 py-2 cursor-pointer rounded-lg"
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{dashboard.name}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className={cn(
+                        "text-sm truncate",
+                        isActive ? "font-medium text-foreground" : "text-muted-foreground"
+                      )}>
+                        {dashboard.name}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
                         {t('sidebar.componentCount', { count: componentCount })}
                       </p>
                     </div>
                     <div
                       className={cn(
-                        'flex items-center gap-0.5',
+                        'flex items-center gap-0.5 shrink-0',
                         isDesktop ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''
                       )}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleStartEdit(dashboard)} title={t('sidebar.rename')}>
-                        <Edit2 className="h-4 w-4" />
+                        <Edit2 className="h-3.5 w-3.5" />
                       </Button>
                       {dashboards.length > 1 && (
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive hover:hover:bg-muted" onClick={() => handleDelete(dashboard.id)} title={t('sidebar.delete')}>
-                          <Trash2 className="h-4 w-4" />
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-error" onClick={() => handleDelete(dashboard.id)} title={t('sidebar.delete')}>
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       )}
                     </div>
@@ -220,27 +228,20 @@ function DashboardSidebarContent({
             />
             <div className="flex gap-1">
               <Button size="sm" variant="ghost" className="h-7 px-2 text-xs flex-1" onClick={handleCreate}>
-                <Check className="h-4 w-4 mr-1 text-success" />
+                <Check className="h-3.5 w-3.5 mr-1 text-success" />
                 {t('sidebar.create')}
               </Button>
               <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { setShowCreateInput(false); setNewDashboardName('') }}>
-                <X className="h-4 w-4" />
+                <X className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
         ) : (
-          <Button variant="outline" className="w-full justify-start border-dashed" onClick={() => setShowCreateInput(true)}>
+          <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-foreground" onClick={() => setShowCreateInput(true)}>
             <Plus className="h-4 w-4 mr-2" />
             {t('sidebar.newDashboard')}
           </Button>
         )}
-      </div>
-
-      {/* Footer Info */}
-      <div className="p-3 border-t border-border">
-        <p className="text-xs text-muted-foreground text-center">
-          {t('sidebar.dashboardCount', { count: dashboards.length })}
-        </p>
       </div>
     </>
   )
