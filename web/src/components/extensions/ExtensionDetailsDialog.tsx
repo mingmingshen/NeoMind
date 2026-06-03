@@ -199,7 +199,7 @@ export function ExtensionDetailsDialog({
     }
   }, [extension, metricTimeRange, t])
 
-  // Load logs
+  // Load logs (with loading spinner for initial load)
   const loadLogs = useCallback(async () => {
     if (!extension) return
     setLogsLoading(true)
@@ -212,6 +212,17 @@ export function ExtensionDetailsDialog({
       setLogsLoading(false)
     }
   }, [extension, getExtensionLogs, handleError])
+
+  // Silent refresh for auto-polling (no loading state to avoid re-render cascade)
+  const silentRefreshLogs = useCallback(async () => {
+    if (!extension) return
+    try {
+      const logEntries = await getExtensionLogs(extension.id)
+      setLogs(logEntries)
+    } catch {
+      // Silent refresh — ignore errors
+    }
+  }, [extension, getExtensionLogs])
 
   // Clear logs
   const handleClearLogs = async () => {
@@ -331,11 +342,11 @@ export function ExtensionDetailsDialog({
 
     loadLogs()
     const interval = setInterval(() => {
-      loadLogs()
+      silentRefreshLogs()
     }, 3000)
 
     return () => clearInterval(interval)
-  }, [activeSection, extension?.id, open, loadLogs])
+  }, [activeSection, extension?.id, open, loadLogs, silentRefreshLogs])
 
   // Render config input based on type
   const renderConfigInput = (paramName: string, param: any) => {
@@ -516,9 +527,11 @@ export function ExtensionDetailsDialog({
           </div>
           <div>
             <Label className="text-muted-foreground text-xs">{t("extensions:info.state", { defaultValue: "State" })}</Label>
-            <Badge variant={extension?.state === "Error" || extension?.state === "Warning" ? "destructive" : "default"}>
-              {extension?.state}
-            </Badge>
+            <div className="mt-1">
+              <Badge variant={extension?.state === "Error" || extension?.state === "Warning" ? "destructive" : "default"}>
+                {extension?.state}
+              </Badge>
+            </div>
           </div>
           <div>
             <Label className="text-muted-foreground text-xs">{t("extensions:info.commands", { defaultValue: "Commands" })}</Label>
