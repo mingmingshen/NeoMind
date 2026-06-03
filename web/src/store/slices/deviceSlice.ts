@@ -165,10 +165,16 @@ export const createDeviceSlice: StateCreator<
       })
 
       // Migrate current_values from devices into deviceTelemetry map
+      // Use buildNestedValues to normalize flat dot-notation keys (e.g. "values.imageUrl")
+      // and unwrap { value, timestamp } envelopes into plain values.
+      // This ensures the same format as fetchDevicesCurrentBatch / _applyCurrentValuesBatch.
       const telemetryInit: Record<string, Record<string, unknown>> = {}
       for (const device of sortedDevices) {
         if (device.current_values && typeof device.current_values === 'object' && Object.keys(device.current_values).length > 0) {
-          telemetryInit[device.id || device.device_id] = device.current_values
+          const nested = buildNestedValues(device.current_values as Record<string, unknown>)
+          if (nested && Object.keys(nested).length > 0) {
+            telemetryInit[device.id || device.device_id] = nested
+          }
         }
       }
 
