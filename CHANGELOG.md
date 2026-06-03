@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Image metric click-to-view** — Map and CustomLayer metric popups now detect image values (base64/URL) via `normalizeImageUrl()` and display a clean thumbnail instead of raw text. Clicking the thumbnail opens a fullscreen overlay with device name + metric name info bar. Inline values in CustomLayer show a 20px thumbnail for image metrics
+- **`window.neomind.callExtension()` API** — Expose a global `window.neomind` object for community/extension frontend components to call extension commands directly. Supports automatic API base URL detection (Tauri/web) and JWT auth token injection. Enables frontend-driven orchestration of extension capabilities (e.g., calling YOLO inference from an NE101 camera component)
 
 ---
 
