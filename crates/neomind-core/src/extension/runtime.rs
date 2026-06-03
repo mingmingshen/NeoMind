@@ -87,6 +87,16 @@ impl ExtensionRuntime {
         self.isolated_manager.set_on_crash_recovery_restart(callback);
     }
 
+    /// Set a callback to be invoked when crash recovery restart fails.
+    /// The callback receives (extension_id, error_message).
+    #[allow(clippy::type_complexity)]
+    pub fn set_on_crash_recovery_failed(
+        &self,
+        callback: Arc<dyn Fn(&str, &str) + Send + Sync>,
+    ) {
+        self.isolated_manager.set_on_crash_recovery_failed(callback);
+    }
+
     /// Get the event dispatcher used for extension event delivery.
     pub fn get_event_dispatcher(&self) -> Arc<crate::extension::EventDispatcher> {
         self.isolated_manager.event_dispatcher()

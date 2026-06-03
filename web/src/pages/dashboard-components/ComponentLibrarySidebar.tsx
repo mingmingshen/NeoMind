@@ -6,17 +6,16 @@
  * to reduce its file size and improve maintainability.
  */
 
-import { memo } from 'react'
+import { memo, useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as lucideReact from 'lucide-react'
 import {
-  LayoutGrid, Store as StoreIcon, Search, ChevronDown,
+  LayoutGrid, Store as StoreIcon, Search,
   Box, Check, Trash2, Download, Loader2, Upload, PackagePlus, RefreshCw,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
 import {
   FullScreenDialog, FullScreenDialogHeader, FullScreenDialogContent,
 } from '@/components/automation/dialog'
@@ -73,6 +72,20 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
 }: ComponentLibrarySidebarProps) {
   const { t, i18n } = useTranslation('dashboardComponents')
 
+  // Highlight newly installed community component
+  const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const highlightedRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!highlightedId) return
+    const timer = setTimeout(() => setHighlightedId(null), 2500)
+    return () => clearTimeout(timer)
+  }, [highlightedId])
+
   return (
     <>
       <FullScreenDialog open={open} onOpenChange={(newOpen: boolean) => {
@@ -92,6 +105,13 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
         />
 
         <FullScreenDialogContent>
+          <style>{`
+            @keyframes fadeHighlight {
+              0% { box-shadow: 0 0 0 3px oklch(var(--primary) / 0.25); }
+              70% { box-shadow: 0 0 0 3px oklch(var(--primary) / 0.15); }
+              100% { box-shadow: 0 0 0 0px oklch(var(--primary) / 0); }
+            }
+          `}</style>
           <div className="flex-1 overflow-hidden flex flex-col">
             {/* Tabs */}
             <div className="px-4 md:px-6 pt-4 pb-2 shrink-0 space-y-3">
@@ -145,76 +165,55 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                   </div>
                 ) : (
                   filteredLibrary.map((category) => (
-                    <Collapsible key={category.category} defaultOpen={true}>
-                      <CollapsibleTrigger className="w-full flex items-center gap-2 py-2 px-1 hover:bg-muted-50 rounded-md transition-colors group">
+                    <div key={category.category}>
+                      <div className="flex items-center gap-2 pt-3 pb-2 px-1">
                         <category.categoryIcon className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm font-medium flex-1 text-left">{category.categoryLabel}</span>
+                        <span className="text-sm font-medium text-foreground">{category.categoryLabel}</span>
                         <span className="text-xs text-muted-foreground bg-muted rounded-full px-1.5 py-0.5 min-w-[24px] text-center">
                           {category.items.length}
                         </span>
-                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <div className="grid grid-cols-[repeat(auto-fill,minmax(max(140px,(100%/6-10px)),1fr))] gap-2.5 pb-3 px-1">
-                          {category.items.map((item) => {
-                            const Icon = item.icon
-                            const installedComp = installedComponents.find(c => c.id === item.id)
-                            const isCommunity = !!installedComp
-                            const isLocal = installedComp?.source !== 'marketplace' // undefined or 'local' = local
-                            return (
-                              <div key={item.id} className="relative group">
-                                <button
-                                  type="button"
-                                  onClick={() => onAddComponent(item.id)}
-                                  className="w-full h-[72px] flex items-center gap-3 py-2 px-3 rounded-xl border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer active:scale-[0.98] text-left"
-                                >
-                                  <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${category.categoryColor}`}>
-                                    <Icon className="h-4.5 w-4.5 shrink-0" />
-                                  </span>
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-xs font-medium block truncate">{item.name}</span>
-                                    <p className={`${textNano} text-muted-foreground mt-0.5 line-clamp-2 leading-snug`}>{item.description}</p>
-                                  </div>
-                                </button>
-                                {isCommunity && (
-                                  <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    {isLocal && (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-5 w-5 text-muted-foreground hover:text-info"
-                                        disabled={installingId === item.id}
-                                        aria-label={t('componentLibrary.reinstall')}
-                                        onClick={async (e) => {
-                                          e.stopPropagation()
-                                          onSetInstalling(item.id)
-                                          try {
-                                            await onRefreshComponent(item.id)
-                                            notifySuccess(t('componentLibrary.reinstallSuccess'))
-                                          } catch {
-                                            notifyError(t('componentLibrary.installError'))
-                                          } finally {
-                                            onSetInstalling(null)
-                                          }
-                                        }}
-                                      >
-                                        {installingId === item.id
-                                          ? <Loader2 className="h-3 w-3 animate-spin" />
-                                          : <RefreshCw className="h-3 w-3" />}
-                                      </Button>
-                                    )}
+                      </div>
+                      <div className="grid grid-cols-[repeat(auto-fill,minmax(max(140px,(100%/6-10px)),1fr))] gap-2.5 pb-2 px-1">
+                        {category.items.map((item) => {
+                          const Icon = item.icon
+                          const installedComp = installedComponents.find(c => c.id === item.id)
+                          const isCommunity = !!installedComp
+                          const isLocal = installedComp?.source !== 'marketplace'
+                          const isHighlighted = highlightedId === item.id
+                          return (
+                            <div
+                              key={item.id}
+                              ref={isHighlighted ? highlightedRef : undefined}
+                              className="relative group"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => onAddComponent(item.id)}
+                                className={`w-full h-[72px] flex items-center gap-3 py-2 px-3 rounded-xl border bg-background hover:shadow-sm hover:border-primary/30 hover:text-accent-foreground transition-all duration-200 cursor-pointer active:scale-[0.98] text-left ${isHighlighted ? 'border-primary/50 shadow-sm ring-2 ring-primary/20 animate-[fadeHighlight_2s_ease-out_forwards]' : 'border-border'}`}
+                              >
+                                <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${category.categoryColor}`}>
+                                  <Icon className="h-4.5 w-4.5 shrink-0" />
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-xs font-medium block truncate">{item.name}</span>
+                                  <p className={`${textNano} text-muted-foreground mt-0.5 line-clamp-2 leading-snug`}>{item.description}</p>
+                                </div>
+                              </button>
+                              {isCommunity && (
+                                <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  {isLocal && (
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-5 w-5 text-muted-foreground hover:text-error"
+                                      className="h-5 w-5 text-muted-foreground hover:text-info"
                                       disabled={installingId === item.id}
-                                      aria-label={t('componentLibrary.uninstall')}
+                                      aria-label={t('componentLibrary.reinstall')}
                                       onClick={async (e) => {
                                         e.stopPropagation()
                                         onSetInstalling(item.id)
                                         try {
-                                          await onUninstall(item.id)
-                                          notifySuccess(t('componentLibrary.uninstallSuccess'))
+                                          await onRefreshComponent(item.id)
+                                          notifySuccess(t('componentLibrary.reinstallSuccess'))
                                         } catch {
                                           notifyError(t('componentLibrary.installError'))
                                         } finally {
@@ -224,16 +223,39 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                                     >
                                       {installingId === item.id
                                         ? <Loader2 className="h-3 w-3 animate-spin" />
-                                        : <Trash2 className="h-3 w-3" />}
+                                        : <RefreshCw className="h-3 w-3" />}
                                     </Button>
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5 text-muted-foreground hover:text-error"
+                                    disabled={installingId === item.id}
+                                    aria-label={t('componentLibrary.uninstall')}
+                                    onClick={async (e) => {
+                                      e.stopPropagation()
+                                      onSetInstalling(item.id)
+                                      try {
+                                        await onUninstall(item.id)
+                                        notifySuccess(t('componentLibrary.uninstallSuccess'))
+                                      } catch {
+                                        notifyError(t('componentLibrary.installError'))
+                                      } finally {
+                                        onSetInstalling(null)
+                                      }
+                                    }}
+                                  >
+                                    {installingId === item.id
+                                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                                      : <Trash2 className="h-3 w-3" />}
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
                   ))
                 )}
               </div>
@@ -291,6 +313,8 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                                 } else {
                                   await onInstall(mc.id)
                                   notifySuccess(t('componentLibrary.installSuccess'))
+                                  onLibraryTabChange('components')
+                                  setHighlightedId(mc.id)
                                 }
                               } catch {
                                 notifyError(t('componentLibrary.installError'))

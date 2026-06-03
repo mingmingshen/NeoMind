@@ -120,6 +120,11 @@ pub struct IsolatedExtensionManager {
     #[allow(clippy::type_complexity)]
     on_crash_recovery_restart:
         std::sync::RwLock<Option<Arc<dyn Fn(&str, &Path) + Send + Sync>>>,
+    /// Optional callback invoked when crash recovery restart fails.
+    /// Parameters: (extension_id, error_message)
+    #[allow(clippy::type_complexity)]
+    on_crash_recovery_failed:
+        std::sync::RwLock<Option<Arc<dyn Fn(&str, &str) + Send + Sync>>>,
     /// Per-extension loading locks to prevent race conditions during concurrent loads
     /// Maps extension ID to a mutex that must be held during loading
     loading_locks: AsyncRwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -151,6 +156,7 @@ impl IsolatedExtensionManager {
             death_channel,
             loading_locks: AsyncRwLock::new(HashMap::new()),
             on_crash_recovery_restart: std::sync::RwLock::new(None),
+            on_crash_recovery_failed: std::sync::RwLock::new(None),
         }
     }
 
@@ -167,6 +173,18 @@ impl IsolatedExtensionManager {
         callback: Arc<dyn Fn(&str, &Path) + Send + Sync>,
     ) {
         if let Ok(mut guard) = self.on_crash_recovery_restart.write() {
+            *guard = Some(callback);
+        }
+    }
+
+    /// Set a callback to be invoked when crash recovery restart fails.
+    /// The callback receives (extension_id, error_message).
+    #[allow(clippy::type_complexity)]
+    pub fn set_on_crash_recovery_failed(
+        &self,
+        callback: Arc<dyn Fn(&str, &str) + Send + Sync>,
+    ) {
+        if let Ok(mut guard) = self.on_crash_recovery_failed.write() {
             *guard = Some(callback);
         }
     }
@@ -303,6 +321,12 @@ impl IsolatedExtensionManager {
                                     self.config.extension_config.max_restart_attempts,
                                     self.config.extension_config.restart_cooldown_secs
                                 );
+                                // Notify that this extension is dead and won't be restarted
+                                if let Ok(guard) = self.on_crash_recovery_failed.read() {
+                                    if let Some(ref callback) = *guard {
+                                        callback(&ext_id, "Crash recovery skipped: restart policy limit reached");
+                                    }
+                                }
                                 continue;
                             }
 
@@ -380,10 +404,22 @@ impl IsolatedExtensionManager {
                                     }
                                     Err(e) => {
                                         tracing::error!(extension_id = %ext_id, error = %e, "Failed to restart extension after crash");
+                                        // Notify callback so storage can record the error
+                                        if let Ok(guard) = self.on_crash_recovery_failed.read() {
+                                            if let Some(ref callback) = *guard {
+                                                callback(&ext_id, &e.to_string());
+                                            }
+                                        }
                                     }
                                 }
                             } else {
                                 tracing::error!(extension_id = %ext_id, "Cannot restart extension - path not found in cache");
+                                // Notify that this extension is dead with no path for recovery
+                                if let Ok(guard) = self.on_crash_recovery_failed.read() {
+                                    if let Some(ref callback) = *guard {
+                                        callback(&ext_id, "Cannot restart: extension path not found in cache");
+                                    }
+                                }
                             }
                         }
                     }

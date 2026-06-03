@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Transform `extensions.invoke()` JS API** — The extension invocation function was registered as a flat global `extensions_invoke` instead of an object method. Transform JS code calling `extensions.invoke(ext_id, command, params)` would fail with "extensions is not defined". Now properly creates an `extensions` object with `invoke` as its method
 - **Extension health state display** — Error/Warning/Stopped states now show distinct colors in ExtensionCard. Auto-clear error status on successful reload and crash recovery. Auto-refresh logs when viewing logs section
+- **Extension crash recovery error reporting** — Added `on_crash_recovery_failed` callback to cover all failure paths: restart failure, restart policy limit reached, and extension path not found in cache. All three cases now write error status to storage so the frontend reflects the actual extension state
+- **Component library sidebar** — Replaced Collapsible sections with flat grid layout for faster scanning. Added post-install highlight animation that auto-scrolls to the newly installed component in the library
 
 ---
 

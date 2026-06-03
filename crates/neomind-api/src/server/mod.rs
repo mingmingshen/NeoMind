@@ -271,6 +271,20 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
                     },
                 ));
             }
+
+            // Record error in storage when crash recovery restart fails
+            bg_state.extensions.runtime.set_on_crash_recovery_failed(Arc::new(
+                move |extension_id: &str, error: &str| {
+                    let ext_id = extension_id.to_string();
+                    let err_msg = error.to_string();
+                    tokio::spawn(async move {
+                        if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+                            let _ = store.update_error_status(&ext_id, &err_msg);
+                        }
+                    });
+                },
+            ));
+
             bg_state.extensions.runtime.clone().start_death_monitoring();
 
             // Initialize extension event subscription
