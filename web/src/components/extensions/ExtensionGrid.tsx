@@ -93,13 +93,15 @@ export function ExtensionGrid({
     // Error/Warning/Stopped indicate problems
     const activeCount = exts.filter((ext) => ext.state !== "Error" && ext.state !== "Warning" && ext.state !== "Stopped" && ext.state !== "Failed").length
     const errorCount = exts.filter((ext) => ext.state === "Error" || ext.state === "Warning").length
+    const stoppedCount = exts.filter((ext) => ext.state === "Stopped" || ext.state === "Failed").length
 
-    // Build status options
+    // Build status options (only show categories that have items)
     const options: StatusOption[] = [
       { value: "all", label: t("allStatuses"), icon: <Grid3x3 className="h-3 w-3" />, className: "text-muted-foreground" },
       { value: "active", label: t("categories.active", { defaultValue: "Active" }), icon: <div className="w-2 h-2 rounded-full bg-success" />, className: "text-success" },
       { value: "error", label: t("categories.error"), icon: <div className="w-2 h-2 rounded-full bg-error" />, className: "text-error" },
-    ]
+      { value: "stopped", label: t("categories.stopped"), icon: <div className="w-2 h-2 rounded-full bg-muted-foreground" />, className: "text-muted-foreground" },
+    ].filter((opt) => opt.value === "all" || (opt.value === "active" && activeCount > 0) || (opt.value === "error" && errorCount > 0) || (opt.value === "stopped" && stoppedCount > 0))
 
     let filtered = exts
 
@@ -126,6 +128,8 @@ export function ExtensionGrid({
             return ext.state !== "Error" && ext.state !== "Warning" && ext.state !== "Stopped" && ext.state !== "Failed"
           case "error":
             return ext.state === "Error" || ext.state === "Warning"
+          case "stopped":
+            return ext.state === "Stopped" || ext.state === "Failed"
           default:
             return true
         }
@@ -136,6 +140,7 @@ export function ExtensionGrid({
       total: exts.length,
       active: activeCount,
       error: errorCount,
+      stopped: stoppedCount,
     }
 
     return { filteredExtensions: filtered, stats: computedStats, statusOptions: options, hasActiveFilters: searchQuery || statusFilter !== "all" }
@@ -285,7 +290,8 @@ export function ExtensionGrid({
           {statusOptions.map((option) => {
             const isSelected = statusFilter === option.value
             const count = option.value === "all" ? stats.total :
-                         option.value === "active" ? stats.active : stats.error
+                         option.value === "active" ? stats.active :
+                         option.value === "error" ? stats.error : stats.stopped
 
             return (
               <button
