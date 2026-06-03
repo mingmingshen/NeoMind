@@ -438,16 +438,27 @@ impl JsTransformExecutor {
                 .length(3)
                 .build();
 
-            // Register extensions_invoke() for use in user code
+            // Register extensions.invoke() as a proper object method
+            // Create the `extensions` global object with `invoke` property
             context
                 .register_global_property(
-                    js_string!("extensions_invoke"),
+                    js_string!("__extensions_invoke__"),
                     invoke_fn_obj,
                     boa_engine::property::Attribute::default(),
                 )
                 .map_err(|e| AutomationError::TransformError {
                     operation: "JsTransform".to_string(),
-                    message: format!("Failed to register extensions_invoke function: {}", e),
+                    message: format!("Failed to register __extensions_invoke__ function: {}", e),
+                })?;
+
+            // Build the extensions object via JS so users can call extensions.invoke(...)
+            context
+                .eval(Source::from_bytes(
+                    b"const extensions = { invoke: __extensions_invoke__ };",
+                ))
+                .map_err(|e| AutomationError::TransformError {
+                    operation: "JsTransform".to_string(),
+                    message: format!("Failed to create extensions object: {}", e),
                 })?;
 
             if !extension_results.is_empty() {
