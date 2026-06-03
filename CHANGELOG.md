@@ -11,12 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Complex MetricValue in Extension transforms** — `TransformedMetric.value` upgraded from `f64` to `MetricValue` (Float/Integer/Boolean/String/Json). Extension transforms can now produce detection box arrays, count-by-class maps, and text arrays — all faithfully stored and pushed via WebSocket
+- **Extension input mapping resolution** — Parameters like `{from: "values.imageUrl", convert: "url_to_base64"}` are now resolved automatically: dot-path extraction from device data, HTTP fetch for URLs, base64 encoding. Already-base64 values detected and passed through without HTTP call. Image dimensions extracted for coordinate normalization
+- **Extension output mapping extraction** — New `output_mapping` field on `TransformOperation::Extension` with transforms: `count`, `count_by_class`, `filter_roi`, `count_in_roi`, `extract_texts`, `normalize` (with `image_param` for multi-image). ROI filtering and coordinate normalization for detection boxes
+- **Dynamic output type detection** — Transform output registry now detects MetricValue variant (Float/Integer/Boolean/String/Json) instead of hardcoding Float
 - **Image metric click-to-view** — Map and CustomLayer metric popups now detect image values (base64/URL) via `normalizeImageUrl()` and display a clean thumbnail instead of raw text. Clicking the thumbnail opens a fullscreen overlay with device name + metric name info bar. Inline values in CustomLayer show a 20px thumbnail for image metrics
 - **`window.neomind.callExtension()` API** — Expose a global `window.neomind` object for community/extension frontend components to call extension commands directly. Supports automatic API base URL detection (Tauri/web) and JWT auth token injection. Enables frontend-driven orchestration of extension capabilities (e.g., calling YOLO inference from an NE101 camera component)
 
 ### Fixed
 
 - **Transform `extensions.invoke()` JS API** — The extension invocation function was registered as a flat global `extensions_invoke` instead of an object method. Transform JS code calling `extensions.invoke(ext_id, command, params)` would fail with "extensions is not defined". Now properly creates an `extensions` object with `invoke` as its method
+- **Extension health state display** — Error/Warning/Stopped states now show distinct colors in ExtensionCard. Auto-clear error status on successful reload and crash recovery. Auto-refresh logs when viewing logs section
 
 ---
 
