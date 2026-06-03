@@ -58,13 +58,17 @@ export function DashboardGrid({
   const isMobile = useIsMobile()
   const touchEnabled = isTouchDevice()
 
+  // Track active drag/resize to prevent layout reset during interaction
+  const isInteractingRef = useRef(false)
+
   // Component ID string — changes when dashboard switches (different widgets)
   const componentIdKey = useMemo(() => components.map(c => c.id).join(','), [components])
 
   // Track container width via ResizeObserver
+  // Skip updates during drag/resize to prevent layout reset ("jump" bug)
   const widthRef = useRef(0)
   const updateWidth = useCallback(() => {
-    if (containerRef.current) {
+    if (containerRef.current && !isInteractingRef.current) {
       const w = containerRef.current.offsetWidth
       widthRef.current = w
       setWidth(w)
@@ -119,18 +123,31 @@ export function DashboardGrid({
     }
   }, [componentIdKey])
 
-  // Drag/resize handlers — only persist to parent, don't feed back into layouts
+  // Drag/resize handlers — freeze width updates during interaction, persist on stop
+  const handleDragStart = useCallback(() => {
+    isInteractingRef.current = true
+  }, [])
+
   const handleDragStop = useCallback((layout: any) => {
+    isInteractingRef.current = false
     if (onLayoutChange && editMode) {
       onLayoutChange(layout as readonly any[])
     }
-  }, [onLayoutChange, editMode])
+    // Re-measure width after drag (container may have changed)
+    requestAnimationFrame(updateWidth)
+  }, [onLayoutChange, editMode, updateWidth])
+
+  const handleResizeStart = useCallback(() => {
+    isInteractingRef.current = true
+  }, [])
 
   const handleResizeStop = useCallback((layout: any) => {
+    isInteractingRef.current = false
     if (onLayoutChange && editMode) {
       onLayoutChange(layout as readonly any[])
     }
-  }, [onLayoutChange, editMode])
+    requestAnimationFrame(updateWidth)
+  }, [onLayoutChange, editMode, updateWidth])
 
   // Transitions
   const [transitionsEnabled, setTransitionsEnabled] = useState(false)
@@ -223,7 +240,9 @@ export function DashboardGrid({
           maxRows={Infinity}
           dragConfig={{ enabled: editMode && !isMobile, bounded: false }}
           resizeConfig={{ enabled: editMode && !isMobile, handles: ['se'] as const }}
+          onDragStart={handleDragStart}
           onDragStop={handleDragStop}
+          onResizeStart={handleResizeStart}
           onResizeStop={handleResizeStop}
         >
           {components.map((component) => (

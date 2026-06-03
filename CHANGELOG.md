@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dashboard component rendering** — Fixed extension component loading in `ComponentRenderer` by removing interfering `ErrorBoundary` wrapper
 - **Dashboard mobile edit mode** — Fixed state reset when toggling mobile edit mode
 - **Extension IPC routing** — Fixed stale reference in extension stream routing after process restart
+- **Native confirm dialogs** — Replace `window.confirm()` with styled custom confirm dialog for dashboard widget removal and LLM instance deletion
+- **Dashboard widget drag jumping** — Freeze container width measurement during drag/resize operations to prevent layout reset from stale store positions
+
+### Changed
+
+- **Component library and marketplace grids** — Replaced fixed responsive breakpoints with auto-fill columns (max 6) for better use of screen width on large displays
 
 ---
 

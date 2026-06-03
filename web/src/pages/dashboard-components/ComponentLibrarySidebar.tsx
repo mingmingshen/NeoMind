@@ -155,7 +155,7 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                         <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
                       </CollapsibleTrigger>
                       <CollapsibleContent>
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 pb-3 px-1">
+                        <div className="grid grid-cols-[repeat(auto-fill,minmax(max(140px,(100%/6-10px)),1fr))] gap-2.5 pb-3 px-1">
                           {category.items.map((item) => {
                             const Icon = item.icon
                             const installedComp = installedComponents.find(c => c.id === item.id)
@@ -241,7 +241,7 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
               /* Marketplace tab */
               <div className="flex-1 overflow-y-auto px-4 md:px-6 pt-4 pb-6">
                 {marketLoading ? (
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(max(140px,(100%/6-10px)),1fr))] gap-3">
                     {Array.from({ length: 6 }).map((_, i) => (
                       <div key={i} className="rounded-lg border border-border p-4 space-y-3">
                         <div className="w-10 h-10 rounded-lg bg-muted animate-pulse" />
@@ -256,7 +256,7 @@ export const ComponentLibrarySidebar = memo(function ComponentLibrarySidebar({
                     <p className="text-sm text-muted-foreground">{t('componentLibrary.marketplaceEmpty')}</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(max(220px,(100%/6-10px)),1fr))] gap-3">
                     {marketComponents.map((mc: MarketComponentEntry) => {
                       const isInstalled = installedComponents.some(c => c.id === mc.id)
                       const McIcon = (lucideReact as any)[mc.icon || 'Box'] || Box

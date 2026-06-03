@@ -1421,7 +1421,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               </div>
             </div>
             <div className="flex-1 p-6 space-y-4">
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(max(160px,(100%/6-10px)),1fr))] gap-4">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="border rounded-lg p-4 space-y-3">
                     <Skeleton className="h-4 w-2/3" />
