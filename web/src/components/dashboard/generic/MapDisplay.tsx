@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { normalizeImageUrl } from '@/lib/imageUtils'
 import { findDevice } from '@/lib/deviceUtils'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { useDataSource } from '@/hooks/useDataSource'
@@ -116,9 +117,10 @@ interface MapMarkerDotProps {
   onClick: () => void
   isSelected?: boolean
   t: (key: string) => string
+  onImageClick?: (info: { src: string; deviceName?: string; metricName?: string }) => void
 }
 
-const MapMarkerDot = memo(function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotProps) {
+const MapMarkerDot = memo(function MapMarkerDot({ marker, onClick, isSelected = false, t, onImageClick }: MapMarkerDotProps) {
   // Marker type config for colors and icons — memoized
   const config = useMemo(() => {
     const type = marker.markerType || 'device'
@@ -207,12 +209,15 @@ const MapMarkerDot = memo(function MapMarkerDot({ marker, onClick, isSelected = 
       </button>
 
       {/* Details Popup — same style as CustomLayer */}
-      {isSelected && (
+      {isSelected && (() => {
+        const _isImg = !!normalizeImageUrl(marker.markerType === 'metric' ? marker.metricValue : null)
+        return (
         <div
           className={cn(
-            'absolute z-50 min-w-[200px] max-w-[280px] rounded-lg shadow-xl border',
-            'bg-bg-95 backdrop-blur',
-            'p-3 animate-in fade-in zoom-in-95 duration-150'
+            'absolute z-50 rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-150',
+            _isImg
+              ? 'min-w-[160px] max-w-[280px] overflow-hidden'
+              : 'min-w-[200px] max-w-[280px] border bg-bg-95 backdrop-blur p-3',
           )}
           style={{
             left: '50%',
@@ -221,6 +226,7 @@ const MapMarkerDot = memo(function MapMarkerDot({ marker, onClick, isSelected = 
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {!_isImg && (<>
           {/* Close button */}
           <button
             className="absolute top-1.5 right-1.5 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center"
@@ -244,6 +250,7 @@ const MapMarkerDot = memo(function MapMarkerDot({ marker, onClick, isSelected = 
               <p className="text-sm font-semibold truncate">{marker.label || marker.deviceName || marker.id}</p>
             </div>
           </div>
+          </>)}
 
           {/* Content based on type */}
           <div className="space-y-1.5 text-sm">
@@ -275,7 +282,29 @@ const MapMarkerDot = memo(function MapMarkerDot({ marker, onClick, isSelected = 
               </>
             )}
 
-            {marker.markerType === 'metric' && (
+            {marker.markerType === 'metric' && (() => {
+              const img = normalizeImageUrl(marker.metricValue)
+              if (img) {
+                return (
+                  <div className="relative">
+                    <img
+                      src={img.src}
+                      alt={marker.metricName || 'metric'}
+                      className="w-full max-h-[120px] object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onImageClick?.({ src: img.src, deviceName: marker.deviceName, metricName: marker.metricName })
+                      }}
+                    />
+                    {marker.deviceName && (
+                      <span className="absolute bottom-0 inset-x-0 px-1.5 py-0.5 text-[10px] text-white bg-black/50 truncate">
+                        {marker.deviceName}
+                      </span>
+                    )}
+                  </div>
+                )
+              }
+              return (
               <>
                 {marker.deviceName && (
                   <div className="flex justify-between items-center">
@@ -296,7 +325,8 @@ const MapMarkerDot = memo(function MapMarkerDot({ marker, onClick, isSelected = 
                   </span>
                 </div>
               </>
-            )}
+              )
+            })()}
 
             {marker.markerType === 'command' && (
               <>
@@ -345,8 +375,17 @@ const MapMarkerDot = memo(function MapMarkerDot({ marker, onClick, isSelected = 
               </>
             )}
           </div>
+          {_isImg && (
+            <button
+              className="absolute top-1 right-1 flex items-center justify-center h-3.5 w-3.5 rounded-full bg-black/40 text-white/70 hover:text-white hover:bg-black/60"
+              onClick={(e) => { e.stopPropagation(); onClick() }}
+            >
+              <X className="h-2 w-2" />
+            </button>
+          )}
         </div>
-      )}
+        )
+      })()}
     </>
   )
 })
@@ -370,6 +409,7 @@ interface SimpleSvgMapProps {
   onMapClick?: (lat: number, lng: number) => void
   selectedMarkerId?: string | null
   t: (key: string) => string
+  onImageClick?: (info: { src: string; deviceName?: string; metricName?: string }) => void
 }
 
 function SimpleSvgMap({
@@ -387,6 +427,7 @@ function SimpleSvgMap({
   onMapClick,
   selectedMarkerId,
   t,
+  onImageClick,
 }: SimpleSvgMapProps) {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
@@ -670,6 +711,7 @@ function SimpleSvgMap({
               onClick={() => onMarkerClick(marker)}
               isSelected={isSelected}
               t={t}
+              onImageClick={onImageClick}
             />
           </div>
         )
@@ -994,6 +1036,7 @@ export function MapDisplay({
   const [currentCenter, setCurrentCenter] = useState(center)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [selectedMarker, setSelectedMarker] = useState<MapMarker | null>(null)
+  const [fullscreenImage, setFullscreenImage] = useState<{ src: string; deviceName?: string; metricName?: string } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerSize, setContainerSize] = useState({ width: 400, height: 300 })
 
@@ -1120,6 +1163,7 @@ export function MapDisplay({
             onMapClick={onMapClick}
             selectedMarkerId={selectedMarker?.id}
             t={t}
+            onImageClick={setFullscreenImage}
           />
         </div>
       </div>
@@ -1167,6 +1211,7 @@ export function MapDisplay({
           onMapClick={onMapClick}
           selectedMarkerId={selectedMarker?.id}
           t={t}
+          onImageClick={setFullscreenImage}
         />
       </div>
     </div>, getPortalRoot()
@@ -1177,6 +1222,29 @@ export function MapDisplay({
       {/* Normal view (hidden when fullscreen to avoid dual rendering) */}
       {!isFullscreen && mapContent}
       {fullscreenOverlay}
+      {fullscreenImage && createPortal(
+        <div
+          className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center"
+          onClick={() => setFullscreenImage(null)}
+        >
+          <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
+            <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-black/50 text-white">
+              {fullscreenImage.deviceName && <span className="text-sm font-medium">{fullscreenImage.deviceName}</span>}
+              {fullscreenImage.metricName && <span className="text-xs text-white/70 font-mono">{fullscreenImage.metricName}</span>}
+            </div>
+            <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={() => setFullscreenImage(null)}>
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+          <img
+            src={fullscreenImage.src}
+            alt={fullscreenImage.metricName || 'metric'}
+            className="w-full h-full object-cover"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        getPortalRoot()
+      )}
     </>
   )
 }

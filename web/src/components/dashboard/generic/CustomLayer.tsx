@@ -15,6 +15,7 @@ import { createPortal } from 'react-dom'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { normalizeImageUrl } from '@/lib/imageUtils'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { useDataSource } from '@/hooks/useDataSource'
 import {
@@ -38,6 +39,7 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
+  X,
 } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
 import { useStore } from '@/store'
@@ -147,6 +149,7 @@ interface LayerItemComponentProps {
   onToggleVisibility: (id: string) => void
   onToggleLock: (id: string) => void
   onExecuteCommand?: (deviceId: string, command: string) => Promise<void>
+  onImageClick?: (info: { src: string; deviceName?: string; metricName?: string }) => void
   t: (key: string) => string
 }
 
@@ -199,6 +202,7 @@ function LayerItemComponent({
   onToggleVisibility,
   onToggleLock,
   onExecuteCommand,
+  onImageClick,
   t,
 }: LayerItemComponentProps) {
   const [isDragging, setIsDragging] = useState(false)
@@ -450,14 +454,23 @@ function LayerItemComponent({
             )}
 
             {/* Value */}
-            {item.value !== undefined && (
-              <span className={cn(
-                'text-xs tabular-nums max-w-[100px] truncate',
-                item.type === 'metric' ? 'font-semibold' : ''
-              )} title={String(item.value)}>
-                {item.value}
-              </span>
-            )}
+            {item.value !== undefined && (() => {
+              const img = normalizeImageUrl(item.value)
+              return img ? (
+                <img
+                  src={img.src}
+                  alt={item.label || 'metric'}
+                  className="h-5 w-5 rounded object-cover flex-shrink-0"
+                />
+              ) : (
+                <span className={cn(
+                  'text-xs tabular-nums max-w-[100px] truncate',
+                  item.type === 'metric' ? 'font-semibold' : ''
+                )} title={String(item.value)}>
+                  {item.value}
+                </span>
+              )
+            })()}
           </div>
         )}
 
@@ -486,20 +499,24 @@ function LayerItemComponent({
       </div>
 
       {/* Details Popup */}
-      {showDetails && !isTextOnly && (
+      {showDetails && !isTextOnly && (() => {
+        const _isImg = !!normalizeImageUrl(item.type === 'metric' ? item.value : null)
+        return (
         <div
           className={cn(
-            'absolute z-50 min-w-[200px] max-w-[280px] rounded-lg shadow-xl border',
-            'bg-bg-95 backdrop-blur',
-            'p-3 animate-in fade-in zoom-in-95 duration-150'
+            'absolute z-50 rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-150',
+            _isImg
+              ? 'min-w-[160px] max-w-[280px] overflow-hidden'
+              : 'min-w-[200px] max-w-[280px] border bg-bg-95 backdrop-blur p-3',
           )}
           style={{
             left: `${item.position.x}%`,
-            top: `${item.position.y + 8}%`,
+            top: `${item.position.y + 2}%`,
             transform: 'translate(-50%, 0)',
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {!_isImg && (<>
           {/* Close button */}
           <button
             className="absolute top-1.5 right-1.5 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center"
@@ -525,6 +542,7 @@ function LayerItemComponent({
               <p className="text-sm font-semibold truncate">{item.label || item.deviceId || item.id}</p>
             </div>
           </div>
+          </>)}
 
           {/* Content based on type */}
           <div className="space-y-1.5 text-sm">
@@ -548,7 +566,29 @@ function LayerItemComponent({
               </>
             )}
 
-            {item.type === 'metric' && (
+            {item.type === 'metric' && (() => {
+              const img = normalizeImageUrl(item.value)
+              if (img) {
+                return (
+                  <div className="relative">
+                    <img
+                      src={img.src}
+                      alt={item.metricName || 'metric'}
+                      className="w-full max-h-[120px] object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onImageClick?.({ src: img.src, deviceName: item.deviceName, metricName: item.metricName })
+                      }}
+                    />
+                    {(item.deviceName || item.deviceId) && (
+                      <span className="absolute bottom-0 inset-x-0 px-1.5 py-0.5 text-[10px] text-white bg-black/50 truncate">
+                        {item.deviceName || item.deviceId}
+                      </span>
+                    )}
+                  </div>
+                )
+              }
+              return (
               <>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">{t('customLayer.device')}:</span>
@@ -566,7 +606,8 @@ function LayerItemComponent({
                   </span>
                 </div>
               </>
-            )}
+              )
+            })()}
 
             {item.type === 'command' && (
               <>
@@ -610,8 +651,19 @@ function LayerItemComponent({
               </>
             )}
           </div>
+          {_isImg && (
+            <button
+              className="absolute top-1 right-1 flex items-center justify-center h-3.5 w-3.5 rounded-full bg-black/40 text-white/70 hover:text-white hover:bg-black/60"
+              onClick={() => setShowDetails(false)}
+            >
+              <svg className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
-      )}
+        )
+      })()}
     </>
   )
 }
@@ -882,6 +934,7 @@ export function CustomLayer({
   const [isEditing, setIsEditing] = useState(editable)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [fullscreenImage, setFullscreenImage] = useState<{ src: string; deviceName?: string; metricName?: string } | null>(null)
 
   // Canvas zoom and pan state
   const [zoom, setZoom] = useState(1)
@@ -1268,6 +1321,7 @@ export function CustomLayer({
                 onToggleVisibility={handleToggleVisibility}
                 onToggleLock={handleToggleLock}
                 onExecuteCommand={handleExecuteCommand}
+                onImageClick={setFullscreenImage}
                 t={t}
               />
             ))}
@@ -1410,6 +1464,29 @@ export function CustomLayer({
       {/* Normal view (hidden when fullscreen to avoid dual rendering and ref conflicts) */}
       {!isFullscreen && content}
       {fullscreenOverlay}
+      {fullscreenImage && createPortal(
+        <div
+          className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center"
+          onClick={() => setFullscreenImage(null)}
+        >
+          <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
+            <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-black/50 text-white">
+              {fullscreenImage.deviceName && <span className="text-sm font-medium">{fullscreenImage.deviceName}</span>}
+              {fullscreenImage.metricName && <span className="text-xs text-white/70 font-mono">{fullscreenImage.metricName}</span>}
+            </div>
+            <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={() => setFullscreenImage(null)}>
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+          <img
+            src={fullscreenImage.src}
+            alt={fullscreenImage.metricName || 'metric'}
+            className="w-full h-full object-cover"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        getPortalRoot()
+      )}
     </>
   )
 }

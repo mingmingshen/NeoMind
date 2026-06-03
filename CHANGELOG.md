@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Image metric click-to-view** — Map and CustomLayer metric popups now detect image values (base64/URL) via `normalizeImageUrl()` and display a clean thumbnail instead of raw text. Clicking the thumbnail opens a fullscreen overlay with device name + metric name info bar. Inline values in CustomLayer show a 20px thumbnail for image metrics
+
+---
+
 ## [v0.8.5] - 2026-06-03
 
 ### Added
