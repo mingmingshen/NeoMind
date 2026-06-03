@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Image metric click-to-view** — Map and CustomLayer metric popups now detect image values (base64/URL) via `normalizeImageUrl()` and display a clean thumbnail instead of raw text. Clicking the thumbnail opens a fullscreen overlay with device name + metric name info bar. Inline values in CustomLayer show a 20px thumbnail for image metrics
 - **`window.neomind.callExtension()` API** — Expose a global `window.neomind` object for community/extension frontend components to call extension commands directly. Supports automatic API base URL detection (Tauri/web) and JWT auth token injection. Enables frontend-driven orchestration of extension capabilities (e.g., calling YOLO inference from an NE101 camera component)
 
+### Fixed
+
+- **Transform `extensions.invoke()` JS API** — The extension invocation function was registered as a flat global `extensions_invoke` instead of an object method. Transform JS code calling `extensions.invoke(ext_id, command, params)` would fail with "extensions is not defined". Now properly creates an `extensions` object with `invoke` as its method
+
 ---
 
 ## [v0.8.5] - 2026-06-03
