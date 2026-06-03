@@ -34,11 +34,64 @@ export function getDynamicSchema(
   // Check if this is an extension or community component
   const extensionDto = dynamicRegistry.getMeta(componentType)
   const communityMeta = communityRegistry.getMeta(componentType)
+  const meta = extensionDto || communityMeta
   const schemaSource = extensionDto?.config_schema?.properties
     ? extensionDto
     : communityMeta?.config_schema?.properties
       ? communityMeta
       : null
+
+  // ── ConfigPanel: community/extension bundle exports a custom config UI ──
+  const globalName = meta?.global_name
+  if (globalName) {
+    const bundleGlobal = (window as any)[globalName]
+    if (bundleGlobal?.ConfigPanel) {
+      const ConfigPanelComponent = bundleGlobal.ConfigPanel
+      const displaySections: ConfigSection[] = [
+        {
+          type: 'custom' as const,
+          render: () => React.createElement(ConfigPanelComponent, {
+            config,
+            onChange: (key: string, value: any) => updateConfig(key)(value),
+          }),
+        },
+      ]
+
+      // Device binding section (if component requires it)
+      if (communityMeta?.has_device_binding) {
+        displaySections.push({
+          type: 'custom' as const,
+          render: () => (
+            <DeviceBindingConfig
+              deviceId={config.deviceBinding?.deviceId}
+              deviceTypeFilter={communityMeta.device_type_filter}
+              onChange={(deviceId) => {
+                updateConfig('deviceBinding')({ deviceId: deviceId || undefined })
+              }}
+            />
+          ),
+        })
+      }
+
+      // Data source section (if component supports it)
+      let dataSourceSections: ConfigSection[] = []
+      if (meta.has_data_source) {
+        const dsAllowedTypes = (meta.data_source_allowed_types || ['device-metric', 'extension', 'extension-command']) as any
+        dataSourceSections = [
+          {
+            type: 'data-source' as const,
+            props: {
+              dataSource: config.dataSource,
+              onChange: updateDataSource,
+              allowedTypes: dsAllowedTypes,
+            },
+          },
+        ]
+      }
+
+      return { displaySections, dataSourceSections, styleSections: [] }
+    }
+  }
 
   if (schemaSource?.config_schema?.properties) {
     // Generate config UI from JSON Schema (extension or community)
