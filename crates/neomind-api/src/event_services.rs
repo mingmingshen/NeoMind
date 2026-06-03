@@ -286,9 +286,7 @@ impl TransformEventService {
                                                 .publish(NeoMindEvent::DeviceMetric {
                                                     device_id: transformed_metric.device_id.clone(),
                                                     metric: transformed_metric.metric.clone(),
-                                                    value: MetricValue::Float(
-                                                        transformed_metric.value,
-                                                    ),
+                                                    value: transformed_metric.value.clone(),
                                                     timestamp: transformed_metric.timestamp,
                                                     quality: transformed_metric.quality,
                                                     is_virtual: Some(true),
@@ -300,11 +298,17 @@ impl TransformEventService {
                                             // for proper querying from data explorer
                                             let storage_device_id =
                                                 transformed_metric.storage_device_id();
+                                            // Convert neomind_core::MetricValue → neomind_devices::MetricValue for storage
+                                            let storage_value = match &transformed_metric.value {
+                                                MetricValue::Float(f) => neomind_devices::MetricValue::Float(*f),
+                                                MetricValue::Integer(i) => neomind_devices::MetricValue::Integer(*i),
+                                                MetricValue::Boolean(b) => neomind_devices::MetricValue::Boolean(*b),
+                                                MetricValue::String(s) => neomind_devices::MetricValue::String(s.clone()),
+                                                MetricValue::Json(v) => neomind_devices::MetricValue::String(v.to_string()),
+                                            };
                                             let data_point = neomind_devices::DataPoint {
                                                 timestamp: transformed_metric.timestamp,
-                                                value: neomind_devices::MetricValue::Float(
-                                                    transformed_metric.value,
-                                                ),
+                                                value: storage_value,
                                                 quality: transformed_metric.quality,
                                             };
                                             if let Err(e) = time_series_storage_inner
@@ -326,7 +330,7 @@ impl TransformEventService {
                                             tracing::trace!(
                                                 device_id = %storage_device_id,
                                                 metric = %transformed_metric.metric,
-                                                value = transformed_metric.value,
+                                                value = ?transformed_metric.value,
                                                 "Published and stored transformed metric"
                                             );
                                         }

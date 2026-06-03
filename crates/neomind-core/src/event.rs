@@ -666,7 +666,7 @@ impl fmt::Display for NeoMindEvent {
 }
 
 /// Metric value type for device metrics.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MetricValue {
     /// Floating point value

@@ -14,48 +14,123 @@ import { initVisualViewport } from "@/hooks/useVisualViewport"
 ;(window as any).jsxRuntime = jsxRuntime
 
 // Expose NeoMind API for community/extension components
-// Components can call: window.neomind.callExtension(id, command, args)
 ;(window as any).neomind = {
   /**
    * Call an extension command from a frontend component.
-   * @param extensionId - Extension ID (e.g. "yolo-device-inference")
-   * @param command - Command name (e.g. "analyze")
-   * @param args - Command arguments (optional)
-   * @returns Promise with the command result
+   * POST /api/extensions/:id/command
    */
   callExtension: async (extensionId: string, command: string, args?: Record<string, unknown>) => {
-    const { getApiBase } = await import('@/lib/api')
-    const apiBase = getApiBase()
+    const { api } = await import('@/lib/api')
+    return api.executeCommand(extensionId, { command, args: args || {} })
+  },
 
-    // Get auth token if available
-    let token: string | null = null
-    try {
-      const tokenStr = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
-      if (tokenStr) {
-        const parsed = JSON.parse(tokenStr)
-        token = parsed?.token || parsed
-      }
-    } catch {}
+  /**
+   * List all installed extensions.
+   * GET /api/extensions
+   */
+  listExtensions: async () => {
+    const { api } = await import('@/lib/api')
+    return api.listExtensions()
+  },
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+  /**
+   * Create a transform automation.
+   * Maps component TransformConfig → backend CreateAutomationRequest.
+   * POST /api/automations
+   */
+  createTransform: async (config: {
+    name: string
+    scope: string
+    extension_id: string
+    command?: string
+    input?: Record<string, unknown>
+    output?: Record<string, unknown>
+    args?: Record<string, unknown>
+    rule: { device_id: string; device_type?: string }
+  }) => {
+    const { api } = await import('@/lib/api')
+
+    // Map component template config → backend TransformAutomation format
+    // Backend expects: { scope: {device: "..."}, operations: [{op_type: "extension", ...}] }
+    const parameters: Record<string, unknown> = { ...(config.input || {}), ...(config.args || {}) }
+    const outputMetrics = config.output ? Object.keys(config.output) : []
+
+    const definition: Record<string, unknown> = {
+      scope: { device: config.scope },
+      operations: [{
+        op_type: 'extension',
+        extension_id: config.extension_id,
+        command: config.command || 'detect',
+        parameters,
+        output_metrics: outputMetrics,
+        output_mapping: config.output || null,
+      }],
     }
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
 
-    const response = await fetch(`${apiBase}/extensions/${extensionId}/command`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ command, args: args || {} }),
+    const result = await api.createAutomation({
+      name: config.name,
+      type: 'transform',
+      enabled: true,
+      definition,
     })
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => 'Unknown error')
-      return { success: false, error: `HTTP ${response.status}: ${text}` }
+    // Return shape expected by components: { id, name, scope, extension_id, rule, status, created_at }
+    const automation = (result as any).automation
+    return {
+      id: automation.id,
+      name: automation.name,
+      scope: config.scope,
+      extension_id: config.extension_id,
+      rule: config.rule,
+      status: automation.enabled ? 'active' : 'paused',
+      created_at: automation.created_at,
     }
+  },
 
-    return response.json()
+  /**
+   * Delete a transform automation.
+   * DELETE /api/automations/:id
+   */
+  deleteTransform: async (id: string) => {
+    const { api } = await import('@/lib/api')
+    await api.deleteAutomation(id)
+  },
+
+  /**
+   * List transform automations, optionally filtered.
+   * GET /api/automations?type=transform
+   */
+  listTransforms: async (filter?: { scope?: string; extension_id?: string }) => {
+    const { api } = await import('@/lib/api')
+    const result = await api.listAutomations({ type: 'transform' })
+    return result.automations.map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      scope: a.scope || '',
+      extension_id: a.extension_id || '',
+      rule: a.rule || {},
+      status: a.enabled ? 'active' : 'paused',
+      created_at: a.created_at,
+    }))
+  },
+
+  /**
+   * Write a virtual metric value for a device.
+   * POST /api/automations/transforms/process
+   */
+  writeMetric: async (deviceId: string, metric: string, value: unknown) => {
+    // Virtual metrics are produced by transforms.
+    // For direct writes from components, we use the transform process endpoint
+    // with a minimal inline payload that sets the metric directly.
+    const { api } = await import('@/lib/api')
+    try {
+      await api.processTransformData({
+        device_id: deviceId,
+        data: { [metric]: value },
+      })
+    } catch {
+      // Silent degradation — components should never block on metric writes
+    }
   },
 }
 

@@ -308,6 +308,9 @@ pub enum TransformOperation {
         parameters: HashMap<String, serde_json::Value>,
         /// Output metric name(s)
         output_metrics: Vec<String>,
+        /// Output mapping configuration: key=metric name, value={from, normalize, transform, roi, ...}
+        #[serde(default)]
+        output_mapping: Option<HashMap<String, serde_json::Value>>,
     },
 
     /// Multi-output transform - generates multiple metrics

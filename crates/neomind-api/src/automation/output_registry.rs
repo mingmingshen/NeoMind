@@ -23,6 +23,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::transform::TransformedMetric;
+use neomind_core::event::MetricValue;
 
 /// Information about a Transform output metric (data source)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,6 +87,17 @@ impl TransformOutputType {
     }
 }
 
+/// Detect the output type from a MetricValue.
+fn detect_output_type(value: &MetricValue) -> TransformOutputType {
+    match value {
+        MetricValue::Float(_) => TransformOutputType::Float,
+        MetricValue::Integer(_) => TransformOutputType::Integer,
+        MetricValue::Boolean(_) => TransformOutputType::Boolean,
+        MetricValue::String(_) => TransformOutputType::String,
+        MetricValue::Json(_) => TransformOutputType::Unknown,
+    }
+}
+
 /// Registry for Transform output metrics
 ///
 /// Tracks all Transform outputs and makes them available as data sources.
@@ -145,7 +157,7 @@ impl TransformOutputRegistry {
                 metric_name: metric.metric.clone(),
                 data_source_id: data_source_id.clone(),
                 display_name: format!("{}: {}", transform_name, metric.metric),
-                data_type: TransformOutputType::Float, // Default to float
+                data_type: detect_output_type(&metric.value),
                 unit: None,
                 description: format!("Output from Transform: {}", transform_name),
                 last_update: Some(metric.timestamp),
@@ -302,7 +314,7 @@ mod tests {
                 device_id: "sensor1".to_string(),
                 transform_id: None,
                 metric: "temperature_f".to_string(),
-                value: 72.5,
+                value: 72.5.into(),
                 timestamp: 12345,
                 quality: Some(1.0),
             },
@@ -310,7 +322,7 @@ mod tests {
                 device_id: "sensor1".to_string(),
                 transform_id: None,
                 metric: "humidity_pct".to_string(),
-                value: 65.0,
+                value: 65.0.into(),
                 timestamp: 12345,
                 quality: Some(1.0),
             },

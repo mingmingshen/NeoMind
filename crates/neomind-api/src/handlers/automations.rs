@@ -759,7 +759,7 @@ pub async fn process_data_handler(
                             .publish(NeoMindEvent::DeviceMetric {
                                 device_id: metric.device_id.clone(),
                                 metric: metric.metric.clone(),
-                                value: neomind_core::MetricValue::Float(metric.value),
+                                value: metric.value.clone(),
                                 timestamp: metric.timestamp,
                                 quality: metric.quality,
                                 is_virtual: Some(true),
