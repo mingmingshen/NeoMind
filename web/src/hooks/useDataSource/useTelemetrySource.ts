@@ -9,7 +9,7 @@ import { getUnifiedId, getUnifiedField, getUnifiedSource } from '@/types/dashboa
 import type { NeoMindStore } from '@/store'
 import { useStore } from '@/store'
 import { logError } from '@/lib/errors'
-import { fetchHistoricalTelemetry, telemetryCache } from './fetch'
+import { fetchHistoricalTelemetry } from './fetch'
 import {
   isImageDataSource, getDataSourceLimit,
 } from './helpers'
@@ -122,14 +122,9 @@ export function useTelemetrySource(
       initialTelemetryFetchDoneRef.current = false
       emptyRetryCountRef.current = 0
       retryInProgressRef.current = false
-      // Invalidate cache for changed sources to prevent stale data
-      telemetrySources.forEach(ds => {
-        const deviceId = getUnifiedId(ds)
-        const metricId = getUnifiedField(ds)
-        if (deviceId && metricId) {
-          telemetryCache.deleteWhere((_, key) => key.startsWith(`${deviceId}|${metricId}|`))
-        }
-      })
+      // Cache key already includes deviceId+metricId+timeRange+aggregate+timeBucket,
+      // so different configs naturally miss; and 60s TTL bounds staleness.
+      // Do NOT delete cache here — that would defeat cache reuse on dashboard switching.
     }
     prevTelemetryKeyRef.current = telemetryKey
 
@@ -150,7 +145,7 @@ export function useTelemetrySource(
         fetchTimeoutRef.current = setTimeout(() => {
           fetchTimeoutRef.current = null
           reject(new Error('Fetch timeout'))
-        }, 5000)
+        }, 10000)
       })
 
       try {
@@ -169,7 +164,12 @@ export function useTelemetrySource(
                 dsSourceId = `ai:${dsSourceId}`
               }
               const includeRawPoints = ds.params?.includeRawPoints === true || ds.transform === 'raw'
-              const bypassCache = !initialTelemetryFetchDoneRef.current || includeRawPoints
+              // Always prefer cache: it's 60s-bucket-aligned + 30s-TTL-protected.
+              // Previous logic bypassed cache on (a) initial fetch and (b) raw/chart data,
+              // which forced every dashboard switch and every chart into a cold fetch.
+              // Charts and dashboard switching now reuse cached data instantly while
+              // the periodic poll (or WS push) refreshes in the background.
+              const bypassCache = false
               const isImg = isImageDataSource(ds)
               const actualTimeRange = ds.timeRange ?? (isImg ? 48 : 1)
               const actualLimit = ds.limit ?? (isImg ? 200 : 50)

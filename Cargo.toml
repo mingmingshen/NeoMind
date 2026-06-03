@@ -19,7 +19,7 @@ exclude = ["web"]
 resolver = "2"
 
 [workspace.package]
-version = "0.8.4"
+version = "0.8.5"
 edition = "2021"
 rust-version = "1.85"
 authors = ["NeoMind Contributors"]
@@ -45,7 +45,7 @@ urlencoding = "2.1"
 
 # UI (Web)
 axum = "0.7"
-tower-http = { version = "0.6", features = ["fs", "cors", "compression-gzip", "limit", "timeout"] }
+tower-http = { version = "0.6", features = ["fs", "cors", "compression-gzip", "compression-br", "limit", "timeout"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
@@ -73,6 +73,8 @@ redb = "2.1"
 
 # TLS certificate generation
 rcgen = { version = "0.13", features = ["crypto"] }
+hostname = "0.4"
+time = "0.3"
 
 # Crypto
 aes-gcm = "0.10"

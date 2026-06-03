@@ -124,7 +124,7 @@ mod tests {
             output_fields: vec![],
             config: CommandConfigDto {
                 requires_auth: false,
-                timeout_ms: 30000,
+                timeout_ms: 120000,
                 is_stream: false,
                 expected_duration_ms: None,
             },
@@ -133,7 +133,7 @@ mod tests {
         assert_eq!(command.id, "turn_on");
         assert_eq!(command.display_name, "Turn On");
         assert!(!command.config.is_stream);
-        assert_eq!(command.config.timeout_ms, 30000);
+        assert_eq!(command.config.timeout_ms, 120000);
     }
 
     #[tokio::test]
@@ -239,7 +239,7 @@ mod tests {
                 output_fields: vec![],
                 config: CommandConfigDto {
                     requires_auth: false,
-                    timeout_ms: 30000,
+                    timeout_ms: 120000,
                     is_stream: false,
                     expected_duration_ms: None,
                 },
@@ -285,7 +285,7 @@ mod tests {
                 output_fields: vec![],
                 config: CommandConfigDto {
                     requires_auth: false,
-                    timeout_ms: 30000,
+                    timeout_ms: 120000,
                     is_stream: false,
                     expected_duration_ms: None,
                 },

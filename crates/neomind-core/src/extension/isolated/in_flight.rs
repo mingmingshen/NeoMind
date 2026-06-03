@@ -209,7 +209,7 @@ impl InFlightRequests {
 
 impl Default for InFlightRequests {
     fn default() -> Self {
-        Self::new(Duration::from_secs(30))
+        Self::new(Duration::from_secs(300))
     }
 }
 

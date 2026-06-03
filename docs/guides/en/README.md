@@ -21,6 +21,7 @@ docs/guides/en/
 ├── 12-commands.md                # Device command queue
 ├── 14-api.md                     # REST/WebSocket API reference
 ├── 15-web.md                     # React frontend architecture
+├── 16-environment-variables.md   # Environment variables reference
 ├── extension-system.md           # Extension development guide
 ├── ble-provisioning.md           # BLE device provisioning
 ├── custom-dashboard-components.md # Dashboard component development
@@ -71,6 +72,7 @@ docs/guides/en/
 | [Frontend](15-web.md) | Updated | React 18, Zustand, design system |
 | [Custom Dashboard Components](custom-dashboard-components.md) | Complete | Build and publish dashboard widgets |
 | [BLE Provisioning](ble-provisioning.md) | Complete | Zero-touch device setup via Bluetooth |
+| [Environment Variables](16-environment-variables.md) | New | Complete env var reference (Server, Auth, LLM, Extension, CLI, Docker) |
 
 ## Module Dependencies
 

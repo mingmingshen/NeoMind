@@ -21,13 +21,5 @@ model = "qwen3.5:4b"
 listen = "0.0.0.0"
 port = 1883
 
-[memory]
-max_short_term_messages = 100
-max_short_term_tokens = 4000
-max_mid_term_entries = 1000
-max_long_term_knowledge = 10000
-embedding_provider = "simple"
-embedding_dim = 64
-use_hybrid_search = true
-semantic_weight = 0.7
-bm25_weight = 0.3
+# Memory settings are configured via the Web UI (Settings > Memory)
+# No [memory] section needed here

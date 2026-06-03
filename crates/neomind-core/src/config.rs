@@ -11,6 +11,11 @@ pub enum LlmProvider {
     Anthropic,
     Google,
     XAi,
+    Qwen,
+    DeepSeek,
+    GLM,
+    MiniMax,
+    LlamaCpp,
 }
 
 impl LlmProvider {
@@ -22,6 +27,11 @@ impl LlmProvider {
             LlmProvider::Anthropic => endpoints::ANTHROPIC,
             LlmProvider::Google => endpoints::GOOGLE,
             LlmProvider::XAi => endpoints::XAI,
+            LlmProvider::Qwen => endpoints::QWEN,
+            LlmProvider::DeepSeek => endpoints::DEEPSEEK,
+            LlmProvider::GLM => endpoints::GLM,
+            LlmProvider::MiniMax => endpoints::MINIMAX,
+            LlmProvider::LlamaCpp => endpoints::LLAMACPP,
         }
     }
 
@@ -30,9 +40,14 @@ impl LlmProvider {
         match self {
             LlmProvider::Ollama => models::OLLAMA_DEFAULT,
             LlmProvider::OpenAi => models::OPENAI_DEFAULT,
-            LlmProvider::Anthropic => "claude-3-haiku",
-            LlmProvider::Google => "gemini-pro",
-            LlmProvider::XAi => "grok-beta",
+            LlmProvider::Anthropic => models::ANTHROPIC_DEFAULT,
+            LlmProvider::Google => models::GOOGLE_DEFAULT,
+            LlmProvider::XAi => models::XAI_DEFAULT,
+            LlmProvider::Qwen => models::QWEN_DEFAULT,
+            LlmProvider::DeepSeek => models::DEEPSEEK_DEFAULT,
+            LlmProvider::GLM => models::GLM_DEFAULT,
+            LlmProvider::MiniMax => models::MINIMAX_DEFAULT,
+            LlmProvider::LlamaCpp => models::LLAMACPP_DEFAULT,
         }
     }
 }
@@ -55,6 +70,14 @@ pub mod endpoints {
 pub mod models {
     pub const OLLAMA_DEFAULT: &str = "qwen3.5:4b";
     pub const OPENAI_DEFAULT: &str = "gpt-4o-mini";
+    pub const ANTHROPIC_DEFAULT: &str = "claude-3-haiku";
+    pub const GOOGLE_DEFAULT: &str = "gemini-pro";
+    pub const XAI_DEFAULT: &str = "grok-beta";
+    pub const QWEN_DEFAULT: &str = "qwen-plus";
+    pub const DEEPSEEK_DEFAULT: &str = "deepseek-chat";
+    pub const GLM_DEFAULT: &str = "glm-4-flash";
+    pub const MINIMAX_DEFAULT: &str = "MiniMax-Text-01";
+    pub const LLAMACPP_DEFAULT: &str = "";
 }
 
 /// 环境变量名称
@@ -146,7 +169,7 @@ pub mod agent_env_vars {
     /// 从环境变量获取 LLM 请求超时时间（秒），或返回默认值
     ///
     /// 默认值：
-    /// - Ollama: 180 秒
+    /// - Ollama: 120 秒
     /// - OpenAI/Cloud: 60 秒
     ///
     /// 此环境变量会同时应用于两种后端
@@ -158,7 +181,7 @@ pub mod agent_env_vars {
 
     /// 获取 Ollama 后端的超时时间（秒）
     pub fn ollama_timeout_secs() -> u64 {
-        llm_timeout_secs().unwrap_or(300)
+        llm_timeout_secs().unwrap_or(120)
     }
 
     /// 获取 OpenAI/Cloud 后端的超时时间（秒）

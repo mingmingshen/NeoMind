@@ -241,7 +241,7 @@ export function EmbeddedBrokerConfigDialog({ open, onOpenChange, onConfigSaved }
       onSubmit={handleSave}
       submitLabel={t('broker.save')}
       cancelLabel={t('broker.cancel')}
-      submitDisabled={!config}
+      submitDisabled={!config || (tlsEnabled && !certsExist && certMode !== 'auto' && !(certMode === 'manual' && !!certPem && !!keyPem))}
     >
       <FormSectionGroup>
         {/* General Settings */}

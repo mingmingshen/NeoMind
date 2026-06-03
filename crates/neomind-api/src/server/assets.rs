@@ -263,6 +263,8 @@ where
     if index_path.exists() {
         use tower_http::services::{ServeDir, ServeFile};
         tracing::info!("Serving frontend static files from: {}", web_dir);
+        // ServeDir handles static files; Cache-Control is set by the per-path
+        // middleware in router.rs (cache_headers_layer) applied to the fallback.
         router.fallback_service(ServeDir::new(&web_dir).fallback(ServeFile::new(index_path)))
     } else {
         tracing::info!(

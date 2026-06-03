@@ -383,9 +383,9 @@ async fn test_execution_failed_error() {
 
 #[tokio::test]
 async fn test_command_timeout() {
-    let registry = ExtensionRegistry::new();
+    let registry = ExtensionRegistry::new().with_command_timeout_secs(5);
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test").with_delay(35000)) // 35 seconds, exceeds 30s timeout
+        Box::new(ConfigurableExtension::new("cmd.test").with_delay(10000)) // 10 seconds, exceeds 5s timeout
             as Box<dyn Extension>,
     ));
 

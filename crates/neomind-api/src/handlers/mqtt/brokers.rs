@@ -587,9 +587,17 @@ pub async fn update_broker_handler(
             broker.password = Some(pwd);
         }
     }
-    // Update certificates
-    broker.ca_cert = req.ca_cert;
-    broker.client_cert = req.client_cert;
+    // Update certificates - only overwrite if explicitly provided (not empty placeholder)
+    if let Some(cert) = req.ca_cert {
+        if !cert.is_empty() && cert != "*****" {
+            broker.ca_cert = Some(cert);
+        }
+    }
+    if let Some(cert) = req.client_cert {
+        if !cert.is_empty() && cert != "*****" {
+            broker.client_cert = Some(cert);
+        }
+    }
     // Only update client_key if provided and not the masked placeholder
     if let Some(key) = req.client_key {
         if !key.is_empty() && key != "*****" {

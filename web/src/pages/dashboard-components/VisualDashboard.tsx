@@ -394,26 +394,15 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   // Share dialog state
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
 
-  // Persist sidebar state to localStorage (default to closed on mobile, open on desktop)
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
-    const saved = localStorage.getItem('neomind_dashboard_sidebar_open')
-    if (saved !== null) return saved !== 'false'
-    // No saved value - default based on device type
-    return window.innerWidth >= 1024 // Default to closed on mobile/tablet, open on desktop
-  })
+  // Mobile sidebar drawer state (desktop sidebar is always open)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  // Layout mode: 'sidebar' (default) or 'tabs' (horizontal tab bar in toolbar)
+  // Layout mode: 'sidebar' or 'tabs' (horizontal tab bar in toolbar, default)
   const [layoutMode, setLayoutMode] = useState<'sidebar' | 'tabs'>(() => {
     const saved = localStorage.getItem('neomind_dashboard_layout_mode')
     if (saved === 'tabs' || saved === 'sidebar') return saved
-    return 'sidebar'
+    return 'tabs'
   })
-
-  // Update localStorage when sidebar state changes
-  const handleSidebarOpenChange = useCallback((open: boolean) => {
-    setSidebarOpen(open)
-    localStorage.setItem('neomind_dashboard_sidebar_open', String(open))
-  }, [])
 
   // Switch to tab bar layout
   const handleSwitchToTabs = useCallback(() => {
@@ -1507,7 +1496,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           onRename={handleDashboardRename}
           onDelete={handleDashboardDelete}
           open={sidebarOpen}
-          onOpenChange={handleSidebarOpenChange}
+          onOpenChange={setSidebarOpen}
           isDesktop={isDesktop}
           onSwitchToTabs={handleSwitchToTabs}
         />
@@ -1528,15 +1517,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             />
           ) : (
             <div className="flex items-center gap-2 min-w-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => isMobile ? handleSidebarOpenChange(true) : handleSidebarOpenChange(!sidebarOpen)}
-                className="h-7 w-7 shrink-0"
-                aria-label="Toggle sidebar"
-              >
-                <PanelLeft className="h-4 w-4" />
-              </Button>
               <h1 className="text-sm font-semibold truncate">
                 {currentDashboard.name}
               </h1>

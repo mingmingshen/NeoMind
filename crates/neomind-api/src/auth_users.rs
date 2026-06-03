@@ -186,10 +186,15 @@ impl AuthUserState {
     pub fn new() -> Self {
         // Check if running in test mode
         if std::env::var("NEOMIND_TEST_MODE").is_ok() {
+            tracing::warn!(
+                category = "auth",
+                "NEOMIND_TEST_MODE active: using in-memory auth store. NOT suitable for production!"
+            );
             return Self::new_with_memory_store();
         }
 
-        let db_path = "data/users.redb";
+        let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+        let db_path: &'static str = Box::leak(format!("{}/users.redb", data_dir).into_boxed_str());
         let jwt_secret = std::env::var("NEOMIND_JWT_SECRET").unwrap_or_else(|_| {
             // Generate a random secret (warning: changes on restart!)
             uuid::Uuid::new_v4().to_string().replace("-", "")

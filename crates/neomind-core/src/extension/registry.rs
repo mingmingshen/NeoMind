@@ -58,6 +58,8 @@ pub struct ExtensionRegistry {
     safety_manager: std::sync::Arc<ExtensionSafetyManager>,
     /// Event bus for publishing lifecycle events (optional)
     event_bus: Option<std::sync::Arc<EventBus>>,
+    /// Command execution timeout in seconds (default: 300)
+    command_timeout_secs: u64,
     /// Event dispatcher for pushing events to extensions (optional)
     /// Using Option<Arc<>> for interior mutability
     event_dispatcher: parking_lot::RwLock<Option<std::sync::Arc<EventDispatcher>>>,
@@ -74,7 +76,14 @@ impl ExtensionRegistry {
             safety_manager: std::sync::Arc::new(ExtensionSafetyManager::new()),
             event_bus: None,
             event_dispatcher: parking_lot::RwLock::new(None),
+            command_timeout_secs: 300,
         }
+    }
+
+    /// Set the command execution timeout in seconds.
+    pub fn with_command_timeout_secs(mut self, secs: u64) -> Self {
+        self.command_timeout_secs = secs;
+        self
     }
 
     /// Set the event bus for publishing lifecycle events.
@@ -393,8 +402,8 @@ impl ExtensionRegistry {
         // Record start time for execution stats
         let start_time = std::time::Instant::now();
 
-        // Execute with timeout protection (30 seconds)
-        let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        // Execute with timeout protection
+        let result = tokio::time::timeout(std::time::Duration::from_secs(self.command_timeout_secs), async {
             let ext_guard = ext_clone.read().await;
             ext_guard.execute_command(command, args).await
         })
@@ -440,7 +449,7 @@ impl ExtensionRegistry {
                 self.safety_manager.record_failure(id).await;
 
                 // Update error stats for timeout
-                let error_msg = format!("Command '{}' timed out after 30 seconds", command);
+                let error_msg = format!("Command '{}' timed out after {} seconds", command, self.command_timeout_secs);
                 if let Some(info) = self.info_cache.write().get_mut(id) {
                     info.stats.error_count += 1;
                     info.stats.last_error = Some(error_msg.clone());
@@ -449,7 +458,8 @@ impl ExtensionRegistry {
                 tracing::error!(
                     extension_id = %id,
                     command = %command,
-                    "[ExtensionRegistry] Extension command timed out after 30 seconds"
+                    timeout_secs = self.command_timeout_secs,
+                    "[ExtensionRegistry] Extension command timed out"
                 );
                 Err(ExtensionError::Timeout(format!(
                     "Command '{}' on extension '{}' timed out",

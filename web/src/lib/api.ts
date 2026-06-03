@@ -1031,7 +1031,17 @@ export const api = {
       headers['X-API-Key'] = apiKey
     }
     const response = await fetch(`${base}/mqtt/broker-config/tls/ca-cert`, { headers })
-    if (!response.ok) throw new Error('Failed to download CA certificate')
+    if (!response.ok) {
+      // Parse structured error from response body
+      try {
+        const body = await response.json()
+        const message = body?.error?.message || body?.message || `Download failed (${response.status})`
+        throw new Error(message)
+      } catch (e) {
+        if (e instanceof Error) throw e
+        throw new Error(`Failed to download CA certificate (${response.status})`)
+      }
+    }
     const blob = await response.blob()
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')

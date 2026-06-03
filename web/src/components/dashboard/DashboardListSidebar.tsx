@@ -2,7 +2,7 @@
  * DashboardListSidebar Component
  *
  * Left sidebar for managing multiple dashboards.
- * - Desktop: Separate column with collapse toggle (expanded/collapsed)
+ * - Desktop: Separate fixed column (always expanded)
  * - Mobile: Slide-out drawer with backdrop
  */
 
@@ -14,8 +14,6 @@ import {
   Pencil,
   Check,
   X,
-  PanelLeftClose,
-  PanelLeftOpen,
   PanelTop,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -61,9 +59,8 @@ function DashboardSidebarContent({
   onDelete,
   onOpenChange,
   isDesktop,
-  collapsed,
   onSwitchToTabs,
-}: Omit<DashboardListSidebarProps, 'open' | 'className'> & { collapsed: boolean }) {
+}: Omit<DashboardListSidebarProps, 'open' | 'className'>) {
   const { t } = useTranslation('dashboardComponents')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
@@ -111,9 +108,9 @@ function DashboardSidebarContent({
     <>
       {/* Header */}
       <div className="flex items-center justify-between px-3 h-11 border-b border-border">
-        {!collapsed && <h2 className="text-sm font-semibold">{t('sidebar.title')}</h2>}
-        <div className={cn("flex items-center gap-0.5", collapsed && "mx-auto")}>
-          {isDesktop && !collapsed && onSwitchToTabs && (
+        <h2 className="text-sm font-semibold">{t('sidebar.title')}</h2>
+        <div className="flex items-center gap-0.5">
+          {isDesktop && onSwitchToTabs && (
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -131,20 +128,7 @@ function DashboardSidebarContent({
               </Tooltip>
             </TooltipProvider>
           )}
-          {isDesktop ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onOpenChange?.(collapsed)}
-              className="h-6 w-6 rounded-lg"
-            >
-              {collapsed ? (
-                <PanelLeftOpen className="h-4 w-4" />
-              ) : (
-                <PanelLeftClose className="h-4 w-4" />
-              )}
-            </Button>
-          ) : (
+          {!isDesktop && (
             <Button
               variant="ghost"
               size="icon"
@@ -157,217 +141,179 @@ function DashboardSidebarContent({
         </div>
       </div>
 
-      {/* Collapsed mode - icon only with tooltip. Add button is hidden when collapsed. */}
-      {collapsed ? (
-        <TooltipProvider delayDuration={200}>
-          <div className="flex-1 min-h-0 flex flex-col items-center py-2 gap-1">
-            <ScrollArea className="flex-1 w-full min-h-0">
-              <div className="flex flex-col items-center gap-1 py-1">
-                {dashboards.map((dashboard) => {
-                  const isActive = dashboard.id === currentDashboardId
-                  return (
-                    <Tooltip key={dashboard.id}>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleSwitch(dashboard.id)}
-                          className={cn(
-                            "h-9 w-9 rounded-lg",
-                            isActive && "bg-muted"
-                          )}
-                        >
-                          <LayoutDashboard className={cn(
-                            "h-4 w-4",
-                            isActive ? "text-foreground" : "text-muted-foreground"
-                          )} />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">{dashboard.name}</TooltipContent>
-                    </Tooltip>
-                )
-              })}
-            </div>
-          </ScrollArea>
-        </div>
-        </TooltipProvider>
-      ) : (
-        <>
-          {/* New Dashboard Button */}
-          <div className="p-3 pb-2">
-            {showCreateInput ? (
-              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                <Input
-                  ref={createInputRef}
-                  value={newDashboardName}
-                  onChange={(e) => setNewDashboardName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newDashboardName.trim()) {
-                      onCreate(newDashboardName.trim())
-                      setNewDashboardName('')
-                      setShowCreateInput(false)
-                    }
-                    if (e.key === 'Escape') {
-                      setShowCreateInput(false)
-                      setNewDashboardName('')
-                    }
-                  }}
-                  placeholder={t('sidebar.namePlaceholder')}
-                  className="h-8 flex-1 rounded-lg placeholder:text-[11px]"
-                  autoFocus
-                />
-                <button
-                  className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
-                  onClick={() => {
-                    if (newDashboardName.trim()) {
-                      onCreate(newDashboardName.trim())
-                      setNewDashboardName('')
-                      setShowCreateInput(false)
-                    }
-                  }}
-                >
-                  <Check className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
-                  onClick={() => { setShowCreateInput(false); setNewDashboardName('') }}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : (
-              <Button
-                onClick={() => setShowCreateInput(true)}
-                variant="outline"
-                className="w-full h-8 text-sm rounded-lg"
-              >
-                <Plus className="h-4 w-4 mr-1.5" />
+      {/* New Dashboard Button */}
+      <div className="p-3 pb-2">
+        {showCreateInput ? (
+          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            <Input
+              ref={createInputRef}
+              value={newDashboardName}
+              onChange={(e) => setNewDashboardName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newDashboardName.trim()) {
+                  onCreate(newDashboardName.trim())
+                  setNewDashboardName('')
+                  setShowCreateInput(false)
+                }
+                if (e.key === 'Escape') {
+                  setShowCreateInput(false)
+                  setNewDashboardName('')
+                }
+              }}
+              placeholder={t('sidebar.namePlaceholder')}
+              className="h-8 flex-1 rounded-lg placeholder:text-[11px]"
+              autoFocus
+            />
+            <button
+              className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
+              onClick={() => {
+                if (newDashboardName.trim()) {
+                  onCreate(newDashboardName.trim())
+                  setNewDashboardName('')
+                  setShowCreateInput(false)
+                }
+              }}
+            >
+              <Check className="h-3.5 w-3.5" />
+            </button>
+            <button
+              className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
+              onClick={() => { setShowCreateInput(false); setNewDashboardName('') }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <Button
+            onClick={() => setShowCreateInput(true)}
+            variant="outline"
+            className="w-full h-8 text-sm rounded-lg"
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            {t('sidebar.newDashboard')}
+          </Button>
+        )}
+      </div>
+
+      {/* Dashboard List */}
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="px-2 pb-2 space-y-0.5">
+          {dashboards.length === 0 ? (
+            <div className="py-8 text-center">
+              <LayoutDashboard className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+              <p className={cn(textNano, "text-muted-foreground")}>
                 {t('sidebar.newDashboard')}
-              </Button>
-            )}
-          </div>
-
-          {/* Dashboard List */}
-          <ScrollArea className="flex-1 min-h-0">
-            <div className="px-2 pb-2 space-y-0.5">
-              {dashboards.length === 0 ? (
-                <div className="py-8 text-center">
-                  <LayoutDashboard className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                  <p className={cn(textNano, "text-muted-foreground")}>
-                    {t('sidebar.newDashboard')}
-                  </p>
-                </div>
-              ) : (
-                dashboards.map((dashboard) => {
-                  const isActive = dashboard.id === currentDashboardId
-                  const isEditing = editingId === dashboard.id
-                  const count = dashboard.components?.length ?? 0
-
-                  return (
-                    <div
-                      key={dashboard.id}
-                      onClick={() => !isEditing && handleSwitch(dashboard.id)}
-                      className={cn(
-                        "group relative flex items-start gap-2 p-2 rounded-lg cursor-pointer transition-all",
-                        isActive
-                          ? "bg-muted"
-                          : "hover:bg-muted-50",
-                        isEditing && "bg-muted"
-                      )}
-                    >
-                      {isEditing ? (
-                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Input
-                            ref={editInputRef}
-                            value={editingName}
-                            onChange={(e) => setEditingName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && editingName.trim()) {
-                                onRename(dashboard.id, editingName.trim())
-                                setEditingId(null)
-                                setEditingName('')
-                              }
-                              if (e.key === 'Escape') {
-                                setEditingId(null)
-                                setEditingName('')
-                              }
-                            }}
-                            className="h-7 text-sm flex-1 rounded-md"
-                            autoFocus
-                          />
-                          <button
-                            className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
-                            onClick={() => {
-                              if (editingName.trim()) {
-                                onRename(dashboard.id, editingName.trim())
-                                setEditingId(null)
-                                setEditingName('')
-                              }
-                            }}
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
-                            onClick={() => { setEditingId(null); setEditingName('') }}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-start gap-2 min-w-0 flex-1">
-                            <LayoutDashboard className={cn(
-                              "h-4 w-4 mt-0.5 shrink-0",
-                              isActive ? "text-foreground" : "text-muted-foreground"
-                            )} />
-                            <div className="min-w-0 flex-1">
-                              <h4 className={cn(
-                                "text-sm truncate",
-                                isActive ? "text-foreground font-medium" : "text-muted-foreground"
-                              )}>
-                                {dashboard.name}
-                              </h4>
-                              <div className={cn("flex items-center gap-1 mt-0.5 overflow-hidden", textNano, "text-muted-foreground")}>
-                                <span className="truncate">{t('sidebar.componentCount', { count })}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Action buttons */}
-                          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors"
-                              onClick={(e) => { e.stopPropagation(); setEditingId(dashboard.id); setEditingName(dashboard.name) }}
-                              title={t('sidebar.rename')}
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </button>
-                            <button
-                              className="h-6 w-6 flex items-center justify-center rounded hover:bg-error-light text-muted-foreground hover:text-destructive transition-colors"
-                              onClick={(e) => { e.stopPropagation(); handleDelete(dashboard.id) }}
-                              title={t('sidebar.delete')}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )
-                })
-              )}
+              </p>
             </div>
-          </ScrollArea>
+          ) : (
+            dashboards.map((dashboard) => {
+              const isActive = dashboard.id === currentDashboardId
+              const isEditing = editingId === dashboard.id
+              const count = dashboard.components?.length ?? 0
 
-          {/* Footer */}
-          <div className="p-2 border-t border-border">
-            <p className={cn(textNano, "text-muted-foreground text-center")}>
-              {t('sidebar.dashboardCount', { count: dashboards.length })}
-            </p>
-          </div>
-        </>
-      )}
+              return (
+                <div
+                  key={dashboard.id}
+                  onClick={() => !isEditing && handleSwitch(dashboard.id)}
+                  className={cn(
+                    "group relative flex items-start gap-2 p-2 rounded-lg cursor-pointer transition-all",
+                    isActive
+                      ? "bg-muted"
+                      : "hover:bg-muted-50",
+                    isEditing && "bg-muted"
+                  )}
+                >
+                  {isEditing ? (
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <Input
+                        ref={editInputRef}
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && editingName.trim()) {
+                            onRename(dashboard.id, editingName.trim())
+                            setEditingId(null)
+                            setEditingName('')
+                          }
+                          if (e.key === 'Escape') {
+                            setEditingId(null)
+                            setEditingName('')
+                          }
+                        }}
+                        className="h-7 text-sm flex-1 rounded-md"
+                        autoFocus
+                      />
+                      <button
+                        className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md text-success hover:bg-success-light transition-colors"
+                        onClick={() => {
+                          if (editingName.trim()) {
+                            onRename(dashboard.id, editingName.trim())
+                            setEditingId(null)
+                            setEditingName('')
+                          }
+                        }}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        className="h-6 w-6 shrink-0 flex items-center justify-center rounded-md hover:bg-muted transition-colors"
+                        onClick={() => { setEditingId(null); setEditingName('') }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-2 min-w-0 flex-1">
+                        <LayoutDashboard className={cn(
+                          "h-4 w-4 mt-0.5 shrink-0",
+                          isActive ? "text-foreground" : "text-muted-foreground"
+                        )} />
+                        <div className="min-w-0 flex-1">
+                          <h4 className={cn(
+                            "text-sm truncate",
+                            isActive ? "text-foreground font-medium" : "text-muted-foreground"
+                          )}>
+                            {dashboard.name}
+                          </h4>
+                          <div className={cn("flex items-center gap-1 mt-0.5 overflow-hidden", textNano, "text-muted-foreground")}>
+                            <span className="truncate">{t('sidebar.componentCount', { count })}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors"
+                          onClick={(e) => { e.stopPropagation(); setEditingId(dashboard.id); setEditingName(dashboard.name) }}
+                          title={t('sidebar.rename')}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        <button
+                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-error-light text-muted-foreground hover:text-destructive transition-colors"
+                          onClick={(e) => { e.stopPropagation(); handleDelete(dashboard.id) }}
+                          title={t('sidebar.delete')}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )
+            })
+          )}
+        </div>
+      </ScrollArea>
+
+      {/* Footer */}
+      <div className="p-2 border-t border-border">
+        <p className={cn(textNano, "text-muted-foreground text-center")}>
+          {t('sidebar.dashboardCount', { count: dashboards.length })}
+        </p>
+      </div>
     </>
   )
 }
@@ -385,13 +331,12 @@ export function DashboardListSidebar({
   onSwitchToTabs,
   className,
 }: DashboardListSidebarProps) {
-  // Desktop mode: separate column with collapse toggle
+  // Desktop mode: separate fixed-width column
   if (isDesktop) {
     return (
       <div
         className={cn(
-          "h-full bg-bg-50 border-r border-border flex flex-col transition-[width] duration-200",
-          open ? "w-64" : "w-12",
+          "h-full w-64 bg-bg-50 border-r border-border flex flex-col",
           className
         )}
       >
@@ -404,7 +349,6 @@ export function DashboardListSidebar({
           onDelete={onDelete}
           onOpenChange={onOpenChange}
           isDesktop={true}
-          collapsed={!open}
           onSwitchToTabs={onSwitchToTabs}
         />
       </div>
@@ -443,7 +387,6 @@ export function DashboardListSidebar({
           onDelete={onDelete}
           onOpenChange={onOpenChange}
           isDesktop={false}
-          collapsed={false}
         />
       </div>
     </>

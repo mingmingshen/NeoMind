@@ -220,7 +220,7 @@ impl Default for IsolatedExtensionConfig {
     fn default() -> Self {
         Self {
             startup_timeout_secs: 120,
-            command_timeout_secs: 30,
+            command_timeout_secs: 300,
             // ✨ FIX: Memory limit increased to 2048MB for YOLO extensions
             // Breakdown:
             // - ONNX model: ~100MB
@@ -2830,7 +2830,7 @@ mod tests {
     fn test_config_default() {
         let config = IsolatedExtensionConfig::default();
         assert_eq!(config.startup_timeout_secs, 120);
-        assert_eq!(config.command_timeout_secs, 30);
+        assert_eq!(config.command_timeout_secs, 300);
         assert_eq!(config.max_memory_mb, 2048); // Updated for YOLO extensions
         assert!(config.restart_on_crash);
     }

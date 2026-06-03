@@ -27,7 +27,7 @@ fn test_isolated_extension_config_default() {
     let config = IsolatedExtensionConfig::default();
 
     assert_eq!(config.startup_timeout_secs, 120);
-    assert_eq!(config.command_timeout_secs, 30);
+    assert_eq!(config.command_timeout_secs, 300);
     assert_eq!(config.max_memory_mb, 2048);
     assert!(config.restart_on_crash);
     assert_eq!(config.max_restart_attempts, 3);

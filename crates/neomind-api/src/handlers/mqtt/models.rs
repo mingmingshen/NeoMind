@@ -46,6 +46,7 @@ pub struct MqttStatusDto {
     /// Server IP address (actual accessible IP, not 0.0.0.0)
     pub server_ip: String,
     pub listen_port: u16,
+    pub tls_enabled: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub external_brokers: Vec<ExternalBrokerConnectionDto>,
     pub last_error: Option<String>,

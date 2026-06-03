@@ -252,6 +252,9 @@ async fn test_telemetry_concurrent_write_performance() {
     // Wait for all writers to complete
     while join_set.join_next().await.is_some() {}
 
+    // Flush buffer to ensure all data is persisted before querying
+    storage.flush().unwrap();
+
     let elapsed = start.elapsed();
     let total_writes = num_writers * writes_per_writer;
 
@@ -450,6 +453,9 @@ async fn test_image_retrieval_performance() {
         };
         storage.write(device_id, metric, point).await.unwrap();
     }
+
+    // Flush buffer to ensure all data is persisted before querying
+    storage.flush().unwrap();
 
     // Test retrieval performance
     let mut total_retrieval_time = std::time::Duration::ZERO;

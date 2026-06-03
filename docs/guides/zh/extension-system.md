@@ -881,9 +881,10 @@ force_isolated = ["weather-extension", "untrusted-extension"]
 force_in_process = ["core-extension"]
 
 [extensions.isolated]
-startup_timeout_secs = 30
-command_timeout_secs = 30
-max_memory_mb = 512
+# 以下为示例值。默认值：启动=120s，命令=300s，内存=2048MB
+startup_timeout_secs = 120
+command_timeout_secs = 300
+max_memory_mb = 2048
 restart_on_crash = true
 max_restart_attempts = 3
 restart_cooldown_secs = 60

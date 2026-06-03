@@ -387,6 +387,19 @@ impl EmbeddedBroker {
             let key_path = config.tls_key_path.as_deref().ok_or_else(|| {
                 EmbeddedBrokerError::Config("TLS key path required".to_string())
             })?;
+
+            // Verify cert and key files exist and are readable before passing to rmqtt
+            if !std::path::Path::new(cert_path).exists() {
+                return Err(EmbeddedBrokerError::Config(format!(
+                    "TLS certificate file not found: {}", cert_path
+                )));
+            }
+            if !std::path::Path::new(key_path).exists() {
+                return Err(EmbeddedBrokerError::Config(format!(
+                    "TLS key file not found: {}", key_path
+                )));
+            }
+
             tracing::info!("TLS enabled with cert: {}, key: {}", cert_path, key_path);
             builder
                 .tls_cert(Some(cert_path.to_string()))

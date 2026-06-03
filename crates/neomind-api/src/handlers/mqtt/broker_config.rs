@@ -187,6 +187,12 @@ pub async fn update_broker_config_handler(
 
     // Update fields if provided
     if let Some(listen) = req.listen {
+        // Validate listen address is a valid IP (or "0.0.0.0" / "::")
+        if listen.parse::<std::net::IpAddr>().is_err() {
+            return Err(ErrorResponse::bad_request(
+                format!("Invalid listen address: '{}'. Must be a valid IP address (e.g. 0.0.0.0, 127.0.0.1, ::)", listen)
+            ));
+        }
         config.listen = listen;
     }
     if let Some(port) = req.port {
@@ -199,6 +205,12 @@ pub async fn update_broker_config_handler(
         config.auth_enabled = auth_enabled;
     }
     if let Some(tls_enabled) = req.tls_enabled {
+        // Block enabling TLS when certificates are not configured
+        if tls_enabled && config.tls_cert_path.is_none() {
+            return Err(ErrorResponse::bad_request(
+                "Cannot enable TLS: no certificates configured. Upload or generate certificates first.".to_string()
+            ));
+        }
         config.tls_enabled = tls_enabled;
     }
 
@@ -291,6 +303,8 @@ pub async fn update_broker_config_handler(
 /// password (min 4 chars), and maximum credential count (100).
 /// Passwords are hashed with bcrypt before storage.
 pub async fn add_credential_handler(
+    #[cfg(feature = "embedded-broker")] State(state): State<crate::server::types::ServerState>,
+    #[cfg(not(feature = "embedded-broker"))] State(_state): State<crate::server::types::ServerState>,
     Json(req): Json<AddCredentialRequest>,
 ) -> HandlerResult<serde_json::Value> {
     // Validate username
@@ -311,10 +325,16 @@ pub async fn add_credential_handler(
     let store = config::open_settings_store()
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
 
-    // Check credential count limit
+    // Check credential count limit and uniqueness
     let creds = store
         .list_mqtt_credentials()
         .map_err(|e| ErrorResponse::internal(format!("Failed to load credentials: {}", e)))?;
+
+    if creds.iter().any(|c| c.username == req.username) {
+        return Err(ErrorResponse::bad_request(format!(
+            "Username '{}' already exists", req.username
+        )));
+    }
 
     if creds.len() >= 100 {
         return Err(ErrorResponse::bad_request("Maximum credential limit (100) reached".to_string()));
@@ -327,6 +347,19 @@ pub async fn add_credential_handler(
     store
         .add_mqtt_credential(&req.username, &password_hash)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save credential: {}", e)))?;
+
+    // Refresh in-memory credential cache
+    #[cfg(feature = "embedded-broker")]
+    {
+        if let Ok(store) = config::open_settings_store() {
+            match crate::server::types::CredentialCache::load_from_store(&store) {
+                Ok(cache) => {
+                    *state.credential_cache.write().unwrap() = cache;
+                }
+                Err(e) => tracing::error!("Failed to refresh credential cache: {}", e),
+            }
+        }
+    }
 
     tracing::info!(username = %req.username, "Added MQTT credential");
 
@@ -343,6 +376,8 @@ pub async fn add_credential_handler(
 /// Deletes a credential by username. Returns 404 if not found.
 /// System credentials (starting with `__neomind`) cannot be deleted via this API.
 pub async fn delete_credential_handler(
+    #[cfg(feature = "embedded-broker")] State(state): State<crate::server::types::ServerState>,
+    #[cfg(not(feature = "embedded-broker"))] State(_state): State<crate::server::types::ServerState>,
     Json(req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
     let username = req
@@ -365,6 +400,19 @@ pub async fn delete_credential_handler(
 
     if !deleted {
         return Err(ErrorResponse::not_found(format!("Credential not found: {}", username)));
+    }
+
+    // Refresh in-memory credential cache
+    #[cfg(feature = "embedded-broker")]
+    {
+        if let Ok(store) = config::open_settings_store() {
+            match crate::server::types::CredentialCache::load_from_store(&store) {
+                Ok(cache) => {
+                    *state.credential_cache.write().unwrap() = cache;
+                }
+                Err(e) => tracing::error!("Failed to refresh credential cache: {}", e),
+            }
+        }
     }
 
     tracing::info!(username = %username, "Deleted MQTT credential");
@@ -392,8 +440,9 @@ pub async fn upload_tls_handler(
     }
 
     // Ensure TLS directory exists
-    let tls_dir = std::path::Path::new("data/tls");
-    std::fs::create_dir_all(tls_dir)
+    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+    let tls_dir = std::path::Path::new(&data_dir).join("tls");
+    std::fs::create_dir_all(&tls_dir)
         .map_err(|e| ErrorResponse::internal(format!("Failed to create TLS directory: {}", e)))?;
 
     let cert_path = tls_dir.join("mqtt-server.crt");
@@ -407,6 +456,14 @@ pub async fn upload_tls_handler(
     // Write private key
     std::fs::write(&key_path, &req.key_pem)
         .map_err(|e| ErrorResponse::internal(format!("Failed to write private key: {}", e)))?;
+
+    // Restrict private key file permissions on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| ErrorResponse::internal(format!("Failed to set key file permissions: {}", e)))?;
+    }
 
     // Write CA certificate if provided
     if let Some(ca_pem) = &req.ca_pem {
@@ -466,7 +523,11 @@ pub async fn upload_tls_handler(
     }))
 }
 
-/// Validate PEM format (basic check for PEM headers).
+/// Validate PEM format for certificates and private keys.
+///
+/// Checks PEM headers and validates that the content matches the expected type:
+/// - "certificate" expects `-----BEGIN CERTIFICATE-----`
+/// - "private key" expects `-----BEGIN PRIVATE KEY-----` or `-----BEGIN RSA PRIVATE KEY-----`
 fn validate_pem(pem: &str, label: &str) -> Result<(), ErrorResponse> {
     let trimmed = pem.trim();
     if trimmed.is_empty() {
@@ -479,6 +540,31 @@ fn validate_pem(pem: &str, label: &str) -> Result<(), ErrorResponse> {
             "{} must be in PEM format (-----BEGIN ...-----END ...-----)",
             label
         )));
+    }
+
+    // Validate PEM type matches expected content
+    let lower = trimmed.to_lowercase();
+    match label {
+        "certificate" | "CA certificate" => {
+            if !lower.contains("-----begin certificate-----") {
+                return Err(ErrorResponse::bad_request(format!(
+                    "{} must contain a valid certificate block (-----BEGIN CERTIFICATE-----)",
+                    label
+                )));
+            }
+        }
+        "private key" => {
+            if !lower.contains("-----begin private key-----")
+                && !lower.contains("-----begin rsa private key-----")
+                && !lower.contains("-----begin ec private key-----")
+            {
+                return Err(ErrorResponse::bad_request(format!(
+                    "{} must contain a valid private key block (-----BEGIN PRIVATE KEY-----, RSA PRIVATE KEY, or EC PRIVATE KEY)",
+                    label
+                )));
+            }
+        }
+        _ => {}
     }
 
     Ok(())

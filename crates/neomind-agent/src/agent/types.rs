@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use neomind_core::{config::agent_env_vars, Message};
+use neomind_core::{config::{agent_env_vars, endpoints, models}, Message};
 
 /// Agent event emitted during streaming processing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -358,12 +358,11 @@ impl Default for AgentConfig {
             temperature: agent_env_vars::temperature(),
             enable_tools: true,
             enable_memory: true,
-            // Use qwen2.5:3b for native tool calling support (qwen2:1.5b doesn't support tools)
-            model: "qwen2.5:3b".to_string(),
+            model: models::OLLAMA_DEFAULT.to_string(),
             api_endpoint: std::env::var("OLLAMA_ENDPOINT")
                 .ok()
                 .or_else(|| std::env::var("OPENAI_ENDPOINT").ok())
-                .or_else(|| Some("http://localhost:11434/v1".to_string())),
+                .or_else(|| Some(endpoints::OLLAMA.to_string())),
             api_key: std::env::var("OPENAI_API_KEY").ok(),
             max_tool_calls: default_max_tool_calls(),
             keep_recent_tool_results: default_keep_tool_results(),
@@ -1624,7 +1623,7 @@ mod tests {
     fn test_agent_config_default() {
         let config = AgentConfig::default();
         assert_eq!(config.name, "NeoMind Agent");
-        assert_eq!(config.model, "qwen2.5:3b");
+        assert_eq!(config.model, models::OLLAMA_DEFAULT);
         assert!(config.enable_tools);
         assert!(config.enable_memory);
     }

@@ -887,9 +887,10 @@ force_isolated = ["weather-extension", "untrusted-extension"]
 force_in_process = ["core-extension"]
 
 [extensions.isolated]
-startup_timeout_secs = 30
-command_timeout_secs = 30
-max_memory_mb = 512
+# These are example overrides. Defaults: startup=120s, command=300s, memory=2048MB
+startup_timeout_secs = 120
+command_timeout_secs = 300
+max_memory_mb = 2048
 restart_on_crash = true
 max_restart_attempts = 3
 restart_cooldown_secs = 60

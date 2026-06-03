@@ -33,7 +33,7 @@ use std::sync::Arc;
 /// This creates a simple default runtime for auto-onboarding when LLM is not fully configured
 fn create_default_llm_runtime() -> Arc<dyn LlmRuntime> {
     // Create a default Ollama runtime with standard settings
-    let config = OllamaConfig::new("qwen2.5:3b")
+    let config = OllamaConfig::new(neomind_core::config::models::OLLAMA_DEFAULT)
         .with_endpoint("http://localhost:11434")
         .with_timeout_secs(120);
 

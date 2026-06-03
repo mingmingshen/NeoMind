@@ -633,6 +633,7 @@ export interface MqttStatus {
   clients_count: number
   server_ip: string
   listen_port: number
+  tls_enabled: boolean
   external_brokers?: ExternalBrokerConnection[]
 }
 

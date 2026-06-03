@@ -31,6 +31,7 @@ import { LineChart } from '@/components/dashboard/generic/LineChart'
 import { AreaChart } from '@/components/dashboard/generic/LineChart'
 import { BarChart } from '@/components/dashboard/generic/BarChart'
 import { PieChart } from '@/components/dashboard/generic/PieChart'
+import { confirm } from '@/components/ui/use-confirm'
 import { CommandButton } from '@/components/dashboard/generic/CommandButton'
 import { ImageDisplay } from '@/components/dashboard/generic/ImageDisplay'
 import { ImageHistory } from '@/components/dashboard/generic/ImageHistory'
@@ -325,7 +326,7 @@ const ComponentWrapper = memo(function ComponentWrapper({
             <Copy className="h-4 w-4" />
           </Button>
           <Button variant="secondary" size="icon" className="h-9 w-9 bg-bg-90 backdrop-blur hover:bg-destructive hover:text-destructive-foreground transition-colors"
-            onClick={() => { const confirmed = window.confirm(t('componentWrapper.removeConfirm')); if (confirmed) onRemove(component.id) }}>
+            onClick={() => { confirm({ title: t('componentWrapper.remove'), description: t('componentWrapper.removeConfirm'), confirmText: t('componentWrapper.remove'), variant: 'destructive' }).then(ok => { if (ok) onRemove(component.id) }) }}>
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
@@ -345,7 +346,7 @@ const ComponentWrapper = memo(function ComponentWrapper({
                 <Copy className="h-3 w-3 mr-1" />{t('componentWrapper.copy')}
               </Button>
               <Button variant="secondary" size="sm" className="h-8 text-xs hover:bg-destructive hover:text-destructive-foreground"
-                onClick={() => { const confirmed = window.confirm(t('componentWrapper.removeConfirm')); if (confirmed) onRemove(component.id) }}>
+                onClick={() => { confirm({ title: t('componentWrapper.remove'), description: t('componentWrapper.removeConfirm'), confirmText: t('componentWrapper.remove'), variant: 'destructive' }).then(ok => { if (ok) onRemove(component.id) }) }}>
                 <Trash2 className="h-3 w-3 mr-1" />{t('componentWrapper.remove')}
               </Button>
             </div>

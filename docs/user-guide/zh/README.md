@@ -1,6 +1,6 @@
 # NeoMind 用户指南
 
-> **版本**：v0.8.4 | **许可证**：Apache 2.0 | **平台**：macOS、Windows、Linux
+> **版本**：v0.8.5 | **许可证**：Apache 2.0 | **平台**：macOS、Windows、Linux
 
 NeoMind 是一款面向物联网的边缘 AI 平台。连接设备、运行 AI Agent 实现监控与自动化，并通过实时仪表板可视化一切——后端基于 Rust 构建，在边缘硬件上发挥极致性能。
 

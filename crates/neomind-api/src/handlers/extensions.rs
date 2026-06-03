@@ -276,7 +276,7 @@ fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -
             output_fields: vec![], // V2: Commands don't declare output fields
             config: CommandConfigDto {
                 requires_auth: false,
-                timeout_ms: 30000,
+                timeout_ms: 300000,
                 is_stream: false,
                 expected_duration_ms: None,
             },
@@ -398,7 +398,7 @@ pub async fn get_extension_handler(
             output_fields: vec![], // V2: Commands don't declare output fields
             config: CommandConfigDto {
                 requires_auth: false,
-                timeout_ms: 30000,
+                timeout_ms: 300000,
                 is_stream: false,
                 expected_duration_ms: None,
             },
@@ -1167,7 +1167,7 @@ pub async fn list_extension_commands_handler(
             output_fields: vec![], // V2: Commands don't declare output fields
             config: CommandConfigDto {
                 requires_auth: false,
-                timeout_ms: 30000,
+                timeout_ms: 300000,
                 is_stream: false,
                 expected_duration_ms: None,
             },
@@ -3210,7 +3210,7 @@ fn load_extension_components(
     file_path: Option<&std::path::PathBuf>,
 ) -> Option<Vec<DashboardComponentDto>> {
     // Log path configuration for debugging
-    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
+    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     tracing::debug!(
         extension_id = %extension_id,
         data_dir = %data_dir,
@@ -3222,7 +3222,7 @@ fn load_extension_components(
         fp.clone()
     } else {
         // Try to find extension in data/extensions directory
-        let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
+        let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
         std::path::PathBuf::from(data_dir)
             .join("extensions")
             .join(extension_id)
@@ -3399,7 +3399,7 @@ pub async fn serve_extension_asset_handler(
     }
 
     // Extension directory is always data/extensions/{id}
-    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
+    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     let ext_dir = std::path::PathBuf::from(data_dir)
         .join("extensions")
         .join(&id);

@@ -21,6 +21,7 @@ docs/guides/zh/
 ├── 12-commands.md                # 设备命令队列
 ├── 14-api.md                     # REST/WebSocket API 参考
 ├── 15-web.md                     # React 前端架构
+├── 16-environment-variables.md   # 环境变量参考
 ├── extension-system.md           # 扩展开发指南
 ├── ble-provisioning.md           # BLE 设备配网
 ├── custom-dashboard-components.md # 仪表板组件开发
@@ -71,6 +72,7 @@ docs/guides/zh/
 | [前端](15-web.md) | 已更新 | React 18、Zustand、设计系统 |
 | [自定义仪表板组件](custom-dashboard-components.md) | 完成 | 构建和发布仪表板组件 |
 | [BLE 配网](ble-provisioning.md) | 完成 | 蓝牙零接触设备设置 |
+| [环境变量](16-environment-variables.md) | 新增 | 完整环境变量参考（服务器、认证、LLM、扩展、CLI、Docker） |
 
 ## 模块依赖关系
 

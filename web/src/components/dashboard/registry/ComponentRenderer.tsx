@@ -358,17 +358,24 @@ const ComponentRenderer = memo(function ComponentRenderer({
     return () => clearInterval(pollInterval)
   }, [mightBeExtension, componentType])
 
+  // Subscribe to installed community component count to detect when
+  // communityRegistry gets populated after async fetchInstalled().
+  // This breaks through the memo boundary so isCommunity is re-evaluated.
+  const communityRevision = useStore(useCallback((s: any) =>
+    (s.installed?.length ?? 0) + (s.loading ? 0.5 : 0)
+  , []))
+
   // Re-check isDynamic when poll count changes
   const currentIsDynamic = dynamicRegistry.isDynamic(componentType)
   const currentIsCommunity = communityRegistry.isCommunity(componentType)
 
-  // Trigger load when component becomes registered
+  // Trigger load when component becomes registered (or community registry populates)
   useEffect(() => {
     if ((currentIsDynamic || currentIsCommunity) && !isDynamic && !isCommunity && !DynamicComponent && !loading && !loadError) {
       // Component just became registered, trigger load
       setAttemptCount(0)
     }
-  }, [currentIsDynamic, currentIsCommunity, isDynamic, isCommunity, DynamicComponent, loading, loadError])
+  }, [currentIsDynamic, currentIsCommunity, isDynamic, isCommunity, DynamicComponent, loading, loadError, communityRevision])
 
   // Get metadata (check static, dynamic, and community registries)
   let meta = getComponentMeta(componentType)

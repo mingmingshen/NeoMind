@@ -52,7 +52,7 @@ impl OllamaConfig {
         Self {
             endpoint: "http://localhost:11434".to_string(),
             model: model.into(),
-            timeout_secs: 300,
+            timeout_secs: 120,
         }
     }
 

@@ -6,6 +6,59 @@ use std::sync::Arc;
 
 pub type CredentialValidator = Arc<dyn Fn(&str, &str) -> bool + Send + Sync>;
 
+/// In-memory cache for MQTT credentials (I5: avoid redb hit on every CONNECT).
+///
+/// Stores user credentials (username -> bcrypt hash) and the system password
+/// so the auth hook can validate without touching redb.
+#[cfg(feature = "embedded-broker")]
+#[derive(Default)]
+pub struct CredentialCache {
+    /// User credentials: username -> bcrypt password hash.
+    pub users: std::collections::HashMap<String, String>,
+    /// System password for `__neomind_internal__` (plaintext, never logged).
+    pub system_password: Option<String>,
+}
+
+#[cfg(feature = "embedded-broker")]
+impl std::fmt::Debug for CredentialCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialCache")
+            .field("users", &format!("{} entries", self.users.len()))
+            .field("system_password", &self.system_password.as_ref().map(|_| "***REDACTED***"))
+            .finish()
+    }
+}
+
+#[cfg(feature = "embedded-broker")]
+impl CredentialCache {
+    /// Load all credentials from redb into the cache.
+    pub fn load_from_store(store: &neomind_storage::SettingsStore) -> Result<Self, String> {
+        let mut cache = Self::default();
+
+        // Load system credential
+        match store.get_system_mqtt_credential() {
+            Ok(Some(pass)) => cache.system_password = Some(pass),
+            Ok(None) => tracing::warn!("Credential cache: no system credential found"),
+            Err(e) => tracing::error!("Credential cache: failed to load system credential: {}", e),
+        }
+
+        // Load user credentials
+        match store.list_mqtt_credentials() {
+            Ok(creds) => {
+                for cred in &creds {
+                    cache.users.insert(cred.username.clone(), cred.password_hash.clone());
+                }
+                tracing::info!("Credential cache: loaded {} user credentials", cache.users.len());
+            }
+            Err(e) => {
+                return Err(format!("Failed to load user credentials: {}", e));
+            }
+        }
+
+        Ok(cache)
+    }
+}
+
 use neomind_agent::SessionManager;
 use neomind_core::{extension::ExtensionRegistry, EventBus};
 use neomind_devices::adapter::AdapterResult;
@@ -116,6 +169,14 @@ pub struct ServerState {
 
     /// Semaphore to limit concurrent telemetry DB queries (max 16).
     pub telemetry_query_semaphore: Arc<tokio::sync::Semaphore>,
+
+    /// Mutex to prevent concurrent broker restarts (C2 race condition fix).
+    #[cfg(feature = "embedded-broker")]
+    broker_restart_lock: Arc<tokio::sync::Mutex<()>>,
+
+    /// In-memory credential cache for fast auth validation (I5: avoids redb on every CONNECT).
+    #[cfg(feature = "embedded-broker")]
+    pub credential_cache: Arc<std::sync::RwLock<CredentialCache>>,
 }
 
 // Backward compatibility: Provide direct field access as before
@@ -172,37 +233,25 @@ impl ServerState {
         use neomind_devices::adapters::{create_adapter, mqtt::MqttAdapterConfig};
         use crate::config::{get_embedded_broker_config, open_settings_store};
 
+        // Acquire restart lock to prevent concurrent restarts (C2 race condition fix).
+        // If another restart is in progress, this waits until it completes.
+        let _guard = self.broker_restart_lock.lock().await;
+
         let broker_config = get_embedded_broker_config();
 
         // 1. Stop existing broker — rmqtt abort is instant, port released immediately
-        {
+        let old_broker_config = {
             let old_broker = self.devices.embedded_broker.read().unwrap().clone();
-            if let Some(broker) = old_broker {
+            if let Some(ref broker) = old_broker {
                 if broker.is_running() {
                     tracing::info!("Stopping embedded broker for config change...");
                     broker.stop().await.map_err(|e| format!("Broker stop failed: {}", e))?;
                 }
             }
+            let config = old_broker.as_ref().map(|b| b.config());
             *self.devices.embedded_broker.write().unwrap() = None;
-        }
-
-        // Wait for port to be released (up to 5s)
-        {
-            let port = broker_config.port;
-            let max_wait = std::time::Duration::from_secs(5);
-            let wait_start = std::time::Instant::now();
-            loop {
-                if !neomind_devices::embedded_broker::is_broker_running(port) {
-                    // Small additional delay to ensure OS has fully released the socket
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    break;
-                }
-                if wait_start.elapsed() >= max_wait {
-                    return Err(format!("Port {} not released after 5s", port));
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }
-        }
+            config
+        };
 
         // 2. Stop existing internal-mqtt adapter
         if let Some(adapter) = self.devices.service.get_adapter("internal-mqtt").await {
@@ -213,56 +262,107 @@ impl ServerState {
             self.devices.service.unregister_adapter("internal-mqtt").await;
         }
 
-        // 3. Create new broker with updated config and credential validator
+        // 3. Refresh credential cache and create new broker with cache-backed validator
+        if let Ok(store) = crate::config::open_settings_store() {
+            match CredentialCache::load_from_store(&store) {
+                Ok(cache) => {
+                    *self.credential_cache.write().unwrap() = cache;
+                }
+                Err(e) => tracing::error!("Failed to refresh credential cache during restart: {}", e),
+            }
+        }
+
+        let cache = self.credential_cache.clone();
         let credential_validator: CredentialValidator =
             std::sync::Arc::new(move |username: &str, password: &str| {
-                let store = match crate::config::open_settings_store() {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::error!("Credential validator: failed to open settings store: {}", e);
-                        return false;
-                    }
-                };
+                let cache = cache.read().unwrap();
 
                 if username == "__neomind_internal__" {
-                    if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
+                    if let Some(ref system_pass) = cache.system_password {
                         return password == system_pass;
                     }
-                    tracing::warn!("Credential validator: no system credential found");
+                    tracing::warn!("Credential validator: no system credential in cache");
                     return false;
                 }
 
-                let creds = match store.list_mqtt_credentials() {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::error!("Credential validator: failed to list credentials: {}", e);
-                        return false;
-                    }
-                };
-
-                for cred in &creds {
-                    if cred.username == username {
-                        tracing::debug!(
-                            "Credential validator: found user '{}', verifying bcrypt (hash len={})",
-                            username, cred.password_hash.len()
-                        );
-                        let result = bcrypt::verify(password, &cred.password_hash).unwrap_or(false);
-                        tracing::debug!("Credential validator: bcrypt verify result = {}", result);
-                        return result;
-                    }
+                if let Some(hash) = cache.users.get(username) {
+                    return bcrypt::verify(password, hash).unwrap_or(false);
                 }
 
-                tracing::warn!(
-                    "Credential validator: no matching user for '{}'. Available: {:?}",
-                    username,
-                    creds.iter().map(|c| c.username.as_str()).collect::<Vec<_>>()
-                );
+                tracing::debug!("Credential validator: user '{}' not found in cache", username);
                 false
             });
 
         let broker = EmbeddedBroker::new(broker_config.clone(), credential_validator);
 
         if let Err(e) = broker.start().await {
+            // Attempt rollback: restart with the old config and rebuild adapter
+            if let Some(ref old_cfg) = old_broker_config {
+                tracing::warn!("Broker restart failed ({}), attempting rollback with previous config...", e);
+                let rollback_cache = self.credential_cache.clone();
+                let rollback_validator: CredentialValidator =
+                    std::sync::Arc::new(move |username: &str, password: &str| {
+                        let cache = rollback_cache.read().unwrap();
+                        if username == "__neomind_internal__" {
+                            return cache.system_password.as_deref() == Some(password);
+                        }
+                        cache.users.get(username)
+                            .map_or(false, |hash| bcrypt::verify(password, hash).unwrap_or(false))
+                    });
+                let rollback_broker = EmbeddedBroker::new(old_cfg.clone(), rollback_validator);
+                if let Ok(()) = rollback_broker.start().await {
+                    *self.devices.embedded_broker.write().unwrap() = Some(Arc::new(rollback_broker));
+                    tracing::info!("Rollback successful: broker restarted with previous config");
+
+                    // Also rebuild the internal-mqtt adapter with old config
+                    // Extract adapter password before any async operations (store is not Send)
+                    let rollback_adapter_pass = crate::config::open_settings_store()
+                        .ok()
+                        .and_then(|s| s.get_system_mqtt_credential().ok().flatten());
+                    {
+                        let adapter_pass = rollback_adapter_pass;
+                        let rollback_mqtt_config = MqttAdapterConfig {
+                            name: "internal-mqtt".to_string(),
+                            mqtt: neomind_devices::mqtt::MqttConfig {
+                                broker: "127.0.0.1".to_string(),
+                                port: old_cfg.port,
+                                client_id: Some("neomind-internal".to_string()),
+                                username: adapter_pass.as_ref().map(|_| "__neomind_internal__".to_string()),
+                                password: adapter_pass,
+                                tls: old_cfg.tls_enabled,
+                                ca_cert: old_cfg.tls_ca_path.clone(),
+                                client_cert: None,
+                                client_key: None,
+                                keep_alive: 60,
+                                clean_session: true,
+                                qos: 1,
+                                topic_prefix: "device".to_string(),
+                                command_topic: "downlink".to_string(),
+                            },
+                            subscribe_topics: vec!["#".to_string()],
+                            discovery_topic: Some("device/+/+/uplink".to_string()),
+                            discovery_prefix: "device".to_string(),
+                            auto_discovery: true,
+                            storage_dir: Some("data".to_string()),
+                        };
+                        if let Some(event_bus) = self.core.event_bus.as_ref() {
+                            if let Ok(val) = serde_json::to_value(&rollback_mqtt_config) {
+                                if let Ok(adapter) = create_adapter("mqtt", &val, event_bus) {
+                                    adapter.set_telemetry_storage(self.devices.telemetry.clone());
+                                    self.devices.service.register_adapter("internal-mqtt".to_string(), adapter.clone()).await;
+                                    if let Err(e) = adapter.start().await {
+                                        tracing::warn!("Rollback adapter start failed: {}", e);
+                                    } else {
+                                        tracing::info!("Rollback: internal-mqtt adapter restarted");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    tracing::error!("Rollback also failed — system has no running broker");
+                }
+            }
             return Err(format!("Failed to start broker: {}", e));
         }
         tracing::info!(
@@ -940,6 +1040,10 @@ impl ServerState {
                 };
                 Arc::new(tokio::sync::RwLock::new(push_manager))
             },
+            #[cfg(feature = "embedded-broker")]
+            broker_restart_lock: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "embedded-broker")]
+            credential_cache: Arc::new(std::sync::RwLock::new(CredentialCache::default())),
         }
     }
 
@@ -1118,6 +1222,10 @@ impl ServerState {
                 let push_manager = PushManager::memory().ok();
                 Arc::new(tokio::sync::RwLock::new(push_manager))
             },
+            #[cfg(feature = "embedded-broker")]
+            broker_restart_lock: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "embedded-broker")]
+            credential_cache: Arc::new(std::sync::RwLock::new(CredentialCache::default())),
         }
     }
 
@@ -1285,58 +1393,39 @@ impl ServerState {
             }
         }
 
-        // Credential validator closure: validates username/password against redb.
-        // Called by the auth hook on every MQTT CONNECT when auth_enabled is true.
+        // Populate credential cache from redb (one-time load)
+        if let Ok(store) = open_settings_store() {
+            match CredentialCache::load_from_store(&store) {
+                Ok(cache) => {
+                    *self.credential_cache.write().unwrap() = cache;
+                }
+                Err(e) => tracing::error!("Failed to load credential cache: {}", e),
+            }
+        }
+
+        // Credential validator closure: validates username/password against in-memory cache.
+        // No redb access on the hot path — only bcrypt verification.
+        let cache = self.credential_cache.clone();
         let credential_validator: CredentialValidator =
             Arc::new(move |username: &str, password: &str| {
-                let store = match open_settings_store() {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::error!("Credential validator: failed to open settings store: {}", e);
-                        return false;
-                    }
-                };
+                let cache = cache.read().unwrap();
 
                 // System credential check (plaintext comparison)
                 if username == "__neomind_internal__" {
-                    if let Ok(Some(system_pass)) = store.get_system_mqtt_credential() {
+                    if let Some(ref system_pass) = cache.system_password {
                         return password == system_pass;
                     }
-                    tracing::warn!("Credential validator: no system credential found");
+                    tracing::warn!("Credential validator: no system credential in cache");
                     return false;
                 }
 
-                // User credential check (bcrypt)
-                let creds = match store.list_mqtt_credentials() {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::error!("Credential validator: failed to list credentials: {}", e);
-                        return false;
-                    }
-                };
-
-                tracing::debug!(
-                    "Credential validator: found {} user credentials, looking for '{}'",
-                    creds.len(), username
-                );
-
-                for cred in &creds {
-                    if cred.username == username {
-                        tracing::debug!(
-                            "Credential validator: found matching user '{}', verifying bcrypt (hash len={})",
-                            username, cred.password_hash.len()
-                        );
-                        let result = bcrypt::verify(password, &cred.password_hash).unwrap_or(false);
-                        tracing::debug!("Credential validator: bcrypt verify result = {}", result);
-                        return result;
-                    }
+                // User credential check (bcrypt, no redb)
+                if let Some(hash) = cache.users.get(username) {
+                    let result = bcrypt::verify(password, hash).unwrap_or(false);
+                    return result;
                 }
 
-                tracing::warn!(
-                    "Credential validator: no matching user found for '{}'. Available: {:?}",
-                    username,
-                    creds.iter().map(|c| c.username.as_str()).collect::<Vec<_>>()
-                );
+                tracing::debug!("Credential validator: user '{}' not found in cache", username);
                 false
             });
 
@@ -1367,7 +1456,7 @@ impl ServerState {
     pub async fn init_device_adapters(&self) {
         use neomind_devices::adapter::DeviceAdapter;
         use neomind_devices::adapters::{create_adapter, mqtt::MqttAdapterConfig};
-        use crate::config::{get_embedded_broker_config, open_settings_store};
+        use crate::config::get_embedded_broker_config;
 
         // Start device service to listen for EventBus events
         self.devices.service.start().await;
@@ -1380,18 +1469,12 @@ impl ServerState {
         let (adapter_username, adapter_password) = {
             #[cfg(feature = "embedded-broker")]
             {
-                if let Ok(store) = open_settings_store() {
-                    match store.get_system_mqtt_credential() {
-                        Ok(Some(pass)) => {
-                            tracing::debug!("Internal MQTT adapter: using system credential");
-                            (Some("__neomind_internal__".to_string()), Some(pass))
-                        }
-                        _ => {
-                            tracing::warn!("Internal MQTT adapter: no system credential found, connecting without auth");
-                            (None, None)
-                        }
-                    }
+                let cache = self.credential_cache.read().unwrap();
+                if let Some(ref pass) = cache.system_password {
+                    tracing::debug!("Internal MQTT adapter: using system credential from cache");
+                    (Some("__neomind_internal__".to_string()), Some(pass.clone()))
                 } else {
+                    tracing::warn!("Internal MQTT adapter: no system credential in cache, connecting without auth");
                     (None, None)
                 }
             }
@@ -2043,7 +2126,7 @@ impl ServerState {
                     use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
                     use neomind_core::llm::backend::LlmRuntime;
 
-                    let config = OllamaConfig::new("qwen2.5:3b")
+                    let config = OllamaConfig::new(neomind_core::config::models::OLLAMA_DEFAULT)
                         .with_endpoint("http://localhost:11434")
                         .with_timeout_secs(120);
 

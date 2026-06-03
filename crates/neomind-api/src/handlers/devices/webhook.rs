@@ -170,7 +170,7 @@ pub async fn get_webhook_url_handler(
     }
 
     let server_url =
-        std::env::var("NEOMIND_SERVER_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
+        std::env::var("NEOMIND_SERVER_URL").unwrap_or_else(|_| "http://localhost:9375".to_string());
 
     ok(serde_json::json!({
         "device_id": device_id,

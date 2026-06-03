@@ -149,6 +149,7 @@ export async function fetchHistoricalTelemetry(
       const isUnifiedSource = deviceId.startsWith('transform:') || deviceId.startsWith('ai:')
       let metricData: unknown[] | undefined
 
+      const apiStart = performance.now()
       if (isUnifiedSource) {
         const response = await api.queryTelemetry(deviceId, metricId, startSec, endSec, fetchLimit, false)
         metricData = response?.data as unknown[] | undefined
@@ -170,6 +171,11 @@ export async function fetchHistoricalTelemetry(
             }
           }
         }
+      }
+
+      const apiElapsed = performance.now() - apiStart
+      if (apiElapsed > 2000) {
+        console.warn(`[Telemetry] Slow query: ${deviceId}/${metricId} took ${Math.round(apiElapsed)}ms`)
       }
 
       if (Array.isArray(metricData) && metricData.length > 0) {

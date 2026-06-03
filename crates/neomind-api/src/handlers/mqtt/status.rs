@@ -41,6 +41,7 @@ pub async fn get_mqtt_status_handler(
     let broker_config = crate::config::get_embedded_broker_config();
     let listen_address = broker_config.listen.clone();
     let listen_port = broker_config.port;
+    let tls_enabled = broker_config.tls_enabled;
 
     // Get the actual server IP for embedded broker
     let server_ip = get_server_host();
@@ -82,6 +83,7 @@ pub async fn get_mqtt_status_handler(
             clients_count,
             server_ip,
             listen_port,
+            tls_enabled,
             external_brokers,
             last_error,
         },

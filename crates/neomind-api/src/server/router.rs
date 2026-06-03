@@ -2,6 +2,8 @@
 
 use axum::{
     extract::DefaultBodyLimit,
+    http::{header, HeaderValue},
+    middleware,
     routing::{any, delete, get, post, put},
     Router,
 };
@@ -1053,8 +1055,11 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     let router = assets::configure_static_file_serving(router);
 
     router
+        // Cache-Control for static assets: immutable for hashed files, no-cache for HTML.
+        // Only adds headers when not already set (API responses keep their own headers).
+        .layer(middleware::from_fn(cache_headers_middleware))
         // Apply middleware layers (compression, CORS) but NOT body limit - that's applied per-router
-        .layer(tower_http::compression::CompressionLayer::new())
+        .layer(tower_http::compression::CompressionLayer::new().br(true))
         // CORS layer
         .layer(
             tower_http::cors::CorsLayer::new()
@@ -1063,4 +1068,38 @@ pub fn create_router_with_state(state: ServerState) -> Router {
                 .allow_headers(tower_http::cors::Any),
         )
         .with_state(state)
+}
+
+/// Middleware that adds Cache-Control headers to static file responses.
+///
+/// - `index.html` → `no-cache` (users get latest version after upgrades)
+/// - `/assets/*`  → `immutable, 1 year` (Vite outputs content-hashed filenames)
+/// - Other files  → `1 hour` (reasonable default)
+/// - API responses → unchanged (already have their own headers or don't need caching)
+async fn cache_headers_middleware(
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
+    let path = request.uri().path().to_owned();
+    let mut response = next.run(request).await;
+
+    // Only set Cache-Control on success responses that don't already have it
+    if response.status().is_success() && !response.headers().contains_key(header::CACHE_CONTROL) {
+        let cc = if path == "/" || path == "/index.html" || path.ends_with(".html") {
+            "no-cache, no-store, must-revalidate"
+        } else if path.starts_with("/assets/") {
+            "public, max-age=31536000, immutable"
+        } else if path.starts_with("/api/") {
+            // API responses — don't add caching headers
+            return response;
+        } else {
+            "public, max-age=3600"
+        };
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static(cc),
+        );
+    }
+
+    response
 }

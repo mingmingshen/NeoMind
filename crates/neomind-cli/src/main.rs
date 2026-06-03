@@ -2223,7 +2223,7 @@ fn load_llm_backend_from_env() -> Result<LlmBackend> {
     }
 
     Err(anyhow::anyhow!(
-        "No LLM backend configured. Set OLLAMA_ENDPOINT or OPENAI_API_KEY environment variable."
+        "No LLM backend configured. Set OLLAMA_ENDPOINT or OPENAI_API_KEY, or configure via the Web UI (http://localhost:9375)."
     ))
 }
 

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.8.5] - 2026-06-03
+
+### Added
+
+- **MQTT broker TLS certificate generation** — Self-signed certificate generation with proper X.509 extensions (Key Usage, Extended Key Usage, Subject Alternative Names including system hostname). 1-hour clock skew tolerance for date validation. Certificate paths respect `NEOMIND_DATA_DIR` environment variable
+- **MQTT broker restart API** — `PUT /api/mqtt/broker-config` now triggers automatic broker restart when port, listen address, or TLS settings change. Includes rollback logic: if the new broker fails to start, automatically restarts with the previous configuration and rebuilds the internal MQTT adapter
+- **MQTT TLS status in API** — `GET /api/mqtt/status` now returns `tls_enabled` field indicating whether TLS is active on the embedded broker
+- **Credential cache for MQTT authentication** — In-memory `CredentialCache` with `Arc<RwLock>` avoids redb lookups on every MQTT CONNECT packet. Cache auto-refreshes when credentials are added or deleted via the API. Custom `Debug` impl redacts sensitive fields (system password)
+- **Restart lock for embedded broker** — `tokio::sync::Mutex` prevents concurrent restart operations from racing against each other
+- **Environment variables documentation** — New `docs/guides/en/16-environment-variables.md` and `docs/guides/zh/16-environment-variables.md` covering server, auth, LLM, extension, CLI, and Docker configuration
+- **Brotli compression** — HTTP response compression now supports both Gzip and Brotli encoding
+
+### Changed
+
+- **Extension command timeout increased** — Default FFI command timeout raised from 30s to 300s (configurable via `NEOMIND_FFI_TIMEOUT_SECS`). In-flight request timeout aligned to match. Prevents timeout errors for long-running extensions (YOLO, video processing)
+- **Extension memory limit** — Default memory limit for isolated extensions raised from 512MB to 2048MB, accommodating ML model workloads
+- **Dashboard desktop layout** — Desktop sidebar is now always expanded (removed collapsible toggle). Simplified navigation with fixed sidebar layout. Tab bar mode remains available as an alternative
+- **Telemetry data fetching** — Optimized caching strategy with 10s fetch timeout (up from 5s) for better reliability over slow connections. 60s bucket alignment and 30s TTL maintained for cache freshness
+- **MQTT broker config validation** — Listen address must be a valid IP. TLS cannot be enabled without pre-configured certificates. Credential uniqueness check before adding duplicates
+- **Deploy configuration** — Updated nginx example with improved WebSocket proxying and Docker-specific port mappings
+
+### Fixed
+
+- **MQTT broker restart Send safety** — Fixed `Box<dyn StdError>` held across `.await` boundary in restart rollback path, which caused handler trait resolution failure. Store data is now extracted before any async operations
+- **Telemetry test data integrity** — Fixed `test_image_retrieval_performance` and `test_telemetry_concurrent_write_performance` flaky failures by adding explicit `flush()` calls before querying. Tests were reading from redb while data was still in the write buffer
+- **Extension test timeout assertion** — Updated `test_command_descriptor_dto` assertion to match the new 120s default timeout value
+- **Dashboard component rendering** — Fixed extension component loading in `ComponentRenderer` by removing interfering `ErrorBoundary` wrapper
+- **Dashboard mobile edit mode** — Fixed state reset when toggling mobile edit mode
+- **Extension IPC routing** — Fixed stale reference in extension stream routing after process restart
+
+---
+
 ## [v0.8.4] - 2026-06-02
 
 ### Changed

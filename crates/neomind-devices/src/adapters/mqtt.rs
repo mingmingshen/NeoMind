@@ -473,10 +473,10 @@ impl MqttAdapter {
                     }
                     Err(e) => {
                         error_count += 1;
-                        // Exponential backoff: 1s, 2s, 4s, 8s, ... capped at 30s
+                        // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
                         // rumqttc handles reconnection internally — just keep polling
                         let backoff = Duration::from_secs(
-                            (1u64 << error_count.min(4)).min(30),
+                            (1u64 << error_count.min(5)).min(30),
                         );
                         warn!(
                             "MQTT broker {} error ({}), reconnecting in {:?}: {}",
@@ -705,10 +705,10 @@ impl MqttAdapter {
                     }
                     Err(e) => {
                         error_count += 1;
-                        // Exponential backoff: 1s, 2s, 4s, 8s, ... capped at 30s
+                        // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
                         // rumqttc handles reconnection internally — just keep polling
                         let backoff = Duration::from_secs(
-                            (1u64 << error_count.min(4)).min(30),
+                            (1u64 << error_count.min(5)).min(30),
                         );
                         warn!(
                             "MQTT broker {} error ({}), reconnecting in {:?}: {}",
@@ -732,8 +732,10 @@ impl MqttAdapter {
 
     /// Resolve a string that is either PEM content or a file path to PEM content.
     fn resolve_pem(input: &str) -> Result<String, Box<dyn std::error::Error>> {
-        if input.contains("-----BEGIN") {
-            // Already PEM content
+        // Require both BEGIN and END markers to identify PEM content.
+        // This avoids misidentifying file paths that might contain "-----BEGIN".
+        let trimmed = input.trim();
+        if trimmed.contains("-----BEGIN") && trimmed.contains("-----END") {
             Ok(input.to_string())
         } else {
             // Treat as file path
@@ -827,13 +829,28 @@ impl MqttAdapter {
     }
 
     /// Load a PEM-encoded private key from a string.
+    ///
+    /// Tries PKCS#8 first, then falls back to PKCS#1 RSA and SEC1 EC keys.
     fn load_private_key(pem: &str) -> Result<PrivateKeyDer<'static>, Box<dyn std::error::Error>> {
-        let mut pem_cursor = Cursor::new(pem.as_bytes());
-        let mut keys_iter = rustls_pemfile::pkcs8_private_keys(&mut pem_cursor);
-        let key = keys_iter
-            .next()
-            .ok_or("No PKCS#8 private key found in PEM")??;
-        Ok(PrivateKeyDer::Pkcs8(key))
+        // Try PKCS#8 (-----BEGIN PRIVATE KEY-----)
+        let mut cursor = Cursor::new(pem.as_bytes());
+        if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut cursor).next() {
+            return Ok(PrivateKeyDer::Pkcs8(key?));
+        }
+
+        // Try PKCS#1 RSA (-----BEGIN RSA PRIVATE KEY-----)
+        let mut cursor = Cursor::new(pem.as_bytes());
+        if let Some(key) = rustls_pemfile::rsa_private_keys(&mut cursor).next() {
+            return Ok(PrivateKeyDer::Pkcs1(key?));
+        }
+
+        // Try SEC1 EC (-----BEGIN EC PRIVATE KEY-----)
+        let mut cursor = Cursor::new(pem.as_bytes());
+        if let Some(key) = rustls_pemfile::ec_private_keys(&mut cursor).next() {
+            return Ok(PrivateKeyDer::Sec1(key?));
+        }
+
+        Err("No supported private key found in PEM (tried PKCS#8, PKCS#1 RSA, SEC1 EC)".into())
     }
 
     /// Remove a broker connection from this adapter.
@@ -1125,7 +1142,7 @@ impl DeviceAdapter for MqttAdapter {
                 info!("Stored topic mapping: {} -> {}", telemetry_topic, device_id);
             } else {
                 // Use default topic pattern if not specified: device/{device_type}/{device_id}/uplink
-                let default_topic = format!("device/{}/{}+/uplink", device.device_type, device_id);
+                let default_topic = format!("device/{}/{}/uplink", device.device_type, device_id);
                 self.subscribe_topic(&default_topic).await?;
                 info!(
                     "No telemetry_topic specified for device {}, subscribed to default: {}",
@@ -1153,8 +1170,8 @@ impl DeviceAdapter for MqttAdapter {
                 "Device {} not found in registry during subscribe_device",
                 device_id
             );
-            // If device not found in registry, use a wildcard pattern
-            let topic = format!("device/+/{}+/uplink", device_id);
+            // If device not found in registry, use a wildcard pattern to match all topics for this device
+            let topic = format!("device/+/{}/#", device_id);
             self.subscribe_topic(&topic).await?;
             info!(
                 "Device {} not found in registry, subscribed to wildcard topic: {}",

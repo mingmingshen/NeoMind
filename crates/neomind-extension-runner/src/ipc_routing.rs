@@ -49,7 +49,17 @@ where
 }
 
 /// Maximum time an FFI call is allowed to run before we consider it hung.
-const FFI_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// Default 120s. Override via `NEOMIND_FFI_TIMEOUT_SECS` env var.
+fn ffi_call_timeout() -> std::time::Duration {
+    static TIMEOUT: std::sync::OnceLock<std::time::Duration> = std::sync::OnceLock::new();
+    *TIMEOUT.get_or_init(|| {
+        let secs = std::env::var("NEOMIND_FFI_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(120);
+        std::time::Duration::from_secs(secs.max(10))
+    })
+}
 
 /// Wrapper that makes a raw pointer `Send` for crossing thread boundaries.
 /// SAFETY: The pointer is only moved between threads, not accessed concurrently.
@@ -59,7 +69,7 @@ unsafe impl<T> Send for SendPtr<T> {}
 /// Like [`safe_ffi_call`] but also enforces a wall-clock timeout.
 ///
 /// The FFI closure is executed on a dedicated thread. If it does not return
-/// within `FFI_CALL_TIMEOUT`, the thread is **detached** (it cannot be
+/// within the configured timeout, the thread is **detached** (it cannot be
 /// safely cancelled) and an error is returned. The runner remains alive but
 /// the hung thread will eventually finish or be cleaned up when the process
 /// exits.
@@ -80,17 +90,18 @@ where
         })
         .map_err(|e| format!("Failed to spawn FFI thread for {}: {}", label, e))?;
 
-    match rx.recv_timeout(FFI_CALL_TIMEOUT) {
+    let timeout = ffi_call_timeout();
+    match rx.recv_timeout(timeout) {
         Ok(inner_result) => inner_result,
         Err(_) => {
             error!(
                 label = label,
-                timeout_secs = FFI_CALL_TIMEOUT.as_secs(),
+                timeout_secs = timeout.as_secs(),
                 "FFI call timed out — extension may be stuck, thread detached"
             );
             Err(format!(
                 "FFI call timed out after {}s in {}",
-                FFI_CALL_TIMEOUT.as_secs(),
+                timeout.as_secs(),
                 label
             ))
         }

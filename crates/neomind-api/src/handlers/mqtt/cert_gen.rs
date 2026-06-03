@@ -6,7 +6,10 @@
 use std::net::IpAddr;
 use std::path::PathBuf;
 
-use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, KeyPair, SanType};
+use rcgen::{
+    BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair,
+    KeyUsagePurpose, SanType,
+};
 
 /// Paths to the generated PEM files.
 pub struct CertPaths {
@@ -17,8 +20,11 @@ pub struct CertPaths {
 }
 
 /// Get the TLS directory for storing certificates.
+/// Uses `NEOMIND_DATA_DIR` env var (same as the rest of the project) or falls back to `data`.
 fn get_tls_dir() -> PathBuf {
-    PathBuf::from("data/tls")
+    let data_dir =
+        std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
+    PathBuf::from(data_dir).join("tls")
 }
 
 /// Get the local machine's LAN IP address (private IPv4).
@@ -41,14 +47,31 @@ fn get_local_ip() -> Option<IpAddr> {
     None
 }
 
+/// Get the system hostname for inclusion in SANs.
+fn get_hostname() -> Option<String> {
+    hostname::get().ok().and_then(|h| h.into_string().ok())
+}
+
 /// Generate self-signed CA + server certificates for the MQTT broker.
 ///
 /// The CA certificate is valid for 5 years; the server certificate is valid
-/// for 1 year and includes SANs for localhost, 127.0.0.1, and the local LAN IP.
+/// for 1 year and includes SANs for localhost, 127.0.0.1, the local LAN IP,
+/// and the system hostname.
+///
+/// Both certificates include proper Key Usage and Extended Key Usage extensions
+/// required by strict TLS implementations (e.g. rustls).
 pub fn generate_self_signed_certs() -> Result<CertPaths, String> {
     let tls_dir = get_tls_dir();
     std::fs::create_dir_all(&tls_dir)
         .map_err(|e| format!("Failed to create TLS directory: {}", e))?;
+
+    // Use time::OffsetDateTime directly (same type rcgen uses internally)
+    // to avoid the panic risk in rcgen::date_time_ymd on invalid dates (e.g. Feb 29).
+    let now = time::OffsetDateTime::now_utc();
+    // Start 1 hour in the past to tolerate clock skew on devices
+    let not_before = now - time::Duration::hours(1);
+    let ca_not_after = now + time::Duration::days(5 * 365);
+    let server_not_after = now + time::Duration::days(365);
 
     // --- CA key + self-signed cert ---
     let ca_key =
@@ -64,9 +87,13 @@ pub fn generate_self_signed_certs() -> Result<CertPaths, String> {
         .distinguished_name
         .push(DnType::OrganizationName, "NeoMind");
 
-    // 5-year validity
-    let five_years = rcgen::date_time_ymd(2031, 1, 1);
-    ca_params.not_after = five_years;
+    // CA Key Usage: certificate signing and CRL signing
+    ca_params.key_usages.push(KeyUsagePurpose::KeyCertSign);
+    ca_params.key_usages.push(KeyUsagePurpose::CrlSign);
+    ca_params.key_usages.push(KeyUsagePurpose::DigitalSignature);
+
+    ca_params.not_before = not_before;
+    ca_params.not_after = ca_not_after;
 
     let ca_cert = ca_params
         .self_signed(&ca_key)
@@ -82,7 +109,7 @@ pub fn generate_self_signed_certs() -> Result<CertPaths, String> {
         .distinguished_name
         .push(DnType::CommonName, "NeoMind MQTT Server");
 
-    // SANs: localhost, 127.0.0.1, and local LAN IP
+    // SANs: localhost, 127.0.0.1, local LAN IP, and hostname
     let mut sans = vec![
         SanType::DnsName("localhost".try_into().map_err(|_| "Invalid DNS name".to_string())?),
         SanType::IpAddress(IpAddr::from([127, 0, 0, 1])),
@@ -90,11 +117,25 @@ pub fn generate_self_signed_certs() -> Result<CertPaths, String> {
     if let Some(local_ip) = get_local_ip() {
         sans.push(SanType::IpAddress(local_ip));
     }
+    if let Some(hostname) = get_hostname() {
+        if let Ok(dns_name) = hostname.as_str().try_into() {
+            sans.push(SanType::DnsName(dns_name));
+        }
+    }
     server_params.subject_alt_names = sans;
 
-    // 1-year validity
-    let one_year = rcgen::date_time_ymd(2027, 1, 1);
-    server_params.not_after = one_year;
+    // Server Key Usage: digital signature and key encipherment
+    server_params.key_usages.push(KeyUsagePurpose::DigitalSignature);
+    server_params.key_usages.push(KeyUsagePurpose::KeyEncipherment);
+    // Extended Key Usage: TLS server authentication
+    server_params
+        .extended_key_usages
+        .push(ExtendedKeyUsagePurpose::ServerAuth);
+
+    server_params.not_before = not_before;
+    server_params.not_after = server_not_after;
+
+    let sans_count = server_params.subject_alt_names.len();
 
     let server_cert = server_params
         .signed_by(&server_key, &ca_cert, &ca_key)
@@ -114,6 +155,24 @@ pub fn generate_self_signed_certs() -> Result<CertPaths, String> {
         .map_err(|e| format!("Failed to write server cert: {}", e))?;
     std::fs::write(&server_key_path, server_key.serialize_pem())
         .map_err(|e| format!("Failed to write server key: {}", e))?;
+
+    // Restrict private key file permissions on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let key_mode = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(&ca_key_path, key_mode.clone())
+            .map_err(|e| format!("Failed to set CA key permissions: {}", e))?;
+        std::fs::set_permissions(&server_key_path, key_mode)
+            .map_err(|e| format!("Failed to set server key permissions: {}", e))?;
+    }
+
+    tracing::info!(
+        ca_cert = %ca_cert_path.display(),
+        server_cert = %server_cert_path.display(),
+        sans_count = sans_count,
+        "Generated self-signed TLS certificates"
+    );
 
     Ok(CertPaths {
         ca_cert_path: ca_cert_path.to_string_lossy().to_string(),

@@ -163,7 +163,7 @@ export function InstanceManagerDialog({ open, onOpenChange }: InstanceManagerDia
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
-    if (confirm(t('deleteConfirm'))) {
+    if (await confirmDialog({ title: t('delete'), description: t('deleteDesc', { defaultValue: `Are you sure you want to delete this instance? This action cannot be undone.` }), confirmText: t('delete'), variant: 'destructive' })) {
       await deleteInstance(id)
     }
   }
