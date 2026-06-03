@@ -84,11 +84,13 @@ export function ComponentConfigDialog({
   const dataSourceSections = configSchema?.dataSourceSections ?? []
   const styleSections = configSchema?.styleSections ?? []
   const displaySections = configSchema?.displaySections ?? []
+  const advancedSections = configSchema?.advancedSections ?? []
   const allSections = configSchema?.sections ?? []
 
   const hasDataSource = dataSourceSections.length > 0 || allSections.some(s => s.type === 'data-source')
   const hasStyleConfig = styleSections.length > 0
   const hasDisplayConfig = showTitleInDisplay || displaySections.length > 0 || allSections.some(s => s.type !== 'data-source')
+  const hasAdvancedConfig = advancedSections.length > 0
 
   // Desktop preview: build mock component for direct rendering
   const meta = getComponentMeta(componentType as ImplementedComponentType)
@@ -133,7 +135,7 @@ export function ComponentConfigDialog({
 
   // Tab states
   const [mobileDataSourceTab, setMobileDataSourceTab] = useState<'datasource' | 'transform'>('datasource')
-  const [configTabValue, setConfigTabValue] = useState<'style' | 'display' | 'datasource' | 'transform'>('display')
+  const [configTabValue, setConfigTabValue] = useState<'style' | 'display' | 'datasource' | 'transform' | 'advanced'>('display')
 
   // Mobile collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['dataSource', 'display']))
@@ -387,6 +389,17 @@ export function ComponentConfigDialog({
                     </MobileConfigCard>
                   )}
 
+                  {/* Advanced Card */}
+                  {hasAdvancedConfig && (
+                    <MobileConfigCard
+                      title={t('componentConfig.advanced', 'Advanced')}
+                      isExpanded={expandedSections.has('advanced')}
+                      onToggle={() => toggleSection('advanced')}
+                    >
+                      <ConfigRenderer sections={advancedSections} />
+                    </MobileConfigCard>
+                  )}
+
                   {/* Display Card */}
                   {hasDisplayConfig && (
                     <MobileConfigCard
@@ -481,6 +494,11 @@ export function ComponentConfigDialog({
                       {t('componentConfig.dataSource')}
                     </TabsTrigger>
                   )}
+                  {hasAdvancedConfig && (
+                    <TabsTrigger value="advanced" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                      {t('componentConfig.advanced', 'Advanced')}
+                    </TabsTrigger>
+                  )}
                   {shouldShowDataTransform && (
                     <TabsTrigger value="transform" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
                       {t('componentConfig.transform')}
@@ -525,6 +543,12 @@ export function ComponentConfigDialog({
                         <ConfigRenderer sections={dataSourceSections} />
                       </div>
                     )}
+                  </TabsContent>
+                )}
+
+                {hasAdvancedConfig && (
+                  <TabsContent value="advanced" className="flex-1 min-h-0 overflow-y-auto p-4">
+                    <ConfigRenderer sections={advancedSections} />
                   </TabsContent>
                 )}
 

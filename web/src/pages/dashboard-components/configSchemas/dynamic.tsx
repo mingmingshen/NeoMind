@@ -89,10 +89,10 @@ export function getDynamicSchema(
         ]
       }
 
-      // AdvancedPanel → Style tab for advanced/complex config
-      const styleSections: ConfigSection[] = []
+      // AdvancedPanel → Advanced tab for complex/component-specific config
+      const advancedSections: ConfigSection[] = []
       if (bundleGlobal.AdvancedPanel) {
-        styleSections.push({
+        advancedSections.push({
           type: 'custom' as const,
           render: () => React.createElement(bundleGlobal.AdvancedPanel, {
             config,
@@ -101,7 +101,7 @@ export function getDynamicSchema(
         })
       }
 
-      return { displaySections, dataSourceSections, styleSections }
+      return { displaySections, dataSourceSections, advancedSections }
     }
   }
 

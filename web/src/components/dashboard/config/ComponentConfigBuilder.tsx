@@ -33,7 +33,8 @@ export interface ComponentConfigSchema {
   // Separated sections for three-column layout UI
   dataSourceSections?: ConfigSection[]
   styleSections?: ConfigSection[]
-  displaySections?: ConfigSection[]  // NEW: Display-specific configuration (labels, legends, axes, etc.)
+  displaySections?: ConfigSection[]  // Display-specific configuration (labels, legends, axes, etc.)
+  advancedSections?: ConfigSection[] // Advanced/component-specific configuration
   // Legacy support - all sections combined
   sections?: ConfigSection[]
 }
