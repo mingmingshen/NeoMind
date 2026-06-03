@@ -314,7 +314,7 @@ impl ExtensionHealthStatus {
 }
 
 /// Maximum number of log lines retained per extension.
-const MAX_LOG_LINES: usize = 500;
+const MAX_LOG_LINES: usize = 2000;
 
 /// A single log line captured from extension stderr.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -327,17 +327,6 @@ fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -
             .collect()
     });
 
-    // Determine state based on is_running and is_isolated
-    let state_str = if info.is_running {
-        if info.is_isolated {
-            "Running (Isolated)"
-        } else {
-            "Running"
-        }
-    } else {
-        "Stopped"
-    };
-
     // Try to get health status from storage
     let (health_status, last_error, last_error_at) =
         if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
@@ -353,6 +342,19 @@ fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -
         } else {
             ("unknown".to_string(), None, None)
         };
+
+    // Determine state based on is_running and health_status
+    let state_str = if !info.is_running {
+        "Stopped"
+    } else if health_status == "error" {
+        "Error"
+    } else if health_status == "warning" {
+        "Warning"
+    } else if info.is_isolated {
+        "Running (Isolated)"
+    } else {
+        "Running"
+    };
 
     ExtensionDto {
         id: info.metadata.id.clone(),
@@ -452,17 +454,6 @@ pub async fn get_extension_handler(
             .collect()
     });
 
-    // Determine state based on is_running and is_isolated
-    let state_str = if info.is_running {
-        if info.is_isolated {
-            "Running (Isolated)"
-        } else {
-            "Running"
-        }
-    } else {
-        "Stopped"
-    };
-
     // Try to get health status from storage
     let (health_status, last_error, last_error_at) =
         if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
@@ -478,6 +469,19 @@ pub async fn get_extension_handler(
         } else {
             ("unknown".to_string(), None, None)
         };
+
+    // Determine state based on is_running and health_status
+    let state_str = if !info.is_running {
+        "Stopped"
+    } else if health_status == "error" {
+        "Error"
+    } else if health_status == "warning" {
+        "Warning"
+    } else if info.is_isolated {
+        "Running (Isolated)"
+    } else {
+        "Running"
+    };
 
     ok(ExtensionDto {
         id: info.metadata.id.clone(),
@@ -2771,6 +2775,16 @@ pub async fn reload_extension_handler(
         // Load via unified service (handles both native and WASM)
         match runtime.load(path).await {
             Ok(metadata) => {
+                // Clear error status on successful reload
+                if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+                    if let Ok(Some(mut record)) = store.load(&id) {
+                        record.health_status = "ok".to_string();
+                        record.last_error = None;
+                        record.last_error_at = None;
+                        let _ = store.save(&record);
+                    }
+                }
+
                 // Apply saved config
                 if let Some(ref cfg) = config {
                     if let Err(e) = runtime
@@ -2799,6 +2813,10 @@ pub async fn reload_extension_handler(
                 );
             }
             Err(e) => {
+                // Record the reload failure in storage so the UI shows Error state
+                if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+                    let _ = store.update_error_status(&id, &format!("Reload failed: {}", e));
+                }
                 return Err(ErrorResponse::internal(format!(
                     "Failed to reload extension: {}",
                     e

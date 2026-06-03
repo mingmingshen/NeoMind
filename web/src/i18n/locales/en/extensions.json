@@ -33,6 +33,7 @@
   "running": "Running",
   "stopped": "Stopped",
   "error": "Error",
+  "warning": "Warning",
   "actions": "Actions",
   "start": "Start",
   "stop": "Stop",

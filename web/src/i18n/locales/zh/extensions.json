@@ -33,6 +33,7 @@
   "running": "运行中",
   "stopped": "已停止",
   "error": "错误",
+  "warning": "警告",
   "actions": "操作",
   "start": "启动",
   "stop": "停止",

@@ -241,7 +241,14 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
                         let rt = runtime.clone();
                         tokio::spawn(async move {
                             if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
-                                if let Ok(Some(record)) = store.load(&ext_id) {
+                                // Clear error status after successful crash recovery
+                                if let Ok(Some(mut record)) = store.load(&ext_id) {
+                                    record.health_status = "ok".to_string();
+                                    record.last_error = None;
+                                    record.last_error_at = None;
+                                    let _ = store.save(&record);
+
+                                    // Apply saved config if available
                                     if let Some(ref config) = record.config {
                                         tracing::info!(
                                             extension_id = %ext_id,

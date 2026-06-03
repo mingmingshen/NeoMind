@@ -197,7 +197,20 @@ export const createExtensionSlice: StateCreator<
   // Backend: POST /api/extensions/:id/reload -> { message, extension_id, config_applied }
   reloadExtension: async (id) => {
     try {
+      // Clean up stale frontend state before reload
+      dynamicRegistry.unregisterExtension(id)
+      try {
+        const { closeExtensionStreamClient } = await import('@/lib/extension-stream')
+        closeExtensionStreamClient(id)
+      } catch {
+        // Stream may not exist for this extension, safe to ignore
+      }
+
       await api.reloadExtension(id)
+
+      // Brief pause to let the new process fully initialize before we re-fetch
+      await new Promise(resolve => setTimeout(resolve, 300))
+
       // Refresh extension data after reload
       fetchCache.invalidate('extensions')
       await get().fetchExtensions()

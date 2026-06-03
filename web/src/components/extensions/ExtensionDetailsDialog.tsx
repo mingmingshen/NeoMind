@@ -325,6 +325,18 @@ export function ExtensionDetailsDialog({
     }
   }, [open])
 
+  // Auto-refresh logs when viewing the logs section
+  useEffect(() => {
+    if (activeSection !== "logs" || !extension || !open) return
+
+    loadLogs()
+    const interval = setInterval(() => {
+      loadLogs()
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [activeSection, extension?.id, open, loadLogs])
+
   // Render config input based on type
   const renderConfigInput = (paramName: string, param: any) => {
     const value = configValues[paramName] ?? param.default
@@ -504,7 +516,7 @@ export function ExtensionDetailsDialog({
           </div>
           <div>
             <Label className="text-muted-foreground text-xs">{t("extensions:info.state", { defaultValue: "State" })}</Label>
-            <Badge variant={extension?.state === "Running" ? "default" : "secondary"}>
+            <Badge variant={extension?.state === "Error" || extension?.state === "Warning" ? "destructive" : "default"}>
               {extension?.state}
             </Badge>
           </div>

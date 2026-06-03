@@ -90,15 +90,15 @@ export function ExtensionGrid({
     const exts = extensions || []
 
     // In V2 system, extensions are always active once registered
-    // Only Error state indicates a problem
-    const activeCount = exts.filter((ext) => ext.state !== "Error").length
-    const errorCount = exts.filter((ext) => ext.state === "Error").length
+    // Error/Warning/Stopped indicate problems
+    const activeCount = exts.filter((ext) => ext.state !== "Error" && ext.state !== "Warning" && ext.state !== "Stopped" && ext.state !== "Failed").length
+    const errorCount = exts.filter((ext) => ext.state === "Error" || ext.state === "Warning").length
 
     // Build status options
     const options: StatusOption[] = [
       { value: "all", label: t("allStatuses"), icon: <Grid3x3 className="h-3 w-3" />, className: "text-muted-foreground" },
-      { value: "active", label: t("categories.active", { defaultValue: "Active" }), icon: <div className="w-2 h-2 rounded-full bg-green-500" />, className: "text-green-600 dark:text-green-400" },
-      { value: "error", label: t("categories.error"), icon: <div className="w-2 h-2 rounded-full bg-red-500" />, className: "text-red-600 dark:text-red-400" },
+      { value: "active", label: t("categories.active", { defaultValue: "Active" }), icon: <div className="w-2 h-2 rounded-full bg-success" />, className: "text-success" },
+      { value: "error", label: t("categories.error"), icon: <div className="w-2 h-2 rounded-full bg-error" />, className: "text-error" },
     ]
 
     let filtered = exts
@@ -123,9 +123,9 @@ export function ExtensionGrid({
       filtered = filtered.filter((ext) => {
         switch (statusFilter) {
           case "active":
-            return ext.state !== "Error"
+            return ext.state !== "Error" && ext.state !== "Warning" && ext.state !== "Stopped" && ext.state !== "Failed"
           case "error":
-            return ext.state === "Error"
+            return ext.state === "Error" || ext.state === "Warning"
           default:
             return true
         }
@@ -326,8 +326,8 @@ export function ExtensionGrid({
               {t("showingResults", { count: filteredExtensions.length, defaultValue: "Showing {{count}} extensions" }).replace("{{count}}", String(filteredExtensions.length))}
             </span>
             {stats.active > 0 && (
-              <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="flex items-center gap-1 text-success">
+                <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
                 {stats.active} {t("active", { defaultValue: "active" })}
               </span>
             )}

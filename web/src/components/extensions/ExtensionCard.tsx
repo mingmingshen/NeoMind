@@ -1,6 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,7 +35,18 @@ export function ExtensionCard({
 }: ExtensionCardProps) {
   const { t } = useTranslation(["extensions"])
 
-  const isActive = extension.state !== "Error"
+  const hasError = extension.state === "Error"
+  const hasWarning = extension.state === "Warning"
+  const isFailed = extension.state === "Failed" || extension.state === "Stopped"
+  const isHealthy = !hasError && !hasWarning && !isFailed
+
+  const displayState = hasError
+    ? t('error', { defaultValue: 'Error' })
+    : hasWarning
+      ? t('warning', { defaultValue: 'Warning' })
+      : isFailed
+        ? extension.state
+        : t('active', { defaultValue: 'Active' })
 
   return (
     <Card className="group border-border hover:border-border transition-all duration-200 overflow-hidden bg-card backdrop-blur-sm flex flex-col">
@@ -46,13 +56,13 @@ export function ExtensionCard({
           <div className="flex items-center gap-3">
             <div className={cn(
               "relative p-2 rounded-lg transition-all",
-              isActive ? "bg-primary text-primary-foreground" : "bg-muted",
+              isHealthy ? "bg-primary text-primary-foreground" : "bg-muted",
             )}>
               <Code2 className="h-4 w-4" />
               {/* Status indicator dot */}
               <div className={cn(
                 "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background",
-                isActive ? "bg-green-500" : "bg-red-500"
+                hasError ? "bg-error" : hasWarning ? "bg-warning" : isFailed ? "bg-muted-foreground" : "bg-success"
               )} />
             </div>
             <div>
@@ -60,10 +70,12 @@ export function ExtensionCard({
                 <h3 className="font-medium text-sm">{extension.name}</h3>
                 <span className={cn(
                   textNano, "px-1.5 py-0.5 rounded-full",
-                  isActive ? "bg-green-500/10 text-green-600 dark:text-green-400" :
-                  "bg-red-500/10 text-red-600 dark:text-red-400"
+                  hasError ? "bg-error-light text-error" :
+                  hasWarning ? "bg-warning-light text-warning" :
+                  isFailed ? "bg-muted-30 text-muted-foreground" :
+                  "bg-success-light text-success"
                 )}>
-                  {isActive ? t('active', { defaultValue: 'Active' }) : extension.state}
+                  {displayState}
                 </span>
               </div>
               <div className="flex items-center gap-2 mt-0.5">
@@ -129,8 +141,8 @@ export function ExtensionCard({
 
         {/* Action Bar — always at bottom */}
         <div className="flex items-center justify-between pt-2 border-t border-border mt-auto">
-          <span className={cn(textNano, "text-muted-foreground")}>
-            {isActive ? t('card.active', { defaultValue: 'Active' }) : extension.state}
+          <span className={cn(textNano, hasError ? "text-error" : hasWarning ? "text-warning" : "text-muted-foreground")}>
+            {displayState}
           </span>
           <Button
             size="sm"
