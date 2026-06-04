@@ -132,6 +132,37 @@ import { initVisualViewport } from "@/hooks/useVisualViewport"
       // Silent degradation — components should never block on metric writes
     }
   },
+
+  /**
+   * Fetch the latest telemetry values for a device.
+   * GET /api/devices/:id — returns fresh current_values from the backend.
+   * Used by community components to poll for data that may not arrive via WS
+   * (e.g., large base64 images that exceed WS message size limits).
+   */
+  fetchDeviceValues: async (deviceId: string): Promise<Record<string, unknown> | null> => {
+    const { api } = await import('@/lib/api')
+    try {
+      const result = await api.getDeviceCurrent(deviceId)
+      const cv = (result as any)?.current_values || (result as any)?.values
+      if (!cv || typeof cv !== 'object' || Object.keys(cv).length === 0) return null
+      // Convert flat dot-separated keys to nested structure (matching store behavior)
+      const nested: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(cv as Record<string, unknown>)) {
+        const parts = key.split('.')
+        let target = nested
+        for (let i = 0; i < parts.length - 1; i++) {
+          if (!target[parts[i]] || typeof target[parts[i]] !== 'object') {
+            target[parts[i]] = {}
+          }
+          target = target[parts[i]] as Record<string, unknown>
+        }
+        target[parts[parts.length - 1]] = value
+      }
+      return nested
+    } catch {
+      return null
+    }
+  },
 }
 
 // Initialize global VisualViewport tracking for mobile keyboard handling
