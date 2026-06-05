@@ -23,6 +23,41 @@ import {
 import type { DashboardStore } from './dashboardHelpers'
 
 // ============================================================================
+// Self-sync echo suppression
+// ============================================================================
+// When the frontend triggers a dashboard save (drag, config edit, etc.), the
+// backend emits a DashboardUpdated SSE event back to us.  Without suppression
+// this echo causes a full fetchDashboards() that overwrites in-progress edits.
+
+const SELF_SYNC_ECHO_MS = 5000 // ignore echo for 5s after our own sync
+
+const recentSelfSyncs: string[] = [] // dashboard IDs we recently synced
+const recentSelfSyncTimestamps: number[] = [] // matching timestamps
+
+/** Record that we are about to sync a dashboard. */
+function recordSelfSync(dashboardId: string): void {
+  const now = Date.now()
+  recentSelfSyncs.push(dashboardId)
+  recentSelfSyncTimestamps.push(now)
+  // Prune stale entries
+  const cutoff = now - SELF_SYNC_ECHO_MS
+  while (recentSelfSyncTimestamps.length > 0 && recentSelfSyncTimestamps[0] < cutoff) {
+    recentSelfSyncs.shift()
+    recentSelfSyncTimestamps.shift()
+  }
+}
+
+/** Should we ignore this DashboardUpdated SSE event (echo of our own sync)? */
+export function isSelfSyncEcho(eventDashboardId: string): boolean {
+  const now = Date.now()
+  for (let i = recentSelfSyncs.length - 1; i >= 0; i--) {
+    if (now - recentSelfSyncTimestamps[i] > SELF_SYNC_ECHO_MS) break
+    if (recentSelfSyncs[i] === eventDashboardId) return true
+  }
+  return false
+}
+
+// ============================================================================
 // Defaults
 // ============================================================================
 
@@ -88,6 +123,9 @@ export const createDashboardCrudSlice: StateCreator<
   let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null
   function handleIdChange(dash: Dashboard, result: { data: Dashboard | null }): void {
     if (result.data && result.data.id !== dash.id) {
+      // Also record the server-assigned ID so the SSE echo is suppressed
+      recordSelfSync(result.data.id)
+
       const { dashboards: currentDashboards } = get()
       const activeDashboardId = get().currentDashboardId
       const newDashboards = currentDashboards.map((d: Dashboard) =>
@@ -112,6 +150,7 @@ export const createDashboardCrudSlice: StateCreator<
       syncDebounceTimer = null
       // Only sync if no newer schedule call has been made
       if (version !== syncVersion) return
+      recordSelfSync(dashboard.id)
       try {
         const result = await storage.sync(dashboard)
         handleIdChange(dashboard, result)
@@ -130,6 +169,7 @@ export const createDashboardCrudSlice: StateCreator<
       pendingSyncDashboard = null
       if (dashboard) {
         syncVersion++
+        recordSelfSync(dashboard.id)
         try {
           const result = await storage.sync(dashboard)
           handleIdChange(dashboard, result)
@@ -275,6 +315,8 @@ export const createDashboardCrudSlice: StateCreator<
       const updated = dashboards.map((d: Dashboard) => ({ ...d, isDefault: d.id === id }))
       const updatedCurrent = currentDashboardId ? updated.find((d: Dashboard) => d.id === currentDashboardId) || null : null
       set({ dashboards: updated, ...(updatedCurrent ? { currentDashboard: updatedCurrent } : {}) })
+      // Record self-sync for all dashboards since save() bulk-syncs to API
+      for (const d of updated) recordSelfSync(d.id)
       await storage.save(updated)
     },
 
@@ -299,6 +341,7 @@ export const createDashboardCrudSlice: StateCreator<
       const { currentDashboard, dashboards } = get()
       const target = id ? dashboards.find((d: Dashboard) => d.id === id) : currentDashboard
       if (!target) { console.warn('[persistDashboard] no dashboard'); return }
+      recordSelfSync(target.id)
       await storage.sync(target)
     },
 

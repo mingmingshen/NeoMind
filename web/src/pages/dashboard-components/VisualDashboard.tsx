@@ -17,6 +17,7 @@ import { useExtensionLifecycle } from '@/hooks/useExtensionLifecycle'
 import { useCommunityComponentLifecycle } from '@/hooks/useCommunityComponentLifecycle'
 import { useDashboardPrefetch } from '@/hooks/useDashboardPrefetch'
 import { useEvents } from '@/hooks/useEvents'
+import { isSelfSyncEcho } from '@/store/slices/dashboardCrudSlice'
 import { logError } from '@/lib/errors'
 import { clearTelemetryCache } from '@/hooks/useDataSource/fetch'
 import { fetchCache } from '@/lib/utils/async'
@@ -197,7 +198,7 @@ import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
 import { dynamicRegistry, dtoToComponentMeta } from '@/components/dashboard/registry/DynamicRegistry'
 import { communityRegistry } from '@/components/dashboard/registry/CommunityRegistry'
 import { DeviceBindingConfig } from '@/components/dashboard/config/DeviceBindingConfig'
-import { componentRegistry, groupComponentsByCategory, getCategoryInfo } from '@/components/dashboard/registry/registry'
+import { groupComponentsByCategory, getCategoryInfo } from '@/components/dashboard/registry/registry'
 import * as lucideReact from 'lucide-react'
 import { api, fetchAPI } from '@/lib/api'
 import { notifySuccess, notifyError } from '@/lib/notify'
@@ -562,10 +563,15 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     fetchDeviceTypes()
   }, [fetchDashboards, fetchDevices, fetchDeviceTypes])
 
-  // Real-time dashboard sync: refetch when another client or AI modifies dashboards
+  // Real-time dashboard sync: refetch when another client or AI modifies dashboards.
+  // Skip events that are echoes of our own saves (drag, config edit, etc.)
+  // to avoid overwriting in-progress edits with stale server data.
   useEvents({
     eventTypes: ['DashboardUpdated'],
-    onEvent: () => {
+    onEvent: (event) => {
+      const data = event.data as { dashboard_id?: string; action?: string } | undefined
+      const dashboardId = data?.dashboard_id
+      if (dashboardId && isSelfSyncEcho(dashboardId)) return
       fetchDashboards()
     },
   })
@@ -1191,7 +1197,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         : latestComponentDataSource
 
       // Merge local config changes with the latest component config
-      // Local changes take precedence
       const mergedConfig = {
         ...(latestComponent as any)?.config || {},
         ...componentConfig,
