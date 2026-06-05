@@ -469,7 +469,9 @@ export const createDeviceSlice: StateCreator<
           if (existing && shallowEqualValues(existing, newValues)) continue
 
           changed = true
-          telemetryPatch[id] = newValues
+          // Preserve virtual metrics (from transforms) when replacing telemetry
+          const virtualData = (state.deviceTelemetry[id] as Record<string, unknown> | undefined)?.virtual
+          telemetryPatch[id] = virtualData ? { ...newValues, virtual: virtualData } : newValues
         }
 
         // For devices not yet in store, add placeholder entries with current_values
@@ -634,7 +636,10 @@ export const createDeviceSlice: StateCreator<
         const newValues = buildNestedValues(entry.current_values)
         if (!newValues || Object.keys(newValues).length === 0) continue
         changed = true
-        telemetryPatch[id] = newValues
+        // Preserve virtual metrics (from transforms) when replacing telemetry
+        const existingTelemetry = state.deviceTelemetry[id] as Record<string, unknown> | undefined
+        const virtualData = existingTelemetry?.virtual
+        telemetryPatch[id] = virtualData ? { ...newValues, virtual: virtualData } : newValues
       }
 
       // Add placeholder entries for devices not yet in store
