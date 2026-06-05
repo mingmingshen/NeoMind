@@ -35,40 +35,57 @@ import { initVisualViewport } from "@/hooks/useVisualViewport"
 
   /**
    * Create a transform automation.
-   * Maps component TransformConfig → backend CreateAutomationRequest.
+   * Supports two formats:
+   *   1. js_code format: { js_code, output_prefix, rule } — AI-native JavaScript transform
+   *   2. operations format: { extension_id, command, input, output } — legacy extension-based
    * POST /api/automations
    */
   createTransform: async (config: {
     name: string
+    description?: string
     scope: string
-    extension_id: string
+    extension_id?: string
     command?: string
     input?: Record<string, unknown>
     output?: Record<string, unknown>
     args?: Record<string, unknown>
-    rule: { device_id: string; device_type?: string }
+    js_code?: string
+    output_prefix?: string
+    rule: { device_id: string; device_type?: string; _fp?: string }
   }) => {
     const { api } = await import('@/lib/api')
 
-    // Map component template config → backend TransformAutomation format
-    // Backend expects: { scope: {device: "..."}, operations: [{op_type: "extension", ...}] }
-    const parameters: Record<string, unknown> = { ...(config.input || {}), ...(config.args || {}) }
-    const outputMetrics = config.output ? Object.keys(config.output) : []
+    let definition: Record<string, unknown>
 
-    const definition: Record<string, unknown> = {
-      scope: { device: config.scope },
-      operations: [{
-        op_type: 'extension',
-        extension_id: config.extension_id,
-        command: config.command || 'detect',
-        parameters,
-        output_metrics: outputMetrics,
-        output_mapping: config.output || null,
-      }],
+    if (config.js_code) {
+      // js_code format: pass directly as TransformAutomation fields
+      definition = {
+        scope: { device: config.scope },
+        js_code: config.js_code,
+        output_prefix: config.output_prefix || 'transform',
+        rule: config.rule,
+      }
+    } else {
+      // Legacy operations format
+      const parameters: Record<string, unknown> = { ...(config.input || {}), ...(config.args || {}) }
+      const outputMetrics = config.output ? Object.keys(config.output) : []
+
+      definition = {
+        scope: { device: config.scope },
+        operations: [{
+          op_type: 'extension',
+          extension_id: config.extension_id || '',
+          command: config.command || 'detect',
+          parameters,
+          output_metrics: outputMetrics,
+          output_mapping: config.output || null,
+        }],
+      }
     }
 
     const result = await api.createAutomation({
       name: config.name,
+      description: config.description || '',
       type: 'transform',
       enabled: true,
       definition,
@@ -97,6 +114,41 @@ import { initVisualViewport } from "@/hooks/useVisualViewport"
   },
 
   /**
+   * Update a transform automation in place (avoids delete+create race conditions).
+   * PUT /api/automations/:id
+   */
+  updateTransform: async (id: string, config: {
+    name?: string
+    description?: string
+    scope?: string
+    js_code?: string
+    output_prefix?: string
+  }) => {
+    const { api } = await import('@/lib/api')
+    const definition: Record<string, unknown> = {}
+    if (config.scope) definition.scope = { device: config.scope }
+    if (config.js_code) definition.js_code = config.js_code
+    if (config.output_prefix) definition.output_prefix = config.output_prefix
+
+    try {
+      const result = await api.updateAutomation(id, {
+        name: config.name,
+        description: config.description,
+        definition: Object.keys(definition).length > 0 ? definition : undefined,
+      })
+      const automation = (result as any).automation
+      return {
+        id: automation.id,
+        name: automation.name,
+        status: automation.enabled ? 'active' : 'paused',
+      }
+    } catch (error) {
+      // Throw error so caller can handle fallback (e.g., recreate Transform)
+      throw error
+    }
+  },
+
+  /**
    * List transform automations, optionally filtered.
    * GET /api/automations?type=transform
    */
@@ -106,6 +158,7 @@ import { initVisualViewport } from "@/hooks/useVisualViewport"
     return result.automations.map((a: any) => ({
       id: a.id,
       name: a.name,
+      description: a.description || '',
       scope: a.scope || '',
       extension_id: a.extension_id || '',
       rule: a.rule || {},

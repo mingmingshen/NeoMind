@@ -16,7 +16,7 @@
 //! async fn main() {
 //!     // Set up limits before loading extension
 //!     setup_resource_limits(&ResourceLimitsConfig {
-//!         memory_limit_mb: Some(1024),
+//!         memory_limit_mb: Some(2048),
 //!         cpu_affinity: None,
 //!         nice_level: Some(10),
 //!     })?;
@@ -52,7 +52,7 @@ pub struct ResourceLimitsConfig {
 impl Default for ResourceLimitsConfig {
     fn default() -> Self {
         Self {
-            memory_limit_mb: Some(1024), // 1GB default
+            memory_limit_mb: Some(2048), // 2GB default — needed for extensions loading large shared libs (e.g. ONNX Runtime)
             memory_limit_hard_mb: None, // 2x soft limit
             cpu_affinity: None,
             nice_level: Some(10), // Lower priority
@@ -125,64 +125,69 @@ fn setup_unix_limits(config: &ResourceLimitsConfig) -> Result<(), ResourceLimitE
 
     // 1. Set memory limit
     if let Some(soft_mb) = config.memory_limit_mb {
-        let soft = soft_mb * 1024 * 1024;
-        let desired_hard =
-            config.memory_limit_hard_mb.unwrap_or(soft_mb * 2) * 1024 * 1024;
+        // On macOS, setrlimit for memory is unreliable inside Tauri/sandboxed processes.
+        // RLIMIT_AS and RLIMIT_DATA both return EINVAL. Skip entirely to avoid noise.
+        #[cfg(not(target_os = "macos"))]
+        {
+            let soft = soft_mb * 1024 * 1024;
+            let desired_hard =
+                config.memory_limit_hard_mb.unwrap_or(soft_mb * 2) * 1024 * 1024;
 
-        info!(
-            "Setting memory limit: soft={}MB, hard={}MB",
-            soft_mb,
-            config.memory_limit_hard_mb.unwrap_or(soft_mb * 2)
-        );
+            info!(
+                "Setting memory limit: soft={}MB, hard={}MB",
+                soft_mb,
+                config.memory_limit_hard_mb.unwrap_or(soft_mb * 2)
+            );
 
-        // Clamp hard limit to the system's current hard limit to avoid EINVAL on macOS
-        let sys_max = unsafe {
-            let mut lim: rlimit = std::mem::zeroed();
-            if getrlimit(RLIMIT_AS, &mut lim) == 0 {
-                lim.rlim_max
-            } else {
-                // Cannot query, use desired value and let setrlimit decide
-                desired_hard
-            }
-        };
-        let hard = desired_hard.min(sys_max);
-        // soft must not exceed hard
-        let soft = soft.min(hard);
-
-        let limits = rlimit {
-            rlim_cur: soft,
-            rlim_max: hard,
-        };
-
-        let result = unsafe {
-            // Try RLIMIT_AS (address space limit) first
-            let mut result = setrlimit(RLIMIT_AS, &limits);
-
-            // If that fails, try RLIMIT_DATA (data segment limit)
-            if result != 0 {
-                // Re-query for RLIMIT_DATA hard limit
+            // Clamp hard limit to the system's current hard limit to avoid EINVAL
+            let sys_max = unsafe {
                 let mut lim: rlimit = std::mem::zeroed();
-                let data_limits = if getrlimit(RLIMIT_DATA, &mut lim) == 0 {
-                    rlimit {
-                        rlim_cur: soft.min(lim.rlim_max),
-                        rlim_max: hard.min(lim.rlim_max),
-                    }
+                if getrlimit(RLIMIT_AS, &mut lim) == 0 {
+                    lim.rlim_max
                 } else {
-                    limits
-                };
-                warn!("RLIMIT_AS failed, trying RLIMIT_DATA");
-                result = setrlimit(RLIMIT_DATA, &data_limits);
+                    desired_hard
+                }
+            };
+            let hard = desired_hard.min(sys_max);
+            let soft = soft.min(hard);
+
+            let limits = rlimit {
+                rlim_cur: soft,
+                rlim_max: hard,
+            };
+
+            let result = unsafe {
+                let mut result = setrlimit(RLIMIT_AS, &limits);
+
+                if result != 0 {
+                    let mut lim: rlimit = std::mem::zeroed();
+                    let data_limits = if getrlimit(RLIMIT_DATA, &mut lim) == 0 {
+                        rlimit {
+                            rlim_cur: soft.min(lim.rlim_max),
+                            rlim_max: hard.min(lim.rlim_max),
+                        }
+                    } else {
+                        limits
+                    };
+                    warn!("RLIMIT_AS failed, trying RLIMIT_DATA");
+                    result = setrlimit(RLIMIT_DATA, &data_limits);
+                }
+
+                result
+            };
+
+            if result != 0 {
+                let err = io::Error::last_os_error();
+                warn!("Failed to set memory limit: {} (continuing anyway)", err);
+            } else {
+                info!("Memory limit set successfully");
             }
+        }
 
-            result
-        };
-
-        if result != 0 {
-            let err = io::Error::last_os_error();
-            // Non-fatal on macOS: memory limits are best-effort
-            warn!("Failed to set memory limit: {} (continuing anyway)", err);
-        } else {
-            info!("Memory limit set successfully");
+        #[cfg(target_os = "macos")]
+        {
+            let _ = soft_mb; // suppress unused warning
+            info!("Memory limit skipped on macOS (not supported in sandboxed processes)");
         }
     }
 
@@ -306,7 +311,7 @@ mod tests {
     #[test]
     fn test_config_default() {
         let config = ResourceLimitsConfig::default();
-        assert_eq!(config.memory_limit_mb, Some(1024));
+        assert_eq!(config.memory_limit_mb, Some(2048));
         assert_eq!(config.nice_level, Some(10));
         assert!(config.cpu_affinity.is_none());
         assert!(config.memory_limit_hard_mb.is_none());
@@ -315,13 +320,13 @@ mod tests {
     #[test]
     fn test_config_custom() {
         let config = ResourceLimitsConfig {
-            memory_limit_mb: Some(1024),
-            memory_limit_hard_mb: Some(2048),
+            memory_limit_mb: Some(2048),
+            memory_limit_hard_mb: Some(4096),
             cpu_affinity: Some(vec![0, 1]),
             nice_level: Some(5),
         };
 
-        assert_eq!(config.memory_limit_mb, Some(1024));
+        assert_eq!(config.memory_limit_mb, Some(2048));
         assert_eq!(config.memory_limit_hard_mb, Some(2048));
         assert_eq!(config.cpu_affinity, Some(vec![0, 1]));
         assert_eq!(config.nice_level, Some(5));

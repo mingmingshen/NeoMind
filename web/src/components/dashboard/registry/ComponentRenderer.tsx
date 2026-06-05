@@ -504,6 +504,21 @@ const ComponentRenderer = memo(function ComponentRenderer({
         // Update primary metric value
         if ('metric' in eventData && 'value' in eventData) {
           store.updateDeviceMetric(deviceId, eventData.metric as string, eventData.value)
+          // When device sends all telemetry as a single _raw JSON string,
+          // parse and store each field individually so components can read
+          // flat keys like "ts", "values.battery", "values.image"
+          if (eventData.metric === '_raw' && typeof eventData.value === 'string') {
+            try {
+              const parsed = JSON.parse(eventData.value)
+              if (parsed && typeof parsed === 'object') {
+                for (const [key, val] of Object.entries(parsed)) {
+                  if (val !== null && val !== undefined) {
+                    store.updateDeviceMetric(deviceId, key, val)
+                  }
+                }
+              }
+            } catch { /* not JSON, ignore */ }
+          }
         }
         // Update all other keys as nested metrics
         for (const [key, value] of Object.entries(eventData)) {
@@ -525,6 +540,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
     const builtProps: Record<string, any> = {
       dataSource: componentDataSource,
       editMode, // Pass editMode as a separate prop for components that need it
+      config: componentConfig, // Pass full config object for community/extension components that read props.config
       ...restConfig,
       ...componentDisplay,
       title: componentTitle || componentConfig.title,

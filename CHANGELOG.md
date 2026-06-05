@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dynamic output type detection** — Transform output registry now detects MetricValue variant (Float/Integer/Boolean/String/Json) instead of hardcoding Float
 - **Image metric click-to-view** — Map and CustomLayer metric popups now detect image values (base64/URL) via `normalizeImageUrl()` and display a clean thumbnail instead of raw text. Clicking the thumbnail opens a fullscreen overlay with device name + metric name info bar. Inline values in CustomLayer show a 20px thumbnail for image metrics
 - **`window.neomind.callExtension()` API** — Expose a global `window.neomind` object for community/extension frontend components to call extension commands directly. Supports automatic API base URL detection (Tauri/web) and JWT auth token injection. Enables frontend-driven orchestration of extension capabilities (e.g., calling YOLO inference from an NE101 camera component)
+- **`neomind.fetchDeviceValues()` API** — Community components can now fetch real-time device telemetry data via `neomind.fetchDeviceValues(deviceId, metricPath)`. Supports dot-path access (e.g., `"values.battery"`) and returns current values from the dashboard store
+- **Dashboard Advanced tab for components** — Component config dialog now has an Advanced tab. Community/extension bundles can export `AdvancedPanel` component for custom configuration UI in both Style and Advanced tabs
+- **Community component `config` prop** — `ComponentRenderer` now passes the full `config` object as a prop to community/extension components, enabling components that read `props.config` directly
+- **Dashboard SSE self-sync echo suppression** — Frontend now suppresses DashboardUpdated SSE events that are echoes of its own saves (drag, config edit). Prevents stale server data from overwriting in-progress edits
+- **Dashboard `updateTransform` API** — New `window.neomind.updateTransform()` method for updating transforms in-place without delete+create race conditions
+- **Transform `input_raw` and `__imageData` variables** — JS transform context now provides `input_raw` (full input object, never auto-unwrapped), `__imageData` (base64 image from device data), and `imageMeta` (width/height from image header) for vision transform workflows
+
+### Changed
+
+- **Extension default memory limit** — Raised from 1024MB to 2048MB for extension runner, accommodating ML model workloads
+- **Cross-platform library search path** — Extension binary directory now added to `LD_LIBRARY_PATH` (Linux) and `DYLD_LIBRARY_PATH` (macOS) in addition to Windows `PATH`, ensuring bundled shared libraries (onnxruntime, ffmpeg, etc.) are found on all platforms
+- **Extension IPC channel initialization** — Event channel is now created BEFORE stdin reader starts, preventing a race condition where Init messages could be silently dropped (causing 120s timeout)
 
 ### Fixed
 
@@ -24,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Extension health state display** — Error/Warning/Stopped states now show distinct colors in ExtensionCard. Auto-clear error status on successful reload and crash recovery. Auto-refresh logs when viewing logs section
 - **Extension crash recovery error reporting** — Added `on_crash_recovery_failed` callback to cover all failure paths: restart failure, restart policy limit reached, and extension path not found in cache. All three cases now write error status to storage so the frontend reflects the actual extension state
 - **Component library sidebar** — Replaced Collapsible sections with flat grid layout for faster scanning. Added post-install highlight animation that auto-scrolls to the newly installed component in the library
+- **Extension list filter** — Added Stopped/Failed filter option to the extension list page
+- **Device telemetry image normalization** — Normalized device telemetry on initial fetch to prevent missing images
+- **Extension detail status badge** — Fixed status badge position and log auto-refresh behavior
+- **Dashboard drag jump** — Freeze container width measurement during drag/resize to prevent layout reset from stale store positions
+- **Component `_raw` telemetry parsing** — ComponentRenderer now parses `_raw` JSON string telemetry and stores each field individually, enabling flat key access like `"ts"`, `"values.battery"`, `"values.image"`
+- **IPC event channel error logging** — Added error log when IPC event channel is not initialized, preventing silent message drops
+- **Extension `hasDeviceBinding` metadata** — Component metadata now correctly propagates `has_device_binding` field through CommunityRegistry and DynamicRegistry
 
 ---
 

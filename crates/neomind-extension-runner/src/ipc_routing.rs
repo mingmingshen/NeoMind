@@ -142,6 +142,8 @@ pub(crate) fn push_event(message: IpcMessage) {
             // This is safer than blocking the stdin reader thread
             tracing::warn!("IPC event channel full or closed, dropping event: {}", e);
         }
+    } else {
+        tracing::error!("IPC event channel not initialized, dropping message - event channel must be created before stdin reader starts");
     }
 }
 

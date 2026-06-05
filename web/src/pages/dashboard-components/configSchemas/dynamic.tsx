@@ -94,10 +94,14 @@ export function getDynamicSchema(
       if (bundleGlobal.AdvancedPanel) {
         advancedSections.push({
           type: 'custom' as const,
-          render: () => React.createElement(bundleGlobal.AdvancedPanel, {
-            config,
-            onChange: (key: string, value: any) => updateConfig(key)(value),
-          }),
+          render: () => {
+            return React.createElement(bundleGlobal.AdvancedPanel, {
+              config,
+              onChange: (key: string, value: any) => {
+                return updateConfig(key)(value)
+              },
+            })
+          },
         })
       }
 

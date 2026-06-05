@@ -5,6 +5,8 @@
 
 use crate::mdl::MetricValue;
 use async_trait::async_trait;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use futures::{Stream, StreamExt};
 use neomind_core::{EventBus, NeoMindEvent};
 use std::pin::Pin;
@@ -217,7 +219,7 @@ fn convert_metric_value(value: MetricValue) -> neomind_core::MetricValue {
                 .collect();
             neomind_core::MetricValue::Json(json!(json_arr))
         }
-        MetricValue::Binary(_) => neomind_core::MetricValue::String("<binary>".to_string()),
+        MetricValue::Binary(v) => neomind_core::MetricValue::String(STANDARD.encode(v)),
         MetricValue::Null => neomind_core::MetricValue::String("null".to_string()),
     }
 }

@@ -463,6 +463,7 @@ export class CommunityComponentRegistry {
       maxDataSources: meta.max_data_sources,
       hasDisplayConfig: meta.has_display_config,
       hasActions: meta.has_actions,
+      hasDeviceBinding: meta.has_device_binding,
       acceptsProp,
       defaultProps: meta.default_config,
       variants: meta.variants,

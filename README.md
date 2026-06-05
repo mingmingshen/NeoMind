@@ -13,7 +13,7 @@
     <img src="https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg" alt="Build Status">
   </a>
   <img src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" alt="License">
-  <img src="https://img.shields.io/badge/v-0.8.5-information.svg" alt="Version">
+  <img src="https://img.shields.io/badge/v-0.8.6-information.svg" alt="Version">
   <img src="https://img.shields.io/badge/Rust-1.85+-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg" alt="Platform">
 </p>
@@ -180,7 +180,7 @@ docker compose up -d
 
 **Specific version:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.8.5 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.8.6 sh
 ```
 
 **Custom directories:**
@@ -200,7 +200,7 @@ curl -fsSL ... | USE_NGINX=true sh
 
 **Manual installation:**
 ```bash
-VERSION=0.8.5
+VERSION=0.8.6
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-server-linux-amd64.tar.gz
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-web-${VERSION}.tar.gz
 tar xzf neomind-server-linux-amd64.tar.gz

@@ -295,7 +295,10 @@ impl TransformEventService {
 
                                             // Store to time series storage for historical queries
                                             // Use storage_device_id() to get "transform:{transform_id}" format
-                                            // for proper querying from data explorer
+                                            // for proper querying from data explorer.
+                                            // Note: DeviceMetric event published above will also be consumed by
+                                            // DeviceService, which writes to "device:{device_id}" namespace
+                                            // so device details page can show virtual metrics.
                                             let storage_device_id =
                                                 transformed_metric.storage_device_id();
                                             // Convert neomind_core::MetricValue → neomind_devices::MetricValue for storage

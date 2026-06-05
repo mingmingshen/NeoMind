@@ -151,6 +151,58 @@ impl JsTransformExecutor {
                 message: format!("Failed to set input: {}", e),
             })?;
 
+        // Define input_raw as the full input object (never auto-unwrapped)
+        let raw_code = format!("var input_raw = {};", input_json);
+        context
+            .eval(Source::from_bytes(raw_code.as_bytes()))
+            .map_err(|e| AutomationError::TransformError {
+                operation: "JsTransform".to_string(),
+                message: format!("Failed to set input_raw: {}", e),
+            })?;
+
+        // Extract image data: search for the first large string value that looks like image data.
+        // Device metrics may arrive under any key name (values.image, image, photo, picture, etc.)
+        // so we scan all string values and pick the first one that looks like base64 image data.
+        let mut image_b64 = find_image_data(input);
+        // Strip data URI prefix (e.g., "data:image/jpeg;base64,") if present
+        if let Some(comma_pos) = image_b64.find(',') {
+            if image_b64.starts_with("data:") && comma_pos < 50 {
+                image_b64 = &image_b64[comma_pos + 1..];
+            }
+        }
+
+        let image_json = serde_json::to_string(image_b64).unwrap_or_else(|_| "\"\"".to_string());
+        tracing::info!(
+            device_id = %device_id,
+            image_b64_len = image_b64.len(),
+            input_keys = ?input.as_object().map(|o| o.keys().take(10).collect::<Vec<_>>()),
+            "Transform image data extraction"
+        );
+        let img_inject = format!("var __imageData = {};", image_json);
+        context
+            .eval(Source::from_bytes(img_inject.as_bytes()))
+            .map_err(|e| AutomationError::TransformError {
+                operation: "JsTransform".to_string(),
+                message: format!("Failed to set __imageData: {}", e),
+            })?;
+
+        if let Some((w, h)) = extract_image_dimensions(image_b64) {
+            let meta_code = format!("var imageMeta = {{ width: {}, height: {} }};", w, h);
+            context
+                .eval(Source::from_bytes(meta_code.as_bytes()))
+                .map_err(|e| AutomationError::TransformError {
+                    operation: "JsTransform".to_string(),
+                    message: format!("Failed to set imageMeta: {}", e),
+                })?;
+        } else {
+            context
+                .eval(Source::from_bytes(b"var imageMeta = null;"))
+                .map_err(|e| AutomationError::TransformError {
+                    operation: "JsTransform".to_string(),
+                    message: format!("Failed to set imageMeta: {}", e),
+                })?;
+        }
+
         // Pre-execute extension calls if registry is provided
         // We parse the code for extensions.invoke() calls, execute them asynchronously,
         // and inject the results into the JS context before running user code
@@ -284,6 +336,25 @@ impl JsTransformExecutor {
                                                 if let Ok(v) = serde_json::from_str(params_str) {
                                                     break v;
                                                 }
+                                                // Fallback: evaluate as JavaScript expression
+                                                // (input_raw, __imageData, etc. are already in context)
+                                                let eval_expr = format!(
+                                                    "JSON.stringify({{{}}})",
+                                                    params_str
+                                                );
+                                                match context.eval(Source::from_bytes(eval_expr.as_bytes())) {
+                                                    Ok(val) => {
+                                                        if let Some(s) = val.as_string() {
+                                                            let std_str = s.to_std_string_escaped();
+                                                            if let Ok(v) = serde_json::from_str::<Value>(&std_str) {
+                                                                break v;
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::debug!("Failed to evaluate extension params as JS: {}", e);
+                                                    }
+                                                }
                                                 break serde_json::json!({});
                                             } else if next_char == Some('\'')
                                                 || next_char == Some('"')
@@ -337,35 +408,38 @@ impl JsTransformExecutor {
                 if !pending_calls.is_empty() {
                     let registry = registry.clone();
 
-                    // Use block_in_place to avoid spawning new threads
-                    let results = handle.block_on(async move {
-                        let mut results_map = std::collections::HashMap::new();
+                    // Use block_in_place to safely block on async code from within a tokio worker thread
+                    let results = tokio::task::block_in_place(|| {
+                        handle.block_on(async move {
+                            let mut results_map = std::collections::HashMap::new();
 
-                        for (ext_id, cmd_str, params_val) in pending_calls {
-                            tracing::debug!(
-                                "Pre-executing extension call for Transform: {}::{} with args: {:?}",
-                                ext_id, cmd_str, params_val
-                            );
+                            for (ext_id, cmd_str, params_val) in pending_calls {
+                                tracing::info!(
+                                    "Pre-executing extension call for Transform: {}::{} with params keys: {:?}",
+                                    ext_id, cmd_str,
+                                    params_val.as_object().map(|o| o.keys().collect::<Vec<_>>()).unwrap_or_default()
+                                );
 
-                            match registry.execute_command(&ext_id, &cmd_str, &params_val).await {
-                                Ok(result) => {
-                                    tracing::debug!("Extension call result: {:?}", result);
-                                    results_map.insert(
-                                        format!("{}::{}", ext_id, cmd_str),
-                                        result
-                                    );
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Extension call failed: {}::{} - {:?}", ext_id, cmd_str, e);
-                                    results_map.insert(
-                                        format!("{}::{}", ext_id, cmd_str),
-                                        serde_json::json!({ "error": e.to_string() })
-                                    );
+                                match registry.execute_command(&ext_id, &cmd_str, &params_val).await {
+                                    Ok(result) => {
+                                        tracing::debug!("Extension call result: {:?}", result);
+                                        results_map.insert(
+                                            format!("{}::{}", ext_id, cmd_str),
+                                            result
+                                        );
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("Extension call failed: {}::{} - {:?}", ext_id, cmd_str, e);
+                                        results_map.insert(
+                                            format!("{}::{}", ext_id, cmd_str),
+                                            serde_json::json!({ "error": e.to_string() })
+                                        );
+                                    }
                                 }
                             }
-                        }
 
-                        results_map
+                            results_map
+                        })
                     });
 
                     extension_results = results;
@@ -379,7 +453,7 @@ impl JsTransformExecutor {
                 results_json.insert(key.clone(), value.clone());
 
                 let value_json = serde_json::to_string(value).unwrap_or_default();
-                let var_name = format!("ext_result_{}", key.replace("::", "_"));
+                let var_name = format!("ext_result_{}", key.replace("::", "_").replace('-', "_"));
 
                 let inject_code = format!("const {} = {};", var_name, value_json);
 
@@ -484,8 +558,21 @@ impl JsTransformExecutor {
         // Convert result to Value
         let result_value = self.js_value_to_json(result, &mut context)?;
 
+        tracing::info!(
+            device_id = %device_id,
+            output_prefix = %output_prefix,
+            result_type = %result_value.to_string().chars().take(50).collect::<String>(),
+            "Transform JS execution result"
+        );
+
         // Convert result to metrics
-        self.json_to_metrics(&result_value, output_prefix, device_id, timestamp)
+        let metrics = self.json_to_metrics(&result_value, output_prefix, device_id, timestamp)?;
+        tracing::info!(
+            device_id = %device_id,
+            metric_count = metrics.len(),
+            "Transform produced metrics"
+        );
+        Ok(metrics)
     }
 
     /// Convert Boa value to JSON Value
@@ -524,18 +611,37 @@ impl JsTransformExecutor {
             Value::Object(obj) => {
                 for (key, val) in obj.iter() {
                     let metric_name = format!("{}.{}", output_prefix, key);
-                    let metric_value = value_as_f64(val).unwrap_or_else(|| {
-                        val.to_string()
-                            .chars()
-                            .map(|c| c as u32 as f64)
-                            .sum::<f64>()
-                            % 10000.0
-                    });
+
+                    // Convert value to MetricValue, preserving JSON types for arrays/objects
+                    let metric_value = match val {
+                        Value::Number(n) => {
+                            if let Some(f) = n.as_f64() {
+                                MetricValue::Float(f)
+                            } else if let Some(i) = n.as_i64() {
+                                MetricValue::Integer(i)
+                            } else {
+                                MetricValue::Float(0.0)
+                            }
+                        }
+                        Value::String(s) => MetricValue::String(s.clone()),
+                        Value::Bool(b) => MetricValue::Boolean(*b),
+                        Value::Array(_) | Value::Object(_) => {
+                            // Preserve arrays and objects as JSON
+                            MetricValue::Json(val.clone())
+                        }
+                        Value::Null => MetricValue::Integer(0),
+                    };
 
                     tracing::debug!(
                         "Transform generated metric: {} = {} (device: {})",
                         metric_name,
-                        metric_value,
+                        // Truncate for logging
+                        match &metric_value {
+                            MetricValue::Json(j) => {
+                                serde_json::to_string(j).unwrap_or_default().chars().take(100).collect::<String>()
+                            }
+                            _ => format!("{:?}", metric_value)
+                        },
                         device_id
                     );
 
@@ -543,7 +649,7 @@ impl JsTransformExecutor {
                         device_id: device_id.to_string(),
                         transform_id: None,
                         metric: metric_name,
-                        value: metric_value.into(),
+                        value: metric_value,
                         timestamp,
                         quality: Some(1.0),
                     });
@@ -554,13 +660,30 @@ impl JsTransformExecutor {
             Value::Array(arr) => {
                 for (index, val) in arr.iter().enumerate() {
                     let metric_name = format!("{}.{}", output_prefix, index);
-                    let metric_value = value_as_f64(val).unwrap_or(0.0);
+
+                    let metric_value = match val {
+                        Value::Number(n) => {
+                            if let Some(f) = n.as_f64() {
+                                MetricValue::Float(f)
+                            } else if let Some(i) = n.as_i64() {
+                                MetricValue::Integer(i)
+                            } else {
+                                MetricValue::Float(0.0)
+                            }
+                        }
+                        Value::String(s) => MetricValue::String(s.clone()),
+                        Value::Bool(b) => MetricValue::Boolean(*b),
+                        Value::Array(_) | Value::Object(_) => {
+                            MetricValue::Json(val.clone())
+                        }
+                        Value::Null => MetricValue::Integer(0),
+                    };
 
                     metrics.push(TransformedMetric {
                         device_id: device_id.to_string(),
                         transform_id: None,
                         metric: metric_name,
-                        value: metric_value.into(),
+                        value: metric_value,
                         timestamp,
                         quality: Some(1.0),
                     });
@@ -573,7 +696,16 @@ impl JsTransformExecutor {
                         device_id: device_id.to_string(),
                         transform_id: None,
                         metric: output_prefix.to_string(),
-                        value: f.into(),
+                        value: MetricValue::Float(f),
+                        timestamp,
+                        quality: Some(1.0),
+                    });
+                } else if let Some(i) = n.as_i64() {
+                    metrics.push(TransformedMetric {
+                        device_id: device_id.to_string(),
+                        transform_id: None,
+                        metric: output_prefix.to_string(),
+                        value: MetricValue::Integer(i),
                         timestamp,
                         quality: Some(1.0),
                     });
@@ -581,14 +713,11 @@ impl JsTransformExecutor {
             }
 
             Value::String(s) => {
-                let value = s
-                    .parse::<f64>()
-                    .unwrap_or_else(|_| s.chars().map(|c| c as u32 as f64).sum::<f64>() % 10000.0);
                 metrics.push(TransformedMetric {
                     device_id: device_id.to_string(),
                     transform_id: None,
                     metric: output_prefix.to_string(),
-                    value: value.into(),
+                    value: MetricValue::String(s.clone()),
                     timestamp,
                     quality: Some(1.0),
                 });
@@ -599,18 +728,18 @@ impl JsTransformExecutor {
                     device_id: device_id.to_string(),
                     transform_id: None,
                     metric: output_prefix.to_string(),
-                    value: if *b { 1.0 } else { 0.0 }.into(),
+                    value: MetricValue::Boolean(*b),
                     timestamp,
                     quality: Some(1.0),
                 });
             }
 
-            _ => {
+            Value::Null => {
                 metrics.push(TransformedMetric {
                     device_id: device_id.to_string(),
                     transform_id: None,
                     metric: output_prefix.to_string(),
-                    value: 0.0.into(),
+                    value: MetricValue::Integer(0),
                     timestamp,
                     quality: Some(0.0),
                 });
@@ -1036,11 +1165,12 @@ impl TransformEngine {
             }
         };
 
-        tracing::debug!(
+        tracing::info!(
             transform_id = %transform.metadata.id,
             transform_name = %transform.metadata.name,
             scope = ?transform.scope,
-            output_prefix = %actual_prefix,
+            output_prefix_from_definition = %transform.output_prefix,
+            actual_prefix = %actual_prefix,
             device_id = %device_id,
             "Executing transform with scoped output prefix"
         );
@@ -2411,6 +2541,100 @@ impl TransformEngine {
             quality: Some(1.0),
         }])
     }
+}
+
+/// Find image data in a JSON value by scanning for large base64 strings.
+/// Checks nested objects recursively; returns the first match.
+fn find_image_data(value: &Value) -> &str {
+    fn search(v: &Value) -> Option<&str> {
+        match v {
+            Value::String(s) if s.len() > 200 => {
+                // Looks like base64 image data (data URI or raw base64)
+                if s.starts_with("data:image") || !s.contains(' ') && !s.contains('\n') {
+                    // Strip data URI prefix if present
+                    Some(s)
+                } else {
+                    None
+                }
+            }
+            Value::Object(map) => {
+                // Prioritize keys containing "image" or "photo" or "picture"
+                for (k, v) in map {
+                    let kl = k.to_lowercase();
+                    if kl.contains("image") || kl.contains("photo") || kl.contains("picture") {
+                        if let Some(s) = v.as_str() {
+                            if s.len() > 200 {
+                                return Some(s);
+                            }
+                        }
+                    }
+                }
+                // Fallback: scan all values
+                for v in map.values() {
+                    if let Some(s) = search(v) {
+                        return Some(s);
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+    search(value).unwrap_or("")
+}
+
+/// Extract image dimensions from base64-encoded image data (PNG/JPEG headers)
+fn extract_image_dimensions(b64: &str) -> Option<(u32, u32)> {
+    if b64.len() < 40 {
+        return None;
+    }
+
+    use base64::Engine;
+    let decode_len = (std::cmp::min(b64.len(), 5600) / 4) * 4;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&b64.as_bytes()[..decode_len])
+        .ok()?;
+
+    if bytes.len() < 24 {
+        return None;
+    }
+
+    // PNG: signature at byte 0, IHDR chunk has width/height at bytes 16-23
+    if bytes.len() >= 24 && &bytes[0..8] == b"\x89PNG\r\n\x1a\n" {
+        let width = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
+        let height = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+        if width > 0 && height > 0 {
+            return Some((width, height));
+        }
+    }
+
+    // JPEG: scan for SOF0 (0xFFC0) or SOF2 (0xFFC2) marker
+    if bytes.len() >= 4 && bytes[0] == 0xFF && bytes[1] == 0xD8 {
+        let mut pos = 2;
+        while pos + 9 <= bytes.len() {
+            if bytes[pos] != 0xFF {
+                break;
+            }
+            let marker = bytes[pos + 1];
+            if marker == 0xC0 || marker == 0xC1 || marker == 0xC2 {
+                let height = u16::from_be_bytes([bytes[pos + 5], bytes[pos + 6]]) as u32;
+                let width = u16::from_be_bytes([bytes[pos + 7], bytes[pos + 8]]) as u32;
+                if width > 0 && height > 0 {
+                    return Some((width, height));
+                }
+            }
+            if pos + 3 >= bytes.len() {
+                break;
+            }
+            let seg_len = u16::from_be_bytes([bytes[pos + 2], bytes[pos + 3]]) as usize;
+            if seg_len < 2 {
+                break;
+            }
+            pos += 2 + seg_len;
+        }
+    }
+
+    None
 }
 
 /// Convert a JSON value to f64 if possible

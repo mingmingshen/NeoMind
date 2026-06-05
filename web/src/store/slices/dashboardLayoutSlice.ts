@@ -83,6 +83,16 @@ export const createDashboardLayoutSlice: StateCreator<
       if (!currentDashboard) return
       const removed = currentDashboard.components.find((c) => c.id === id)
       cleanupAgentForComponent(removed)
+      // Generic resource cleanup: components may store resource IDs in config
+      if (removed) {
+        const compConfig = (removed as any).config as Record<string, unknown> | undefined
+        if (compConfig?._transformId && typeof compConfig._transformId === 'string') {
+          const neomind = (window as any).neomind
+          if (neomind?.deleteTransform) {
+            neomind.deleteTransform(compConfig._transformId).catch(() => {})
+          }
+        }
+      }
       commitDashboard(
         currentDashboard.components.filter((c) => c.id !== id),
         {

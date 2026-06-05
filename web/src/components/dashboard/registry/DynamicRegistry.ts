@@ -642,6 +642,7 @@ export function dtoToComponentMeta(dto: DashboardComponentDto): ComponentMeta {
     maxDataSources: dto.max_data_sources,
     hasDisplayConfig: dto.has_display_config,
     hasActions: dto.has_actions,
+    hasDeviceBinding: dto.has_device_binding,
     acceptsProp: createPropChecker(dto.config_schema),
     defaultProps: dto.default_config,
     variants: dto.variants,

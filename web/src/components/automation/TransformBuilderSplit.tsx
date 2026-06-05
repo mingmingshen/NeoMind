@@ -1078,8 +1078,10 @@ export function TransformBuilder({
     return []
   }, [scopeType, deviceTypes, devices])
 
-  // Auto-select first scope option when scopeType changes
+  // Auto-select first scope option when scopeType changes (only for NEW transforms)
+  // When editing, scopeValue is set from the existing transform and should not be overwritten.
   useEffect(() => {
+    if (transform) return // Don't auto-select when editing existing transform
     if (scopeType !== 'global' && scopeOptions.length > 0) {
       setScopeValue(scopeOptions[0].value)
     } else if (scopeType === 'global') {

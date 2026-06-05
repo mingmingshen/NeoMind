@@ -625,20 +625,48 @@ impl IsolatedExtension {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        // On Windows, add the DLL directory to PATH so the extension can find bundled dependencies
-        // (onnxruntime.dll, ffmpeg DLLs, etc.)
-        #[cfg(target_os = "windows")]
-        {
-            if let Some(binary_dir) = extension_path_absolute.parent() {
-                let bin_dir = binary_dir.to_string_lossy().to_string();
+        // Add the extension's binary directory to the platform-specific library search path
+        // so bundled shared libraries (onnxruntime, ffmpeg, etc.) are found at runtime.
+        if let Some(binary_dir) = extension_path_absolute.parent() {
+            let bin_dir = binary_dir.to_string_lossy().to_string();
+
+            #[cfg(target_os = "windows")]
+            {
                 let current_path = std::env::var("PATH").unwrap_or_default();
                 cmd.env("PATH", format!("{};{}", bin_dir, current_path));
-                tracing::debug!(
-                    extension_id = %self.extension_id,
-                    bin_dir = %bin_dir,
-                    "Added extension binary directory to PATH for Windows DLL resolution"
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                let current = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                cmd.env(
+                    "LD_LIBRARY_PATH",
+                    if current.is_empty() {
+                        bin_dir.clone()
+                    } else {
+                        format!("{}:{}", bin_dir, current)
+                    },
                 );
             }
+
+            #[cfg(target_os = "macos")]
+            {
+                let current = std::env::var("DYLD_LIBRARY_PATH").unwrap_or_default();
+                cmd.env(
+                    "DYLD_LIBRARY_PATH",
+                    if current.is_empty() {
+                        bin_dir.clone()
+                    } else {
+                        format!("{}:{}", bin_dir, current)
+                    },
+                );
+            }
+
+            tracing::debug!(
+                extension_id = %self.extension_id,
+                binary_dir = %bin_dir,
+                "Added extension binary directory to platform library search path"
+            );
         }
 
         let mut child = cmd
@@ -2734,14 +2762,27 @@ impl IsolatedExtension {
 /// Infer log level from a log line by looking at common prefixes.
 fn infer_log_level(line: &str) -> &'static str {
     let lower = line.to_ascii_lowercase();
-    // Match tracing/prefix patterns like "ERROR", "WARN ", "INFO ", "DEBUG", "TRACE"
-    if lower.starts_with("error") || lower.contains(" error ") || lower.contains("[error]") {
+
+    // First, try to match tracing compact format: "LEVEL " after timestamp
+    // e.g. "2026-06-05T05:16:34.378080Z  WARN Failed to..."
+    // Look for the log level keyword that appears right after the timestamp (after 'Z ' or at start)
+    if let Some(pos) = lower.find("z  ") {
+        let after_ts = &lower[pos + 3..];
+        if after_ts.starts_with("error") { return "error"; }
+        if after_ts.starts_with("warn")  { return "warn"; }
+        if after_ts.starts_with("info")  { return "info"; }
+        if after_ts.starts_with("debug") { return "debug"; }
+        if after_ts.starts_with("trace") { return "trace"; }
+    }
+
+    // Fallback: match prefix patterns
+    if lower.starts_with("error") || lower.contains("[error]") {
         "error"
-    } else if lower.starts_with("warn") || lower.contains(" warn ") || lower.contains("[warn]") {
+    } else if lower.starts_with("warn") || lower.contains("[warn]") {
         "warn"
-    } else if lower.starts_with("info") || lower.contains(" info ") || lower.contains("[info]") {
+    } else if lower.starts_with("info") || lower.contains("[info]") {
         "info"
-    } else if lower.starts_with("debug") || lower.contains(" debug ") || lower.contains("[debug]") {
+    } else if lower.starts_with("debug") || lower.contains("[debug]") {
         "debug"
     } else if lower.starts_with("trace") {
         "trace"

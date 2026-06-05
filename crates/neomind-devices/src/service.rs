@@ -1475,9 +1475,6 @@ impl DeviceService {
         &self,
         device_id: &str,
     ) -> Result<HashMap<String, MetricValue>, DeviceError> {
-        // Get device config and template
-        let (_, template) = self.get_device_with_template(device_id).await?;
-
         let mut result = HashMap::new();
 
         // Get telemetry storage reference
@@ -1490,49 +1487,27 @@ impl DeviceService {
             }
         };
 
-        // Unified source_id for telemetry storage queries
+        // Query ALL metrics stored under device:{device_id} namespace
+        // This includes both template-defined metrics and virtual metrics from Transforms
         let device_source_id = format!("device:{}", device_id);
-
-        // If template has defined metrics, query those specifically
-        if !template.metrics.is_empty() {
-            // Batch: fetch all template metrics in a single redb transaction
-            let metric_names: Vec<&str> = template.metrics.iter()
-                .map(|m| m.name.as_str())
+        if let Ok(all_metrics) = storage.list_metrics(&device_source_id).await {
+            let metric_names: Vec<&str> = all_metrics
+                .iter()
+                .filter(|n| !n.is_empty())
+                .map(|n| n.as_str())
                 .collect();
-            match storage.latest_batch(&device_source_id, &metric_names).await {
-                Ok(batch) => {
-                    for (name, point) in batch {
-                        result.insert(name, point.value);
+            if !metric_names.is_empty() {
+                match storage.latest_batch(&device_source_id, &metric_names).await {
+                    Ok(batch) => {
+                        for (name, point) in batch {
+                            result.insert(name, point.value);
+                        }
                     }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to batch get latest values for {}/{} ({} metrics): {}",
-                        device_id, template.device_type, metric_names.len(), e
-                    );
-                }
-            }
-        } else {
-            // Simple mode: no metrics defined - return all available metrics from storage
-            // List all metrics for this device and batch-fetch the latest values
-            if let Ok(all_metrics) = storage.list_metrics(&device_source_id).await {
-                let metric_names: Vec<&str> = all_metrics.iter()
-                    .filter(|n| !n.is_empty())
-                    .map(|n| n.as_str())
-                    .collect();
-                if !metric_names.is_empty() {
-                    match storage.latest_batch(&device_source_id, &metric_names).await {
-                        Ok(batch) => {
-                            for (name, point) in batch {
-                                result.insert(name, point.value);
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to batch get latest values for {} ({} metrics): {}",
-                                device_id, metric_names.len(), e
-                            );
-                        }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to get latest values for {} ({} metrics): {}",
+                            device_id, metric_names.len(), e
+                        );
                     }
                 }
             }

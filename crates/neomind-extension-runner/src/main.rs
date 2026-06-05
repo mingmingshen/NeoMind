@@ -107,7 +107,7 @@ struct Args {
     verbose: bool,
 
     /// Memory limit in MB (0 = no limit)
-    #[arg(long = "memory-limit", default_value = "1024")]
+    #[arg(long = "memory-limit", default_value = "2048")]
     memory_limit_mb: u64,
 
     /// Hard memory limit in MB (0 = 2x soft limit)
@@ -2348,6 +2348,11 @@ impl Runner {
 
         debug!("Waiting for Init message from host");
 
+        // Create event channel BEFORE starting stdin reader to prevent race condition.
+        // If stdin reader starts first, it may read the Init message before EVENT_TX
+        // is initialized, causing the message to be silently dropped and a 120s timeout.
+        let mut event_rx = create_event_channel();
+
         // Start stdin reader thread (reads all stdin messages and routes them)
         let _stdin_reader_handle = start_stdin_reader();
 
@@ -2361,9 +2366,6 @@ impl Runner {
             .expect("Failed to spawn push stdout writer thread");
         debug!("Push stdout writer thread started");
         debug!("Stdin reader thread started");
-
-        // Create event channel for efficient notification (replaces polling)
-        let mut event_rx = create_event_channel();
 
         while self.running {
             // Channel recv blocks efficiently - zero CPU when idle

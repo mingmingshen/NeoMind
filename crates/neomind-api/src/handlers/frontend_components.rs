@@ -1354,7 +1354,7 @@ pub async fn get_bundle_handler(
     Ok(Response::builder()
         .status(200)
         .header("content-type", "application/javascript")
-        .header("cache-control", "public, max-age=3600")
+        .header("cache-control", "no-cache")
         .body(axum::body::Body::from(bytes))
         .unwrap())
 }
