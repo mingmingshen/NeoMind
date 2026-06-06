@@ -563,7 +563,8 @@ const ComponentRenderer = memo(function ComponentRenderer({
   // Only recreate when actual component data changes
   // IMPORTANT: Must be before any early returns to follow React Hooks rules
   const props = useMemo(() => {
-    const { editMode, ...restConfig } = componentConfig
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { editMode, key: _key, ref: _ref, children: _children, ...restConfig } = componentConfig
 
     // Build props for the component (NOT including key - key must be passed directly)
     const builtProps: Record<string, any> = {
