@@ -657,17 +657,21 @@ const ComponentRenderer = memo(function ComponentRenderer({
     return <UnknownComponent type={component.type} className={className} />
   }
 
+  // ErrorBoundary resetKey: when config (e.g., deviceBinding) or component identity changes,
+  // reset the error state so the component gets a fresh retry.
+  const errorResetKey = component.id + ':' + component.type + ':' + (componentConfig.deviceBinding?.deviceId || '')
+
   // Built-in components: render directly without Suspense (they're statically imported)
   if (isBuiltIn) {
     return (
-      <ErrorBoundary fallback={<ComponentErrorFallback className={className} />}>
+      <ErrorBoundary resetKey={errorResetKey} fallback={<ComponentErrorFallback className={className} />}>
         <Component key={component.id} {...props} />
       </ErrorBoundary>
     )
   }
 
   return (
-    <ErrorBoundary fallback={<ComponentErrorFallback className={className} />}>
+    <ErrorBoundary resetKey={errorResetKey} fallback={<ComponentErrorFallback className={className} />}>
       <Suspense fallback={<ComponentSkeleton meta={meta} className={className} />}>
         <Component key={component.id} {...props} />
       </Suspense>

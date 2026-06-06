@@ -5,6 +5,8 @@ import { AlertTriangle } from "lucide-react";
 interface ErrorBoundaryProps {
   children: React.ReactNode;
   fallback?: React.ReactNode;
+  /** Changing this key resets the error state, allowing a retry */
+  resetKey?: string | number;
 }
 
 interface ErrorBoundaryState {
@@ -23,6 +25,13 @@ export class ErrorBoundary extends React.Component<
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
+  }
+
+  componentDidUpdate(prevProps: ErrorBoundaryProps) {
+    // Reset error state when resetKey changes (e.g., component remounts with new props)
+    if (this.state.hasError && this.props.resetKey !== prevProps.resetKey) {
+      this.setState({ hasError: false, error: undefined });
+    }
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
