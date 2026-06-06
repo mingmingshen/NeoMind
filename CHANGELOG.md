@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Extension detail status badge** — Fixed status badge position and log auto-refresh behavior
 - **Dashboard drag jump** — Freeze container width measurement during drag/resize to prevent layout reset from stale store positions
 - **Component `_raw` telemetry parsing** — ComponentRenderer now parses `_raw` JSON string telemetry and stores each field individually, enabling flat key access like `"ts"`, `"values.battery"`, `"values.image"`
+- **Component render error isolation** — Each component grid cell is now wrapped in its own `ErrorBoundary`. A faulty community component crashing during render no longer takes down the entire dashboard — only that cell shows an error card, while the rest remains functional and the user can still access config to fix or remove the broken component
 - **IPC event channel error logging** — Added error log when IPC event channel is not initialized, preventing silent message drops
 - **Extension `hasDeviceBinding` metadata** — Component metadata now correctly propagates `has_device_binding` field through CommunityRegistry and DynamicRegistry
 
