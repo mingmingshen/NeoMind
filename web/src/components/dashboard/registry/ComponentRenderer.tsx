@@ -10,6 +10,7 @@ import { lazy, Suspense, memo, useMemo, useState, useEffect, useCallback, useRef
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 import { findDevice } from '@/lib/deviceUtils'
 import type { DataSource } from '@/types/dashboard'
 import { normalizeDataSource } from '@/types/dashboard'
@@ -136,6 +137,34 @@ function UnknownComponent({ type, className }: UnknownComponentProps) {
             Type: <code className="text-xs bg-muted px-1 py-0.5 rounded">{type}</code>
           </p>
         </div>
+      </div>
+    </Card>
+  )
+}
+
+// ============================================================================
+// Error Fallback — shown when a component crashes during render
+// Isolates the error to a single grid cell so the rest of the dashboard
+// stays functional. User can still access config to fix/remove the component.
+// ============================================================================
+
+interface ComponentErrorFallbackProps {
+  className?: string
+}
+
+function ComponentErrorFallback({ className }: ComponentErrorFallbackProps) {
+  return (
+    <Card className={cn('border-destructive/40', className)}>
+      <div className="flex flex-col items-center justify-center h-full min-h-[120px] p-4 text-center">
+        <div className="w-8 h-8 rounded-full bg-destructive/10 flex items-center justify-center mb-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-destructive">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </div>
+        <p className="text-xs font-medium text-destructive">Component Error</p>
+        <p className="text-[10px] text-muted-foreground mt-1">Check config or remove this component</p>
       </div>
     </Card>
   )
@@ -630,13 +659,19 @@ const ComponentRenderer = memo(function ComponentRenderer({
 
   // Built-in components: render directly without Suspense (they're statically imported)
   if (isBuiltIn) {
-    return <Component key={component.id} {...props} />
+    return (
+      <ErrorBoundary fallback={<ComponentErrorFallback className={className} />}>
+        <Component key={component.id} {...props} />
+      </ErrorBoundary>
+    )
   }
 
   return (
-    <Suspense fallback={<ComponentSkeleton meta={meta} className={className} />}>
-      <Component key={component.id} {...props} />
-    </Suspense>
+    <ErrorBoundary fallback={<ComponentErrorFallback className={className} />}>
+      <Suspense fallback={<ComponentSkeleton meta={meta} className={className} />}>
+        <Component key={component.id} {...props} />
+      </Suspense>
+    </ErrorBoundary>
   )
 }, (prevProps, nextProps) => {
   // Custom comparison for more precise re-render control
