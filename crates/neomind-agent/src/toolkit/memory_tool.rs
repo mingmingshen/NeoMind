@@ -12,19 +12,30 @@ use super::error::{Result, ToolError};
 use super::tool::{Tool, ToolCategory};
 use super::ToolOutput;
 
+/// Type alias for the per-execution agent_id handle.
+type AgentIdHandle = Arc<RwLock<Option<String>>>;
+/// Type alias for the per-execution knowledge_files handle.
+type KnowledgeFilesHandle = Arc<RwLock<Vec<KnowledgeFileRef>>>;
+
 /// Tool for managing persistent memory across sessions.
 ///
 /// Supports:
 /// - Persistent: USER.md (user profile), KNOWLEDGE.md (domain knowledge)
 /// - Agent-scoped custom files: `custom:{name}` → `agents/{agent_id}/custom/{name}.md`
 /// - Session: `sessions/{id}/notes.md` (multi-step task tracking, 7-day TTL)
+///
+/// ## Concurrency safety
+/// `agent_id` and `knowledge_files` use **per-execution Arc handles** stored in a
+/// `parking_lot::RwLock`. Each execution swaps in its own fresh Arc before the tool
+/// loop and reads it back after. Concurrent agent executions never interfere because
+/// each swaps its own independent Arc — no shared mutable state between executions.
 pub struct MemoryTool {
     store: Arc<RwLock<MarkdownMemoryStore>>,
     session_id: Arc<RwLock<Option<String>>>,
-    /// Agent ID for agent-scoped custom file isolation — set per-execution
-    agent_id: Arc<RwLock<Option<String>>>,
-    /// Knowledge file index — updated when LLM creates custom files
-    knowledge_files: Arc<RwLock<Vec<KnowledgeFileRef>>>,
+    /// Per-execution agent ID handle — swapped atomically via parking_lot::RwLock.
+    agent_id: parking_lot::RwLock<AgentIdHandle>,
+    /// Per-execution knowledge file index handle — swapped atomically via parking_lot::RwLock.
+    knowledge_files: parking_lot::RwLock<KnowledgeFilesHandle>,
 }
 
 impl MemoryTool {
@@ -33,8 +44,8 @@ impl MemoryTool {
         Self {
             store,
             session_id: Arc::new(RwLock::new(None)),
-            agent_id: Arc::new(RwLock::new(None)),
-            knowledge_files: Arc::new(RwLock::new(Vec::new())),
+            agent_id: parking_lot::RwLock::new(Arc::new(RwLock::new(None))),
+            knowledge_files: parking_lot::RwLock::new(Arc::new(RwLock::new(Vec::new()))),
         }
     }
 
@@ -46,8 +57,8 @@ impl MemoryTool {
         Self {
             store,
             session_id: session_handle,
-            agent_id: Arc::new(RwLock::new(None)),
-            knowledge_files: Arc::new(RwLock::new(Vec::new())),
+            agent_id: parking_lot::RwLock::new(Arc::new(RwLock::new(None))),
+            knowledge_files: parking_lot::RwLock::new(Arc::new(RwLock::new(Vec::new()))),
         }
     }
 
@@ -57,14 +68,14 @@ impl MemoryTool {
     pub fn with_shared_handles(
         store: Arc<RwLock<MarkdownMemoryStore>>,
         session_handle: Arc<RwLock<Option<String>>>,
-        agent_id_handle: Arc<RwLock<Option<String>>>,
-        knowledge_files_handle: Arc<RwLock<Vec<KnowledgeFileRef>>>,
+        agent_id_handle: AgentIdHandle,
+        knowledge_files_handle: KnowledgeFilesHandle,
     ) -> Self {
         Self {
             store,
             session_id: session_handle,
-            agent_id: agent_id_handle,
-            knowledge_files: knowledge_files_handle,
+            agent_id: parking_lot::RwLock::new(agent_id_handle),
+            knowledge_files: parking_lot::RwLock::new(knowledge_files_handle),
         }
     }
 
@@ -74,14 +85,31 @@ impl MemoryTool {
     }
 
     /// Get a handle to set the agent ID per-execution.
-    pub fn agent_id_handle(&self) -> Arc<RwLock<Option<String>>> {
-        self.agent_id.clone()
+    pub fn agent_id_handle(&self) -> AgentIdHandle {
+        self.agent_id.read().clone()
     }
 
     /// Get a handle to read/modify the knowledge file index.
     /// The executor reads this after tool loop to sync back to AgentMemory.
-    pub fn knowledge_files_handle(&self) -> Arc<RwLock<Vec<KnowledgeFileRef>>> {
-        self.knowledge_files.clone()
+    pub fn knowledge_files_handle(&self) -> KnowledgeFilesHandle {
+        self.knowledge_files.read().clone()
+    }
+
+    /// Swap in a fresh per-execution agent_id handle.
+    /// Returns the new handle for the executor to use.
+    /// This is concurrency-safe: each execution creates its own Arc.
+    pub fn swap_agent_id_handle(&self, new_handle: AgentIdHandle) -> AgentIdHandle {
+        let mut guard = self.agent_id.write();
+        *guard = new_handle;
+        guard.clone()
+    }
+
+    /// Swap in a fresh per-execution knowledge_files handle.
+    /// Returns the new handle for the executor to use.
+    pub fn swap_knowledge_files_handle(&self, new_handle: KnowledgeFilesHandle) -> KnowledgeFilesHandle {
+        let mut guard = self.knowledge_files.write();
+        *guard = new_handle;
+        guard.clone()
     }
 
     /// Get preview text (first 50 chars).
@@ -140,9 +168,21 @@ impl MemoryTool {
         target.strip_prefix("custom:")
     }
 
-    /// Get the current agent_id.
+    /// Get the current agent_id from the per-execution handle.
     async fn get_agent_id(&self) -> Option<String> {
-        self.agent_id.read().await.clone()
+        let handle: AgentIdHandle = self.current_agent_id_handle();
+        let guard = handle.read().await;
+        guard.clone()
+    }
+
+    /// Read the current agent_id Arc handle (synchronous).
+    fn current_agent_id_handle(&self) -> AgentIdHandle {
+        self.agent_id.read().clone()
+    }
+
+    /// Read the current knowledge_files Arc handle (synchronous).
+    fn current_knowledge_files_handle(&self) -> KnowledgeFilesHandle {
+        self.knowledge_files.read().clone()
     }
 
     /// Read a custom file, respecting agent scope.
@@ -174,7 +214,8 @@ impl MemoryTool {
     /// Update the knowledge file index when creating a new custom file.
     async fn register_knowledge_file(&self, name: &str, description: &str) {
         let now = chrono::Utc::now().timestamp();
-        let mut files = self.knowledge_files.write().await;
+        let handle = self.current_knowledge_files_handle();
+        let mut files = handle.write().await;
         if let Some(existing) = files.iter_mut().find(|f| f.name == name) {
             existing.updated_at = now;
         } else {
@@ -256,6 +297,27 @@ Examples:
 
     fn category(&self) -> ToolCategory {
         ToolCategory::System
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn swap_agent_context(
+        &self,
+        agent_id: String,
+        knowledge_files: Vec<neomind_storage::KnowledgeFileRef>,
+    ) -> Option<(
+        std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
+        std::sync::Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>,
+    )> {
+        let id_handle = std::sync::Arc::new(tokio::sync::RwLock::new(Some(agent_id)));
+        let kf_handle = std::sync::Arc::new(tokio::sync::RwLock::new(knowledge_files));
+
+        self.swap_agent_id_handle(id_handle.clone());
+        self.swap_knowledge_files_handle(kf_handle.clone());
+
+        Some((id_handle, kf_handle))
     }
 
     async fn execute(&self, args: Value) -> Result<ToolOutput> {

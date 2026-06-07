@@ -51,8 +51,6 @@ impl LlmTestContext {
             memory_store: None,
             backend_semaphores: None,
             skill_registry: None,
-            memory_agent_id_handle: None,
-            memory_knowledge_files_handle: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;

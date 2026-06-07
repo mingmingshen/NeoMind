@@ -125,12 +125,10 @@ impl AgentExecutor {
             updated_at: now,
         });
 
-        // Also update the shared handle so the MemoryTool sees it
-        if let Some(ref handle) = self.memory_knowledge_files_handle {
-            if let Ok(mut guard) = handle.try_write() {
-                *guard = updated_memory.knowledge_files.clone();
-            }
-        }
+        // Also update the per-execution handle so the MemoryTool sees it
+        // Note: The handle is passed to update_memory from the caller (execute_internal)
+        // For auto_init, the updated_memory.knowledge_files will be synced by the caller
+        // via per_exec_knowledge_files handle after this method returns.
 
         tracing::info!(
             agent_id = %agent.id,

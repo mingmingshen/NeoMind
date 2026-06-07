@@ -308,10 +308,6 @@ pub struct AgentExecutorConfig {
     pub backend_semaphores: Option<crate::ai_agent::scheduler::BackendSemaphores>,
     /// Skill registry for querying operation guides
     pub skill_registry: Option<crate::skills::SharedSkillRegistry>,
-    /// MemoryTool agent_id handle — set per-execution for agent-scoped file isolation
-    pub memory_agent_id_handle: Option<Arc<tokio::sync::RwLock<Option<String>>>>,
-    /// MemoryTool knowledge_files handle — synced back to AgentMemory after tool loop
-    pub memory_knowledge_files_handle: Option<Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>>,
 }
 
 /// Context for agent execution.
@@ -378,10 +374,6 @@ pub struct AgentExecutor {
     backend_semaphores: Option<crate::ai_agent::scheduler::BackendSemaphores>,
     /// Semaphore limiting concurrent tool executions (default: 6)
     tool_concurrency: Arc<Semaphore>,
-    /// MemoryTool agent_id handle — set per-execution for agent-scoped file isolation
-    memory_agent_id_handle: Option<Arc<tokio::sync::RwLock<Option<String>>>>,
-    /// MemoryTool knowledge_files handle — synced back to AgentMemory after tool loop
-    memory_knowledge_files_handle: Option<Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>>,
 }
 
 /// Parse the LLM's final text response to extract situation_analysis, conclusion, and confidence.
@@ -419,8 +411,6 @@ impl AgentExecutor {
             memory_store: config.memory_store.clone(),
             backend_semaphores: config.backend_semaphores.clone(),
             tool_concurrency: Arc::new(Semaphore::new(6)),
-            memory_agent_id_handle: config.memory_agent_id_handle.clone(),
-            memory_knowledge_files_handle: config.memory_knowledge_files_handle.clone(),
         })
     }
 
@@ -1655,14 +1645,15 @@ impl AgentExecutor {
             .clone()
             .ok_or_else(|| NeoMindError::Tool("Tool registry not available".to_string()))?;
 
-        // Inject agent_id into MemoryTool for agent-scoped file isolation
-        if let Some(ref handle) = self.memory_agent_id_handle {
-            *handle.write().await = Some(agent.id.clone());
-        }
-        // Initialize knowledge_files from current agent memory
-        if let Some(ref handle) = self.memory_knowledge_files_handle {
-            *handle.write().await = agent.memory.knowledge_files.clone();
-        }
+        // Inject agent context into MemoryTool via per-execution handles (concurrency-safe).
+        // Each execution gets its own Arc handles, swapped into the shared MemoryTool via
+        // parking_lot::RwLock — concurrent executions never interfere.
+        let per_exec_handles = registry.prepare_memory_tool_execution(
+            agent.id.clone(),
+            agent.memory.knowledge_files.clone(),
+        );
+        let _per_exec_agent_id = per_exec_handles.as_ref().map(|h| h.0.clone());
+        let _per_exec_knowledge_files = per_exec_handles.as_ref().map(|h| h.1.clone());
 
         // Build mode-specific config
         let tool_config = match agent.execution_mode {
@@ -2257,8 +2248,6 @@ impl AgentExecutor {
                             memory_store: executor_memory_store,
                             backend_semaphores: backend_sems,
                             skill_registry: executor_skill_registry,
-                            memory_agent_id_handle: None,
-                            memory_knowledge_files_handle: None,
                         };
 
                         match AgentExecutor::new(executor_config).await {
@@ -2474,8 +2463,6 @@ impl AgentExecutor {
                     memory_store: executor_memory_store,
                     backend_semaphores: backend_sems,
                     skill_registry: executor_skill_registry,
-                    memory_agent_id_handle: None,
-                    memory_knowledge_files_handle: None,
                 };
 
                 match AgentExecutor::new(executor_config).await {
@@ -2824,12 +2811,25 @@ impl AgentExecutor {
         })
         .await;
 
+        // Inject per-execution agent context into MemoryTool (concurrency-safe).
+        let per_exec_knowledge_files = self
+            .tool_registry
+            .read()
+            .as_ref()
+            .and_then(|registry| {
+                registry.prepare_memory_tool_execution(
+                    agent_id.clone(),
+                    agent.memory.knowledge_files.clone(),
+                )
+            })
+            .map(|h| h.1);
+
         // Execute with error handling for stability.
         // Wrap with catch_unwind so panics (e.g. UTF-8 slice bugs) are converted
         // to Err and a proper Failed execution record is created instead of
         // silently disappearing.
         let execution_result: AgentResult<(DecisionProcess, StorageExecutionResult)> =
-            match std::panic::AssertUnwindSafe(self.execute_internal(context, event_data.clone()))
+            match std::panic::AssertUnwindSafe(self.execute_internal(context, event_data.clone(), per_exec_knowledge_files.clone()))
                 .catch_unwind()
                 .await
             {
@@ -3057,6 +3057,7 @@ impl AgentExecutor {
         &self,
         context: ExecutionContext,
         event_data: Option<EventTriggerData>,
+        per_exec_knowledge_files: Option<Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>>,
     ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
         let mut agent = context.agent;
         let agent_id = agent.id.clone();
@@ -3178,8 +3179,8 @@ impl AgentExecutor {
                     )
                     .await?;
 
-                // Sync knowledge_files from MemoryTool
-                if let Some(ref handle) = self.memory_knowledge_files_handle {
+                // Sync knowledge_files from per-execution MemoryTool handle
+                if let Some(ref handle) = per_exec_knowledge_files {
                     updated_memory.knowledge_files = handle.read().await.clone();
                 }
 
@@ -3325,8 +3326,8 @@ impl AgentExecutor {
                     )
                     .await?;
 
-                // Sync knowledge_files from MemoryTool
-                if let Some(ref handle) = self.memory_knowledge_files_handle {
+                // Sync knowledge_files from per-execution MemoryTool handle
+                if let Some(ref handle) = per_exec_knowledge_files {
                     updated_memory.knowledge_files = handle.read().await.clone();
                 }
 

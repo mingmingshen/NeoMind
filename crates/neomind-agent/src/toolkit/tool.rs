@@ -213,6 +213,25 @@ pub trait Tool: Send + Sync {
         vec![]
     }
 
+    /// Downcast support for tool-specific operations.
+    fn as_any(&self) -> &dyn std::any::Any {
+        // Default: no downcast support. Override in tools that need it.
+        unimplemented!("as_any not implemented for {}", self.name())
+    }
+
+    /// Swap agent context for per-execution isolation (MemoryTool only).
+    /// Returns per-execution handles if the tool supports it, else None.
+    fn swap_agent_context(
+        &self,
+        _agent_id: String,
+        _knowledge_files: Vec<neomind_storage::KnowledgeFileRef>,
+    ) -> Option<(
+        std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
+        std::sync::Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>,
+    )> {
+        None
+    }
+
     /// Get tool relationships.
     fn relationships(&self) -> ToolRelationships {
         ToolRelationships::default()

@@ -183,7 +183,22 @@ impl ToolRegistry {
 
     /// Check if empty.
     pub fn is_empty(&self) -> bool {
-        self.tools.is_empty()
+        self.tools.len() == 0
+    }
+
+    /// Prepare the MemoryTool for a new agent execution.
+    /// Creates fresh per-execution handles (concurrency-safe) and swaps them in.
+    /// Returns (agent_id_handle, knowledge_files_handle) for the executor to use.
+    pub fn prepare_memory_tool_execution(
+        &self,
+        agent_id: String,
+        knowledge_files: Vec<neomind_storage::KnowledgeFileRef>,
+    ) -> Option<(
+        std::sync::Arc<tokio::sync::RwLock<Option<String>>>,
+        std::sync::Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>,
+    )> {
+        let tool = self.tools.get("memory")?;
+        tool.swap_agent_context(agent_id, knowledge_files)
     }
 
     /// Search for tools by keyword.

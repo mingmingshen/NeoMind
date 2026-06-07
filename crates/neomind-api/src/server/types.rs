@@ -1743,16 +1743,14 @@ impl ServerState {
         }
 
         // Memory tool — persistent memory across sessions
-        // Share agent_id and knowledge_files handles between MemoryTool and executor
+        // Uses per-execution handle swapping for concurrency safety
         {
             let memory_store = tokio::sync::RwLock::new(
                 (*self.agents.system_memory_store).clone(),
             );
-            let memory_tool = neomind_agent::toolkit::MemoryTool::with_shared_handles(
+            let memory_tool = neomind_agent::toolkit::MemoryTool::with_session_handle(
                 std::sync::Arc::new(memory_store),
                 self.agents.memory_session_handle.clone(),
-                self.agents.memory_agent_id_handle.clone(),
-                self.agents.memory_knowledge_files_handle.clone(),
             );
             registry.register(Arc::new(memory_tool));
         }
@@ -1823,16 +1821,14 @@ impl ServerState {
             tracing::debug!(category = "ai", "Vision tool skipped: LLM instance manager not available");
         }
 
-        // Re-register memory tool with shared handles
+        // Re-register memory tool (per-execution handle swapping for concurrency safety)
         {
             let memory_store = tokio::sync::RwLock::new(
                 (*self.agents.system_memory_store).clone(),
             );
-            let memory_tool = neomind_agent::toolkit::MemoryTool::with_shared_handles(
+            let memory_tool = neomind_agent::toolkit::MemoryTool::with_session_handle(
                 std::sync::Arc::new(memory_store),
                 self.agents.memory_session_handle.clone(),
-                self.agents.memory_agent_id_handle.clone(),
-                self.agents.memory_knowledge_files_handle.clone(),
             );
             registry.register(Arc::new(memory_tool));
         }
@@ -2513,8 +2509,6 @@ impl ServerState {
             memory_store: Some(self.agents.system_memory_store.clone()),
             backend_semaphores: None,
             skill_registry: Some(self.agents.session_manager.skill_registry()),
-            memory_agent_id_handle: Some(self.agents.memory_agent_id_handle.clone()),
-            memory_knowledge_files_handle: Some(self.agents.memory_knowledge_files_handle.clone()),
         };
 
         let manager = neomind_agent::ai_agent::AiAgentManager::new(executor_config)
