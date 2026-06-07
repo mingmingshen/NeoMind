@@ -378,7 +378,8 @@ const PieChartRenderer = createMemoRenderer(({ chartData, showTooltip, showLegen
       innerRadius={variant === 'donut' ? innerRadius : 0}
       outerRadius={outerRadius}
       dataKey="value"
-      isAnimationActive={false}
+      isAnimationActive
+      animationDuration={600}
     >
       {chartData.map((entry, index) => (
         <Cell key={`cell-${index}`} fill={entry.color || effectiveColors[index % effectiveColors.length]} stroke="none" />

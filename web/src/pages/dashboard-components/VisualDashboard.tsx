@@ -1206,6 +1206,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       // dataSource should be stored as a separate property, not inside config
       delete (mergedConfig as any).dataSource
 
+      // Remove runtime-only fields that should never be persisted
+      delete (mergedConfig as any).editMode
+
       // Update the component in the store
       // CRITICAL: dataSource must be saved as a separate property, not inside config
       const updateData: any = {

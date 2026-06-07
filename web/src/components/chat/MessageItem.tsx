@@ -25,7 +25,7 @@ export const MessageItem = React.memo<MessageItemProps>(
 
     return (
       <div
-        className={`flex gap-3 ${isAssistant ? "justify-start" : "justify-end"}`}
+        className={`flex gap-3 animate-fade-in-up ${isAssistant ? "justify-start" : "justify-end"}`}
       >
         {isAssistant && (
           <div className="flex-shrink-0 w-8 h-8 rounded-lg mt-0.5 bg-accent-orange-bg flex items-center justify-center">

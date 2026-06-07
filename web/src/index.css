@@ -197,6 +197,11 @@ a {
   touch-action: auto;
 }
 
+/* Theme transition - smooth color changes when switching light/dark */
+html {
+  transition: background-color 300ms ease, color 300ms ease;
+}
+
 @layer base {
   :root {
     --background: oklch(1 0 0 / 97%);
@@ -1013,6 +1018,19 @@ a {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 200ms var(--ease-out);
 }
 
 @keyframes pulse-glow {

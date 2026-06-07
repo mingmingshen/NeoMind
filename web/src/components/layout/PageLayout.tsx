@@ -115,7 +115,7 @@ export function PageLayout({
           )}
           data-page-scroll-container
         >
-          <div className={cn('mx-auto w-full flex flex-col min-h-full', maxWidthClass[maxWidth])}>
+          <div className={cn('mx-auto w-full flex flex-col min-h-full animate-fade-in', maxWidthClass[maxWidth])}>
             {children}
             {/* Bottom spacer: ensures content isn't hidden behind fixed footer/nav */}
             {!noPadding && (

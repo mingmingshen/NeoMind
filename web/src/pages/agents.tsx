@@ -551,16 +551,21 @@ export function AgentsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {paginatedAgents.map((agent) => (
-              <AgentCard
+            {paginatedAgents.map((agent, index) => (
+              <div
                 key={agent.id}
-                agent={agent}
-                onToggleStatus={handleToggleStatus}
-                onExecute={handleExecute}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onClick={() => handleViewDetail(agent)}
-              />
+                className="animate-fade-in-up"
+                style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
+              >
+                <AgentCard
+                  agent={agent}
+                  onToggleStatus={handleToggleStatus}
+                  onExecute={handleExecute}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onClick={() => handleViewDetail(agent)}
+                />
+              </div>
             ))}
           </div>
         )}

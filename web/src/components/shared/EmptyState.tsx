@@ -73,15 +73,15 @@ export function EmptyState({ icon, title, description, action, className }: Empt
   const iconContent = typeof icon === 'string' ? iconMap[icon as keyof typeof iconMap] : icon
 
   return (
-    <div className={cn('flex flex-col items-center justify-center py-12 px-4 text-center', className)}>
+    <div className={cn('flex flex-col items-center justify-center py-12 px-4 text-center animate-fade-in-up', className)}>
       {iconContent && (
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted-50 text-muted-foreground">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent ring-1 ring-primary/10 text-muted-foreground">
           {iconContent}
         </div>
       )}
       <h3 className="text-lg font-semibold">{title}</h3>
       {description && (
-        <p className="mt-2 text-sm text-muted-foreground max-w-sm">{description}</p>
+        <p className="mt-2 text-sm text-muted-foreground max-w-sm leading-relaxed">{description}</p>
       )}
       {action && (
         <Button

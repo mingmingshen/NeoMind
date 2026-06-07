@@ -195,7 +195,7 @@ export function ResponsiveTable({
                 </td>
               </tr>
             ) : (
-              data.map((rowData) => {
+              data.map((rowData, index) => {
                 const rowClass = getRowClassName?.(rowData)
                 const visibleActions = actions?.filter(a => a.show?.(rowData) !== false)
 
@@ -203,10 +203,11 @@ export function ResponsiveTable({
                   <tr
                     key={rowKey(rowData)}
                     className={cn(
-                      "border-b transition-colors hover:bg-muted-50",
+                      "border-b transition-all duration-200 hover:bg-muted-30 hover:shadow-sm animate-fade-in-up",
                       onRowClick && 'cursor-pointer',
                       rowClass
                     )}
+                    style={{ animationDelay: `${index * 30}ms`, animationFillMode: 'both' }}
                     onClick={() => onRowClick?.(rowData)}
                   >
                     {columns.map((column) => (
@@ -284,7 +285,7 @@ export function ResponsiveTable({
             </div>
           </Card>
         ) : (
-          data.map((rowData) => {
+          data.map((rowData, index) => {
             const rowClass = getRowClassName?.(rowData)
             const visibleActions = actions?.filter(a => a.show?.(rowData) !== false)
 
@@ -292,10 +293,11 @@ export function ResponsiveTable({
               <Card
                 key={rowKey(rowData)}
                 className={cn(
-                  'overflow-hidden border-border shadow-sm',
+                  'overflow-hidden border-border shadow-sm animate-fade-in-up',
                   onRowClick && 'cursor-pointer active:scale-[0.99] transition-all',
                   rowClass
                 )}
+                style={{ animationDelay: `${index * 40}ms`, animationFillMode: 'both' }}
                 onClick={() => onRowClick?.(rowData)}
               >
                 {/* Card Header - First column as title */}

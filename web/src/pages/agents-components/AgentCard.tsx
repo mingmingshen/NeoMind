@@ -91,8 +91,8 @@ export function AgentCard({
   return (
     <div
       className={cn(
-        "group relative bg-card rounded-lg border transition-all cursor-pointer p-4",
-        "hover:border-border hover:shadow-md"
+        "group relative bg-card rounded-lg border transition-all cursor-pointer p-4 h-full",
+        "hover:border-border hover:shadow-md hover:-translate-y-0.5"
       )}
       onClick={onClick}
     >

@@ -49,7 +49,7 @@ export function ExtensionCard({
         : t('active', { defaultValue: 'Active' })
 
   return (
-    <Card className="group border-border hover:border-border transition-all duration-200 overflow-hidden bg-card backdrop-blur-sm flex flex-col">
+    <Card className="group border-border hover:border-border hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden bg-card backdrop-blur-sm flex flex-col">
       <CardContent className="p-4 flex flex-col flex-1">
         {/* Header */}
         <div className="flex items-start justify-between mb-3">

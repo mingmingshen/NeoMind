@@ -150,7 +150,11 @@ export function ExtensionGrid({
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="border rounded-xl p-5 space-y-4">
+          <div
+            key={i}
+            className="border rounded-xl p-5 space-y-4 animate-fade-in-up"
+            style={{ animationDelay: `${i * 60}ms`, animationFillMode: 'both' }}
+          >
             <div className="flex items-start gap-3">
               <Skeleton className="h-10 w-10 rounded-xl" />
               <div className="flex-1 space-y-2">
@@ -343,14 +347,19 @@ export function ExtensionGrid({
 
       {/* Extension Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        {filteredExtensions.map((extension) => (
-          <ExtensionCard
+        {filteredExtensions.map((extension, index) => (
+          <div
             key={extension.id}
-            extension={extension}
-            onDetails={() => onDetails?.(extension.id)}
-            onUninstall={() => onUninstall?.(extension.id)}
-            onReload={() => onReload?.(extension.id)}
-          />
+            className="animate-fade-in-up"
+            style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
+          >
+            <ExtensionCard
+              extension={extension}
+              onDetails={() => onDetails?.(extension.id)}
+              onUninstall={() => onUninstall?.(extension.id)}
+              onReload={() => onReload?.(extension.id)}
+            />
+          </div>
         ))}
       </div>
 

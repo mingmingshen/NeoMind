@@ -354,7 +354,7 @@ export const LineChart = memo(LineChartInner)
 // This is critical because Recharts doesn't use React.memo internally, so every
 // parent re-render causes a full SVG re-render even with identical data.
 
-const LineChartRenderer = createMemoRenderer(({ data, series, showGrid, showTooltip, showLegend, color, smooth, fillArea, width, height }: {
+const LineChartRenderer = createMemoRenderer(({ data, series, showGrid, showTooltip, showLegend, color, smooth, fillArea, width, height, uid }: {
   data: any[]
   series: SeriesData[]
   showGrid: boolean
@@ -365,13 +365,14 @@ const LineChartRenderer = createMemoRenderer(({ data, series, showGrid, showTool
   fillArea: boolean
   width: number
   height: number
+  uid: string
 }) => (
   <RechartsLineChart width={width} height={height} data={data} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
     <defs>
       {series.map((s, i) => {
         const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
         return (
-          <linearGradient key={i} id={`gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
+          <linearGradient key={i} id={`line-grad-${uid}-${i}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor={seriesColor} stopOpacity={0.2} />
             <stop offset="95%" stopColor={seriesColor} stopOpacity={0} />
           </linearGradient>
@@ -387,8 +388,8 @@ const LineChartRenderer = createMemoRenderer(({ data, series, showGrid, showTool
       const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
       return (
         <g key={i}>
-          {fillArea && <Area type={smooth ? 'monotone' : 'linear'} dataKey={`series${i}`} stroke="none" fill={`url(#gradient-${i})`} isAnimationActive={false} />}
-          <Line type={smooth ? 'monotone' : 'linear'} dataKey={`series${i}`} name={s.name} stroke={seriesColor} strokeWidth={2} dot={false} isAnimationActive={false} activeDot={{ r: 4, className: 'fill-background stroke-[2px]' }} strokeLinejoin="round" strokeLinecap="round" />
+          {fillArea && <Area type={smooth ? 'monotone' : 'linear'} dataKey={`series${i}`} stroke="none" fill={`url(#line-grad-${uid}-${i})`} isAnimationActive animationDuration={800} />}
+          <Line type={smooth ? 'monotone' : 'linear'} dataKey={`series${i}`} name={s.name} stroke={seriesColor} strokeWidth={2} dot={false} isAnimationActive animationDuration={800} activeDot={{ r: 4, className: 'fill-background stroke-[2px]' }} strokeLinejoin="round" strokeLinecap="round" />
         </g>
       )
     })}
@@ -426,7 +427,7 @@ const AreaChartRenderer = createMemoRenderer(({ data, series, showGrid, showTool
     {showLegend && <Legend />}
     {series.map((s, i) => {
       const seriesColor = s.color || color || fallbackColors[i % fallbackColors.length]
-      return <Area key={i} type={smooth ? 'monotone' : 'linear'} dataKey={`series${i}`} name={s.name} stroke={seriesColor} strokeWidth={2} fill={`url(#area-grad-${uid}-${i})`} isAnimationActive={false} strokeLinejoin="round" strokeLinecap="round" connectNulls />
+      return <Area key={i} type={smooth ? 'monotone' : 'linear'} dataKey={`series${i}`} name={s.name} stroke={seriesColor} strokeWidth={2} fill={`url(#area-grad-${uid}-${i})`} isAnimationActive animationDuration={800} strokeLinejoin="round" strokeLinecap="round" connectNulls />
     })}
   </RechartsAreaChart>
 ))
@@ -447,10 +448,11 @@ function LineChartWithDimensions({ data, series, showGrid, showTooltip, showLege
   const { ref, width, height, turn } = useChartDimensions()
   const staggeredData = useStaggeredData(data, turn)
   const staggeredSeries = useStaggeredData(series, turn)
+  const uid = useId().replace(/:/g, '')
   return (
     <div ref={ref} style={{ width: '100%', height: '100%' }}>
       {width > 0 && height > 0 && (
-        <LineChartRenderer data={staggeredData} series={staggeredSeries} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} smooth={smooth} fillArea={fillArea} width={width} height={height} />
+        <LineChartRenderer uid={uid} data={staggeredData} series={staggeredSeries} showGrid={showGrid} showTooltip={showTooltip} showLegend={showLegend} color={color} smooth={smooth} fillArea={fillArea} width={width} height={height} />
       )}
     </div>
   )
