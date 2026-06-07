@@ -696,7 +696,7 @@ export function useAnalystSession({
             user_prompt: cfg.systemPrompt,
             llm_backend_id: cfg.modelId,
             schedule: { schedule_type: 'event', event_filter: eventFilter },
-            execution_mode: 'chat',
+            execution_mode: 'focused',
             context_window_size: cfg.contextWindowSize,
             resources,
           })
@@ -709,7 +709,7 @@ export function useAnalystSession({
           user_prompt: cfg.systemPrompt,
           llm_backend_id: cfg.modelId,
           schedule: { schedule_type: 'event', event_filter: eventFilter },
-          execution_mode: 'chat',
+          execution_mode: 'focused',
           context_window_size: cfg.contextWindowSize,
           resources,
         })

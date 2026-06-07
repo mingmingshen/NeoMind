@@ -13,8 +13,7 @@ use neomind_core::{
 };
 use neomind_storage::{
     AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
-    DataPoint, ExecutionMode, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory,
-    TimeSeriesStore, WorkingMemory,
+    DataPoint, ExecutionJournal, ExecutionMode, ResourceType, ScheduleType, TimeSeriesStore,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -54,6 +53,8 @@ impl RealPerfTestContext {
             memory_store: None,
             backend_semaphores: None,
             skill_registry: None,
+            memory_agent_id_handle: None,
+            memory_knowledge_files_handle: None,
         };
         let executor = AgentExecutor::new(executor_config).await?;
 
@@ -143,19 +144,14 @@ impl RealPerfTestContext {
                 last_duration_ms: Some(0),
             },
             memory: AgentMemory {
-                state_variables: Default::default(),
-                baselines: Default::default(),
-                learned_patterns: vec![],
-                trend_data: vec![],
-                task_profile: None,
+                journal: ExecutionJournal::default(),
+                knowledge_files: vec![],
                 updated_at: now,
-                working: WorkingMemory::default(),
-                short_term: ShortTermMemory::default(),
-                long_term: LongTermMemory::default(),
             },
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
             priority: 128,
@@ -336,6 +332,8 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
         memory_store: None,
         backend_semaphores: None,
         skill_registry: None,
+        memory_agent_id_handle: None,
+        memory_knowledge_files_handle: None,
     };
 
     let executor = AgentExecutor::new(executor_config).await?;
@@ -372,19 +370,14 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
             last_duration_ms: Some(0),
         },
         memory: AgentMemory {
-            state_variables: Default::default(),
-            baselines: Default::default(),
-            learned_patterns: vec![],
-            trend_data: vec![],
-            task_profile: None,
+            journal: ExecutionJournal::default(),
+            knowledge_files: vec![],
             updated_at: chrono::Utc::now().timestamp(),
-            working: WorkingMemory::default(),
-            short_term: ShortTermMemory::default(),
-            long_term: LongTermMemory::default(),
         },
         tool_config: None,
         execution_mode: ExecutionMode::Focused,
         error_message: None,
+        system_prompt: None,
         max_retries: 0,
         consecutive_failures: 0,
         priority: 128,

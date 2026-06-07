@@ -15,6 +15,9 @@ pub(crate) enum AnalysisResult {
         reasoning_steps: Vec<ReasoningStep>,
         decisions: Vec<Decision>,
         conclusion: String,
+        /// LLM-generated insight — kept in response schema for token compatibility
+        /// but no longer used by the executor (memory system simplified).
+        #[allow(dead_code)]
         insight: Option<String>,
     },
     Free {
@@ -548,9 +551,10 @@ impl AgentExecutor {
     ) -> AgentResult<(String, Vec<ReasoningStep>, Vec<Decision>, String, Option<String>)> {
         use neomind_core::llm::backend::{GenerationParams, LlmInput};
 
+        let _ = parsed_intent; // retained for API stability; may be used in future
         let current_time = chrono::Utc::now();
         let time_str = current_time.format("%Y-%m-%d %H:%M:%S UTC").to_string();
-        let _timestamp = current_time.timestamp();
+
 
         tracing::info!(
             agent_id = %agent.id,
@@ -560,121 +564,9 @@ impl AgentExecutor {
             "Calling LLM for situation analysis..."
         );
 
-        // Check if any data contains images
-        let _has_images = data.iter().any(|d| {
-            d.values
-                .get("_is_image")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-        });
-
         // Collect image parts directly from data_collected
         // Images are already collected in data_collected, no need to re-query storage
-        let mut image_parts = Vec::new();
-        let mut image_sources_info = Vec::new(); // Track image sources for text summary
-
-        for d in data.iter() {
-            let is_image = d
-                .values
-                .get("_is_image")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            if !is_image {
-                continue;
-            }
-
-            // Record image source info for text summary
-            image_sources_info.push(format!(
-                "[图像数据: {}, 格式: {}]",
-                d.source,
-                d.values
-                    .get("image_mime_type")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-            ));
-
-            // Try to get image URL first
-            if let Some(url) = d.values.get("image_url").and_then(|v| v.as_str()) {
-                if !url.is_empty() {
-                    image_parts.push((
-                        d.source.clone(),
-                        d.data_type.clone(),
-                        ImageContent::Url(url.to_string()),
-                    ));
-                    continue;
-                }
-            }
-
-            // Fall back to base64 data
-            if let Some(base64) = d.values.get("image_base64").and_then(|v| v.as_str()) {
-                if !base64.is_empty() {
-                    // Prefer stored mime → fall back to magic-prefix
-                    // inference → final jpeg fallback.
-                    let mime = d
-                        .values
-                        .get("image_mime_type")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .or_else(|| {
-                            crate::image_utils::infer_mime_from_base64_prefix(base64)
-                                .map(|s| s.to_string())
-                        })
-                        .unwrap_or_else(|| "image/jpeg".to_string());
-                    // Clean base64: strip whitespace/newlines, remove non-base64 characters
-                    let cleaned_base64: String = base64
-                        .chars()
-                        .filter(|c| {
-                            c.is_ascii_alphanumeric() || *c == '+' || *c == '/' || *c == '='
-                        })
-                        .collect();
-                    // Fix padding
-                    let padded_len = (cleaned_base64.len() + 3) & !3;
-                    let padded_base64 = if cleaned_base64.len() < padded_len {
-                        let mut s = cleaned_base64;
-                        for _ in 0..(padded_len - s.len()) {
-                            s.push('=');
-                        }
-                        s
-                    } else {
-                        cleaned_base64
-                    };
-                    // Try standard decoding first, then URL-safe
-                    let decoded = base64::engine::general_purpose::STANDARD
-                        .decode(&padded_base64)
-                        .or_else(|_| {
-                            // Try URL-safe base64 (uses - and _ instead of + and /)
-                            let url_safe_fixed: String =
-                                padded_base64.replace('-', "+").replace('_', "/");
-                            base64::engine::general_purpose::STANDARD.decode(&url_safe_fixed)
-                        });
-                    match decoded {
-                        Ok(bytes) => {
-                            tracing::debug!(
-                                source = %d.source,
-                                size_kb = bytes.len() / 1024,
-                                "Validated base64 image data"
-                            );
-                            // Re-encode as clean standard base64 for Ollama
-                            let clean = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                            image_parts.push((
-                                d.source.clone(),
-                                d.data_type.clone(),
-                                ImageContent::Base64(clean, mime.to_string()),
-                            ));
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                source = %d.source,
-                                len = base64.len(),
-                                error = %e,
-                                "Skipping invalid base64 image data"
-                            );
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
+        let (image_parts, image_sources_info) = collect_image_parts(data);
 
         // Check if LLM supports vision/multimodal
         let llm_supports_vision = llm.capabilities().supports_images;
@@ -720,76 +612,10 @@ impl AgentExecutor {
 
         // Build text data summary for non-image data
         // IMPORTANT: Filter out memory-related data to avoid confusing small models
-        let max_metrics = 15;
-        let text_data_summary: Vec<_> = data
-            .iter()
-            .filter(|d| {
-                // Exclude images
-                if d.values
-                    .get("_is_image")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-                {
-                    return false;
-                }
-                // Exclude memory-related data types (confuses small models)
-                let data_type_lower = d.data_type.to_lowercase();
-                if matches!(
-                    data_type_lower.as_str(),
-                    "summary" | "memory" | "state_variables" | "baselines" | "patterns"
-                ) {
-                    return false;
-                }
-                // Exclude placeholder data from collect_data
-                // When no data sources are bound, collect_data adds a placeholder with guidance
-                // This placeholder should NOT be treated as real sensor data
-                if d.source == "system"
-                    && d.values
-                        .get("message")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.contains("No pre-collected data"))
-                        .unwrap_or(false)
-                {
-                    return false;
-                }
-                true
-            })
-            .take(max_metrics)
-            .map(|d| {
-                // Create a more compact representation of values
-                let value_str = if let Some(v) = d.values.get("value") {
-                    format!("{}", v) // Compact value representation
-                } else if let Some(v) = d.values.get("history") {
-                    format!(
-                        "[历史数据: {}个点]",
-                        v.as_array().map(|a| a.len()).unwrap_or(0)
-                    )
-                } else {
-                    // Fallback to compact JSON - use character-safe truncation
-                    let json_str = serde_json::to_string(&d.values).unwrap_or_default();
-                    if json_str.chars().count() > 200 {
-                        // Truncate at character boundary, not byte boundary
-                        json_str.chars().take(200).collect::<String>() + "..."
-                    } else {
-                        json_str
-                    }
-                };
-                format!("- {}: {} = {}", d.source, d.data_type, value_str)
-            })
-            .collect();
-
-        // Build intent context
-        let _intent_context = if let Some(intent) = parsed_intent.or(agent.parsed_intent.as_ref()) {
-            format!(
-                "\n意图类型: {:?}\n目标指标: {:?}\n条件: {:?}\n动作: {:?}",
-                intent.intent_type, intent.target_metrics, intent.conditions, intent.actions
-            )
-        } else {
-            "".to_string()
-        };
+        let text_data_summary = build_text_data_summary(data);
 
         // Build history context from conversation turns and memory (shared with Free mode)
-        let history_context = build_history_context(agent, &HistoryConfig::focused());
+        let history_context = build_history_context(agent, &HistoryConfig::focused(agent.context_window_size));
 
         // === USER MESSAGES ===
         // Build user messages context for adding to user message (not system message)
@@ -817,73 +643,7 @@ impl AgentExecutor {
             None
         };
 
-        // === SEMANTIC MEMORY CONTEXT ===
-        // Compress memory into meaning-preserving format that small models can understand
-        let memory_context = {
-            let mut parts = Vec::new();
-
-            // 1. Recent success pattern (learned from what works)
-            if !agent.memory.short_term.summaries.is_empty() {
-                let last_3: Vec<_> = agent
-                    .memory
-                    .short_term
-                    .summaries
-                    .iter()
-                    .rev()
-                    .take(3)
-                    .collect();
-                let success_rate =
-                    last_3.iter().filter(|s| s.success).count() as f32 / last_3.len() as f32;
-
-                if success_rate >= 0.8 {
-                    parts.push("Recent: Success pattern established".to_string());
-                } else if success_rate <= 0.3 {
-                    parts.push("Recent: Multiple failures, needs new approach".to_string());
-                }
-            }
-
-            // 2. Action patterns (what actions typically work)
-            if !agent.memory.learned_patterns.is_empty() {
-                let high_confidence: Vec<_> = agent
-                    .memory
-                    .learned_patterns
-                    .iter()
-                    .filter(|p| p.confidence >= 0.75)
-                    .collect();
-
-                if !high_confidence.is_empty() {
-                    let pattern_summary = high_confidence
-                        .iter()
-                        .map(|p| truncate_to(&p.description, 20))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    parts.push(format!("Patterns: {}", pattern_summary));
-                }
-            }
-
-            // 3. Baseline anomalies (if current values deviate significantly)
-            if !agent.memory.baselines.is_empty() && !data.is_empty() {
-                // Check if any current data significantly deviates from baseline
-                for (metric, baseline) in agent.memory.baselines.iter().take(2) {
-                    for d in data.iter().take(3) {
-                        if let Some(val) = d.values.get("value").and_then(|v| v.as_f64()) {
-                            if (val - baseline).abs() / baseline.abs().max(0.1) > 0.3 {
-                                parts.push(format!("Anomaly: {} changed significantly", metric));
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if parts.is_empty() {
-                String::new()
-            } else {
-                format!("[Memory: {}]", parts.join(" | "))
-            }
-        };
-
-        // === SYSTEM PROMPT - Restore original working structure ===
+        // === SYSTEM PROMPT ===
         // This was the proven working format - don't over-engineer it
         // Detect language from user_prompt to determine response language
         let detected_language = SemanticToolMapper::detect_language(&agent.user_prompt);
@@ -893,209 +653,25 @@ impl AgentExecutor {
                 | crate::agent::semantic_mapper::Language::Mixed
         );
 
-        let role_prompt = if is_chinese {
-            "你是一个物联网自动化助手。只输出有效的JSON格式，不要输出其他任何文字。"
-        } else {
-            "You are an IoT automation assistant. Output ONLY valid JSON. No other text."
-        };
-
-        // Build history context string for injection into system prompt
-        let history_context_str = if history_context.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "## Historical Context\n\nRefer to the following history to avoid duplicate alerts and track trends.\n\n{}\n\n",
-                history_context
-            )
-        };
-
-        // Get current time context for temporal understanding
-        let time_context = get_time_context();
-
-        // Build resources info based on execution mode
-        let resources_info = match agent.execution_mode {
-            neomind_storage::agents::ExecutionMode::Focused => {
-                Self::build_focused_data_table(agent, data)
-            }
-            neomind_storage::agents::ExecutionMode::Free => {
-                let available_commands = Self::build_available_commands_description(agent);
-                let available_data_sources = Self::build_available_data_sources_description(agent);
-                if available_data_sources.is_empty() {
-                    available_commands
-                } else {
-                    format!("{}\n\n{}", available_commands, available_data_sources)
-                }
-            }
-        };
-
-        // Language-specific templates
-        let (output_format_header, user_instruction_header) = if is_chinese {
-            (
-                "# 输出格式 - 仅输出JSON，不要输出其他任何文字",
-                "# 用户指令",
-            )
-        } else {
-            (
-                "# Output Format - Output ONLY valid JSON, no other text",
-                "# User Instruction",
-            )
-        };
-
-        let system_prompt = if has_valid_images {
-            if is_chinese {
-                format!(
-                    "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\",\n  \"insight\": \"可选的关键发现，例行执行可省略\"\n}}\n\n{}\n{}",
-                    role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
-                )
-            } else {
-                format!(
-                    "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Image content description\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Analysis step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\",\n  \"insight\": \"Optional key finding, omit if routine\"\n}}\n\n{}\n{}",
-                    role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
-                )
-            }
-        } else if is_chinese {
-            format!(
-                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\",\n  \"insight\": \"可选的关键发现，例行执行可省略\"\n}}\n\n{}\n{}",
-                role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
-            )
-        } else {
-            format!(
-                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Situation analysis\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\",\n  \"insight\": \"Optional key finding, omit if routine\"\n}}\n\n{}\n{}",
-                role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
-            )
-        };
-
-        // Inject time context and history context into system prompt
-        let system_prompt = {
-            let mut prompt = system_prompt;
-            if !time_context.is_empty() {
-                prompt = format!("{}\n\n{}", prompt, time_context);
-            }
-            if !history_context_str.is_empty() {
-                prompt = format!("{}\n\n{}", prompt, history_context_str);
-            }
-            prompt
-        };
-
-        // === CONTEXT MANAGEMENT ===
-        // For image analysis, include minimal memory context
-        let memory_context_for_msg = if !memory_context.is_empty() {
-            let history_header = if is_chinese {
-                "# 历史参考"
-            } else {
-                "# Historical Reference"
-            };
-            format!("\n\n{}\n{}", history_header, memory_context)
-        } else {
-            String::new()
-        };
+        let system_prompt = build_focused_system_prompt(
+            agent,
+            data,
+            has_valid_images,
+            is_chinese,
+            &history_context,
+        );
 
         // Build messages - multimodal if images present
-        let messages = if has_valid_images {
-            let (current_data_header, important_note, image_only_text) = if is_chinese {
-                (
-                    "## 当前数据",
-                    "重要：只输出JSON格式，不要有任何其他文字。",
-                    "仅有图像数据",
-                )
-            } else {
-                (
-                    "## Current Data",
-                    "Important: Output ONLY JSON format, no other text.",
-                    "Image data only",
-                )
-            };
-
-            let mut parts = vec![ContentPart::text(format!(
-                "{}\n{}\n\n{}",
-                current_data_header,
-                if text_data_summary.is_empty() {
-                    // Show image sources info instead of generic "image only" text
-                    if !image_sources_info.is_empty() {
-                        format!("{}\n{}", image_only_text, image_sources_info.join("\n"))
-                    } else {
-                        image_only_text.to_string()
-                    }
-                } else {
-                    text_data_summary.join("\n")
-                },
-                important_note
-            ))];
-
-            // Add images
-            for (source, _data_type, image_content) in &image_parts {
-                match image_content {
-                    ImageContent::Base64(data, mime) => {
-                        parts.push(ContentPart::image_base64(data.clone(), mime.clone()));
-                        tracing::debug!(source = %source, mime = %mime, "Adding base64 image to LLM message");
-                    }
-                    ImageContent::Url(url) => {
-                        parts.push(ContentPart::image_url(url.clone()));
-                        tracing::debug!(source = %source, url = %url, "Adding URL image to LLM message");
-                    }
-                }
-            }
-
-            // Add memory context and user messages
-            if !memory_context_for_msg.is_empty() {
-                parts.push(ContentPart::text(memory_context_for_msg));
-            }
-            if let Some(ref user_msgs) = user_messages_for_user_msg {
-                parts.push(ContentPart::text(format!("\n\n{}", user_msgs)));
-            }
-
-            vec![
-                Message::new(MessageRole::System, Content::text(system_prompt)),
-                Message::from_parts(MessageRole::User, parts),
-            ]
-        } else {
-            // Text-only message
-            let data_summary = if text_data_summary.is_empty() {
-                // Check if we have image data that couldn't be displayed
-                if !image_sources_info.is_empty() {
-                    if is_chinese {
-                        format!(
-                            "当前只有图像数据（LLM 不支持视觉）：\n{}",
-                            image_sources_info.join("\n")
-                        )
-                    } else {
-                        format!(
-                            "Image data only (LLM doesn't support vision):\n{}",
-                            image_sources_info.join("\n")
-                        )
-                    }
-                } else if is_chinese {
-                    "当前无预采集的传感器数据。请基于用户指令和已知模式进行分析，如需设备数据请建议用户绑定数据源。".to_string()
-                } else {
-                    "No pre-collected sensor data available. Analyze based on the user's instructions and known patterns. If device data is needed, suggest the user bind data sources.".to_string()
-                }
-            } else {
-                text_data_summary.join("\n")
-            };
-
-            let (current_data_header, json_only_note) = if is_chinese {
-                ("## 当前数据", "只输出JSON，不要有其他文字。")
-            } else {
-                ("## Current Data", "Output ONLY JSON, no other text.")
-            };
-
-            let mut user_msg_content = format!(
-                "{}\n{}\n\n{}",
-                current_data_header, data_summary, json_only_note
-            );
-
-            if !memory_context_for_msg.is_empty() {
-                user_msg_content = format!("{}\n\n{}", user_msg_content, memory_context_for_msg);
-            }
-            if let Some(ref user_msgs) = user_messages_for_user_msg {
-                user_msg_content = format!("{}\n\n{}", user_msg_content, user_msgs);
-            }
-
-            vec![
-                Message::new(MessageRole::System, Content::text(system_prompt)),
-                Message::new(MessageRole::User, Content::text(user_msg_content)),
-            ]
-        };
+        let messages = build_focused_user_message(
+            &system_prompt,
+            &text_data_summary,
+            &image_parts,
+            &image_sources_info,
+            has_valid_images,
+            is_chinese,
+            "",
+            user_messages_for_user_msg.as_deref(),
+        );
 
         let input = LlmInput {
             messages,
@@ -1813,5 +1389,415 @@ impl AgentExecutor {
         }
 
         false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper functions extracted from analyze_with_llm
+// ---------------------------------------------------------------------------
+
+/// Collect image parts from `DataCollected` entries.
+///
+/// Returns `(image_parts, image_sources_info)`:
+/// - `image_parts`: validated image content (URL or cleaned base64) with source/type metadata.
+/// - `image_sources_info`: human-readable description strings for the text summary.
+fn collect_image_parts(
+    data: &[DataCollected],
+) -> (
+    Vec<(String, String, ImageContent)>,
+    Vec<String>,
+) {
+    let mut image_parts = Vec::new();
+    let mut image_sources_info = Vec::new(); // Track image sources for text summary
+
+    for d in data.iter() {
+        let is_image = d
+            .values
+            .get("_is_image")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !is_image {
+            continue;
+        }
+
+        // Record image source info for text summary
+        image_sources_info.push(format!(
+            "[图像数据: {}, 格式: {}]",
+            d.source,
+            d.values
+                .get("image_mime_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+        ));
+
+        // Try to get image URL first
+        if let Some(url) = d.values.get("image_url").and_then(|v| v.as_str()) {
+            if !url.is_empty() {
+                image_parts.push((
+                    d.source.clone(),
+                    d.data_type.clone(),
+                    ImageContent::Url(url.to_string()),
+                ));
+                continue;
+            }
+        }
+
+        // Fall back to base64 data
+        if let Some(base64) = d.values.get("image_base64").and_then(|v| v.as_str()) {
+            if !base64.is_empty() {
+                // Prefer stored mime → fall back to magic-prefix
+                // inference → final jpeg fallback.
+                let mime = d
+                    .values
+                    .get("image_mime_type")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| {
+                        crate::image_utils::infer_mime_from_base64_prefix(base64)
+                            .map(|s| s.to_string())
+                    })
+                    .unwrap_or_else(|| "image/jpeg".to_string());
+                // Clean base64: strip whitespace/newlines, remove non-base64 characters
+                let cleaned_base64: String = base64
+                    .chars()
+                    .filter(|c| {
+                        c.is_ascii_alphanumeric() || *c == '+' || *c == '/' || *c == '='
+                    })
+                    .collect();
+                // Fix padding
+                let padded_len = (cleaned_base64.len() + 3) & !3;
+                let padded_base64 = if cleaned_base64.len() < padded_len {
+                    let mut s = cleaned_base64;
+                    for _ in 0..(padded_len - s.len()) {
+                        s.push('=');
+                    }
+                    s
+                } else {
+                    cleaned_base64
+                };
+                // Try standard decoding first, then URL-safe
+                let decoded = base64::engine::general_purpose::STANDARD
+                    .decode(&padded_base64)
+                    .or_else(|_| {
+                        // Try URL-safe base64 (uses - and _ instead of + and /)
+                        let url_safe_fixed: String =
+                            padded_base64.replace('-', "+").replace('_', "/");
+                        base64::engine::general_purpose::STANDARD.decode(&url_safe_fixed)
+                    });
+                match decoded {
+                    Ok(bytes) => {
+                        tracing::debug!(
+                            source = %d.source,
+                            size_kb = bytes.len() / 1024,
+                            "Validated base64 image data"
+                        );
+                        // Re-encode as clean standard base64 for Ollama
+                        let clean = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                        image_parts.push((
+                            d.source.clone(),
+                            d.data_type.clone(),
+                            ImageContent::Base64(clean, mime.to_string()),
+                        ));
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            source = %d.source,
+                            len = base64.len(),
+                            error = %e,
+                            "Skipping invalid base64 image data"
+                        );
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    (image_parts, image_sources_info)
+}
+
+/// Build a compact text summary of non-image data for the LLM prompt.
+///
+/// Filters out images, memory-internal data types, and placeholder entries,
+/// then formats up to 15 metrics as `- source: type = value` lines.
+fn build_text_data_summary(data: &[DataCollected]) -> Vec<String> {
+    let max_metrics = 15;
+    data.iter()
+        .filter(|d| {
+            // Exclude images
+            if d.values
+                .get("_is_image")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                return false;
+            }
+            // Exclude memory-related data types (confuses small models)
+            let data_type_lower = d.data_type.to_lowercase();
+            if matches!(
+                data_type_lower.as_str(),
+                "summary" | "memory" | "state_variables" | "baselines" | "patterns"
+            ) {
+                return false;
+            }
+            // Exclude placeholder data from collect_data
+            // When no data sources are bound, collect_data adds a placeholder with guidance
+            // This placeholder should NOT be treated as real sensor data
+            if d.source == "system"
+                && d.values
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.contains("No pre-collected data"))
+                    .unwrap_or(false)
+            {
+                return false;
+            }
+            true
+        })
+        .take(max_metrics)
+        .map(|d| {
+            // Create a more compact representation of values
+            let value_str = if let Some(v) = d.values.get("value") {
+                format!("{}", v) // Compact value representation
+            } else if let Some(v) = d.values.get("history") {
+                format!(
+                    "[历史数据: {}个点]",
+                    v.as_array().map(|a| a.len()).unwrap_or(0)
+                )
+            } else {
+                // Fallback to compact JSON - use character-safe truncation
+                let json_str = serde_json::to_string(&d.values).unwrap_or_default();
+                if json_str.chars().count() > 200 {
+                    // Truncate at character boundary, not byte boundary
+                    json_str.chars().take(200).collect::<String>() + "..."
+                } else {
+                    json_str
+                }
+            };
+            format!("- {}: {} = {}", d.source, d.data_type, value_str)
+        })
+        .collect()
+}
+
+/// Build the system prompt for focused-mode LLM analysis.
+///
+/// Assembles role prompt, resources info, JSON output format template,
+/// user instruction header, and appends time/history context.
+fn build_focused_system_prompt(
+    agent: &AiAgent,
+    data: &[DataCollected],
+    has_valid_images: bool,
+    is_chinese: bool,
+    history_context: &str,
+) -> String {
+    // DEPRECATED: This function is only reached via the legacy Focused JSON path,
+    // which is no longer active since all agents now use tool-calling.
+    // See should_use_tools() in mod.rs.
+    let default_role_prompt = if is_chinese {
+        "你是一个物联网自动化助手。只输出有效的JSON格式，不要输出其他任何文字。"
+    } else {
+        "You are an IoT automation assistant. Output ONLY valid JSON. No other text."
+    };
+    let role_prompt = agent
+        .system_prompt
+        .as_deref()
+        .unwrap_or(default_role_prompt);
+
+    // Build history context string for injection into system prompt
+    let history_context_str = if history_context.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "## Historical Context\n\nRefer to the following history to avoid duplicate alerts and track trends.\n\n{}\n\n",
+            history_context
+        )
+    };
+
+    // Get current time context for temporal understanding
+    let time_context = get_time_context();
+
+    // Build resources info based on execution mode
+    let resources_info = match agent.execution_mode {
+        neomind_storage::agents::ExecutionMode::Focused => {
+            AgentExecutor::build_focused_data_table(agent, data)
+        }
+        neomind_storage::agents::ExecutionMode::Free => {
+            let available_commands = AgentExecutor::build_available_commands_description(agent);
+            let available_data_sources =
+                AgentExecutor::build_available_data_sources_description(agent);
+            if available_data_sources.is_empty() {
+                available_commands
+            } else {
+                format!("{}\n\n{}", available_commands, available_data_sources)
+            }
+        }
+    };
+
+    // Language-specific templates
+    let (output_format_header, user_instruction_header) = if is_chinese {
+        (
+            "# 输出格式 - 仅输出JSON，不要输出其他任何文字",
+            "# 用户指令",
+        )
+    } else {
+        (
+            "# Output Format - Output ONLY valid JSON, no other text",
+            "# User Instruction",
+        )
+    };
+
+    let system_prompt = if has_valid_images {
+        if is_chinese {
+            format!(
+                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\",\n  \"insight\": \"可选的关键发现，例行执行可省略\"\n}}\n\n{}\n{}",
+                role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
+            )
+        } else {
+            format!(
+                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Image content description\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Analysis step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\",\n  \"insight\": \"Optional key finding, omit if routine\"\n}}\n\n{}\n{}",
+                role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
+            )
+        }
+    } else if is_chinese {
+        format!(
+            "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\",\n  \"insight\": \"可选的关键发现，例行执行可省略\"\n}}\n\n{}\n{}",
+            role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
+        )
+    } else {
+        format!(
+            "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Situation analysis\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\",\n  \"insight\": \"Optional key finding, omit if routine\"\n}}\n\n{}\n{}",
+            role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
+        )
+    };
+
+    // Inject time context and history context into system prompt
+    let mut prompt = system_prompt;
+    if !time_context.is_empty() {
+        prompt = format!("{}\n\n{}", prompt, time_context);
+    }
+    if !history_context_str.is_empty() {
+        prompt = format!("{}\n\n{}", prompt, history_context_str);
+    }
+    prompt
+}
+
+/// Build the user-facing message (and system message) pair for focused-mode LLM analysis.
+///
+/// Handles both multimodal (with images) and text-only paths, appending
+/// memory context and user messages as content parts or text sections.
+fn build_focused_user_message(
+    system_prompt: &str,
+    text_data_summary: &[String],
+    image_parts: &[(String, String, ImageContent)],
+    image_sources_info: &[String],
+    has_valid_images: bool,
+    is_chinese: bool,
+    memory_context_for_msg: &str,
+    user_messages_for_user_msg: Option<&str>,
+) -> Vec<Message> {
+    if has_valid_images {
+        let (current_data_header, important_note, image_only_text) = if is_chinese {
+            (
+                "## 当前数据",
+                "重要：只输出JSON格式，不要有任何其他文字。",
+                "仅有图像数据",
+            )
+        } else {
+            (
+                "## Current Data",
+                "Important: Output ONLY JSON format, no other text.",
+                "Image data only",
+            )
+        };
+
+        let mut parts = vec![ContentPart::text(format!(
+            "{}\n{}\n\n{}",
+            current_data_header,
+            if text_data_summary.is_empty() {
+                // Show image sources info instead of generic "image only" text
+                if !image_sources_info.is_empty() {
+                    format!("{}\n{}", image_only_text, image_sources_info.join("\n"))
+                } else {
+                    image_only_text.to_string()
+                }
+            } else {
+                text_data_summary.join("\n")
+            },
+            important_note
+        ))];
+
+        // Add images
+        for (source, _data_type, image_content) in image_parts {
+            match image_content {
+                ImageContent::Base64(data, mime) => {
+                    parts.push(ContentPart::image_base64(data.clone(), mime.clone()));
+                    tracing::debug!(source = %source, mime = %mime, "Adding base64 image to LLM message");
+                }
+                ImageContent::Url(url) => {
+                    parts.push(ContentPart::image_url(url.clone()));
+                    tracing::debug!(source = %source, url = %url, "Adding URL image to LLM message");
+                }
+            }
+        }
+
+        // Add memory context and user messages
+        if !memory_context_for_msg.is_empty() {
+            parts.push(ContentPart::text(memory_context_for_msg.to_string()));
+        }
+        if let Some(user_msgs) = user_messages_for_user_msg {
+            parts.push(ContentPart::text(format!("\n\n{}", user_msgs)));
+        }
+
+        vec![
+            Message::new(MessageRole::System, Content::text(system_prompt.to_string())),
+            Message::from_parts(MessageRole::User, parts),
+        ]
+    } else {
+        // Text-only message
+        let data_summary = if text_data_summary.is_empty() {
+            // Check if we have image data that couldn't be displayed
+            if !image_sources_info.is_empty() {
+                if is_chinese {
+                    format!(
+                        "当前只有图像数据（LLM 不支持视觉）：\n{}",
+                        image_sources_info.join("\n")
+                    )
+                } else {
+                    format!(
+                        "Image data only (LLM doesn't support vision):\n{}",
+                        image_sources_info.join("\n")
+                    )
+                }
+            } else if is_chinese {
+                "当前无预采集的传感器数据。请基于用户指令和已知模式进行分析，如需设备数据请建议用户绑定数据源。".to_string()
+            } else {
+                "No pre-collected sensor data available. Analyze based on the user's instructions and known patterns. If device data is needed, suggest the user bind data sources.".to_string()
+            }
+        } else {
+            text_data_summary.join("\n")
+        };
+
+        let (current_data_header, json_only_note) = if is_chinese {
+            ("## 当前数据", "只输出JSON，不要有其他文字。")
+        } else {
+            ("## Current Data", "Output ONLY JSON, no other text.")
+        };
+
+        let mut user_msg_content = format!(
+            "{}\n{}\n\n{}",
+            current_data_header, data_summary, json_only_note
+        );
+
+        if !memory_context_for_msg.is_empty() {
+            user_msg_content = format!("{}\n\n{}", user_msg_content, memory_context_for_msg);
+        }
+        if let Some(user_msgs) = user_messages_for_user_msg {
+            user_msg_content = format!("{}\n\n{}", user_msg_content, user_msgs);
+        }
+
+        vec![
+            Message::new(MessageRole::System, Content::text(system_prompt.to_string())),
+            Message::new(MessageRole::User, Content::text(user_msg_content)),
+        ]
     }
 }

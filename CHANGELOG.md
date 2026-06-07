@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.7] - 2026-06-07
+
+### Agent Memory & Context Engineering Overhaul
+
+Complete rewrite of the agent memory system — replacing a complex hierarchical model (ShortTermMemory, LongTermMemory, TaskProfile, fingerprint-based dedup, LLM reflection) with a simple and effective ExecutionJournal + KnowledgeFileRef design.
+
+### Added
+
+- **ExecutionJournal** — FIFO ring buffer of `ExecutionRecord` (max 10 entries). Each execution logs outcome, actions taken, success status, and timestamp. Replaces ShortTermMemory + LongTermMemory (~200 lines removed)
+- **KnowledgeFileRef** — Index entries for agent-scoped knowledge files created by the LLM via the `memory` tool. Replaces TaskProfile + Baselines
+- **Agent-scoped knowledge files** — `custom:{name}` files now isolated per agent at `agents/{agent_id}/custom/{name}.md` instead of global `custom/{name}.md`. Prevents cross-agent file collisions
+- **Shared Arc handle pattern** — `agent_id` and `knowledge_files` handles shared between MemoryTool, AgentExecutor, and AgentState for seamless injection and sync
+- **Auto-initialized task-understanding file** — On first execution, a `task-understanding.md` knowledge file is automatically created with the agent's mission, bound resources, and first execution result
+- **Memory writing guidelines in system prompt** — Guidelines section now explicitly tells the LLM when to create knowledge files (discovered thresholds, patterns, device quirks), what format to use, and what not to store (temporary data, raw metrics)
+- **Prioritized context layers** — System prompt restructured with clear priority order: Identity → Time → Task → User Messages → Knowledge Index → Resources → Journal → Guidelines
+- **Merged resource sections** — Eliminated redundant dual display of resources (was shown separately in `resource_info` and `current_data_section`). Now a single "Resources & Data" section: table format for Focused mode, list + JSON for Free mode
+
+### Frontend Visual Polish
+
+- **Stagger fade-in-up animations** — List rows, card grids, and skeletons now animate in with staggered delays
+- **Chart entrance animations** — LineChart, BarChart, PieChart animate on first render with gradient fills
+- **Shimmer skeleton effect** — Skeleton loading upgraded from simple pulse to shimmer sweep animation
+- **Page-level fade-in transition** — Pages wrapped in `PageLayout` now fade in smoothly on mount
+- **Chat message entrance animation** — New chat messages animate in as they appear
+- **Theme switch transition** — Theme toggle now has color transition and icon rotation animation
+- **Card hover effects** — Cards lift with shadow on hover for interactive feedback
+- **EmptyState gradient icon** — Empty state icon container upgraded with gradient styling
+
+### Changed
+
+- **Time context** — Reduced from 6-line `### Current Time Information` block to single concise line: `2026-06-07 14:30:00 Asia/Shanghai (June 07, 2026, Saturday Afternoon)`
+- **HistoryConfig mode-aware** — Focused mode now uses `HistoryConfig::focused()` (fewer journal entries) instead of always using `HistoryConfig::free()`
+- **Frontend Memory tab** — Replaced old sections (Task Knowledge, Long-Term Memories, Learned Patterns, Known Baselines, Image Analysis History) with: Knowledge Files cards, Execution Journal timeline, and stats (execution count + file count + last update)
+- **Frontend types** — `AgentMemory` interface now contains `ExecutionJournal` + `KnowledgeFileRef[]`. Renamed agent's `ExecutionRecord` to `JournalExecutionRecord` to avoid collision with automation's `ExecutionRecord`
+- **Frontend state typing** — Memory state changed from `useState<any>` to `useState<AgentMemory | null>` for type safety
+
+### Removed
+
+- **ShortTermMemory, LongTermMemory, MemorySummary, ImportantMemory, TaskProfile** — All deleted from `AgentMemory`
+- **Complex memory write logic** — `should_record()`, `reflect_task_profile()`, `should_trigger_reflection()`, `image_analysis_fingerprint()`, `extract_image_insight()` (~260 lines removed)
+- **Context fingerprint functions** — `execution_fingerprint()`, `execution_fingerprint_from_summary()`, `conclusion_fingerprint_core()` (~60 lines removed)
+- **Dead instructions** — Removed "Reply in the SAME language" directive and redundant duplicate resource display
+- **Unused functions** — `strip_llm_thinking()`, `clean_and_truncate_text()`, `is_agent_scoped()` method, and associated tests
+
+### Fixed
+
+- **Gradient ID collisions** — LineChart and BarChart gradient fills now use unique IDs per chart instance, preventing SVG gradient conflicts when multiple charts are on the same page
+- **O(n²) stagger index** — ResponsiveTable stagger animation index lookup reduced from O(n²) to O(1)
+
+### Backward Compatibility
+
+- All new `AgentMemory` fields use `#[serde(default)]` — old redb data deserializes gracefully with empty journal + empty knowledge files
+- `ExecutionJournal` uses manual `Default` impl with `max_records=10` (not derived, which would give 0)
+- No data migration required
+
+---
+
 ## [Unreleased]
 
 ### Added

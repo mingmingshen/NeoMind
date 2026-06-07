@@ -5,7 +5,7 @@
 use crate::llm_backends::{OllamaConfig, OllamaRuntime};
 use futures::future::join_all;
 use futures::FutureExt;
-use neomind_core::llm::backend::{GenerationParams, LlmInput, LlmRuntime};
+use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::{
     message::{Content, ContentPart, Message, MessageRole},
     EventBus, MetricValue, NeoMindEvent,
@@ -22,24 +22,16 @@ use neomind_storage::{
     AgentStore,
     AgentToolConfig,
     AiAgent,
-    // New conversation types
-    ConversationTurn,
     DataCollected,
     Decision,
     DecisionProcess,
     ExecutionResult as StorageExecutionResult,
     ExecutionStatus,
     GeneratedReport,
-    LearnedPattern,
     LlmBackendStore,
     MarkdownMemoryStore,
-    MemorySummary,
     ReasoningStep,
     ResourceType,
-    TaskProfile,
-    TrendPoint,
-    TurnInput,
-    TurnOutput,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -53,10 +45,9 @@ use crate::agent::types::LlmBackend;
 use crate::error::{NeoMindError, Result as AgentResult};
 
 /// Internal representation of image content for multimodal LLM messages.
-#[allow(dead_code)]
-enum ImageContent {
+pub(crate) enum ImageContent {
     Url(String),
-    Base64(String, String), // (_data, _mime_type)
+    Base64(String, String), // (data, mime_type)
 }
 
 /// Intermediate data from the tool execution loop, passed to result construction.
@@ -76,6 +67,15 @@ struct ToolLoopOutput {
     all_tool_results: Vec<crate::toolkit::ToolResult>,
     /// (thought, tool_calls) per round
     round_data_list_raw: Vec<(Option<String>, Vec<ToolCallRecord>)>,
+}
+
+/// Outcome of intra-round + cross-round deduplication.
+#[derive(PartialEq)]
+enum DedupOutcome {
+    /// Some tool calls survived deduplication.
+    HasNew,
+    /// All tool calls were duplicates.
+    AllDuplicate,
 }
 
 /// Configuration for the tool loop, varying by execution mode.
@@ -139,8 +139,7 @@ pub use context::{DataSourceRef, EventTriggerData};
 
 // Re-export functions needed by sibling modules (via use super::*)
 pub(crate) use context::{
-    build_history_context, clean_and_truncate_text, conclusion_fingerprint, truncate_to,
-    HistoryConfig,
+    build_history_context, truncate_to, HistoryConfig,
 };
 pub(crate) use data_collector::get_time_context;
 pub(crate) use intent::extract_threshold;
@@ -149,6 +148,16 @@ pub(crate) use response_parser::{
     extract_json_from_mixed_text, extract_string_field, json_value_to_string, sanitize_json_string,
     summarize_tool_output, try_recover_truncated_json,
 };
+
+/// Resolve the role prompt for an agent.
+/// Returns the agent's custom `system_prompt` if set, otherwise the default IoT role string.
+fn resolve_role(agent: &neomind_storage::AiAgent, default: &str) -> String {
+    agent
+        .system_prompt
+        .as_deref()
+        .unwrap_or(default)
+        .to_string()
+}
 
 /// Build JSON Schema parameters from extension command parameters.
 fn build_parameters_schema(
@@ -299,6 +308,10 @@ pub struct AgentExecutorConfig {
     pub backend_semaphores: Option<crate::ai_agent::scheduler::BackendSemaphores>,
     /// Skill registry for querying operation guides
     pub skill_registry: Option<crate::skills::SharedSkillRegistry>,
+    /// MemoryTool agent_id handle — set per-execution for agent-scoped file isolation
+    pub memory_agent_id_handle: Option<Arc<tokio::sync::RwLock<Option<String>>>>,
+    /// MemoryTool knowledge_files handle — synced back to AgentMemory after tool loop
+    pub memory_knowledge_files_handle: Option<Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>>,
 }
 
 /// Context for agent execution.
@@ -365,6 +378,10 @@ pub struct AgentExecutor {
     backend_semaphores: Option<crate::ai_agent::scheduler::BackendSemaphores>,
     /// Semaphore limiting concurrent tool executions (default: 6)
     tool_concurrency: Arc<Semaphore>,
+    /// MemoryTool agent_id handle — set per-execution for agent-scoped file isolation
+    memory_agent_id_handle: Option<Arc<tokio::sync::RwLock<Option<String>>>>,
+    /// MemoryTool knowledge_files handle — synced back to AgentMemory after tool loop
+    memory_knowledge_files_handle: Option<Arc<tokio::sync::RwLock<Vec<neomind_storage::KnowledgeFileRef>>>>,
 }
 
 /// Parse the LLM's final text response to extract situation_analysis, conclusion, and confidence.
@@ -402,6 +419,8 @@ impl AgentExecutor {
             memory_store: config.memory_store.clone(),
             backend_semaphores: config.backend_semaphores.clone(),
             tool_concurrency: Arc::new(Semaphore::new(6)),
+            memory_agent_id_handle: config.memory_agent_id_handle.clone(),
+            memory_knowledge_files_handle: config.memory_knowledge_files_handle.clone(),
         })
     }
 
@@ -415,16 +434,13 @@ impl AgentExecutor {
 
     /// Check whether tool mode should be used for this agent execution.
     ///
-    /// - Free mode: always uses tool calling (if LLM + registry support it)
-    /// - Focused mode: uses tool calling only when `enable_tool_chaining=true`
-    /// - Otherwise falls back to structured JSON analysis
+    /// All agents use tool-calling when the LLM and tool registry support it.
+    /// Falls back to structured JSON analysis only when tool-calling is unavailable.
     fn should_use_tools(
         &self,
         agent: &AiAgent,
         llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>,
     ) -> bool {
-        use neomind_storage::agents::ExecutionMode;
-
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
         let registry_available = self.tool_registry.read().is_some();
 
@@ -438,19 +454,7 @@ impl AgentExecutor {
             return false;
         }
 
-        match agent.execution_mode {
-            ExecutionMode::Free => true,
-            ExecutionMode::Focused => {
-                let enabled = agent.enable_tool_chaining;
-                if !enabled {
-                    tracing::debug!(
-                        agent_id = %agent.id,
-                        "Tool mode skipped — Focused agent has enable_tool_chaining=false"
-                    );
-                }
-                enabled
-            }
-        }
+        true
     }
 
     /// Execute agent using tool/function-calling mode.
@@ -515,7 +519,7 @@ impl AgentExecutor {
     ///
     /// Unlike the Focused analysis path which filters out memory data for small
     /// models, the Free prompt intentionally **includes** historical context
-    /// (learned patterns, baselines, recent conclusions, user messages) so the
+    /// (knowledge files, execution journal, user messages) so the
     /// agent can leverage accumulated experience and make progressively better
     /// decisions.
     fn build_tool_system_prompt(
@@ -526,18 +530,19 @@ impl AgentExecutor {
     ) -> String {
         let time_ctx = get_time_context();
 
-        // ── Build resource_info and current_data_section based on mode ──
-        let (resource_info, current_data_section) = if config.is_focused_plus {
-            // Focused+: grouped resources with latest value snapshot,
-            // LLM uses tools for historical queries.
-            Self::build_focused_plus_sections(agent, data_collected)
+        // ── Merged resource + data section (eliminates redundancy) ──
+        let resource_data_section = if config.is_focused_plus {
+            Self::build_focused_resource_section(agent, data_collected)
         } else {
-            // Free mode: full pre-collected data dump, flat resource list.
-            Self::build_free_sections(agent, data_collected)
+            Self::build_free_resource_section(agent, data_collected)
         };
 
-        // ── Historical Context (shared with Focused via build_history_context) ──
-        let history_section = build_history_context(agent, &HistoryConfig::free());
+        // ── Context: User Messages → Knowledge Files → Journal ──
+        let history_section = if config.is_focused_plus {
+            build_history_context(agent, &HistoryConfig::focused(agent.context_window_size))
+        } else {
+            build_history_context(agent, &HistoryConfig::free(agent.context_window_size))
+        };
 
         // Build invocation input section
         let invocation_section = match invocation_input {
@@ -581,91 +586,76 @@ impl AgentExecutor {
             ));
         }
 
-        let guidelines = if config.is_focused_plus {
+        // Combined guidelines + exit guidance (one section, no redundancy)
+        let memory_guidance = "\
+             - Use the `memory` tool to persist important discoveries. Create a knowledge file when you:\n\
+               * Discover stable thresholds or normal ranges (e.g., 'temp normal: 22-28°C')\n\
+               * Identify recurring patterns across executions\n\
+               * Learn device quirks or environment-specific behaviors\n\
+               * Derive alert rules from accumulated observations\n\
+             - Knowledge file format: one topic per file, bullet points, concise. Example:\n\
+               `memory(action='create', target='custom:thresholds', content='# Thresholds\\n- CPU alert: >85%\\n- Temp normal: 22-28°C\\n- Temp alert: >40°C')`\n\
+             - Do NOT store temporary data, raw metrics, or information that changes every execution.\n\
+             - Update existing files with `add`/`replace` rather than creating duplicates.";
+
+        let combined_guidance = if config.is_focused_plus {
             format!(
-                "Guidelines:\n\
-                 - The snapshot above shows current values. Use `device(action=\"history\")` \
-                 with `time_range` to query trends when the task requires historical analysis.\n\
+                "## Guidelines & Exit\n\
+                 - The snapshot above shows current values. Use `device(action=\"history\")` with `time_range` for trends.\n\
                  - You can use `device(action=\"control\")` to execute bound commands.\n\
                  - Do NOT call the same tool with the same parameters if it already returned results.\n\
-                 - Max {} rounds of tool calls. Be efficient.\n\
-                 - For complex operations, use the `skill` tool to search for guides.",
+                 - Max {} rounds. Be efficient.\n\
+                 - For complex operations, use the `skill` tool to search for guides.\n\
+                 - Stop when you have enough data or a tool call failed. Write your analysis directly — plain text only.\n\
+                 {memory_guidance}",
                 config.max_rounds,
             )
         } else {
             format!(
-                "Guidelines:\n\
+                "## Guidelines & Exit\n\
                  - Do NOT call the same tool with the same parameters if it already returned results.\n\
                  - If a metric query returns empty data, try a different metric or move on.\n\
-                 - Max {} rounds of tool calls. Be efficient.\n\
-                 - For complex operations (rules, device control, messaging), use the `skill` tool to search for relevant guides before executing.",
+                 - Max {} rounds. Be efficient.\n\
+                 - For complex operations, use the `skill` tool to search for guides.\n\
+                 - Stop when you have enough data, already sent notifications, got the same result, or a tool failed.\n\
+                 - After your last tool call, write your analysis directly — plain text only, key findings first.\n\
+                 {memory_guidance}",
                 config.max_rounds,
             )
         };
 
-        let exit_guidance = if config.is_focused_plus {
-            "\n## When to stop\n\
-             Stop calling tools and write your final response when:\n\
-             - You have collected enough data to answer the task.\n\
-             - A tool call failed and retrying won't help.\n\
-             Write your analysis directly — do NOT use JSON or code blocks.\n"
-                .to_string()
-        } else {
-            format!(
-                "\n## When to stop\n\
-                 IMPORTANT — stop calling tools and write your final response as soon as ONE of these is true:\n\
-                 1. You have the data needed to answer the task.\n\
-                 2. You have already sent notifications or executed commands (no need to verify them).\n\
-                 3. You called a tool and got the same or similar result as before.\n\
-                 4. You have used {} rounds and still don't have enough data — summarize what you have.\n\
-                 5. A tool failed — explain the failure, don't retry.\n\
-                 After your last tool call, write your analysis directly. \
-                 Do NOT use JSON or code blocks — plain text only.\n\
-                 Keep it concise: key findings first, then anomalies, then recommendations.\n",
-                config.max_rounds,
-            )
-        };
+        let default_identity = format!(
+            "You are an intelligent IoT agent named '{}' monitoring edge devices.",
+            agent.name
+        );
+        let identity = resolve_role(agent, &default_identity);
 
         format!(
-            "You are an intelligent IoT agent named '{}' monitoring edge devices.\n\
-             Current time: {}\n\
-             Your task: {}\n{}{}{}{}{}\
-             You have access to tools for querying metrics, executing commands, and sending notifications.\n\n\
-             {}\n\
-             {}\n\
-             Reply in the SAME language as the task description.",
-            agent.name,
+            "{}\nTime: {}\nTask: {}\n{}\n{}\n{}\n{}\n\n{}\n",
+            identity,
             time_ctx,
             agent.user_prompt,
-            resource_info,
-            current_data_section,
             history_section,
+            resource_data_section,
             invocation_section,
             mode_constraints,
-            guidelines,
-            exit_guidance,
+            combined_guidance,
         )
     }
 
-    /// Build sections for Focused+ mode:
-    /// - resource_info: grouped by type (metrics, commands, extension tools)
-    /// - current_data: only latest value snapshots, no history blobs
-    fn build_focused_plus_sections(
+    /// Build merged resource + data section for Focused+ mode.
+    /// Single table: | Resource | Type | Current |
+    fn build_focused_resource_section(
         agent: &AiAgent,
         data_collected: &[DataCollected],
-    ) -> (String, String) {
-        // Build a lookup: source -> latest value for snapshot
-        let mut latest_values: std::collections::HashMap<&str, String> =
-            std::collections::HashMap::new();
+    ) -> String {
+        // Build lookup: source -> latest value
+        let mut latest_values: HashMap<&str, String> = HashMap::new();
         for d in data_collected {
             if d.source == "system" {
                 continue;
             }
-            if d.values
-                .get("_is_image")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-            {
+            if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
                 continue;
             }
             if let Some(v) = d.values.get("value") {
@@ -673,97 +663,57 @@ impl AgentExecutor {
             }
         }
 
-        // Group resources by type
-        let mut metric_lines: Vec<String> = Vec::new();
-        let mut command_lines: Vec<String> = Vec::new();
+        if agent.resources.is_empty() && latest_values.is_empty() {
+            return "\n## Resources & Data\nNo bound resources. Use tools to query.\n".to_string();
+        }
+
+        let mut section = String::from("\n## Resources & Data\n");
+        section.push_str("| Resource | Type | Current |\n|----------|------|--------|\n");
 
         for r in &agent.resources {
-            match r.resource_type {
-                ResourceType::Metric => {
-                    let current = latest_values
-                        .get(r.resource_id.as_str())
-                        .map(|v| format!(" (current: {})", v))
-                        .unwrap_or_default();
-                    metric_lines.push(format!("- {} (`{}`){}", r.name, r.resource_id, current));
-                }
-                ResourceType::Command => {
-                    command_lines.push(format!("- {} (`{}`)", r.name, r.resource_id));
-                }
-                ResourceType::ExtensionTool => {
-                    command_lines.push(format!("- {} (`{}`)", r.name, r.resource_id));
-                }
-                ResourceType::ExtensionMetric => {
-                    let current = latest_values
-                        .get(r.resource_id.as_str())
-                        .map(|v| format!(" (current: {})", v))
-                        .unwrap_or_default();
-                    metric_lines.push(format!("- {} (`{}`){}", r.name, r.resource_id, current));
-                }
-                ResourceType::Device | ResourceType::DataStream => {}
+            let type_str = match r.resource_type {
+                ResourceType::Metric | ResourceType::ExtensionMetric => "metric",
+                ResourceType::Command | ResourceType::ExtensionTool => "command",
+                ResourceType::Device => "device",
+                ResourceType::DataStream => "stream",
+            };
+            let current = latest_values
+                .get(r.resource_id.as_str())
+                .cloned()
+                .unwrap_or_else(|| "-".to_string());
+            section.push_str(&format!("| {} | {} | {} |\n", r.name, type_str, current));
+        }
+
+        // Add any data sources not in resources
+        for (source, value) in &latest_values {
+            let source_id = source.to_string();
+            if !agent.resources.iter().any(|r| r.resource_id == source_id) {
+                section.push_str(&format!("| {} | - | {} |\n", source, value));
             }
         }
 
-        let mut resource_info = String::from("\n## Bound Resources\n");
-        if !metric_lines.is_empty() {
-            resource_info.push_str("### Metrics\n");
-            for line in &metric_lines {
-                resource_info.push_str(line);
-                resource_info.push('\n');
-            }
-        }
-        if !command_lines.is_empty() {
-            resource_info.push_str("### Commands\n");
-            for line in &command_lines {
-                resource_info.push_str(line);
-                resource_info.push('\n');
-            }
-        }
-        resource_info.push('\n');
-
-        // current_data: snapshot only, no history blobs
-        let current_data_section = if latest_values.is_empty() {
-            "\n## Current Snapshot\nNo pre-collected data. Use tools to query.\n".to_string()
-        } else {
-            let mut table = String::from("\n## Current Snapshot (latest values)\n");
-            table.push_str("| Resource | Value |\n|----------|-------|\n");
-            let mut entries: Vec<_> = latest_values.iter().collect();
-            entries.sort_by_key(|(k, _)| *k);
-            for (source, value) in entries {
-                table.push_str(&format!("| {} | {} |\n", source, value));
-            }
-            table.push('\n');
-            table
-        };
-
-        (resource_info, current_data_section)
+        section.push('\n');
+        section
     }
 
-    /// Build sections for Free mode:
-    /// - resource_info: flat resource list
-    /// - current_data: full pre-collected data dump
-    fn build_free_sections(agent: &AiAgent, data_collected: &[DataCollected]) -> (String, String) {
-        let resource_info = if agent.resources.is_empty() {
-            String::new()
-        } else {
+    /// Build merged resource + data section for Free mode.
+    /// Resource list + JSON data dump in one section.
+    fn build_free_resource_section(agent: &AiAgent, data_collected: &[DataCollected]) -> String {
+        let mut section = String::from("\n## Resources & Data\n");
+
+        if !agent.resources.is_empty() {
             let items: Vec<String> = agent
                 .resources
                 .iter()
                 .map(|r| format!("- {} ({})", r.name, r.resource_id))
                 .collect();
-            format!(
-                "\nRecommended resources to focus on:\n{}\n",
-                items.join("\n")
-            )
-        };
+            section.push_str(&format!("Bound: {}\n", items.join(", ")));
+        }
 
         let data_text: Vec<String> = data_collected
             .iter()
             .filter(|d| {
-                if d.values
-                    .get("_is_image")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-                {
+                if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
                     return false;
                 }
                 if d.source == "system"
@@ -779,22 +729,19 @@ impl AgentExecutor {
             })
             .map(|d| {
                 let json_str = serde_json::to_string_pretty(&d.values).unwrap_or_default();
-                format!("**Source: {}**\n{}", d.source, json_str)
+                format!("**{}**: {}", d.source, json_str)
             })
             .collect();
 
-        let current_data_section = if data_text.is_empty() {
-            "\n## Current Data\nNo pre-collected data available.\n\n\
-             **IMPORTANT**: You MUST use the available tools to query the data you need!\n\
-             - Use `query_metric` or `get_latest_metrics` to fetch device metrics\n\
-             - Use `list_devices` to discover available devices\n\
-             - Do NOT conclude \"no data\" without first attempting to query using tools.\n"
-                .to_string()
+        if data_text.is_empty() {
+            section.push_str(
+                "No pre-collected data. **You MUST use tools to query the data you need!**\n",
+            );
         } else {
-            format!("\n## Current Data\n{}\n", data_text.join("\n\n"))
-        };
+            section.push_str(&format!("\nData:\n{}\n", data_text.join("\n")));
+        }
 
-        (resource_info, current_data_section)
+        section
     }
 
     /// Build initial messages (system + user) with multimodal image support.
@@ -987,45 +934,15 @@ impl AgentExecutor {
                 break;
             }
 
-            // --- Intra-round deduplication ---
-            // Remove duplicate tool calls within the same round (same name + similar args).
-            let mut seen_this_round: HashSet<String> = HashSet::new();
-            tool_calls.retain(|tc| {
-                let args_preview = serde_json::to_string(&tc.arguments).unwrap_or_default();
-                let bound = args_preview.len().min(100);
-                let args_short = &args_preview[..args_preview.floor_char_boundary(bound)];
-                let sig = format!("{}:{}", tc.name, args_short);
-                seen_this_round.insert(sig)
-            });
+            // --- Intra-round + Cross-round deduplication ---
+            let dedup_outcome = Self::deduplicate_tool_calls(
+                &mut tool_calls,
+                &mut all_executed_signatures,
+                &agent.id,
+                round,
+            );
 
-            // --- Cross-round deduplication ---
-            // Filter out tool calls that were already executed in previous rounds with
-            // the same arguments. This prevents small models from wasting tokens.
-            let before_count = tool_calls.len();
-            tool_calls.retain(|tc| {
-                let args_preview = serde_json::to_string(&tc.arguments).unwrap_or_default();
-                let bound = args_preview.len().min(100);
-                let args_short = &args_preview[..args_preview.floor_char_boundary(bound)];
-                let sig = format!("{}:{}", tc.name, args_short);
-                all_executed_signatures.insert(sig)
-            });
-            let deduped_count = before_count - tool_calls.len();
-            if deduped_count > 0 {
-                tracing::debug!(
-                    agent_id = %agent.id,
-                    round = round + 1,
-                    deduped = deduped_count,
-                    "Skipped duplicate tool calls from previous rounds"
-                );
-            }
-
-            // If all tool calls were duplicates, treat as no-op and ask LLM again
-            if tool_calls.is_empty() {
-                tracing::warn!(
-                    agent_id = %agent.id,
-                    round = round + 1,
-                    "All tool calls were duplicates, asking LLM to proceed differently"
-                );
+            if dedup_outcome == DedupOutcome::AllDuplicate {
                 messages.push(Message::new(
                     MessageRole::Assistant,
                     Content::text(&output.text),
@@ -1042,54 +959,15 @@ impl AgentExecutor {
             }
 
             // --- Duplicate round detection ---
-            // Compare tool signatures (name + key arguments) to detect truly stuck loops.
-            // Only counts as duplicate when the FULL round's tool set AND arguments match
-            // the previous round — different arguments to the same tool are NOT duplicates.
-            let current_round_sig = {
-                let mut sigs: Vec<String> = tool_calls
-                    .iter()
-                    .map(|tc| {
-                        let action = tc
-                            .arguments
-                            .get("action")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        let mut sig = format!("{}|{}", tc.name, action);
-                        for param in &["device_id", "metric", "agent_id", "rule_id", "extension_id"]
-                        {
-                            if let Some(val) = tc.arguments.get(*param).and_then(|v| v.as_str()) {
-                                sig.push_str(&format!("|{}", val));
-                            }
-                        }
-                        sig
-                    })
-                    .collect();
-                sigs.sort();
-                sigs.join(";;")
-            };
-            if current_round_sig == prev_round_tool_names {
-                consecutive_duplicate_rounds += 1;
-                tracing::info!(
-                    agent_id = %agent.id,
-                    round = round + 1,
-                    consecutive_duplicates = consecutive_duplicate_rounds,
-                    "Duplicate tool round detected (same tools + args) — continuing, cross-round dedup handles re-execution"
-                );
-            } else {
-                consecutive_duplicate_rounds = 0;
-            }
-            prev_round_tool_names = current_round_sig;
-
-            // Stop after 3+ consecutive identical rounds — the LLM is stuck.
-            // Repeated tool calls in complex tasks are normal; cross-round dedup above
-            // already prevents actual re-execution.
-            if consecutive_duplicate_rounds >= 3 {
-                tracing::warn!(
-                    agent_id = %agent.id,
-                    round = round + 1,
-                    consecutive_duplicates = consecutive_duplicate_rounds,
-                    "LLM stuck in loop (3+ consecutive duplicate rounds), forcing text response"
-                );
+            let should_break = Self::detect_duplicate_round(
+                &tool_calls,
+                &mut prev_round_tool_names,
+                &mut consecutive_duplicate_rounds,
+                &agent.id,
+                round,
+            ).await;
+            // We need &self for send_thinking, so handle the break here
+            let should_break = if should_break {
                 self.send_thinking(
                     &agent.id,
                     execution_id,
@@ -1097,6 +975,11 @@ impl AgentExecutor {
                     "Stopping: detected repeated tool calling pattern, forcing text response",
                 )
                 .await;
+                true
+            } else {
+                false
+            };
+            if should_break {
                 break;
             }
 
@@ -1147,36 +1030,21 @@ impl AgentExecutor {
             let results = if calls.is_empty() {
                 Vec::new()
             } else {
-                let _permit = self.tool_concurrency.acquire().await.unwrap();
+                let _permit = match self.tool_concurrency.acquire().await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::error!("Tool concurrency semaphore closed: {}", e);
+                        break;
+                    }
+                };
                 registry.execute_parallel(calls).await
             };
 
-            let mut round_tool_calls: Vec<ToolCallRecord> = Vec::new();
-            for (i, tc) in tool_calls.iter().enumerate() {
-                let result =
-                    results
-                        .get(i)
-                        .cloned()
-                        .unwrap_or_else(|| crate::toolkit::ToolResult {
-                            name: tool_name_map
-                                .get(&tc.name)
-                                .cloned()
-                                .unwrap_or_else(|| tc.name.clone()),
-                            result: Err(crate::toolkit::error::ToolError::Execution(
-                                "No result".to_string(),
-                            )),
-                        });
-                // Use original name for history display
-                let display_name = tool_name_map
-                    .get(&tc.name)
-                    .cloned()
-                    .unwrap_or_else(|| tc.name.clone());
-                round_tool_calls.push(ToolCallRecord {
-                    name: display_name,
-                    input: tc.arguments.clone(),
-                    result,
-                });
-            }
+            let round_tool_calls = Self::build_round_tool_calls(
+                &tool_calls,
+                &results,
+                tool_name_map,
+            );
 
             round_data_list.push(RoundData {
                 thought: if remaining_text.is_empty() {
@@ -1187,64 +1055,17 @@ impl AgentExecutor {
                 tool_calls: round_tool_calls,
             });
 
-            for result in &results {
-                all_tool_results.push(result.clone());
-                let result_text = match &result.result {
-                    Ok(output) => {
-                        let raw = serde_json::to_string_pretty(&output.data)
-                            .unwrap_or_else(|_| "Success".to_string());
-                        // Sanitize base64/image data to prevent context bloat
-                        let sanitized =
-                            crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
-                        // UTF-8 safe truncation (has fast-path for short strings)
-                        // 128KB limit: large enough for compact time-series and multi-device
-                        // queries. The compaction layer handles context window limits later.
-                        const MAX_TOOL_RESULT_IN_MSG: usize = 131072;
-                        crate::agent::streaming::truncate_result_utf8(
-                            &sanitized,
-                            MAX_TOOL_RESULT_IN_MSG,
-                        )
-                    }
-                    Err(e) => format!("Error: {}", e),
-                };
-
-                // Skill tool results go to separate reference buffer, not messages history
-                if result.name == "skill" {
-                    if !skill_reference.is_empty() {
-                        skill_reference.push_str("\n\n");
-                    }
-                    skill_reference.push_str(&result_text);
-                    // Add a concise acknowledgment to messages so LLM knows the skill was retrieved
-                    messages.push(Message::new(
-                        MessageRole::User,
-                        Content::text("Skill guide retrieved and will be used as reference."),
-                    ));
-                } else {
-                    // Use sanitized name for LLM message so it matches what the LLM used
-                    let msg_name = original_to_sanitized
-                        .get(&result.name)
-                        .cloned()
-                        .unwrap_or_else(|| result.name.clone());
-                    messages.push(Message::tool_result(&msg_name, &result_text));
-                }
-
-                // Send thinking event for each tool result
-                let result_preview = match &result.result {
-                    Ok(output) => {
-                        let brief = summarize_tool_output(&output.data, &result.name);
-                        truncate_to(&brief, 200).to_string()
-                    }
-                    Err(e) => format!("Error: {}", e),
-                };
-                self.send_thinking(
-                    &agent.id,
-                    execution_id,
-                    step_num,
-                    &format!("tool '{}' → {}", result.name, result_preview),
-                )
-                .await;
-                step_num += 1;
-            }
+            let new_step_num = self.process_tool_results(
+                &results,
+                messages,
+                &mut all_tool_results,
+                &mut skill_reference,
+                &original_to_sanitized,
+                &agent.id,
+                execution_id,
+                step_num,
+            ).await;
+            step_num = new_step_num;
 
             // --- Messages compaction ---
             // When the message history grows too large, compact old tool results into
@@ -1255,98 +1076,19 @@ impl AgentExecutor {
         // If all rounds exhausted without LLM producing final text, OR if LLM failed
         // mid-loop (error message in final_text), use Focused's Phase 2 pattern to
         // generate a natural language conclusion.
-        //
-        // Unlike the old JSON-template approach, this sends full tool results (truncated
-        // to 8KB each) in [tool_name]\nresult\n\n format — same as Focused Phase 2 — so
-        // the LLM has enough data to produce a real analysis.
         let needs_summary = final_text.is_empty()
             || final_text == "LLM generation failed during tool execution."
             || final_text == "Completed tool execution rounds.";
         if needs_summary && !all_tool_results.is_empty() {
-            // Clear error text so summary response replaces it
             final_text.clear();
-
-            // Build follow-up prompt — natural language, NOT JSON template.
-            // Includes full tool results so the LLM can produce a real analysis.
-            let task = &agent.user_prompt;
-            let mut phase2_user = format!(
-                "{}\n\n[Completed {} rounds of tool execution, {} tool results collected]\n\
-                 IMPORTANT: You MUST analyze ALL tool results below and provide a COMPLETE response. \
-                 Do NOT just say \"execution completed\" — present the data naturally.\n\n",
-                task,
-                round_data_list.len().max(1),
-                all_tool_results.len(),
-            );
-
-            const TOOL_RESULT_MAX_LEN: usize = 131072;
-            for r in &all_tool_results {
-                let result_text = match &r.result {
-                    Ok(output) => {
-                        let raw = serde_json::to_string_pretty(&output.data)
-                            .unwrap_or_else(|_| "Success".to_string());
-                        // Sanitize base64/image data to prevent context bloat
-                        let sanitized =
-                            crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
-                        crate::agent::streaming::truncate_result_utf8(
-                            &sanitized,
-                            TOOL_RESULT_MAX_LEN,
-                        )
-                    }
-                    Err(e) => format!("Error: {}", e),
-                };
-                phase2_user.push_str(&format!("[{}]\n{}\n\n", r.name, result_text));
-            }
-            phase2_user.push_str(&format!(
-                "\nPlease organize the above data to answer: {}",
-                task
-            ));
-
-            let summary_messages = vec![
-                Message::new(
-                    MessageRole::System,
-                    Content::text(
-                        "You are an intelligent IoT assistant. Analyze the tool execution results \
-                         and provide a comprehensive, user-friendly response in the SAME language \
-                         as the task. Focus on the actual data and insights, not on mentioning that \
-                         tools were called."
-                    ),
-                ),
-                Message::new(MessageRole::User, Content::text(&phase2_user)),
-            ];
-
-            let summary_input = LlmInput {
-                messages: summary_messages,
-                params: GenerationParams {
-                    temperature: Some(0.7),
-                    max_tokens: Some(2000),
-                    ..Default::default()
-                },
-                model: None,
-                stream: false,
-                tools: None, // No tools — force LLM to answer, not call more tools
-            };
-
-            match llm_runtime.generate(summary_input).await {
-                Ok(output) => {
-                    let text = output.text.trim().to_string();
-                    let response_len = text.len();
-                    if !text.is_empty() {
-                        final_text = text;
-                    }
-                    tracing::debug!(
-                        agent_id = %agent.id,
-                        response_len,
-                        "Phase 2 analysis generated successfully"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        agent_id = %agent.id,
-                        error = %e,
-                        "Failed to generate Phase 2 analysis"
-                    );
-                    // Leave final_text empty — build_tool_result will generate fallback
-                }
+            let summary = self.generate_phase2_summary(
+                agent,
+                llm_runtime,
+                &all_tool_results,
+                round_data_list.len(),
+            ).await;
+            if let Some(text) = summary {
+                final_text = text;
             }
         }
 
@@ -1361,6 +1103,339 @@ impl AgentExecutor {
                 .into_iter()
                 .map(|rd| (rd.thought, rd.tool_calls))
                 .collect(),
+        }
+    }
+
+    /// Intra-round and cross-round deduplication of tool calls.
+    ///
+    /// Removes duplicate tool calls within the same round (same name + similar args),
+    /// then filters out tool calls that were already executed in previous rounds.
+    /// Returns whether all tool calls were filtered out (all duplicates).
+    fn deduplicate_tool_calls(
+        tool_calls: &mut Vec<crate::agent::types::ToolCall>,
+        all_executed_signatures: &mut HashSet<String>,
+        agent_id: &str,
+        round: usize,
+    ) -> DedupOutcome {
+        // --- Intra-round deduplication ---
+        // Remove duplicate tool calls within the same round (same name + similar args).
+        let mut seen_this_round: HashSet<String> = HashSet::new();
+        tool_calls.retain(|tc| {
+            let args_preview = serde_json::to_string(&tc.arguments).unwrap_or_default();
+            let bound = args_preview.len().min(100);
+            let args_short = &args_preview[..args_preview.floor_char_boundary(bound)];
+            let sig = format!("{}:{}", tc.name, args_short);
+            seen_this_round.insert(sig)
+        });
+
+        // --- Cross-round deduplication ---
+        // Filter out tool calls that were already executed in previous rounds with
+        // the same arguments. This prevents small models from wasting tokens.
+        let before_count = tool_calls.len();
+        tool_calls.retain(|tc| {
+            let args_preview = serde_json::to_string(&tc.arguments).unwrap_or_default();
+            let bound = args_preview.len().min(100);
+            let args_short = &args_preview[..args_preview.floor_char_boundary(bound)];
+            let sig = format!("{}:{}", tc.name, args_short);
+            all_executed_signatures.insert(sig)
+        });
+        let deduped_count = before_count - tool_calls.len();
+        if deduped_count > 0 {
+            tracing::debug!(
+                agent_id = %agent_id,
+                round = round + 1,
+                deduped = deduped_count,
+                "Skipped duplicate tool calls from previous rounds"
+            );
+        }
+
+        // If all tool calls were duplicates, treat as no-op and ask LLM again
+        if tool_calls.is_empty() {
+            tracing::warn!(
+                agent_id = %agent_id,
+                round = round + 1,
+                "All tool calls were duplicates, asking LLM to proceed differently"
+            );
+            DedupOutcome::AllDuplicate
+        } else {
+            DedupOutcome::HasNew
+        }
+    }
+
+    /// Detect duplicate rounds by comparing tool signatures.
+    ///
+    /// Compares tool signatures (name + key arguments) to detect truly stuck loops.
+    /// Only counts as duplicate when the FULL round's tool set AND arguments match
+    /// the previous round — different arguments to the same tool are NOT duplicates.
+    ///
+    /// Returns `true` if the LLM is stuck (3+ consecutive identical rounds).
+    async fn detect_duplicate_round(
+        tool_calls: &[crate::agent::types::ToolCall],
+        prev_round_tool_names: &mut String,
+        consecutive_duplicate_rounds: &mut usize,
+        agent_id: &str,
+        round: usize,
+    ) -> bool {
+        let current_round_sig = {
+            let mut sigs: Vec<String> = tool_calls
+                .iter()
+                .map(|tc| {
+                    let action = tc
+                        .arguments
+                        .get("action")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let mut sig = format!("{}|{}", tc.name, action);
+                    for param in &["device_id", "metric", "agent_id", "rule_id", "extension_id"]
+                    {
+                        if let Some(val) = tc.arguments.get(*param).and_then(|v| v.as_str()) {
+                            sig.push_str(&format!("|{}", val));
+                        }
+                    }
+                    sig
+                })
+                .collect();
+            sigs.sort();
+            sigs.join(";;")
+        };
+        if current_round_sig == *prev_round_tool_names {
+            *consecutive_duplicate_rounds += 1;
+            tracing::info!(
+                agent_id = %agent_id,
+                round = round + 1,
+                consecutive_duplicates = consecutive_duplicate_rounds,
+                "Duplicate tool round detected (same tools + args) — continuing, cross-round dedup handles re-execution"
+            );
+        } else {
+            *consecutive_duplicate_rounds = 0;
+        }
+        *prev_round_tool_names = current_round_sig;
+
+        // Stop after 3+ consecutive identical rounds — the LLM is stuck.
+        // Repeated tool calls in complex tasks are normal; cross-round dedup above
+        // already prevents actual re-execution.
+        if *consecutive_duplicate_rounds >= 3 {
+            tracing::warn!(
+                agent_id = %agent_id,
+                round = round + 1,
+                consecutive_duplicates = consecutive_duplicate_rounds,
+                "LLM stuck in loop (3+ consecutive duplicate rounds), forcing text response"
+            );
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Build the list of ToolCallRecords from executed tool calls and their results.
+    fn build_round_tool_calls(
+        tool_calls: &[crate::agent::types::ToolCall],
+        results: &[crate::toolkit::ToolResult],
+        tool_name_map: &HashMap<String, String>,
+    ) -> Vec<ToolCallRecord> {
+        let mut round_tool_calls: Vec<ToolCallRecord> = Vec::new();
+        for (i, tc) in tool_calls.iter().enumerate() {
+            let result =
+                results
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| crate::toolkit::ToolResult {
+                        name: tool_name_map
+                            .get(&tc.name)
+                            .cloned()
+                            .unwrap_or_else(|| tc.name.clone()),
+                        result: Err(crate::toolkit::error::ToolError::Execution(
+                            "No result".to_string(),
+                        )),
+                    });
+            // Use original name for history display
+            let display_name = tool_name_map
+                .get(&tc.name)
+                .cloned()
+                .unwrap_or_else(|| tc.name.clone());
+            round_tool_calls.push(ToolCallRecord {
+                name: display_name,
+                input: tc.arguments.clone(),
+                result,
+            });
+        }
+        round_tool_calls
+    }
+
+    /// Process tool results: append to all_tool_results, build messages, handle skill results.
+    ///
+    /// Returns the updated step number after emitting thinking events.
+    async fn process_tool_results(
+        &self,
+        results: &[crate::toolkit::ToolResult],
+        messages: &mut Vec<Message>,
+        all_tool_results: &mut Vec<crate::toolkit::ToolResult>,
+        skill_reference: &mut String,
+        original_to_sanitized: &HashMap<String, String>,
+        agent_id: &str,
+        execution_id: &str,
+        mut step_num: u32,
+    ) -> u32 {
+        for result in results {
+            all_tool_results.push(result.clone());
+            let result_text = match &result.result {
+                Ok(output) => {
+                    let raw = serde_json::to_string_pretty(&output.data)
+                        .unwrap_or_else(|_| "Success".to_string());
+                    // Sanitize base64/image data to prevent context bloat
+                    let sanitized =
+                        crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
+                    // UTF-8 safe truncation (has fast-path for short strings)
+                    // 128KB limit: large enough for compact time-series and multi-device
+                    // queries. The compaction layer handles context window limits later.
+                    const MAX_TOOL_RESULT_IN_MSG: usize = 131072;
+                    crate::agent::streaming::truncate_result_utf8(
+                        &sanitized,
+                        MAX_TOOL_RESULT_IN_MSG,
+                    )
+                }
+                Err(e) => format!("Error: {}", e),
+            };
+
+            // Skill tool results go to separate reference buffer, not messages history
+            if result.name == "skill" {
+                if !skill_reference.is_empty() {
+                    skill_reference.push_str("\n\n");
+                }
+                skill_reference.push_str(&result_text);
+                // Add a concise acknowledgment to messages so LLM knows the skill was retrieved
+                messages.push(Message::new(
+                    MessageRole::User,
+                    Content::text("Skill guide retrieved and will be used as reference."),
+                ));
+            } else {
+                // Use sanitized name for LLM message so it matches what the LLM used
+                let msg_name = original_to_sanitized
+                    .get(&result.name)
+                    .cloned()
+                    .unwrap_or_else(|| result.name.clone());
+                messages.push(Message::tool_result(&msg_name, &result_text));
+            }
+
+            // Send thinking event for each tool result
+            let result_preview = match &result.result {
+                Ok(output) => {
+                    let brief = summarize_tool_output(&output.data, &result.name);
+                    truncate_to(&brief, 200).to_string()
+                }
+                Err(e) => format!("Error: {}", e),
+            };
+            self.send_thinking(
+                agent_id,
+                execution_id,
+                step_num,
+                &format!("tool '{}' → {}", result.name, result_preview),
+            )
+            .await;
+            step_num += 1;
+        }
+        step_num
+    }
+
+    /// Generate a Phase 2 summary when the tool loop exhausted rounds without final text.
+    ///
+    /// Uses the Focused Phase 2 pattern: sends full tool results in natural language
+    /// format so the LLM can produce a real analysis, NOT a JSON template.
+    async fn generate_phase2_summary(
+        &self,
+        agent: &AiAgent,
+        llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>,
+        all_tool_results: &[crate::toolkit::ToolResult],
+        round_count: usize,
+    ) -> Option<String> {
+        use neomind_core::llm::backend::{GenerationParams, LlmInput};
+
+        // Build follow-up prompt — natural language, NOT JSON template.
+        // Includes full tool results so the LLM can produce a real analysis.
+        let task = &agent.user_prompt;
+        let mut phase2_user = format!(
+            "{}\n\n[Completed {} rounds of tool execution, {} tool results collected]\n\
+             IMPORTANT: You MUST analyze ALL tool results below and provide a COMPLETE response. \
+             Do NOT just say \"execution completed\" — present the data naturally.\n\n",
+            task,
+            round_count.max(1),
+            all_tool_results.len(),
+        );
+
+        const TOOL_RESULT_MAX_LEN: usize = 131072;
+        for r in all_tool_results {
+            let result_text = match &r.result {
+                Ok(output) => {
+                    let raw = serde_json::to_string_pretty(&output.data)
+                        .unwrap_or_else(|_| "Success".to_string());
+                    // Sanitize base64/image data to prevent context bloat
+                    let sanitized =
+                        crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
+                    crate::agent::streaming::truncate_result_utf8(
+                        &sanitized,
+                        TOOL_RESULT_MAX_LEN,
+                    )
+                }
+                Err(e) => format!("Error: {}", e),
+            };
+            phase2_user.push_str(&format!("[{}]\n{}\n\n", r.name, result_text));
+        }
+        phase2_user.push_str(&format!(
+            "\nPlease organize the above data to answer: {}",
+            task
+        ));
+
+        // Phase 2 summary is always a generic summarization instruction —
+        // it should NOT use the agent's custom system_prompt (which is a role
+        // identity, not a summarization directive).
+        let summary_role = "You are an intelligent assistant. Analyze the tool execution results \
+                     and provide a comprehensive, user-friendly response in the SAME language \
+                     as the task. Focus on the actual data and insights, not on mentioning that \
+                     tools were called.";
+        let summary_messages = vec![
+            Message::new(
+                MessageRole::System,
+                Content::text(summary_role),
+            ),
+            Message::new(MessageRole::User, Content::text(&phase2_user)),
+        ];
+
+        let summary_input = LlmInput {
+            messages: summary_messages,
+            params: GenerationParams {
+                temperature: Some(0.7),
+                max_tokens: Some(2000),
+                ..Default::default()
+            },
+            model: None,
+            stream: false,
+            tools: None, // No tools — force LLM to answer, not call more tools
+        };
+
+        match llm_runtime.generate(summary_input).await {
+            Ok(output) => {
+                let text = output.text.trim().to_string();
+                let response_len = text.len();
+                if !text.is_empty() {
+                    tracing::debug!(
+                        agent_id = %agent.id,
+                        response_len,
+                        "Phase 2 analysis generated successfully"
+                    );
+                    Some(text)
+                } else {
+                    None
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    agent_id = %agent.id,
+                    error = %e,
+                    "Failed to generate Phase 2 analysis"
+                );
+                // Return None — build_tool_result will generate fallback
+                None
+            }
         }
     }
 
@@ -1579,6 +1654,15 @@ impl AgentExecutor {
             .read()
             .clone()
             .ok_or_else(|| NeoMindError::Tool("Tool registry not available".to_string()))?;
+
+        // Inject agent_id into MemoryTool for agent-scoped file isolation
+        if let Some(ref handle) = self.memory_agent_id_handle {
+            *handle.write().await = Some(agent.id.clone());
+        }
+        // Initialize knowledge_files from current agent memory
+        if let Some(ref handle) = self.memory_knowledge_files_handle {
+            *handle.write().await = agent.memory.knowledge_files.clone();
+        }
 
         // Build mode-specific config
         let tool_config = match agent.execution_mode {
@@ -2173,6 +2257,8 @@ impl AgentExecutor {
                             memory_store: executor_memory_store,
                             backend_semaphores: backend_sems,
                             skill_registry: executor_skill_registry,
+                            memory_agent_id_handle: None,
+                            memory_knowledge_files_handle: None,
                         };
 
                         match AgentExecutor::new(executor_config).await {
@@ -2345,11 +2431,17 @@ impl AgentExecutor {
                             "Data event agent waiting for backend permit"
                         );
                     }
-                    // Use expect with clear message - semaphore acquisition should not fail
-                    // unless the semaphore is closed, which indicates a serious bug
-                    let _backend_permit = backend_sem.acquire().await.expect(
-                        "Backend semaphore acquisition failed - semaphore was closed or is broken",
-                    );
+                    let _backend_permit = match backend_sem.acquire().await {
+                        Ok(p) => p,
+                        Err(e) => {
+                            tracing::error!(
+                                agent_id = %agent_id_for_log,
+                                error = %e,
+                                "Backend semaphore closed, skipping execution"
+                            );
+                            return;
+                        }
+                    };
                     tracing::debug!(
                         agent_id = %agent_id_for_log,
                         backend_id = %backend_id,
@@ -2382,6 +2474,8 @@ impl AgentExecutor {
                     memory_store: executor_memory_store,
                     backend_semaphores: backend_sems,
                     skill_registry: executor_skill_registry,
+                    memory_agent_id_handle: None,
+                    memory_knowledge_files_handle: None,
                 };
 
                 match AgentExecutor::new(executor_config).await {
@@ -2762,11 +2856,6 @@ impl AgentExecutor {
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
         // Build execution record
-        let (decision_process_for_turn, success) = match &execution_result {
-            Ok((dp, _)) => (Some(dp.clone()), true),
-            Err(_) => (None, false),
-        };
-
         let record = match execution_result {
             Ok((decision_process, result)) => {
                 // Update stats
@@ -2830,52 +2919,8 @@ impl AgentExecutor {
         };
 
         // Save execution record and conversation turn in a single transaction
-        tracing::debug!(
-            agent_id = %agent_id,
-            execution_id = %execution_id,
-            has_decision_process = decision_process_for_turn.is_some(),
-            success = success,
-            "Creating conversation turn"
-        );
-
-        let turn = decision_process_for_turn.as_ref().map(|dp| {
-            tracing::debug!(
-                agent_id = %agent_id,
-                execution_id = %execution_id,
-                data_collected_count = dp.data_collected.len(),
-                reasoning_steps_count = dp.reasoning_steps.len(),
-                decisions_count = dp.decisions.len(),
-                "Creating conversation turn from decision process"
-            );
-            // Extract event info for conversation turn if available
-            let turn_event_data = event_data.as_ref().map(|ed| {
-                serde_json::json!({
-                    "source_type": ed.source.source_type,
-                    "source_id": ed.source.source_id,
-                    "field": ed.source.field,
-                    "value": serde_json::to_value(&ed.value).unwrap_or_default(),
-                })
-            });
-            self.create_conversation_turn(
-                execution_id.clone(),
-                trigger_type.clone(),
-                dp.data_collected.clone(),
-                turn_event_data,
-                dp,
-                duration_ms,
-                success,
-            )
-        });
-
-        tracing::debug!(
-            agent_id = %agent_id,
-            execution_id = %execution_id,
-            turn_created = turn.is_some(),
-            "About to save execution with conversation"
-        );
-
         self.store
-            .save_execution_with_conversation(&record, Some(&agent_id), turn.as_ref())
+            .save_execution_with_conversation(&record, Some(&agent_id), None)
             .await
             .map_err(|e| NeoMindError::Storage(format!("Failed to save execution: {}", e)))?;
 
@@ -3123,47 +3168,27 @@ impl AgentExecutor {
                 .await;
 
                 // Update memory with Free mode results
-                // Free mode: deterministic insight — extract from conclusion when any tool failed
-                let free_insight = if execution_result.success_rate < 1.0 {
-                    Some(truncate_to(&decision_process.conclusion, 150))
-                } else {
-                    None
-                };
-                let has_insight = free_insight.is_some();
                 let mut updated_memory = self
                     .update_memory(
                         &agent,
-                        &decision_process.data_collected,
                         &decision_process.decisions,
-                        &decision_process.situation_analysis,
                         &decision_process.conclusion,
                         &execution_id,
                         true,
-                        free_insight,
                     )
                     .await?;
 
-                // Trigger reflection if conditions are met
-                if memory::should_trigger_reflection(&updated_memory, has_insight) {
-                    if let Ok(Some(llm)) = self.get_llm_runtime_for_agent(&agent).await {
-                        if let Some(profile) = memory::reflect_task_profile(
-                            &agent.name,
-                            &agent.user_prompt,
-                            &updated_memory.short_term.summaries,
-                            updated_memory.task_profile.as_ref(),
-                            &llm,
-                        )
-                        .await
-                        {
-                            tracing::info!(
-                                agent_id = %agent.id,
-                                version = profile.version,
-                                "Task profile reflected"
-                            );
-                            updated_memory.task_profile = Some(profile);
-                        }
-                    }
+                // Sync knowledge_files from MemoryTool
+                if let Some(ref handle) = self.memory_knowledge_files_handle {
+                    updated_memory.knowledge_files = handle.read().await.clone();
                 }
+
+                // Auto-init knowledge file on first execution
+                self.auto_init_knowledge_file(
+                    &agent,
+                    &mut updated_memory,
+                    &decision_process.conclusion,
+                );
 
                 self.store
                     .update_agent_memory(&agent.id, updated_memory.clone())
@@ -3193,7 +3218,7 @@ impl AgentExecutor {
                 reasoning_steps,
                 decisions,
                 conclusion,
-                insight,
+                insight: _,
             } => {
                 // Send thinking event for analysis completion
                 self.send_thinking(
@@ -3290,41 +3315,27 @@ impl AgentExecutor {
                 let report = self.maybe_generate_report(&agent, &data_collected).await?;
 
                 // Step 5: Update memory with learnings
-                let has_insight = insight.is_some();
                 let mut updated_memory = self
                     .update_memory(
                         &agent,
-                        &data_collected,
                         &decisions,
-                        &situation_analysis,
                         &conclusion,
                         &execution_id,
                         true,
-                        insight,
                     )
                     .await?;
 
-                // Trigger reflection if conditions are met
-                if memory::should_trigger_reflection(&updated_memory, has_insight) {
-                    if let Ok(Some(llm)) = self.get_llm_runtime_for_agent(&agent).await {
-                        if let Some(profile) = memory::reflect_task_profile(
-                            &agent.name,
-                            &agent.user_prompt,
-                            &updated_memory.short_term.summaries,
-                            updated_memory.task_profile.as_ref(),
-                            &llm,
-                        )
-                        .await
-                        {
-                            tracing::info!(
-                                agent_id = %agent.id,
-                                version = profile.version,
-                                "Task profile reflected"
-                            );
-                            updated_memory.task_profile = Some(profile);
-                        }
-                    }
+                // Sync knowledge_files from MemoryTool
+                if let Some(ref handle) = self.memory_knowledge_files_handle {
+                    updated_memory.knowledge_files = handle.read().await.clone();
                 }
+
+                // Auto-init knowledge file on first execution
+                self.auto_init_knowledge_file(
+                    &agent,
+                    &mut updated_memory,
+                    &conclusion,
+                );
 
                 // Save updated memory
                 self.store

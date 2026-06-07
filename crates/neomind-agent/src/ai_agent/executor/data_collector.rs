@@ -37,7 +37,6 @@ pub(crate) fn get_time_context() -> String {
     let local_now = now.with_timezone(&tz);
 
     // Format various time components
-    let utc_time = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
     let local_time = local_now.format("%Y-%m-%d %H:%M:%S").to_string();
     let date_str = local_now.format("%B %d, %Y").to_string();
     let day_of_week = local_now.format("%A").to_string(); // Monday, Tuesday, etc.
@@ -54,13 +53,8 @@ pub(crate) fn get_time_context() -> String {
     };
 
     format!(
-        "### Current Time Information\n\
-         - UTC Time: {}\n\
-         - Local Time: {} ({})\n\
-         - Date: {}\n\
-         - Day of Week: {}\n\
-         - Time Period: {}",
-        utc_time, local_time, timezone, date_str, day_of_week, time_period
+        "{} {} ({}, {} {})",
+        local_time, timezone, date_str, day_of_week, time_period
     )
 }
 
@@ -965,67 +959,48 @@ impl AgentExecutor {
     ) -> AgentResult<Vec<DataCollected>> {
         let mut results = Vec::new();
 
-        // --- Part 1: Standard memory summary (from state_variables) ---
-        if !agent.memory.state_variables.is_empty() {
+        // --- Memory summary from execution journal ---
+        if !agent.memory.journal.records.is_empty() {
             let mut memory_summary = serde_json::Map::new();
 
-            // Add last conclusion only
-            if let Some(conclusion) = agent
-                .memory
-                .state_variables
-                .get("last_conclusion")
-                .and_then(|v| v.as_str())
-            {
-                memory_summary.insert("last_conclusion".to_string(), serde_json::json!(conclusion));
+            // Last outcome from most recent journal entry
+            if let Some(last) = agent.memory.journal.records.last() {
+                memory_summary
+                    .insert("last_conclusion".to_string(), serde_json::json!(last.outcome));
             }
 
-            // Add condensed recent analyses (only conclusions)
-            if let Some(analyses) = agent
+            // Recent outcomes (up to 2)
+            let conclusions: Vec<&str> = agent
                 .memory
-                .state_variables
-                .get("recent_analyses")
-                .and_then(|v| v.as_array())
-            {
-                let condensed: Vec<_> = analyses
-                    .iter()
-                    .take(2)
-                    .filter_map(|a| {
-                        a.get("conclusion")
-                            .and_then(|c| c.as_str())
-                            .filter(|s| !s.is_empty())
-                            .map(|c| serde_json::json!(c))
-                    })
-                    .collect();
-                if !condensed.is_empty() {
-                    memory_summary.insert(
-                        "recent_conclusions".to_string(),
-                        serde_json::json!(condensed),
-                    );
-                }
+                .journal
+                .records
+                .iter()
+                .rev()
+                .take(2)
+                .map(|r| r.outcome.as_str())
+                .collect();
+            if !conclusions.is_empty() {
+                memory_summary.insert(
+                    "recent_conclusions".to_string(),
+                    serde_json::json!(conclusions),
+                );
             }
 
-            // Add execution count
-            if let Some(count) = agent
-                .memory
-                .state_variables
-                .get("total_executions")
-                .and_then(|v| v.as_i64())
-            {
-                memory_summary.insert("total_executions".to_string(), serde_json::json!(count));
-            }
+            // Execution count = number of journal records
+            memory_summary.insert(
+                "total_executions".to_string(),
+                serde_json::json!(agent.memory.journal.records.len()),
+            );
 
-            if !memory_summary.is_empty() {
-                results.push(DataCollected {
-                    source: "memory".to_string(),
-                    data_type: "summary".to_string(),
-                    values: serde_json::to_value(memory_summary).unwrap_or_default(),
-                    timestamp,
-                });
-            }
+            results.push(DataCollected {
+                source: "memory".to_string(),
+                data_type: "summary".to_string(),
+                values: serde_json::to_value(memory_summary).unwrap_or_default(),
+                timestamp,
+            });
         }
 
-        // Image analysis history is now handled by `build_history_context` in context.rs,
-        // which directly scans short_term.summaries for [image_analysis] entries.
+        // Image analysis history is now handled by `build_history_context` in context.rs.
         // No need to inject it as DataCollected here.
 
         Ok(results)

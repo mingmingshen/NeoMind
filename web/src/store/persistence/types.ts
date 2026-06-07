@@ -244,7 +244,7 @@ export function fromDashboardDTO(dto: DashboardDTO): Dashboard {
         type: c.type as GenericComponent['type'],
         ...(dsValue ? { dataSource: dsValue } : {}),
         ...(c.display ? { display: c.display as unknown as DisplayConfig } : {}),
-        ...(c.config ? { config: c.config } : {}),
+        ...(c.config && typeof c.config === 'object' && !Array.isArray(c.config) ? { config: c.config } : {}),
         ...(c.actions ? { actions: c.actions as unknown as ActionConfig[] } : {}),
       }
       return comp
@@ -255,7 +255,7 @@ export function fromDashboardDTO(dto: DashboardDTO): Dashboard {
       ...base,
       type: c.type as BusinessComponent['type'],
       ...(dsValue ? { dataSource: dsValue } : {}),
-      ...(c.config ? { config: c.config } : {}),
+      ...(c.config && typeof c.config === 'object' && !Array.isArray(c.config) ? { config: c.config } : {}),
     }
     return comp
   })

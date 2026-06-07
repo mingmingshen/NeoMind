@@ -10,8 +10,8 @@ use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::EventBus;
 use neomind_storage::{
-    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, ExecutionMode,
-    LongTermMemory, ScheduleType, ShortTermMemory, WorkingMemory,
+    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, ExecutionJournal,
+    ExecutionMode, ScheduleType,
 };
 use std::sync::Arc;
 
@@ -51,6 +51,8 @@ impl LlmTestContext {
             memory_store: None,
             backend_semaphores: None,
             skill_registry: None,
+            memory_agent_id_handle: None,
+            memory_knowledge_files_handle: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -94,14 +96,8 @@ impl LlmTestContext {
                 last_duration_ms: Some(0),
             },
             memory: AgentMemory {
-                working: WorkingMemory::default(),
-                short_term: ShortTermMemory::default(),
-                long_term: LongTermMemory::default(),
-                state_variables: Default::default(),
-                baselines: Default::default(),
-                learned_patterns: vec![],
-                trend_data: vec![],
-                task_profile: None,
+                journal: ExecutionJournal::default(),
+                knowledge_files: vec![],
                 updated_at: now,
             },
             conversation_history: vec![],
@@ -111,6 +107,7 @@ impl LlmTestContext {
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
             enable_tool_chaining: false,
@@ -177,16 +174,11 @@ async fn test_llm_monitor_agent() -> anyhow::Result<()> {
     println!("    决策数: {}", record.decision_process.decisions.len());
     println!("    结论: {}", record.decision_process.conclusion);
 
-    // Verify conversation history was created
+    // Verify conversation history (backward compat, no longer written to)
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
     println!("\n对话历史长度: {}", agent.conversation_history.len());
-    assert_eq!(agent.conversation_history.len(), 1);
+    let _ = &agent.conversation_history;
 
-    let turn = &agent.conversation_history[0];
-    println!("  执行ID: {}", turn.execution_id);
-    println!("  成功: {}", turn.success);
-
-    assert!(turn.success, "Execution should succeed");
     assert!(
         !record.decision_process.situation_analysis.is_empty(),
         "LLM should provide analysis"
@@ -241,9 +233,8 @@ async fn test_llm_executor_agent() -> anyhow::Result<()> {
 
     println!("  结论: {}", record.decision_process.conclusion);
 
-    // Verify conversation history
-    let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    assert_eq!(agent.conversation_history.len(), 1);
+    // Verify agent can be reloaded (conversation_history is backward compat only)
+    let _agent = ctx.store.get_agent(&agent_id).await?.unwrap();
 
     println!("\n✅ Executor Agent 测试通过！");
     Ok(())
@@ -287,9 +278,8 @@ async fn test_llm_analyst_agent() -> anyhow::Result<()> {
     println!("  结论:");
     println!("    {}", record.decision_process.conclusion);
 
-    // Verify conversation history
-    let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    assert_eq!(agent.conversation_history.len(), 1);
+    // Verify agent can be reloaded (conversation_history is backward compat only)
+    let _agent = ctx.store.get_agent(&agent_id).await?.unwrap();
 
     println!("\n✅ Analyst Agent 测试通过！");
     Ok(())
@@ -345,21 +335,10 @@ async fn test_llm_conversation_context() -> anyhow::Result<()> {
     println!("  分析: {}", record3.decision_process.situation_analysis);
     println!("  时长: {}ms", record3.duration_ms);
 
-    // Verify conversation history accumulated
+    // Verify conversation history (backward compat, no longer written to)
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
     println!("\n对话历史长度: {}", agent.conversation_history.len());
-    assert_eq!(agent.conversation_history.len(), 3);
-
-    // Show the conversation turns
-    for (i, turn) in agent.conversation_history.iter().enumerate() {
-        println!(
-            "  轮次{}: 触发={}, 成功={}, 时长={}ms",
-            i + 1,
-            turn.trigger_type,
-            turn.success,
-            turn.duration_ms
-        );
-    }
+    let _ = &agent.conversation_history;
 
     println!("\n✅ 对话上下文测试通过！");
     Ok(())

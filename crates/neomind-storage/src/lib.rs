@@ -144,35 +144,25 @@ pub use agents::{
     AgentToolConfig,
     AiAgent,
     // Conversation types
-    ConversationTurn,
     DataCollected,
     DataSummary,
     Decision,
     DecisionProcess,
     ExecutionFilter,
-    // Execution mode
+    ExecutionJournal,
     ExecutionMode,
+    ExecutionRecord,
     ExecutionResult,
     ExecutionStatus,
     GeneratedReport,
-    ImportantMemory,
     IntentType,
-    LearnedPattern,
-    LongTermMemory,
-    MemorySummary,
+    KnowledgeFileRef,
     NotificationSent,
     ParsedIntent,
     ReasoningStep,
     ResourceType,
     ScheduleType,
-    ShortTermMemory,
-    TaskProfile,
-    TrendPoint,
-    TurnInput,
-    TurnOutput,
     UserMessage,
-    // Hierarchical memory types
-    WorkingMemory,
 };
 
 pub use device_state::{

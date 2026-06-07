@@ -36,7 +36,7 @@ import { cn } from "@/lib/utils"
 import { textNano } from "@/design-system/tokens/typography"
 import { useIsMobile } from "@/hooks/useMobile"
 import { api } from "@/lib/api"
-import type { AiAgentDetail } from "@/types"
+import type { AiAgentDetail, AgentMemory, KnowledgeFileRef, JournalExecutionRecord } from "@/types"
 import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent } from "@/lib/events"
 import { useEvents } from "@/hooks/useEvents"
 
@@ -77,7 +77,7 @@ export function AgentDetailPanel({
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
   const [executions, setExecutions] = useState<any[]>([])
   const [executionsLoading, setExecutionsLoading] = useState(false)
-  const [memory, setMemory] = useState<any>(null)
+  const [memory, setMemory] = useState<AgentMemory | null>(null)
   const [memoryLoading, setMemoryLoading] = useState(false)
   const [availableResources, setAvailableResources] = useState<any>(null)
 
@@ -308,6 +308,15 @@ export function AgentDetailPanel({
                   )}
                 </DetailSection>
 
+                {/* System Prompt */}
+                {agent.system_prompt && (
+                  <DetailSection title={t('agents:creator.advanced.systemPrompt')} icon={Sparkles}>
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground bg-muted-10 p-3 rounded">
+                      {agent.system_prompt}
+                    </div>
+                  </DetailSection>
+                )}
+
                 {/* Schedule & Config - Two columns */}
                 <div className={cn("gap-4", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
                   {/* Schedule */}
@@ -518,7 +527,7 @@ function InfoRow({ label, value, mono }: InfoRowProps) {
 // ============================================================================
 
 interface MemoryContentProps {
-  memory: any
+  memory: AgentMemory | null
   loading: boolean
 }
 
@@ -543,27 +552,20 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
     )
   }
 
-  // Count memory items
-  const stateVarCount = Object.keys(memory.state_variables || {}).length
-  const learnedPatternsCount = memory.learned_patterns?.length || 0
-  const longTermPatternsCount = memory.long_term?.patterns?.length || 0
-  const shortTermSummariesCount = memory.short_term?.summaries?.length || 0
-  const longTermMemoriesCount = memory.long_term?.memories?.length || 0
-
-  // Check if memory is empty
-  const isEmptyMemory = stateVarCount === 0 && learnedPatternsCount === 0 && shortTermSummariesCount === 0 && longTermMemoriesCount === 0 && longTermPatternsCount === 0 && !memory.task_profile
+  const journalRecords = memory.journal?.records || []
+  const knowledgeFiles = memory.knowledge_files || []
+  const isEmptyMemory = journalRecords.length === 0 && knowledgeFiles.length === 0
 
   if (isEmptyMemory) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
         <Brain className="h-12 w-12 mb-3 opacity-20" />
         <p className="text-sm">{t('agents:detail.noMemory')}</p>
-        <p className="text-xs mt-1 opacity-60">{t('agents:memory.title')}</p>
+        <p className="text-xs mt-1 opacity-60">{t('agents:memory.emptyHint')}</p>
       </div>
     )
   }
 
-  // Format timestamp
   const formatTime = (timestamp: string | number) => {
     const ts = typeof timestamp === 'number' ? timestamp * 1000 : new Date(timestamp).getTime()
     const date = new Date(ts)
@@ -582,250 +584,83 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
   return (
     <ScrollArea className="h-full">
       <div className="space-y-4 pr-2">
-        {/* Memory Stats Summary */}
+        {/* Stats */}
         <div className={cn("gap-2", isMobile ? "grid grid-cols-1" : "grid grid-cols-3")}>
-          {(shortTermSummariesCount > 0 || longTermMemoriesCount > 0 || longTermPatternsCount > 0) && (
-            <>
-              {shortTermSummariesCount > 0 && (
-                <div className="flex flex-col items-center p-3 rounded-lg bg-info-light border border-info">
-                  <History className="h-4 w-4 text-info mb-1" />
-                  <span className="text-lg font-bold text-info">{shortTermSummariesCount}</span>
-                  <span className={cn(textNano, "text-muted-foreground uppercase tracking-wide")}>{t('agents:memory.shortTerm')}</span>
-                </div>
-              )}
-              {longTermMemoriesCount > 0 && (
-                <div className="flex flex-col items-center p-3 rounded-lg bg-accent-purple-light border border-accent-purple-light">
-                  <Sparkles className="h-4 w-4 text-accent-purple mb-1" />
-                  <span className="text-lg font-bold text-accent-purple">{longTermMemoriesCount}</span>
-                  <span className={cn(textNano, "text-muted-foreground uppercase tracking-wide")}>{t('agents:memory.longTerm')}</span>
-                </div>
-              )}
-              {longTermPatternsCount > 0 && (
-                <div className="flex flex-col items-center p-3 rounded-lg bg-warning-light border border-warning">
-                  <TrendingUp className="h-4 w-4 text-warning mb-1" />
-                  <span className="text-lg font-bold text-warning">{longTermPatternsCount}</span>
-                  <span className={cn(textNano, "text-muted-foreground uppercase tracking-wide")}>{t('agents:detail.learnedPatterns')}</span>
-                </div>
-              )}
-            </>
+          {journalRecords.length > 0 && (
+            <div className="flex flex-col items-center p-3 rounded-lg bg-info-light border border-info">
+              <History className="h-4 w-4 text-info mb-1" />
+              <span className="text-lg font-bold text-info">{journalRecords.length}</span>
+              <span className={cn(textNano, "text-muted-foreground uppercase tracking-wide")}>{t('agents:memory.executions')}</span>
+            </div>
+          )}
+          {knowledgeFiles.length > 0 && (
+            <div className="flex flex-col items-center p-3 rounded-lg bg-accent-purple-light border border-accent-purple-light">
+              <FileText className="h-4 w-4 text-accent-purple mb-1" />
+              <span className="text-lg font-bold text-accent-purple">{knowledgeFiles.length}</span>
+              <span className={cn(textNano, "text-muted-foreground uppercase tracking-wide")}>{t('agents:memory.knowledgeFiles')}</span>
+            </div>
+          )}
+          {memory.updated_at && (
+            <div className="flex flex-col items-center p-3 rounded-lg bg-muted-30 border border-border">
+              <Clock className="h-4 w-4 text-muted-foreground mb-1" />
+              <span className="text-sm font-medium text-foreground">
+                {formatTime(memory.updated_at)}
+              </span>
+              <span className={cn(textNano, "text-muted-foreground uppercase tracking-wide")}>{t('agents:memory.lastUpdate')}</span>
+            </div>
           )}
         </div>
 
-        {/* Working Memory - Current Analysis */}
-        {memory.working && (memory.working.current_analysis || memory.working.current_conclusion) && (
+        {/* Knowledge Files */}
+        {knowledgeFiles.length > 0 && (
           <DetailSection
-            title={t('agents:memory.working')}
-            icon={Zap}
+            title={`${t('agents:memory.knowledgeFiles')} (${knowledgeFiles.length})`}
+            icon={FileText}
           >
-            <div className="p-3 rounded-lg bg-gradient-to-br from-info-light to-accent-purple-light border border-info">
-              {memory.working.current_analysis && (
-                <div className="mb-2">
-                  <div className={cn(textNano, "text-muted-foreground uppercase tracking-wide mb-1")}>{t('agents:memory.situationAnalysis')}</div>
-                  <p className="text-sm leading-relaxed">{memory.working.current_analysis}</p>
-                </div>
-              )}
-              {memory.working.current_conclusion && (
-                <div className="flex items-start gap-2 pt-2 border-t border-border">
-                  <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
-                  <div>
-                    <div className={cn(textNano, "text-muted-foreground uppercase tracking-wide mb-0.5")}>{t('agents:memory.conclusion')}</div>
-                    <p className="text-sm font-medium">{memory.working.current_conclusion}</p>
+            <div className="space-y-2">
+              {knowledgeFiles.map((file: KnowledgeFileRef, idx: number) => (
+                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-accent-purple-light to-pink-500/5 border border-accent-purple-light hover:border-accent-purple transition-colors">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium font-mono">{file.name}</span>
+                    <span className="text-xs text-muted-foreground">{formatTime(file.updated_at)}</span>
                   </div>
+                  <p className="text-xs text-muted-foreground line-clamp-2">{file.description}</p>
                 </div>
-              )}
+              ))}
             </div>
           </DetailSection>
         )}
 
-        {/* Task Knowledge - accumulated wisdom */}
-        {memory.task_profile && (
+        {/* Execution Journal */}
+        {journalRecords.length > 0 && (
           <DetailSection
-            title={t('agents:memory.taskKnowledge')}
-            icon={BookOpen}
-          >
-            <div className="text-xs text-muted-foreground mb-2">
-              {t('agents:memory.taskKnowledgeHint', {
-                version: memory.task_profile.version,
-                date: formatTime(memory.task_profile.updated_at),
-                executions: memory.task_profile.executions_reflected
-              })}
-            </div>
-            <div className="text-sm whitespace-pre-line bg-background px-3 py-2 rounded-lg border border-border">
-              {memory.task_profile.summary}
-            </div>
-          </DetailSection>
-        )}
-
-        {/* Short-Term Memory - Recent Executions */}
-        {shortTermSummariesCount > 0 && (
-          <DetailSection
-            title={`${t('agents:memory.shortTerm')} (${shortTermSummariesCount}/${memory.short_term?.max_summaries || 10})`}
+            title={`${t('agents:memory.journal')} (${journalRecords.length}/${memory.journal?.max_records || 10})`}
             icon={History}
           >
             <div className="space-y-2">
-              {memory.short_term?.summaries?.map((summary: any, idx: number) => (
+              {journalRecords.map((record: JournalExecutionRecord, idx: number) => (
                 <div key={idx} className="group relative overflow-hidden rounded-lg bg-background border border-border hover:border-info transition-colors">
-                  {/* Success indicator strip */}
-                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${summary.success ? 'bg-success' : 'bg-error'}`} />
-
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${record.success ? 'bg-success' : 'bg-error'}`} />
                   <div className="pl-4 pr-3 py-3">
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-mono text-muted-foreground bg-muted-50 px-1.5 py-0.5 rounded">
-                          {summary.execution_id?.slice(0, 6)}...
+                          {record.execution_id?.slice(0, 6)}...
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {formatTime(summary.timestamp)}
+                          {formatTime(record.timestamp)}
                         </span>
                       </div>
-                      <Badge
-                        variant={summary.success ? 'default' : 'destructive'}
-                        className="text-xs"
-                      >
-                        {summary.success ? t('agents:executionStatus.completed') : t('agents:executionStatus.failed')}
+                      <Badge variant={record.success ? 'default' : 'destructive'} className="text-xs">
+                        {record.success ? t('agents:executionStatus.completed') : t('agents:executionStatus.failed')}
                       </Badge>
                     </div>
-
-                    {summary.conclusion && (
-                      <div className="mb-2">
-                        <div className="text-xs text-muted-foreground mb-0.5">{t('agents:memory.conclusion')}</div>
-                        <p className="text-sm">{summary.conclusion}</p>
-                      </div>
-                    )}
-
-                    {summary.situation && (
-                      <div className="mb-2">
-                        <div className="text-xs text-muted-foreground mb-0.5">{t('agents:memory.situationAnalysis')}</div>
-                        <p className="text-xs text-muted-foreground line-clamp-2">{summary.situation}</p>
-                      </div>
-                    )}
-
-                    {summary.decisions && summary.decisions.length > 0 && (
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Zap className="h-4 w-4" />
-                        <span>{summary.decisions.length} {t('agents:memory.decisions')}</span>
-                      </div>
-                    )}
-
-                    {summary.insight && (
-                      <div className="mt-2 flex items-start gap-1.5 text-xs text-accent-orange">
-                        <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                        <span>{summary.insight}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Archive info */}
-            {memory.short_term?.last_archived_at && (
-              <div className="mt-2 text-xs text-center text-muted-foreground">
-                {t('agents:memory.lastArchived')}: {formatTime(memory.short_term.last_archived_at)}
-              </div>
-            )}
-          </DetailSection>
-        )}
-
-        {/* Long-Term Memory - Important Memories */}
-        {longTermMemoriesCount > 0 && (
-          <DetailSection
-            title={`${t('agents:memory.longTerm')} (${longTermMemoriesCount}/${memory.long_term?.max_memories || 50})`}
-            icon={Sparkles}
-          >
-            <div className="space-y-2">
-              {memory.long_term?.memories?.map((mem: any, idx: number) => (
-                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-accent-purple-light to-pink-500/5 border border-accent-purple-light hover:border-accent-purple transition-colors">
-                  <div className="flex items-center justify-between mb-2">
-                    <Badge variant="outline" className="text-xs">
-                      {mem.memory_type}
-                    </Badge>
-                    <div className="flex items-center gap-1">
-                      <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-accent-purple rounded-full"
-                          style={{ width: `${Math.round((mem.importance || 0) * 100)}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-muted-foreground">{Math.round((mem.importance || 0) * 100)}%</span>
+                    <p className="text-sm">{record.outcome}</p>
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Zap className="h-3.5 w-3.5" />
+                      <span>{record.action_taken}</span>
                     </div>
                   </div>
-                  <p className="text-sm line-clamp-3">{mem.content}</p>
-                  {mem.metadata?.execution_id && (
-                    <div className="mt-2 text-xs text-muted-foreground font-mono">
-                      {mem.metadata.execution_id.slice(0, 8)}...
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </DetailSection>
-        )}
-
-        {/* Learned Patterns (from long_term) */}
-        {longTermPatternsCount > 0 && (
-          <DetailSection
-            title={`${t('agents:detail.learnedPatterns')} (${longTermPatternsCount})`}
-            icon={TrendingUp}
-          >
-            <div className="space-y-2">
-              {memory.long_term?.patterns?.map((pattern: any, idx: number) => (
-                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-warning-light to-accent-orange-light border border-warning">
-                  <div className="flex items-center justify-between mb-2">
-                    <Badge variant="outline" className="text-xs">
-                      {pattern.pattern_type}
-                    </Badge>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{formatTime(pattern.learned_at)}</span>
-                      <span className="text-xs font-medium text-warning">
-                        {Math.round((pattern.confidence || 0) * 100)}%
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-sm">{pattern.description}</p>
-                </div>
-              ))}
-            </div>
-          </DetailSection>
-        )}
-
-        {/* Legacy Learned Patterns */}
-        {learnedPatternsCount > 0 && longTermPatternsCount === 0 && (
-          <DetailSection
-            title={`${t('agents:detail.learnedPatterns')} (${learnedPatternsCount})`}
-            icon={TrendingUp}
-          >
-            <div className="space-y-2">
-              {(memory.learned_patterns || []).map((pattern: any, idx: number) => (
-                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-warning-light to-accent-orange-light border border-warning">
-                  <div className="flex items-center justify-between mb-2">
-                    <Badge variant="outline" className="text-xs">
-                      {pattern.pattern_type}
-                    </Badge>
-                    <span className="text-xs font-medium text-warning">
-                      {Math.round((pattern.confidence || 0) * 100)}%
-                    </span>
-                  </div>
-                  <p className="text-sm">{pattern.description}</p>
-                </div>
-              ))}
-            </div>
-          </DetailSection>
-        )}
-
-        {/* State Variables */}
-        {stateVarCount > 0 && (
-          <DetailSection
-            title={t('agents:detail.stateVariables')}
-            icon={Database}
-          >
-            <div className={cn("gap-2", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
-              {Object.entries(memory.state_variables || {}).map(([key, value]) => (
-                <div key={key} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border">
-                  <span className="text-xs font-medium truncate flex-1 mr-2" title={key}>{key}</span>
-                  <span className="text-xs font-mono text-muted-foreground truncate max-w-[100px]" title={String(value)}>
-                    {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                  </span>
                 </div>
               ))}
             </div>

@@ -5,8 +5,8 @@
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_core::EventBus;
 use neomind_storage::{
-    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, ConversationTurn,
-    ExecutionMode, LongTermMemory, ScheduleType, ShortTermMemory, WorkingMemory,
+    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
+    ExecutionMode, ExecutionJournal, ScheduleType,
 };
 use std::sync::Arc;
 
@@ -36,6 +36,8 @@ impl TestContext {
             memory_store: None,
             backend_semaphores: None,
             skill_registry: None,
+            memory_agent_id_handle: None,
+            memory_knowledge_files_handle: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -77,19 +79,14 @@ impl TestContext {
                 last_duration_ms: Some(0),
             },
             memory: AgentMemory {
-                state_variables: Default::default(),
-                baselines: Default::default(),
-                learned_patterns: vec![],
-                trend_data: vec![],
-                task_profile: None,
+                journal: ExecutionJournal::default(),
+                knowledge_files: vec![],
                 updated_at: now,
-                working: WorkingMemory::default(),
-                short_term: ShortTermMemory::default(),
-                long_term: LongTermMemory::default(),
             },
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
             priority: 128,
@@ -110,13 +107,6 @@ impl TestContext {
             .get_agent(agent_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Agent not found"))
-    }
-
-    async fn get_conversation_history(&self, agent_id: &str) -> Vec<ConversationTurn> {
-        self.store
-            .get_conversation_history(agent_id, None)
-            .await
-            .unwrap_or_default()
     }
 }
 
@@ -146,22 +136,14 @@ async fn test_conversation_history_basic() -> anyhow::Result<()> {
         println!("状态: {:?}", record.status);
         println!("时长: {}ms", record.duration_ms);
 
-        let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-        println!("对话历史长度: {}", agent.conversation_history.len());
-
-        assert_eq!(agent.conversation_history.len(), i + 1);
+        let _agent = ctx.store.get_agent(&agent_id).await?.unwrap();
+        let _ = i;
     }
 
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    assert_eq!(agent.conversation_history.len(), 3);
-
-    // Verify each turn
-    for (i, turn) in agent.conversation_history.iter().enumerate() {
-        println!("\n轮次 #{}:", i + 1);
-        println!("  执行ID: {}", turn.execution_id);
-        println!("  触发: {}", turn.trigger_type);
-        println!("  成功: {}", turn.success);
-    }
+    // conversation_history is now Vec<serde_json::Value> (backward compat only, not written to)
+    // Just verify the field deserializes without error
+    let _ = &agent.conversation_history;
 
     println!("\n✅ 基础对话历史测试通过！");
     Ok(())
@@ -195,9 +177,8 @@ async fn test_all_agent_roles() -> anyhow::Result<()> {
             .await?;
         println!("执行状态: {:?}", record.status);
 
-        // Reload and check history
-        let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
-        assert_eq!(agent.conversation_history.len(), 1);
+        // Reload and verify agent can be retrieved
+        let _agent = ctx.store.get_agent(&agent.id).await?.unwrap();
     }
 
     println!("\n✅ 所有类型测试通过！");
@@ -233,24 +214,11 @@ async fn test_conversation_persistence() -> anyhow::Result<()> {
         );
     }
 
-    // Get history from store
-    let history = ctx.store.get_conversation_history(&agent_id, None).await?;
-    println!("\n从存储获取的历史: {} 轮次", history.len());
-
-    assert_eq!(history.len(), 5);
-
-    // Verify each turn has required fields
-    for (i, turn) in history.iter().enumerate() {
-        println!("\n轮次 #{}:", i + 1);
-        println!("  执行ID: {}", turn.execution_id);
-        println!("  时间戳: {}", turn.timestamp);
-        println!("  触发: {}", turn.trigger_type);
-        println!("  成功: {}", turn.success);
-
-        assert!(!turn.execution_id.is_empty());
-        assert!(turn.timestamp > 0);
-        assert!(turn.success);
-    }
+    // conversation_history is now Vec<serde_json::Value> (backward compat only, not written to)
+    // Verify the agent can be loaded after multiple executions
+    let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
+    println!("\nAgent loaded successfully after 5 executions");
+    let _ = &agent.conversation_history;
 
     println!("\n✅ 持久化测试通过！");
     Ok(())
@@ -291,36 +259,8 @@ async fn test_context_window_messages() -> anyhow::Result<()> {
 
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
 
-    // Verify conversation history was populated
-    assert!(
-        !agent.conversation_history.is_empty(),
-        "Conversation history should have turns"
-    );
-    assert!(
-        agent.conversation_history.len() <= 5,
-        "History should be bounded"
-    );
-
-    println!(
-        "\nConversation history turns: {}",
-        agent.conversation_history.len()
-    );
-    for (i, turn) in agent.conversation_history.iter().enumerate() {
-        println!(
-            "  #{}: trigger={}, success={}, conclusion_len={}",
-            i + 1,
-            turn.trigger_type,
-            turn.success,
-            turn.output.conclusion.len()
-        );
-    }
-
-    // Verify conversation history was populated (short-term may be skipped by write gating
-    // when all executions are routine successes without meaningful data)
-    assert!(
-        !agent.conversation_history.is_empty(),
-        "Conversation history should have entries"
-    );
+    // Verify conversation history deserializes (backward compat field)
+    let _ = &agent.conversation_history;
 
     println!("\n✅ Context window test passed!");
     Ok(())
@@ -330,7 +270,7 @@ async fn test_context_window_messages() -> anyhow::Result<()> {
 async fn test_conversation_turn_structure() -> anyhow::Result<()> {
     let ctx = TestContext::new().await?;
 
-    println!("\n=== 测试对话轮次结构 ===");
+    println!("\n=== 测试执行记录结构 ===");
 
     let agent = ctx.create_test_agent("结构测试", "分析数据趋势").await?;
 
@@ -349,37 +289,11 @@ async fn test_conversation_turn_structure() -> anyhow::Result<()> {
     );
     println!("  结论: {}", record.decision_process.conclusion);
 
-    // Load conversation history
-    let history = ctx.store.get_conversation_history(&agent.id, None).await?;
+    // Verify the execution record has expected fields
+    assert!(!record.id.is_empty());
+    assert!(record.duration_ms >= 0);
 
-    assert_eq!(history.len(), 1);
-
-    let turn = &history[0];
-
-    // Verify TurnInput
-    println!("\nTurnInput:");
-    println!("  数据收集: {} 项", turn.input.data_collected.len());
-
-    // Verify TurnOutput
-    println!("\nTurnOutput:");
-    println!("  情况分析: {} 字符", turn.output.situation_analysis.len());
-    println!("  推理步骤: {} 步", turn.output.reasoning_steps.len());
-    println!("  决策: {} 个", turn.output.decisions.len());
-    println!("  结论: {} 字符", turn.output.conclusion.len());
-
-    // Verify metadata
-    println!("\n元数据:");
-    println!("  执行ID: {}", turn.execution_id);
-    println!("  时间戳: {}", turn.timestamp);
-    println!("  触发: {}", turn.trigger_type);
-    println!("  时长: {}ms", turn.duration_ms);
-    println!("  成功: {}", turn.success);
-
-    assert!(!turn.execution_id.is_empty());
-    assert!(turn.timestamp > 0);
-    let _ = turn.duration_ms; // u64 is always >= 0
-
-    println!("\n✅ 对话轮次结构测试通过！");
+    println!("\n✅ 执行记录结构测试通过！");
     Ok(())
 }
 
@@ -420,11 +334,12 @@ async fn test_multiple_executions_accumulation() -> anyhow::Result<()> {
     let elapsed = start.elapsed();
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
 
-    println!("\n总执行次数: {}", agent.conversation_history.len());
+    println!("\n总执行次数: {}", executions);
     println!("总耗时: {:?}", elapsed);
     println!("平均每次: {:?}", elapsed / executions as u32);
 
-    assert_eq!(agent.conversation_history.len(), executions);
+    // conversation_history is now Vec<serde_json::Value> (backward compat, not written to)
+    let _ = &agent.conversation_history;
 
     println!("\n✅ 多次执行累积测试通过！");
     Ok(())
@@ -439,10 +354,9 @@ async fn test_conversation_history_ordering() -> anyhow::Result<()> {
     let agent = ctx.create_test_agent("顺序测试", "验证历史顺序").await?;
 
     let agent_id = agent.id.clone();
-    let mut timestamps = Vec::new();
 
     // Execute 5 times with delays
-    for i in 0..5 {
+    for _i in 0..5 {
         let _before = chrono::Utc::now().timestamp();
 
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
@@ -453,19 +367,8 @@ async fn test_conversation_history_ordering() -> anyhow::Result<()> {
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-        if let Some(turn) = agent.conversation_history.last() {
-            timestamps.push(turn.timestamp);
-            println!("执行 #{}: 时间戳={}", i + 1, turn.timestamp);
-        }
-    }
-
-    // Verify timestamps are increasing
-    for i in 1..timestamps.len() {
-        assert!(
-            timestamps[i] >= timestamps[i - 1],
-            "Timestamps should be non-decreasing"
-        );
+        // conversation_history is now Vec<serde_json::Value> (backward compat only, not written to)
+        let _agent = ctx.store.get_agent(&agent_id).await?.unwrap();
     }
 
     println!("\n✅ 顺序验证通过！");
@@ -492,13 +395,13 @@ async fn test_agent_role_prompts() -> anyhow::Result<()> {
             .await?;
 
         // Verify agent has proper memory structure
-        // Newly created agents have empty memory/history — that's expected.
-        let _ = &agent.memory.short_term.summaries;
+        // Newly created agents have empty memory/history -- that's expected.
+        let _ = &agent.memory.journal.records;
         let _ = &agent.conversation_history;
 
         println!(
-            "Memory summaries: {}, History turns: {}",
-            agent.memory.short_term.summaries.len(),
+            "Journal records: {}, History turns: {}",
+            agent.memory.journal.records.len(),
             agent.conversation_history.len()
         );
     }
@@ -544,31 +447,25 @@ async fn test_full_lifecycle() -> anyhow::Result<()> {
                 .await?;
 
             println!("  #{}: {:?}", i + 1, record.status);
-
-            let agent = ctx.store.get_agent(agent_id).await?.unwrap();
-            assert_eq!(agent.conversation_history.len(), i + 1);
+            let _ = i; // use loop variable
         }
 
         let agent = ctx.store.get_agent(agent_id).await?.unwrap();
         println!(
-            "  ✅ {} 完成 (历史: {} 轮次)",
+            "  ✅ {} 完成",
             name,
-            agent.conversation_history.len()
         );
+        let _ = &agent.conversation_history;
     }
 
     println!("\n--- 验证阶段 ---");
 
-    // Verify all agents have correct history
+    // Verify all agents can be loaded
     for (agent_id, name) in &agent_ids {
         let agent = ctx.store.get_agent(agent_id).await?.unwrap();
-        let history = ctx.store.get_conversation_history(agent_id, None).await?;
 
         println!("\n{}:", name);
-        println!("  历史轮次: {}", history.len());
         println!("  上下文窗口: {}", agent.context_window_size);
-
-        assert_eq!(history.len(), 3);
     }
 
     println!("\n============================================================");
@@ -582,54 +479,27 @@ async fn test_full_lifecycle() -> anyhow::Result<()> {
 async fn test_conversation_turn_fields() -> anyhow::Result<()> {
     let ctx = TestContext::new().await?;
 
-    println!("\n=== 测试对话轮次字段完整性 ===");
+    println!("\n=== 测试执行记录字段完整性 ===");
 
     let agent = ctx
         .create_test_agent("字段完整性测试", "测试所有字段")
         .await?;
 
-    let _ = ctx
+    let record = ctx
         .executor
         .execute_agent(agent.clone(), None, None)
         .await?;
 
-    let history = ctx.store.get_conversation_history(&agent.id, None).await?;
-
-    assert_eq!(history.len(), 1);
-
-    let turn = &history[0];
-
-    // Verify all required fields
+    // Verify execution record fields
     assert!(
-        !turn.execution_id.is_empty(),
-        "execution_id should not be empty"
+        !record.id.is_empty(),
+        "execution record id should not be empty"
     );
-    assert!(turn.timestamp > 0, "timestamp should be positive");
-    assert!(
-        !turn.trigger_type.is_empty(),
-        "trigger_type should not be empty"
-    );
-    let _ = turn.duration_ms; // u64 is always >= 0
+    let _ = record.duration_ms; // u64 is always >= 0
 
     println!("\n字段验证:");
-    println!("  ✓ execution_id: {}", turn.execution_id);
-    println!("  ✓ timestamp: {}", turn.timestamp);
-    println!("  ✓ trigger_type: {}", turn.trigger_type);
-    println!("  ✓ duration_ms: {}", turn.duration_ms);
-    println!("  ✓ success: {}", turn.success);
-
-    // Verify TurnOutput fields
-    println!("\nTurnOutput 字段:");
-    println!(
-        "  ✓ situation_analysis: {} 字符",
-        turn.output.situation_analysis.len()
-    );
-    println!(
-        "  ✓ reasoning_steps: {} 项",
-        turn.output.reasoning_steps.len()
-    );
-    println!("  ✓ decisions: {} 个", turn.output.decisions.len());
-    println!("  ✓ conclusion: {} 字符", turn.output.conclusion.len());
+    println!("  ✓ id: {}", record.id);
+    println!("  ✓ duration_ms: {}", record.duration_ms);
 
     println!("\n✅ 字段完整性测试通过！");
     Ok(())

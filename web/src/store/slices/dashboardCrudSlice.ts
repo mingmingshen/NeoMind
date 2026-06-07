@@ -209,7 +209,8 @@ export const createDashboardCrudSlice: StateCreator<
           const migrated = result.data.map((d: Dashboard) => ({
             ...d,
             components: d.components.map((comp) => {
-              const config = (comp.config || {}) as Record<string, unknown>
+              const rawConfig = comp.config
+              const config = rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig) ? rawConfig as Record<string, unknown> : {}
               if ('dataSource' in config && config.dataSource) {
                 const { dataSource, ...rest } = config
                 return { ...comp, config: rest, dataSource } as DashboardComponent

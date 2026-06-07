@@ -18,8 +18,7 @@ use neomind_core::{
 use neomind_messages::{MessageManager, MessageSeverity};
 use neomind_storage::{
     AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
-    DataPoint, ExecutionMode, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory,
-    TimeSeriesStore, WorkingMemory,
+    DataPoint, ExecutionJournal, ExecutionMode, ResourceType, ScheduleType, TimeSeriesStore,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -74,6 +73,8 @@ impl FullTestContext {
             memory_store: None,
             backend_semaphores: None,
             skill_registry: None,
+            memory_agent_id_handle: None,
+            memory_knowledge_files_handle: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -190,19 +191,14 @@ impl FullTestContext {
                 last_duration_ms: Some(0),
             },
             memory: AgentMemory {
-                state_variables: Default::default(),
-                baselines: Default::default(),
-                learned_patterns: vec![],
-                trend_data: vec![],
-                task_profile: None,
+                journal: ExecutionJournal::default(),
+                knowledge_files: vec![],
                 updated_at: now,
-                working: WorkingMemory::default(),
-                short_term: ShortTermMemory::default(),
-                long_term: LongTermMemory::default(),
             },
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
             priority: 128,
@@ -276,19 +272,14 @@ impl FullTestContext {
                 last_duration_ms: Some(0),
             },
             memory: AgentMemory {
-                state_variables: Default::default(),
-                baselines: Default::default(),
-                learned_patterns: vec![],
-                trend_data: vec![],
-                task_profile: None,
+                journal: ExecutionJournal::default(),
+                knowledge_files: vec![],
                 updated_at: now,
-                working: WorkingMemory::default(),
-                short_term: ShortTermMemory::default(),
-                long_term: LongTermMemory::default(),
             },
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
             priority: 128,
@@ -705,22 +696,11 @@ async fn test_end_to_end_workflow() -> anyhow::Result<()> {
         .await?;
     }
 
-    // Verify conversation history
+    // Verify conversation history (backward compat field, no longer written to)
     println!("\n--- 对话历史 ---");
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    println!("总轮次: {}", agent.conversation_history.len());
-
-    for (i, turn) in agent.conversation_history.iter().enumerate() {
-        println!("轮次{}:", i + 1);
-        println!(
-            "  时间: {}",
-            chrono::DateTime::from_timestamp(turn.timestamp, 0)
-                .map(|dt| dt.format("%H:%M:%S").to_string())
-                .unwrap_or_else(|| "?".to_string())
-        );
-        println!("  数据点: {}", turn.input.data_collected.len());
-        println!("  成功: {}", turn.success);
-    }
+    println!("总轮次 (conversation_history): {}", agent.conversation_history.len());
+    let _ = &agent.conversation_history;
 
     println!("\n✅ 端到端工作流测试通过！");
     Ok(())

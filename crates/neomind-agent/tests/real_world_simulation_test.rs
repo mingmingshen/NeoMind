@@ -31,8 +31,7 @@ use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_messages::{MessageManager, MessageSeverity};
 use neomind_storage::{
     AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
-    DataPoint, ExecutionMode, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory,
-    TimeSeriesStore, WorkingMemory,
+    DataPoint, ExecutionJournal, ExecutionMode, ResourceType, ScheduleType, TimeSeriesStore,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -82,6 +81,8 @@ impl SimulationContext {
             memory_store: None,
             backend_semaphores: None,
             skill_registry: None,
+            memory_agent_id_handle: None,
+            memory_knowledge_files_handle: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -189,18 +190,13 @@ impl SimulationContext {
                 last_duration_ms: Some(0),
             },
             memory: AgentMemory {
-                state_variables: Default::default(),
-                baselines: Default::default(),
-                learned_patterns: vec![],
-                trend_data: vec![],
-                task_profile: None,
+                journal: ExecutionJournal::default(),
+                knowledge_files: vec![],
                 updated_at: now,
-                working: WorkingMemory::default(),
-                short_term: ShortTermMemory::default(),
-                long_term: LongTermMemory::default(),
             },
             execution_mode: ExecutionMode::Focused,
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
             priority: 128,
@@ -971,14 +967,15 @@ async fn scenario_3_multi_agent_collaboration() -> anyhow::Result<()> {
     println!("   - 分析Agent: 生成优化建议");
     println!("   - Agent协作: 通过共享数据协作");
 
-    // 检查对话历史
+    // 检查对话历史 (backward compat, no longer written to)
     for agent_id in &[&monitor_agent.id, &executor_agent.id, &analyst_agent.id] {
         let agent = ctx.store.get_agent(agent_id).await?.unwrap();
         println!(
-            "   - {} 对话历史: {} 轮",
+            "   - {} 对话历史: {} 条 (backward compat)",
             agent.name,
             agent.conversation_history.len()
         );
+        let _ = &agent.conversation_history;
     }
 
     Ok(())
@@ -1125,21 +1122,13 @@ async fn scenario_4_long_running_agent() -> anyhow::Result<()> {
     // 检查Agent状态
     let agent = ctx.store.get_agent(&daily_monitor.id).await?.unwrap();
     println!("\n   📈 Agent状态:");
-    println!("      对话历史: {} 轮", agent.conversation_history.len());
+    println!("      对话历史: {} 条 (backward compat)", agent.conversation_history.len());
     println!("      上下文窗口: {}", agent.context_window_size);
     println!("      成功执行: {}", agent.stats.successful_executions);
     println!("      平均耗时: {}ms", agent.stats.avg_duration_ms);
 
-    // 验证历史累积
-    assert_eq!(agent.conversation_history.len(), 24, "应该有24轮对话历史");
-
-    // 验证时间顺序
-    for i in 1..agent.conversation_history.len() {
-        assert!(
-            agent.conversation_history[i].timestamp >= agent.conversation_history[i - 1].timestamp,
-            "对话历史应该按时间顺序排列"
-        );
-    }
+    // conversation_history is now Vec<serde_json::Value> (backward compat, no longer written to)
+    let _ = &agent.conversation_history;
 
     ctx.print_subsection("阶段3: 历史趋势分析");
 
@@ -1171,8 +1160,6 @@ async fn scenario_4_long_running_agent() -> anyhow::Result<()> {
 
     println!("✅ 长期运行Agent测试完成:");
     println!("   - 24小时周期模拟");
-    println!("   - 对话历史累积: {} 轮", agent.conversation_history.len());
-    println!("   - 时间顺序验证: 通过");
     println!("   - 上下文窗口: 正常工作");
     println!("   - 性能稳定: 平均{}ms", avg_time);
 

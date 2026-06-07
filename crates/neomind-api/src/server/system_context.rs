@@ -262,32 +262,32 @@ pub async fn summarize_agent_context(
         return Ok(());
     }
 
-    // Collect short-term summaries from active agents
+    // Collect recent execution records from active agents
     let mut agent_data = String::new();
     for agent in active {
-        let summaries: Vec<_> = agent
+        let records: Vec<_> = agent
             .memory
-            .short_term
-            .summaries
+            .journal
+            .records
             .iter()
             .rev()
             .take(5)
             .collect();
-        if !summaries.is_empty() {
+        if !records.is_empty() {
             agent_data.push_str(&format!("### {}\n", agent.name));
-            for summary in summaries {
-                // Combine situation + conclusion for richer context
+            for record in records {
+                // Combine outcome + action_taken for richer context
                 let mut text = String::new();
-                if !summary.situation.is_empty() {
-                    text.push_str(&summary.situation.chars().take(80).collect::<String>());
+                if !record.outcome.is_empty() {
+                    text.push_str(&record.outcome.chars().take(80).collect::<String>());
                 }
-                if !summary.conclusion.is_empty() {
+                if !record.action_taken.is_empty() {
                     if !text.is_empty() {
                         text.push_str(" → ");
                     }
-                    text.push_str(&summary.conclusion.chars().take(60).collect::<String>());
+                    text.push_str(&record.action_taken.chars().take(60).collect::<String>());
                 }
-                let status = if summary.success { "OK" } else { "FAIL" };
+                let status = if record.success { "OK" } else { "FAIL" };
                 agent_data.push_str(&format!("- [{}] {}\n", status, text));
             }
             agent_data.push('\n');

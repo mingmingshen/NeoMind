@@ -966,6 +966,88 @@ impl MarkdownMemoryStore {
         self.base_path.join("custom")
     }
 
+    // ========== Agent-scoped custom file methods ==========
+
+    /// Read an agent-scoped custom file.
+    /// Path: `agents/{agent_id}/custom/{name}.md`
+    pub fn read_agent_custom_file(&self, agent_id: &str, name: &str) -> Result<String> {
+        Self::validate_custom_name(name)?;
+        let path = self
+            .base_path
+            .join("agents")
+            .join(agent_id)
+            .join("custom")
+            .join(format!("{}.md", name));
+        if !path.exists() {
+            return Ok(String::new());
+        }
+        fs::read_to_string(&path).map_err(|e| {
+            Error::Storage(format!(
+                "Failed to read agent custom file {}/{}: {}",
+                agent_id, name, e
+            ))
+        })
+    }
+
+    /// Write an agent-scoped custom file. Enforces per-file char limit.
+    /// Path: `agents/{agent_id}/custom/{name}.md`
+    pub fn write_agent_custom_file(
+        &self,
+        agent_id: &str,
+        name: &str,
+        content: &str,
+    ) -> Result<()> {
+        Self::validate_custom_name(name)?;
+        let limit = self.config.agent_char_limit;
+        let char_count = content.chars().count();
+        if char_count > limit {
+            return Err(Error::InvalidInput(format!(
+                "Custom file content exceeds {} char limit: {} > {}",
+                name, char_count, limit
+            )));
+        }
+        let dir = self
+            .base_path
+            .join("agents")
+            .join(agent_id)
+            .join("custom");
+        fs::create_dir_all(&dir)?;
+        let path = dir.join(format!("{}.md", name));
+        fs::write(&path, content).map_err(|e| {
+            Error::Storage(format!(
+                "Failed to write agent custom file {}/{}: {}",
+                agent_id, name, e
+            ))
+        })?;
+        info!(agent_id = %agent_id, name = %name, chars = char_count, "Wrote agent custom file");
+        Ok(())
+    }
+
+    /// List agent-scoped custom files. Returns (name, char_count) pairs.
+    pub fn list_agent_custom_files(&self, agent_id: &str) -> Result<Vec<(String, usize)>> {
+        let custom_dir = self
+            .base_path
+            .join("agents")
+            .join(agent_id)
+            .join("custom");
+        if !custom_dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut files = Vec::new();
+        for entry in fs::read_dir(&custom_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().map(|e| e == "md").unwrap_or(false) {
+                if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
+                    let content = fs::read_to_string(&path).unwrap_or_default();
+                    files.push((name.to_string(), content.chars().count()));
+                }
+            }
+        }
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(files)
+    }
+
     // ========================================================================
     // Legacy API (deprecated - kept for backward compatibility)
     // ========================================================================

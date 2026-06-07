@@ -40,27 +40,64 @@ export const ITEMS_PER_PAGE = 10
 function getCodeSummary(jsCode: string): string {
   if (!jsCode) return '-'
 
-  // Try to extract return statement
-  const returnMatch = jsCode.match(/return\s+({[^}]*}|\[[^\]]*\]|[^;{};]+)/s)
-  if (returnMatch) {
-    const ret = returnMatch[1].trim()
-    if (ret.length > 45) {
-      return ret.substring(0, 42) + '...'
+  const TRUNCATE_LEN = 45
+
+  // Try to extract return statement with balanced braces/brackets
+  const returnIdx = jsCode.indexOf('return ')
+  if (returnIdx !== -1) {
+    const afterReturn = jsCode.slice(returnIdx + 7).trimStart()
+    const firstChar = afterReturn[0]
+
+    if (firstChar === '{' || firstChar === '[') {
+      // Balanced bracket matching
+      const open = firstChar
+      const close = firstChar === '{' ? '}' : ']'
+      let depth = 0
+      let inString: string | null = null
+      let escaped = false
+      let endIdx = -1
+
+      for (let i = 0; i < afterReturn.length; i++) {
+        const ch = afterReturn[i]
+
+        if (escaped) { escaped = false; continue }
+        if (ch === '\\') { escaped = true; continue }
+
+        if (inString) {
+          if (ch === inString) inString = null
+          continue
+        }
+        if (ch === '"' || ch === "'" || ch === '`') { inString = ch; continue }
+
+        if (ch === open) depth++
+        else if (ch === close) {
+          depth--
+          if (depth === 0) { endIdx = i; break }
+        }
+      }
+
+      if (endIdx !== -1) {
+        const expr = afterReturn.slice(0, endIdx + 1).replace(/\s+/g, ' ').trim()
+        return expr.length > TRUNCATE_LEN ? expr.substring(0, TRUNCATE_LEN - 3) + '...' : expr
+      }
+    } else {
+      // Simple return (variable, literal, etc.) — take until ; or newline
+      const match = afterReturn.match(/^[^;{}\n]+/)
+      if (match) {
+        const expr = match[0].trim()
+        return expr.length > TRUNCATE_LEN ? expr.substring(0, TRUNCATE_LEN - 3) + '...' : expr
+      }
     }
-    return ret
   }
 
   // Show first non-comment line
   const lines = jsCode.split('\n').filter(l => l.trim() && !l.trim().startsWith('//'))
   if (lines.length > 0) {
     const firstLine = lines[0].trim()
-    if (firstLine.length > 45) {
-      return firstLine.substring(0, 42) + '...'
-    }
-    return firstLine
+    return firstLine.length > TRUNCATE_LEN ? firstLine.substring(0, TRUNCATE_LEN - 3) + '...' : firstLine
   }
 
-  return jsCode.substring(0, 45) + (jsCode.length > 45 ? '...' : '')
+  return jsCode.substring(0, TRUNCATE_LEN) + (jsCode.length > TRUNCATE_LEN ? '...' : '')
 }
 
 export function TransformsList({

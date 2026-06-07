@@ -8,7 +8,7 @@
 
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+
 use std::sync::Arc;
 
 use crate::Error;
@@ -65,13 +65,13 @@ pub struct AiAgent {
     pub stats: AgentStats,
     /// Persistent memory across executions
     pub memory: AgentMemory,
-    /// Conversation history - recent executions for context
+    /// Conversation history — kept for backward compat deserialization, no longer written to.
     #[serde(default)]
-    pub conversation_history: Vec<ConversationTurn>,
+    pub conversation_history: Vec<serde_json::Value>,
     /// User messages sent between executions
     #[serde(default)]
     pub user_messages: Vec<UserMessage>,
-    /// Compressed summary of old conversation turns
+    /// Compressed summary of old conversation turns — kept for backward compat, no longer written to.
     #[serde(default)]
     pub conversation_summary: Option<String>,
     /// How many recent turns to include in LLM context
@@ -91,6 +91,9 @@ pub struct AiAgent {
     pub execution_mode: ExecutionMode,
     /// Error message (if status is error)
     pub error_message: Option<String>,
+    /// Custom system prompt override (replaces default IoT role prompt)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
     /// Maximum number of automatic retries for transient execution failures (default: 0 = no retry)
     #[serde(default)]
     pub max_retries: u32,
@@ -250,691 +253,81 @@ pub struct AgentStats {
     pub last_duration_ms: Option<u64>,
 }
 
-/// Hierarchical memory for an agent across executions.
+/// Agent memory: execution journal + knowledge file index.
 ///
-/// Based on MemGPT/Letta architecture with three tiers:
-/// - Working Memory: Current execution context (ephemeral)
-/// - Short-Term Memory: Recent compressed summaries (time-bounded)
-/// - Long-Term Memory: Important patterns and knowledge (retrieval-based)
+/// Keeps it simple — journal stores recent execution outcomes,
+/// knowledge_files tracks markdown files the agent creates via the memory tool.
+/// Old fields (short_term, long_term, baselines, task_profile) are accepted
+/// via `#[serde(default)]` for backward compat and silently ignored.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentMemory {
-    /// Working memory - current execution context
+    /// Execution journal — recent execution records
     #[serde(default)]
-    pub working: WorkingMemory,
-    /// Short-term memory - recent compressed summaries
+    pub journal: ExecutionJournal,
+    /// Knowledge files created by the agent via memory tool
     #[serde(default)]
-    pub short_term: ShortTermMemory,
-    /// Long-term memory - important patterns and knowledge
-    #[serde(default)]
-    pub long_term: LongTermMemory,
-    /// Legacy state variables (for backward compatibility)
-    #[serde(default)]
-    pub state_variables: HashMap<String, serde_json::Value>,
-    /// Legacy learned patterns (migrated to long_term)
-    #[serde(default)]
-    pub learned_patterns: Vec<LearnedPattern>,
-    /// Historical baselines
-    #[serde(default)]
-    pub baselines: HashMap<String, f64>,
-    /// Trend data points (for analysis)
-    #[serde(default)]
-    pub trend_data: Vec<TrendPoint>,
-    /// Evolving task-level knowledge summary.
-    /// Updated periodically by LLM reflection. Max 500 chars.
-    #[serde(default)]
-    pub task_profile: Option<TaskProfile>,
+    pub knowledge_files: Vec<KnowledgeFileRef>,
     /// Last memory update
+    #[serde(default = "default_timestamp")]
     pub updated_at: i64,
 }
 
-/// Evolving task-level knowledge accumulated from execution experience.
+/// A single execution record in the journal.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskProfile {
-    /// Accumulated knowledge text (max 500 chars)
-    pub summary: String,
-    /// When this profile was last updated
-    pub updated_at: i64,
-    /// Total executions reflected into this profile
-    pub executions_reflected: u32,
-    /// Version — incremented each reflection cycle
-    pub version: u32,
-}
-
-/// Working memory - current execution context.
-///
-/// Stores ephemeral data for the current execution only.
-/// Automatically cleared after each execution.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct WorkingMemory {
-    /// Current analysis results (this execution only)
-    #[serde(default)]
-    pub current_analysis: Option<String>,
-    /// Current conclusion (this execution only)
-    #[serde(default)]
-    pub current_conclusion: Option<String>,
-    /// Current decisions being considered
-    #[serde(default)]
-    pub pending_decisions: Vec<serde_json::Value>,
-    /// Temporary data collection for this execution
-    #[serde(default)]
-    pub temp_data: HashMap<String, serde_json::Value>,
-    /// Timestamp when this working memory was created
-    #[serde(default)]
-    pub created_at: i64,
-}
-
-/// Short-term memory - recent compressed summaries.
-///
-/// Stores the last N executions in compressed form.
-/// Automatically archived to long-term memory when full.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ShortTermMemory {
-    /// Compressed summaries of recent executions
-    #[serde(default)]
-    pub summaries: Vec<MemorySummary>,
-    /// Maximum number of summaries to keep
-    #[serde(default = "default_short_term_limit")]
-    pub max_summaries: usize,
-    /// Timestamp of last archival
-    #[serde(default)]
-    pub last_archived_at: Option<i64>,
-}
-
-/// Long-term memory - important patterns and knowledge.
-///
-/// Stores high-value memories with importance scoring.
-/// Retrieved using RAG-style semantic matching.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct LongTermMemory {
-    /// Important memories with importance scores
-    #[serde(default)]
-    pub memories: Vec<ImportantMemory>,
-    /// Learned patterns (high-confidence, reusable)
-    #[serde(default)]
-    pub patterns: Vec<LearnedPattern>,
-    /// Maximum number of memories to keep
-    #[serde(default = "default_long_term_limit")]
-    pub max_memories: usize,
-    /// Minimum importance score for retention
-    #[serde(default = "default_min_importance")]
-    pub min_importance: f32,
-}
-
-/// A compressed memory summary for short-term storage.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemorySummary {
-    /// Timestamp of this summary
+pub struct ExecutionRecord {
     pub timestamp: i64,
-    /// Execution ID this summarizes
     pub execution_id: String,
-    /// Compressed situation analysis
-    pub situation: String,
-    /// Compressed conclusion
-    pub conclusion: String,
-    /// Key decisions made
-    pub decisions: Vec<String>,
-    /// Success flag
+    /// Brief outcome description (≤100 chars)
+    pub outcome: String,
+    /// Actions taken (≤150 chars), e.g. "sent alert" / "no action"
+    pub action_taken: String,
     pub success: bool,
-    /// Key finding or lesson from this execution (max 150 chars)
-    #[serde(default)]
-    pub insight: Option<String>,
 }
 
-/// An important memory for long-term storage with importance scoring.
+/// Execution journal — FIFO ring buffer of recent execution records.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImportantMemory {
-    /// Unique memory ID
-    pub id: String,
-    /// Memory type (pattern, anomaly, decision, knowledge)
-    pub memory_type: String,
-    /// Memory content (compressed)
-    pub content: String,
-    /// Importance score (0-1), higher is more important
-    pub importance: f32,
-    /// Creation timestamp
+pub struct ExecutionJournal {
+    pub records: Vec<ExecutionRecord>,
+    #[serde(default = "default_journal_limit")]
+    pub max_records: usize,
+}
+
+impl Default for ExecutionJournal {
+    fn default() -> Self {
+        Self {
+            records: Vec::new(),
+            max_records: default_journal_limit(),
+        }
+    }
+}
+
+/// Reference to a knowledge file created by the agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeFileRef {
+    /// File name (without path), e.g. "device-patterns"
+    pub name: String,
+    /// Brief description (≤100 chars), written by LLM at creation time
+    pub description: String,
     pub created_at: i64,
-    /// Last access timestamp (for LRU eviction)
-    pub last_accessed_at: i64,
-    /// Access count (for importance boost)
-    pub access_count: u64,
-    /// Associated metadata
-    pub metadata: HashMap<String, String>,
+    pub updated_at: i64,
 }
 
-/// Default short-term memory limit (number of summaries).
-fn default_short_term_limit() -> usize {
-    20
+fn default_timestamp() -> i64 {
+    chrono::Utc::now().timestamp()
 }
 
-/// Default long-term memory limit (number of important memories).
-fn default_long_term_limit() -> usize {
-    50
-}
-
-/// Default minimum importance score for long-term retention.
-fn default_min_importance() -> f32 {
-    0.5
-}
-
-/// Normalize agent memory limits for backward compatibility.
-///
-/// Agents created before proper memory limits were implemented may have
-/// zero values for these limits. This function ensures they are set to
-/// sensible defaults.
-fn normalize_agent_memory_limits(agent: &mut AiAgent) {
-    if agent.memory.short_term.max_summaries == 0 {
-        agent.memory.short_term.max_summaries = default_short_term_limit();
-    }
-    if agent.memory.long_term.max_memories == 0 {
-        agent.memory.long_term.max_memories = default_long_term_limit();
-    }
-    if agent.memory.long_term.min_importance == 0.0 {
-        agent.memory.long_term.min_importance = default_min_importance();
-    }
+fn default_journal_limit() -> usize {
+    10
 }
 
 impl Default for AgentMemory {
     fn default() -> Self {
         Self {
-            working: WorkingMemory::default(),
-            short_term: ShortTermMemory::default(),
-            long_term: LongTermMemory::default(),
-            state_variables: HashMap::new(),
-            learned_patterns: Vec::new(),
-            baselines: HashMap::new(),
-            trend_data: Vec::new(),
-            task_profile: None,
-            updated_at: chrono::Utc::now().timestamp(),
+            journal: ExecutionJournal::default(),
+            knowledge_files: Vec::new(),
+            updated_at: default_timestamp(),
         }
     }
-}
-
-// ========== Hierarchical Memory Methods ==========
-
-/// Truncate a string to a maximum character count, respecting Unicode.
-fn truncate_chars(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let truncated: String = s.chars().take(max).collect();
-    format!("{}...", truncated)
-}
-
-/// Compute bigram Jaccard similarity between two strings.
-/// Same algorithm as DedupProcessor in neomind-agent, inlined here to avoid
-/// circular dependency between neomind-storage and neomind-agent.
-fn text_similarity(a: &str, b: &str) -> f32 {
-    let bigrams = |s: &str| -> HashSet<String> {
-        let chars: Vec<char> = s.to_lowercase().chars().collect();
-        if chars.len() < 2 {
-            return HashSet::from_iter([s.to_lowercase()]);
-        }
-        (0..=chars.len() - 2)
-            .map(|i| chars[i..i + 2].iter().collect())
-            .collect()
-    };
-    let set_a = bigrams(a);
-    let set_b = bigrams(b);
-    if set_a.is_empty() && set_b.is_empty() {
-        return 1.0;
-    }
-    let intersection = set_a.intersection(&set_b).count() as f32;
-    let union = set_a.union(&set_b).count() as f32;
-    if union == 0.0 {
-        return 0.0;
-    }
-    intersection / union
-}
-
-/// Check if text contains generic/routine markers.
-fn is_generic_content(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    let generic_markers = [
-        "正常", "正常范围", "no action", "normal", "stable", "routine", "status normal",
-    ];
-    generic_markers.iter().any(|m| lower.contains(m))
-}
-
-impl AgentMemory {
-    /// Add a memory summary to short-term memory.
-    /// Automatically archives to long-term if capacity exceeded.
-    pub fn add_to_short_term(
-        &mut self,
-        execution_id: String,
-        situation: String,
-        conclusion: String,
-        decisions: Vec<String>,
-        success: bool,
-        insight: Option<String>,
-    ) {
-        let summary = MemorySummary {
-            timestamp: chrono::Utc::now().timestamp(),
-            execution_id,
-            situation,
-            conclusion,
-            decisions,
-            success,
-            insight,
-        };
-
-        self.short_term.summaries.push(summary);
-
-        // Check if we need to archive
-        if self.short_term.summaries.len() > self.short_term.max_summaries {
-            self.archive_to_long_term();
-        }
-
-        self.updated_at = chrono::Utc::now().timestamp();
-    }
-
-    /// Archive old short-term memories to long-term memory.
-    /// Keeps only the most recent summaries in short-term.
-    /// Deduplicates against existing long-term entries using text similarity.
-    pub fn archive_to_long_term(&mut self) {
-        let now = chrono::Utc::now().timestamp();
-        self.short_term.last_archived_at = Some(now);
-
-        // Keep only the most recent half in short-term
-        let keep_count = self.short_term.max_summaries / 2;
-        let drain_count = self.short_term.summaries.len().saturating_sub(keep_count);
-        let to_archive: Vec<_> = self.short_term.summaries.drain(..drain_count).collect();
-
-        // Convert archived summaries to important memories
-        for summary in to_archive {
-            // Calculate importance based on multiple factors
-            let importance = self.calculate_importance(&summary);
-
-            // Only keep memories above threshold
-            if importance >= self.long_term.min_importance {
-                let content = format!(
-                    "{} -> {}",
-                    truncate_chars(&summary.situation, 100),
-                    truncate_chars(&summary.conclusion, 100)
-                );
-
-                // Check for similar existing entry — update timestamp instead of duplicating
-                let similar_idx = self
-                    .long_term
-                    .memories
-                    .iter()
-                    .position(|m| text_similarity(&m.content, &content) > 0.7);
-
-                if let Some(idx) = similar_idx {
-                    // Update existing entry's last_accessed_at and take the higher importance
-                    let existing = &mut self.long_term.memories[idx];
-                    existing.last_accessed_at = now;
-                    if importance > existing.importance {
-                        existing.importance = importance;
-                    }
-                    tracing::debug!(
-                        existing_content = %existing.content,
-                        new_content = %content,
-                        "Updated existing long-term memory instead of creating duplicate"
-                    );
-                    continue;
-                }
-
-                let memory = ImportantMemory {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    memory_type: if summary.success {
-                        "successful_execution"
-                    } else {
-                        "failed_execution"
-                    }
-                    .to_string(),
-                    content,
-                    importance,
-                    created_at: summary.timestamp,
-                    last_accessed_at: now,
-                    access_count: 0,
-                    metadata: {
-                        let mut meta = HashMap::new();
-                        meta.insert("execution_id".to_string(), summary.execution_id.clone());
-                        meta.insert("success".to_string(), summary.success.to_string());
-                        if !summary.decisions.is_empty() {
-                            meta.insert("decisions".to_string(), summary.decisions.join("; "));
-                        }
-                        meta
-                    },
-                };
-                self.long_term.memories.push(memory);
-            }
-        }
-
-        // Prune long-term memory if needed
-        self.prune_long_term_memory();
-
-        // Decay old learned patterns — reduce confidence for patterns not seen in 7 days
-        let seven_days_secs: i64 = 7 * 86400;
-        self.learned_patterns.retain(|p| {
-            let age_secs = now - p.learned_at;
-            age_secs < seven_days_secs * 4 // remove patterns older than 28 days
-        });
-        for pattern in &mut self.learned_patterns {
-            let age_secs = now - pattern.learned_at;
-            if age_secs > seven_days_secs {
-                // Reduce confidence by 10% per week of age
-                let weeks_old = (age_secs / seven_days_secs) as f32;
-                pattern.confidence *= 0.9_f32.powf(weeks_old);
-            }
-        }
-
-        // Prune baselines with no matching recent data sources
-        let recent_sources: HashSet<&str> = self
-            .short_term
-            .summaries
-            .iter()
-            .flat_map(|s| s.decisions.iter().map(|d| d.as_str()))
-            .collect();
-        // Keep baselines that appeared in any recent summary or are very new
-        self.baselines.retain(|key, _| {
-            recent_sources.iter().any(|s| s.contains(key.as_str()))
-                || self.trend_data.iter().rev().take(50).any(|t| t.metric == *key)
-        });
-
-        tracing::debug!(
-            short_term_count = self.short_term.summaries.len(),
-            long_term_count = self.long_term.memories.len(),
-            "Archived short-term memories to long-term"
-        );
-    }
-
-    /// Calculate importance score for a memory summary.
-    /// Factors in: recency, success/failure, decision significance, generic content penalty.
-    fn calculate_importance(&self, summary: &MemorySummary) -> f32 {
-        let mut importance = 0.5; // Base importance
-
-        // Boost for failed executions (learning opportunities)
-        if !summary.success {
-            importance += 0.2;
-        }
-
-        // Boost for summaries with decisions (actionable)
-        if !summary.decisions.is_empty() {
-            importance += 0.15;
-        }
-
-        // Strongly deprioritize generic/routine conclusions
-        if is_generic_content(&summary.conclusion) || is_generic_content(&summary.situation) {
-            importance *= 0.3;
-        }
-
-        // Time decay (older memories are less important unless accessed)
-        let age_hours = (chrono::Utc::now().timestamp() - summary.timestamp) as f32 / 3600.0;
-        let decay_factor = 1.0 / (1.0 + age_hours / 24.0); // Half-life of 24 hours
-        importance *= decay_factor;
-
-        // Clamp to [0, 1]
-        importance.clamp(0.0, 1.0)
-    }
-
-    /// Prune long-term memory to stay within capacity.
-    /// Removes low-importance, stale, and generic memories first.
-    pub fn prune_long_term_memory(&mut self) {
-        if self.long_term.memories.len() <= self.long_term.max_memories {
-            return;
-        }
-
-        // Sort by: (1) generic content first to remove, (2) low importance, (3) old last_accessed_at
-        self.long_term.memories.sort_by(|a, b| {
-            // Generic entries are sorted to the front (removed first)
-            let a_generic = is_generic_content(&a.content);
-            let b_generic = is_generic_content(&b.content);
-            match (a_generic, b_generic) {
-                (true, false) => return std::cmp::Ordering::Less, // a is generic, remove first
-                (false, true) => return std::cmp::Ordering::Greater,
-                _ => {}
-            }
-            // Then by low importance first
-            match a.importance.partial_cmp(&b.importance) {
-                Some(std::cmp::Ordering::Equal) => {}
-                Some(ord) => return ord,
-                None => return std::cmp::Ordering::Equal,
-            }
-            // If equal importance, keep recently accessed ones
-            b.last_accessed_at.cmp(&a.last_accessed_at)
-        });
-
-        // Keep only the top memories
-        let keep_count = self.long_term.max_memories;
-        let removed_count = self.long_term.memories.len() - keep_count;
-        self.long_term.memories.truncate(keep_count);
-
-        tracing::debug!(
-            removed_count = removed_count,
-            remaining_count = self.long_term.memories.len(),
-            "Pruned long-term memory"
-        );
-    }
-
-    /// Retrieve relevant long-term memories based on keyword matching.
-    /// Simple RAG-like retrieval without vector embeddings.
-    /// Returns a vector of (memory_id, content) tuples for easy access.
-    pub fn retrieve_memories(&mut self, query: &str, limit: usize) -> Vec<(String, String)> {
-        let now = chrono::Utc::now().timestamp();
-        let query_lower = query.to_lowercase();
-
-        // First pass: Update access stats and compute scores
-        let mut scores: Vec<(usize, f32)> = self
-            .long_term
-            .memories
-            .iter()
-            .enumerate()
-            .map(|(idx, mem)| {
-                let mut score = mem.importance;
-                if mem.content.to_lowercase().contains(&query_lower)
-                    || mem.memory_type.to_lowercase().contains(&query_lower)
-                {
-                    // Relevance boost
-                    score += 0.1;
-                }
-                (idx, score)
-            })
-            .collect();
-
-        // Sort by score (descending)
-        scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Second pass: Update access stats for relevant memories and collect results
-        let results: Vec<(String, String)> = scores
-            .into_iter()
-            .take(limit)
-            .filter_map(|(idx, _)| {
-                let mem = &mut self.long_term.memories[idx];
-                if mem.content.to_lowercase().contains(&query_lower)
-                    || mem.memory_type.to_lowercase().contains(&query_lower)
-                {
-                    mem.last_accessed_at = now;
-                    mem.access_count += 1;
-
-                    // Boost importance based on access frequency
-                    let access_boost = (mem.access_count as f32).log10() * 0.05;
-                    mem.importance = (mem.importance + access_boost).min(1.0);
-
-                    Some((mem.id.clone(), mem.content.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        results
-    }
-
-    /// Clear working memory (called after each execution).
-    pub fn clear_working(&mut self) {
-        self.working = WorkingMemory::default();
-    }
-
-    /// Store current analysis in working memory.
-    pub fn set_working_analysis(&mut self, analysis: String, conclusion: String) {
-        self.working.current_analysis = Some(analysis);
-        self.working.current_conclusion = Some(conclusion);
-        self.working.created_at = chrono::Utc::now().timestamp();
-    }
-
-    /// Add a pattern directly to long-term memory.
-    /// Uses fuzzy matching to avoid near-duplicate patterns.
-    /// Also updates the legacy learned_patterns field for backward compatibility.
-    pub fn add_pattern(&mut self, pattern: LearnedPattern) {
-        if pattern.confidence < 0.7 {
-            return;
-        }
-
-        // Fuzzy dedup: find similar patterns in both locations
-        let similar_in_long_term = self.long_term.patterns.iter().position(|p| {
-            p.pattern_type == pattern.pattern_type
-                && text_similarity(&p.description, &pattern.description) > 0.7
-        });
-        let similar_in_legacy = self.learned_patterns.iter().position(|p| {
-            p.pattern_type == pattern.pattern_type
-                && text_similarity(&p.description, &pattern.description) > 0.7
-        });
-
-        match (similar_in_long_term, similar_in_legacy) {
-            // New pattern — add to both
-            (None, None) => {
-                self.long_term.patterns.push(pattern.clone());
-                self.learned_patterns.push(pattern);
-            }
-            // Similar exists with lower confidence — replace
-            (Some(lt_idx), Some(leg_idx)) => {
-                if pattern.confidence > self.long_term.patterns[lt_idx].confidence {
-                    self.long_term.patterns[lt_idx] = pattern.clone();
-                    self.learned_patterns[leg_idx] = pattern;
-                }
-            }
-            // Similar only in long_term
-            (Some(lt_idx), None) => {
-                if pattern.confidence > self.long_term.patterns[lt_idx].confidence {
-                    self.long_term.patterns[lt_idx] = pattern.clone();
-                    // Also add to legacy for consistency
-                    self.learned_patterns.push(pattern);
-                }
-            }
-            // Similar only in legacy
-            (None, Some(leg_idx)) => {
-                if pattern.confidence > self.learned_patterns[leg_idx].confidence {
-                    self.learned_patterns[leg_idx] = pattern.clone();
-                    self.long_term.patterns.push(pattern);
-                }
-            }
-        }
-
-        // Prune long_term.patterns if needed
-        if self.long_term.patterns.len() > 15 {
-            self.long_term.patterns.sort_by(|a, b| {
-                b.confidence
-                    .partial_cmp(&a.confidence)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            self.long_term.patterns.truncate(15);
-        }
-
-        // Also prune legacy learned_patterns
-        if self.learned_patterns.len() > 15 {
-            self.learned_patterns.sort_by(|a, b| {
-                b.confidence
-                    .partial_cmp(&a.confidence)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            self.learned_patterns.truncate(15);
-        }
-    }
-
-    /// Get a summary of memory usage for debugging.
-    pub fn memory_usage_summary(&self) -> String {
-        format!(
-            "Working: {}, Short-term: {}/{}, Long-term: {}/{}, Patterns: {}, Trend points: {}, Baselines: {}",
-            if self.working.current_analysis.is_some() {
-                "active"
-            } else {
-                "empty"
-            },
-            self.short_term.summaries.len(),
-            self.short_term.max_summaries,
-            self.long_term.memories.len(),
-            self.long_term.max_memories,
-            self.long_term.patterns.len(),
-            self.trend_data.len(),
-            self.baselines.len()
-        )
-    }
-}
-
-/// A learned pattern from historical data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LearnedPattern {
-    /// Pattern identifier
-    pub id: String,
-    /// Pattern type
-    pub pattern_type: String,
-    /// Pattern description
-    pub description: String,
-    /// Confidence (0-1)
-    pub confidence: f32,
-    /// When this pattern was learned
-    pub learned_at: i64,
-    /// Pattern data
-    pub data: serde_json::Value,
-}
-
-/// A data point for trend analysis.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrendPoint {
-    /// Timestamp
-    pub timestamp: i64,
-    /// Metric name
-    pub metric: String,
-    /// Value
-    pub value: f64,
-    /// Additional context
-    pub context: Option<serde_json::Value>,
-}
-
-/// Input for a single conversation turn (execution).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TurnInput {
-    /// Data collected during this execution
-    pub data_collected: Vec<DataCollected>,
-    /// Event data if this was event-triggered
-    pub event_data: Option<serde_json::Value>,
-}
-
-/// Output from a single conversation turn (execution).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TurnOutput {
-    /// Situation analysis
-    pub situation_analysis: String,
-    /// Reasoning steps taken
-    pub reasoning_steps: Vec<ReasoningStep>,
-    /// Decisions made
-    pub decisions: Vec<Decision>,
-    /// Final conclusion
-    pub conclusion: String,
-}
-
-/// A single conversation turn - one complete execution with context.
-///
-/// This represents one "turn" in the long-running conversation with an agent.
-/// Each execution adds a new turn, and recent turns are included in the LLM context
-/// to maintain conversational memory across executions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationTurn {
-    /// Execution ID (links to AgentExecutionRecord)
-    pub execution_id: String,
-    /// Timestamp when this turn occurred
-    pub timestamp: i64,
-    /// What triggered this execution (event, schedule, manual)
-    pub trigger_type: String,
-    /// Input to the agent
-    pub input: TurnInput,
-    /// Output from the agent
-    pub output: TurnOutput,
-    /// How long this turn took (milliseconds)
-    pub duration_ms: u64,
-    /// Whether this turn completed successfully
-    pub success: bool,
 }
 
 /// User message sent to an agent between executions.
@@ -1212,11 +605,8 @@ impl AgentStore {
 
         match table.get(id)? {
             Some(bytes) => {
-                let mut agent: AiAgent = serde_json::from_slice(bytes.value())
+                let agent: AiAgent = serde_json::from_slice(bytes.value())
                     .map_err(|e| Error::Serialization(e.to_string()))?;
-
-                // Normalize memory limits for backward compatibility
-                normalize_agent_memory_limits(&mut agent);
 
                 Ok(Some(agent))
             }
@@ -1233,16 +623,13 @@ impl AgentStore {
 
         for item in table.iter()? {
             let (_id, bytes) = item?;
-            let mut agent: AiAgent = match serde_json::from_slice(bytes.value()) {
+            let agent: AiAgent = match serde_json::from_slice(bytes.value()) {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::warn!("Skipping corrupted agent record {}: {}", _id.value(), e);
                     continue;
                 }
             };
-
-            // Normalize memory limits for backward compatibility
-            normalize_agent_memory_limits(&mut agent);
 
             if self.matches_agent_filter(&agent, &filter) {
                 agents.push(agent);
@@ -1445,7 +832,7 @@ impl AgentStore {
                     None => None,
                 };
 
-                // Use latest memory if available (preserves short_term, long_term, etc.)
+                // Use latest memory if available
                 if let Some(ref mem) = latest_mem {
                     ag.memory = mem.clone();
                 }
@@ -1517,13 +904,13 @@ impl AgentStore {
         Ok(())
     }
 
-    /// Save execution record and optionally append conversation turn in a single transaction.
-    /// This is more efficient than calling save_execution and append_conversation_turn separately.
+    /// Save execution record and optionally update agent's updated_at timestamp.
+    /// Conversation history is no longer maintained — short-term memory is the single source.
     pub async fn save_execution_with_conversation(
         &self,
         execution: &AgentExecutionRecord,
         agent_id: Option<&str>,
-        conversation_turn: Option<&ConversationTurn>,
+        _conversation_turn: Option<&serde_json::Value>,
     ) -> Result<(), Error> {
         let write_txn = self.db.begin_write()?;
 
@@ -1535,15 +922,8 @@ impl AgentStore {
             table.insert(execution.id.as_str(), value.as_slice())?;
         }
 
-        // Optionally update conversation history in the same transaction
-        if let (Some(agent_id), Some(turn)) = (agent_id, conversation_turn) {
-            tracing::debug!(
-                agent_id = %agent_id,
-                execution_id = %execution.id,
-                turn_execution_id = %turn.execution_id,
-                "Updating conversation history for agent"
-            );
-            // Get current agent state using the write transaction (it can also read)
+        // Update agent's updated_at timestamp in the same transaction
+        if let Some(agent_id) = agent_id {
             let mut agent = {
                 let result = match write_txn.open_table(AGENTS_TABLE)?.get(agent_id)? {
                     Some(bytes) => {
@@ -1557,77 +937,14 @@ impl AgentStore {
                 result?
             };
 
-            // Update conversation history
-            let old_len = agent.conversation_history.len();
-            agent.conversation_history.push(turn.clone());
-            tracing::debug!(
-                "[DEBUG] Conversation history: old_len={}, new_len={}",
-                old_len,
-                agent.conversation_history.len()
-            );
-
-            tracing::debug!(
-                agent_id = %agent_id,
-                old_history_len = old_len,
-                new_history_len = agent.conversation_history.len(),
-                "Conversation history updated"
-            );
-
-            // Trim history to prevent unbounded growth
-            // Keep the most recent MAX_CONVERSATION_TURNS entries
-            // Before discarding old turns, compress them into conversation_summary
-            if agent.conversation_history.len() > Self::MAX_CONVERSATION_TURNS {
-                let removed_count = agent.conversation_history.len() - Self::MAX_CONVERSATION_TURNS;
-
-                // Compress evicted turns into conversation_summary to preserve key insights
-                let evicted: Vec<&ConversationTurn> =
-                    agent.conversation_history.iter().take(removed_count).collect();
-                let summary_addition = Self::summarize_evicted_turns(&evicted);
-                if !summary_addition.is_empty() {
-                    let existing = agent.conversation_summary.take().unwrap_or_default();
-                    // Keep summary bounded: if it grows too long, trim the oldest part
-                    let combined = if existing.is_empty() {
-                        summary_addition
-                    } else {
-                        format!("{}\n{}", existing, summary_addition)
-                    };
-                    // Cap summary at ~2000 chars to prevent unbounded growth
-                    const MAX_SUMMARY_LEN: usize = 2000;
-                    agent.conversation_summary = Some(if combined.len() > MAX_SUMMARY_LEN {
-                        let cut = combined.floor_char_boundary(combined.len() - MAX_SUMMARY_LEN);
-                        combined[cut..].to_string()
-                    } else {
-                        combined
-                    });
-                }
-
-                // Remove the oldest entries
-                agent.conversation_history.drain(0..removed_count);
-
-                tracing::debug!(
-                    agent_id = %agent_id,
-                    removed_count = removed_count,
-                    remaining_count = agent.conversation_history.len(),
-                    "Trimmed conversation history to prevent unbounded growth"
-                );
-            }
-
             agent.updated_at = chrono::Utc::now().timestamp();
 
-            // Save updated agent
             {
                 let mut table = write_txn.open_table(AGENTS_TABLE)?;
                 let value =
                     serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
                 table.insert(agent_id, value.as_slice())?;
             }
-        } else {
-            tracing::warn!(
-                execution_id = %execution.id,
-                agent_id = ?agent_id,
-                has_turn = conversation_turn.is_some(),
-                "Skipping conversation history update - agent_id or turn is None"
-            );
         }
 
         write_txn.commit()?;
@@ -1825,217 +1142,6 @@ impl AgentStore {
         true
     }
 
-    // ========== Conversation History Methods ==========
-
-    /// Maximum number of conversation turns to keep in history.
-    /// Older turns are automatically removed to prevent unbounded growth.
-    const MAX_CONVERSATION_TURNS: usize = 20;
-
-    /// Compress evicted conversation turns into a compact summary string.
-    /// Preserves key insights (conclusions, anomaly patterns, decisions) while
-    /// discarding full details. This prevents total information loss when old
-    /// turns are evicted from the bounded conversation_history.
-    fn summarize_evicted_turns(turns: &[&ConversationTurn]) -> String {
-        if turns.is_empty() {
-            return String::new();
-        }
-
-        let mut lines = Vec::new();
-        let first_ts = turns.first().and_then(|t| {
-            chrono::DateTime::from_timestamp(t.timestamp, 0)
-                .map(|dt| dt.format("%Y-%m-%d").to_string())
-        }).unwrap_or_else(|| "?".to_string());
-        let last_ts = turns.last().and_then(|t| {
-            chrono::DateTime::from_timestamp(t.timestamp, 0)
-                .map(|dt| dt.format("%m-%d %H:%M").to_string())
-        }).unwrap_or_else(|| "?".to_string());
-
-        lines.push(format!("[Historical {} to {}]", first_ts, last_ts));
-
-        let success_count = turns.iter().filter(|t| t.success).count();
-        let fail_count = turns.len() - success_count;
-        lines.push(format!(
-            "Summary: {} executions ({} success, {} failure)",
-            turns.len(), success_count, fail_count
-        ));
-
-        // Collect unique conclusions (truncated)
-        let conclusions: Vec<String> = turns
-            .iter()
-            .filter(|t| !t.output.conclusion.is_empty())
-            .map(|t| {
-                let conclusion = if t.output.conclusion.len() > 80 {
-                    let cut = t.output.conclusion.floor_char_boundary(80);
-                    format!("{}...", &t.output.conclusion[..cut])
-                } else {
-                    t.output.conclusion.clone()
-                };
-                let status = if t.success { "OK" } else { "FAIL" };
-                format!("- [{}] {}", status, conclusion)
-            })
-            .take(5)
-            .collect();
-        if !conclusions.is_empty() {
-            lines.push(format!("Key conclusions:\n{}", conclusions.join("\n")));
-        }
-
-        // Collect decision patterns
-        let all_decisions: Vec<&str> = turns
-            .iter()
-            .flat_map(|t| t.output.decisions.iter())
-            .filter(|d| !d.description.is_empty())
-            .map(|d| &d.description[..d.description.len().min(60)])
-            .take(3)
-            .collect();
-        if !all_decisions.is_empty() {
-            lines.push(format!("Actions taken: {}", all_decisions.join("; ")));
-        }
-
-        lines.join("\n")
-    }
-
-    /// Append a new conversation turn to an agent's history.
-    /// Automatically trims history to MAX_CONVERSATION_TURNS to prevent unbounded growth.
-    pub async fn append_conversation_turn(
-        &self,
-        agent_id: &str,
-        turn: &ConversationTurn,
-    ) -> Result<(), Error> {
-        let mut agent = self
-            .get_agent(agent_id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
-
-        agent.conversation_history.push(turn.clone());
-
-        // Trim history to prevent unbounded growth
-        // Keep the most recent MAX_CONVERSATION_TURNS entries
-        // Compress evicted turns into conversation_summary before discarding
-        if agent.conversation_history.len() > Self::MAX_CONVERSATION_TURNS {
-            let removed_count = agent.conversation_history.len() - Self::MAX_CONVERSATION_TURNS;
-            let evicted: Vec<&ConversationTurn> =
-                agent.conversation_history.iter().take(removed_count).collect();
-            let summary_addition = Self::summarize_evicted_turns(&evicted);
-            if !summary_addition.is_empty() {
-                let existing = agent.conversation_summary.take().unwrap_or_default();
-                let combined = if existing.is_empty() {
-                    summary_addition
-                } else {
-                    format!("{}\n{}", existing, summary_addition)
-                };
-                const MAX_SUMMARY_LEN: usize = 2000;
-                agent.conversation_summary = Some(if combined.len() > MAX_SUMMARY_LEN {
-                    let cut = combined.floor_char_boundary(combined.len() - MAX_SUMMARY_LEN);
-                    combined[cut..].to_string()
-                } else {
-                    combined
-                });
-            }
-            agent.conversation_history.drain(0..removed_count);
-
-            tracing::debug!(
-                agent_id = %agent_id,
-                removed_count = removed_count,
-                remaining_count = agent.conversation_history.len(),
-                "Trimmed conversation history to prevent unbounded growth"
-            );
-        }
-
-        agent.updated_at = chrono::Utc::now().timestamp();
-
-        // Save the updated agent
-        let write_txn = self.db.begin_write()?;
-        {
-            let mut table = write_txn.open_table(AGENTS_TABLE)?;
-            let value =
-                serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
-            table.insert(agent_id, value.as_slice())?;
-        }
-        write_txn.commit()?;
-
-        Ok(())
-    }
-
-    /// Get recent conversation turns for an agent.
-    pub async fn get_conversation_history(
-        &self,
-        agent_id: &str,
-        limit: Option<usize>,
-    ) -> Result<Vec<ConversationTurn>, Error> {
-        let agent = self.get_agent(agent_id).await?;
-        let agent =
-            agent.ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
-
-        let history = &agent.conversation_history;
-        if let Some(limit) = limit {
-            if history.len() > limit {
-                Ok(history[history.len() - limit..].to_vec())
-            } else {
-                Ok(history.clone())
-            }
-        } else {
-            Ok(history.clone())
-        }
-    }
-
-    /// Compress conversation history by keeping recent turns and summarizing old ones.
-    pub async fn compress_conversation(
-        &self,
-        agent_id: &str,
-        keep_recent: usize,
-        summary: String,
-    ) -> Result<(), Error> {
-        let mut agent = self
-            .get_agent(agent_id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
-
-        if agent.conversation_history.len() > keep_recent {
-            // Remove old turns, keeping only the most recent ones
-            agent.conversation_history = agent
-                .conversation_history
-                .split_off(agent.conversation_history.len() - keep_recent);
-            agent.conversation_summary = Some(summary);
-            agent.updated_at = chrono::Utc::now().timestamp();
-
-            // Save the updated agent
-            let write_txn = self.db.begin_write()?;
-            {
-                let mut table = write_txn.open_table(AGENTS_TABLE)?;
-                let value =
-                    serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
-                table.insert(agent_id, value.as_slice())?;
-            }
-            write_txn.commit()?;
-        }
-
-        Ok(())
-    }
-
-    /// Clear all conversation history for an agent.
-    pub async fn clear_conversation_history(&self, agent_id: &str) -> Result<(), Error> {
-        let mut agent = self
-            .get_agent(agent_id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
-
-        agent.conversation_history.clear();
-        agent.conversation_summary = None;
-        agent.updated_at = chrono::Utc::now().timestamp();
-
-        // Save the updated agent
-        let write_txn = self.db.begin_write()?;
-        {
-            let mut table = write_txn.open_table(AGENTS_TABLE)?;
-            let value =
-                serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
-            table.insert(agent_id, value.as_slice())?;
-        }
-        write_txn.commit()?;
-
-        Ok(())
-    }
-
     // ========== User Message Methods ==========
 
     /// Maximum number of user messages to keep.
@@ -2213,6 +1319,7 @@ mod tests {
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
         };
@@ -2258,6 +1365,7 @@ mod tests {
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
         };
@@ -2336,6 +1444,7 @@ mod tests {
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
         };
@@ -2344,15 +1453,12 @@ mod tests {
         store.save_agent(&agent).await.unwrap();
 
         // Update memory
-        agent
-            .memory
-            .state_variables
-            .insert("baseline_temp".to_string(), serde_json::json!(25.0));
-        agent.memory.trend_data.push(TrendPoint {
-            timestamp: chrono::Utc::now().timestamp(),
-            metric: "temperature".to_string(),
-            value: 25.5,
-            context: None,
+        agent.memory.journal.records.push(ExecutionRecord {
+            timestamp: 1000,
+            execution_id: "exec-1".into(),
+            outcome: "Temperature normal".into(),
+            action_taken: "no action".into(),
+            success: true,
         });
 
         store
@@ -2362,11 +1468,8 @@ mod tests {
 
         // Retrieve and verify
         let retrieved = store.get_agent("agent-1").await.unwrap().unwrap();
-        assert_eq!(
-            retrieved.memory.state_variables.get("baseline_temp"),
-            Some(&serde_json::json!(25.0))
-        );
-        assert_eq!(retrieved.memory.trend_data.len(), 1);
+        assert_eq!(retrieved.memory.journal.records.len(), 1);
+        assert_eq!(retrieved.memory.journal.records[0].outcome, "Temperature normal");
     }
 
     #[tokio::test]
@@ -2404,6 +1507,7 @@ mod tests {
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
         };

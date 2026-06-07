@@ -1897,8 +1897,8 @@ export interface AiAgentDetail extends AiAgent {
   stats: AgentStats
   updated_at: string
   error_message?: string
-  // Conversation history fields
-  conversation_history: ConversationTurn[]
+  // Legacy field — no longer written to, kept for backward compat
+  conversation_history?: never[]
   user_messages: UserMessage[]
   conversation_summary: string | null
   context_window_size: number
@@ -1911,8 +1911,10 @@ export interface AiAgentDetail extends AiAgent {
     enabled: boolean
     allowed_tools?: string[]
   }
-  /** Execution mode: "focused" for single-pass, "free" for multi-round tool calling, "chat"/"react" for backward compatibility */
-  execution_mode?: 'focused' | 'free' | 'chat' | 'react'
+  /** Execution mode: "focused" for bound-resource agents, "free" for unrestricted tool-calling */
+  execution_mode?: 'focused' | 'free'
+  /** Custom system prompt override */
+  system_prompt?: string
 }
 
 /**
@@ -1940,104 +1942,42 @@ export interface ParsedIntent {
 /**
  * Agent memory with persistent state
  */
+/**
+ * Agent memory: execution journal + knowledge file index
+ */
 export interface AgentMemory {
-  // Hierarchical memory structure
-  working: WorkingMemory
-  short_term: ShortTermMemory
-  long_term: LongTermMemory
-  // Legacy fields (backward compatibility)
-  state_variables: Record<string, unknown>
-  baselines?: Record<string, number>
-  learned_patterns: LearnedPattern[]
-  trend_data: TrendPoint[]
+  journal: ExecutionJournal
+  knowledge_files: KnowledgeFileRef[]
   updated_at: string
-  // Task-level accumulated knowledge
-  task_profile?: TaskProfile | null
 }
 
 /**
- * Evolving task-level knowledge from reflection
+ * Execution journal — recent execution records
  */
-export interface TaskProfile {
-  summary: string
-  updated_at: number
-  executions_reflected: number
-  version: number
+export interface ExecutionJournal {
+  records: JournalExecutionRecord[]
+  max_records: number
 }
 
 /**
- * Working memory - current execution context
+ * A single execution record in the agent's journal
  */
-export interface WorkingMemory {
-  current_analysis: string | null
-  current_conclusion: string | null
-  created_at: string
-}
-
-/**
- * Short-term memory - recent summaries
- */
-export interface ShortTermMemory {
-  summaries: MemorySummary[]
-  max_summaries: number
-  last_archived_at: string | null
-}
-
-/**
- * Memory summary for short-term storage
- */
-export interface MemorySummary {
+export interface JournalExecutionRecord {
   timestamp: string
   execution_id: string
-  situation: string
-  conclusion: string
-  decisions: string[]
+  outcome: string
+  action_taken: string
   success: boolean
-  insight?: string | null
 }
 
 /**
- * Long-term memory - important patterns
+ * Reference to a knowledge file created by the agent
  */
-export interface LongTermMemory {
-  memories: ImportantMemory[]
-  patterns: LearnedPattern[]
-  max_memories: number
-  min_importance: number
-}
-
-/**
- * Important memory for long-term storage
- */
-export interface ImportantMemory {
-  id: string
-  memory_type: string
-  content: string
-  importance: number
-  created_at: string
-  access_count: number
-}
-
-/**
- * Learned pattern from historical data
- */
-export interface LearnedPattern {
-  id: string
-  pattern_type: string
+export interface KnowledgeFileRef {
+  name: string
   description: string
-  confidence: number
-  learned_at: number  // Unix timestamp
-  data: Record<string, unknown>
-}
-
-/**
- * Trend data point for memory
- */
-export interface TrendPoint {
-  timestamp: number
-  metric: string
-  value: number
-  context?: Record<string, unknown>
+  created_at: string
+  updated_at: string
 }
 
 /**
@@ -2123,37 +2063,6 @@ export interface AgentExecution {
 export type ExecutionStatus = 'Running' | 'Completed' | 'Failed' | 'Cancelled'
 
 /**
- * Input for a single conversation turn (execution)
- */
-export interface TurnInput {
-  data_collected: DataCollected[]
-  event_data: Record<string, unknown> | null
-}
-
-/**
- * Output from a single conversation turn (execution)
- */
-export interface TurnOutput {
-  situation_analysis: string
-  reasoning_steps: ReasoningStep[]
-  decisions: Decision[]
-  conclusion: string
-}
-
-/**
- * A single conversation turn - one complete execution with context
- */
-export interface ConversationTurn {
-  execution_id: string
-  timestamp: number
-  trigger_type: string
-  input: TurnInput
-  output: TurnOutput
-  duration_ms: number
-  success: boolean
-}
-
-/**
  * User message sent to an agent between executions
  */
 export interface UserMessage {
@@ -2194,8 +2103,10 @@ export interface CreateAgentRequest {
   priority?: number
   /** Context window size (default: 10) */
   context_window_size?: number
-  /** Execution mode: "focused" for single-pass, "free" for multi-round tool calling, "chat"/"react" for backward compatibility */
-  execution_mode?: 'focused' | 'free' | 'chat' | 'react'
+  /** Execution mode: "focused" for bound-resource agents, "free" for unrestricted tool-calling */
+  execution_mode?: 'focused' | 'free'
+  /** Custom system prompt override */
+  system_prompt?: string
 }
 
 /**

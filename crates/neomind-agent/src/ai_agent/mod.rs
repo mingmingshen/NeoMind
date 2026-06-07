@@ -173,6 +173,7 @@ impl AiAgentManager {
             stats: Default::default(),
             memory: Default::default(),
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
             conversation_history: Default::default(),

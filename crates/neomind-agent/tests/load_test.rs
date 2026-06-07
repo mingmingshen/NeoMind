@@ -13,8 +13,8 @@ use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_storage::{
-    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, ExecutionMode,
-    LongTermMemory, ScheduleType, ShortTermMemory, WorkingMemory,
+    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, ExecutionJournal,
+    ExecutionMode, ScheduleType,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -178,6 +178,8 @@ impl LoadTestContext {
             memory_store: None,
             backend_semaphores: None,
             skill_registry: None,
+            memory_agent_id_handle: None,
+            memory_knowledge_files_handle: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -221,19 +223,14 @@ impl LoadTestContext {
                 last_duration_ms: Some(0),
             },
             memory: AgentMemory {
-                state_variables: Default::default(),
-                baselines: Default::default(),
-                learned_patterns: vec![],
-                trend_data: vec![],
-                task_profile: None,
+                journal: ExecutionJournal::default(),
+                knowledge_files: vec![],
                 updated_at: now,
-                working: WorkingMemory::default(),
-                short_term: ShortTermMemory::default(),
-                long_term: LongTermMemory::default(),
             },
             tool_config: None,
             execution_mode: ExecutionMode::Focused,
             error_message: None,
+            system_prompt: None,
             max_retries: 0,
             consecutive_failures: 0,
             priority: 128,
@@ -444,11 +441,10 @@ async fn test_agent_with_large_dataset() -> anyhow::Result<()> {
     println!("  最大: {:?}", max_time);
     println!("  总计: {:?}", total_time);
 
-    // Check conversation history
+    // Check agent state (conversation_history is backward compat only, not written to)
     let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
-    println!("  对话历史: {} 条", agent.conversation_history.len());
-
-    assert_eq!(agent.conversation_history.len(), executions);
+    println!("  对话历史 (backward compat): {} 条", agent.conversation_history.len());
+    let _ = &agent.conversation_history;
 
     println!("✅ 大数据集 Agent 测试通过！");
     Ok(())
@@ -492,27 +488,14 @@ async fn test_conversation_history_under_load() -> anyhow::Result<()> {
 
     let elapsed = start.elapsed();
 
-    // Verify history was saved (capped at MAX_CONVERSATION_TURNS)
+    // Verify history was saved (conversation_history is backward compat only, not written to)
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    let expected_history = execution_count.min(20); // MAX_CONVERSATION_TURNS = 20
-    assert_eq!(
-        agent.conversation_history.len(),
-        expected_history,
-        "History should be capped at MAX_CONVERSATION_TURNS (20)"
-    );
-
-    // Verify conversation history order
-    for i in 1..agent.conversation_history.len() {
-        assert!(
-            agent.conversation_history[i].timestamp >= agent.conversation_history[i - 1].timestamp,
-            "Conversation history should be in chronological order"
-        );
-    }
+    let _ = &agent.conversation_history;
 
     println!("\n结果:");
     println!("  总执行: {}", execution_count);
     println!(
-        "  历史记录: {} (capped at 20)",
+        "  历史记录 (backward compat): {} 条",
         agent.conversation_history.len()
     );
     println!("  总耗时: {:?}", elapsed);
@@ -609,17 +592,17 @@ async fn test_multi_agent_concurrent_execution() -> anyhow::Result<()> {
         total_executions as f64 / total_elapsed.as_secs_f64()
     );
 
-    // Verify all agents have correct history
+    // Verify all agents can be loaded (conversation_history is backward compat only)
     println!("\n验证对话历史:");
     for (i, (agent_id, name)) in agent_ids.iter().enumerate() {
         let agent = ctx.store.get_agent(agent_id).await?.unwrap();
         println!(
-            "  Agent{} ({}): {} 条历史记录",
+            "  Agent{} ({}): {} 条历史记录 (backward compat)",
             i + 1,
             name,
             agent.conversation_history.len()
         );
-        assert_eq!(agent.conversation_history.len(), execution_rounds);
+        let _ = &agent.conversation_history;
     }
 
     println!("✅ 多 Agent 并发测试通过！");

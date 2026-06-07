@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 
 use neomind_agent::memory::MemoryScheduler;
 use neomind_agent::SessionManager;
-use neomind_storage::{AgentStore, MarkdownMemoryStore, MemoryConfig};
+use neomind_storage::{AgentStore, KnowledgeFileRef, MarkdownMemoryStore, MemoryConfig};
 
 /// AI Agent manager type alias.
 pub type AgentManager = Arc<neomind_agent::ai_agent::AiAgentManager>;
@@ -37,6 +37,12 @@ pub struct AgentState {
     /// Handle to set session ID on the memory tool (shared across sessions).
     pub memory_session_handle: Arc<RwLock<Option<String>>>,
 
+    /// Handle to set agent ID on the memory tool (per-execution, for agent-scoped files).
+    pub memory_agent_id_handle: Arc<RwLock<Option<String>>>,
+
+    /// Handle to sync knowledge_files index between MemoryTool and AgentMemory.
+    pub memory_knowledge_files_handle: Arc<RwLock<Vec<KnowledgeFileRef>>>,
+
     /// Memory scheduler for background extraction/compression (lazy-initialized).
     pub memory_scheduler: Arc<RwLock<Option<MemoryScheduler>>>,
 }
@@ -55,6 +61,8 @@ impl AgentState {
             agent_manager,
             system_memory_store,
             memory_session_handle: Arc::new(RwLock::new(None)),
+            memory_agent_id_handle: Arc::new(RwLock::new(None)),
+            memory_knowledge_files_handle: Arc::new(RwLock::new(Vec::new())),
             memory_scheduler: Arc::new(RwLock::new(None)),
         }
     }
@@ -114,6 +122,8 @@ impl AgentState {
                 std::env::temp_dir().join("test-memory"),
             )),
             memory_session_handle: Arc::new(RwLock::new(None)),
+            memory_agent_id_handle: Arc::new(RwLock::new(None)),
+            memory_knowledge_files_handle: Arc::new(RwLock::new(Vec::new())),
             memory_scheduler: Arc::new(RwLock::new(None)),
         }
     }

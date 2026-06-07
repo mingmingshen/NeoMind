@@ -1,7 +1,7 @@
 //! Memory management tool for persistent and session-scoped storage.
 
 use async_trait::async_trait;
-use neomind_storage::MarkdownMemoryStore;
+use neomind_storage::{KnowledgeFileRef, MarkdownMemoryStore};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -16,24 +16,29 @@ use super::ToolOutput;
 ///
 /// Supports:
 /// - Persistent: USER.md (user profile), KNOWLEDGE.md (domain knowledge)
-/// - Custom files: `custom/{name}.md` (domain-specific knowledge, LLM auto-created)
+/// - Agent-scoped custom files: `custom:{name}` → `agents/{agent_id}/custom/{name}.md`
 /// - Session: `sessions/{id}/notes.md` (multi-step task tracking, 7-day TTL)
 pub struct MemoryTool {
     store: Arc<RwLock<MarkdownMemoryStore>>,
     session_id: Arc<RwLock<Option<String>>>,
+    /// Agent ID for agent-scoped custom file isolation — set per-execution
+    agent_id: Arc<RwLock<Option<String>>>,
+    /// Knowledge file index — updated when LLM creates custom files
+    knowledge_files: Arc<RwLock<Vec<KnowledgeFileRef>>>,
 }
 
 impl MemoryTool {
-    /// Create a new memory tool.
+    /// Create a new memory tool (no agent context — global scope).
     pub fn new(store: Arc<RwLock<MarkdownMemoryStore>>) -> Self {
         Self {
             store,
             session_id: Arc::new(RwLock::new(None)),
+            agent_id: Arc::new(RwLock::new(None)),
+            knowledge_files: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
     /// Create a new memory tool with a shared session ID handle.
-    /// This allows the API layer to set the session ID per-request.
     pub fn with_session_handle(
         store: Arc<RwLock<MarkdownMemoryStore>>,
         session_handle: Arc<RwLock<Option<String>>>,
@@ -41,12 +46,42 @@ impl MemoryTool {
         Self {
             store,
             session_id: session_handle,
+            agent_id: Arc::new(RwLock::new(None)),
+            knowledge_files: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    /// Create a new memory tool with shared handles for all dynamic state.
+    /// The agent_id and knowledge_files handles are shared with the executor
+    /// so it can inject agent_id per-execution and sync knowledge_files back.
+    pub fn with_shared_handles(
+        store: Arc<RwLock<MarkdownMemoryStore>>,
+        session_handle: Arc<RwLock<Option<String>>>,
+        agent_id_handle: Arc<RwLock<Option<String>>>,
+        knowledge_files_handle: Arc<RwLock<Vec<KnowledgeFileRef>>>,
+    ) -> Self {
+        Self {
+            store,
+            session_id: session_handle,
+            agent_id: agent_id_handle,
+            knowledge_files: knowledge_files_handle,
         }
     }
 
     /// Get a handle to set the session ID (call after registration).
     pub fn session_id_handle(&self) -> Arc<RwLock<Option<String>>> {
         self.session_id.clone()
+    }
+
+    /// Get a handle to set the agent ID per-execution.
+    pub fn agent_id_handle(&self) -> Arc<RwLock<Option<String>>> {
+        self.agent_id.clone()
+    }
+
+    /// Get a handle to read/modify the knowledge file index.
+    /// The executor reads this after tool loop to sync back to AgentMemory.
+    pub fn knowledge_files_handle(&self) -> Arc<RwLock<Vec<KnowledgeFileRef>>> {
+        self.knowledge_files.clone()
     }
 
     /// Get preview text (first 50 chars).
@@ -100,9 +135,65 @@ impl MemoryTool {
             })
     }
 
-    /// Parse a target string. Returns Ok(Some(name)) for custom:{name}, Ok(None) for built-in targets.
+    /// Parse a target string. Returns Some(name) for custom:{name}, None for built-in targets.
     fn parse_custom_target(target: &str) -> Option<&str> {
         target.strip_prefix("custom:")
+    }
+
+    /// Get the current agent_id.
+    async fn get_agent_id(&self) -> Option<String> {
+        self.agent_id.read().await.clone()
+    }
+
+    /// Read a custom file, respecting agent scope.
+    fn read_custom(&self, store: &MarkdownMemoryStore, agent_id: Option<&str>, name: &str) -> Result<String> {
+        if let Some(aid) = agent_id {
+            store
+                .read_agent_custom_file(aid, name)
+                .map_err(|e| ToolError::Execution(e.to_string()))
+        } else {
+            store
+                .read_custom_file(name)
+                .map_err(|e| ToolError::Execution(e.to_string()))
+        }
+    }
+
+    /// Write a custom file, respecting agent scope.
+    fn write_custom(&self, store: &MarkdownMemoryStore, agent_id: Option<&str>, name: &str, content: &str) -> Result<()> {
+        if let Some(aid) = agent_id {
+            store
+                .write_agent_custom_file(aid, name, content)
+                .map_err(|e| ToolError::Execution(e.to_string()))
+        } else {
+            store
+                .write_custom_file(name, content)
+                .map_err(|e| ToolError::Execution(e.to_string()))
+        }
+    }
+
+    /// Update the knowledge file index when creating a new custom file.
+    async fn register_knowledge_file(&self, name: &str, description: &str) {
+        let now = chrono::Utc::now().timestamp();
+        let mut files = self.knowledge_files.write().await;
+        if let Some(existing) = files.iter_mut().find(|f| f.name == name) {
+            existing.updated_at = now;
+        } else {
+            files.push(KnowledgeFileRef {
+                name: name.to_string(),
+                description: truncate_to(description, 100),
+                created_at: now,
+                updated_at: now,
+            });
+        }
+    }
+}
+
+fn truncate_to(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        text.to_string()
+    } else {
+        let truncated: String = text.chars().take(max_chars.saturating_sub(3)).collect();
+        truncated + "..."
     }
 }
 
@@ -127,13 +218,13 @@ Targets:
 - user: Persistent user profile and preferences (USER.md)
 - knowledge: System knowledge and domain info (KNOWLEDGE.md)
 - session: Session-scoped notes for multi-step task tracking (cleared after 7 days)
-- custom:{name}: Domain-specific custom file (e.g., custom:mqtt-setup, custom:device-map). Created with action='create'.
+- custom:{name}: Domain-specific custom file (e.g., custom:device-patterns, custom:thresholds). Created with action='create'.
 
 Examples:
 - Add user preference: action='add', target='user', content='Prefers dark mode'
 - Replace in knowledge: action='replace', target='knowledge', old_text='old info', content='new info'
 - Read session notes: action='read', target='session'
-- Create custom file: action='create', target='custom:mqtt-setup', content='Broker at 192.168.1.1:1883...'
+- Create custom file: action='create', target='custom:device-patterns', content='- temp normal: 22-28°C\n- alert threshold: 40°C'
 - List all targets: action='list'"##
     }
 
@@ -187,6 +278,9 @@ Examples:
             }
         }
 
+        // Read agent_id once for this execution
+        let agent_id = self.get_agent_id().await;
+
         match action {
             "create" => {
                 let content = args["content"].as_str().ok_or_else(|| {
@@ -201,9 +295,19 @@ Examples:
                 })?;
 
                 let store = self.store.write().await;
-                store
-                    .write_custom_file(custom_name, content)
-                    .map_err(|e| ToolError::Execution(e.to_string()))?;
+                self.write_custom(&store, agent_id.as_deref(), custom_name, content)?;
+
+                // Extract description from first line of content
+                let description = content
+                    .lines()
+                    .next()
+                    .unwrap_or("Knowledge file")
+                    .trim_start_matches("# ")
+                    .to_string();
+
+                drop(store);
+                self.register_knowledge_file(custom_name, &description)
+                    .await;
 
                 Ok(ToolOutput::success(serde_json::json!({
                     "message": format!("Created custom file '{}' ({} chars)", custom_name, content.chars().count())
@@ -218,13 +322,9 @@ Examples:
                 let dedup = DedupProcessor::with_defaults();
 
                 let result = if let Some(custom_name) = Self::parse_custom_target(target) {
-                    let existing = store
-                        .read_custom_file(custom_name)
-                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    let existing = self.read_custom(&store, agent_id.as_deref(), custom_name)?;
                     let new_content = Self::append_content(&existing, content);
-                    store
-                        .write_custom_file(custom_name, &new_content)
-                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    self.write_custom(&store, agent_id.as_deref(), custom_name, &new_content)?;
                     format!(
                         "Added to custom:{} ({} chars)",
                         custom_name,
@@ -234,12 +334,10 @@ Examples:
                     match target {
                         "user" | "knowledge" => {
                             let existing = store.read_file(target).await?;
-                            // Check similarity against existing entries
                             let existing_lines: Vec<String> = existing
                                 .lines()
                                 .filter(|l| l.trim().starts_with("- ["))
                                 .filter_map(|l| {
-                                    // Strip "- [date] " prefix and " [importance: N]" suffix
                                     let trimmed = l.trim();
                                     let after_date = trimmed.strip_prefix("- [")?;
                                     let close_bracket = after_date.find(']')?;
@@ -297,13 +395,9 @@ Examples:
                 let store = self.store.write().await;
 
                 let result = if let Some(custom_name) = Self::parse_custom_target(target) {
-                    let existing = store
-                        .read_custom_file(custom_name)
-                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    let existing = self.read_custom(&store, agent_id.as_deref(), custom_name)?;
                     let new_content = Self::replace_in_content(&existing, old_text, content)?;
-                    store
-                        .write_custom_file(custom_name, &new_content)
-                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    self.write_custom(&store, agent_id.as_deref(), custom_name, &new_content)?;
                     format!(
                         "Replaced in custom:{} ({} chars)",
                         custom_name,
@@ -350,13 +444,9 @@ Examples:
                 let store = self.store.write().await;
 
                 let result = if let Some(custom_name) = Self::parse_custom_target(target) {
-                    let existing = store
-                        .read_custom_file(custom_name)
-                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    let existing = self.read_custom(&store, agent_id.as_deref(), custom_name)?;
                     let new_content = Self::remove_from_content(&existing, old_text)?;
-                    store
-                        .write_custom_file(custom_name, &new_content)
-                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    self.write_custom(&store, agent_id.as_deref(), custom_name, &new_content)?;
                     format!(
                         "Removed from custom:{} ({} chars)",
                         custom_name,
@@ -399,9 +489,7 @@ Examples:
                 let store = self.store.read().await;
 
                 let result = if let Some(custom_name) = Self::parse_custom_target(target) {
-                    let content = store
-                        .read_custom_file(custom_name)
-                        .map_err(|e| ToolError::Execution(e.to_string()))?;
+                    let content = self.read_custom(&store, agent_id.as_deref(), custom_name)?;
                     serde_json::json!({
                         "target": target,
                         "content": content,
@@ -440,7 +528,6 @@ Examples:
             "list" => {
                 let store = self.store.read().await;
 
-                // Read persistent files
                 let user_content = store.read_file("user").await?;
                 let knowledge_content = store.read_file("knowledge").await?;
 
@@ -455,7 +542,6 @@ Examples:
                     }
                 });
 
-                // Read session notes if session_id is set
                 if let Some(session_id) = self.session_id.read().await.clone() {
                     let notes_content = store.read_session_file(&session_id, "notes").await?;
                     result["session"] = serde_json::json!({
@@ -464,16 +550,21 @@ Examples:
                     });
                 }
 
-                // Read custom files
-                let custom_files = store
-                    .list_custom_files()
-                    .map_err(|e| ToolError::Execution(e.to_string()))?;
+                // Read custom files (agent-scoped or global)
+                let custom_files = if let Some(ref aid) = agent_id {
+                    store
+                        .list_agent_custom_files(aid)
+                        .map_err(|e| ToolError::Execution(e.to_string()))?
+                } else {
+                    store
+                        .list_custom_files()
+                        .map_err(|e| ToolError::Execution(e.to_string()))?
+                };
+
                 if !custom_files.is_empty() {
                     let mut customs = serde_json::Map::new();
                     for (name, chars) in &custom_files {
-                        let content = store
-                            .read_custom_file(name)
-                            .map_err(|e| ToolError::Execution(e.to_string()))?;
+                        let content = self.read_custom(&store, agent_id.as_deref(), name)?;
                         customs.insert(
                             format!("custom:{}", name),
                             serde_json::json!({

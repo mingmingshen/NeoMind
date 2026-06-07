@@ -392,19 +392,11 @@ async fn generate_pattern_based_suggestions(state: &ServerState) -> Vec<Suggesti
 
     let mut high_confidence_patterns: Vec<(String, f32)> = Vec::new();
 
+    // Use recent journal outcomes as pattern-like insights
     for agent in agents {
-        for pattern in &agent.memory.learned_patterns {
-            if pattern.confidence > 0.7 {
-                if let Some(action) = pattern.data.get("action") {
-                    if let Some(action_str) = action.as_str() {
-                        high_confidence_patterns
-                            .push((format!("类似: {}", action_str), pattern.confidence));
-                    }
-                }
-                if !pattern.description.is_empty() {
-                    high_confidence_patterns
-                        .push((pattern.description.clone(), pattern.confidence));
-                }
+        for record in agent.memory.journal.records.iter().rev().take(3) {
+            if !record.outcome.is_empty() {
+                high_confidence_patterns.push((record.outcome.clone(), 0.8));
             }
         }
     }
