@@ -40,7 +40,7 @@ fn default_enabled() -> bool { true }
 fn default_storage_path() -> String { "data/memory".to_string() }
 fn default_user_limit() -> usize { 2000 }
 fn default_knowledge_limit() -> usize { 3000 }
-fn default_agent_limit() -> usize { 1000 }
+fn default_agent_limit() -> usize { 5000 }
 fn default_ttl() -> u64 { 7 }
 fn default_context_interval() -> u64 { 600 }
 fn default_summary_interval() -> u64 { 7200 }
@@ -94,7 +94,7 @@ mod tests {
         assert!(config.enabled);
         assert_eq!(config.user_char_limit, 2000);
         assert_eq!(config.knowledge_char_limit, 3000);
-        assert_eq!(config.agent_char_limit, 1000);
+        assert_eq!(config.agent_char_limit, 5000);
         assert_eq!(config.temp_file_ttl_days, 7);
         assert_eq!(config.system_context_interval_secs, 600);
         assert_eq!(config.summary_interval_secs, 7200);

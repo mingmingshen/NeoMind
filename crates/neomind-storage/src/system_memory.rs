@@ -1834,7 +1834,7 @@ mod tests_new_layout {
             storage_path: temp_dir.path().to_str().unwrap().to_string(),
             user_char_limit: 2000,
             knowledge_char_limit: 3000,
-            agent_char_limit: 1000,
+            agent_char_limit: 5000,
             temp_file_ttl_days: 7,
             system_context_interval_secs: 600,
             summary_interval_secs: 7200,

@@ -499,6 +499,13 @@ export function AgentEditorFullScreen({
     }
   }, [agent, open])
 
+  // Reload resources when devices/deviceTypes become available (may be empty on first render)
+  useEffect(() => {
+    if (open && agent && devices.length > 0) {
+      loadAgentResources(agent)
+    }
+  }, [devices, deviceTypes, open])
+
   // Auto-focus name input when creating a new agent
   useEffect(() => {
     if (open && !agent) {
