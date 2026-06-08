@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { Confirmer } from "@/components/ui/confirmer"
 import { tokenManager, getApiBase, isTauriEnv, setApiBase, getApiKey } from "@/lib/api"
 import { StartupLoading } from "@/components/StartupLoading"
+import { LoadingState } from "@/components/shared/LoadingState"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
 import { useExtensionComponents } from "@/hooks/useExtensionComponents"
 import { UpdateDialog } from '@/components/update'
@@ -192,10 +193,7 @@ function handleTauriBackspace(e: KeyboardEvent) {
 function PageLoading() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
+      <LoadingState size="lg" text="Loading..." />
     </div>
   )
 }

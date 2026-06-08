@@ -203,7 +203,7 @@ export function ResponsiveTable({
                   <tr
                     key={rowKey(rowData)}
                     className={cn(
-                      "border-b transition-all duration-200 hover:bg-muted-30 hover:shadow-sm animate-fade-in-up",
+                      "border-b transition-all duration-200 hover:bg-brand-bg/40 hover:shadow-sm animate-fade-in-up",
                       onRowClick && 'cursor-pointer',
                       rowClass
                     )}
@@ -293,8 +293,8 @@ export function ResponsiveTable({
               <Card
                 key={rowKey(rowData)}
                 className={cn(
-                  'overflow-hidden border-border shadow-sm animate-fade-in-up',
-                  onRowClick && 'cursor-pointer active:scale-[0.99] transition-all',
+                  'overflow-hidden border-border shadow-sm animate-fade-in-up hover:shadow-md hover:-translate-y-0.5 transition-all duration-200',
+                  onRowClick && 'cursor-pointer active:scale-[0.99]',
                   rowClass
                 )}
                 style={{ animationDelay: `${index * 40}ms`, animationFillMode: 'both' }}

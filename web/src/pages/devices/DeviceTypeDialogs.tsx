@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
+import { LoadingState } from "@/components/shared/LoadingState"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
@@ -2664,9 +2665,7 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
       <FullScreenDialogContent>
         <FullScreenDialogMain className="p-4 md:p-6">
           {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
+            <LoadingState size="lg" className="h-64" />
           ) : deviceTypes.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               {t('devices:cloud.noDeviceTypes', "暂无可用设备类型")}

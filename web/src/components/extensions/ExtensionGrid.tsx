@@ -186,8 +186,8 @@ export function ExtensionGrid({
     return (
       <div className="flex flex-col items-center py-12 px-4">
         {/* Hero */}
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent ring-1 ring-primary/10 mb-5">
-          <Plug className="h-8 w-8 text-primary" />
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted ring-1 ring-border mb-5">
+          <Plug className="h-8 w-8 text-muted-foreground" />
         </div>
         <h3 className="text-xl font-semibold">{t("empty.title")}</h3>
         <p className="mt-2 text-sm text-muted-foreground max-w-md text-center leading-relaxed">
@@ -204,10 +204,10 @@ export function ExtensionGrid({
             {marqueeItems.map((ext, i) => (
               <div
                 key={`${ext.name}-${i}`}
-                className="flex-shrink-0 w-56 mx-2 rounded-xl border bg-background/80 backdrop-blur-sm p-3.5 hover:border-primary/30 hover:bg-background transition-colors"
+                className="flex-shrink-0 w-56 mx-2 rounded-xl border bg-background/80 backdrop-blur-sm p-3.5 hover:border-brand/30 hover:bg-background transition-colors"
               >
                 <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-bg text-brand">
                     {ext.icon}
                   </div>
                   <div className="min-w-0">

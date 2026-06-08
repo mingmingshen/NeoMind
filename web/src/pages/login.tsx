@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { BrandLogoHorizontal } from "@/components/shared/BrandName"
+import { LoadingState } from "@/components/shared/LoadingState"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
 import { textNano } from '@/design-system/tokens/typography'
 import { tokenManager, getApiBase, getApiKey, setApiBase, clearApiKey, setApiKey } from "@/lib/api"
@@ -233,7 +234,7 @@ export function LoginPage() {
   if (checkingAuth) {
     return (
       <div className="flex flex-col bg-background relative overflow-hidden viewport-full items-center justify-center">
-        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <LoadingState size="lg" />
       </div>
     )
   }

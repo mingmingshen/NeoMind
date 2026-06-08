@@ -295,6 +295,11 @@ html {
     --shadow-glass-lg: 0 2px 8px 0 oklch(0 0 0 / 8%);
     --shadow-brand: 0 2px 12px 0 oklch(0.647 0.289 71 / 15%);
 
+    /* Brand color - NeoMind orange (#E05727) */
+    --brand: oklch(0.63 0.21 37);
+    --brand-bg: oklch(0.63 0.21 37 / 10%);
+    --brand-foreground: oklch(1 0 0);
+
     /* Semi-transparent background tokens (Tailwind v3 workaround) */
     --bg-50: oklch(1 0 0 / 50%);
     --bg-70: oklch(1 0 0 / 70%);
@@ -389,6 +394,11 @@ html {
     --shadow-glass-lg: 0 4px 16px 0 oklch(0 0 0 / 25%);
     --shadow-brand: 0 2px 12px 0 oklch(0.647 0.289 71 / 15%);
 
+    /* Brand color - NeoMind orange (brighter for dark bg) */
+    --brand: oklch(0.70 0.19 40);
+    --brand-bg: oklch(0.70 0.19 40 / 14%);
+    --brand-foreground: oklch(0.13 0.008 270);
+
     /* Semi-transparent background tokens (dark) */
     --bg-50: oklch(0.13 0.008 270 / 50%);
     --bg-70: oklch(0.13 0.008 270 / 70%);
@@ -440,18 +450,18 @@ html {
     z-index: 0;
     pointer-events: none;
     background:
-      radial-gradient(ellipse 800px 500px at 10% 5%, oklch(0.647 0.289 71 / 6%) 0%, transparent 70%),
-      radial-gradient(ellipse 600px 600px at 85% 90%, oklch(0.55 0.15 280 / 4%) 0%, transparent 70%),
-      radial-gradient(ellipse 1000px 400px at 50% 40%, oklch(0.60 0.08 250 / 3%) 0%, transparent 70%);
+      radial-gradient(ellipse 800px 500px at 10% 5%, oklch(0.647 0.289 71 / 12%) 0%, transparent 70%),
+      radial-gradient(ellipse 600px 600px at 85% 90%, oklch(0.55 0.15 280 / 8%) 0%, transparent 70%),
+      radial-gradient(ellipse 1000px 400px at 50% 40%, oklch(0.60 0.08 250 / 5%) 0%, transparent 70%);
     background-size: 150% 150%;
     animation: aurora-shift 25s ease-in-out infinite alternate;
   }
 
   .dark .aurora-bg {
     background:
-      radial-gradient(ellipse 800px 500px at 15% 10%, oklch(0.647 0.289 71 / 10%) 0%, transparent 70%),
-      radial-gradient(ellipse 600px 600px at 85% 90%, oklch(0.62 0.20 300 / 6%) 0%, transparent 70%),
-      radial-gradient(ellipse 1000px 400px at 50% 50%, oklch(0.55 0.10 250 / 4%) 0%, transparent 70%);
+      radial-gradient(ellipse 800px 500px at 15% 10%, oklch(0.647 0.289 71 / 18%) 0%, transparent 70%),
+      radial-gradient(ellipse 600px 600px at 85% 90%, oklch(0.62 0.20 300 / 12%) 0%, transparent 70%),
+      radial-gradient(ellipse 1000px 400px at 50% 50%, oklch(0.55 0.10 250 / 8%) 0%, transparent 70%);
     background-size: 150% 150%;
   }
 

@@ -4,9 +4,10 @@
  * Shows detailed view of a selected agent with tabs.
  */
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { LoadingState } from "@/components/shared/LoadingState"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -109,6 +110,10 @@ export function AgentDetailPanel({
   }, [agent?.id])
 
   // Listen to WebSocket events for real-time agent status updates
+  // Use ref to avoid stale closure over agent ID
+  const agentIdRef = useRef(agent?.id)
+  agentIdRef.current = agent?.id
+
   useEvents({
     enabled: !!agent?.id,
     eventTypes: ['AgentExecutionStarted', 'AgentExecutionCompleted'],
@@ -119,14 +124,13 @@ export function AgentDetailPanel({
       }
     },
     onEvent: (event) => {
-      if (!agent) return
-
-      const eventData = event.data as { agent_id?: string }
+      const currentAgentId = agentIdRef.current
+      if (!currentAgentId) return
 
       switch (event.type) {
         case 'AgentExecutionStarted': {
           const startedData = (event as AgentExecutionStartedEvent).data
-          if (startedData.agent_id === agent.id) {
+          if (startedData.agent_id === currentAgentId) {
             setRealtimeStatus('Executing')
           }
           break
@@ -134,7 +138,7 @@ export function AgentDetailPanel({
 
         case 'AgentExecutionCompleted': {
           const completedData = (event as AgentExecutionCompletedEvent).data
-          if (completedData.agent_id === agent.id) {
+          if (completedData.agent_id === currentAgentId) {
             // Clear realtime status - agent's original status will be used
             setRealtimeStatus(null)
             // Reload executions silently to include the just-completed one
@@ -142,7 +146,7 @@ export function AgentDetailPanel({
               loadExecutions()
             }
             // Reload agent data to get updated stats
-            api.getAgent(agent.id).then(() => {
+            api.getAgent(currentAgentId).then(() => {
               // Notify parent to refresh if needed
               onRefresh()
             }).catch(err => {
@@ -575,9 +579,7 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <LoadingState size="md" className="h-full" />
     )
   }
 

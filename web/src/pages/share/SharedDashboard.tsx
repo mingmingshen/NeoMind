@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import i18n from '@/i18n/config'
 import { fetchAPI } from '@/lib/api'
 import { Loader2, AlertTriangle, Eye, Zap, EyeOff } from 'lucide-react'
+import { LoadingState } from '@/components/shared/LoadingState'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
 import { DashboardGrid } from '@/components/dashboard/DashboardGrid'
 import { renderDashboardComponent } from '@/pages/dashboard-components/Renderers'
@@ -186,10 +187,7 @@ export function SharedDashboard() {
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">{t('sharedDashboard.loading')}</p>
-        </div>
+        <LoadingState size="lg" text={t('sharedDashboard.loading')} />
       </div>
     )
   }
@@ -348,7 +346,7 @@ function SharedDashboardContent({ dashboard }: SharedDashboardContentProps) {
   if (!ready) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <LoadingState size="md" />
       </div>
     )
   }

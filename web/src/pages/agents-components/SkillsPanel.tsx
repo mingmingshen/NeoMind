@@ -10,6 +10,7 @@ import {
   BookOpen,
   Loader2,
   Plus,
+
   Trash2,
   Wrench,
   Save,
@@ -21,7 +22,7 @@ import {
   Target,
 } from "lucide-react"
 import CodeMirror from "@uiw/react-codemirror"
-import { ResponsiveTable, EmptyState } from "@/components/shared"
+import { ResponsiveTable, EmptyState, LoadingState } from "@/components/shared"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -31,6 +32,7 @@ import {
   FullScreenDialogFooter,
 } from "@/components/automation/dialog"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { useTranslation } from "react-i18next"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
 import { api } from "@/lib/api"
@@ -101,6 +103,7 @@ export const SkillsPanel = forwardRef<SkillsPanelHandle, SkillsPanelProps>(funct
 ) {
   const { handleError } = useErrorHandler()
   const { toast } = useToast()
+  const { t } = useTranslation("agents")
 
   // Data state
   const [skills, setSkills] = useState<SkillSummary[]>([])
@@ -245,7 +248,7 @@ anti_triggers:
       } else if (dialogSkill) {
         await api.updateSkill(dialogSkill.id, dialogContent)
       }
-      toast({ title: dialogMode === "create" ? "Skill created" : "Skill updated" })
+      toast({ title: dialogMode === "create" ? t("skills.skillCreated") : t("skills.skillUpdated") })
       closeDialog()
       loadSkills()
     } catch (e) {
@@ -258,17 +261,17 @@ anti_triggers:
   // Delete skill
   const handleDelete = async (id: string, name: string) => {
     const confirmed = await confirm({
-      title: "Delete Skill",
-      description: `Are you sure you want to delete "${name}"? This action cannot be undone.`,
-      confirmText: "Delete",
-      cancelText: "Cancel",
+      title: t("skills.deleteSkill"),
+      description: t("skills.deleteConfirm", { name }),
+      confirmText: t("skills.delete"),
+      cancelText: t("skills.cancel"),
       variant: "destructive",
     })
     if (!confirmed) return
 
     try {
       await api.deleteSkill(id)
-      toast({ title: `Skill "${name}" deleted` })
+      toast({ title: t("skills.skillDeleted", { name }) })
       loadSkills()
     } catch (e) {
       handleError(e, { operation: "Delete skill" })
@@ -439,9 +442,7 @@ anti_triggers:
 
         <FullScreenDialogContent>
           {dialogLoading ? (
-            <div className="flex items-center justify-center w-full h-full">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
+            <LoadingState size="lg" className="h-full" />
           ) : (
             <div className="w-full h-full overflow-hidden">
               <CodeMirror

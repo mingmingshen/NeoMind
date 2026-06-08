@@ -13,6 +13,7 @@ import { useStore } from "@/store"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { getApiBase, isTauriEnv } from '@/lib/api'
 import { Loader2 } from "lucide-react"
+import { LoadingState } from "@/components/shared/LoadingState"
 import { AccountStep } from "./setup/AccountStep"
 import { CompleteStep } from "./setup/CompleteStep"
 
@@ -97,10 +98,7 @@ export function SetupPage() {
   if (checking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">{t('setup:loading')}</span>
-        </div>
+        <LoadingState size="lg" text={t('setup:loading')} />
       </div>
     )
   }

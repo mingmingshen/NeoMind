@@ -75,7 +75,7 @@ export function EmptyState({ icon, title, description, action, className }: Empt
   return (
     <div className={cn('flex flex-col items-center justify-center py-12 px-4 text-center animate-fade-in-up', className)}>
       {iconContent && (
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent ring-1 ring-primary/10 text-muted-foreground">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
           {iconContent}
         </div>
       )}
@@ -112,7 +112,7 @@ export function EmptyStateCompact({
   return (
     <div className="flex flex-col items-center justify-center py-6 text-center">
       {icon && (
-        <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-muted-50 text-muted-foreground">
+        <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
           {icon}
         </div>
       )}

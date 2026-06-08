@@ -89,6 +89,11 @@ export default {
           light: "var(--accent-indigo-bg)",
         },
         // Glass tokens
+        brand: {
+          DEFAULT: "var(--brand)",
+          bg: "var(--brand-bg)",
+          foreground: "var(--brand-foreground)",
+        },
         glass: "var(--glass)",
         "glass-heavy": "var(--glass-heavy)",
         "surface-glass": "var(--surface-glass)",

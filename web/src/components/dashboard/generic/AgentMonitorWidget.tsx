@@ -46,6 +46,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { LoadingState } from '../shared'
 import type { AiAgent, AgentExecution, DataCollected } from '@/types'
 import type {
   AgentExecutionStartedEvent,
@@ -372,9 +373,7 @@ function ExecutionDetailDialog({ execution, open, onClose, agentId }: ExecutionD
 
           <div className="flex-1 overflow-auto space-y-4">
             {showLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
+              <LoadingState size="md" />
             ) : detail ? (
               <>
                 {/* Timing */}
@@ -933,10 +932,7 @@ export function AgentMonitorWidget({
   if (agentShowLoading && !editMode) {
     return (
       <div className={cn(dashboardCardBase, "overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">{t('common:loading')}</p>
-        </div>
+        <LoadingState size="lg" />
       </div>
     )
   }

@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from "react"
 import { useTranslation } from "react-i18next"
+import { LoadingState } from "@/components/shared/LoadingState"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -229,9 +230,7 @@ export function AgentExecutionTimeline({
       <ScrollArea className="flex-1">
         <div className="p-4">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
+            <LoadingState size="md" className="py-12" />
           ) : executions.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Clock className="h-12 w-12 mx-auto mb-3 opacity-20" />

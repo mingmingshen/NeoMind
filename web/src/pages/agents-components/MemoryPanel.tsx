@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ResponsiveTable, EmptyState } from "@/components/shared"
+import { ResponsiveTable, EmptyState, LoadingState } from "@/components/shared"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
@@ -193,9 +193,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
         .then((res) => {
           setLlmBackends(res.backends || [])
         })
-        .catch(() => {})
+        .catch((err) => {
+          handleError(err, { operation: "Load LLM backends", showToast: false })
+        })
     }
-  }, [configOpen])
+  }, [configOpen, handleError])
 
   useEffect(() => {
     loadConfig()
@@ -627,9 +629,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
 
         <FullScreenDialogContent className="flex-col">
           {contentLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
+            <LoadingState size="lg" className="flex-1" />
           ) : editing ? (
             <div className="w-full h-full overflow-hidden">
               <CodeMirror
@@ -771,9 +771,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
 
         <FullScreenDialogContent>
           {configLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
+            <LoadingState size="lg" className="flex-1" />
           ) : (
             <FullScreenDialogMain className="p-6">
               <div className="space-y-8 max-w-4xl mx-auto">

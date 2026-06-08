@@ -13,7 +13,7 @@
     <img src="https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg" alt="Build Status">
   </a>
   <img src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" alt="License">
-  <img src="https://img.shields.io/badge/v-0.8.7-information.svg" alt="Version">
+  <img src="https://img.shields.io/badge/v-0.8.8-information.svg" alt="Version">
   <img src="https://img.shields.io/badge/Rust-1.85+-orange.svg" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg" alt="Platform">
 </p>

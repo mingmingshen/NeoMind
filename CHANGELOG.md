@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.8] - 2026-06-09
+
+### Visual Quality & Brand Identity
+
+- **Brand color system** — Added `--brand` CSS variable (NeoMind orange #E05727) with light/dark variants, registered in Tailwind config
+- **Enhanced Aurora background** — Doubled aurora gradient opacity for more visible ambient lighting in both light and dark modes
+- **Card hover lift effect** — ResponsiveTable mobile cards and DeviceList cards now lift with shadow on hover (`hover:shadow-md hover:-translate-y-0.5`)
+- **Table row brand-tinted hover** — Desktop table rows highlight with subtle brand color on hover instead of plain gray
+- **Unified loading states** — Replaced 11 raw `Loader2` spinners across page-level and dialog contexts with consistent `LoadingState` component
+- **Extension marquee brand color** — Empty state marquee cards use brand color for icon backgrounds and hover borders
+- **EmptyState consistency** — Unified icon container styling across `EmptyState` and `EmptyStateCompact`
+
+### Fixed
+
+- **AiAnalyst JSX structure** — Fixed unclosed div tag in initializing state render
+- **AgentDetailPanel stale closure** — Used ref to avoid stale closure over agent ID in event handlers
+
+---
+
 ## [0.8.7] - 2026-06-08
 
 ### Agent Memory & Context Engineering Overhaul

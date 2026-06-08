@@ -80,7 +80,7 @@ export function DeviceList({
             return (
               <Card
                 key={device.id}
-                className="overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] transition-all"
+                className="overflow-hidden border-border shadow-sm cursor-pointer active:scale-[0.99] hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                 onClick={() => onViewDetails(device)}
               >
                 <div className="px-3 py-2.5">

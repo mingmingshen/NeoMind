@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   ScanEye,
   Loader2,
+
   AlertCircle,
   Activity,
   Clock,
@@ -25,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import { dashboardCardBase } from '@/design-system/tokens/size'
 import { textNano, textMini } from "@/design-system/tokens/typography"
 import { indicatorFontWeight } from '@/design-system/tokens/indicator'
+import { LoadingState } from '../shared'
 import { AnalystTimeline } from './ai-analyst/AnalystTimeline'
 import { AnalystInputBar } from './ai-analyst/AnalystInputBar'
 import { useAnalystSession } from './ai-analyst/useAnalystSession'
@@ -336,10 +338,7 @@ export function AiAnalyst({
           className,
         )}
       >
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Initializing...</p>
-        </div>
+        <LoadingState size="lg" />
       </div>
     )
   }
