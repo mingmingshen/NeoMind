@@ -21,6 +21,8 @@ import type { ComponentConfigSchema, ConfigSection } from '@/components/dashboar
 import { DeviceBindingConfig } from '@/components/dashboard/config/DeviceBindingConfig'
 import { dynamicRegistry } from '@/components/dashboard/registry/DynamicRegistry'
 import { communityRegistry } from '@/components/dashboard/registry/CommunityRegistry'
+import { useStore } from '@/store'
+import { findDevice } from '@/lib/deviceUtils'
 import type { SchemaContext, Updaters } from './types'
 
 export function getDynamicSchema(
@@ -95,6 +97,21 @@ export function getDynamicSchema(
       // AdvancedPanel → Advanced tab for complex/component-specific config
       const advancedSections: ConfigSection[] = []
       if (bundleGlobal.AdvancedPanel) {
+        // Get device's current image from store (populated by WebSocket) for ROI editing
+        const boundDeviceId = config.deviceBinding?.deviceId
+        const storeState = useStore.getState()
+        const boundDevice = boundDeviceId ? findDevice(storeState.devices, boundDeviceId) : null
+        // Check both device.current_values and deviceTelemetry map
+        const deviceValues = (boundDevice?.current_values || storeState.deviceTelemetry?.[boundDeviceId || ''] || {}) as Record<string, unknown>
+        const getVal = (obj: any, ...paths: string[]) => {
+          for (const p of paths) { let v = obj; for (const k of p.split('.')) { v = v?.[k]; if (!v) break; } if (v && typeof v === 'string') return v; }
+          return undefined
+        }
+        const deviceImage = getVal(deviceValues, 'image', 'values.image', 'photo', 'values.photo', 'imageUrl', 'values.imageUrl', 'picture', 'values.picture')
+        const deviceImageSrc = deviceImage
+          ? (deviceImage.startsWith('data:') ? deviceImage : 'data:image/jpeg;base64,' + deviceImage)
+          : undefined
+
         advancedSections.push({
           type: 'custom' as const,
           render: () => {
@@ -103,6 +120,7 @@ export function getDynamicSchema(
               onChange: (key: string, value: any) => {
                 return updateConfig(key)(value)
               },
+              deviceImageSrc,
             })
           },
         })
