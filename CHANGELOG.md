@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.8.7] - 2026-06-07
+## [0.8.7] - 2026-06-08
 
 ### Agent Memory & Context Engineering Overhaul
 
@@ -15,115 +15,82 @@ Complete rewrite of the agent memory system — replacing a complex hierarchical
 
 ### Added
 
-- **ExecutionJournal** — FIFO ring buffer of `ExecutionRecord` (max 10 entries). Each execution logs outcome, actions taken, success status, and timestamp. Replaces ShortTermMemory + LongTermMemory (~200 lines removed)
+- **ExecutionJournal** — FIFO ring buffer of `ExecutionRecord` (max 10 entries). Each execution logs outcome, actions taken, success status, and timestamp
 - **KnowledgeFileRef** — Index entries for agent-scoped knowledge files created by the LLM via the `memory` tool. Replaces TaskProfile + Baselines
-- **Agent-scoped knowledge files** — `custom:{name}` files now isolated per agent at `agents/{agent_id}/custom/{name}.md` instead of global `custom/{name}.md`. Prevents cross-agent file collisions
-- **Shared Arc handle pattern** — `agent_id` and `knowledge_files` handles shared between MemoryTool, AgentExecutor, and AgentState for seamless injection and sync
-- **Auto-initialized task-understanding file** — On first execution, a `task-understanding.md` knowledge file is automatically created with the agent's mission, bound resources, and first execution result
-- **Memory writing guidelines in system prompt** — Guidelines section now explicitly tells the LLM when to create knowledge files (discovered thresholds, patterns, device quirks), what format to use, and what not to store (temporary data, raw metrics)
-- **Prioritized context layers** — System prompt restructured with clear priority order: Identity → Time → Task → User Messages → Knowledge Index → Resources → Journal → Guidelines
-- **Merged resource sections** — Eliminated redundant dual display of resources (was shown separately in `resource_info` and `current_data_section`). Now a single "Resources & Data" section: table format for Focused mode, list + JSON for Free mode
+- **Agent-scoped knowledge files** — `custom:{name}` files now isolated per agent at `agents/{agent_id}/custom/{name}.md`
+- **Rule creation metric discovery enforcement** — Three-layer defense to prevent LLM from creating rules with guessed device IDs or metric names
+- **Smart tool result compaction** — `compact_messages()` now uses `smart_summarize_tool_result()` to preserve key data instead of blind truncation
+- **Agent knowledge file initialization at creation** — `task-understanding.md` is created immediately when an agent is created
+- **Knowledge file content API field** — `KnowledgeFileRefDto` now includes optional `content` field
+- **Complex MetricValue in Extension transforms** — `TransformedMetric.value` upgraded from `f64` to `MetricValue` (Float/Integer/Boolean/String/Json)
+- **Extension input/output mapping resolution** — Automatic dot-path extraction, URL fetch, base64 encoding for transform parameters
+- **Dynamic output type detection** — Transform output registry detects MetricValue variant instead of hardcoding Float
+- **Image metric click-to-view** — Map and CustomLayer metric popups detect image values and display thumbnails
+- **`window.neomind` API** — `callExtension()`, `fetchDeviceValues()`, `createTransform()`, `updateTransform()`, `deleteTransform()`, `listTransforms()` for community components
+- **Dashboard Advanced tab** — Component config dialog supports custom `AdvancedPanel` from community/extension bundles
+- **Community component `config` prop** — `ComponentRenderer` passes full config object to community components
+- **Dashboard SSE self-sync echo suppression** — Prevents stale server data from overwriting in-progress edits
+- **Transform `input_raw` and `__imageData` variables** — JS transform context for vision workflows
 
 ### Frontend Visual Polish
 
-- **Stagger fade-in-up animations** — List rows, card grids, and skeletons now animate in with staggered delays
+- **Stagger fade-in-up animations** — List rows, card grids, and skeletons animate in with staggered delays
 - **Chart entrance animations** — LineChart, BarChart, PieChart animate on first render with gradient fills
-- **Shimmer skeleton effect** — Skeleton loading upgraded from simple pulse to shimmer sweep animation
-- **Page-level fade-in transition** — Pages wrapped in `PageLayout` now fade in smoothly on mount
+- **Shimmer skeleton effect** — Skeleton loading upgraded from pulse to shimmer sweep animation
+- **Page-level fade-in transition** — Pages wrapped in `PageLayout` fade in smoothly on mount
 - **Chat message entrance animation** — New chat messages animate in as they appear
-- **Theme switch transition** — Theme toggle now has color transition and icon rotation animation
-- **Card hover effects** — Cards lift with shadow on hover for interactive feedback
-- **EmptyState gradient icon** — Empty state icon container upgraded with gradient styling
+- **Theme switch transition** — Theme toggle has color transition and icon rotation animation
+- **Card hover effects** — Cards lift with shadow on hover
+- **Component library sidebar** — Flat grid layout with post-install highlight animation
 
 ### Changed
 
-- **Time context** — Reduced from 6-line `### Current Time Information` block to single concise line: `2026-06-07 14:30:00 Asia/Shanghai (June 07, 2026, Saturday Afternoon)`
-- **HistoryConfig mode-aware** — Focused mode now uses `HistoryConfig::focused()` (fewer journal entries) instead of always using `HistoryConfig::free()`
-- **Frontend Memory tab** — Replaced old sections (Task Knowledge, Long-Term Memories, Learned Patterns, Known Baselines, Image Analysis History) with: Knowledge Files cards, Execution Journal timeline, and stats (execution count + file count + last update)
-- **Frontend types** — `AgentMemory` interface now contains `ExecutionJournal` + `KnowledgeFileRef[]`. Renamed agent's `ExecutionRecord` to `JournalExecutionRecord` to avoid collision with automation's `ExecutionRecord`
-- **Frontend state typing** — Memory state changed from `useState<any>` to `useState<AgentMemory | null>` for type safety
+- **Time context** — Reduced to single concise line
+- **HistoryConfig mode-aware** — Focused mode uses `HistoryConfig::focused()`
+- **Frontend Memory tab** — Knowledge Files cards + Execution Journal timeline
+- **Extension default memory limit** — Raised from 2048MB to 4096MB for ML model workloads
+- **Cross-platform library search path** — `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH` / `PATH` for shared libraries
+- **Extension IPC channel initialization** — Event channel created before stdin reader, preventing race conditions
 
 ### Removed
 
-- **ShortTermMemory, LongTermMemory, MemorySummary, ImportantMemory, TaskProfile** — All deleted from `AgentMemory`
-- **Complex memory write logic** — `should_record()`, `reflect_task_profile()`, `should_trigger_reflection()`, `image_analysis_fingerprint()`, `extract_image_insight()` (~260 lines removed)
-- **Context fingerprint functions** — `execution_fingerprint()`, `execution_fingerprint_from_summary()`, `conclusion_fingerprint_core()` (~60 lines removed)
-- **Dead instructions** — Removed "Reply in the SAME language" directive and redundant duplicate resource display
-- **Unused functions** — `strip_llm_thinking()`, `clean_and_truncate_text()`, `is_agent_scoped()` method, and associated tests
+- **ShortTermMemory, LongTermMemory, MemorySummary, ImportantMemory, TaskProfile** — Deleted from `AgentMemory`
+- **Complex memory write logic** — ~260 lines removed
+- **Context fingerprint functions** — ~60 lines removed
+- **System prompt editor** — Removed custom system prompt textarea from agent editor
 
 ### Fixed
 
-- **Gradient ID collisions** — LineChart and BarChart gradient fills now use unique IDs per chart instance, preventing SVG gradient conflicts when multiple charts are on the same page
-- **O(n²) stagger index** — ResponsiveTable stagger animation index lookup reduced from O(n²) to O(1)
+- **Vision tool mis-invocation** — System prompt no longer tells LLM to "Use the vision tool" when images are already embedded. Changed to "(included in message)" label
+- **Vision tool incomplete data URL handling** — `resolve_image()` correctly parses `image/jpeg;base64,...` without `data:` prefix
+- **Agent base64 image cleaning** — URL-safe char conversion, whitespace stripping, padding fix, decode+re-encode validation
+- **Gradient ID collisions** — LineChart and BarChart gradient fills use unique IDs per chart instance
+- **O(n²) stagger index** — Reduced to O(1)
+- **Extension memory limit** — RLIMIT_AS raised to 4GB to accommodate ONNX Runtime + rayon thread pools
+- **Cargo.lock tracked** — Removed from .gitignore for reproducible CI builds
+- **CI build fallback** — Platform-specific bundle type fallback (deb+rpm / app / nsis) when full build fails
+- **Transform `extensions.invoke()` JS API** — Properly creates `extensions` object with `invoke` method
+- **Extension health state display** — Distinct colors for Error/Warning/Stopped states
+- **Extension crash recovery error reporting** — All failure paths write error status to storage
+- **Extension list filter** — Added Stopped/Failed filter option
+- **Device telemetry image normalization** — Normalized on initial fetch
+- **Dashboard drag jump** — Freeze container width during drag/resize
+- **Component `_raw` telemetry parsing** — Parses JSON string telemetry for flat key access
+- **Component render error isolation** — Per-cell ErrorBoundary prevents cascade failures
+- **Extension `hasDeviceBinding` metadata** — Correctly propagates through registries
+- **Agent knowledge file auto-init on update** — Legacy agents get `task-understanding.md` on first update
+- **Timeseries default timeRange** — Changed from 1h to 24h
+- **Agent card status glow** — Removed excessive ring effects
+- **Error messages for 400/422** — Shows actual server error message
+- **Metric tag extraction** — Expanded exclusion list for timeline
+- **Dynamic config multi-data-source** — Respects `max_data_sources` from widget manifest
+- **IPC event channel error logging** — Prevents silent message drops
+- **NE101 ROI canvas** — Fixed React error #310 (conditional hook), image from device store, canvas layout fix
 
 ### Backward Compatibility
 
-- All new `AgentMemory` fields use `#[serde(default)]` — old redb data deserializes gracefully with empty journal + empty knowledge files
-- `ExecutionJournal` uses manual `Default` impl with `max_records=10` (not derived, which would give 0)
+- All new `AgentMemory` fields use `#[serde(default)]` — old redb data deserializes gracefully
 - No data migration required
-
----
-
-## [Unreleased]
-
-### Added
-
-- **Rule creation metric discovery enforcement** — Three-layer defense to prevent LLM from creating rules with guessed device IDs or metric names: (1) `rule-management.md` skill rewritten with mandatory 3-step discovery flow, decision tree for condition types, and real workflow examples with "WRONG" anti-patterns; (2) `shell.rs` tool description emphasizes "discover FIRST, create SECOND" with placeholder names in examples; (3) `streaming.rs` dead-end detection injects forced metric discovery reminder when rule create is attempted without prior `device list`/`device get`
-- **Smart tool result compaction** — `compact_messages()` now uses `smart_summarize_tool_result()` to preserve key data (device IDs, names, status, error messages) instead of blind truncation. Handles JSON output, CLI responses, and plain text. Native `Tool` role messages are also compacted (previously only `Assistant` messages were checked)
-- **Agent knowledge file initialization at creation** — `task-understanding.md` is created immediately when an agent is created (not on first execution), providing the agent with mission and resource context from the start
-- **Knowledge file content API field** — `KnowledgeFileRefDto` now includes optional `content` field, allowing the API to return file contents on demand
-
-### Fixed
-
-- **Vision tool incomplete data URL handling** — `resolve_image()` now correctly parses `image/jpeg;base64,...` (missing `data:` prefix) by detecting the `;base64,` pattern without the `data:` prefix. Previously fell through to fallback which passed the entire string as raw base64 to Ollama, causing "illegal base64 data at input byte 27" errors
-- **Agent vision tool mis-invocation** — `build_focused_resource_section()` and `build_system_section()` no longer tell the LLM to "Use the `vision` tool" when images are already embedded directly in the user message. Previously, multimodal-capable LLMs saw images visually AND received text instructions to call the vision tool, causing them to fabricate invalid base64 data in tool arguments (LLMs can't reproduce binary data as text). Changed to "(included in message)" label
-- **Agent base64 image cleaning** — `build_tool_messages()` now cleans base64 data before embedding in ContentPart: URL-safe character conversion (`-`→`+`, `_`→`/`), whitespace stripping, padding fix, and decode+re-encode validation. Invalid data is logged and skipped instead of passed to Ollama
-
-### Fixed
-
-- **Agent knowledge file auto-init on update** — Legacy agents created before the knowledge file feature now get `task-understanding.md` auto-initialized on first update, not just on creation
-- **Timeseries default timeRange** — Changed from 1 hour to 24 hours for dashboard data source resolution. Also prefers raw points with timestamps over flat number arrays
-- **Agent card status glow** — Removed excessive ring effects from Active/Executing/Error status icons
-- **System prompt editor removed** — Removed custom system prompt textarea from agent editor and detail panel (auto-generated prompts work better for most users)
-- **Error messages for 400/422** — Frontend now shows the actual server error message instead of generic "Invalid request" text
-- **Metric tag extraction** — Expanded exclusion list for timeline metric tags to filter out image-related, memory, and status fields
-- **Dynamic config multi-data-source** — Dashboard dynamic config schemas now respect `max_data_sources` from widget manifest, enabling `multiple` mode for widgets that support multiple data sources
-
-### Added
-
-- **Complex MetricValue in Extension transforms** — `TransformedMetric.value` upgraded from `f64` to `MetricValue` (Float/Integer/Boolean/String/Json). Extension transforms can now produce detection box arrays, count-by-class maps, and text arrays — all faithfully stored and pushed via WebSocket
-- **Extension input mapping resolution** — Parameters like `{from: "values.imageUrl", convert: "url_to_base64"}` are now resolved automatically: dot-path extraction from device data, HTTP fetch for URLs, base64 encoding. Already-base64 values detected and passed through without HTTP call. Image dimensions extracted for coordinate normalization
-- **Extension output mapping extraction** — New `output_mapping` field on `TransformOperation::Extension` with transforms: `count`, `count_by_class`, `filter_roi`, `count_in_roi`, `extract_texts`, `normalize` (with `image_param` for multi-image). ROI filtering and coordinate normalization for detection boxes
-- **Dynamic output type detection** — Transform output registry now detects MetricValue variant (Float/Integer/Boolean/String/Json) instead of hardcoding Float
-- **Image metric click-to-view** — Map and CustomLayer metric popups now detect image values (base64/URL) via `normalizeImageUrl()` and display a clean thumbnail instead of raw text. Clicking the thumbnail opens a fullscreen overlay with device name + metric name info bar. Inline values in CustomLayer show a 20px thumbnail for image metrics
-- **`window.neomind.callExtension()` API** — Expose a global `window.neomind` object for community/extension frontend components to call extension commands directly. Supports automatic API base URL detection (Tauri/web) and JWT auth token injection. Enables frontend-driven orchestration of extension capabilities (e.g., calling YOLO inference from an NE101 camera component)
-- **`neomind.fetchDeviceValues()` API** — Community components can now fetch real-time device telemetry data via `neomind.fetchDeviceValues(deviceId, metricPath)`. Supports dot-path access (e.g., `"values.battery"`) and returns current values from the dashboard store
-- **Dashboard Advanced tab for components** — Component config dialog now has an Advanced tab. Community/extension bundles can export `AdvancedPanel` component for custom configuration UI in both Style and Advanced tabs
-- **Community component `config` prop** — `ComponentRenderer` now passes the full `config` object as a prop to community/extension components, enabling components that read `props.config` directly
-- **Dashboard SSE self-sync echo suppression** — Frontend now suppresses DashboardUpdated SSE events that are echoes of its own saves (drag, config edit). Prevents stale server data from overwriting in-progress edits
-- **Dashboard `updateTransform` API** — New `window.neomind.updateTransform()` method for updating transforms in-place without delete+create race conditions
-- **Transform `input_raw` and `__imageData` variables** — JS transform context now provides `input_raw` (full input object, never auto-unwrapped), `__imageData` (base64 image from device data), and `imageMeta` (width/height from image header) for vision transform workflows
-
-### Changed
-
-- **Extension default memory limit** — Raised from 1024MB to 2048MB for extension runner, accommodating ML model workloads
-- **Cross-platform library search path** — Extension binary directory now added to `LD_LIBRARY_PATH` (Linux) and `DYLD_LIBRARY_PATH` (macOS) in addition to Windows `PATH`, ensuring bundled shared libraries (onnxruntime, ffmpeg, etc.) are found on all platforms
-- **Extension IPC channel initialization** — Event channel is now created BEFORE stdin reader starts, preventing a race condition where Init messages could be silently dropped (causing 120s timeout)
-
-### Fixed
-
-- **Transform `extensions.invoke()` JS API** — The extension invocation function was registered as a flat global `extensions_invoke` instead of an object method. Transform JS code calling `extensions.invoke(ext_id, command, params)` would fail with "extensions is not defined". Now properly creates an `extensions` object with `invoke` as its method
-- **Extension health state display** — Error/Warning/Stopped states now show distinct colors in ExtensionCard. Auto-clear error status on successful reload and crash recovery. Auto-refresh logs when viewing logs section
-- **Extension crash recovery error reporting** — Added `on_crash_recovery_failed` callback to cover all failure paths: restart failure, restart policy limit reached, and extension path not found in cache. All three cases now write error status to storage so the frontend reflects the actual extension state
-- **Component library sidebar** — Replaced Collapsible sections with flat grid layout for faster scanning. Added post-install highlight animation that auto-scrolls to the newly installed component in the library
-- **Extension list filter** — Added Stopped/Failed filter option to the extension list page
-- **Device telemetry image normalization** — Normalized device telemetry on initial fetch to prevent missing images
-- **Extension detail status badge** — Fixed status badge position and log auto-refresh behavior
-- **Dashboard drag jump** — Freeze container width measurement during drag/resize to prevent layout reset from stale store positions
-- **Component `_raw` telemetry parsing** — ComponentRenderer now parses `_raw` JSON string telemetry and stores each field individually, enabling flat key access like `"ts"`, `"values.battery"`, `"values.image"`
-- **Component render error isolation** — Each component grid cell is now wrapped in its own `ErrorBoundary`. A faulty community component crashing during render no longer takes down the entire dashboard — only that cell shows an error card, while the rest remains functional and the user can still access config to fix or remove the broken component
-- **IPC event channel error logging** — Added error log when IPC event channel is not initialized, preventing silent message drops
-- **Extension `hasDeviceBinding` metadata** — Component metadata now correctly propagates `has_device_binding` field through CommunityRegistry and DynamicRegistry
 
 ---
 
