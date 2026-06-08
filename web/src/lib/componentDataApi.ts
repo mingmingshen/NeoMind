@@ -63,11 +63,12 @@ export async function resolveDataSourceData(
       break
     }
     case 'timeseries': {
-      const timeRange = options?.timeRange ?? ds.timeRange ?? 1
+      const timeRange = options?.timeRange ?? ds.timeRange ?? 24
       const limit = options?.limit ?? ds.limit ?? 50
       try {
         const response = await fetchHistoricalTelemetry(id, field, timeRange, limit, 'raw', true, true)
-        return { series: response.data }
+        // Prefer raw points (with timestamps) over flat number array
+        return { series: response.raw && response.raw.length ? response.raw : response.data }
       } catch {
         return { series: [] }
       }

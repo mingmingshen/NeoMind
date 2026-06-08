@@ -77,6 +77,7 @@ export function getDynamicSchema(
       let dataSourceSections: ConfigSection[] = []
       if (meta.has_data_source) {
         const dsAllowedTypes = (meta.data_source_allowed_types || ['device-metric', 'extension', 'extension-command']) as any
+        const maxDs = meta.max_data_sources ?? 1
         dataSourceSections = [
           {
             type: 'data-source' as const,
@@ -84,6 +85,8 @@ export function getDynamicSchema(
               dataSource: config.dataSource,
               onChange: updateDataSource,
               allowedTypes: dsAllowedTypes,
+              multiple: maxDs > 1,
+              maxSources: maxDs,
             },
           },
         ]
@@ -286,6 +289,7 @@ export function getDynamicSchema(
     let dataSourceSections: ConfigSection[] = []
     if (schemaSource.has_data_source) {
       const dsAllowedTypes = (schemaSource.data_source_allowed_types || ['device-metric', 'extension', 'extension-command']) as any
+      const maxDs = schemaSource.max_data_sources ?? 1
       dataSourceSections = [
         {
           type: 'data-source' as const,
@@ -293,6 +297,8 @@ export function getDynamicSchema(
             dataSource: config.dataSource,
             onChange: updateDataSource,
             allowedTypes: dsAllowedTypes,
+            multiple: maxDs > 1,
+            maxSources: maxDs,
           },
         },
       ]

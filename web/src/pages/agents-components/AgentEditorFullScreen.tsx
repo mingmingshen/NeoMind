@@ -330,7 +330,6 @@ export function AgentEditorFullScreen({
 
   // Advanced configuration state
   const [executionMode, setExecutionMode] = useState<'focused' | 'free'>('focused')
-  const [systemPrompt, setSystemPrompt] = useState('')
   const [priority, setPriority] = useState(5)
   const [contextWindowSize, setContextWindowSize] = useState(10)
 
@@ -470,7 +469,6 @@ export function AgentEditorFullScreen({
         setLlmBackendId(agent.llm_backend_id || null)
         // Load advanced config from agent
         setExecutionMode(agent.execution_mode === 'free' ? 'free' : 'focused')
-        setSystemPrompt(agent.system_prompt ?? '')
         setPriority(agent.priority ?? 5)
         setContextWindowSize(agent.context_window_size ?? 10)
         parseSchedule(agent.schedule)
@@ -483,7 +481,6 @@ export function AgentEditorFullScreen({
         setLlmBackendId(null)
         // Reset to defaults
         setExecutionMode('focused')
-        setSystemPrompt(tAgent('creator.advanced.defaultSystemPrompt'))
         setPriority(5)
         setContextWindowSize(10)
         setScheduleType('timer')
@@ -1221,7 +1218,6 @@ export function AgentEditorFullScreen({
         priority: priority !== 5 ? priority : undefined,
         context_window_size: contextWindowSize !== 10 ? contextWindowSize : undefined,
         execution_mode: isFocusedMode ? 'focused' : 'free',
-        system_prompt: systemPrompt.trim() || undefined,
       }
 
       await onSave(data)
@@ -1393,42 +1389,6 @@ export function AgentEditorFullScreen({
                 placeholder={tAgent('creator.basicInfo.descriptionPlaceholder')}
                 className={cn(isMobile ? "h-12 text-base" : "h-10")}
               />
-            </div>
-
-            {/* Custom System Prompt */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">{tAgent('creator.advanced.systemPrompt')}</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-primary"
-                  onClick={() => setSystemPrompt(tAgent('creator.advanced.defaultSystemPrompt'))}
-                >
-                  {tAgent('creator.advanced.useDefault')}
-                </Button>
-              </div>
-              <Textarea
-                value={systemPrompt}
-                onChange={(e) => {
-                  const val = e.target.value
-                  setSystemPrompt(val)
-                  if (val.length > 4000) {
-                    setFieldErrors(prev => ({ ...prev, systemPrompt: tAgent('creator.advanced.systemPromptTooLong') }))
-                  } else if (fieldErrors.systemPrompt) {
-                    setFieldErrors(prev => { const next = { ...prev }; delete next.systemPrompt; return next })
-                  }
-                }}
-                placeholder={tAgent('creator.advanced.systemPromptPlaceholder')}
-                rows={3}
-                className={cn("resize-none", fieldErrors.systemPrompt && "border-destructive")}
-              />
-              {fieldErrors.systemPrompt ? (
-                <p className="text-xs text-destructive">{fieldErrors.systemPrompt}</p>
-              ) : (
-                <p className="text-xs text-muted-foreground">{tAgent('creator.advanced.systemPromptHint')}</p>
-              )}
             </div>
 
             {/* Prompt */}

@@ -28,7 +28,6 @@ import {
   Database,
   MessageSquare,
   History,
-  Sparkles,
   Lightbulb,
   BookOpen,
   ChevronDown,
@@ -310,15 +309,6 @@ export function AgentDetailPanel({
                     </div>
                   )}
                 </DetailSection>
-
-                {/* System Prompt */}
-                {agent.system_prompt && (
-                  <DetailSection title={t('agents:creator.advanced.systemPrompt')} icon={Sparkles}>
-                    <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground bg-muted-10 p-3 rounded">
-                      {agent.system_prompt}
-                    </div>
-                  </DetailSection>
-                )}
 
                 {/* Schedule & Config - Two columns */}
                 <div className={cn("gap-4", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>

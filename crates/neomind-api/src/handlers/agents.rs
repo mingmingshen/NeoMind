@@ -1356,6 +1356,11 @@ pub async fn update_agent(
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update agent: {}", e)))?;
 
+    // Auto-init knowledge file if agent has none (covers legacy agents created before init feature)
+    if agent.memory.knowledge_files.is_empty() {
+        init_agent_knowledge_file(&state, &agent).await;
+    }
+
     // Reschedule the agent if schedule changed or if agent is active (interval/cron type)
     // This ensures scheduled agents pick up the new schedule
     if has_schedule_update || agent.schedule.schedule_type != neomind_storage::ScheduleType::Event {

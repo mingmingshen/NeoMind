@@ -101,9 +101,9 @@ export function AgentCard({
         {/* Icon with status glow */}
         <div className={cn(
           "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors",
-          agent.status === 'Active' && "bg-success-light ring-2 ring-success-light",
-          agent.status === 'Executing' && "bg-info-light ring-2 ring-info",
-          agent.status === 'Error' && "bg-error-light ring-2 ring-error/30",
+          agent.status === 'Active' && "bg-success-light",
+          agent.status === 'Executing' && "bg-info-light",
+          agent.status === 'Error' && "bg-error-light",
           agent.status === 'Paused' && "bg-muted-50"
         )}>
           <Bot className={cn(

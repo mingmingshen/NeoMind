@@ -3,6 +3,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::llm_backends::{OllamaConfig, OllamaRuntime};
+use base64::Engine;
 use futures::future::join_all;
 use futures::FutureExt;
 use neomind_core::llm::backend::LlmRuntime;
@@ -667,11 +668,14 @@ impl AgentExecutor {
     ) -> String {
         // Build lookup: source -> latest value
         let mut latest_values: HashMap<&str, String> = HashMap::new();
+        let mut image_sources: Vec<&str> = Vec::new();
         for d in data_collected {
             if d.source == "system" {
                 continue;
             }
             if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
+                // Record image source for display (image data is embedded in user message)
+                image_sources.push(&d.source);
                 continue;
             }
             if let Some(v) = d.values.get("value") {
@@ -706,6 +710,14 @@ impl AgentExecutor {
             if !agent.resources.iter().any(|r| r.resource_id == source_id) {
                 section.push_str(&format!("| {} | - | {} |\n", source, value));
             }
+        }
+
+        // Note image sources for context (images are already embedded in user message)
+        if !image_sources.is_empty() {
+            section.push_str(&format!(
+                "\n**Images**: {} (included in message)\n",
+                image_sources.join(", ")
+            ));
         }
 
         section.push('\n');
@@ -791,10 +803,45 @@ impl AgentExecutor {
                                     .map(|s| s.to_string())
                             })
                             .unwrap_or_else(|| "image/jpeg".to_string());
-                        return Some(ContentPart::image_base64(
-                            base64.to_string(),
-                            mime,
-                        ));
+                        // Clean base64: handle URL-safe chars, strip whitespace, fix padding
+                        let cleaned: String = base64.chars().filter_map(|c| match c {
+                            '-' => Some('+'),
+                            '_' => Some('/'),
+                            c if c.is_ascii_alphanumeric()
+                                || c == '+'
+                                || c == '/'
+                                || c == '=' =>
+                            {
+                                Some(c)
+                            }
+                            _ => None, // skip whitespace/newlines
+                        }).collect();
+                        let padded_len = (cleaned.len() + 3) & !3;
+                        let padded = if cleaned.len() < padded_len {
+                            let mut s = cleaned;
+                            while s.len() < padded_len {
+                                s.push('=');
+                            }
+                            s
+                        } else {
+                            cleaned
+                        };
+                        // Decode + re-encode to guarantee clean standard base64
+                        match base64::engine::general_purpose::STANDARD.decode(&padded) {
+                            Ok(bytes) => {
+                                let clean = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                                return Some(ContentPart::image_base64(clean, mime));
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    source = %d.source,
+                                    len = base64.len(),
+                                    error = %e,
+                                    "Invalid base64 image data in build_tool_messages, skipping"
+                                );
+                                return None;
+                            }
+                        }
                     }
                 }
                 None
@@ -1748,15 +1795,10 @@ impl AgentExecutor {
             .clone()
             .ok_or_else(|| NeoMindError::Tool("Tool registry not available".to_string()))?;
 
-        // Inject agent context into MemoryTool via per-execution handles (concurrency-safe).
-        // Each execution gets its own Arc handles, swapped into the shared MemoryTool via
-        // parking_lot::RwLock — concurrent executions never interfere.
-        let per_exec_handles = registry.prepare_memory_tool_execution(
-            agent.id.clone(),
-            agent.memory.knowledge_files.clone(),
-        );
-        let _per_exec_agent_id = per_exec_handles.as_ref().map(|h| h.0.clone());
-        let _per_exec_knowledge_files = per_exec_handles.as_ref().map(|h| h.1.clone());
+        // NOTE: per-execution MemoryTool handles are prepared by the scheduler
+        // (execute_scheduled / run_manual) before calling execute_internal → this method.
+        // Do NOT call prepare_memory_tool_execution here — that would create a SECOND set
+        // of Arc handles, and the memory tool would register new files into the wrong handle.
 
         // Build mode-specific config
         let tool_config = match agent.execution_mode {

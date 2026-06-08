@@ -35,9 +35,10 @@ export function getUserFriendlyError(error: unknown): string {
   // Handle API errors with status codes
   if (isApiError(error)) {
     const status = (error as ApiErrorLike).status || (error as any).statusCode;
+    const serverMessage = (error as ApiErrorLike).message;
     switch (status) {
       case 400:
-        return "Invalid request. Please check your input.";
+        return serverMessage || "Invalid request. Please check your input.";
       case 401:
         return "Session expired. Please refresh the page.";
       case 403:
@@ -47,7 +48,7 @@ export function getUserFriendlyError(error: unknown): string {
       case 409:
         return "A conflict occurred. The resource may already exist.";
       case 422:
-        return "Invalid data provided. Please check your input.";
+        return serverMessage || "Invalid data provided. Please check your input.";
       case 500:
         return "Server error. Please try again later.";
       case 502:

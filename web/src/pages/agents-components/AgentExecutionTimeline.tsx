@@ -137,7 +137,10 @@ function extractMetricTags(data: DataCollected[]): string[] {
       for (const key of ['name', 'metric', 'metric_name', 'display_name', 'key', 'field']) {
         if (obj[key] && typeof obj[key] === 'string') tags.add(obj[key] as string)
       }
-      const exclude = ['value', 'data', 'image', 'src', 'url', 'base64', 'timestamp', 'time', 'id', '_id']
+      const exclude = ['value', 'data', 'image', 'src', 'url', 'base64', 'timestamp', 'time', 'id', '_id',
+        'image_base64', 'image_url', 'image_mime_type', 'mime_type', 'image_mime',
+        '_is_image', '_is_event_data', 'memory', 'summary', 'total_executions',
+        'success', 'status', 'type', 'action', 'error', 'message']
       for (const key of Object.keys(obj)) {
         if (!exclude.includes(key.toLowerCase()) && !key.startsWith('_')) {
           const val = obj[key]

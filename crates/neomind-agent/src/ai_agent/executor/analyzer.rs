@@ -354,22 +354,25 @@ impl AgentExecutor {
         // --- Current Data Table ---
         let data_entries: Vec<&DataCollected> = data
             .iter()
-            .filter(|d| {
-                d.source != "system"
-                    && !d
-                        .values
-                        .get("_is_image")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false)
-            })
+            .filter(|d| d.source != "system")
             .take(15)
             .collect();
 
-        if !data_entries.is_empty() {
+        // Separate image entries from text entries
+        let (image_entries, text_entries): (Vec<_>, Vec<_>) = data_entries
+            .into_iter()
+            .partition(|d| {
+                d.values
+                    .get("_is_image")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            });
+
+        if !text_entries.is_empty() {
             sections.push("## Current Data (live from bound resources)".to_string());
             sections.push("| Resource | Type | Value |".to_string());
             sections.push("|----------|------|-------|".to_string());
-            for d in &data_entries {
+            for d in &text_entries {
                 let value = if let Some(v) = d.values.get("value") {
                     format!("{}", v)
                 } else {
@@ -383,6 +386,14 @@ impl AgentExecutor {
                 };
                 sections.push(format!("| {} | {} | {} |", d.source, d.data_type, value));
             }
+        }
+
+        if !image_entries.is_empty() {
+            let sources: Vec<&str> = image_entries.iter().map(|d| d.source.as_str()).collect();
+            sections.push(format!(
+                "\n**Images**: {} (included in message)",
+                sources.join(", ")
+            ));
         }
 
         // --- Available Commands Table ---

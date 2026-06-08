@@ -76,6 +76,18 @@ Complete rewrite of the agent memory system — replacing a complex hierarchical
 ### Fixed
 
 - **Vision tool incomplete data URL handling** — `resolve_image()` now correctly parses `image/jpeg;base64,...` (missing `data:` prefix) by detecting the `;base64,` pattern without the `data:` prefix. Previously fell through to fallback which passed the entire string as raw base64 to Ollama, causing "illegal base64 data at input byte 27" errors
+- **Agent vision tool mis-invocation** — `build_focused_resource_section()` and `build_system_section()` no longer tell the LLM to "Use the `vision` tool" when images are already embedded directly in the user message. Previously, multimodal-capable LLMs saw images visually AND received text instructions to call the vision tool, causing them to fabricate invalid base64 data in tool arguments (LLMs can't reproduce binary data as text). Changed to "(included in message)" label
+- **Agent base64 image cleaning** — `build_tool_messages()` now cleans base64 data before embedding in ContentPart: URL-safe character conversion (`-`→`+`, `_`→`/`), whitespace stripping, padding fix, and decode+re-encode validation. Invalid data is logged and skipped instead of passed to Ollama
+
+### Fixed
+
+- **Agent knowledge file auto-init on update** — Legacy agents created before the knowledge file feature now get `task-understanding.md` auto-initialized on first update, not just on creation
+- **Timeseries default timeRange** — Changed from 1 hour to 24 hours for dashboard data source resolution. Also prefers raw points with timestamps over flat number arrays
+- **Agent card status glow** — Removed excessive ring effects from Active/Executing/Error status icons
+- **System prompt editor removed** — Removed custom system prompt textarea from agent editor and detail panel (auto-generated prompts work better for most users)
+- **Error messages for 400/422** — Frontend now shows the actual server error message instead of generic "Invalid request" text
+- **Metric tag extraction** — Expanded exclusion list for timeline metric tags to filter out image-related, memory, and status fields
+- **Dynamic config multi-data-source** — Dashboard dynamic config schemas now respect `max_data_sources` from widget manifest, enabling `multiple` mode for widgets that support multiple data sources
 
 ### Added
 
