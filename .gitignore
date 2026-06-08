@@ -4,7 +4,7 @@
 # Build Artifacts
 # =============================================================================
 target/
-Cargo.lock
+# Cargo.lock committed for reproducible builds (binary crates should track lockfile)
 docs/superpowers/.superpowers/
 # Extension binaries (compiled libraries)
 # Extensions are loaded at runtime, not part of source code
@@ -47,7 +47,6 @@ package.json
 # Tauri (Desktop App)
 # =============================================================================
 web/src-tauri/target/
-web/src-tauri/Cargo.lock
 web/src-tauri/WixTools/
 web/src-tauri/icons/NeoMind.iconset/
 web/src-tauri/gen/
