@@ -63,7 +63,7 @@ export async function resolveDataSourceData(
       break
     }
     case 'timeseries': {
-      const timeRange = options?.timeRange ?? ds.timeRange ?? 24
+      const timeRange = options?.timeRange ?? (ds.timeRange && ds.timeRange > 0 ? ds.timeRange : 24)
       const limit = options?.limit ?? ds.limit ?? 50
       try {
         const response = await fetchHistoricalTelemetry(id, field, timeRange, limit, 'raw', true, true)
