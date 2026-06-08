@@ -161,9 +161,20 @@ impl VisionTool {
     /// Resolve image input to (base64_data, mime_type).
     async fn resolve_image(&self, image: &str) -> Result<(String, String)> {
         // 1. Data URL: data:image/png;base64,... (case-insensitive prefix)
+        //    Also handles incomplete data URLs missing the "data:" prefix
+        //    (e.g. "image/jpeg;base64,/9j/...") which some callers produce.
         let image_lower_prefix = image.chars().take(11).collect::<String>().to_ascii_lowercase();
-        if image_lower_prefix == "data:image/" {
-            if let Some(rest) = image.get(11..) {
+        let is_data_image_url = image_lower_prefix == "data:image/";
+        let is_incomplete_data_url = !is_data_image_url && image.contains(";base64,")
+            && image_lower_prefix.starts_with("image/");
+
+        if is_data_image_url || is_incomplete_data_url {
+            let rest = if is_data_image_url {
+                image.get(11..) // skip "data:image/"
+            } else {
+                image.get(6..) // skip "image/"
+            };
+            if let Some(rest) = rest {
                 if let Some((mime_suffix, b64)) = rest.split_once(";base64,") {
                     if b64.is_empty() {
                         return Err(ToolError::InvalidArguments(

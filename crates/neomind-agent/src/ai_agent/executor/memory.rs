@@ -54,16 +54,22 @@ impl AgentExecutor {
         Ok(memory)
     }
 
-    /// Auto-initialize a knowledge file on the agent's first execution.
-    /// Creates `task-understanding.md` with task summary and first execution results.
+    /// Auto-initialize a knowledge file when the agent has none yet.
+    /// Covers both newly-created agents (whose init happened at creation time)
+    /// and legacy agents created before the init-at-creation feature was added.
     pub(crate) fn auto_init_knowledge_file(
         &self,
         agent: &AiAgent,
         updated_memory: &mut AgentMemory,
-        conclusion: &str,
+        _conclusion: &str,
     ) {
-        // Only on first execution (journal had 0 records, now has 1) and no knowledge files yet
-        if updated_memory.journal.records.len() != 1 || !updated_memory.knowledge_files.is_empty() {
+        // Skip if agent already has knowledge files
+        if !updated_memory.knowledge_files.is_empty() {
+            return;
+        }
+
+        // Must have at least one journal entry (completed an execution)
+        if updated_memory.journal.records.is_empty() {
             return;
         }
 
@@ -73,9 +79,9 @@ impl AgentExecutor {
 
         let now = chrono::Utc::now().timestamp();
 
-        // Build task understanding content
+        // Build resources summary
         let resources_summary = if agent.resources.is_empty() {
-            "None".to_string()
+            "None (free mode)".to_string()
         } else {
             agent
                 .resources
@@ -85,8 +91,47 @@ impl AgentExecutor {
                 .join("\n")
         };
 
+        // Build identity section
+        let default_identity = format!(
+            "You are an intelligent IoT agent named '{}' monitoring edge devices.",
+            agent.name
+        );
+        let identity_section = agent
+            .system_prompt
+            .as_deref()
+            .unwrap_or(&default_identity);
+
+        // Build schedule info
+        let schedule_info = match &agent.schedule.schedule_type {
+            neomind_storage::ScheduleType::Interval => format!(
+                "Interval: every {}s",
+                agent.schedule.interval_seconds.unwrap_or(300)
+            ),
+            neomind_storage::ScheduleType::Cron => format!(
+                "Cron: {}",
+                agent.schedule.cron_expression.as_deref().unwrap_or("?")
+            ),
+            neomind_storage::ScheduleType::Event => "Event-driven".to_string(),
+        };
+
+        // Latest execution info
+        let latest = updated_memory.journal.records.last();
+        let latest_exec = match latest {
+            Some(r) => format!(
+                "- Latest execution: {} ({})",
+                truncate_to(&r.outcome, 80),
+                chrono::DateTime::from_timestamp(r.timestamp, 0)
+                    .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            ),
+            None => "- No executions yet".to_string(),
+        };
+
         let content = format!(
             "# Task Understanding\n\
+             \n\
+             ## Identity & Role\n\
+             {}\n\
              \n\
              ## Mission\n\
              {}\n\
@@ -94,15 +139,29 @@ impl AgentExecutor {
              ## Bound Resources\n\
              {}\n\
              \n\
-             ## First Execution\n\
-             - Result: {}\n\
-             - Time: {}\n\
+             ## Schedule\n\
+             {}\n\
+             \n\
+             ## Status\n\
+             - Execution mode: {:?}\n\
+             - Total executions: {}\n\
+             {}\n\
+             - Initialized: {}\n\
+             \n\
+             ## Memory Commands\n\
+             - Read this file: `memory(action='read', target='custom:task-understanding')`\n\
+             - Update this file: `memory(action='add', target='custom:task-understanding', content='## New Section\\n...')`\n\
+             - Create new knowledge file: `memory(action='create', target='custom:{{{{name}}}}', content='...')`\n\
              \n\
              ## Notes\n\
-             This file was auto-created. Update it as you learn more about the environment.",
+             This file was auto-created. Update it as you learn more about the environment and discover patterns.",
+            identity_section,
             agent.user_prompt,
             resources_summary,
-            truncate_to(conclusion, 200),
+            schedule_info,
+            agent.execution_mode,
+            updated_memory.journal.records.len(),
+            latest_exec,
             chrono::DateTime::from_timestamp(now, 0)
                 .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
                 .unwrap_or_else(|| "unknown".to_string()),

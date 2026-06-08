@@ -2063,6 +2063,21 @@ pub async fn process_stream_events_with_safeguards(
                                 Use the IDs/data from the list results above to construct the command.\n\n",
                                 action_hint
                             ));
+
+                            // Rule-specific: if creating a rule, verify device/metric discovery was done
+                            if action_hint.contains("rule") && action_hint.contains("create") {
+                                let has_device_list = commands_ref.iter()
+                                    .any(|c| c.contains("device list") || c.contains("device get"));
+                                if !has_device_list {
+                                    msg.push_str(
+                                        "⚠️ RULE CREATION REQUIRES METRIC DISCOVERY:\n\
+                                        You have NOT run `neomind device list` or `neomind device get <ID>` yet.\n\
+                                        You CANNOT create a rule without knowing the REAL device ID and metric field name.\n\
+                                        Run `neomind device list` FIRST to discover metric_fields, THEN construct the DSL.\n\
+                                        NEVER guess device IDs or metric names — they will silently fail.\n\n"
+                                    );
+                                }
+                            }
                         }
 
                         msg.push_str(

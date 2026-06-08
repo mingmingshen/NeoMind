@@ -272,6 +272,15 @@ pub async fn get_agent_memory(
     Ok(CliResponse::success(data, "Agent memory retrieved"))
 }
 
+/// Clear agent memory
+pub async fn clear_agent_memory(
+    client: &ApiClient,
+    id: &str,
+) -> Result<CliResponse> {
+    client.delete(&format!("/agents/{}/memory", id)).await?;
+    Ok(CliResponse::success(json!({}), "Agent memory cleared"))
+}
+
 /// Get agent execution history
 pub async fn get_agent_executions(
     client: &ApiClient,

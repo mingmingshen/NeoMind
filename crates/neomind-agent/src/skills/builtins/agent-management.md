@@ -136,7 +136,7 @@ neomind agent update <ID> --name 'Better Name' --description 'Updated'
 neomind agent executions <ID> --limit 10      # Execution history
 neomind agent latest-execution <ID>           # Most recent execution
 neomind agent conversation <ID> --limit 20    # Full message log
-neomind agent memory <ID>                     # Extracted knowledge
+neomind agent memory <ID>                     # Execution journal + knowledge files
 ```
 
 ### Send Message
@@ -213,7 +213,7 @@ neomind llm list
 # If the configured model is not available, update:
 neomind agent update <ID> --llm-backend <available_backend>
 
-# 5. Check extracted memory for stale/incorrect knowledge
+# 5. Check agent memory (execution journal + knowledge files)
 neomind agent memory <ID>
 
 # 6. If agent is stuck in a loop, pause and review

@@ -1048,6 +1048,22 @@ impl MarkdownMemoryStore {
         Ok(files)
     }
 
+    /// Delete all memory files for an agent (the entire `agents/{agent_id}/` directory).
+    /// Called when an agent is deleted to clean up associated knowledge files.
+    pub fn clean_agent_dir(&self, agent_id: &str) -> Result<()> {
+        let agent_dir = self.base_path.join("agents").join(agent_id);
+        if agent_dir.exists() {
+            fs::remove_dir_all(&agent_dir).map_err(|e| {
+                Error::Storage(format!(
+                    "Failed to clean agent memory dir {}: {}",
+                    agent_id, e
+                ))
+            })?;
+            info!(agent_id = %agent_id, "Cleaned agent memory directory");
+        }
+        Ok(())
+    }
+
     // ========================================================================
     // Legacy API (deprecated - kept for backward compatibility)
     // ========================================================================

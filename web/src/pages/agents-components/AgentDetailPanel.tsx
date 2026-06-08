@@ -31,12 +31,15 @@ import {
   Sparkles,
   Lightbulb,
   BookOpen,
+  ChevronDown,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { textNano } from "@/design-system/tokens/typography"
 import { useIsMobile } from "@/hooks/useMobile"
 import { api } from "@/lib/api"
 import type { AiAgentDetail, AgentMemory, KnowledgeFileRef, JournalExecutionRecord } from "@/types"
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent } from "@/lib/events"
 import { useEvents } from "@/hooks/useEvents"
 
@@ -523,6 +526,51 @@ function InfoRow({ label, value, mono }: InfoRowProps) {
 }
 
 // ============================================================================
+// Knowledge File Card — expandable with markdown rendering
+// ============================================================================
+
+function KnowledgeFileCard({ file, formatTime }: { file: KnowledgeFileRef; formatTime: (ts: string | number) => string }) {
+  const [expanded, setExpanded] = useState(false)
+  const hasContent = file.content && file.content.trim().length > 0
+
+  return (
+    <div className="rounded-lg bg-gradient-to-br from-accent-purple-light to-pink-500/5 border border-accent-purple-light hover:border-accent-purple transition-colors overflow-hidden">
+      <button
+        type="button"
+        className="w-full p-3 text-left flex items-center justify-between gap-2"
+        onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <FileText className="h-3.5 w-3.5 text-accent-purple shrink-0" />
+            <span className="text-sm font-medium font-mono truncate">{file.name}</span>
+          </div>
+          <p className="text-xs text-muted-foreground line-clamp-1">{file.description}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs text-muted-foreground">{formatTime(file.updated_at)}</span>
+          <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+        </div>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-3 pt-0 border-t border-accent-purple-light/50">
+          {hasContent ? (
+            <div className="mt-2 prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-p:my-1 prose-headings:font-semibold prose-headings:my-2 prose-h1:text-base prose-h2:text-sm prose-h3:text-xs prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:font-mono prose-pre:bg-muted prose-pre:p-2 prose-pre:rounded-md prose-ul:my-1 prose-ul:pl-4 prose-ol:my-1 prose-ol:pl-4 prose-li:my-0 prose-li:text-xs">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {file.content ?? ''}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground italic mt-2">No content available</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
 // Memory Content - Structured and readable display
 // ============================================================================
 
@@ -618,14 +666,8 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
             icon={FileText}
           >
             <div className="space-y-2">
-              {knowledgeFiles.map((file: KnowledgeFileRef, idx: number) => (
-                <div key={idx} className="p-3 rounded-lg bg-gradient-to-br from-accent-purple-light to-pink-500/5 border border-accent-purple-light hover:border-accent-purple transition-colors">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium font-mono">{file.name}</span>
-                    <span className="text-xs text-muted-foreground">{formatTime(file.updated_at)}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground line-clamp-2">{file.description}</p>
-                </div>
+              {knowledgeFiles.map((file: KnowledgeFileRef) => (
+                <KnowledgeFileCard key={file.name} file={file} formatTime={formatTime} />
               ))}
             </div>
           </DetailSection>

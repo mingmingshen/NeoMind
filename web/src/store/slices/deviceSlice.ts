@@ -102,7 +102,9 @@ const buildNestedValues = (metrics: Record<string, unknown>): Record<string, unk
     const parts = key.split('.')
     let current = result
     for (let i = 0; i < parts.length - 1; i++) {
-      if (!(parts[i] in current)) current[parts[i]] = {}
+      if (!(parts[i] in current) || typeof current[parts[i]] !== 'object' || current[parts[i]] === null) {
+        current[parts[i]] = {}
+      }
       current = current[parts[i]] as Record<string, unknown>
     }
     current[parts[parts.length - 1]] = value

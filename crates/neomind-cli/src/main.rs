@@ -1436,12 +1436,23 @@ enum AgentCommand {
     },
     /// Get agent memory.
     ///
-    /// Shows extracted facts and context stored by the agent across executions.
-    /// Memory helps the agent maintain context between runs.
-    /// Check this if the agent seems to forget important information.
+    /// Shows the execution journal (recent outcomes) and knowledge files index.
+    /// The journal tracks recent execution results; knowledge files store
+    /// persistent notes the agent has created about its environment.
     ///
     /// Example: `neomind agent memory agent-001`
     Memory {
+        /// Agent ID.
+        #[arg(required = true)]
+        id: String,
+    },
+    /// Clear agent memory.
+    ///
+    /// Resets the execution journal and removes all knowledge files.
+    /// Use this when the agent has accumulated stale or incorrect knowledge.
+    ///
+    /// Example: `neomind agent clear-memory agent-001`
+    ClearMemory {
         /// Agent ID.
         #[arg(required = true)]
         id: String,
@@ -4118,6 +4129,9 @@ async fn run_agent_cmd(cmd: AgentCommand) -> Result<()> {
         }
         AgentCommand::Memory { id } => {
             get_agent_memory(&client, &id).await?
+        }
+        AgentCommand::ClearMemory { id } => {
+            clear_agent_memory(&client, &id).await?
         }
         AgentCommand::Executions { id, limit, offset } => {
             get_agent_executions(&client, &id, limit, offset).await?

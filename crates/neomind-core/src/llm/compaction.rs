@@ -271,33 +271,32 @@ pub fn compact_messages(
         let is_recent = result.len() < config.min_recent_messages;
         let should_keep = priority == MessagePriority::System || is_recent;
 
-        if !should_keep {
-            // Check if adding this would exceed budget
-            if current_tokens + msg_tokens > max_tokens {
-                removed_count += 1;
-                continue;
-            }
-        }
-
-        // Handle tool result compaction
-        // Note: This compaction path only applies to the executor path (neomind-core Message).
-        // The streaming chat path (AgentMessage) has its own compaction in streaming.rs.
-        if config.compact_tool_results && priority == MessagePriority::Assistant {
-            // Check if this looks like a tool result.
-            // Matches both: "tool_call_id" (structured) and "Tool 'name' result:" (plain text)
+        // Handle tool result compaction BEFORE budget check.
+        // Tool results should be summarized, never silently dropped,
+        // because they contain critical data (device IDs, query results).
+        if config.compact_tool_results {
             let content_text = content_as_text(&msg.content);
-            let is_tool_result = content_text.contains("tool_call_id")
-                || content_text.starts_with("Tool '");
+            let is_tool_result = if msg.role == MessageRole::Tool {
+                // Executor path: native Tool role messages
+                true
+            } else if priority == MessagePriority::Assistant {
+                // Chat path: Assistant messages containing tool results
+                content_text.contains("tool_call_id")
+                    || content_text.starts_with("Tool '")
+            } else {
+                false
+            };
+
             if is_tool_result {
                 tool_result_count += 1;
                 if tool_result_count > config.keep_recent_tool_results {
-                    // Summarize old tool result
-                    let truncated = truncate_text(&content_text, 200);
+                    // Use smart summarization to preserve key data (IDs, names, status)
+                    let summary = smart_summarize_tool_result(&content_text, 300);
                     let summary_msg = Message {
                         role: msg.role,
                         content: crate::message::Content::Text(format!(
                             "[Previous tool result: {}]",
-                            truncated
+                            summary
                         )),
                         tool_name: msg.tool_name.clone(),
                         timestamp: msg.timestamp,
@@ -306,6 +305,14 @@ pub fn compact_messages(
                     result.push(summary_msg);
                     continue;
                 }
+            }
+        }
+
+        if !should_keep {
+            // Check if adding this would exceed budget
+            if current_tokens + msg_tokens > max_tokens {
+                removed_count += 1;
+                continue;
             }
         }
 
@@ -424,6 +431,186 @@ pub fn estimate_messages_tokens(messages: &[Message]) -> usize {
         .iter()
         .map(|m| estimate_message_tokens(&m.content))
         .sum()
+}
+
+/// Intelligently summarize tool result content, preserving key data.
+///
+/// Handles different content types:
+/// - JSON: preserves success status + extracts id/name from first few entries
+/// - CLI output: preserves command line + first few output lines
+/// - Errors: kept in full (usually short and critical)
+/// - System hints (short messages): kept in full
+/// - Fallback: truncate to max_len at word boundary
+pub fn smart_summarize_tool_result(text: &str, max_len: usize) -> String {
+    let trimmed = text.trim();
+
+    // Short messages: keep in full
+    if trimmed.len() <= max_len {
+        return trimmed.to_string();
+    }
+
+    // Try JSON parsing
+    if (trimmed.starts_with('{') && trimmed.contains("\"success\""))
+        || (trimmed.starts_with('{') && trimmed.contains("\"error\""))
+        || trimmed.starts_with('[')
+    {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            return summarize_json(&value, max_len);
+        }
+    }
+
+    // Error messages (usually short, keep in full up to limit)
+    if trimmed.starts_with("Error") || trimmed.contains("error:") || trimmed.contains("failed") {
+        return truncate_at_word_boundary(trimmed, max_len);
+    }
+
+    // CLI-style output: preserve first few lines (command + initial output)
+    let lines: Vec<&str> = trimmed.lines().collect();
+    if lines.len() > 3 {
+        let mut summary = String::new();
+        for (i, line) in lines.iter().enumerate() {
+            if i >= 4 {
+                summary.push_str(&format!("... ({} more lines)", lines.len() - 4));
+                break;
+            }
+            if i > 0 {
+                summary.push('\n');
+            }
+            summary.push_str(line);
+        }
+        if summary.len() <= max_len {
+            return summary;
+        }
+        // Fall through if still too long
+    }
+
+    // Fallback: word-boundary truncation
+    truncate_at_word_boundary(trimmed, max_len)
+}
+
+/// Summarize a JSON value, preserving success status and key identifiers.
+fn summarize_json(value: &serde_json::Value, max_len: usize) -> String {
+    let mut parts = Vec::new();
+
+    match value {
+        serde_json::Value::Object(map) => {
+            // Extract success/error status
+            if let Some(success) = map.get("success") {
+                parts.push(format!("success={}", success));
+            }
+
+            // Extract error info
+            if let Some(error) = map.get("error") {
+                if let Some(err_msg) = error.get("message") {
+                    parts.push(format!("error={}", err_msg));
+                } else {
+                    parts.push(format!("error={}", error));
+                }
+            }
+
+            // Extract data items - show first few with id/name
+            if let Some(data) = map.get("data") {
+                match data {
+                    serde_json::Value::Array(items) => {
+                        let mut item_summaries = Vec::new();
+                        for item in items.iter().take(3) {
+                            item_summaries.push(extract_item_id_name(item));
+                        }
+                        let summary = item_summaries.join(", ");
+                        if items.len() > 3 {
+                            parts.push(format!("items=[{} ... +{} more]", summary, items.len() - 3));
+                        } else {
+                            parts.push(format!("items=[{}]", summary));
+                        }
+                    }
+                    serde_json::Value::Object(obj) => {
+                        // Show a few key-value pairs from the object
+                        let kv: Vec<String> = obj.iter().take(3)
+                            .map(|(k, v)| format!("{}={}", k, summarize_value(v)))
+                            .collect();
+                        parts.push(format!("data={{{}}}", kv.join(", ")));
+                    }
+                    other => {
+                        let s = summarize_value(other);
+                        if !s.is_empty() {
+                            parts.push(format!("data={}", s));
+                        }
+                    }
+                }
+            }
+
+            // Extract message if present
+            if let Some(msg) = map.get("message") {
+                parts.push(format!("message={}", msg));
+            }
+        }
+        serde_json::Value::Array(items) => {
+            let mut item_summaries = Vec::new();
+            for item in items.iter().take(3) {
+                item_summaries.push(extract_item_id_name(item));
+            }
+            let summary = item_summaries.join(", ");
+            if items.len() > 3 {
+                parts.push(format!("[{} ... +{} more]", summary, items.len() - 3));
+            } else {
+                parts.push(format!("[{}]", summary));
+            }
+        }
+        other => {
+            return truncate_at_word_boundary(&other.to_string(), max_len);
+        }
+    }
+
+    let result = parts.join(", ");
+    if result.len() <= max_len {
+        result
+    } else {
+        truncate_at_word_boundary(&result, max_len)
+    }
+}
+
+/// Extract id/name fields from a JSON object for summary display.
+fn extract_item_id_name(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Object(map) => {
+            let id = map.get("id").or_else(|| map.get("name"));
+            let typ = map.get("type").or_else(|| map.get("status"));
+            match (id, typ) {
+                (Some(id), Some(typ)) => format!("{}({})", id, typ),
+                (Some(id), None) => id.to_string(),
+                (None, Some(typ)) => format!("type={}", typ),
+                (None, None) => "{...}".to_string(),
+            }
+        }
+        other => summarize_value(other),
+    }
+}
+
+/// Summarize a JSON value to a short string.
+fn summarize_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Array(arr) => format!("[{} items]", arr.len()),
+        serde_json::Value::Object(obj) => format!("{{{} keys}}", obj.len()),
+    }
+}
+
+/// Truncate text at a word boundary.
+fn truncate_at_word_boundary(text: &str, max_len: usize) -> String {
+    if text.len() <= max_len {
+        return text.to_string();
+    }
+    let end = text.floor_char_boundary(max_len);
+    let truncated = &text[..end];
+    if let Some(last_space) = truncated.rfind(' ') {
+        let space_end = text.floor_char_boundary(last_space);
+        format!("{}...", &text[..space_end])
+    } else {
+        format!("{}...", truncated)
+    }
 }
 
 /// Truncate text to a maximum length, adding ellipsis if truncated.

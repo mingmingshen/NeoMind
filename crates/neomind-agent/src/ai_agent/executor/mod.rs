@@ -73,7 +73,10 @@ struct ToolLoopOutput {
 #[derive(PartialEq)]
 enum DedupOutcome {
     /// Some tool calls survived deduplication.
-    HasNew,
+    /// Contains the count and signatures of cross-round duplicates that were dropped.
+    HasNew {
+        skipped_cross_round: Vec<String>,
+    },
     /// All tool calls were duplicates.
     AllDuplicate,
 }
@@ -205,15 +208,40 @@ fn build_parameters_schema(
     })
 }
 
-/// Compact executor message history to prevent context window overflow.
+/// Compact executor message history using token-aware compaction from neomind-core.
+///
+/// Falls back to the legacy count-based compaction when the context window is unknown.
+fn compact_executor_messages(messages: &mut Vec<Message>, context_window: usize) {
+    use neomind_core::llm::compaction::{compact_messages, CompactionConfig};
+
+    // Unknown or unreasonably large context window → legacy fallback
+    if context_window == 0 || context_window > 1_000_000 {
+        compact_executor_messages_legacy(messages, 10);
+        return;
+    }
+
+    let config = CompactionConfig::for_context_size(context_window);
+    let result = compact_messages(messages, &config, context_window);
+
+    if result.messages_removed > 0 || result.messages_truncated > 0 {
+        tracing::debug!(
+            original_tokens = result.original_tokens,
+            compacted_tokens = result.compacted_tokens,
+            removed = result.messages_removed,
+            truncated = result.messages_truncated,
+            "Compacted executor messages"
+        );
+    }
+
+    *messages = result.messages;
+}
+
+/// Legacy count-based compaction fallback.
 ///
 /// When the number of non-system messages exceeds `keep_recent * 2`, old tool result
 /// messages are replaced with short summaries. The system prompt (first message) and
 /// the most recent messages are always preserved.
-///
-/// This operates directly on `Vec<Message>` used by the executor tool loop.
-fn compact_executor_messages(messages: &mut [Message], keep_recent: usize) {
-    // Threshold: if we have more than keep_recent * 2 non-system messages, compact.
+fn compact_executor_messages_legacy(messages: &mut [Message], keep_recent: usize) {
     let non_system_count = messages
         .iter()
         .filter(|m| m.role != MessageRole::System)
@@ -233,17 +261,14 @@ fn compact_executor_messages(messages: &mut [Message], keep_recent: usize) {
         total_messages = messages.len(),
         non_system = non_system_count,
         to_compact,
-        "Compacting executor messages"
+        "Compacting executor messages (legacy)"
     );
 
-    // Walk from oldest (index 1, skip system prompt) and compact tool result messages.
-    // We need to track how many non-system messages we've compacted.
     let mut compacted_count = 0usize;
     let mut i = 1; // Skip system prompt at index 0
     while i < messages.len() && compacted_count < to_compact {
         if messages[i].role == MessageRole::User {
             let text = messages[i].content.as_text();
-            // Skill guide acknowledgment messages start with "Skill guide retrieved"
             if text.starts_with("Skill guide retrieved") {
                 let summary = if text.len() > 100 {
                     let preview = &text[..text.floor_char_boundary(80)];
@@ -257,7 +282,6 @@ fn compact_executor_messages(messages: &mut [Message], keep_recent: usize) {
                 compacted_count += 1;
             }
         } else if messages[i].role == MessageRole::Tool {
-            // Native tool result messages (MessageRole::Tool with tool_name)
             let text = messages[i].content.as_text();
             let summary = if text.len() > 100 {
                 let preview = &text[..text.floor_char_boundary(80)];
@@ -268,7 +292,6 @@ fn compact_executor_messages(messages: &mut [Message], keep_recent: usize) {
             messages[i].content = Content::text(summary);
             compacted_count += 1;
         } else if messages[i].role == MessageRole::Assistant {
-            // Compact old assistant messages to just a brief note
             let text = messages[i].content.as_text();
             if text.len() > 200 {
                 let preview = &text[..text.floor_char_boundary(100)];
@@ -605,6 +628,9 @@ impl AgentExecutor {
                 "## Guidelines & Exit\n\
                  - Do NOT call the same tool with the same parameters if it already returned results.\n\
                  - If a metric query returns empty data, try a different metric or move on.\n\
+                 - Batch similar queries: use `neomind device list` once, then query each device in ONE round. Do NOT re-query devices you already have data for.\n\
+                 - Before querying, review the tool results in your conversation — if a device's data was already returned, do not query it again.\n\
+                 - Track what you have: mentally note which devices/queries are already done and only issue new queries.\n\
                  - Max {} rounds. Be efficient.\n\
                  - For complex operations, use the `skill` tool to search for guides.\n\
                  - Stop when you have enough data, already sent notifications, got the same result, or a tool failed.\n\
@@ -831,6 +857,9 @@ impl AgentExecutor {
         let mut prev_round_tool_names: String = String::new();
         let mut consecutive_duplicate_rounds: usize = 0;
 
+        // Get context window for token-aware compaction
+        let context_window = llm_runtime.max_context_length();
+
         for round in 0..max_rounds {
             // Inject accumulated skill reference into system prompt once, after first tool round
             if round > 0 && !skill_reference.is_empty() && !skill_injected {
@@ -932,7 +961,7 @@ impl AgentExecutor {
                 round,
             );
 
-            if dedup_outcome == DedupOutcome::AllDuplicate {
+            if matches!(dedup_outcome, DedupOutcome::AllDuplicate) {
                 messages.push(Message::new(
                     MessageRole::Assistant,
                     Content::text(&output.text),
@@ -946,6 +975,25 @@ impl AgentExecutor {
                     ),
                 ));
                 continue;
+            }
+
+            // --- Partial-dedup hint: some calls were skipped, some survived ---
+            if let DedupOutcome::HasNew { skipped_cross_round } = &dedup_outcome {
+                if !skipped_cross_round.is_empty() {
+                    let skipped_summary: Vec<String> = skipped_cross_round
+                        .iter()
+                        .map(|s| s.split_whitespace().take(5).collect::<Vec<_>>().join(" "))
+                        .collect();
+                    messages.push(Message::new(
+                        MessageRole::User,
+                        Content::text(&format!(
+                            "[System] Skipped {} duplicate tool call(s). Commands already executed: {}. \
+                             Use the results from previous rounds instead of re-querying.",
+                            skipped_cross_round.len(),
+                            skipped_summary.join("; ")
+                        )),
+                    ));
+                }
             }
 
             // --- Duplicate round detection ---
@@ -1060,7 +1108,7 @@ impl AgentExecutor {
             // --- Messages compaction ---
             // When the message history grows too large, compact old tool results into
             // short summaries to prevent context window overflow in subsequent rounds.
-            compact_executor_messages(messages, 10);
+            compact_executor_messages(messages, context_window);
         }
 
         // If all rounds exhausted without LLM producing final text, OR if LLM failed
@@ -1108,26 +1156,31 @@ impl AgentExecutor {
         round: usize,
     ) -> DedupOutcome {
         // --- Intra-round deduplication ---
-        // Remove duplicate tool calls within the same round (same name + similar args).
         let mut seen_this_round: HashSet<String> = HashSet::new();
         tool_calls.retain(|tc| {
-            let args_preview = serde_json::to_string(&tc.arguments).unwrap_or_default();
-            let bound = args_preview.len().min(100);
-            let args_short = &args_preview[..args_preview.floor_char_boundary(bound)];
-            let sig = format!("{}:{}", tc.name, args_short);
+            let sig = Self::tool_signature(tc);
             seen_this_round.insert(sig)
         });
 
         // --- Cross-round deduplication ---
-        // Filter out tool calls that were already executed in previous rounds with
-        // the same arguments. This prevents small models from wasting tokens.
         let before_count = tool_calls.len();
+        let mut skipped_cross_round: Vec<String> = Vec::new();
         tool_calls.retain(|tc| {
-            let args_preview = serde_json::to_string(&tc.arguments).unwrap_or_default();
-            let bound = args_preview.len().min(100);
-            let args_short = &args_preview[..args_preview.floor_char_boundary(bound)];
-            let sig = format!("{}:{}", tc.name, args_short);
-            all_executed_signatures.insert(sig)
+            let sig = Self::tool_signature(tc);
+            if all_executed_signatures.contains(&sig) {
+                // Collect a human-readable summary for the hint
+                if tc.name == "shell" {
+                    if let Some(cmd) = tc.arguments.get("command").and_then(|v| v.as_str()) {
+                        skipped_cross_round.push(cmd.to_string());
+                    }
+                } else {
+                    skipped_cross_round.push(sig);
+                }
+                false
+            } else {
+                all_executed_signatures.insert(sig);
+                true
+            }
         });
         let deduped_count = before_count - tool_calls.len();
         if deduped_count > 0 {
@@ -1139,7 +1192,6 @@ impl AgentExecutor {
             );
         }
 
-        // If all tool calls were duplicates, treat as no-op and ask LLM again
         if tool_calls.is_empty() {
             tracing::warn!(
                 agent_id = %agent_id,
@@ -1148,8 +1200,59 @@ impl AgentExecutor {
             );
             DedupOutcome::AllDuplicate
         } else {
-            DedupOutcome::HasNew
+            DedupOutcome::HasNew { skipped_cross_round }
         }
+    }
+
+    /// Compute a dedup-signature for a tool call.
+    ///
+    /// For the `shell` tool, normalizes the command (strips cosmetic flags,
+    /// collapses whitespace) and ignores the `description` field entirely,
+    /// so that re-querying the same device with a different description
+    /// still counts as a duplicate.
+    ///
+    /// For all other tools, falls back to `name:first_100_chars_of_args_json`.
+    fn tool_signature(tc: &crate::agent::types::ToolCall) -> String {
+        if tc.name == "shell" {
+            let command = tc
+                .arguments
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let normalized = Self::normalize_shell_command(command);
+            format!("shell:{}", normalized)
+        } else {
+            let args_preview = serde_json::to_string(&tc.arguments).unwrap_or_default();
+            let bound = args_preview.len().min(100);
+            let args_short = &args_preview[..args_preview.floor_char_boundary(bound)];
+            format!("{}:{}", tc.name, args_short)
+        }
+    }
+
+    /// Normalize a neomind CLI command for dedup purposes:
+    /// collapse whitespace and strip cosmetic flags (`--format`, `--output`)
+    /// that don't change the query result.
+    fn normalize_shell_command(cmd: &str) -> String {
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        let mut filtered = Vec::new();
+        let mut skip_next = false;
+        for part in parts.iter() {
+            if skip_next {
+                skip_next = false;
+                continue;
+            }
+            // Strip flags that take a value: --format json, --output json
+            if *part == "--format" || *part == "--output" {
+                skip_next = true;
+                continue;
+            }
+            // Strip --format=json, --output=json
+            if part.starts_with("--format=") || part.starts_with("--output=") {
+                continue;
+            }
+            filtered.push(*part);
+        }
+        filtered.join(" ")
     }
 
     /// Detect duplicate rounds by comparing tool signatures.

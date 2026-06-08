@@ -374,7 +374,7 @@ impl ShellTool {
                 } else if action == "create"
                     && (is_validation || combined.contains("dsl") || combined.contains("parse"))
                 {
-                    Some("Rule DSL syntax: RULE \"<name>\" WHEN <condition> DO <action> END. Example: RULE \"Temp Alert\" WHEN sensor-001.temperature > 30 DO NOTIFY \"Too hot\" END. Use actual device_id (not 'device.' prefix). Run `neomind device list` to discover IDs and metric_fields grouped by type.".to_string())
+                    Some("Rule DSL syntax: RULE \"<name>\" WHEN <device_id>.<metric> <op> <value> DO <action> END. RULE name MUST be in double quotes. Use real device_id directly (NO 'device.' prefix). BEFORE writing DSL: run `neomind device list` to discover real device IDs and metric_fields per type. If metric_fields is empty, run `neomind device get <ID>` for exact field names. NEVER guess metric names.".to_string())
                 } else if action == "enable" || action == "disable" {
                     Some("Run 'neomind rule list' to find the rule ID, then 'neomind rule <enable|disable> <ID>'.".to_string())
                 } else {
@@ -473,7 +473,7 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 | dashboard | list, get, create, update, delete, share, add-components, remove-components | Dashboard CRUD. `--components` replaces ALL; use `add-components` to append safely |
 | widget | list, get, bundle, create, install, uninstall, market-list, market-install | IIFE React components. `create` scaffolds manifest.json + bundle.js. Props: dataSource (.value, .timeSeries), config, title |
 | rule | list, get, create, update, delete, enable, disable, test, history | Rules use DSL: `RULE ... WHEN ... DO ... END` |
-| agent | list, get, create, update, delete, control, invoke, executions, latest-execution, conversation, memory, send-message | Created as `active` by default. **Shortcut**: `--every 5m` (or `30s`, `1h`, `2d`) replaces `--schedule-type interval --schedule-config "300"`. Or use `--schedule-type event` for device-triggered agents. **`--llm-backend`**: check `neomind llm list` for available backends and their capabilities (`multimodal`, `supports_images`, `function_calling`, `max_context`). Match capabilities to the task — use a multimodal backend for image/vision tasks, check `function_calling` for tool-heavy agents |
+| agent | list, get, create, update, delete, control, invoke, executions, latest-execution, conversation, memory, clear-memory, send-message | Created as `active` by default. **Shortcut**: `--every 5m` (or `30s`, `1h`, `2d`) replaces `--schedule-type interval --schedule-config "300"`. Or use `--schedule-type event` for device-triggered agents. **`--llm-backend`**: check `neomind llm list` for available backends and their capabilities (`multimodal`, `supports_images`, `function_calling`, `max_context`). Match capabilities to the task — use a multimodal backend for image/vision tasks, check `function_calling` for tool-heavy agents |
 | transform | list, get, create, update, delete, test-code, metrics, data-sources | JS code transforms; `input` is raw metric value. `--scope` defaults to `global`. `metrics` lists virtual outputs |
 | extension | list, get/info, status, logs, config, install, uninstall, market-list, market-install, reload | `get <ID>` returns commands, metrics, config details. `config <ID>` reads config, `config <ID> --set '<JSON>'` updates |
 | message | list, get, send, read/ack, channel-list, channel-get, channel-create, channel-update, channel-delete, channel-test, channel-types, channel-type-schema | Send requires `--title` + `--body` + `--severity`. Use `channel-types` to discover types, `channel-type-schema <TYPE>` for config schema. |
@@ -488,21 +488,29 @@ Use this tool to run any system command. For NeoMind platform operations, use th
 
 > For complex operations (dashboard creation, agent management, extension development, device onboarding), use the `skill` tool to load detailed step-by-step guides.
 
-### Rule DSL Syntax
+### Rule DSL Syntax — MANDATORY: discover device IDs and metrics FIRST
+**Before creating ANY rule, you MUST run `neomind device list`** to get real device IDs and `metric_fields` per type.
+If `metric_fields` is empty, run `neomind device get <ID>` for exact metric names.
+**NEVER guess device IDs or metric names** — rules with fake names silently fail.
+
 ```
 RULE "<name>" WHEN <condition> DO <action> END
 ```
-- Conditions: `<device_id>.<metric> <op> <value>`, `EXTENSION <ext_id>.<metric> <op> <value>`
+- Conditions: `<device_id>.<metric> <op> <value>` (use REAL device_id + REAL metric from discovery), `EXTENSION <ext_id>.<metric> <op> <value>`
 - Operators: `< > <= >= == !=`, `BETWEEN val AND val`, combine with `AND`, `OR`, `NOT`
 - Actions: `NOTIFY "msg" [channels]`, `EXECUTE device.cmd(key=val)`, `ALERT "title" "msg" SEVERITY`, `TRIGGER_AGENT id "input"`
 - Template vars: `{{device.name}}`, `{{value}}`
 - New rules are **disabled** — must `neomind rule enable <ID>` after create
-- Metric names must match exactly — use `device list` (grouped by type with metric_fields) or `device get <ID>` to discover real names
 
 ```bash
-neomind rule create --dsl 'RULE high_temp WHEN sensor-001.temperature > 30 DO NOTIFY "High temp on {{device.name}}: {{value}}°C" END'
-neomind rule create --dsl 'RULE offline WHEN sensor-001.status == "offline" DO NOTIFY "{{device.name}} went offline" [email] END'
-neomind rule create --dsl 'RULE critical WHEN sensor-001.cpu > 90 AND sensor-001.memory > 80 DO ALERT "Critical" "Check {{device.name}}" CRITICAL END'
+# Step 1: DISCOVER real device IDs and metric names
+neomind device list
+# → Returns types with metric_fields (e.g. ["temperature","humidity"]) and device IDs
+
+# Step 2: Create rule using DISCOVERED names (not the examples below!)
+# These examples use placeholder names — YOU must replace with real ones from step 1
+neomind rule create --dsl 'RULE "High Temp Alert" WHEN REAL_DEVICE_ID.temperature > 30 DO NOTIFY "High temp on {{device.name}}: {{value}}°C" END'
+neomind rule enable <RULE_ID>
 ```
 
 ### Dashboard Components

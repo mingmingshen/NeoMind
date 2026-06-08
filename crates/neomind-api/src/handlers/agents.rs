@@ -229,6 +229,8 @@ struct ExecutionRecordDto {
 struct KnowledgeFileRefDto {
     name: String,
     description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -558,6 +560,7 @@ impl From<&AiAgent> for AgentDetailDto {
                 knowledge_files: agent.memory.knowledge_files.iter().map(|f| KnowledgeFileRefDto {
                     name: f.name.clone(),
                     description: f.description.clone(),
+                    content: None,
                     created_at: format_datetime(f.created_at),
                     updated_at: format_datetime(f.updated_at),
                 }).collect(),
@@ -974,6 +977,10 @@ pub async fn create_agent(
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to save agent: {}", e)))?;
 
+    // Initialize knowledge file at creation time (not first execution)
+    // This gives the agent immediate context for its first run.
+    init_agent_knowledge_file(&state, &agent).await;
+
     // Schedule the agent if it's interval/cron type (not event-triggered)
     if agent.schedule.schedule_type != neomind_storage::ScheduleType::Event {
         if let Ok(manager) = state.get_or_init_agent_manager().await {
@@ -1005,6 +1012,119 @@ pub async fn create_agent(
         "name": agent.name,
         "status": "active",
     }))
+}
+
+/// Initialize the agent's knowledge file at creation time.
+/// Creates `task-understanding.md` with the system prompt, task description, and bound resources.
+async fn init_agent_knowledge_file(state: &crate::server::ServerState, agent: &AiAgent) {
+    use neomind_storage::KnowledgeFileRef;
+
+    let memory_store = &state.agents.system_memory_store;
+    let now = chrono::Utc::now().timestamp();
+
+    // Build resources summary
+    let resources_summary = if agent.resources.is_empty() {
+        "None (free mode)".to_string()
+    } else {
+        agent
+            .resources
+            .iter()
+            .map(|r| format!("- {} ({})", r.name, r.resource_id))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    // Build the system prompt section (identity + role)
+    let default_identity = format!(
+        "You are an intelligent IoT agent named '{}' monitoring edge devices.",
+        agent.name
+    );
+    let identity_section = agent
+        .system_prompt
+        .as_deref()
+        .unwrap_or(&default_identity);
+
+    // Schedule info
+    let schedule_info = match &agent.schedule.schedule_type {
+        ScheduleType::Interval => format!(
+            "Interval: every {}s",
+            agent.schedule.interval_seconds.unwrap_or(300)
+        ),
+        ScheduleType::Cron => format!(
+            "Cron: {}",
+            agent.schedule.cron_expression.as_deref().unwrap_or("?")
+        ),
+        ScheduleType::Event => "Event-driven".to_string(),
+    };
+
+    let content = format!(
+        "# Task Understanding\n\
+         \n\
+         ## Identity & Role\n\
+         {}\n\
+         \n\
+         ## Mission\n\
+         {}\n\
+         \n\
+         ## Bound Resources\n\
+         {}\n\
+         \n\
+         ## Schedule\n\
+         {}\n\
+         \n\
+         ## Status\n\
+         - Execution mode: {:?}\n\
+         - Created: {}\n\
+         \n\
+         ## Memory Commands\n\
+         - Read this file: `memory(action='read', target='custom:task-understanding')`\n\
+         - Update this file: `memory(action='add', target='custom:task-understanding', content='## New Section\\n...')`\n\
+         - Create new knowledge file: `memory(action='create', target='custom:{{name}}', content='...')`\n\
+         \n\
+         ## Notes\n\
+         This file was auto-created when the agent was created.\n\
+         The AI should update it as it learns more about the environment and discovers patterns.",
+        identity_section,
+        agent.user_prompt,
+        resources_summary,
+        schedule_info,
+        agent.execution_mode,
+        chrono::DateTime::from_timestamp(now, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+    );
+
+    // Write the knowledge file
+    if let Err(e) = memory_store.write_agent_custom_file(&agent.id, "task-understanding", &content) {
+        tracing::warn!(
+            agent_id = %agent.id,
+            "Failed to init knowledge file at creation: {}", e
+        );
+        return;
+    }
+
+    // Register in agent's memory knowledge_files index
+    let mut updated_memory = agent.memory.clone();
+    updated_memory.knowledge_files.push(KnowledgeFileRef {
+        name: "task-understanding".to_string(),
+        description: format!("Task context: {}",
+            agent.user_prompt.chars().take(80).collect::<String>()),
+        created_at: now,
+        updated_at: now,
+    });
+
+    // Save updated memory back to storage (await to avoid TOCTOU with early executions)
+    if let Err(e) = state.agents.agent_store.update_agent_memory(&agent.id, updated_memory).await {
+        tracing::warn!(
+            agent_id = %agent.id,
+            "Failed to save knowledge file index: {}", e
+        );
+    }
+
+    tracing::info!(
+        agent_id = %agent.id,
+        "Initialized knowledge file at agent creation"
+    );
 }
 
 /// Update an AI Agent.
@@ -1289,6 +1409,7 @@ pub async fn delete_agent(
     // This is critical for:
     // 1. Removing scheduled tasks (interval/cron agents)
     // 2. Preventing event-triggered agents from executing
+    // 3. Checking if the agent is currently executing (prevent file cleanup race)
     if let Ok(manager) = state.get_or_init_agent_manager().await {
         // Use the manager's delete_agent which properly unschedules
         manager
@@ -1301,6 +1422,19 @@ pub async fn delete_agent(
             .delete_agent(&id)
             .await
             .map_err(|e| ErrorResponse::internal(format!("Failed to delete agent: {}", e)))?;
+    }
+
+    // Clean up agent memory files (knowledge files, custom files).
+    // Note: There is a small race window if the agent is mid-execution.
+    // This is acceptable because:
+    // - The agent was already unscheduled (no future executions)
+    // - A running execution holds Arc<AiAgent> in memory and will complete
+    //   using its in-memory snapshot; file I/O failures are logged, not fatal
+    // - The directory removal is best-effort (non-critical)
+
+    // Clean up agent memory files (knowledge files, custom files)
+    if let Err(e) = state.agents.system_memory_store.clean_agent_dir(&id) {
+        tracing::warn!(agent_id = %id, "Failed to clean agent memory dir: {}", e);
     }
 
     tracing::info!("Deleted AI Agent: {}", id);
@@ -1680,6 +1814,9 @@ pub async fn get_agent_memory(
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
+    let memory_store = &state.agents.system_memory_store;
+    let agent_id = &agent.id;
+
     let memory = AgentMemoryDto {
         journal: ExecutionJournalDto {
             records: agent.memory.journal.records.iter().map(|r| ExecutionRecordDto {
@@ -1691,11 +1828,17 @@ pub async fn get_agent_memory(
             }).collect(),
             max_records: agent.memory.journal.max_records,
         },
-        knowledge_files: agent.memory.knowledge_files.iter().map(|f| KnowledgeFileRefDto {
-            name: f.name.clone(),
-            description: f.description.clone(),
-            created_at: format_datetime(f.created_at),
-            updated_at: format_datetime(f.updated_at),
+        knowledge_files: agent.memory.knowledge_files.iter().map(|f| {
+            let content = memory_store
+                .read_agent_custom_file(agent_id, &f.name)
+                .unwrap_or_default();
+            KnowledgeFileRefDto {
+                name: f.name.clone(),
+                description: f.description.clone(),
+                content: Some(content),
+                created_at: format_datetime(f.created_at),
+                updated_at: format_datetime(f.updated_at),
+            }
         }).collect(),
         updated_at: format_datetime(agent.memory.updated_at),
     };

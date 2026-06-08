@@ -68,6 +68,17 @@ Complete rewrite of the agent memory system — replacing a complex hierarchical
 
 ### Added
 
+- **Rule creation metric discovery enforcement** — Three-layer defense to prevent LLM from creating rules with guessed device IDs or metric names: (1) `rule-management.md` skill rewritten with mandatory 3-step discovery flow, decision tree for condition types, and real workflow examples with "WRONG" anti-patterns; (2) `shell.rs` tool description emphasizes "discover FIRST, create SECOND" with placeholder names in examples; (3) `streaming.rs` dead-end detection injects forced metric discovery reminder when rule create is attempted without prior `device list`/`device get`
+- **Smart tool result compaction** — `compact_messages()` now uses `smart_summarize_tool_result()` to preserve key data (device IDs, names, status, error messages) instead of blind truncation. Handles JSON output, CLI responses, and plain text. Native `Tool` role messages are also compacted (previously only `Assistant` messages were checked)
+- **Agent knowledge file initialization at creation** — `task-understanding.md` is created immediately when an agent is created (not on first execution), providing the agent with mission and resource context from the start
+- **Knowledge file content API field** — `KnowledgeFileRefDto` now includes optional `content` field, allowing the API to return file contents on demand
+
+### Fixed
+
+- **Vision tool incomplete data URL handling** — `resolve_image()` now correctly parses `image/jpeg;base64,...` (missing `data:` prefix) by detecting the `;base64,` pattern without the `data:` prefix. Previously fell through to fallback which passed the entire string as raw base64 to Ollama, causing "illegal base64 data at input byte 27" errors
+
+### Added
+
 - **Complex MetricValue in Extension transforms** — `TransformedMetric.value` upgraded from `f64` to `MetricValue` (Float/Integer/Boolean/String/Json). Extension transforms can now produce detection box arrays, count-by-class maps, and text arrays — all faithfully stored and pushed via WebSocket
 - **Extension input mapping resolution** — Parameters like `{from: "values.imageUrl", convert: "url_to_base64"}` are now resolved automatically: dot-path extraction from device data, HTTP fetch for URLs, base64 encoding. Already-base64 values detected and passed through without HTTP call. Image dimensions extracted for coordinate normalization
 - **Extension output mapping extraction** — New `output_mapping` field on `TransformOperation::Extension` with transforms: `count`, `count_by_class`, `filter_roi`, `count_in_roi`, `extract_texts`, `normalize` (with `image_param` for multi-image). ROI filtering and coordinate normalization for detection boxes
