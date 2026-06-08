@@ -254,14 +254,18 @@ jobs:
         working-directory: ./web
         shell: bash
         run: |
-          # Try building with DMG first, fall back to app bundle only if DMG fails
+          # Try building with all bundles first, fall back to subset if external download fails
           npm run tauri build -- --target ${{ matrix.target }} || {
-            echo "⚠️ Full build failed, trying without DMG..."
-            # If on macOS, try building just the app bundle
+            echo "⚠️ Full build failed, retrying with reduced bundle types..."
             if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+              # macOS: retry without DMG
               npm run tauri build -- --target ${{ matrix.target }} --bundles app
+            elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+              # Windows: retry with NSIS only
+              npm run tauri build -- --target ${{ matrix.target }} --bundles nsis
             else
-              exit 1
+              # Linux: retry with deb+rpm only (skip AppImage — AppRun download can be flaky)
+              npm run tauri build -- --target ${{ matrix.target }} --bundles deb,rpm
             fi
           }
         env:
