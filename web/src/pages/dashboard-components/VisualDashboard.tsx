@@ -541,8 +541,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       // Hash dataSource identity (use _saveTs stamp if present for forced refresh)
       const ds = gc.dataSource
       const dsKey = ds ? (Array.isArray(ds) ? ds.map((d: any) => `${d.type}:${d.sourceId ?? d.extensionId ?? ''}:${d.metricId ?? ''}:${d._saveTs ?? ''}`).join(',') : `${(ds as any).type}:${(ds as any).sourceId ?? (ds as any).extensionId ?? ''}:${(ds as any).metricId ?? ''}:${(ds as any)._saveTs ?? ''}`) : ''
-      // Hash config — use value hash to detect actual changes (not just key changes)
-      const configHash = gc.config ? JSON.stringify(gc.config).length.toString(36) + ':' + Object.keys(gc.config).sort().join(',') : ''
+      // Hash config — use full JSON content to detect ALL value changes,
+      // not just structural changes (length/keys).
+      const configHash = gc.config ? JSON.stringify(gc.config) : ''
       hash += `|${c.id}:${c.type}:${c.title}:${c.position?.x ?? 0},${c.position?.y ?? 0},${c.position?.w ?? 0},${c.position?.h ?? 0}:${dsKey}:${configHash}`
     }
     return hash
