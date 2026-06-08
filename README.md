@@ -180,7 +180,7 @@ docker compose up -d
 
 **Specific version:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.8.7 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.8.8 sh
 ```
 
 **Custom directories:**
@@ -200,7 +200,7 @@ curl -fsSL ... | USE_NGINX=true sh
 
 **Manual installation:**
 ```bash
-VERSION=0.8.7
+VERSION=0.8.8
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-server-linux-amd64.tar.gz
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-web-${VERSION}.tar.gz
 tar xzf neomind-server-linux-amd64.tar.gz
