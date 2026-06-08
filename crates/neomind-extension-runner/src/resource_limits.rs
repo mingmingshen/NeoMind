@@ -52,7 +52,7 @@ pub struct ResourceLimitsConfig {
 impl Default for ResourceLimitsConfig {
     fn default() -> Self {
         Self {
-            memory_limit_mb: Some(2048), // 2GB default — needed for extensions loading large shared libs (e.g. ONNX Runtime)
+            memory_limit_mb: Some(4096), // 4GB default — needed for extensions loading ML models (e.g. ONNX Runtime) + rayon thread pools
             memory_limit_hard_mb: None, // 2x soft limit
             cpu_affinity: None,
             nice_level: Some(10), // Lower priority
