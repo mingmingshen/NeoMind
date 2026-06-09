@@ -475,7 +475,7 @@ export function AgentExecutionTimeline({
                                       title={t('agents:memory.actionsExecuted')}
                                     >
                                       <div className="space-y-2">
-                                        {realActions.map((action: any, idx: number) => (
+                                        {realActions.map((action: { description: string; target: string; success: boolean; parameters?: Record<string, unknown>; result?: string }, idx: number) => (
                                           <Card key={idx} className="p-3 min-w-0">
                                             <div className="flex items-start justify-between gap-3 mb-2">
                                               <div className="text-sm flex-1 min-w-0">

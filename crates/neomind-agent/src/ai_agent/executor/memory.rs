@@ -15,11 +15,11 @@ impl AgentExecutor {
     ) -> AgentResult<AgentMemory> {
         let mut memory = agent.memory.clone();
 
-        let outcome = truncate_to(conclusion, 100);
+        let outcome = truncate_to(conclusion, 300);
         let action_taken = decisions
             .iter()
-            .filter(|d| matches!(d.decision_type.as_str(), "alert" | "command"))
-            .map(|d| truncate_to(&d.description, 50))
+            .take(5)
+            .map(|d| truncate_to(&d.action, 50))
             .collect::<Vec<_>>()
             .join("; ");
         let action_taken = if action_taken.is_empty() {
@@ -114,19 +114,6 @@ impl AgentExecutor {
             neomind_storage::ScheduleType::Event => "Event-driven".to_string(),
         };
 
-        // Latest execution info
-        let latest = updated_memory.journal.records.last();
-        let latest_exec = match latest {
-            Some(r) => format!(
-                "- Latest execution: {} ({})",
-                truncate_to(&r.outcome, 80),
-                chrono::DateTime::from_timestamp(r.timestamp, 0)
-                    .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
-                    .unwrap_or_else(|| "unknown".to_string())
-            ),
-            None => "- No executions yet".to_string(),
-        };
-
         let content = format!(
             "# Task Understanding\n\
              \n\
@@ -142,29 +129,17 @@ impl AgentExecutor {
              ## Schedule\n\
              {}\n\
              \n\
-             ## Status\n\
-             - Execution mode: {:?}\n\
-             - Total executions: {}\n\
-             {}\n\
-             - Initialized: {}\n\
-             \n\
              ## Memory Commands\n\
              - Read this file: `memory(action='read', target='custom:task-understanding')`\n\
              - Update this file: `memory(action='add', target='custom:task-understanding', content='## New Section\\n...')`\n\
              - Create new knowledge file: `memory(action='create', target='custom:{{{{name}}}}', content='...')`\n\
              \n\
              ## Notes\n\
-             This file was auto-created. Update it as you learn more about the environment and discover patterns.",
+             This file was auto-created with static config. Update it as you discover patterns, thresholds, and device quirks.",
             identity_section,
             agent.user_prompt,
             resources_summary,
             schedule_info,
-            agent.execution_mode,
-            updated_memory.journal.records.len(),
-            latest_exec,
-            chrono::DateTime::from_timestamp(now, 0)
-                .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
-                .unwrap_or_else(|| "unknown".to_string()),
         );
 
         // Write file to agent-scoped directory

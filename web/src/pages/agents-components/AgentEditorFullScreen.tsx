@@ -79,12 +79,15 @@ import {
 } from "lucide-react"
 import type {
   AiAgentDetail,
+  AgentSchedule,
   CreateAgentRequest,
   Device,
   DeviceType,
   Extension,
   ExtensionDataSourceInfo,
   ExtensionCommandDescriptor,
+  LlmBackendInstance,
+  ResourceRequest,
   UnifiedDataSourceInfo,
 } from "@/types"
 // Unified dialog components
@@ -325,7 +328,7 @@ export function AgentEditorFullScreen({
   const [saving, setSaving] = useState(false)
 
   // LLM backends
-  const [llmBackends, setLlmBackends] = useState<any[]>([])
+  const [llmBackends, setLlmBackends] = useState<LlmBackendInstance[]>([])
   const [activeBackendId, setActiveBackendId] = useState<string | null>(null)
 
   // Advanced configuration state
@@ -528,7 +531,7 @@ export function AgentEditorFullScreen({
   // Helpers
   // ========================================================================
 
-  const parseSchedule = (schedule: any) => {
+  const parseSchedule = (schedule: AgentSchedule) => {
     if (!schedule) return
     if (schedule.schedule_type === 'interval') {
       if (schedule.interval_seconds === 0) {
@@ -591,14 +594,14 @@ export function AgentEditorFullScreen({
       try {
         const filter = JSON.parse(schedule.event_filter || '{}')
         if (filter.sources && Array.isArray(filter.sources)) {
-          const sources = filter.sources.map((s: any) =>
+          const sources = filter.sources.map((s: Record<string, string>) =>
             restoreFromBackendSourceType({
               type: s.type || 'device',
               id: s.id || '',
               name: s.name || s.id || '',
               ...(s.field ? { field: s.field } : {}),
             })
-          ).filter((s: any) => s.id)
+          ).filter((s: { id: string }) => s.id)
           setTriggerSources(sources)
         }
       } catch {
@@ -635,7 +638,7 @@ export function AgentEditorFullScreen({
         selectedMetricNames.get(deviceId)!.add(itemName)
         // Store data collection config from the first metric
         if (res.config?.data_collection && !resourceDataCollectionConfigs.has(deviceId)) {
-          const dc = res.config.data_collection as any
+          const dc = res.config.data_collection as { time_range_minutes?: number; include_history?: boolean; include_trend?: boolean; include_baseline?: boolean }
           resourceDataCollectionConfigs.set(deviceId, {
             time_range_minutes: dc.time_range_minutes ?? 60,
             include_history: dc.include_history ?? false,
@@ -662,7 +665,7 @@ export function AgentEditorFullScreen({
           extMetricNames.get(extId)!.add(itemName)
           // Store data collection config from the first metric
           if (res.config?.data_collection && !resourceDataCollectionConfigs.has(extId)) {
-            const dc = res.config.data_collection as any
+            const dc = res.config.data_collection as { time_range_minutes?: number; include_history?: boolean; include_trend?: boolean; include_baseline?: boolean }
             resourceDataCollectionConfigs.set(extId, {
               time_range_minutes: dc.time_range_minutes ?? 60,
               include_history: dc.include_history ?? false,
@@ -1093,7 +1096,7 @@ export function AgentEditorFullScreen({
       } else if (scheduleType === 'reactive') {
         finalScheduleType = 'event'
         // Save trigger sources to event_filter with backend type mapping
-        const eventFilterObj: any = {
+        const eventFilterObj: { sources: Array<{ type: string; id: string; name: string; field?: string }> } = {
           sources: triggerSources.map(s => {
             const mapped = mapToBackendSourceType(s.type, s.id)
             return { type: mapped.type, id: mapped.id, name: s.name, ...(s.field ? { field: s.field } : {}) }
@@ -1107,7 +1110,7 @@ export function AgentEditorFullScreen({
 
       // Build resources array in the new format that supports both devices and extensions
       const resources = selectedResources.flatMap(r => {
-        const result: any[] = []
+        const result: ResourceRequest[] = []
 
         // Add metrics
         Array.from(r.selectedMetrics).forEach(metricName => {

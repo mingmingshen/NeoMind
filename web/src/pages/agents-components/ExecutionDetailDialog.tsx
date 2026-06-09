@@ -23,6 +23,174 @@ import type { AgentExecutionDetail, DataCollected } from "@/types"
 import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 import { UnifiedFormDialog } from "@/components/dialog/UnifiedFormDialog"
 
+// ============================================================================
+// Pure helper functions (extracted from component for stable reference)
+// ============================================================================
+
+const isPureBase64 = (str: string): boolean => {
+  if (!str || str.length < 100) return false
+  const cleaned = str.trim()
+
+  if (cleaned.startsWith('http://') || cleaned.startsWith('https://') || cleaned.startsWith('/')) {
+    return false
+  }
+  if (cleaned.startsWith('data:')) {
+    return false
+  }
+
+  const base64Regex = /^[A-Za-z0-9+/=_-]+$/
+  if (!base64Regex.test(cleaned)) {
+    return false
+  }
+
+  try {
+    atob(cleaned.slice(0, 100))
+    return true
+  } catch {
+    return false
+  }
+}
+
+const detectImageFormat = (base64Data: string): { mime: string } | null => {
+  try {
+    const pureBase64 = base64Data.replace(/^data:image\/[^;]+;base64,/, '').replace(/^data:,/, '')
+    const binaryString = atob(pureBase64.slice(0, 32))
+
+    const magicBytes: Record<string, { magic: number[]; mime: string }> = {
+      png: { magic: [0x89, 0x50, 0x4E, 0x47], mime: 'image/png' },
+      jpeg: { magic: [0xFF, 0xD8, 0xFF], mime: 'image/jpeg' },
+      gif: { magic: [0x47, 0x49, 0x46], mime: 'image/gif' },
+      webp: { magic: [0x52, 0x49, 0x46, 0x46], mime: 'image/webp' },
+      bmp: { magic: [0x42, 0x4D], mime: 'image/bmp' },
+    }
+
+    for (const info of Object.values(magicBytes)) {
+      if (info.magic.every((byte, i) => binaryString.charCodeAt(i) === byte)) {
+        return { mime: info.mime }
+      }
+    }
+  } catch {
+    // Invalid base64
+  }
+  return null
+}
+
+const normalizeImageUrl = (value: unknown): string | null => {
+  if (!value) return null
+
+  const valueStr = String(value)
+  const trimmed = valueStr.trim()
+
+  if (trimmed === '-' || trimmed === 'undefined' || trimmed === 'null' || trimmed === '') {
+    return null
+  }
+
+  if (trimmed.startsWith('data:image/')) {
+    return trimmed
+  }
+
+  if (trimmed.startsWith('data:base64,')) {
+    const base64Data = trimmed.slice(12)
+    const formatInfo = detectImageFormat(base64Data) || { mime: 'image/png' }
+    return `data:${formatInfo.mime};base64,${base64Data}`
+  }
+
+  if (isPureBase64(trimmed)) {
+    const formatInfo = detectImageFormat(trimmed) || { mime: 'image/png' }
+    return `data:${formatInfo.mime};base64,${trimmed}`
+  }
+
+  return trimmed
+}
+
+const extractImageData = (data: DataCollected) => {
+  const values = data.values
+  if (!values) return null
+
+  if (Array.isArray(values)) {
+    for (const item of values) {
+      if (typeof item === 'object' && item !== null) {
+        const obj = item as Record<string, unknown>
+        for (const key of ['image_base64', 'imageBase64', 'base64', 'image_url', 'imageUrl', 'url', 'image', 'src']) {
+          const normalized = normalizeImageUrl(obj[key])
+          if (normalized) {
+            return { src: normalized, mimeType: obj.image_mime_type || obj.mimeType }
+          }
+        }
+      }
+    }
+    for (const item of values) {
+      if (typeof item === 'string') {
+        const normalized = normalizeImageUrl(item)
+        if (normalized) return { src: normalized, mimeType: null }
+      }
+    }
+  }
+
+  if (typeof values === 'object') {
+    const obj = values as Record<string, unknown>
+    for (const key of ['image_base64', 'imageBase64', 'base64', 'image_url', 'imageUrl', 'url', 'image', 'src', 'value']) {
+      const normalized = normalizeImageUrl(obj[key])
+      if (normalized) {
+        return { src: normalized, mimeType: obj.image_mime_type || obj.mimeType }
+      }
+    }
+  }
+
+  if (typeof values === 'string') {
+    const normalized = normalizeImageUrl(values)
+    if (normalized) return { src: normalized, mimeType: null }
+  }
+
+  return null
+}
+
+const formatValue = (value: unknown): string => {
+  if (value === null || value === undefined) return '-'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (Array.isArray(value)) return `[${value.length} items]`
+  if (typeof value === 'object') {
+    const str = JSON.stringify(value)
+    return str.length > 100 ? str.slice(0, 100) + '...' : str
+  }
+  return String(value)
+}
+
+const getDataDisplayPairs = (data: DataCollected) => {
+  const values = data.values
+  const pairs: { key: string; value: string }[] = []
+
+  if (!values) return pairs
+
+  if (Array.isArray(values)) {
+    values.forEach((item, idx) => {
+      if (typeof item !== 'object' || item === null) {
+        pairs.push({ key: `[${idx}]`, value: formatValue(item) })
+      } else {
+        const obj = item as Record<string, unknown>
+        for (const [k, v] of Object.entries(obj)) {
+          if (!['image_base64', 'imageBase64', 'base64', 'image_url', 'imageUrl', 'url', 'image', 'src'].includes(k)) {
+            pairs.push({ key: k, value: formatValue(v) })
+          }
+        }
+      }
+    })
+  } else if (typeof values === 'object') {
+    const obj = values as Record<string, unknown>
+    for (const [k, v] of Object.entries(obj)) {
+      if (!['image_base64', 'imageBase64', 'base64', 'image_url', 'imageUrl', 'url', 'image', 'src'].includes(k)) {
+        pairs.push({ key: k, value: formatValue(v) })
+      }
+    }
+  } else {
+    pairs.push({ key: 'value', value: formatValue(values) })
+  }
+
+  return pairs
+}
+
 interface ExecutionDetailDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -84,170 +252,6 @@ export function ExecutionDetailDialog({
       }
       return next
     })
-  }
-
-  const isPureBase64 = (str: string): boolean => {
-    if (!str || str.length < 100) return false
-    const cleaned = str.trim()
-
-    if (cleaned.startsWith('http://') || cleaned.startsWith('https://') || cleaned.startsWith('/')) {
-      return false
-    }
-    if (cleaned.startsWith('data:')) {
-      return false
-    }
-
-    const base64Regex = /^[A-Za-z0-9+/=_-]+$/
-    if (!base64Regex.test(cleaned)) {
-      return false
-    }
-
-    try {
-      atob(cleaned.slice(0, 100))
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  const detectImageFormat = (base64Data: string): { mime: string } | null => {
-    try {
-      const pureBase64 = base64Data.replace(/^data:image\/[^;]+;base64,/, '').replace(/^data:,/, '')
-      const binaryString = atob(pureBase64.slice(0, 32))
-
-      const magicBytes: Record<string, { magic: number[]; mime: string }> = {
-        png: { magic: [0x89, 0x50, 0x4E, 0x47], mime: 'image/png' },
-        jpeg: { magic: [0xFF, 0xD8, 0xFF], mime: 'image/jpeg' },
-        gif: { magic: [0x47, 0x49, 0x46], mime: 'image/gif' },
-        webp: { magic: [0x52, 0x49, 0x46, 0x46], mime: 'image/webp' },
-        bmp: { magic: [0x42, 0x4D], mime: 'image/bmp' },
-      }
-
-      for (const info of Object.values(magicBytes)) {
-        if (info.magic.every((byte, i) => binaryString.charCodeAt(i) === byte)) {
-          return { mime: info.mime }
-        }
-      }
-    } catch {
-      // Invalid base64
-    }
-    return null
-  }
-
-  const normalizeImageUrl = (value: unknown): string | null => {
-    if (!value) return null
-
-    const valueStr = String(value)
-    const trimmed = valueStr.trim()
-
-    if (trimmed === '-' || trimmed === 'undefined' || trimmed === 'null' || trimmed === '') {
-      return null
-    }
-
-    if (trimmed.startsWith('data:image/')) {
-      return trimmed
-    }
-
-    if (trimmed.startsWith('data:base64,')) {
-      const base64Data = trimmed.slice(12)
-      const formatInfo = detectImageFormat(base64Data) || { mime: 'image/png' }
-      return `data:${formatInfo.mime};base64,${base64Data}`
-    }
-
-    if (isPureBase64(trimmed)) {
-      const formatInfo = detectImageFormat(trimmed) || { mime: 'image/png' }
-      return `data:${formatInfo.mime};base64,${trimmed}`
-    }
-
-    return trimmed
-  }
-
-  const extractImageData = (data: DataCollected) => {
-    const values = data.values
-    if (!values) return null
-
-    if (Array.isArray(values)) {
-      for (const item of values) {
-        if (typeof item === 'object' && item !== null) {
-          const obj = item as Record<string, unknown>
-          for (const key of ['image_base64', 'imageBase64', 'base64', 'image_url', 'imageUrl', 'url', 'image', 'src']) {
-            const normalized = normalizeImageUrl(obj[key])
-            if (normalized) {
-              return { src: normalized, mimeType: obj.image_mime_type || obj.mimeType }
-            }
-          }
-        }
-      }
-      for (const item of values) {
-        if (typeof item === 'string') {
-          const normalized = normalizeImageUrl(item)
-          if (normalized) return { src: normalized, mimeType: null }
-        }
-      }
-    }
-
-    if (typeof values === 'object') {
-      const obj = values as Record<string, unknown>
-      for (const key of ['image_base64', 'imageBase64', 'base64', 'image_url', 'imageUrl', 'url', 'image', 'src', 'value']) {
-        const normalized = normalizeImageUrl(obj[key])
-        if (normalized) {
-          return { src: normalized, mimeType: obj.image_mime_type || obj.mimeType }
-        }
-      }
-    }
-
-    if (typeof values === 'string') {
-      const normalized = normalizeImageUrl(values)
-      if (normalized) return { src: normalized, mimeType: null }
-    }
-
-    return null
-  }
-
-  const formatValue = (value: unknown): string => {
-    if (value === null || value === undefined) return '-'
-    if (typeof value === 'string') return value
-    if (typeof value === 'number') return String(value)
-    if (typeof value === 'boolean') return value ? 'true' : 'false'
-    if (Array.isArray(value)) return `[${value.length} items]`
-    if (typeof value === 'object') {
-      const str = JSON.stringify(value)
-      return str.length > 100 ? str.slice(0, 100) + '...' : str
-    }
-    return String(value)
-  }
-
-  const getDataDisplayPairs = (data: DataCollected) => {
-    const values = data.values
-    const pairs: { key: string; value: string }[] = []
-
-    if (!values) return pairs
-
-    if (Array.isArray(values)) {
-      values.forEach((item, idx) => {
-        if (typeof item !== 'object' || item === null) {
-          pairs.push({ key: `[${idx}]`, value: formatValue(item) })
-        } else {
-          const obj = item as Record<string, unknown>
-          for (const [k, v] of Object.entries(obj)) {
-            if (!['image_base64', 'imageBase64', 'base64', 'image_url', 'imageUrl', 'url', 'image', 'src'].includes(k)) {
-              pairs.push({ key: k, value: formatValue(v) })
-            }
-          }
-        }
-      })
-    } else if (typeof values === 'object') {
-      const obj = values as Record<string, unknown>
-      for (const [k, v] of Object.entries(obj)) {
-        if (!['image_base64', 'imageBase64', 'base64', 'image_url', 'imageUrl', 'url', 'image', 'src'].includes(k)) {
-          pairs.push({ key: k, value: formatValue(v) })
-        }
-      }
-    } else {
-      pairs.push({ key: 'value', value: formatValue(values) })
-    }
-
-    return pairs
   }
 
   return (

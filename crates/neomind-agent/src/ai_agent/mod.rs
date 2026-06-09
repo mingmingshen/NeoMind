@@ -12,7 +12,6 @@
 
 pub mod executor;
 pub mod intent_parser;
-pub mod llm_pool;
 pub mod scheduler;
 
 use neomind_storage::{AgentExecutionRecord, AgentSchedule, AgentStatus, AiAgent, ExecutionStatus};

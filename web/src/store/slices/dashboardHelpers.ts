@@ -49,7 +49,7 @@ const MAX_CONCURRENT_CLEANUPS = 3
 /** Delete the associated AI Agent when an ai-analyst component is removed */
 export function cleanupAgentForComponent(component: DashboardComponent | undefined) {
   if (!component || component.type !== 'ai-analyst') return
-  const agentId = (component as any).config?.agentId as string | undefined
+  const agentId = (component.config?.agentId as string | undefined)
   if (!agentId) return
   if (pendingCleanupCount >= MAX_CONCURRENT_CLEANUPS) {
     console.warn('[Dashboard] Skipping agent cleanup — too many concurrent cleanups')

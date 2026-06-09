@@ -291,7 +291,7 @@ anti_triggers:
   // Dialog title
   const dialogTitle =
     dialogMode === "create"
-      ? "Create New Skill"
+      ? t("skills.createNewSkill")
       : dialogSkill?.name || ""
 
   const lineCount = dialogContent.split("\n").filter((l) => l.trim()).length
@@ -303,14 +303,14 @@ anti_triggers:
         columns={[
           {
             key: "name",
-            label: "Skill",
+            label: t("skills.columnSkill"),
           },
           {
             key: "priority",
             label: (
               <div className="flex items-center gap-1">
                 <Hash className="h-4 w-4" />
-                Priority
+                {t("skills.columnPriority")}
               </div>
             ),
             align: "center",
@@ -318,7 +318,7 @@ anti_triggers:
           },
           {
             key: "body_length",
-            label: "Size",
+            label: t("skills.columnSize"),
             align: "right",
             width: "w-24",
           },
@@ -387,7 +387,7 @@ anti_triggers:
         }}
         actions={[
           {
-            label: "View",
+            label: t("skills.actionView"),
             icon: <Eye className="h-4 w-4" />,
             onClick: (rowData) => {
               const row = rowData as unknown as SkillRow
@@ -395,7 +395,7 @@ anti_triggers:
             },
           },
           {
-            label: "Edit",
+            label: t("skills.actionEdit"),
             icon: <Pencil className="h-4 w-4" />,
             onClick: (rowData) => {
               const row = rowData as unknown as SkillRow
@@ -403,7 +403,7 @@ anti_triggers:
             },
           },
           {
-            label: "Delete",
+            label: t("skills.actionDelete"),
             icon: <Trash2 className="h-4 w-4" />,
             onClick: (rowData) => {
               const row = rowData as unknown as SkillRow
@@ -414,8 +414,8 @@ anti_triggers:
         emptyState={
           <EmptyState
             icon={<BookOpen className="h-12 w-12" />}
-            title="No skills"
-            description="Create your first skill to extend agent capabilities"
+            title={t("skills.emptyTitle")}
+            description={t("skills.emptyDesc")}
           />
         }
       />
@@ -466,21 +466,21 @@ anti_triggers:
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">
-                {lineCount} lines
+                {t("skills.lines", { count: lineCount })}
               </span>
             </div>
             <div className="flex items-center gap-2">
               {dialogMode === "view" && (
                 <Button onClick={switchToEdit}>
                   <Pencil className="h-4 w-4 mr-1" />
-                  Edit
+                  {t("skills.btnEdit")}
                 </Button>
               )}
               {dialogMode !== "view" && (
                 <>
                   <Button variant="outline" onClick={closeDialog} disabled={saving}>
                     <X className="h-4 w-4 mr-1" />
-                    Cancel
+                    {t("skills.btnCancel")}
                   </Button>
                   <Button onClick={handleSave} disabled={saving}>
                     {saving ? (
@@ -489,10 +489,10 @@ anti_triggers:
                       <Save className="h-4 w-4 mr-1" />
                     )}
                     {saving
-                      ? "Saving..."
+                      ? t("skills.btnSaving")
                       : dialogMode === "create"
-                        ? "Create"
-                        : "Save"}
+                        ? t("skills.btnCreate")
+                        : t("skills.btnSave")}
                   </Button>
                 </>
               )}

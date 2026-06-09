@@ -87,6 +87,9 @@ bincode = { workspace = true }
 # Version comparison
 semver = { workspace = true }
 
+# Cron expression validation
+cron = "0.12"
+
 # ZIP archive support
 zip = "2"
 

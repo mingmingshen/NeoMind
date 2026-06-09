@@ -241,23 +241,27 @@ pub fn select_messages_with_importance(
             .then_with(|| b.1.cmp(&a.1))
     });
 
-    // Greedy selection: add high-importance messages that fit
+    // Greedy selection: collect high-importance messages that fit
+    let mut important_selected: Vec<&crate::agent::AgentMessage> = Vec::new();
     for (_score, _pos, msg) in scored_messages {
         let msg_tokens = estimate_message_tokens(msg);
         if used_tokens + msg_tokens <= max_tokens {
-            // Insert at the beginning (before recent messages)
-            selected.insert(0, msg);
+            important_selected.push(msg);
             used_tokens += msg_tokens;
         }
     }
 
-    // Sort selected by original position
-    selected.sort_by_key(|msg| {
-        messages
+    // Merge: important messages first (in original order), then recent messages
+    // Sort important_selected by position in original messages slice
+    important_selected.sort_by_key(|msg| {
+        // Use pointer comparison to find original position — messages are unique refs
+        messages[..recent_start]
             .iter()
             .position(|m| std::ptr::eq(m, *msg))
             .unwrap_or(usize::MAX)
     });
+
+    selected = important_selected.into_iter().chain(selected).collect();
 
     selected
 }

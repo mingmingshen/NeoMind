@@ -311,34 +311,33 @@ export function useAgentStatus(agentId: string, options: { enabled?: boolean; in
   useEffect(() => {
     if (!enabled || !agentId) return
 
-    let cancelled = false
+    const abortController = new AbortController()
 
     const fetchStatus = async () => {
       try {
         const data = await api.getAgent(agentId)
-        if (!cancelled) {
-          setStatus(data.status || null)
-          // Check if there's an active execution
-          if (data.status === 'Executing') {
-            // Fetch executions to get current one
-            try {
-              const execData = await api.getAgentExecutions(agentId, 1)
-              if (execData.executions && execData.executions.length > 0) {
-                const latest = execData.executions[0]
-                if (latest.status === 'Running') {
-                  setCurrentExecutionId(latest.id)
-                }
+        if (abortController.signal.aborted) return
+
+        setStatus(data.status || null)
+        // Check if there's an active execution
+        if (data.status === 'Executing') {
+          try {
+            const execData = await api.getAgentExecutions(agentId, 1)
+            if (abortController.signal.aborted) return
+            if (execData.executions && execData.executions.length > 0) {
+              const latest = execData.executions[0]
+              if (latest.status === 'Running') {
+                setCurrentExecutionId(latest.id)
               }
-            } catch {
-              // Ignore execution fetch errors
             }
-          } else {
-            setCurrentExecutionId(null)
+          } catch {
+            // Ignore execution fetch errors
           }
+        } else {
+          setCurrentExecutionId(null)
         }
-      } catch (error) {
-        // Silently fail to avoid console spam
-        if (!cancelled) {
+      } catch {
+        if (!abortController.signal.aborted) {
           setStatus(null)
         }
       } finally {
@@ -352,7 +351,7 @@ export function useAgentStatus(agentId: string, options: { enabled?: boolean; in
     const intervalId = setInterval(fetchStatus, interval)
 
     return () => {
-      cancelled = true
+      abortController.abort()
       clearInterval(intervalId)
     }
   }, [agentId, enabled, interval])

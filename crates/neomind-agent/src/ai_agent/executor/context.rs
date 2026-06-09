@@ -112,8 +112,8 @@ pub(crate) fn build_history_context(agent: &AiAgent, config: &HistoryConfig) -> 
                     "- [{}][{}] {} → {}",
                     ts,
                     status,
-                    truncate_to(&r.outcome, 50),
-                    truncate_to(&r.action_taken, 30)
+                    truncate_to(&r.outcome, 120),
+                    truncate_to(&r.action_taken, 50)
                 )
             })
             .collect::<Vec<_>>();

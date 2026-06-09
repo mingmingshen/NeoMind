@@ -28,27 +28,38 @@ pub fn evict_to_limit(content: &str, max_chars: usize) -> EvictionResult {
         };
     }
 
-    let mut lines: Vec<&str> = content.lines().collect();
-    let mut removed = 0;
+    let lines: Vec<&str> = content.lines().collect();
+    let total_lines = lines.len();
 
-    while !lines.is_empty() {
-        // Calculate total chars including newlines
-        let total_with_newlines: usize = if lines.is_empty() {
-            0
-        } else {
-            lines.iter().map(|l| l.len()).sum::<usize>() + (lines.len() - 1)
-        };
-
-        if total_with_newlines <= max_chars {
-            break;
-        }
-
-        lines.pop();
-        removed += 1;
+    // Pre-compute cumulative byte sizes from the start.
+    // prefix_bytes[i] = bytes for lines[0..i] including newlines between them.
+    let mut prefix_bytes = vec![0usize; total_lines + 1];
+    for i in 0..total_lines {
+        let newline = if i > 0 { 1 } else { 0 };
+        prefix_bytes[i + 1] = prefix_bytes[i] + lines[i].len() + newline;
     }
 
+    // Binary search for the largest keep_count where prefix_bytes[keep_count] <= max_chars
+    let mut lo = 0usize;
+    let mut hi = total_lines;
+    while lo < hi {
+        let mid = lo + (hi - lo + 1) / 2;
+        if prefix_bytes[mid] <= max_chars {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+
+    let keep_count = lo;
+    let removed = total_lines - keep_count;
+
     EvictionResult {
-        content: lines.join("\n"),
+        content: if keep_count > 0 {
+            lines[..keep_count].join("\n")
+        } else {
+            String::new()
+        },
         lines_removed: removed,
         evicted: removed > 0,
     }

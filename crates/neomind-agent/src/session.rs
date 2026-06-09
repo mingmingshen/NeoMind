@@ -748,59 +748,26 @@ impl SessionManager {
             Some(id) => {
                 // Check if session exists in memory
                 if self.sessions.read().await.contains_key(&id) {
-                    // Session exists, return it
                     id
                 } else {
-                    // Session doesn't exist, check if it's in the database
+                    // Session doesn't exist in memory, check if it's in the database
                     let in_db = self.store.session_exists(&id).unwrap_or(false);
 
                     if in_db {
-                        // Session is in database but not in memory (server restart)
-                        // Recreate the agent
-                        tracing::info!(session_id = %id, "Restoring session from database");
-
-                        // Use tool registry if set, otherwise create default mock tools
-                        let tool_registry = self.tool_registry.read().await.clone();
-                        let agent = if let Some(tools) = tool_registry {
-                            Arc::new(Agent::with_tools(
-                                self.default_config.clone(),
-                                id.clone(),
-                                tools,
-                            ))
-                        } else {
-                            Arc::new(Agent::new(self.default_config.clone(), id.clone()))
-                        };
-
-                        // Configure LLM if a default backend is set
-                        let llm_backend = self.default_llm_backend.read().await.clone();
-                        if let Some(backend) = llm_backend {
-                            let _ = agent.configure_llm(backend).await;
+                        // Restore from database (reuses restore_session_from_db which
+                        // includes tool registry, LLM config, skill registry, and history)
+                        match self.restore_session_from_db(&id).await {
+                            Ok(_) => id,
+                            Err(e) => {
+                                tracing::error!(session_id = %id, error = %e, "Failed to restore session, creating new");
+                                self.create_session()
+                                    .await
+                                    .unwrap_or_else(|_| Uuid::new_v4().to_string())
+                            }
                         }
-
-                        // Load message history from database
-                        let history = self.load_history(&id).unwrap_or_else(|e| {
-                            tracing::error!(session_id = %id, error = %e, message = "Failed to load history");
-                            Vec::new()
-                        });
-
-                        // Restore history to agent's memory
-                        if !history.is_empty() {
-                            agent.restore_history(history.clone()).await;
-                            tracing::debug!(session_id = %id, count = history.len(), "Restored messages for session");
-                        }
-
-                        // Save to in-memory cache
-                        self.sessions.write().await.insert(id.clone(), agent);
-                        self.session_messages
-                            .write()
-                            .await
-                            .insert(id.clone(), history);
-
-                        id
                     } else {
                         // Create a new session
-                        tracing::info!(session_id = %id, message = "Session not found in database, creating new session");
-
+                        tracing::info!(session_id = %id, "Session not found in database, creating new session");
                         self.create_session()
                             .await
                             .unwrap_or_else(|_| Uuid::new_v4().to_string())
@@ -808,7 +775,6 @@ impl SessionManager {
                 }
             }
             None => {
-                // No session ID provided, create a new session
                 self.create_session()
                     .await
                     .unwrap_or_else(|_| Uuid::new_v4().to_string())

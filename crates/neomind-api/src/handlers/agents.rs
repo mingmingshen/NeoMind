@@ -808,6 +808,57 @@ pub async fn create_agent(
         )));
     }
 
+    // Validate cron expression when schedule type is cron
+    if request.schedule.schedule_type == "cron" {
+        match &request.schedule.cron_expression {
+            None => {
+                return Err(ErrorResponse::validation(
+                    "cron_expression is required when schedule_type is 'cron'",
+                ));
+            }
+            Some(expr) => {
+                if let Err(e) = expr.parse::<cron::Schedule>() {
+                    return Err(ErrorResponse::bad_request(format!(
+                        "Invalid cron expression '{}': {}",
+                        expr, e
+                    )));
+                }
+            }
+        }
+    }
+
+    // Validate interval_seconds when schedule type is interval
+    if request.schedule.schedule_type == "interval" {
+        match request.schedule.interval_seconds {
+            None | Some(0) => {
+                return Err(ErrorResponse::validation(
+                    "interval_seconds must be > 0 when schedule_type is 'interval'",
+                ));
+            }
+            Some(secs) if secs < 10 => {
+                return Err(ErrorResponse::validation(
+                    "interval_seconds must be at least 10 seconds",
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    // Validate llm_backend_id if explicitly provided (non-default)
+    if let Some(ref backend_id) = request.llm_backend_id {
+        if backend_id != "default" && !backend_id.is_empty() {
+            let manager = get_instance_manager().map_err(|e| {
+                ErrorResponse::internal(format!("Failed to get LLM backend manager: {}", e))
+            })?;
+            if manager.get_instance(backend_id).is_none() {
+                return Err(ErrorResponse::bad_request(format!(
+                    "LLM backend '{}' not found",
+                    backend_id
+                )));
+            }
+        }
+    }
+
     // Validate execution_mode and check Focused mode requires resources
     let has_resources = request.resources.as_ref().is_some_and(|r| !r.is_empty())
         || !request.device_ids.is_empty()
@@ -1177,7 +1228,19 @@ pub async fn update_agent(
                 .ok()
                 .and_then(|m| m.get_active_instance())
                 .map(|inst| inst.id),
-            _ => Some(backend_id),
+            id => {
+                // Validate that the backend exists
+                let manager = get_instance_manager().map_err(|e| {
+                    ErrorResponse::internal(format!("Failed to get LLM backend manager: {}", e))
+                })?;
+                if manager.get_instance(id).is_none() {
+                    return Err(ErrorResponse::bad_request(format!(
+                        "LLM backend '{}' not found",
+                        id
+                    )));
+                }
+                Some(backend_id)
+            }
         };
     }
     // system_prompt update: non-empty string sets it, empty/null clears it
@@ -1217,6 +1280,42 @@ pub async fn update_agent(
                 )));
             }
         };
+
+        // Validate cron expression when schedule type is cron
+        if schedule.schedule_type == "cron" {
+            match &schedule.cron_expression {
+                None => {
+                    return Err(ErrorResponse::validation(
+                        "cron_expression is required when schedule_type is 'cron'",
+                    ));
+                }
+                Some(expr) => {
+                    if let Err(e) = expr.parse::<cron::Schedule>() {
+                        return Err(ErrorResponse::bad_request(format!(
+                            "Invalid cron expression '{}': {}",
+                            expr, e
+                        )));
+                    }
+                }
+            }
+        }
+
+        // Validate interval_seconds when schedule type is interval
+        if schedule.schedule_type == "interval" {
+            match schedule.interval_seconds {
+                None | Some(0) => {
+                    return Err(ErrorResponse::validation(
+                        "interval_seconds must be > 0 when schedule_type is 'interval'",
+                    ));
+                }
+                Some(secs) if secs < 10 => {
+                    return Err(ErrorResponse::validation(
+                        "interval_seconds must be at least 10 seconds",
+                    ));
+                }
+                _ => {}
+            }
+        }
 
         agent.schedule = neomind_storage::AgentSchedule {
             schedule_type,

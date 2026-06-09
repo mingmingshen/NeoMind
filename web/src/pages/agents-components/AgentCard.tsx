@@ -138,7 +138,7 @@ export function AgentCard({
             <button
               onClick={(e) => e.stopPropagation()}
               className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted transition-colors"
-              aria-label="More options"
+              aria-label={t('agents:card.moreOptions')}
             >
               <MoreVertical className="h-4 w-4 text-muted-foreground" />
             </button>
@@ -216,6 +216,7 @@ export function AgentCard({
             checked={agent.status === 'Active'}
             onCheckedChange={handleToggleStatus}
             onClick={(e) => e.stopPropagation()}
+            aria-label={t('agents:card.toggleStatus', { name: agent.name })}
           />
         </div>
       )}

@@ -187,7 +187,7 @@ impl RateLimitedClient {
         self.retry_request(request).await
     }
 
-    /// Retry a request with exponential backoff.
+    /// Retry a request with exponential backoff on 429 and 5xx errors.
     async fn retry_request(&self, request: reqwest::Request) -> Result<Response, reqwest::Error> {
         let mut attempt = 0;
         let mut backoff = BASE_BACKOFF;
@@ -203,8 +203,9 @@ impl RateLimitedClient {
             };
 
             let response = self.client.execute(request_clone).await?;
+            let status = response.status();
 
-            if response.status() == StatusCode::TOO_MANY_REQUESTS {
+            if status == StatusCode::TOO_MANY_REQUESTS {
                 let retry_after = self.parse_retry_after(&response).unwrap_or(backoff);
 
                 warn!(
@@ -214,7 +215,7 @@ impl RateLimitedClient {
                     "Rate limited, retrying"
                 );
 
-                // Consume response
+                // Consume response body
                 let _ = response.text().await;
 
                 tokio::time::sleep(retry_after).await;
@@ -223,7 +224,31 @@ impl RateLimitedClient {
                 backoff = std::cmp::min(backoff * 2, Duration::from_secs(60));
 
                 if attempt >= MAX_RETRIES {
-                    // After max retries, make one final request
+                    return self.client.execute(request).await;
+                }
+                continue;
+            }
+
+            // Retry on 5xx server errors (transient failures)
+            if status.is_server_error() {
+                let body_preview = response.text().await.unwrap_or_default();
+                let preview = &body_preview[..body_preview.len().min(200)];
+
+                warn!(
+                    url = %request.url(),
+                    status = %status,
+                    attempt,
+                    body_preview = preview,
+                    "Server error, retrying"
+                );
+
+                tokio::time::sleep(backoff).await;
+
+                attempt += 1;
+                backoff = std::cmp::min(backoff * 2, Duration::from_secs(60));
+
+                if attempt >= MAX_RETRIES {
+                    // Return the error as a failed response
                     return self.client.execute(request).await;
                 }
                 continue;

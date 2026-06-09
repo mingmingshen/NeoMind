@@ -23,7 +23,7 @@ import { useIsMobile } from "@/hooks/useMobile"
 import { Loader2, Bot, Plus, Brain, Cpu, Settings, Zap, BookOpen, Edit, Play, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
-import type { AiAgent, AiAgentDetail, Extension, UnifiedDataSourceInfo } from "@/types"
+import type { AiAgent, AiAgentDetail, Device, DeviceType, Extension, UnifiedDataSourceInfo } from "@/types"
 import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent, AgentThinkingEvent } from "@/lib/events"
 
 // Import components
@@ -112,8 +112,8 @@ export function AgentsPage() {
   const pendingThinkingRef = useRef<Record<string, string>>({})
 
   // Resources for dialogs
-  const [devices, setDevices] = useState<any[]>([])
-  const [deviceTypes, setDeviceTypes] = useState<any[]>([])
+  const [devices, setDevices] = useState<Device[]>([])
+  const [deviceTypes, setDeviceTypes] = useState<DeviceType[]>([])
   const [extensions, setExtensions] = useState<Extension[]>([])
   const [unifiedDataSources, setUnifiedDataSources] = useState<UnifiedDataSourceInfo[]>([])
 
@@ -136,12 +136,14 @@ export function AgentsPage() {
 
   // Lazy-load editor resources (devices, extensions, data sources) when opening editor
   const [editorResourcesLoaded, setEditorResourcesLoaded] = useState(false)
+  const editorLoadingRef = useRef(false)
   const loadEditorResources = useCallback(async () => {
-    if (editorResourcesLoaded) return
+    if (editorResourcesLoaded || editorLoadingRef.current) return
+    editorLoadingRef.current = true
     try {
       const [devicesData, typesResult, extData] = await Promise.all([
-        api.getDevices().catch((): any => ({ devices: [] })),
-        api.getDeviceTypes().catch((): any => ({ device_types: [] })),
+        api.getDevices().catch((): { devices: Device[] } => ({ devices: [] })),
+        api.getDeviceTypes().catch((): { device_types: DeviceType[] } => ({ device_types: [] })),
         api.listExtensions().catch((): Extension[] => []),
       ])
 
@@ -150,6 +152,7 @@ export function AgentsPage() {
       setExtensions(extData)
       setEditorResourcesLoaded(true)
     } catch (error) {
+      editorLoadingRef.current = false
       handleError(error, { operation: 'Load editor resources', showToast: false })
     }
   }, [editorResourcesLoaded, handleError])
@@ -266,22 +269,16 @@ export function AgentsPage() {
 
     const interval = setInterval(() => {
       const now = Date.now()
+      const expiredIds: string[] = []
+
       setExecutingAgents(prev => {
         const next = new Map<string, number>()
         let hasChanges = false
 
         prev.forEach((timestamp, agentId) => {
           if (now - timestamp > EXECUTION_TIMEOUT_MS) {
-            // Agent has been executing too long, remove it
             hasChanges = true
-            // Also clear thinking state
-            setAgentThinking(prevThinking => {
-              const nextThinking = { ...prevThinking }
-              delete nextThinking[agentId]
-              return nextThinking
-            })
-            // Reload agents to get actual status from server
-            loadItems()
+            expiredIds.push(agentId)
           } else {
             next.set(agentId, timestamp)
           }
@@ -289,6 +286,18 @@ export function AgentsPage() {
 
         return hasChanges ? next : prev
       })
+
+      // Clean up thinking state and reload outside of setState callback
+      if (expiredIds.length > 0) {
+        setAgentThinking(prev => {
+          const next = { ...prev }
+          for (const id of expiredIds) {
+            delete next[id]
+          }
+          return next
+        })
+        loadItems()
+      }
     }, 30000) // Check every 30 seconds
 
     return () => clearInterval(interval)
@@ -436,11 +445,11 @@ export function AgentsPage() {
         handleError(err, { operation: 'Refresh agent details', showToast: false })
       )
     }
-  }, [agents, detailDialogOpen, selectedAgent?.id, handleError])
+  }, [detailDialogOpen, selectedAgent?.id, handleError])
 
-  // Merge executing state from WebSocket with agent data
+  // Merge executing state from WebSocket with agent data (memoized to avoid re-rendering all cards)
   // Only show Executing if agent is currently executing AND not paused/error in database
-  const agentsWithExecutingStatus = agents.map(agent => {
+  const agentsWithExecutingStatus = useMemo(() => agents.map(agent => {
     // If agent is paused or error in database, don't override with executing state
     if (agent.status === 'Paused' || agent.status === 'Error') {
       return {
@@ -454,7 +463,7 @@ export function AgentsPage() {
       status: executingAgents.has(agent.id) ? 'Executing' : agent.status,
       currentThinking: executingAgents.has(agent.id) ? (agentThinking[agent.id] || null) : null
     };
-  })
+  }), [agents, executingAgents, agentThinking])
 
   const isMobile = useIsMobile()
 

@@ -5,6 +5,8 @@
 //! Since memory content gets injected into system prompts, malicious content
 //! must be caught at write time.
 
+use std::sync::OnceLock;
+
 /// Result of a security scan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SecurityScanResult {
@@ -14,6 +16,53 @@ pub enum SecurityScanResult {
     Blocked { reason: String },
 }
 
+/// Pre-compiled injection patterns.
+struct CompiledPattern {
+    re: regex::Regex,
+    label: String,
+}
+
+/// Pre-compiled security pattern sets (compiled once, reused forever).
+struct SecurityPatterns {
+    injection: Vec<CompiledPattern>,
+    exfiltration: Vec<CompiledPattern>,
+}
+
+static SECURITY_PATTERNS: OnceLock<SecurityPatterns> = OnceLock::new();
+
+fn compiled_patterns() -> &'static SecurityPatterns {
+    SECURITY_PATTERNS.get_or_init(|| {
+        let injection_raw: [(&str, &str); 6] = [
+            (r"ignore\s+.*(instructions?|prompts?|rules)", "instruction override"),
+            (r"disregard\s+.*(instructions?|prompts?|rules|above)", "instruction disregard"),
+            (r"forget\s+.*(instructions?|rules|prompt)", "instruction forget"),
+            (r"you\s+are\s+now\s+", "role override"),
+            (r"new\s+instructions?\s*:", "new instructions injection"),
+            (r"<\s*/?(system|instruction|memory-context)\s*>", "XML tag injection"),
+        ];
+
+        let exfil_raw: [(&str, &str); 4] = [
+            (r"curl\s+", "curl command"),
+            (r"wget\s+", "wget command"),
+            (r"http://|https://", "URL in memory"),
+            (r"(api[_-]?key|secret|token|password|credential)\s*[:=]", "credential exposure"),
+        ];
+
+        fn compile(raw: &[(&str, &str)]) -> Vec<CompiledPattern> {
+            raw.iter()
+                .filter_map(|(pat, label)| {
+                    regex::Regex::new(pat).ok().map(|re| CompiledPattern { re, label: label.to_string() })
+                })
+                .collect()
+        }
+
+        SecurityPatterns {
+            injection: compile(&injection_raw),
+            exfiltration: compile(&exfil_raw),
+        }
+    })
+}
+
 /// Scans memory content for security threats.
 pub struct MemorySecurityScanner;
 
@@ -21,58 +70,23 @@ impl MemorySecurityScanner {
     /// Scan content for injection, exfiltration, and obfuscation threats.
     pub fn scan(content: &str) -> SecurityScanResult {
         let lower = content.to_lowercase();
+        let patterns = compiled_patterns();
 
         // 1. Injection patterns - attempt to override instructions
-        let injection_patterns = [
-            (
-                r"ignore\s+.*(instructions?|prompts?|rules)",
-                "instruction override",
-            ),
-            (
-                r"disregard\s+.*(instructions?|prompts?|rules|above)",
-                "instruction disregard",
-            ),
-            (
-                r"forget\s+.*(instructions?|rules|prompt)",
-                "instruction forget",
-            ),
-            (r"you\s+are\s+now\s+", "role override"),
-            (r"new\s+instructions?\s*:", "new instructions injection"),
-            (r"system\s*:\s*", "system role injection"),
-            (
-                r"<\s*/?(system|instruction|memory-context)\s*>",
-                "XML tag injection",
-            ),
-        ];
-
-        for (pattern, label) in &injection_patterns {
-            if let Ok(re) = regex::Regex::new(pattern) {
-                if re.is_match(&lower) {
-                    return SecurityScanResult::Blocked {
-                        reason: format!("Potential prompt injection: {}", label),
-                    };
-                }
+        for p in &patterns.injection {
+            if p.re.is_match(&lower) {
+                return SecurityScanResult::Blocked {
+                    reason: format!("Potential prompt injection: {}", &p.label),
+                };
             }
         }
 
         // 2. Data exfiltration patterns
-        let exfil_patterns = [
-            (r"curl\s+", "curl command"),
-            (r"wget\s+", "wget command"),
-            (r"http://|https://", "URL in memory"),
-            (
-                r"(api[_-]?key|secret|token|password|credential)\s*[:=]",
-                "credential exposure",
-            ),
-        ];
-
-        for (pattern, label) in &exfil_patterns {
-            if let Ok(re) = regex::Regex::new(pattern) {
-                if re.is_match(&lower) {
-                    return SecurityScanResult::Blocked {
-                        reason: format!("Potential data exfiltration: {}", label),
-                    };
-                }
+        for p in &patterns.exfiltration {
+            if p.re.is_match(&lower) {
+                return SecurityScanResult::Blocked {
+                    reason: format!("Potential data exfiltration: {}", &p.label),
+                };
             }
         }
 

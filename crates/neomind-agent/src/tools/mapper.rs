@@ -471,7 +471,7 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                     // 将小时转换为时间戳
                     if let Some(hours) = value.as_i64() {
                         let end_time = chrono::Utc::now().timestamp();
-                        let start_time = end_time - (hours * 3600);
+                        let start_time = end_time.saturating_sub(hours.saturating_mul(3600));
                         mapped.insert("end_time".to_string(), serde_json::json!(end_time));
                         mapped.insert("start_time".to_string(), serde_json::json!(start_time));
                         continue;
@@ -532,7 +532,7 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 ("query_data", "hours") => {
                     if let Some(hours) = value.as_i64() {
                         let end_time = chrono::Utc::now().timestamp();
-                        let start_time = end_time - (hours * 3600);
+                        let start_time = end_time.saturating_sub(hours.saturating_mul(3600));
                         mapped.insert("end_time".to_string(), serde_json::json!(end_time));
                         mapped.insert("start_time".to_string(), serde_json::json!(start_time));
                         continue;

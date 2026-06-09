@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils"
 import { textNano } from "@/design-system/tokens/typography"
 import { useIsMobile } from "@/hooks/useMobile"
 import { api } from "@/lib/api"
-import type { AiAgentDetail, AgentMemory, KnowledgeFileRef, JournalExecutionRecord } from "@/types"
+import type { AiAgentDetail, AgentAvailableResources, AgentExecution, AgentMemory, KnowledgeFileRef, JournalExecutionRecord } from "@/types"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent } from "@/lib/events"
@@ -78,11 +78,11 @@ export function AgentDetailPanel({
   const { handleError } = useErrorHandler()
   const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
-  const [executions, setExecutions] = useState<any[]>([])
+  const [executions, setExecutions] = useState<AgentExecution[]>([])
   const [executionsLoading, setExecutionsLoading] = useState(false)
   const [memory, setMemory] = useState<AgentMemory | null>(null)
   const [memoryLoading, setMemoryLoading] = useState(false)
-  const [availableResources, setAvailableResources] = useState<any>(null)
+  const [availableResources, setAvailableResources] = useState<AgentAvailableResources | null>(null)
 
   // Real-time status from WebSocket events
   const [realtimeStatus, setRealtimeStatus] = useState<string | null>(null)
@@ -324,7 +324,7 @@ export function AgentDetailPanel({
                         <InfoRow label={t('agents:detail.interval')} value={`${agent.schedule.interval_seconds}s`} />
                       )}
                       {agent.schedule.cron_expression && (
-                        <InfoRow label="Cron" value={agent.schedule.cron_expression} mono />
+                        <InfoRow label={t('agents:detail.cron')} value={agent.schedule.cron_expression} mono />
                       )}
                       {agent.schedule.event_filter && (
                         <InfoRow label={t('agents:creator.schedule.event.triggerEvent')} value={agent.schedule.event_filter} mono />
@@ -477,28 +477,6 @@ function StatItem({ icon, label, value, color }: StatItemProps) {
         <div className="text-xs text-muted-foreground truncate">{label}</div>
         <div className="text-sm font-semibold truncate">{value}</div>
       </div>
-    </div>
-  )
-}
-
-// Resource Count Item
-interface ResourceCountItemProps {
-  color: 'blue' | 'purple' | 'green' | 'orange'
-  label: string
-  count: number
-}
-
-function ResourceCountItem({ color, label, count }: ResourceCountItemProps) {
-  const colorMap = {
-    blue: 'bg-info-light text-info border-info',
-    purple: 'bg-accent-purple-light text-accent-purple border-accent-purple-light',
-    green: 'bg-success-light text-success dark:text-success border-success-light',
-    orange: 'bg-accent-orange-light text-accent-orange border-accent-orange-light',
-  }
-  return (
-    <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded border text-sm", colorMap[color])}>
-      <span className="text-muted-foreground">{label}:</span>
-      <span className="font-semibold">{count}</span>
     </div>
   )
 }

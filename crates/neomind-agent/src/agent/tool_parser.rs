@@ -5,10 +5,29 @@
 
 use regex::Regex;
 use serde_json::Value;
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 use super::types::ToolCall;
 use crate::error::Result;
+
+/// Pre-compiled regex for removing code-block-wrapped tool call arrays from responses.
+fn code_block_array_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r#"```(?:json)?\s*\n?\s*(\[\s*\{[\s\S]*?"name"[\s\S]*?\}\s*\])\s*\n?\s*```"#)
+            .expect("code block tool call regex is a compile-time constant")
+    })
+}
+
+/// Pre-compiled regex for removing code-block-wrapped single tool call objects from responses.
+fn code_block_obj_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r#"```(?:json)?\s*\n?\s*(\{\s*"name"[\s\S]*?"arguments"[\s\S]*?\})\s*\n?\s*```"#)
+            .expect("code block single tool call regex is a compile-time constant")
+    })
+}
 
 /// Parse tool calls from LLM response text.
 ///
@@ -313,18 +332,10 @@ pub fn remove_tool_calls_from_response(response: &str) -> String {
     let mut result = response.to_string();
 
     // Remove ```json ... ``` code blocks that contain tool call JSON
-    // Match ```json or ``` followed by content containing "name" and "arguments"
-    let code_block_re =
-        Regex::new(r#"```(?:json)?\s*\n?\s*(\[\s*\{[\s\S]*?"name"[\s\S]*?\}\s*\])\s*\n?\s*```"#)
-            .expect("code block tool call regex is a compile-time constant");
-    result = code_block_re.replace_all(&result, "").to_string();
+    result = code_block_array_re().replace_all(&result, "").to_string();
 
     // Also remove ```json ... ``` with single object tool calls
-    let code_block_obj_re = Regex::new(
-        r#"```(?:json)?\s*\n?\s*(\{\s*"name"[\s\S]*?"arguments"[\s\S]*?\})\s*\n?\s*```"#,
-    )
-    .expect("code block single tool call regex is a compile-time constant");
-    result = code_block_obj_re.replace_all(&result, "").to_string();
+    result = code_block_obj_re().replace_all(&result, "").to_string();
 
     // Remove JSON array format
     while let Some(start) = result.find('[') {

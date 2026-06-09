@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Agent executor refactor** — Extracted LLM runtime management into `llm_runtime.rs` and event trigger logic into `event_trigger.rs`, removing ~900 lines from `executor/mod.rs` and deleting the obsolete `llm_pool.rs` module
+- **Security scanner performance** — Pre-compiled regex injection/exfiltration patterns via `OnceLock`, eliminating per-scan regex compilation overhead in `memory/security.rs`
+- **Tool semantic classification** — Improved `tool_name_to_semantic_type()` to handle shell tools, extension tools (via naming conventions), and fallback classification for unknown tools
+- **Rate limiter robustness** — Enhanced rate-limited client with better timeout and error handling
+- **Token/tool parsing** — Updated tokenizer and tool parser for improved reliability
+- **Memory compressor** — Refined compression logic for more accurate memory summarization
+- **Session management** — Improved session state handling and lifecycle management
+- **Tool mapper** — Updated tool mapping for consistency with current CLI commands
+- **API dependencies** — Added required crate dependencies in `neomind-api/Cargo.toml`
+
+### Fixed
+
+- **Agent storage query** — Fixed agent list query in `neomind-storage`
+- **ExecutionDetailDialog image rendering** — Extracted pure helper functions for base64/image detection, improved image display in execution details
+- **Agent API handlers** — Fixed agent CRUD and execution endpoints in `neomind-api`
+- **Dashboard helpers** — Minor fix in dashboard helper utilities
+
+### Frontend (Agents)
+
+- **ExecutionDetailDialog rewrite** — Refactored 332-line component with extracted helpers, improved image/data display
+- **Agent event hooks** — Updated `useAgentEvents` for better SSE event handling
+- **SkillsPanel** — Improved skill management UI
+- **AgentCard / AgentDetailPanel** — Visual and functional improvements
+- **AgentEditorFullScreen** — Editor refinements
+- **AgentExecutionTimeline** — Timeline display improvements
+- **i18n** — Added/updated agent translation keys for both en and zh locales
+- **Agents page** — Layout and interaction improvements
+
 ## [0.8.8] - 2026-06-09
 
 ### Visual Quality & Brand Identity

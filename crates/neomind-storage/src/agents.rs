@@ -277,7 +277,7 @@ pub struct AgentMemory {
 pub struct ExecutionRecord {
     pub timestamp: i64,
     pub execution_id: String,
-    /// Brief outcome description (≤100 chars)
+    /// Brief outcome description (≤300 chars)
     pub outcome: String,
     /// Actions taken (≤150 chars), e.g. "sent alert" / "no action"
     pub action_taken: String,

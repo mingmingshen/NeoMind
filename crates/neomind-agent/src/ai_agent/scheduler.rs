@@ -695,27 +695,26 @@ impl AgentScheduler {
     /// previously scheduled time (not the actual execution time) to prevent
     /// time drift. If the next scheduled time has already passed, it will
     /// calculate forward from the current time.
-    fn update_next_execution(task: &mut ScheduledTask, _now: i64) {
+    fn update_next_execution(task: &mut ScheduledTask, now: i64) {
         if let Some(interval) = task.interval_seconds {
             // Interval: use the previous scheduled time to prevent drift
             // E.g., if scheduled for 8:00 but executed at 8:00:01,
             // next should be 8:05 (not 8:05:01)
             let scheduled_next = task.next_execution + interval as i64;
-            let current_now = Utc::now().timestamp();
 
-            if scheduled_next > current_now {
+            if scheduled_next > now {
                 // The next scheduled time is still in the future - use it
                 task.next_execution = scheduled_next;
             } else {
                 // We've fallen behind (e.g., system was paused/sleeping)
                 // Calculate the next future time from now
-                let intervals_behind = (current_now - scheduled_next) / interval as i64 + 1;
+                let intervals_behind = (now - scheduled_next) / interval as i64 + 1;
                 task.next_execution = scheduled_next + (intervals_behind * interval as i64);
 
                 tracing::debug!(
                     agent_id = %task.agent_id,
                     scheduled_next = scheduled_next,
-                    current_now = current_now,
+                    now = now,
                     intervals_behind = intervals_behind,
                     new_next = task.next_execution,
                     "Interval task fell behind, rescheduled"
