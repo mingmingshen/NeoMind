@@ -812,7 +812,8 @@ export function CustomLayer({
   onBindingsChange,
   onLayerClick,
   className,
-}: CustomLayerProps) {
+  title,
+}: CustomLayerProps & { title?: string }) {
   const { t } = useTranslation('dashboardComponents')
 
   // Get store for device data and command execution
@@ -1217,7 +1218,7 @@ export function CustomLayer({
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted-20 shrink-0">
           <div className="flex items-center gap-2">
             <Layers className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Custom Layer</span>
+            <span className="text-sm font-medium">{title || 'Custom Layer'}</span>
           </div>
           <div className="flex items-center gap-1">
             {/* Zoom controls */}

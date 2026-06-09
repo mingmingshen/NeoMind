@@ -634,7 +634,8 @@ export function VideoDisplay({
   rounded = true,
   showFullscreen = true,
   className,
-}: VideoDisplayProps) {
+  title,
+}: VideoDisplayProps & { title?: string }) {
   const { data, loading, error } = useDataSource<string>(dataSource, {
     fallback: propSrc,
   })
@@ -791,7 +792,7 @@ export function VideoDisplay({
       <div className="flex items-center justify-between px-4 py-3 bg-bg-95 border-b">
         <div className="flex items-center gap-2">
           <Webcam className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Video</span>
+          <span className="text-sm font-medium">{title || 'Video'}</span>
           <span className="text-xs text-muted-foreground">
             {detectedType === 'hls' && 'HLS'}
             {detectedType === 'device-camera' && 'Camera'}

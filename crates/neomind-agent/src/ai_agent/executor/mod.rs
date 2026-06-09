@@ -1067,6 +1067,44 @@ impl AgentExecutor {
                 break;
             }
 
+            // --- Per-round tool call cap ---
+            // Prevent single-round explosion (e.g. 17 parallel device queries).
+            // Keep only the first N calls and tell the LLM to defer the rest.
+            const MAX_TOOL_CALLS_PER_ROUND: usize = 6;
+            if tool_calls.len() > MAX_TOOL_CALLS_PER_ROUND {
+                let total = tool_calls.len();
+                let deferred_names: Vec<String> = tool_calls[MAX_TOOL_CALLS_PER_ROUND..]
+                    .iter()
+                    .map(|tc| {
+                        tc.arguments.get("command")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&tc.name)
+                            .split_whitespace()
+                            .take(4)
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    })
+                    .collect();
+                tracing::info!(
+                    agent_id = %agent.id,
+                    round = round + 1,
+                    total,
+                    kept = MAX_TOOL_CALLS_PER_ROUND,
+                    "Capping tool calls per round"
+                );
+                tool_calls.truncate(MAX_TOOL_CALLS_PER_ROUND);
+                // Inject hint so LLM knows there's more work to do
+                messages.push(Message::new(
+                    MessageRole::User,
+                    Content::text(&format!(
+                        "[System] {} tool call(s) were deferred to save time. Remaining tasks: {}. \
+                         Continue in the next round if needed.",
+                        total - MAX_TOOL_CALLS_PER_ROUND,
+                        deferred_names.join("; ")
+                    )),
+                ));
+            }
+
             // --- Intra-round + Cross-round deduplication ---
             let dedup_outcome = Self::deduplicate_tool_calls(
                 &mut tool_calls,
@@ -1222,7 +1260,40 @@ impl AgentExecutor {
             // --- Messages compaction ---
             // When the message history grows too large, compact old tool results into
             // short summaries to prevent context window overflow in subsequent rounds.
+            let msg_count_before = messages.len();
             compact_executor_messages(messages, context_window);
+            let msg_count_after = messages.len();
+
+            // --- Inject queried-entities summary after compaction ---
+            // When compaction removed messages, the LLM may "forget" what it already
+            // queried and re-query the same entities. Inject a concise reminder of
+            // all executed signatures to prevent redundant queries.
+            if msg_count_after < msg_count_before {
+                let sig_count = all_executed_signatures.len();
+                if sig_count > 0 && sig_count <= 30 {
+                    let sigs: Vec<&str> = all_executed_signatures
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect();
+                    messages.push(Message::new(
+                        MessageRole::User,
+                        Content::text(&format!(
+                            "[System] Context was compacted. You have already executed {} tool call(s) — do NOT re-execute them:\n{}",
+                            sig_count,
+                            sigs.join("\n")
+                        )),
+                    ));
+                } else if sig_count > 30 {
+                    messages.push(Message::new(
+                        MessageRole::User,
+                        Content::text(&format!(
+                            "[System] Context was compacted. You have already executed {} tool calls across previous rounds. \
+                             Do NOT re-query any entities you have already checked.",
+                            sig_count
+                        )),
+                    ));
+                }
+            }
         }
 
         // If all rounds exhausted without LLM producing final text, OR if LLM failed
@@ -1344,27 +1415,55 @@ impl AgentExecutor {
     }
 
     /// Normalize a neomind CLI command for dedup purposes:
-    /// collapse whitespace and strip cosmetic flags (`--format`, `--output`)
-    /// that don't change the query result.
+    /// collapse whitespace, strip cosmetic flags, and collapse entity-specific
+    /// sub-commands so that re-querying the same entity counts as a duplicate.
+    ///
+    /// Only applies entity-level truncation for `get` actions (which return the same
+    /// entity data regardless of trailing words). Other actions like `history`,
+    /// `execute`, `list` are kept in full to preserve meaningful parameter differences.
+    ///
+    /// Examples:
+    ///   `neomind device get abc123 --format json`  → `neomind device get abc123`
+    ///   `neomind device get abc123 battery metrics` → `neomind device get abc123`
+    ///   `neomind device history abc123 --time-range 7d` → `neomind device history abc123 --time-range 7d`
     fn normalize_shell_command(cmd: &str) -> String {
         let parts: Vec<&str> = cmd.split_whitespace().collect();
+        if parts.is_empty() {
+            return String::new();
+        }
+
+        // Check if this is a `neomind <domain> <action>` with action safe to truncate
+        let action_safe_to_truncate = parts.len() >= 3
+            && parts[0] == "neomind"
+            && matches!(parts[2], "get");
+
         let mut filtered = Vec::new();
         let mut skip_next = false;
-        for part in parts.iter() {
+        for (i, part) in parts.iter().enumerate() {
             if skip_next {
                 skip_next = false;
                 continue;
             }
-            // Strip flags that take a value: --format json, --output json
+            // Strip cosmetic flags that don't change the query result:
+            // --format and --output only affect presentation, not data.
+            // NOTE: --limit, --time-range, --offset etc. are NOT stripped because
+            // they change the actual data returned.
             if *part == "--format" || *part == "--output" {
                 skip_next = true;
                 continue;
             }
-            // Strip --format=json, --output=json
             if part.starts_with("--format=") || part.starts_with("--output=") {
                 continue;
             }
             filtered.push(*part);
+
+            // Entity-level dedup for `get` actions: after `neomind <domain> get <id>`,
+            // stop collecting. Extra words like "battery" or "metrics" are just
+            // LLM-added hints — `device get abc123` returns all data regardless.
+            // Only applies to `get` — `history`/`execute`/`list` keep full args.
+            if action_safe_to_truncate && i >= 3 && filtered.len() >= 4 {
+                break;
+            }
         }
         filtered.join(" ")
     }

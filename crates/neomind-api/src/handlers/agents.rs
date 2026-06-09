@@ -27,14 +27,14 @@ use neomind_core::datasource::DataSourceId;
 // Helper functions for enum serialization
 // ============================================================================
 
-/// Convert AgentStatus to lowercase string.
+/// Convert AgentStatus to PascalCase string (matching existing API contract).
 fn status_to_string(status: &AgentStatus) -> &'static str {
     match status {
-        AgentStatus::Active => "active",
-        AgentStatus::Paused => "paused",
-        AgentStatus::Stopped => "stopped",
-        AgentStatus::Error => "error",
-        AgentStatus::Executing => "executing",
+        AgentStatus::Active => "Active",
+        AgentStatus::Paused => "Paused",
+        AgentStatus::Stopped => "Stopped",
+        AgentStatus::Error => "Error",
+        AgentStatus::Executing => "Executing",
     }
 }
 
@@ -46,13 +46,13 @@ fn execution_mode_to_string(mode: &ExecutionMode) -> &'static str {
     }
 }
 
-/// Convert ExecutionStatus to lowercase string.
+/// Convert ExecutionStatus to PascalCase string (matching existing API contract).
 fn execution_status_to_string(status: &ExecutionStatus) -> &'static str {
     match status {
-        ExecutionStatus::Running => "running",
-        ExecutionStatus::Completed => "completed",
-        ExecutionStatus::Failed => "failed",
-        ExecutionStatus::Partial => "partial",
+        ExecutionStatus::Running => "Running",
+        ExecutionStatus::Completed => "Completed",
+        ExecutionStatus::Failed => "Failed",
+        ExecutionStatus::Partial => "Partial",
     }
 }
 
