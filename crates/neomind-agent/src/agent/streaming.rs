@@ -1499,23 +1499,6 @@ struct ToolExecutionResult {
     result: std::result::Result<crate::toolkit::ToolOutput, crate::toolkit::ToolError>,
 }
 
-/// === IMPROVED: Context Window with CompactionConfig ===
-///
-/// Builds conversation context using CompactionConfig for intelligent compaction:
-/// 1. Reserve tokens floor for generation
-/// 2. Tool result clearing for old messages
-/// 3. Token-based windowing with priority
-/// 4. Always keep recent messages for context continuity
-///
-/// The `max_tokens` parameter allows dynamic context sizing based on the model's actual capacity.
-#[allow(dead_code)]
-pub(crate) fn build_context_window(
-    messages: &[AgentMessage],
-    max_tokens: usize,
-) -> Vec<AgentMessage> {
-    build_context_window_with_summary(messages, max_tokens, None, None)
-}
-
 /// Build context window with optional conversation summary injection.
 ///
 /// When a summary is provided, messages up to `summary_up_to_index` are removed

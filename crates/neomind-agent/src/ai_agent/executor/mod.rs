@@ -1312,6 +1312,23 @@ impl AgentExecutor {
             ).await;
             if let Some(text) = summary {
                 final_text = text;
+            } else {
+                // Phase 2 LLM call failed — build a concise fallback from tool results
+                // instead of returning a generic "Completed" message that loses all data.
+                let success_count = all_tool_results.iter().filter(|r| r.result.is_ok()).count();
+                let total_count = all_tool_results.len();
+                let mut lines = vec![format!(
+                    "Tool execution completed: {}/{} calls succeeded across {} round(s).",
+                    success_count, total_count, round_data_list.len()
+                )];
+                // Include brief summaries of last few successful results
+                for r in all_tool_results.iter().rev().take(5) {
+                    if let Ok(ref output) = r.result {
+                        let brief = summarize_tool_output(&output.data, &r.name);
+                        lines.push(format!("- [{}] {}", r.name, truncate_to(&brief, 200)));
+                    }
+                }
+                final_text = lines.join("\n");
             }
         }
 
@@ -2683,11 +2700,12 @@ impl AgentExecutor {
                     updated_memory.knowledge_files = handle.read().await.clone();
                 }
 
-                // Auto-init knowledge file on first execution
+                // Auto-init knowledge file on first SUCCESSFUL execution
                 self.auto_init_knowledge_file(
                     &agent,
                     &mut updated_memory,
                     &decision_process.conclusion,
+                    overall_success,
                 );
 
                 self.store
@@ -2832,11 +2850,12 @@ impl AgentExecutor {
                     updated_memory.knowledge_files = handle.read().await.clone();
                 }
 
-                // Auto-init knowledge file on first execution
+                // Auto-init knowledge file on first SUCCESSFUL execution
                 self.auto_init_knowledge_file(
                     &agent,
                     &mut updated_memory,
                     &conclusion,
+                    focused_success,
                 );
 
                 // Save updated memory

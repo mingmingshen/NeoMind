@@ -62,6 +62,7 @@ impl AgentExecutor {
         agent: &AiAgent,
         updated_memory: &mut AgentMemory,
         _conclusion: &str,
+        success: bool,
     ) {
         // Skip if agent already has knowledge files
         if !updated_memory.knowledge_files.is_empty() {
@@ -70,6 +71,12 @@ impl AgentExecutor {
 
         // Must have at least one journal entry (completed an execution)
         if updated_memory.journal.records.is_empty() {
+            return;
+        }
+
+        // Only auto-init on successful executions — failed runs would
+        // pollute the knowledge file with error patterns
+        if !success {
             return;
         }
 

@@ -264,24 +264,32 @@ impl AgentExecutor {
         let text = output.text.trim().to_string();
         if text.is_empty() {
             tracing::warn!(agent_id = %agent.id, "LLM returned empty response");
+            // Build a meaningful fallback from the data we already collected,
+            // rather than returning a generic "No analysis produced."
+            let data_summary = if data_lines.is_empty() {
+                "No data was available for analysis.".to_string()
+            } else {
+                let summary: Vec<&str> = data_lines.iter().map(|s| s.as_str()).take(10).collect();
+                format!("Collected data (LLM analysis unavailable):\n{}", summary.join("\n"))
+            };
             return Ok((
-                "No analysis produced.".to_string(),
+                data_summary.clone(),
                 vec![ReasoningStep {
                     step_number: 1,
-                    description: "LLM returned empty response".to_string(),
-                    step_type: "llm_analysis".to_string(),
+                    description: "LLM returned empty response — falling back to raw data summary".to_string(),
+                    step_type: "fallback".to_string(),
                     input: None,
                     output: String::new(),
                     confidence: 0.3,
                 }],
                 vec![Decision {
                     decision_type: "info".to_string(),
-                    description: "Empty LLM response".to_string(),
+                    description: "LLM analysis unavailable, returning raw data".to_string(),
                     action: "log".to_string(),
                     rationale: "LLM returned no content".to_string(),
-                    expected_outcome: "Manual review needed".to_string(),
+                    expected_outcome: "Raw data preserved for user review".to_string(),
                 }],
-                "LLM produced no output.".to_string(),
+                data_summary,
             ));
         }
 
